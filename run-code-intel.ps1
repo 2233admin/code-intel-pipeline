@@ -171,6 +171,16 @@ function Get-StepFailureCategory {
     return $null
 }
 
+function Join-StatusNames {
+    param(
+        [object[]]$Items,
+        [string]$Empty = "none"
+    )
+
+    if ($Items.Count -eq 0) { return $Empty }
+    return (($Items | ForEach-Object { "$($_.name)=$($_.status)" }) -join "; ")
+}
+
 $configData = $null
 if ([string]::IsNullOrWhiteSpace($Config)) {
     $Config = Join-Path $PSScriptRoot "pipeline.config.json"
@@ -580,6 +590,8 @@ $report = [ordered]@{
 }
 
 $reportPath = Join-Path $runDir "report.json"
+$understandingPath = Join-Path $runDir "understanding.md"
+$report["understanding"] = $understandingPath
 $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding UTF8
 
 $summaryPath = Join-Path $runDir "summary.md"
@@ -589,6 +601,7 @@ $summaryLines = @(
     "- Repo: $repoPath",
     "- Mode: $Mode",
     "- Report: $reportPath",
+    "- Understanding: $understandingPath",
     "- Understand command: ``$understandCommand``",
     "",
     "## Summary",
@@ -623,10 +636,77 @@ if ($notes.Count -gt 0) {
 }
 $summaryLines | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 
+$passedSteps = @($steps | Where-Object { $_.status -eq "passed" })
+$skippedSteps = @($steps | Where-Object { $_.status -eq "skipped" })
+$problemSteps = @($steps | Where-Object { $_.status -eq "failed" -or $_.status -eq "manual_required" })
+$graphStep = @($steps | Where-Object { $_.name -eq "understand graph" } | Select-Object -First 1)
+$repowiseSteps = @($steps | Where-Object { $_.name -like "repowise*" })
+$sentruxSteps = @($steps | Where-Object { $_.name -like "sentrux*" })
+$nextAction = "No immediate action required; keep this artifact as the latest clean code-intel snapshot."
+if ($failureCounts.providerQuota -gt 0) {
+    $nextAction = "Provider quota blocked part of the run. Retry provider-backed docs/index work after quota resets."
+}
+elseif ($failureCounts.localToolError -gt 0) {
+    $nextAction = "Fix the local tool error shown in report.json, then rerun the pipeline."
+}
+elseif ($failureCounts.graphMissing -gt 0) {
+    $nextAction = "Run the emitted Understand Anything command in Claude, then rerun the pipeline."
+}
+elseif ($failureCounts.sentruxFail -gt 0) {
+    $nextAction = "Inspect the Sentrux violation or regression before changing or saving a baseline."
+}
+elseif ($manual.Count -gt 0) {
+    $nextAction = "Resolve the manual_required step, then rerun if the team needs a fully clean artifact."
+}
+
+$understandingLines = @(
+    "# Understanding Report",
+    "",
+    "## Key Assumptions",
+    "- The repo path resolved to ``$repoPath``.",
+    "- Mode ``$Mode`` reflects the intended confidence level for this run.",
+    "- ``rg`` is exact inventory, ``repowise`` is semantic memory, Understand Anything is architecture graph context, and Sentrux is the structural gate.",
+    "- Generated artifacts are local evidence, not a replacement for human review.",
+    "",
+    "## Verified",
+    "- Artifact directory: ``$runDir``",
+    "- Report: ``$reportPath``",
+    "- Summary: ``$summaryPath``",
+    "- Tools: rg=$($toolState.rg), git=$($toolState.git), repowise=$($toolState.repowise), sentrux=$($toolState.sentrux)",
+    "- Passed steps: $(Join-StatusNames $passedSteps)",
+    "",
+    "## Unverified Or Inferred",
+    "- Understand graph: $(if ($graphStep.Count -gt 0) { $graphStep[0].status } else { 'not checked' })",
+    "- Repowise state: $(Join-StatusNames $repowiseSteps)",
+    "- Sentrux state: $(Join-StatusNames $sentruxSteps)",
+    "- Skipped steps: $(Join-StatusNames $skippedSteps)",
+    "",
+    "## Failure Categories",
+    "- provider_quota: $($failureCounts.providerQuota)",
+    "- local_tool_error: $($failureCounts.localToolError)",
+    "- graph_missing: $($failureCounts.graphMissing)",
+    "- sentrux_fail: $($failureCounts.sentruxFail)",
+    "",
+    "## Human Inspection Required",
+    "- Read `summary.md` first.",
+    "- If `graph_missing > 0`, run: ``$understandCommand``",
+    "- If ``sentrux_fail > 0``, inspect Sentrux output in ``report.json`` before saving a new baseline.",
+    "- If ``provider_quota > 0``, treat it as an upstream quota/rate issue, not a local indexing failure.",
+    "- If ``local_tool_error > 0``, inspect command output and PATH/tool installation before changing repo code.",
+    "",
+    "## Problem Steps",
+    "$(if ($problemSteps.Count -gt 0) { ($problemSteps | ForEach-Object { '- ' + $_.name + ': ' + $_.status }) -join [Environment]::NewLine } else { '- none' })",
+    "",
+    "## Next Action",
+    $nextAction
+)
+$understandingLines | Set-Content -LiteralPath $understandingPath -Encoding UTF8
+
 Write-Host "Code intel pipeline complete"
 Write-Host "Repo: $repoPath"
 Write-Host "Report: $reportPath"
 Write-Host "Summary: $summaryPath"
+Write-Host "Understanding: $understandingPath"
 if ($manual.Count -gt 0) {
     Write-Host "Manual step required: $understandCommand"
 }

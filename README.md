@@ -25,6 +25,12 @@ D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -RepoPath
 
 The installer checks `rg`, `git`, `python`, `repowise`, `sentrux`, the shared Codex/Claude skill links, Understand Anything, config, repo doctor, and optional provider access. It never writes API keys. JSON output includes `installActions` so another agent can tell whether each tool was already present, installed, needs a new shell, or failed.
 
+Use `-AuditInstallPlan` to print the supply-chain notes for each tool before installing anything:
+
+```powershell
+D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\repo -AuditInstallPlan
+```
+
 Always start with the doctor:
 
 ```powershell
@@ -164,12 +170,33 @@ The index is written to:
 
 Set `CODE_INTEL_ARTIFACT_ROOT` or pass `-ArtifactRoot` when the team wants artifacts on a shared project disk.
 
+## Artifacts
+
+Each pipeline run writes:
+
+- `summary.md`: skim-first operator summary.
+- `report.json`: machine-readable run state and failure categories.
+- `understanding.md`: Karpathy-style understanding report for handoff and human inspection.
+- `files.txt`: exact `rg --files` inventory.
+
+Read `understanding.md` when handing work to another teammate or agent. It lists assumptions, verified facts, unverified areas, failure categories, and the single next action.
+
+## Templates
+
+Reusable process templates live under `templates\`:
+
+- `idea-file.md`: write the idea and success criteria before a nontrivial pipeline or tool change.
+- `understanding-report.md`: standalone understanding-first handoff format.
+- `dependency-audit.md`: pre-install dependency review format.
+
 ## Rules
 
 - Keep generated tool state local at first.
 - Commit only intentional governance files such as `.sentrux/rules.toml`.
 - Do not merge tool internals into the future unified tool until this pipeline has survived real repo work.
 - Treat `Understand Anything` as the architecture snapshot, `repowise` as memory, and `sentrux` as the gate.
+- Treat `understanding.md` as the team handoff layer: do not ship a run you cannot explain.
+- Audit new install surfaces before adding them to `-InstallMissing`.
 - Use `sentruxPath` for legacy-heavy repos where vendored or research-copy code would make a full-repo gate noisy.
 - For `k-atana`, the pipeline now uses scoped `repowise`: sparse worktree plus live file sync for `backend` and a few root metadata files. That avoids nested tool repos while preserving current working-tree changes in the indexed scope.
 - MiniMax-backed `repowise` index-only mode is stable.

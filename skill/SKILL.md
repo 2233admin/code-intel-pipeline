@@ -13,6 +13,7 @@ Canonical files:
 - Doctor: `D:\projects\_tools\code-intel-pipeline\check-code-intel-tools.ps1`
 - Config: `D:\projects\_tools\code-intel-pipeline\pipeline.config.json`
 - Artifacts: `%LOCALAPPDATA%\code-intel\artifacts\<repo>\<timestamp>\` by default, or `CODE_INTEL_ARTIFACT_ROOT` when set.
+- Templates: `D:\projects\_tools\code-intel-pipeline\templates\`
 
 ## Required First Step
 
@@ -31,6 +32,8 @@ D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -RepoPath
 ```
 
 For machine-readable bootstrap status, add `-Json` and read `installActions` first. Valid statuses are `already_present`, `not_requested`, `installed`, `installed_restart_required`, and `install_failed`.
+
+Use `-AuditInstallPlan` before `-InstallMissing` when reviewing a new teammate machine. Read `installPlan` in JSON output for installer source, command, purpose, and supply-chain risk notes.
 
 Always run the doctor before using the pipeline:
 
@@ -102,10 +105,13 @@ Then rerun the pipeline.
 
 5. After each run, read `summary.md` first. Open `report.json` only when the summary shows failure, manual action, or a category count above zero.
 
-6. If the user asks whether the stack is healthy, answer from:
+6. Read `understanding.md` before handing results to a teammate or another agent. It is the understanding-first layer: assumptions, verified facts, unverified areas, human inspection, and next action.
+
+7. If the user asks whether the stack is healthy, answer from:
    - doctor result
    - summary counters
    - failure category counters
+   - understanding report next action
    - repowise docs state
    - sentrux gate result
 
@@ -149,6 +155,16 @@ Examples:
 - `sentrux_fail: sentrux gate`
 
 If all four category counters are zero, say the run is clean instead of summarizing every step again.
+
+## Karpathy-Inspired Operating Rules
+
+Use only these absorbed rules from the Karpathy skills repo:
+
+- Idea file first for nontrivial pipeline changes: use `templates\idea-file.md`.
+- Agentic loop: doctor -> lite -> normal -> read summary -> read understanding -> fix -> rerun -> commit.
+- Minimalism: keep this as an orchestration shell over `rg`, `repowise`, Understand Anything, and `sentrux`; do not copy tool internals into this repo.
+- Supply-chain hygiene: inspect `installPlan` before approving new install surfaces.
+- Understanding-first: never report a run as handled without knowing the next action from `understanding.md`.
 
 ## Sentrux Rules
 
@@ -221,6 +237,7 @@ That path uses `Run-ScopedRepowiseDocs.py` with `coverage_pct=0.02`. If the prov
 ## Output Handling
 
 After each run, read `summary.md` first. Open `report.json` only when a step failed or details matter.
+Read `understanding.md` before delegating follow-up work.
 
 Check results in this order:
 
@@ -232,6 +249,7 @@ Check results in this order:
 6. repowise state
 7. sentrux gate result
 8. exact missing tools or failed checks
+9. understanding report next action
 
 For machine checks, use:
 

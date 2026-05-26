@@ -4,6 +4,9 @@ param(
 
     [string]$Config = "",
 
+    [ValidateSet("lite", "normal", "full")]
+    [string]$Mode = "normal",
+
     [switch]$RepowiseDocs
 )
 
@@ -39,18 +42,18 @@ if (-not $doctorJson.ok) {
 
 if ($RepowiseDocs) {
     if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
-        & $runner -Config $Config -RepoPath $RepoPath -Mode normal -RepowiseDocs
+        & $runner -Config $Config -RepoPath $RepoPath -Mode $Mode -RepowiseDocs
     }
     else {
-        & $runner -Config $Config -Repo $Repo -Mode normal -RepowiseDocs
+        & $runner -Config $Config -Repo $Repo -Mode $Mode -RepowiseDocs
     }
 }
 else {
     if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
-        & $runner -Config $Config -RepoPath $RepoPath -Mode normal
+        & $runner -Config $Config -RepoPath $RepoPath -Mode $Mode
     }
     else {
-        & $runner -Config $Config -Repo $Repo -Mode normal
+        & $runner -Config $Config -Repo $Repo -Mode $Mode
     }
 }
 if ($LASTEXITCODE -ne 0) {
@@ -78,11 +81,15 @@ if ($null -eq $artifactDir) {
 
 $reportPath = Join-Path $artifactDir.FullName "report.json"
 $summaryPath = Join-Path $artifactDir.FullName "summary.md"
+$understandingPath = Join-Path $artifactDir.FullName "understanding.md"
 if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) {
     throw "Missing report.json: $reportPath"
 }
 if (-not (Test-Path -LiteralPath $summaryPath -PathType Leaf)) {
     throw "Missing summary.md: $summaryPath"
+}
+if (-not (Test-Path -LiteralPath $understandingPath -PathType Leaf)) {
+    throw "Missing understanding.md: $understandingPath"
 }
 
 $report = Read-JsonFile $reportPath
@@ -100,9 +107,11 @@ if ($missingCategories.Count -gt 0) {
 $result = [ordered]@{
     ok = $true
     repo = $label
+    mode = $Mode
     artifactDir = $artifactDir.FullName
     report = $reportPath
     summary = $summaryPath
+    understanding = $understandingPath
     steps = $report.steps.Count
     failed = $report.summary.failed
     manualRequired = $report.summary.manualRequired

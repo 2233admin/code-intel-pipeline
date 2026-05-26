@@ -6,6 +6,7 @@ param(
     [switch]$RepairSkillLinks,
     [switch]$CheckProvider,
     [switch]$InstallMissing,
+    [switch]$AuditInstallPlan,
     [switch]$Json
 )
 
@@ -47,6 +48,27 @@ function Add-InstallAction {
         status = $Status
         detail = $Detail
         fix = $Fix
+    })
+}
+
+function Add-InstallPlan {
+    param(
+        [System.Collections.Generic.List[object]]$Plan,
+        [string]$Name,
+        [string]$Installer,
+        [string]$Command,
+        [string]$Purpose,
+        [string]$Risk,
+        [string]$Alternative = ""
+    )
+
+    $Plan.Add([pscustomobject][ordered]@{
+        name = $Name
+        installer = $Installer
+        command = $Command
+        purpose = $Purpose
+        risk = $Risk
+        alternative = $Alternative
     })
 }
 
@@ -277,10 +299,17 @@ function Ensure-SkillSource {
 
 $checks = New-Object System.Collections.Generic.List[object]
 $installActions = New-Object System.Collections.Generic.List[object]
+$installPlan = New-Object System.Collections.Generic.List[object]
 $root = Split-Path -Parent $PSCommandPath
 if ([string]::IsNullOrWhiteSpace($Config)) {
     $Config = Join-Path $root "pipeline.config.json"
 }
+
+Add-InstallPlan $installPlan "rg" "winget or scoop" "winget install --id BurntSushi.ripgrep.MSVC -e" "Exact file inventory and fast text search." "LOW: established CLI tool; install source should still be package-manager controlled." "Use the rg bundled with Codex if available."
+Add-InstallPlan $installPlan "git" "winget" "winget install --id Git.Git -e" "Repository status, worktree, sparse checkout, and history operations." "LOW: foundational tool; ensure official Git for Windows package source." ""
+Add-InstallPlan $installPlan "python" "winget" "winget install --id Python.Python.3.11 -e" "Runs provider preflight and scoped repowise docs helper." "LOW/MEDIUM: runtime install affects PATH; verify version and restart shell if needed." "Use an already managed Python 3.11+ runtime."
+Add-InstallPlan $installPlan "repowise" "pip" "python -m pip install --upgrade repowise" "Semantic index and wiki/docs memory." "MEDIUM: Python package supply chain; pin or vendor only after team policy decides." "Skip repowise with -SkipRepowise for exact-search-only runs."
+Add-InstallPlan $installPlan "sentrux" "cargo" "cargo install sentrux --locked" "Structural quality and regression gate." "MEDIUM: cargo source must be trusted; no automatic install if cargo is absent." "Install a reviewed sentrux.exe on PATH."
 
 Install-MissingTool $installActions "rg" { Invoke-RipgrepInstall } "Install ripgrep with winget (`winget install --id BurntSushi.ripgrep.MSVC -e`) or ensure rg is on PATH."
 Install-MissingTool $installActions "git" { Invoke-WingetInstall "Git.Git" "Git for Windows" } "Install Git for Windows (`winget install --id Git.Git -e`) or ensure git is on PATH."
@@ -407,6 +436,8 @@ $result = [ordered]@{
     repairedSkillLinks = [bool]$RepairSkillLinks
     providerChecked = [bool]$CheckProvider
     installMissing = [bool]$InstallMissing
+    auditInstallPlan = [bool]$AuditInstallPlan
+    installPlan = $installPlan
     installActions = $installActions
     missingRequired = $missingRequired
     warnings = $warnings
@@ -425,6 +456,16 @@ else {
     }
     Write-Host "Root: $root"
     Write-Host "Config: $Config"
+    if ($AuditInstallPlan) {
+        foreach ($planItem in $installPlan) {
+            Write-Host "PLAN $($planItem.name) via $($planItem.installer): $($planItem.command)"
+            Write-Host "  purpose: $($planItem.purpose)"
+            Write-Host "  risk: $($planItem.risk)"
+            if (-not [string]::IsNullOrWhiteSpace($planItem.alternative)) {
+                Write-Host "  alternative: $($planItem.alternative)"
+            }
+        }
+    }
     foreach ($action in $installActions) {
         Write-Host "INSTALL $($action.status) $($action.name) $($action.detail)"
         if ($action.status -eq "install_failed" -and -not [string]::IsNullOrWhiteSpace($action.fix)) {
