@@ -1,6 +1,7 @@
 param(
-    [string]$Config = "D:\projects\_tools\code-intel-pipeline\pipeline.config.json",
+    [string]$Config = "",
     [string]$Repo = "",
+    [string]$RepoPath = "",
     [switch]$Json
 )
 
@@ -96,6 +97,9 @@ function Test-Tool {
 }
 
 $configData = $null
+if ([string]::IsNullOrWhiteSpace($Config)) {
+    $Config = Join-Path $PSScriptRoot "pipeline.config.json"
+}
 if (Test-Path -LiteralPath $Config -PathType Leaf) {
     $configData = Get-Content -LiteralPath $Config -Raw | ConvertFrom-Json
 }
@@ -103,18 +107,26 @@ if (Test-Path -LiteralPath $Config -PathType Leaf) {
 $pipelineRoot = Split-Path -Parent $PSCommandPath
 $pipelineScript = Join-Path $pipelineRoot "run-code-intel.ps1"
 $repoConfig = Resolve-RepoConfig $Repo $configData
-$repoPath = Resolve-RepoPath $Repo $configData
+$repoInput = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) { $RepoPath } else { $Repo }
+$repoPath = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
+    if (Test-Path -LiteralPath $RepoPath -PathType Container) { (Get-Item -LiteralPath $RepoPath).FullName } else { $RepoPath }
+}
+else {
+    Resolve-RepoPath $Repo $configData
+}
 $sentruxScope = Resolve-SentruxScope $repoPath $repoConfig
 
+$userProfile = if ([string]::IsNullOrWhiteSpace($env:USERPROFILE)) { $HOME } else { $env:USERPROFILE }
 $understandSkillCandidates = @(
-    "C:\Users\Administrator\.claude\skills\understand\SKILL.md",
-    "C:\Users\Administrator\.agents\skills\understand\SKILL.md",
-    "C:\Users\Administrator\.codex\skills\understand\SKILL.md"
+    (Join-Path $userProfile ".claude\skills\understand\SKILL.md"),
+    (Join-Path $userProfile ".agents\skills\understand\SKILL.md"),
+    (Join-Path $userProfile ".codex\skills\understand\SKILL.md")
 )
+$repoParentForCandidates = if (-not [string]::IsNullOrWhiteSpace([string]$repoPath)) { Split-Path -Parent $repoPath } else { $pipelineRoot }
 $understandPluginCandidates = @(
-    "C:\Users\Administrator\.claude\plugins\cache\understand-anything",
-    "C:\Users\Administrator\.understand-anything-plugin",
-    "D:\projects\Understand-Anything"
+    (Join-Path $userProfile ".claude\plugins\cache\understand-anything"),
+    (Join-Path $userProfile ".understand-anything-plugin"),
+    (Join-Path $repoParentForCandidates "Understand-Anything")
 )
 
 $understandSkill = $understandSkillCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1

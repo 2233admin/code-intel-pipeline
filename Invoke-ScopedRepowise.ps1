@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$RepoPath,
 
-    [string]$ShadowRoot = "D:\projects\_cache\code-intel\repowise",
+    [string]$ShadowRoot = "",
     [string[]]$ScopePaths = @(),
     [string[]]$RootFiles = @(),
     [switch]$Docs
@@ -18,6 +18,14 @@ function Resolve-Dir {
         throw "Not a directory: $Path"
     }
     return $item.FullName
+}
+
+function Get-DefaultShadowRoot {
+    $fromEnv = [Environment]::GetEnvironmentVariable("CODE_INTEL_SHADOW_ROOT", "User")
+    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) { return $fromEnv }
+    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_SHADOW_ROOT)) { return $env:CODE_INTEL_SHADOW_ROOT }
+    $base = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $env:LOCALAPPDATA } else { (Join-Path $HOME ".code-intel") }
+    return (Join-Path $base "code-intel\repowise")
 }
 
 function Resolve-RelativePath {
@@ -104,6 +112,9 @@ function Set-EnvFromUserRegistry {
 }
 
 $repoPath = Resolve-Dir $RepoPath
+if ([string]::IsNullOrWhiteSpace($ShadowRoot)) {
+    $ShadowRoot = Get-DefaultShadowRoot
+}
 if (-not (Test-Path -LiteralPath (Join-Path $repoPath ".git"))) {
     throw "Repo is not a git repository: $repoPath"
 }

@@ -1,5 +1,5 @@
 param(
-    [string]$ArtifactRoot = "D:\projects\_artifacts\code-intel",
+    [string]$ArtifactRoot = "",
     [string]$OutputPath = ""
 )
 
@@ -9,6 +9,20 @@ $ErrorActionPreference = "Stop"
 function Read-JsonFile {
     param([string]$Path)
     return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+}
+
+if ([string]::IsNullOrWhiteSpace($ArtifactRoot)) {
+    $fromEnv = [Environment]::GetEnvironmentVariable("CODE_INTEL_ARTIFACT_ROOT", "User")
+    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) {
+        $ArtifactRoot = $fromEnv
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_ARTIFACT_ROOT)) {
+        $ArtifactRoot = $env:CODE_INTEL_ARTIFACT_ROOT
+    }
+    else {
+        $base = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $env:LOCALAPPDATA } else { (Join-Path $HOME ".code-intel") }
+        $ArtifactRoot = Join-Path $base "code-intel\artifacts"
+    }
 }
 
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {

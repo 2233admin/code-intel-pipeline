@@ -1,8 +1,8 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$Repo,
+    [string]$Repo = "",
+    [string]$RepoPath = "",
 
-    [string]$Config = "D:\projects\_tools\code-intel-pipeline\pipeline.config.json",
+    [string]$Config = "",
 
     [switch]$RepowiseDocs
 )
@@ -16,25 +16,59 @@ function Read-JsonFile {
 }
 
 $root = Split-Path -Parent $PSCommandPath
+if ([string]::IsNullOrWhiteSpace($Config)) {
+    $Config = Join-Path $root "pipeline.config.json"
+}
 $doctor = Join-Path $root "check-code-intel-tools.ps1"
 $runner = Join-Path $root "run-code-intel.ps1"
 
-$doctorJson = & $doctor -Config $Config -Repo $Repo -Json | ConvertFrom-Json
+$label = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) { $RepoPath } else { $Repo }
+if ([string]::IsNullOrWhiteSpace($label)) {
+    throw "Specify -Repo <alias-or-path> or -RepoPath <path>."
+}
+
+$doctorJson = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
+    & $doctor -Config $Config -RepoPath $RepoPath -Json | ConvertFrom-Json
+}
+else {
+    & $doctor -Config $Config -Repo $Repo -Json | ConvertFrom-Json
+}
 if (-not $doctorJson.ok) {
     throw "Doctor failed: $($doctorJson.missing -join ', ')"
 }
 
 if ($RepowiseDocs) {
-    & $runner -Config $Config -Repo $Repo -Mode normal -RepowiseDocs
+    if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
+        & $runner -Config $Config -RepoPath $RepoPath -Mode normal -RepowiseDocs
+    }
+    else {
+        & $runner -Config $Config -Repo $Repo -Mode normal -RepowiseDocs
+    }
 }
 else {
-    & $runner -Config $Config -Repo $Repo -Mode normal
+    if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
+        & $runner -Config $Config -RepoPath $RepoPath -Mode normal
+    }
+    else {
+        & $runner -Config $Config -Repo $Repo -Mode normal
+    }
 }
 if ($LASTEXITCODE -ne 0) {
-    throw "Pipeline run failed for repo: $Repo"
+    throw "Pipeline run failed for repo: $label"
 }
 
-$artifactDir = Get-ChildItem -Path "D:\projects\_artifacts\code-intel\$Repo" -Directory |
+$repoName = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) { Split-Path -Leaf (Get-Item -LiteralPath $RepoPath).FullName } else { $Repo }
+$artifactRoot = if ($doctorJson.checks -and $doctorJson.checks.config -and (Test-Path -LiteralPath $Config -PathType Leaf)) {
+    $configData = Get-Content -LiteralPath $Config -Raw | ConvertFrom-Json
+    if ($configData.PSObject.Properties["artifactRoot"] -and -not [string]::IsNullOrWhiteSpace([string]$configData.artifactRoot)) { [string]$configData.artifactRoot } else { "" }
+}
+else { "" }
+if ([string]::IsNullOrWhiteSpace($artifactRoot)) {
+    $base = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $env:LOCALAPPDATA } else { (Join-Path $HOME ".code-intel") }
+    $artifactRoot = Join-Path $base "code-intel\artifacts"
+}
+
+$artifactDir = Get-ChildItem -Path (Join-Path $artifactRoot $repoName) -Directory |
     Sort-Object Name -Descending |
     Select-Object -First 1
 
@@ -65,7 +99,7 @@ if ($missingCategories.Count -gt 0) {
 
 $result = [ordered]@{
     ok = $true
-    repo = $Repo
+    repo = $label
     artifactDir = $artifactDir.FullName
     report = $reportPath
     summary = $summaryPath

@@ -1,8 +1,8 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$Repo,
+    [string]$Repo = "",
+    [string]$RepoPath = "",
 
-    [string]$Config,
+    [string]$Config = "",
 
     [ValidateSet("lite", "normal", "full")]
     [string]$Mode = "normal",
@@ -56,6 +56,22 @@ function Get-JsonProperty {
     $prop = $Object.PSObject.Properties[$Name]
     if ($null -eq $prop) { return $null }
     return $prop.Value
+}
+
+function Get-DefaultArtifactRoot {
+    $fromEnv = [Environment]::GetEnvironmentVariable("CODE_INTEL_ARTIFACT_ROOT", "User")
+    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) { return $fromEnv }
+    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_ARTIFACT_ROOT)) { return $env:CODE_INTEL_ARTIFACT_ROOT }
+    $base = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $env:LOCALAPPDATA } else { (Join-Path $HOME ".code-intel") }
+    return (Join-Path $base "code-intel\artifacts")
+}
+
+function Get-DefaultShadowRoot {
+    $fromEnv = [Environment]::GetEnvironmentVariable("CODE_INTEL_SHADOW_ROOT", "User")
+    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) { return $fromEnv }
+    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_SHADOW_ROOT)) { return $env:CODE_INTEL_SHADOW_ROOT }
+    $base = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $env:LOCALAPPDATA } else { (Join-Path $HOME ".code-intel") }
+    return (Join-Path $base "code-intel\repowise")
 }
 
 function Resolve-ChildPath {
@@ -156,6 +172,9 @@ function Get-StepFailureCategory {
 }
 
 $configData = $null
+if ([string]::IsNullOrWhiteSpace($Config)) {
+    $Config = Join-Path $PSScriptRoot "pipeline.config.json"
+}
 if (-not [string]::IsNullOrWhiteSpace($Config)) {
     $configPath = Resolve-Path -LiteralPath $Config -ErrorAction Stop
     $configData = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
@@ -163,12 +182,15 @@ if (-not [string]::IsNullOrWhiteSpace($Config)) {
 
 $repoConfig = $null
 $reposConfig = Get-JsonProperty $configData "repos"
-if ($null -ne $reposConfig) {
+if ($null -ne $reposConfig -and -not [string]::IsNullOrWhiteSpace($Repo)) {
     $repoConfig = Get-JsonProperty $reposConfig $Repo
 }
 
-$repoInput = $Repo
-if ($null -ne $repoConfig) {
+$repoInput = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) { $RepoPath } else { $Repo }
+if ([string]::IsNullOrWhiteSpace($repoInput)) {
+    throw "Specify -Repo <alias-or-path> or -RepoPath <path>."
+}
+if ([string]::IsNullOrWhiteSpace($RepoPath) -and $null -ne $repoConfig) {
     $configuredPath = Get-JsonProperty $repoConfig "path"
     if (-not [string]::IsNullOrWhiteSpace([string]$configuredPath)) {
         $repoInput = [string]$configuredPath
@@ -182,7 +204,7 @@ $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 if ([string]::IsNullOrWhiteSpace($ArtifactRoot)) {
     $configuredArtifactRoot = Get-JsonProperty $configData "artifactRoot"
     $ArtifactRoot = if ([string]::IsNullOrWhiteSpace([string]$configuredArtifactRoot)) {
-        "D:\projects\_artifacts\code-intel"
+        Get-DefaultArtifactRoot
     }
     else {
         [string]$configuredArtifactRoot
@@ -192,7 +214,7 @@ if ([string]::IsNullOrWhiteSpace($ArtifactRoot)) {
 if ([string]::IsNullOrWhiteSpace($RepowiseWorkspaceRoot)) {
     $configuredWorkspaceRoot = Get-JsonProperty $configData "repowiseWorkspaceRoot"
     $RepowiseWorkspaceRoot = if ([string]::IsNullOrWhiteSpace([string]$configuredWorkspaceRoot)) {
-        "D:\projects"
+        Split-Path -Parent $repoPath
     }
     else {
         [string]$configuredWorkspaceRoot
@@ -207,7 +229,7 @@ if ([string]::IsNullOrWhiteSpace($Language)) {
 if ([string]::IsNullOrWhiteSpace($RepowiseShadowRoot)) {
     $configuredShadowRoot = Get-JsonProperty $repoConfig "repowiseShadowRoot"
     $RepowiseShadowRoot = if ([string]::IsNullOrWhiteSpace([string]$configuredShadowRoot)) {
-        "D:\projects\_cache\code-intel\repowise"
+        Get-DefaultShadowRoot
     }
     else {
         [string]$configuredShadowRoot

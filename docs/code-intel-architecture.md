@@ -7,7 +7,7 @@ It is built around one rule: keep the entrypoint small, keep tool roles explicit
 ## Layers
 
 1. `invoke-code-intel.ps1`
-   Thin operator entrypoint. Runs doctor first, then the pipeline. Supports one repo, a repo list, or all configured repos.
+   Thin operator entrypoint. Runs doctor first, then the pipeline. Supports one direct repo path, one configured repo alias, a repo list, or all configured repos.
 
 2. `check-code-intel-tools.ps1`
    Environment doctor. Verifies local tools, Understand Anything presence, repo path, and Sentrux scope state.
@@ -88,13 +88,13 @@ This keeps nested external repos from poisoning indexing and keeps current worki
 Install check:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -Config D:\projects\_tools\code-intel-pipeline\pipeline.config.json -Repo k-atana -CheckProvider
+D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\repo -CheckProvider
 ```
 
 Install or repair a teammate machine:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -Config D:\projects\_tools\code-intel-pipeline\pipeline.config.json -Repo k-atana -CheckProvider -RepairSkillLinks -InstallMissing
+D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\repo -CheckProvider -RepairSkillLinks -InstallMissing
 ```
 
 `-InstallMissing` is explicit by design. The default installer is a doctor; the install mode attempts supported CLI installs and records every attempt in `installActions`.
@@ -104,13 +104,13 @@ D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -Config D
 Doctor and normal run:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\invoke-code-intel.ps1 -Config D:\projects\_tools\code-intel-pipeline\pipeline.config.json -Repo k-atana -Mode normal
+D:\projects\_tools\code-intel-pipeline\invoke-code-intel.ps1 -RepoPath C:\path\to\repo -Mode normal
 ```
 
 Docs-enabled run:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\invoke-code-intel.ps1 -Config D:\projects\_tools\code-intel-pipeline\pipeline.config.json -Repo k-atana -Mode normal -RepowiseDocs
+D:\projects\_tools\code-intel-pipeline\invoke-code-intel.ps1 -RepoPath C:\path\to\repo -Mode normal -RepowiseDocs
 ```
 
 Batch run:
@@ -122,7 +122,7 @@ D:\projects\_tools\code-intel-pipeline\invoke-code-intel.ps1 -Config D:\projects
 Smoke test:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\test-code-intel-pipeline.ps1 -Config D:\projects\_tools\code-intel-pipeline\pipeline.config.json -Repo k-atana
+D:\projects\_tools\code-intel-pipeline\test-code-intel-pipeline.ps1 -RepoPath C:\path\to\repo
 ```
 
 Artifact index:

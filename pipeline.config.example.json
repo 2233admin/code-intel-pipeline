@@ -1,6 +1,6 @@
 {
-  "artifactRoot": "D:\\projects\\_artifacts\\code-intel",
-  "repowiseWorkspaceRoot": "D:\\projects",
+  "artifactRoot": "",
+  "repowiseWorkspaceRoot": "",
   "inventoryExclude": [
     "!**/tools/**",
     "!**/vendor/**",
@@ -8,31 +8,12 @@
     "!**/external/**"
   ],
   "repos": {
-    "k-atana": {
-      "path": "D:\\projects\\_quant\\k-atana",
+    "example-repo": {
+      "path": "C:\\path\\to\\repo",
       "language": "zh",
-      "sentruxPath": "backend",
-      "repowiseScopePaths": [
-        "backend"
-      ],
-      "repowiseRootFiles": [
-        "README.md",
-        "CLAUDE.md",
-        "pyproject.toml",
-        "requirements.txt",
-        "requirements-no-torch.txt",
-        "requirements-frozen.txt",
-        ".env.example",
-        ".gitignore"
-      ]
-    },
-    "glyph-arts": {
-      "path": "D:\\projects\\_active\\glyph-arts",
-      "language": "zh"
-    },
-    "obsidian-llm-wiki": {
-      "path": "D:\\projects\\_active\\obsidian-llm-wiki",
-      "language": "zh"
+      "sentruxPath": "",
+      "repowiseScopePaths": [],
+      "repowiseRootFiles": []
     }
   }
 }

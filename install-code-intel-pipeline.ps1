@@ -1,6 +1,8 @@
 param(
-    [string]$Config = "D:\projects\_tools\code-intel-pipeline\pipeline.config.json",
+    [string]$Config = "",
     [string]$Repo = "",
+    [string]$RepoPath = "",
+    [string]$ArtifactRoot = "",
     [switch]$RepairSkillLinks,
     [switch]$CheckProvider,
     [switch]$InstallMissing,
@@ -202,6 +204,14 @@ function Test-EnvVar {
     Add-Check $Checks "env:$Name" "env" $Required $ok $detail "Set user environment variable $Name. Do not commit secrets to repo files."
 }
 
+function Get-DefaultArtifactRoot {
+    $fromEnv = [Environment]::GetEnvironmentVariable("CODE_INTEL_ARTIFACT_ROOT", "User")
+    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) { return $fromEnv }
+    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_ARTIFACT_ROOT)) { return $env:CODE_INTEL_ARTIFACT_ROOT }
+    $base = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $env:LOCALAPPDATA } else { (Join-Path $HOME ".code-intel") }
+    return (Join-Path $base "code-intel\artifacts")
+}
+
 function Ensure-SkillLink {
     param(
         [System.Collections.Generic.List[object]]$Checks,
@@ -268,7 +278,9 @@ function Ensure-SkillSource {
 $checks = New-Object System.Collections.Generic.List[object]
 $installActions = New-Object System.Collections.Generic.List[object]
 $root = Split-Path -Parent $PSCommandPath
-$artifactRoot = "D:\projects\_artifacts\code-intel"
+if ([string]::IsNullOrWhiteSpace($Config)) {
+    $Config = Join-Path $root "pipeline.config.json"
+}
 
 Install-MissingTool $installActions "rg" { Invoke-RipgrepInstall } "Install ripgrep with winget (`winget install --id BurntSushi.ripgrep.MSVC -e`) or ensure rg is on PATH."
 Install-MissingTool $installActions "git" { Invoke-WingetInstall "Git.Git" "Git for Windows" } "Install Git for Windows (`winget install --id Git.Git -e`) or ensure git is on PATH."
@@ -291,7 +303,6 @@ foreach ($file in $requiredFiles) {
     Test-File $checks "pipeline:$file" (Join-Path $root $file) $true
 }
 Test-File $checks "config" $Config $true
-Test-Directory $checks "artifactRoot" $artifactRoot $false "The pipeline will create this directory on first run."
 
 Test-Tool $checks "rg" $true "Install ripgrep or ensure rg is on PATH."
 Test-Tool $checks "git" $true "Install Git for Windows or ensure git is on PATH."
@@ -326,24 +337,46 @@ Test-EnvVar $checks "ANTHROPIC_API_KEY" $false
 Test-EnvVar $checks "ANTHROPIC_AUTH_TOKEN" $false
 
 $configOk = $false
+$configData = $null
 if (Test-Path -LiteralPath $Config -PathType Leaf) {
     try {
         $configData = Get-Content -LiteralPath $Config -Raw | ConvertFrom-Json
         $configOk = $true
-        $repos = $configData.repos.PSObject.Properties.Name
-        Add-Check $checks "config:repos" "config" $true ($repos.Count -gt 0) ("repos=" + ($repos -join ",")) "Add at least one repo alias under repos."
+        $repos = New-Object System.Collections.Generic.List[string]
+        $reposProp = $configData.PSObject.Properties["repos"]
+        if ($null -ne $reposProp -and $null -ne $reposProp.Value) {
+            foreach ($repoProperty in @($reposProp.Value.PSObject.Properties)) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$repoProperty.Name)) {
+                    $repos.Add([string]$repoProperty.Name)
+                }
+            }
+        }
+        $requiresRepoAlias = -not [string]::IsNullOrWhiteSpace($Repo) -and [string]::IsNullOrWhiteSpace($RepoPath)
+        Add-Check $checks "config:repos" "config" $requiresRepoAlias ($repos.Count -gt 0 -or -not $requiresRepoAlias) ("repos=" + ($repos -join ",")) "Add repo aliases under repos, or use -RepoPath for arbitrary project paths."
     }
     catch {
         Add-Check $checks "config:parse" "config" $true $false $_.Exception.Message "Fix invalid JSON in pipeline config."
     }
 }
 
-if (-not [string]::IsNullOrWhiteSpace($Repo)) {
+if ([string]::IsNullOrWhiteSpace($ArtifactRoot)) {
+    $configuredArtifactRoot = if ($null -ne $configData -and $null -ne $configData.PSObject.Properties["artifactRoot"]) { [string]$configData.artifactRoot } else { "" }
+    $ArtifactRoot = if ([string]::IsNullOrWhiteSpace($configuredArtifactRoot)) { Get-DefaultArtifactRoot } else { $configuredArtifactRoot }
+}
+Test-Directory $checks "artifactRoot" $ArtifactRoot $false "The pipeline will create this directory on first run."
+
+if (-not [string]::IsNullOrWhiteSpace($Repo) -or -not [string]::IsNullOrWhiteSpace($RepoPath)) {
     $doctor = Join-Path $root "check-code-intel-tools.ps1"
     try {
-        $doctorRaw = & $doctor -Config $Config -Repo $Repo -Json
+        $doctorRaw = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
+            & $doctor -Config $Config -RepoPath $RepoPath -Json
+        }
+        else {
+            & $doctor -Config $Config -Repo $Repo -Json
+        }
         $doctorResult = $doctorRaw | ConvertFrom-Json
-        Add-Check $checks "doctor:$Repo" "doctor" $true ([bool]$doctorResult.ok) (($doctorResult.missing -join ",")) "Fix missing doctor checks before running the pipeline."
+        $doctorName = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) { $RepoPath } else { $Repo }
+        Add-Check $checks "doctor:$doctorName" "doctor" $true ([bool]$doctorResult.ok) (($doctorResult.missing -join ",")) "Fix missing doctor checks before running the pipeline."
     }
     catch {
         Add-Check $checks "doctor:$Repo" "doctor" $true $false $_.Exception.Message "Run check-code-intel-tools.ps1 manually for details."
@@ -370,6 +403,7 @@ $result = [ordered]@{
     root = $root
     config = $Config
     repo = $Repo
+    repoPath = $RepoPath
     repairedSkillLinks = [bool]$RepairSkillLinks
     providerChecked = [bool]$CheckProvider
     installMissing = [bool]$InstallMissing
