@@ -1,0 +1,17 @@
+*.log
+*.tmp
+*.bak
+*.local.*
+*.secret*
+.env
+.env.*
+!.env.example
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.repowise-workspace/
+.understand-anything/
+.sentrux/cache/
+artifacts/
+cache/

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Code Intel Pipeline"
+  short_description: "Run local code intelligence gates"
+  brand_color: "#2563EB"
+  default_prompt: "Use $code-intel-pipeline to check this machine and run the rg + repowise + Understand Anything + sentrux pipeline for the current repository."
