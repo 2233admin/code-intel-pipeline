@@ -148,7 +148,7 @@ Install check:
 D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -Config D:\projects\_tools\code-intel-pipeline\pipeline.config.json -Repo k-atana
 ```
 
-Use `-RepairSkillLinks` only when the shared `code-intel-pipeline` skill exists under `.agents\skills` but the `.codex` or `.claude` skill links are missing. Use `-InstallMissing` only on machines where you want the script to install missing CLI tools. It uses `winget` for Git/Python/ripgrep, `pip` for repowise, and `cargo install sentrux --locked` only if Cargo is present. Unsupported installs are reported as manual fixes instead of hidden magic. The installer never writes API keys.
+Use `-RepairSkillLinks` when the shared `code-intel-pipeline` skill should be installed or repaired for Codex and Claude. If `.agents\skills\code-intel-pipeline` is missing, the installer seeds it from this repo's bundled `skill\` directory first, then creates the `.codex` and `.claude` junctions. Use `-InstallMissing` only on machines where you want the script to install missing CLI tools. It uses `winget` for Git/Python/ripgrep, `pip` for repowise, and `cargo install sentrux --locked` only if Cargo is present. Unsupported installs are reported as manual fixes instead of hidden magic. The installer never writes API keys.
 
 Artifact index:
 

@@ -22,7 +22,7 @@ On a new machine or teammate session, run the installer first:
 D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -Config D:\projects\_tools\code-intel-pipeline\pipeline.config.json -Repo <repo-or-alias>
 ```
 
-Use `-CheckProvider` to also ping the MiniMax Anthropic-compatible endpoint. Use `-RepairSkillLinks` only when the shared skill exists but Codex or Claude skill links are missing. Use `-InstallMissing` on teammate machines when missing CLI tools should be installed automatically where supported. Never ask the installer to write API keys; it only checks whether user-scoped env vars exist.
+Use `-CheckProvider` to also ping the MiniMax Anthropic-compatible endpoint. Use `-RepairSkillLinks` when the shared skill should be installed or repaired for Codex and Claude. If the `.agents` copy is missing, the installer seeds it from the repo's bundled `skill\` directory first. Use `-InstallMissing` on teammate machines when missing CLI tools should be installed automatically where supported. Never ask the installer to write API keys; it only checks whether user-scoped env vars exist.
 
 Team bootstrap:
 

@@ -233,6 +233,38 @@ function Ensure-SkillLink {
     Add-Check $Checks "skill:$Name" "skill" $true $ok $detail "Run with -RepairSkillLinks, or create a junction from $Path to $Target."
 }
 
+function Ensure-SkillSource {
+    param(
+        [System.Collections.Generic.List[object]]$Checks,
+        [string]$Path,
+        [string]$BundledPath,
+        [bool]$Repair
+    )
+
+    $skillFile = Join-Path $Path "SKILL.md"
+    $ok = Test-Path -LiteralPath $skillFile -PathType Leaf
+    $detail = if ($ok) { $Path } else { "missing: $Path" }
+
+    if (-not $ok -and $Repair) {
+        $bundledSkillFile = Join-Path $BundledPath "SKILL.md"
+        if (-not (Test-Path -LiteralPath $bundledSkillFile -PathType Leaf)) {
+            $detail = "bundled skill missing: $BundledPath"
+        }
+        else {
+            New-Item -ItemType Directory -Force -Path $Path | Out-Null
+            Copy-Item -LiteralPath (Join-Path $BundledPath "SKILL.md") -Destination (Join-Path $Path "SKILL.md") -Force
+            $bundledAgents = Join-Path $BundledPath "agents"
+            if (Test-Path -LiteralPath $bundledAgents -PathType Container) {
+                Copy-Item -LiteralPath $bundledAgents -Destination $Path -Recurse -Force
+            }
+            $ok = Test-Path -LiteralPath $skillFile -PathType Leaf
+            $detail = if ($ok) { "installed from bundled skill: $BundledPath" } else { "install failed: $Path" }
+        }
+    }
+
+    Add-Check $Checks "skill:source" "skill" $true $ok $detail "Run with -RepairSkillLinks to install the bundled skill into $Path."
+}
+
 $checks = New-Object System.Collections.Generic.List[object]
 $installActions = New-Object System.Collections.Generic.List[object]
 $root = Split-Path -Parent $PSCommandPath
@@ -267,15 +299,19 @@ Test-Tool $checks "python" $true "Install Python 3.11+ or ensure python is on PA
 Test-Tool $checks "repowise" $true "Install repowise into the active Python environment."
 Test-Tool $checks "sentrux" $true "Install sentrux or ensure sentrux.exe is on PATH."
 
-$skillSource = "C:\Users\Administrator\.agents\skills\code-intel-pipeline"
-Ensure-SkillLink $checks "source" $skillSource $skillSource $false
-Ensure-SkillLink $checks "codex" "C:\Users\Administrator\.codex\skills\code-intel-pipeline" $skillSource $RepairSkillLinks
-Ensure-SkillLink $checks "claude" "C:\Users\Administrator\.claude\skills\code-intel-pipeline" $skillSource $RepairSkillLinks
+$userProfile = if ([string]::IsNullOrWhiteSpace($env:USERPROFILE)) { "C:\Users\Administrator" } else { $env:USERPROFILE }
+$skillSource = Join-Path $userProfile ".agents\skills\code-intel-pipeline"
+$codexSkill = Join-Path $userProfile ".codex\skills\code-intel-pipeline"
+$claudeSkill = Join-Path $userProfile ".claude\skills\code-intel-pipeline"
+$bundledSkill = Join-Path $root "skill"
+Ensure-SkillSource $checks $skillSource $bundledSkill $RepairSkillLinks
+Ensure-SkillLink $checks "codex" $codexSkill $skillSource $RepairSkillLinks
+Ensure-SkillLink $checks "claude" $claudeSkill $skillSource $RepairSkillLinks
 
 $understandCandidates = @(
-    "C:\Users\Administrator\.claude\skills\understand\SKILL.md",
-    "C:\Users\Administrator\.agents\skills\understand\SKILL.md",
-    "C:\Users\Administrator\.codex\skills\understand\SKILL.md"
+    (Join-Path $userProfile ".claude\skills\understand\SKILL.md"),
+    (Join-Path $userProfile ".agents\skills\understand\SKILL.md"),
+    (Join-Path $userProfile ".codex\skills\understand\SKILL.md")
 )
 $understandFound = [bool]($understandCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1)
 $understandDetail = "missing"
