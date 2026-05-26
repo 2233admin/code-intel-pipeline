@@ -213,9 +213,3 @@ When the pipeline is stable, merge by interface, not by copying whole projects:
 - `ExactSearchProvider`: backed by `rg`.
 
 That keeps the unified tool small instead of becoming a museum of other people's abstractions.
-
-## Docs
-
-Architecture notes live here:
-
-- `D:\projects\_tools\code-intel-pipeline\docs\code-intel-architecture.md`
