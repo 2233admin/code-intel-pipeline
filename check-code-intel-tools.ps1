@@ -96,6 +96,32 @@ function Test-Tool {
     }
 }
 
+function Test-CommandOutput {
+    param(
+        [string]$Name,
+        [scriptblock]$Body,
+        [string]$ExpectedPattern
+    )
+
+    try {
+        $global:LASTEXITCODE = 0
+        $output = & $Body 2>&1
+        $text = ($output | ForEach-Object { $_.ToString() } | Out-String).Trim()
+        [pscustomobject][ordered]@{
+            name = $Name
+            found = ($global:LASTEXITCODE -eq 0 -and $text -match $ExpectedPattern)
+            output = $text
+        }
+    }
+    catch {
+        [pscustomobject][ordered]@{
+            name = $Name
+            found = $false
+            output = $_.Exception.Message
+        }
+    }
+}
+
 $configData = $null
 if ([string]::IsNullOrWhiteSpace($Config)) {
     $Config = Join-Path $PSScriptRoot "pipeline.config.json"
@@ -161,6 +187,8 @@ $tools = @(
     Test-Tool "repowise" $true
     Test-Tool "sentrux" $true
 )
+$sentruxCore = Test-CommandOutput "sentrux-core" { sentrux check --help } "Enforce architectural rules"
+$sentruxPro = Test-CommandOutput "sentrux-pro" { sentrux pro status } "Tier:\s+pro"
 
 $checks = [ordered]@{
     pipelineScript = [ordered]@{
@@ -172,6 +200,10 @@ $checks = [ordered]@{
         found = Test-Path -LiteralPath $Config -PathType Leaf
     }
     tools = $tools
+    sentrux = [ordered]@{
+        core = $sentruxCore
+        pro = $sentruxPro
+    }
     understandAnything = [ordered]@{
         skillFound = [bool]$understandSkill
         skillPath = if ($understandSkill) { [string]$understandSkill } else { "" }
@@ -187,6 +219,8 @@ if (-not $checks.config.found) { $missing.Add("pipeline config") }
 foreach ($tool in $tools) {
     if ($tool.required -and -not $tool.found) { $missing.Add($tool.name) }
 }
+if (-not $sentruxCore.found) { $missing.Add("sentrux core") }
+if (-not $sentruxPro.found) { $missing.Add("sentrux pro auto-activation") }
 if (-not $checks.understandAnything.skillFound) { $missing.Add("Understand Anything skill") }
 if (-not $checks.understandAnything.pluginFound) { $missing.Add("Understand Anything plugin") }
 if ($repoState -and -not $repoState.exists) { $missing.Add("repo path") }
@@ -214,6 +248,10 @@ else {
         $mark = if ($tool.found) { "OK" } else { "MISSING" }
         Write-Host "$mark $($tool.name) $($tool.source)"
     }
+    $coreMark = if ($sentruxCore.found) { "OK" } else { "MISSING" }
+    $proMark = if ($sentruxPro.found) { "OK" } else { "MISSING" }
+    Write-Host "$coreMark sentrux-core $($sentruxCore.output)"
+    Write-Host "$proMark sentrux-pro $($sentruxPro.output)"
     $uaMark = if ($checks.understandAnything.skillFound -and $checks.understandAnything.pluginFound) { "OK" } else { "MISSING" }
     Write-Host "$uaMark Understand Anything skill=$($checks.understandAnything.skillPath) plugin=$($checks.understandAnything.pluginPath)"
     if ($repoState) {
@@ -232,3 +270,5 @@ else {
 if (-not $result.ok) {
     exit 1
 }
+
+exit 0

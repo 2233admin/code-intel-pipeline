@@ -1,0 +1,28 @@
+# Conservative Sentrux rule seed for one chosen project scope.
+#
+# Copy this file to <scope>/.sentrux/rules.toml, then replace the sample layers
+# and boundaries with rules that describe the architecture you want to preserve.
+# Keep the first version small: one cycle rule plus one or two real boundaries.
+
+[constraints]
+max_cycles = 0
+
+[[layers]]
+name = "core"
+paths = ["src/core/*", "app/core/*"]
+order = 0
+
+[[layers]]
+name = "service"
+paths = ["src/service/*", "app/service/*"]
+order = 1
+
+[[layers]]
+name = "api"
+paths = ["src/api/*", "app/api/*"]
+order = 2
+
+[[boundaries]]
+from = "app/api/*"
+to = "app/core/internal/*"
+reason = "API code should depend on the public core surface, not internal implementation."

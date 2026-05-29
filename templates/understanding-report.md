@@ -13,6 +13,8 @@
 - Understand graph freshness:
 - Provider quota state:
 - Sentrux baseline intent:
+- Sentrux structural deltas:
+- CodeNexus follow-up hints:
 
 ## Failure Categories
 - provider_quota:

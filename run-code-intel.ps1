@@ -31,6 +31,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+$OutputEncoding = [System.Text.UTF8Encoding]::new()
+$env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUTF8 = "1"
+$env:TERM = "xterm"
+$env:NO_COLOR = "1"
+$env:RICH_FORCE_TERMINAL = "0"
+
 function Resolve-Repo {
     param([string]$Path)
 
@@ -105,8 +113,15 @@ function Invoke-LoggedStep {
 
     try {
         $global:LASTEXITCODE = 0
-        $output = & $Body 2>&1
-        $entry.output = ($output | Out-String).Trim()
+        $previousErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            $output = & $Body 2>&1
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+        }
+        $entry.output = ($output | ForEach-Object { $_.ToString() } | Out-String).Trim()
         if ($global:LASTEXITCODE -ne 0) {
             throw "Command exited with code $global:LASTEXITCODE"
         }
@@ -179,6 +194,209 @@ function Join-StatusNames {
 
     if ($Items.Count -eq 0) { return $Empty }
     return (($Items | ForEach-Object { "$($_.name)=$($_.status)" }) -join "; ")
+}
+
+function Read-JsonFileSafe {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $null
+    }
+    try {
+        return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    }
+    catch {
+        return $null
+    }
+}
+
+function ConvertTo-NullableDouble {
+    param([object]$Value)
+
+    if ($null -eq $Value) { return $null }
+    try {
+        return [double]$Value
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-SentruxMetricPair {
+    param(
+        [string]$Output,
+        [string]$Label
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Output)) { return $null }
+    $pattern = [regex]::Escape($Label) + ":\s+([0-9.]+)\s+[^\r\n0-9.]+\s+([0-9.]+)"
+    $match = [regex]::Match($Output, $pattern)
+    if (-not $match.Success) { return $null }
+
+    return [ordered]@{
+        before = ConvertTo-NullableDouble $match.Groups[1].Value
+        after = ConvertTo-NullableDouble $match.Groups[2].Value
+    }
+}
+
+function New-SentruxMetricDelta {
+    param(
+        [string]$Name,
+        [object]$Before,
+        [object]$After,
+        [ValidateSet("higher_is_better", "lower_is_better")]
+        [string]$Polarity = "lower_is_better"
+    )
+
+    $beforeValue = ConvertTo-NullableDouble $Before
+    $afterValue = ConvertTo-NullableDouble $After
+    $delta = $null
+    $direction = "unknown"
+    $regressed = $false
+
+    if ($null -ne $beforeValue -and $null -ne $afterValue) {
+        $delta = $afterValue - $beforeValue
+        if ([math]::Abs($delta) -lt 0.000001) {
+            $direction = "stable"
+        }
+        elseif ($delta -gt 0) {
+            $direction = "up"
+        }
+        else {
+            $direction = "down"
+        }
+
+        if ($Polarity -eq "higher_is_better") {
+            $regressed = $delta -lt 0
+        }
+        else {
+            $regressed = $delta -gt 0
+        }
+    }
+
+    return [ordered]@{
+        name = $Name
+        before = $beforeValue
+        after = $afterValue
+        delta = $delta
+        direction = $direction
+        polarity = $Polarity
+        regressed = $regressed
+    }
+}
+
+function New-SentruxInsight {
+    param(
+        [string]$RepoName,
+        [string]$TargetPath,
+        [string]$BaselinePath,
+        [object[]]$Steps
+    )
+
+    $gateStep = @($Steps | Where-Object { $_.name -like "sentrux gate*" } | Select-Object -Last 1)
+    $checkStep = @($Steps | Where-Object { $_.name -eq "sentrux check" } | Select-Object -First 1)
+    $rulesPath = if ([string]::IsNullOrWhiteSpace($TargetPath)) { "" } else { Join-Path $TargetPath ".sentrux\rules.toml" }
+    $baseline = Read-JsonFileSafe $BaselinePath
+    $gateOutput = if ($gateStep.Count -gt 0) { [string]$gateStep[0].output } else { "" }
+
+    $qualityPair = Get-SentruxMetricPair $gateOutput "Quality"
+    $couplingPair = Get-SentruxMetricPair $gateOutput "Coupling"
+    $cyclesPair = Get-SentruxMetricPair $gateOutput "Cycles"
+    $godFilesPair = Get-SentruxMetricPair $gateOutput "God files"
+    $distance = $null
+    $distanceMatch = [regex]::Match($gateOutput, "Distance from Main Sequence:\s+([0-9.]+)")
+    if ($distanceMatch.Success) {
+        $distance = ConvertTo-NullableDouble $distanceMatch.Groups[1].Value
+    }
+
+    $scan = [ordered]@{}
+    $resolveMatch = [regex]::Match($gateOutput, "\[resolve\]\s+([0-9]+)\s+resolved,\s+([0-9]+)\s+unresolved")
+    if ($resolveMatch.Success) {
+        $scan["resolvedImports"] = [int]$resolveMatch.Groups[1].Value
+        $scan["unresolvedImports"] = [int]$resolveMatch.Groups[2].Value
+    }
+    $graphMatch = [regex]::Match($gateOutput, "\[build_graphs\]\s+([0-9]+)\s+files.*\|\s+([0-9]+)\s+import,\s+([0-9]+)\s+call,\s+([0-9]+)\s+inherit edges")
+    if ($graphMatch.Success) {
+        $scan["files"] = [int]$graphMatch.Groups[1].Value
+        $scan["importEdges"] = [int]$graphMatch.Groups[2].Value
+        $scan["callEdges"] = [int]$graphMatch.Groups[3].Value
+        $scan["inheritEdges"] = [int]$graphMatch.Groups[4].Value
+    }
+
+    $metrics = @()
+    if ($null -ne $qualityPair) {
+        $metrics += [pscustomobject](New-SentruxMetricDelta "quality" $qualityPair["before"] $qualityPair["after"] "higher_is_better")
+    }
+    if ($null -ne $couplingPair) {
+        $metrics += [pscustomobject](New-SentruxMetricDelta "coupling" $couplingPair["before"] $couplingPair["after"] "lower_is_better")
+    }
+    if ($null -ne $cyclesPair) {
+        $metrics += [pscustomobject](New-SentruxMetricDelta "cycles" $cyclesPair["before"] $cyclesPair["after"] "lower_is_better")
+    }
+    if ($null -ne $godFilesPair) {
+        $metrics += [pscustomobject](New-SentruxMetricDelta "god_files" $godFilesPair["before"] $godFilesPair["after"] "lower_is_better")
+    }
+
+    $regressions = @($metrics | Where-Object { $_.regressed })
+    $nextActions = @()
+    $codeNexusHints = @()
+
+    if ([string]::IsNullOrWhiteSpace($TargetPath)) {
+        $nextActions += "Sentrux target was not resolved; inspect pipeline configuration."
+    }
+    elseif (-not (Test-Path -LiteralPath $BaselinePath -PathType Leaf)) {
+        $nextActions += "Create an intentional Sentrux baseline for this scope before using it as a gate."
+    }
+    elseif ($gateStep.Count -gt 0 -and $gateStep[0].status -eq "failed") {
+        $nextActions += "Inspect the Sentrux gate output before saving any new baseline."
+    }
+    elseif ($regressions.Count -gt 0) {
+        $nextActions += "Investigate regressed structural metrics before accepting this change."
+    }
+    else {
+        $nextActions += "No structural regression detected for this scope."
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($rulesPath) -and -not (Test-Path -LiteralPath $rulesPath -PathType Leaf)) {
+        $nextActions += "Add .sentrux/rules.toml when this scope needs explicit architecture boundary rules."
+    }
+
+    if (@($regressions | Where-Object { $_.name -in @("coupling", "cycles") }).Count -gt 0) {
+        $codeNexusHints += "Use CodeNexus impact/context on symbols in newly coupled modules."
+        $codeNexusHints += "Suggested query: gitnexus query `"cross module import dependency cycle`" --repo $RepoName"
+    }
+    elseif (@($regressions | Where-Object { $_.name -eq "quality" }).Count -gt 0) {
+        $codeNexusHints += "Use CodeNexus query to locate the flow behind the quality drop."
+        $codeNexusHints += "Suggested query: gitnexus query `"complex hotspot structural regression`" --repo $RepoName"
+    }
+    else {
+        $codeNexusHints += "If a future gate regresses, start with CodeNexus context/impact on the changed files."
+    }
+
+    return [ordered]@{
+        targetPath = $TargetPath
+        baselinePath = $BaselinePath
+        baselineExists = (-not [string]::IsNullOrWhiteSpace($BaselinePath) -and (Test-Path -LiteralPath $BaselinePath -PathType Leaf))
+        rulesPath = $rulesPath
+        rulesExists = (-not [string]::IsNullOrWhiteSpace($rulesPath) -and (Test-Path -LiteralPath $rulesPath -PathType Leaf))
+        checkStatus = if ($checkStep.Count -gt 0) { $checkStep[0].status } else { "not_run" }
+        gateStatus = if ($gateStep.Count -gt 0) { $gateStep[0].status } else { "not_run" }
+        noDegradation = ($gateOutput -match "No degradation detected")
+        metrics = $metrics
+        baseline = [ordered]@{
+            qualitySignal = ConvertTo-NullableDouble (Get-JsonProperty $baseline "quality_signal")
+            couplingScore = ConvertTo-NullableDouble (Get-JsonProperty $baseline "coupling_score")
+            cycleCount = ConvertTo-NullableDouble (Get-JsonProperty $baseline "cycle_count")
+            complexFnCount = ConvertTo-NullableDouble (Get-JsonProperty $baseline "complex_fn_count")
+            crossModuleEdges = ConvertTo-NullableDouble (Get-JsonProperty $baseline "cross_module_edges")
+            totalImportEdges = ConvertTo-NullableDouble (Get-JsonProperty $baseline "total_import_edges")
+        }
+        distanceFromMainSequence = $distance
+        scan = $scan
+        regressions = $regressions
+        nextActions = $nextActions
+        codeNexusHints = $codeNexusHints
+    }
 }
 
 $configData = $null
@@ -412,18 +630,21 @@ if (-not $SkipRepowise) {
             Push-Location $repoPath
             try {
                 $steps.Add((Invoke-LoggedStep "repowise status" {
-                    repowise status
+                    repowise status --no-workspace
                 }))
 
                 if ($Mode -ne "lite") {
-                    if (Test-Path -LiteralPath (Join-Path $repoPath ".repowise")) {
+                    $repowiseDir = Join-Path $repoPath ".repowise"
+                    $repowiseStatePath = Join-Path $repowiseDir "state.json"
+                    $repowiseDbPath = Join-Path $repowiseDir "wiki.db"
+                    if ((Test-Path -LiteralPath $repowiseStatePath -PathType Leaf) -or (Test-Path -LiteralPath $repowiseDbPath -PathType Leaf)) {
                         $steps.Add((Invoke-LoggedStep "repowise update" {
-                            repowise update
+                            repowise update --no-workspace --index-only
                         }))
                     }
                     else {
                         $steps.Add((Invoke-LoggedStep "repowise init" {
-                            repowise init
+                            @("n") | repowise init . --index-only -y --no-claude-md --no-onboarding --embedder mock --provider mock -x "tmp/**" -x "**/tmp/**" -x "**/*.egg-info/**" -x "uv.lock" -x "**/uv.lock" -x "*.bak" -x "**/*.bak"
                         }))
                     }
 
@@ -452,6 +673,10 @@ if (-not $SkipRepowise) {
         }
     }
 }
+
+$sentruxTargetPath = ""
+$sentruxDir = ""
+$baselinePath = ""
 
 if ($Mode -eq "lite") {
     $steps.Add([pscustomobject][ordered]@{
@@ -567,6 +792,172 @@ $failureCounts = [ordered]@{
     sentruxFail = @($failureClassifications | Where-Object { $_.category -eq "sentrux_fail" }).Count
 }
 
+$sentruxInsight = New-SentruxInsight -RepoName $repoName -TargetPath $sentruxTargetPath -BaselinePath $baselinePath -Steps $steps
+$sentruxDsmPath = Join-Path $runDir "sentrux-dsm.json"
+$sentruxFileDetailsPath = Join-Path $runDir "sentrux-file-details.json"
+$sentruxHotspotsPath = Join-Path $runDir "sentrux-hotspots.json"
+$sentruxEvolutionPath = Join-Path $runDir "sentrux-evolution.json"
+$sentruxWhatIfPath = Join-Path $runDir "sentrux-what-if.json"
+$sentruxDsmSummary = $null
+$sentruxFileDetailsSummary = $null
+$sentruxHotspotsSummary = $null
+$sentruxEvolutionSummary = $null
+$sentruxWhatIfSummary = $null
+$sentruxAgentTool = Join-Path $PSScriptRoot "Invoke-SentruxAgentTool.ps1"
+if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -LiteralPath $sentruxAgentTool -PathType Leaf)) {
+    try {
+        $previousErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            $dsmRaw = & $sentruxAgentTool dsm $sentruxTargetPath 2>&1
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+        }
+        $dsmText = ($dsmRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
+        $dsmObject = $dsmText | ConvertFrom-Json
+        $fileDetails = @($dsmObject.file_details)
+        $dsmObject.PSObject.Properties.Remove("file_details")
+        $dsmObject | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $sentruxDsmPath -Encoding UTF8
+        $functionCount = 0
+        $maxFunctionComplexity = 0
+        $hotspotFile = $null
+        foreach ($file in $fileDetails) {
+            $functionCount += [int]$file.function_count
+            if ([int]$file.max_complexity -gt $maxFunctionComplexity) {
+                $maxFunctionComplexity = [int]$file.max_complexity
+                $hotspotFile = [string]$file.path
+            }
+        }
+        $fileDetailsPayload = [ordered]@{
+            tool = "file_details"
+            path = $sentruxTargetPath
+            generated_from = $sentruxDsmPath
+            files = $fileDetails
+        }
+        $fileDetailsPayload | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $sentruxFileDetailsPath -Encoding UTF8
+        $moduleHotspots = @($dsmObject.modules |
+            Sort-Object { $_.colors.Risk.score } -Descending |
+            Select-Object -First 20 |
+            ForEach-Object {
+                [ordered]@{
+                    id = $_.id
+                    name = $_.name
+                    risk = $_.metrics.risk
+                    riskScore = $_.colors.Risk.score
+                    color = $_.colors.Risk.color
+                    files = $_.files
+                    blastRadius = $_.metrics.blast_radius
+                    gitFiles = $_.metrics.git_files
+                }
+            })
+        $fileHotspots = @($fileDetails |
+            Sort-Object { $_.max_complexity } -Descending |
+            Select-Object -First 30 |
+            ForEach-Object {
+                [ordered]@{
+                    id = $_.id
+                    path = $_.path
+                    sourceAnchor = $_.source_anchor
+                    functionCount = $_.function_count
+                    maxComplexity = $_.max_complexity
+                    avgComplexity = $_.avg_complexity
+                    loc = $_.loc
+                    git = $_.git
+                }
+            })
+        $functionHotspots = @()
+        foreach ($file in $fileDetails) {
+            foreach ($fn in @($file.functions)) {
+                $functionHotspots += [ordered]@{
+                    id = $fn.id
+                    fileId = $file.id
+                    file = $file.path
+                    name = $fn.name
+                    sourceAnchor = $fn.source_anchor
+                    startLine = $fn.start_line
+                    endLine = $fn.end_line
+                    complexity = $fn.complexity
+                    loc = $fn.loc
+                    params = $fn.params
+                    async = $fn.async
+                    public = $fn.public
+                }
+            }
+        }
+        $functionHotspots = @($functionHotspots | Sort-Object { $_["complexity"] } -Descending | Select-Object -First 50)
+        $hotspotsPayload = [ordered]@{
+            tool = "hotspots"
+            path = $sentruxTargetPath
+            generated_from = [ordered]@{
+                dsm = $sentruxDsmPath
+                fileDetails = $sentruxFileDetailsPath
+            }
+            modules = $moduleHotspots
+            files = $fileHotspots
+            functions = $functionHotspots
+        }
+        $hotspotsPayload | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $sentruxHotspotsPath -Encoding UTF8
+        $sentruxDsmSummary = [ordered]@{
+            path = $sentruxDsmPath
+            defaultColorMode = $dsmObject.default_color_mode
+            colorModes = $dsmObject.color_modes.Count
+            modules = $dsmObject.modules.Count
+        }
+        $sentruxFileDetailsSummary = [ordered]@{
+            path = $sentruxFileDetailsPath
+            files = $fileDetails.Count
+            functions = $functionCount
+            maxFunctionComplexity = $maxFunctionComplexity
+            hotspotFile = $hotspotFile
+        }
+        $topFunction = if ($functionHotspots.Count -gt 0) { "{0}:{1}" -f $functionHotspots[0]["name"], $functionHotspots[0]["complexity"] } else { "" }
+        $sentruxHotspotsSummary = [ordered]@{
+            path = $sentruxHotspotsPath
+            modules = $moduleHotspots.Count
+            files = $fileHotspots.Count
+            functions = $functionHotspots.Count
+            topFunction = $topFunction
+        }
+
+        $evolutionRaw = & $sentruxAgentTool evolution $sentruxTargetPath 2>&1
+        $evolutionText = ($evolutionRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
+        $evolutionObject = $evolutionText | ConvertFrom-Json
+        $evolutionText | Set-Content -LiteralPath $sentruxEvolutionPath -Encoding UTF8
+        $evolutionFunctions = @($evolutionObject.hotspots.functions)
+        $evolutionCouplingModules = @($evolutionObject.coupling.modules)
+        $evolutionBusModules = @($evolutionObject.bus_factor.modules)
+        $topEvolutionHotspot = if ($evolutionFunctions.Count -gt 0) { "{0}:{1}" -f $evolutionFunctions[0].name, $evolutionFunctions[0].complexity } else { "" }
+        $topEvolutionCoupling = if ($evolutionCouplingModules.Count -gt 0) { "{0}:{1}" -f $evolutionCouplingModules[0].name, $evolutionCouplingModules[0].coupling } else { "" }
+        $topEvolutionBusFactor = if ($evolutionBusModules.Count -gt 0) { "{0}:{1}" -f $evolutionBusModules[0].name, $evolutionBusModules[0].bus_factor_risk } else { "" }
+        $sentruxEvolutionSummary = [ordered]@{
+            path = $sentruxEvolutionPath
+            sessions = $evolutionObject.count
+            trend = $evolutionObject.trend.direction
+            topHotspot = $topEvolutionHotspot
+            topCoupling = $topEvolutionCoupling
+            topBusFactorRisk = $topEvolutionBusFactor
+        }
+
+        $whatIfRaw = & $sentruxAgentTool what_if $sentruxTargetPath 2>&1
+        $whatIfText = ($whatIfRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
+        $whatIfObject = $whatIfText | ConvertFrom-Json
+        $whatIfText | Set-Content -LiteralPath $sentruxWhatIfPath -Encoding UTF8
+        $failingScenarios = @($whatIfObject.scenarios | Where-Object { -not $_.pass })
+        $topWhatIf = if ($failingScenarios.Count -gt 0) { "{0}:{1}" -f $failingScenarios[0].name, $failingScenarios[0].impact_count } else { "" }
+        $sentruxWhatIfSummary = [ordered]@{
+            path = $sentruxWhatIfPath
+            scenarios = $whatIfObject.summary.scenarios
+            failing = $whatIfObject.summary.failing
+            primaryRisk = $whatIfObject.summary.primary_risk
+            topScenario = $topWhatIf
+        }
+    }
+    catch {
+        $notes.Add("Sentrux structural artifacts were not generated: $($_.Exception.Message)")
+    }
+}
+
 $report = [ordered]@{
     repo = $repoPath
     repoInput = $Repo
@@ -578,6 +969,12 @@ $report = [ordered]@{
     tools = $toolState
     understandCommand = $understandCommand
     steps = $steps
+    sentruxInsight = $sentruxInsight
+    sentruxDsm = $sentruxDsmSummary
+    sentruxFileDetails = $sentruxFileDetailsSummary
+    sentruxHotspots = $sentruxHotspotsSummary
+    sentruxEvolution = $sentruxEvolutionSummary
+    sentruxWhatIf = $sentruxWhatIfSummary
     notes = $notes
     failureClassifications = $failureClassifications
     summary = [ordered]@{
@@ -595,6 +992,10 @@ $report["understanding"] = $understandingPath
 $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding UTF8
 
 $summaryPath = Join-Path $runDir "summary.md"
+$sentruxMetrics = @($sentruxInsight['metrics'])
+$sentruxNextActions = @($sentruxInsight['nextActions'])
+$sentruxCodeNexusHints = @($sentruxInsight['codeNexusHints'])
+$sentruxScan = $sentruxInsight['scan']
 $summaryLines = @(
     "# Code Intel Pipeline",
     "",
@@ -619,6 +1020,41 @@ $summaryLines = @(
 )
 foreach ($step in $steps) {
     $summaryLines += "- $($step.status): $($step.name)"
+}
+$summaryLines += ""
+$summaryLines += "## Sentrux Insight"
+$summaryLines += "- Target: $($sentruxInsight['targetPath'])"
+$summaryLines += "- Baseline: $($sentruxInsight['baselinePath'])"
+$summaryLines += "- Rules: $($sentruxInsight['rulesPath'])"
+$summaryLines += "- Gate: $($sentruxInsight['gateStatus'])"
+$summaryLines += "- Check: $($sentruxInsight['checkStatus'])"
+$summaryLines += "- No degradation: $($sentruxInsight['noDegradation'])"
+if ($null -ne $sentruxDsmSummary) {
+    $summaryLines += "- DSM: $($sentruxDsmSummary.path) (modes=$($sentruxDsmSummary.colorModes), modules=$($sentruxDsmSummary.modules), default=$($sentruxDsmSummary.defaultColorMode))"
+}
+if ($null -ne $sentruxFileDetailsSummary) {
+    $summaryLines += "- File details: $($sentruxFileDetailsSummary.path) (files=$($sentruxFileDetailsSummary.files), functions=$($sentruxFileDetailsSummary.functions), maxComplexity=$($sentruxFileDetailsSummary.maxFunctionComplexity), hotspot=$($sentruxFileDetailsSummary.hotspotFile))"
+}
+if ($null -ne $sentruxHotspotsSummary) {
+    $summaryLines += "- Hotspots: $($sentruxHotspotsSummary.path) (modules=$($sentruxHotspotsSummary.modules), files=$($sentruxHotspotsSummary.files), functions=$($sentruxHotspotsSummary.functions), topFunction=$($sentruxHotspotsSummary.topFunction))"
+}
+if ($null -ne $sentruxEvolutionSummary) {
+    $summaryLines += "- Evolution: $($sentruxEvolutionSummary.path) (sessions=$($sentruxEvolutionSummary.sessions), trend=$($sentruxEvolutionSummary.trend), hotspot=$($sentruxEvolutionSummary.topHotspot), coupling=$($sentruxEvolutionSummary.topCoupling), busFactorRisk=$($sentruxEvolutionSummary.topBusFactorRisk))"
+}
+if ($null -ne $sentruxWhatIfSummary) {
+    $summaryLines += "- What-if: $($sentruxWhatIfSummary.path) (scenarios=$($sentruxWhatIfSummary.scenarios), failing=$($sentruxWhatIfSummary.failing), primaryRisk=$($sentruxWhatIfSummary.primaryRisk), topScenario=$($sentruxWhatIfSummary.topScenario))"
+}
+foreach ($metric in $sentruxMetrics) {
+    $summaryLines += "- Metric $($metric.name): $($metric.before) -> $($metric.after) (delta $($metric.delta), regressed=$($metric.regressed))"
+}
+if ($sentruxScan.Count -gt 0) {
+    $summaryLines += "- Scan: files=$($sentruxScan['files']), imports=$($sentruxScan['importEdges']), calls=$($sentruxScan['callEdges']), unresolvedImports=$($sentruxScan['unresolvedImports'])"
+}
+foreach ($action in $sentruxNextActions) {
+    $summaryLines += "- Next: $action"
+}
+foreach ($hint in $sentruxCodeNexusHints) {
+    $summaryLines += "- CodeNexus: $hint"
 }
 if ($failureClassifications.Count -gt 0) {
     $summaryLines += ""
@@ -655,6 +1091,9 @@ elseif ($failureCounts.graphMissing -gt 0) {
 elseif ($failureCounts.sentruxFail -gt 0) {
     $nextAction = "Inspect the Sentrux violation or regression before changing or saving a baseline."
 }
+elseif (-not [bool]$sentruxInsight['rulesExists']) {
+    $nextAction = "Add real Sentrux boundary rules at $($sentruxInsight['rulesPath']) before treating this scope as governed."
+}
 elseif ($manual.Count -gt 0) {
     $nextAction = "Resolve the manual_required step, then rerun if the team needs a fully clean artifact."
 }
@@ -672,6 +1111,11 @@ $understandingLines = @(
     "- Artifact directory: ``$runDir``",
     "- Report: ``$reportPath``",
     "- Summary: ``$summaryPath``",
+    "- Sentrux DSM: $(if ($null -ne $sentruxDsmSummary) { '``' + $sentruxDsmSummary.path + '``' } else { 'not generated' })",
+    "- Sentrux file details: $(if ($null -ne $sentruxFileDetailsSummary) { '``' + $sentruxFileDetailsSummary.path + '``' } else { 'not generated' })",
+    "- Sentrux hotspots: $(if ($null -ne $sentruxHotspotsSummary) { '``' + $sentruxHotspotsSummary.path + '``' } else { 'not generated' })",
+    "- Sentrux evolution: $(if ($null -ne $sentruxEvolutionSummary) { '``' + $sentruxEvolutionSummary.path + '``' } else { 'not generated' })",
+    "- Sentrux what-if: $(if ($null -ne $sentruxWhatIfSummary) { '``' + $sentruxWhatIfSummary.path + '``' } else { 'not generated' })",
     "- Tools: rg=$($toolState.rg), git=$($toolState.git), repowise=$($toolState.repowise), sentrux=$($toolState.sentrux)",
     "- Passed steps: $(Join-StatusNames $passedSteps)",
     "",
@@ -679,7 +1123,13 @@ $understandingLines = @(
     "- Understand graph: $(if ($graphStep.Count -gt 0) { $graphStep[0].status } else { 'not checked' })",
     "- Repowise state: $(Join-StatusNames $repowiseSteps)",
     "- Sentrux state: $(Join-StatusNames $sentruxSteps)",
+    "- Sentrux gate insight: gate=$($sentruxInsight['gateStatus']), noDegradation=$($sentruxInsight['noDegradation']), rules=$($sentruxInsight['rulesExists'])",
     "- Skipped steps: $(Join-StatusNames $skippedSteps)",
+    "",
+    "## Sentrux Structural Signal",
+    "$(if ($sentruxMetrics.Count -gt 0) { ($sentruxMetrics | ForEach-Object { '- ' + $_.name + ': ' + $_.before + ' -> ' + $_.after + ' (delta ' + $_.delta + ', regressed=' + $_.regressed + ')' }) -join [Environment]::NewLine } else { '- no parsed metrics' })",
+    "$(if ($sentruxNextActions.Count -gt 0) { ($sentruxNextActions | ForEach-Object { '- next: ' + $_ }) -join [Environment]::NewLine } else { '- next: none' })",
+    "$(if ($sentruxCodeNexusHints.Count -gt 0) { ($sentruxCodeNexusHints | ForEach-Object { '- codenexus: ' + $_ }) -join [Environment]::NewLine } else { '- codenexus: none' })",
     "",
     "## Failure Categories",
     "- provider_quota: $($failureCounts.providerQuota)",

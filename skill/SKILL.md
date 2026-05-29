@@ -11,6 +11,7 @@ Canonical files:
 
 - Pipeline: `D:\projects\_tools\code-intel-pipeline\run-code-intel.ps1`
 - Doctor: `D:\projects\_tools\code-intel-pipeline\check-code-intel-tools.ps1`
+- Sentrux Agent tools: `D:\projects\_tools\code-intel-pipeline\Invoke-SentruxAgentTool.ps1`
 - Config: `D:\projects\_tools\code-intel-pipeline\pipeline.config.json`
 - Artifacts: `%LOCALAPPDATA%\code-intel\artifacts\<repo>\<timestamp>\` by default, or `CODE_INTEL_ARTIFACT_ROOT` when set.
 - Templates: `D:\projects\_tools\code-intel-pipeline\templates\`
@@ -30,6 +31,8 @@ Team bootstrap:
 ```powershell
 D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -RepoPath <repo-path> -CheckProvider -RepairSkillLinks -InstallMissing
 ```
+
+The installer also installs the repo-owned Sentrux shim into `CODE_INTEL_BIN` or `%LOCALAPPDATA%\code-intel\bin`, prepends that directory to the user PATH, and verifies `sentrux pro status`. The shim auto-activates local open-source Pro features and forwards all non-`pro` commands to the real `sentrux.exe`.
 
 For machine-readable bootstrap status, add `-Json` and read `installActions` first. Valid statuses are `already_present`, `not_requested`, `installed`, `installed_restart_required`, and `install_failed`.
 
@@ -103,7 +106,7 @@ For a full graph rebuild:
 
 Then rerun the pipeline.
 
-5. After each run, read `summary.md` first. Open `report.json` only when the summary shows failure, manual action, or a category count above zero.
+5. After each run, read `summary.md` first. Its `Sentrux Insight` section shows parsed quality/coupling/cycle/god-file deltas, scan scale, next actions, and CodeNexus follow-up hints. Open `report.json` when the summary shows failure, manual action, a category count above zero, or when the raw `sentruxInsight` object matters.
 
 6. Read `understanding.md` before handing results to a teammate or another agent. It is the understanding-first layer: assumptions, verified facts, unverified areas, human inspection, and next action.
 
@@ -114,6 +117,23 @@ Then rerun the pipeline.
    - understanding report next action
    - repowise docs state
    - sentrux gate result
+   - sentrux insight metric deltas and CodeNexus hints
+
+For an Agent coding session that needs Sentrux as a live guardrail, use the dedicated wrapper:
+
+```powershell
+D:\projects\_tools\code-intel-pipeline\Invoke-SentruxAgentTool.ps1 scan <scope-path>
+D:\projects\_tools\code-intel-pipeline\Invoke-SentruxAgentTool.ps1 session_start <scope-path>
+D:\projects\_tools\code-intel-pipeline\Invoke-SentruxAgentTool.ps1 session_end <scope-path>
+```
+
+It exposes exactly these tools: `scan`, `health`, `session_start`, `session_end`, `rescan`, `check_rules`, `evolution`, `dsm`, `test_gaps`, and `what_if`. Prefer scoped paths for noisy repos. If the repo root contains `tools`, `vendor`, `third_party`, `external`, `research`, or nested git repos, trust the wrapper's `scope_candidates` over the root signal.
+
+The `dsm` output is the visualization handoff. It includes 9 color modes: `Size`, `Coupling`, `TestGap`, `Age`, `Churn`, `Risk`, `Git`, `ExecDepth`, and `BlastRadius`. Every module includes raw `metrics` plus normalized heat `colors` with a `score` and hex `color`. It also includes `file_details` for a file detail panel: file stats plus per-function lines, LOC, complexity, parameter count, async, and public/exported flags.
+
+The `evolution` output carries session trend plus hotspot, coupling, and bus-factor details. The `what_if` output simulates stricter governance gates for complexity, coupling, blast radius, tests, bus factor, and scope pollution before the team hardens `.sentrux/rules.toml`.
+
+Pipeline runs persist map data as `sentrux-dsm.json`, panel data as `sentrux-file-details.json`, sorted sidebar data as `sentrux-hotspots.json`, evolution data as `sentrux-evolution.json`, and simulated gate data as `sentrux-what-if.json` next to `summary.md`, `report.json`, and `understanding.md`.
 
 ## Provider Config
 
@@ -169,6 +189,8 @@ Use only these absorbed rules from the Karpathy skills repo:
 ## Sentrux Rules
 
 Legacy-heavy repos may configure `sentruxPath` in `pipeline.config.json` so Sentrux gates only the core area, such as `backend`.
+
+Rules are separate from baselines. A baseline answers "did this session degrade structure"; `.sentrux/rules.toml` answers "did this session cross an architecture boundary." If `check_rules` reports `rules_missing`, copy `templates\sentrux-rules.example.toml` into the chosen scope and replace the sample layer/boundary names with real project boundaries.
 
 If baseline is missing, use one of:
 
@@ -248,8 +270,9 @@ Check results in this order:
 5. Understand graph state
 6. repowise state
 7. sentrux gate result
-8. exact missing tools or failed checks
-9. understanding report next action
+8. sentrux insight deltas and CodeNexus hints
+9. exact missing tools or failed checks
+10. understanding report next action
 
 For machine checks, use:
 

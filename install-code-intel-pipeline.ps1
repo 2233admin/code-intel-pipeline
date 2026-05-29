@@ -234,6 +234,90 @@ function Get-DefaultArtifactRoot {
     return (Join-Path $base "code-intel\artifacts")
 }
 
+function Get-CodeIntelBinDir {
+    $fromEnv = [Environment]::GetEnvironmentVariable("CODE_INTEL_BIN", "User")
+    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) { return $fromEnv }
+    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_BIN)) { return $env:CODE_INTEL_BIN }
+    $base = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $env:LOCALAPPDATA } else { (Join-Path $HOME ".code-intel") }
+    return (Join-Path $base "code-intel\bin")
+}
+
+function Add-UserPathPrefix {
+    param([string]$PathToAdd)
+
+    $resolved = (New-Item -ItemType Directory -Force -Path $PathToAdd).FullName.TrimEnd('\')
+
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $userParts = @($userPath -split ";" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $userParts = @($userParts | Where-Object { -not [string]::Equals($_.TrimEnd('\'), $resolved, [System.StringComparison]::OrdinalIgnoreCase) })
+    [Environment]::SetEnvironmentVariable("Path", (($resolved) + ";" + ($userParts -join ";")).TrimEnd(";"), "User")
+
+    $processParts = @($env:Path -split ";" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $processParts = @($processParts | Where-Object { -not [string]::Equals($_.TrimEnd('\'), $resolved, [System.StringComparison]::OrdinalIgnoreCase) })
+    $env:Path = (($resolved) + ";" + ($processParts -join ";")).TrimEnd(";")
+}
+
+function Install-SentruxShim {
+    param(
+        [System.Collections.Generic.List[object]]$Actions,
+        [string]$Root
+    )
+
+    $sourceDir = Join-Path $Root "tools\sentrux-shim"
+    $sourcePs1 = Join-Path $sourceDir "sentrux-shim.ps1"
+    $sourceCmd = Join-Path $sourceDir "sentrux.cmd"
+    if (-not (Test-Path -LiteralPath $sourcePs1 -PathType Leaf) -or -not (Test-Path -LiteralPath $sourceCmd -PathType Leaf)) {
+        Add-InstallAction $Actions "sentrux-shim" "install_failed" "missing shim source under $sourceDir" "Restore tools\sentrux-shim from the repository."
+        return
+    }
+
+    try {
+        $shimDir = Get-CodeIntelBinDir
+        New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
+        $oldPs1 = Join-Path $shimDir "sentrux.ps1"
+        if (Test-Path -LiteralPath $oldPs1 -PathType Leaf) {
+            Remove-Item -LiteralPath $oldPs1 -Force
+        }
+        Copy-Item -LiteralPath $sourcePs1 -Destination (Join-Path $shimDir "sentrux-shim.ps1") -Force
+        Copy-Item -LiteralPath $sourceCmd -Destination (Join-Path $shimDir "sentrux.cmd") -Force
+        Add-UserPathPrefix $shimDir
+
+        $statusOutput = & (Join-Path $shimDir "sentrux.cmd") pro status 2>&1
+        $statusText = ($statusOutput | ForEach-Object { $_.ToString() } | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or $statusText -notmatch "Tier:\s+pro") {
+            Add-InstallAction $Actions "sentrux-shim" "install_failed" $statusText "Run sentrux pro status and inspect the error."
+            return
+        }
+
+        Add-InstallAction $Actions "sentrux-shim" "installed" $shimDir "Open a new terminal if this shell cannot find sentrux from PATH."
+    }
+    catch {
+        Add-InstallAction $Actions "sentrux-shim" "install_failed" $_.Exception.Message "Check write permission for the user CODE_INTEL_BIN or LOCALAPPDATA directory."
+    }
+}
+
+function Test-CommandOutput {
+    param(
+        [System.Collections.Generic.List[object]]$Checks,
+        [string]$Name,
+        [string]$Category,
+        [scriptblock]$Body,
+        [string]$ExpectedPattern,
+        [string]$Fix
+    )
+
+    try {
+        $global:LASTEXITCODE = 0
+        $output = & $Body 2>&1
+        $text = ($output | ForEach-Object { $_.ToString() } | Out-String).Trim()
+        $ok = $global:LASTEXITCODE -eq 0 -and $text -match $ExpectedPattern
+        Add-Check $Checks $Name $Category $true $ok $text $Fix
+    }
+    catch {
+        Add-Check $Checks $Name $Category $true $false $_.Exception.Message $Fix
+    }
+}
+
 function Ensure-SkillLink {
     param(
         [System.Collections.Generic.List[object]]$Checks,
@@ -310,17 +394,20 @@ Add-InstallPlan $installPlan "git" "winget" "winget install --id Git.Git -e" "Re
 Add-InstallPlan $installPlan "python" "winget" "winget install --id Python.Python.3.11 -e" "Runs provider preflight and scoped repowise docs helper." "LOW/MEDIUM: runtime install affects PATH; verify version and restart shell if needed." "Use an already managed Python 3.11+ runtime."
 Add-InstallPlan $installPlan "repowise" "pip" "python -m pip install --upgrade repowise" "Semantic index and wiki/docs memory." "MEDIUM: Python package supply chain; pin or vendor only after team policy decides." "Skip repowise with -SkipRepowise for exact-search-only runs."
 Add-InstallPlan $installPlan "sentrux" "cargo" "cargo install sentrux --locked" "Structural quality and regression gate." "MEDIUM: cargo source must be trusted; no automatic install if cargo is absent." "Install a reviewed sentrux.exe on PATH."
+Add-InstallPlan $installPlan "sentrux-shim" "repo-local" "copy tools\\sentrux-shim to CODE_INTEL_BIN and prepend user PATH" "Open-source local Pro activation plus stable forwarding to the real sentrux binary." "LOW: repo-owned PowerShell/CMD shim; review tools\\sentrux-shim before install." "Set SENTRUX_AUTO_PRO=0 to disable auto Pro activation."
 
 Install-MissingTool $installActions "rg" { Invoke-RipgrepInstall } "Install ripgrep with winget (`winget install --id BurntSushi.ripgrep.MSVC -e`) or ensure rg is on PATH."
 Install-MissingTool $installActions "git" { Invoke-WingetInstall "Git.Git" "Git for Windows" } "Install Git for Windows (`winget install --id Git.Git -e`) or ensure git is on PATH."
 Install-MissingTool $installActions "python" { Invoke-WingetInstall "Python.Python.3.11" "Python 3.11" } "Install Python 3.11+ (`winget install --id Python.Python.3.11 -e`) or ensure python is on PATH."
 Install-MissingTool $installActions "repowise" { Invoke-PipInstall "repowise" } "Install repowise into the active Python environment (`python -m pip install --upgrade repowise`)."
 Install-MissingTool $installActions "sentrux" { Invoke-SentruxInstall } "Install sentrux or ensure sentrux.exe is on PATH."
+Install-SentruxShim $installActions $root
 
 $requiredFiles = @(
     "check-code-intel-tools.ps1",
     "invoke-code-intel.ps1",
     "run-code-intel.ps1",
+    "Invoke-SentruxAgentTool.ps1",
     "Invoke-ScopedRepowise.ps1",
     "Run-ScopedRepowiseDocs.py",
     "test-code-intel-pipeline.ps1",
@@ -332,12 +419,16 @@ foreach ($file in $requiredFiles) {
     Test-File $checks "pipeline:$file" (Join-Path $root $file) $true
 }
 Test-File $checks "config" $Config $true
+Test-File $checks "sentrux-shim:cmd" (Join-Path $root "tools\sentrux-shim\sentrux.cmd") $true
+Test-File $checks "sentrux-shim:ps1" (Join-Path $root "tools\sentrux-shim\sentrux-shim.ps1") $true
 
 Test-Tool $checks "rg" $true "Install ripgrep or ensure rg is on PATH."
 Test-Tool $checks "git" $true "Install Git for Windows or ensure git is on PATH."
 Test-Tool $checks "python" $true "Install Python 3.11+ or ensure python is on PATH."
 Test-Tool $checks "repowise" $true "Install repowise into the active Python environment."
 Test-Tool $checks "sentrux" $true "Install sentrux or ensure sentrux.exe is on PATH."
+Test-CommandOutput $checks "tool:sentrux-core" "tool" { sentrux check --help } "Enforce architectural rules" "Install the real sentrux binary; the shim only handles local Pro activation and forwards other commands."
+Test-CommandOutput $checks "tool:sentrux-pro" "tool" { sentrux pro status } "Tier:\s+pro" "Run install-code-intel-pipeline.ps1 again so the repo shim is installed and auto activation is enabled."
 
 $userProfile = if ([string]::IsNullOrWhiteSpace($env:USERPROFILE)) { "C:\Users\Administrator" } else { $env:USERPROFILE }
 $skillSource = Join-Path $userProfile ".agents\skills\code-intel-pipeline"

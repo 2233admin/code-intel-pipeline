@@ -47,6 +47,7 @@ function Invoke-OneRepo {
 
     $label = if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) { $DirectRepoPath } else { $RepoName }
     Write-Host "Code intel invoke: doctor $label"
+    $global:LASTEXITCODE = 0
     if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) {
         & $doctor -Config $Config -RepoPath $DirectRepoPath
     }

@@ -5,6 +5,7 @@ param(
     [string]$ShadowRoot = "",
     [string[]]$ScopePaths = @(),
     [string[]]$RootFiles = @(),
+    [int]$CommitLimit = 25,
     [switch]$Docs
 )
 
@@ -57,7 +58,7 @@ function Invoke-RobocopyMirror {
     }
 
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-    & robocopy $Source $Destination /MIR /XD .git .repowise node_modules .venv venv __pycache__ dist build target .understand-anything .sentrux /NFL /NDL /NJH /NJS /NP | Out-Null
+    & robocopy $Source $Destination /MIR /XD .git .repowise node_modules .venv venv __pycache__ .pytest_cache .mypy_cache tmp dist build target .understand-anything .sentrux "*.egg-info" /XF uv.lock uv.lock.bak "*.bak" "=*" /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -gt 7) {
         throw "robocopy failed for $Source -> $Destination (exit $LASTEXITCODE)"
     }
@@ -82,7 +83,10 @@ function Copy-ScopedFile {
 }
 
 function Write-ScopedConfig {
-    param([string]$ShadowPath)
+    param(
+        [string]$ShadowPath,
+        [int]$CommitLimit
+    )
 
     $configDir = Join-Path $ShadowPath ".repowise"
     New-Item -ItemType Directory -Force -Path $configDir | Out-Null
@@ -92,7 +96,7 @@ function Write-ScopedConfig {
         "model: MiniMax-M2.7",
         "embedder: mock",
         "reasoning: auto",
-        "commit_limit: 100",
+        "commit_limit: $CommitLimit",
         "editor_files:",
         "  claude_md: false"
     )
@@ -111,6 +115,57 @@ function Set-EnvFromUserRegistry {
     }
 }
 
+function Remove-ScopedNoise {
+    param([string]$Root)
+
+    $rootItem = Get-Item -LiteralPath $Root -ErrorAction Stop
+    $rootFull = $rootItem.FullName.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+    $dirNames = @("tmp", "__pycache__", ".pytest_cache", ".mypy_cache", "node_modules", "target", "dist", "build")
+    $dirs = @(
+        Get-ChildItem -LiteralPath $Root -Force -Recurse -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -in $dirNames -or $_.Name -like "*.egg-info" }
+    )
+    foreach ($dir in $dirs) {
+        if ($dir.FullName.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    $files = @(
+        Get-ChildItem -LiteralPath $Root -Force -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -in @("uv.lock", "uv.lock.bak") -or $_.Name -like "*.bak" -or $_.Name -like "=*" }
+    )
+    foreach ($file in $files) {
+        if ($file.FullName.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Invoke-NativeCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Script,
+        [string]$Description = "native command"
+    )
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $global:LASTEXITCODE = 0
+        $ErrorActionPreference = "Continue"
+        $output = & $Script 2>&1
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    $text = ($output | ForEach-Object { $_.ToString() } | Out-String).Trim()
+    if ($global:LASTEXITCODE -ne 0) {
+        throw "$Description failed with exit code $global:LASTEXITCODE. $text"
+    }
+    return $text
+}
+
 $repoPath = Resolve-Dir $RepoPath
 if ([string]::IsNullOrWhiteSpace($ShadowRoot)) {
     $ShadowRoot = Get-DefaultShadowRoot
@@ -120,7 +175,6 @@ if (-not (Test-Path -LiteralPath (Join-Path $repoPath ".git"))) {
 }
 
 $repoName = Split-Path -Leaf $repoPath
-$shadowPath = Join-Path $ShadowRoot $repoName
 $scopeDirs = @($ScopePaths | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
 $scopeFiles = @($RootFiles | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
 
@@ -128,11 +182,23 @@ if ($scopeDirs.Count -eq 0 -and $scopeFiles.Count -eq 0) {
     throw "At least one scope path or root file is required."
 }
 
+$scopeKey = (@($scopeDirs + $scopeFiles) -join "-")
+$scopeSlug = $scopeKey -replace '[:/\\]+', '-'
+$scopeSlug = $scopeSlug -replace '[^A-Za-z0-9._-]', '-'
+$scopeSlug = $scopeSlug.Trim("-")
+if ([string]::IsNullOrWhiteSpace($scopeSlug)) {
+    $scopeSlug = "scoped"
+}
+if ($scopeSlug.Length -gt 80) {
+    $scopeSlug = $scopeSlug.Substring(0, 80).Trim("-")
+}
+$shadowPath = Join-Path $ShadowRoot "$repoName-$scopeSlug"
+
 $head = (git -C $repoPath rev-parse HEAD).Trim()
 
 if (-not (Test-Path -LiteralPath $shadowPath -PathType Container)) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $shadowPath) | Out-Null
-    git -C $repoPath worktree add --detach $shadowPath $head | Out-Null
+    [void](Invoke-NativeCommand -Description "git worktree add" -Script { git -C $repoPath worktree add --detach $shadowPath $head })
 }
 else {
     $shadowGit = Join-Path $shadowPath ".git"
@@ -141,7 +207,7 @@ else {
     }
     $shadowHead = (git -C $shadowPath rev-parse HEAD).Trim()
     if ($shadowHead -ne $head) {
-        git -C $shadowPath checkout --detach --force $head | Out-Null
+        [void](Invoke-NativeCommand -Description "git checkout shadow" -Script { git -C $shadowPath checkout --detach --force $head })
     }
 }
 
@@ -174,11 +240,16 @@ foreach ($file in $scopeFiles) {
     Copy-ScopedFile $sourceFile $destFile
 }
 
-Write-ScopedConfig $shadowPath
+Remove-ScopedNoise $shadowPath
+Write-ScopedConfig $shadowPath $CommitLimit
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 $env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUTF8 = "1"
+$env:TERM = "xterm"
+$env:NO_COLOR = "1"
+$env:RICH_FORCE_TERMINAL = "0"
 $env:REPOWISE_SKIP_HOOK_INSTALL = "1"
 Set-EnvFromUserRegistry "ANTHROPIC_API_KEY"
 Set-EnvFromUserRegistry "ANTHROPIC_BASE_URL"
@@ -199,21 +270,21 @@ Push-Location $shadowPath
 try {
     if ($Docs) {
         if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
-            repowise init . --index-only -y
+            [void](Invoke-NativeCommand -Description "repowise init" -Script { @("n") | repowise init . --index-only -y --no-claude-md --no-onboarding --skip-tests --skip-infra --commit-limit $CommitLimit --embedder mock --provider mock -x "tmp/**" -x "**/tmp/**" -x "**/*.egg-info/**" -x "uv.lock" -x "**/uv.lock" -x "*.bak" -x "**/*.bak" })
         }
         $dbPath = Join-Path $shadowPath ".repowise\wiki.db"
         if (Test-Path -LiteralPath $dbPath -PathType Leaf) {
             Remove-Item -LiteralPath $dbPath -Force
         }
         $scriptPath = Join-Path $PSScriptRoot "Run-ScopedRepowiseDocs.py"
-        python $scriptPath --repo $shadowPath --coverage-pct 0.02 --concurrency 1
+        [void](Invoke-NativeCommand -Description "repowise scoped docs" -Script { python $scriptPath --repo $shadowPath --coverage-pct 0.02 --concurrency 1 })
     }
     else {
         if (Test-Path -LiteralPath $statePath -PathType Leaf) {
-            repowise update --no-workspace --index-only
+            [void](Invoke-NativeCommand -Description "repowise update" -Script { repowise update --no-workspace --index-only })
         }
         else {
-            @("n") | repowise init . --index-only -y
+            [void](Invoke-NativeCommand -Description "repowise init" -Script { @("n") | repowise init . --index-only -y --no-claude-md --no-onboarding --skip-tests --skip-infra --commit-limit $CommitLimit --embedder mock --provider mock -x "tmp/**" -x "**/tmp/**" -x "**/*.egg-info/**" -x "uv.lock" -x "**/uv.lock" -x "*.bak" -x "**/*.bak" })
         }
     }
 }
@@ -225,7 +296,7 @@ $status = $null
 $state = ""
 Push-Location $shadowPath
 try {
-    $status = repowise status --no-workspace 2>&1
+    $status = Invoke-NativeCommand -Description "repowise status" -Script { repowise status --no-workspace }
     if (Test-Path -LiteralPath $statePath -PathType Leaf) {
         $state = Get-Content -LiteralPath $statePath -Raw
     }
@@ -234,14 +305,19 @@ finally {
     Pop-Location
 }
 
-Write-Host "Scoped repowise complete"
-Write-Host "Shadow: $shadowPath"
-Write-Host "HEAD: $head"
-Write-Host "ScopeDirs: $($scopeDirs -join ', ')"
-Write-Host "RootFiles: $($scopeFiles -join ', ')"
-Write-Host "Status:"
-Write-Host ($status | Out-String).Trim()
+$dbPath = Join-Path $shadowPath ".repowise\wiki.db"
+if ((-not (Test-Path -LiteralPath $statePath -PathType Leaf)) -and (-not (Test-Path -LiteralPath $dbPath -PathType Leaf))) {
+    throw "Scoped repowise finished without .repowise\state.json or .repowise\wiki.db: $shadowPath"
+}
+
+Write-Output "Scoped repowise complete"
+Write-Output "Shadow: $shadowPath"
+Write-Output "HEAD: $head"
+Write-Output "ScopeDirs: $($scopeDirs -join ', ')"
+Write-Output "RootFiles: $($scopeFiles -join ', ')"
+Write-Output "Status:"
+Write-Output ($status | Out-String).Trim()
 if (-not [string]::IsNullOrWhiteSpace($state)) {
-    Write-Host "State:"
-    Write-Host $state
+    Write-Output "State:"
+    Write-Output $state
 }
