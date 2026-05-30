@@ -516,7 +516,7 @@ function Get-SourceFiles {
     finally {
         Pop-Location
     }
-    $sourceExt = @(".ps1", ".psm1", ".py", ".ts", ".tsx", ".js", ".jsx", ".rs", ".go", ".java", ".cs")
+    $sourceExt = @(".ps1", ".psm1", ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".rs", ".go", ".java", ".cs")
     return @($files | Where-Object {
         $ext = [System.IO.Path]::GetExtension($_).ToLowerInvariant()
         $sourceExt -contains $ext
@@ -1215,6 +1215,8 @@ function Get-FileDetail {
         ".tsx" { "typescript" }
         ".js" { "javascript" }
         ".jsx" { "javascript" }
+        ".mjs" { "javascript" }
+        ".cjs" { "javascript" }
         ".ps1" { "powershell" }
         ".psm1" { "powershell" }
         ".go" { "go" }
