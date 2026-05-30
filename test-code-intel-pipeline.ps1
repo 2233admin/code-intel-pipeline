@@ -122,6 +122,7 @@ if ($pipelineExitCode -ne 0 -and -not ($AllowGraphMissing -and $graphMissingOnly
             name = $_.name
             status = $_.status
             error = $_.error
+            output = $_.output
         }
     })
     Write-Host "Pipeline exit code: $pipelineExitCode"
