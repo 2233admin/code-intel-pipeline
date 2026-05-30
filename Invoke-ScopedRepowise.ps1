@@ -215,8 +215,9 @@ function Invoke-ProcessWithTimeout {
         $outText = if (Test-Path -LiteralPath $stdout) { Get-Content -LiteralPath $stdout -Raw -ErrorAction SilentlyContinue } else { "" }
         $errText = if (Test-Path -LiteralPath $stderr) { Get-Content -LiteralPath $stderr -Raw -ErrorAction SilentlyContinue } else { "" }
         $text = (($outText, $errText) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join "`n"
-        if ($process.ExitCode -ne 0) {
-            throw "$Description failed with exit code $($process.ExitCode). $text"
+        $exitCode = if ($null -eq $process.ExitCode) { 0 } else { [int]$process.ExitCode }
+        if ($exitCode -ne 0) {
+            throw "$Description failed with exit code $exitCode. $text"
         }
         return $text.Trim()
     }
@@ -272,7 +273,9 @@ else {
 
 Push-Location $shadowPath
 try {
-    git sparse-checkout init --no-cone | Out-Null
+    [void](Invoke-NativeCommand -Description "git reset shadow" -Script { git -C $shadowPath reset --hard HEAD })
+    [void](Invoke-NativeCommand -Description "git clean shadow" -Script { git -C $shadowPath clean -fdx })
+    git sparse-checkout init --no-cone 2>&1 | Out-Null
     $patterns = New-Object System.Collections.Generic.List[string]
     foreach ($dir in $scopeDirs) {
         $patterns.Add("/$($dir.Trim('/'))/")
@@ -280,8 +283,21 @@ try {
     foreach ($file in $scopeFiles) {
         $patterns.Add("/$($file.Trim('/'))")
     }
-    $patterns | git sparse-checkout set --stdin | Out-Null
-    git read-tree -mu HEAD | Out-Null
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $patterns | git sparse-checkout set --stdin 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "git sparse-checkout set failed with exit $LASTEXITCODE"
+        }
+        git read-tree -mu HEAD 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "git read-tree failed with exit $LASTEXITCODE"
+        }
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
 }
 finally {
     Pop-Location
@@ -333,7 +349,7 @@ try {
                 -FilePath "repowise" `
                 -Description "repowise init" `
                 -TimeoutSeconds $TimeoutSeconds `
-                -ArgumentList @("init", ".", "--index-only", "-y", "--no-claude-md", "--no-onboarding", "--skip-tests", "--skip-infra", "--commit-limit", [string]$CommitLimit, "--embedder", "mock", "--provider", "mock", "-x", "tmp/**", "-x", "**/tmp/**", "-x", "**/*.egg-info/**", "-x", "uv.lock", "-x", "**/uv.lock", "-x", "*.bak", "-x", "**/*.bak"))
+                -ArgumentList @("init", ".", "--index-only", "-y", "--no-claude-md", "--no-onboarding", "--skip-tests", "--skip-infra", "--commit-limit", [string]$CommitLimit, "--embedder", "mock", "--provider", "mock"))
         }
         $dbPath = Join-Path $shadowPath ".repowise\wiki.db"
         if (Test-Path -LiteralPath $dbPath -PathType Leaf) {
@@ -359,7 +375,7 @@ try {
                 -FilePath "repowise" `
                 -Description "repowise init" `
                 -TimeoutSeconds $TimeoutSeconds `
-                -ArgumentList @("init", ".", "--index-only", "-y", "--no-claude-md", "--no-onboarding", "--skip-tests", "--skip-infra", "--commit-limit", [string]$CommitLimit, "--embedder", "mock", "--provider", "mock", "-x", "tmp/**", "-x", "**/tmp/**", "-x", "**/*.egg-info/**", "-x", "uv.lock", "-x", "**/uv.lock", "-x", "*.bak", "-x", "**/*.bak"))
+                -ArgumentList @("init", ".", "--index-only", "-y", "--no-claude-md", "--no-onboarding", "--skip-tests", "--skip-infra", "--commit-limit", [string]$CommitLimit, "--embedder", "mock", "--provider", "mock"))
         }
     }
 }

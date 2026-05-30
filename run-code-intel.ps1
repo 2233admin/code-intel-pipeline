@@ -1478,6 +1478,10 @@ if ($RepowiseRootFiles.Count -eq 0) {
     }
 }
 
+if ($RepowiseScopePaths.Count -eq 0 -and $RepowiseRootFiles.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($SentruxPath)) {
+    $RepowiseScopePaths = @($SentruxPath)
+}
+
 $configuredExcludes = Get-JsonProperty $configData "inventoryExclude"
 if ($InventoryExclude.Count -eq 0 -and $null -ne $configuredExcludes) {
     $InventoryExclude = @($configuredExcludes | ForEach-Object { [string]$_ })
@@ -1643,7 +1647,7 @@ if (-not $SkipRepowise) {
                     }
                     else {
                         $steps.Add((Invoke-LoggedStep "repowise init" {
-                            @("n") | repowise init . --index-only -y --no-claude-md --no-onboarding --embedder mock --provider mock -x "tmp/**" -x "**/tmp/**" -x "**/*.egg-info/**" -x "uv.lock" -x "**/uv.lock" -x "*.bak" -x "**/*.bak"
+                            @("n") | repowise init . --index-only -y --no-claude-md --no-onboarding --embedder mock --provider mock
                         }))
                     }
 
