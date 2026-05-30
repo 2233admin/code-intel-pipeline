@@ -6,11 +6,11 @@ param(
     [string]$RunDir = "",
     [string]$DsmPath = "",
     [string]$HotspotsPath = "",
-    [string]$OutputPath = "",
-    [int]$MaxFiles = 8,
-    [int]$MaxReferencesPerFile = 12,
-    [int]$MaxCommitsPerFile = 5,
-    [switch]$Quiet
+[string]$OutputPath = "",
+[int]$MaxFiles = 8,
+[int]$MaxReferencesPerFile = 12,
+[int]$MaxCommitsPerFile = 0,
+[switch]$Quiet
 )
 
 Set-StrictMode -Version Latest
@@ -180,13 +180,14 @@ function Get-References {
     if (-not (Get-Command rg -ErrorAction SilentlyContinue)) {
         return ,@()
     }
+    if ($Limit -le 0) { return ,@() }
 
     $stem = [System.IO.Path]::GetFileNameWithoutExtension($RelativePath)
     if ([string]::IsNullOrWhiteSpace($stem) -or $stem.Length -lt 3) {
         return ,@()
     }
 
-    $lines = Invoke-TextCommand { rg -n --hidden -g "!**/.git/**" -g "!**/node_modules/**" -g "!**/target/**" -g "!**/dist/**" -g "!**/build/**" --fixed-strings $stem $RepoPath }
+    $lines = Invoke-TextCommand { rg -n -m $Limit --hidden -g "!**/.git/**" -g "!**/node_modules/**" -g "!**/target/**" -g "!**/dist/**" -g "!**/build/**" --fixed-strings $stem $RepoPath }
     return ,@($lines | Select-Object -First $Limit)
 }
 
@@ -207,7 +208,7 @@ function Get-FileDigest {
 
     $lines = @()
     try {
-        $lines = @(Get-Content -LiteralPath $path -TotalCount 12 -ErrorAction Stop)
+        $lines = @((Get-Content -LiteralPath $path -TotalCount 12 -ErrorAction Stop) | ForEach-Object { [string]$_ })
     }
     catch {
         $lines = @()
