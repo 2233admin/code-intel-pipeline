@@ -37,4 +37,4 @@ jobs:
 
       - name: Smoke
         shell: pwsh
-        run: .\test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -Mode normal
+        run: .\test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -Mode normal

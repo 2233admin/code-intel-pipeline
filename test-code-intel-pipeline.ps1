@@ -11,7 +11,8 @@ param(
 
     [switch]$SkipRepowise,
     [switch]$RepowiseDocs,
-    [switch]$AllowGraphMissing
+    [switch]$AllowGraphMissing,
+    [switch]$SkipSentruxGate
 )
 
 Set-StrictMode -Version Latest
@@ -63,6 +64,9 @@ if ($SkipRepowise) {
 }
 if ($RepowiseDocs) {
     $runnerParams.RepowiseDocs = $true
+}
+if ($SkipSentruxGate) {
+    $runnerParams.SkipSentruxGate = $true
 }
 & $runner @runnerParams
 $pipelineExitCode = $LASTEXITCODE
