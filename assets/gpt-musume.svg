@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">GPT Musume checks the codebase</title>
+  <desc id="desc">Anime-style project banner: GPT Musume reads a code intelligence report.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff8fb"/>
+      <stop offset="45%" stop-color="#edf7ff"/>
+      <stop offset="100%" stop-color="#f8fff3"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f5f7fb"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#5d6270" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="520" fill="url(#bg)"/>
+  <circle cx="95" cy="92" r="7" fill="#f8cc62"/>
+  <path d="M95 54l9 25 25 9-25 9-9 25-9-25-25-9 25-9z" fill="#ffe394" opacity="0.9"/>
+  <path d="M1085 92l7 19 19 7-19 7-7 19-7-19-19-7 19-7z" fill="#8ed8c7" opacity="0.9"/>
+  <path d="M1032 410l5 14 14 5-14 5-5 14-5-14-14-5 14-5z" fill="#ffb6c8" opacity="0.9"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="42" y="52" width="1116" height="416" rx="34" fill="url(#panel)" stroke="#e5e9f2"/>
+  </g>
+
+  <g transform="translate(76 78)">
+    <text x="0" y="44" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="42" font-weight="800" fill="#263043">Code Intel Pipeline</text>
+    <text x="0" y="86" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="22" fill="#536071">GPT Musume code clinic: scan, image, diagnose, plan surgery.</text>
+
+    <g transform="translate(0 128)">
+      <rect x="0" y="0" width="500" height="220" rx="20" fill="#ffffff" stroke="#e4e8f0"/>
+      <text x="28" y="44" font-family="Consolas, monospace" font-size="18" fill="#7b8493">pipeline status</text>
+      <g font-family="Consolas, monospace" font-size="21" font-weight="700">
+        <text x="28" y="86" fill="#2f8a6d">[ok] sentrux gate: pass</text>
+        <text x="28" y="122" fill="#2f6fb2">[ok] codenexus: context ready</text>
+        <text x="28" y="158" fill="#b07725">[plan] hospital: surgery_plan</text>
+        <text x="28" y="194" fill="#6a5acd">next: read surgery-plan.md</text>
+      </g>
+    </g>
+
+    <g transform="translate(535 134)">
+      <rect x="0" y="0" width="174" height="42" rx="21" fill="#263043"/>
+      <text x="24" y="28" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#ffffff">rg X-Ray</text>
+      <rect x="0" y="58" width="228" height="42" rx="21" fill="#f0f4ff" stroke="#cdd8f4"/>
+      <text x="24" y="86" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#3b4d80">Sentrux CT</text>
+      <rect x="0" y="116" width="260" height="42" rx="21" fill="#fff5dc" stroke="#f2d58f"/>
+      <text x="24" y="144" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#7a5b18">Repowise Chart</text>
+      <rect x="0" y="174" width="296" height="42" rx="21" fill="#e9fbf5" stroke="#b7ead9"/>
+      <text x="24" y="202" font-family="Segoe UI, Microsoft YaHei, sans-serif" font-size="18" font-weight="700" fill="#2f7b64">Hospital Report</text>
+    </g>
+  </g>
+
+  <g transform="translate(790 83)">
+    <path d="M185 334c-53 9-115-6-139-50-24-43-4-99 17-140 21-42 43-82 93-93 55-12 115 15 145 61 31 47 30 113 3 159-24 41-68 54-119 63z" fill="#2e3342"/>
+    <path d="M151 48c60-20 119 15 145 70 25 54 18 128-23 170-42 42-118 47-165 13-49-35-66-109-43-166 16-41 42-73 86-87z" fill="#3c4252"/>
+    <path d="M91 135c-14 41-15 90 8 123 24 35 72 50 116 39 46-11 78-46 86-93 8-44-10-91-44-119-32-27-83-35-119-15-24 13-38 34-47 65z" fill="#fff7f2"/>
+    <path d="M102 145c18-22 32-48 68-54 48-8 92 13 117 51-4-55-53-103-113-100-65 2-109 52-116 114 14-1 28-4 44-11z" fill="#333846"/>
+    <circle cx="140" cy="197" r="12" fill="#3b3c48"/>
+    <circle cx="236" cy="197" r="12" fill="#3b3c48"/>
+    <path d="M176 234c14 10 30 10 44 0" fill="none" stroke="#d7858c" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="105" cy="217" r="22" fill="#ffc7cf" opacity="0.65"/>
+    <circle cx="273" cy="217" r="22" fill="#ffc7cf" opacity="0.65"/>
+
+    <path d="M96 313c26-23 139-23 176 0 36 22 50 72 49 115H47c0-45 13-91 49-115z" fill="#ffffff" stroke="#e4e8f0"/>
+    <path d="M138 303l48 65 50-65" fill="#f9d7df"/>
+    <path d="M171 362l-19 66h72l-19-66z" fill="#f0f4ff"/>
+    <path d="M120 339c21 18 43 29 66 29 24 0 48-11 72-31" fill="none" stroke="#d8dde8" stroke-width="8" stroke-linecap="round"/>
+
+    <g transform="translate(208 28)">
+      <circle cx="43" cy="43" r="42" fill="#ffffff" stroke="#d8dde8" stroke-width="4"/>
+      <path d="M43 18c14 0 25 11 25 25S57 68 43 68 18 57 18 43s11-25 25-25zm0 10c-8 0-15 7-15 15s7 15 15 15 15-7 15-15-7-15-15-15z" fill="#202634"/>
+      <path d="M43 8v20M43 58v20M8 43h20M58 43h20M19 19l14 14M53 53l14 14M67 19L53 33M33 53L19 67" stroke="#202634" stroke-width="6" stroke-linecap="round" opacity="0.78"/>
+    </g>
+
+    <g transform="translate(15 315)">
+      <path d="M0 48l145-36 42 116L42 164z" fill="#c99b70"/>
+      <path d="M19 54l116-28 31 87-116 29z" fill="#e8c39f"/>
+      <text x="55" y="98" font-family="Consolas, monospace" font-size="15" fill="#6f4f35">scan()</text>
+    </g>
+  </g>
+</svg>
