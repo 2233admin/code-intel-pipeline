@@ -6,6 +6,7 @@ param(
     [string[]]$ScopePaths = @(),
     [string[]]$RootFiles = @(),
     [int]$CommitLimit = 25,
+    [int]$TimeoutSeconds = 180,
     [switch]$Docs
 )
 
@@ -166,6 +167,64 @@ function Invoke-NativeCommand {
     return $text
 }
 
+function Stop-ProcessTreeSafe {
+    param([int]$ProcessId)
+
+    $children = @(
+        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.ParentProcessId -eq $ProcessId }
+    )
+    foreach ($child in $children) {
+        Stop-ProcessTreeSafe ([int]$child.ProcessId)
+    }
+
+    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if ($null -ne $process) {
+        Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Invoke-ProcessWithTimeout {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [string[]]$ArgumentList = @(),
+        [string]$Description = "process",
+        [int]$TimeoutSeconds = 180,
+        [string]$WorkingDirectory = (Get-Location).Path
+    )
+
+    $stdout = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-{0}-out.txt" -f ([System.Guid]::NewGuid().ToString("N")))
+    $stderr = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-{0}-err.txt" -f ([System.Guid]::NewGuid().ToString("N")))
+    try {
+        $process = Start-Process `
+            -FilePath $FilePath `
+            -ArgumentList $ArgumentList `
+            -WorkingDirectory $WorkingDirectory `
+            -RedirectStandardOutput $stdout `
+            -RedirectStandardError $stderr `
+            -PassThru `
+            -WindowStyle Hidden
+
+        $finished = $process.WaitForExit([math]::Max(1, $TimeoutSeconds) * 1000)
+        if (-not $finished) {
+            Stop-ProcessTreeSafe ([int]$process.Id)
+            throw "$Description timed out after ${TimeoutSeconds}s"
+        }
+
+        $outText = if (Test-Path -LiteralPath $stdout) { Get-Content -LiteralPath $stdout -Raw -ErrorAction SilentlyContinue } else { "" }
+        $errText = if (Test-Path -LiteralPath $stderr) { Get-Content -LiteralPath $stderr -Raw -ErrorAction SilentlyContinue } else { "" }
+        $text = (($outText, $errText) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join "`n"
+        if ($process.ExitCode -ne 0) {
+            throw "$Description failed with exit code $($process.ExitCode). $text"
+        }
+        return $text.Trim()
+    }
+    finally {
+        Remove-Item -LiteralPath $stdout,$stderr -Force -ErrorAction SilentlyContinue
+    }
+}
+
 $repoPath = Resolve-Dir $RepoPath
 if ([string]::IsNullOrWhiteSpace($ShadowRoot)) {
     $ShadowRoot = Get-DefaultShadowRoot
@@ -270,21 +329,37 @@ Push-Location $shadowPath
 try {
     if ($Docs) {
         if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
-            [void](Invoke-NativeCommand -Description "repowise init" -Script { @("n") | repowise init . --index-only -y --no-claude-md --no-onboarding --skip-tests --skip-infra --commit-limit $CommitLimit --embedder mock --provider mock -x "tmp/**" -x "**/tmp/**" -x "**/*.egg-info/**" -x "uv.lock" -x "**/uv.lock" -x "*.bak" -x "**/*.bak" })
+            [void](Invoke-ProcessWithTimeout `
+                -FilePath "repowise" `
+                -Description "repowise init" `
+                -TimeoutSeconds $TimeoutSeconds `
+                -ArgumentList @("init", ".", "--index-only", "-y", "--no-claude-md", "--no-onboarding", "--skip-tests", "--skip-infra", "--commit-limit", [string]$CommitLimit, "--embedder", "mock", "--provider", "mock", "-x", "tmp/**", "-x", "**/tmp/**", "-x", "**/*.egg-info/**", "-x", "uv.lock", "-x", "**/uv.lock", "-x", "*.bak", "-x", "**/*.bak"))
         }
         $dbPath = Join-Path $shadowPath ".repowise\wiki.db"
         if (Test-Path -LiteralPath $dbPath -PathType Leaf) {
             Remove-Item -LiteralPath $dbPath -Force
         }
         $scriptPath = Join-Path $PSScriptRoot "Run-ScopedRepowiseDocs.py"
-        [void](Invoke-NativeCommand -Description "repowise scoped docs" -Script { python $scriptPath --repo $shadowPath --coverage-pct 0.02 --concurrency 1 })
+        [void](Invoke-ProcessWithTimeout `
+            -FilePath "python" `
+            -Description "repowise scoped docs" `
+            -TimeoutSeconds $TimeoutSeconds `
+            -ArgumentList @($scriptPath, "--repo", $shadowPath, "--coverage-pct", "0.02", "--concurrency", "1"))
     }
     else {
         if (Test-Path -LiteralPath $statePath -PathType Leaf) {
-            [void](Invoke-NativeCommand -Description "repowise update" -Script { repowise update --no-workspace --index-only })
+            [void](Invoke-ProcessWithTimeout `
+                -FilePath "repowise" `
+                -Description "repowise update" `
+                -TimeoutSeconds $TimeoutSeconds `
+                -ArgumentList @("update", "--no-workspace", "--index-only"))
         }
         else {
-            [void](Invoke-NativeCommand -Description "repowise init" -Script { @("n") | repowise init . --index-only -y --no-claude-md --no-onboarding --skip-tests --skip-infra --commit-limit $CommitLimit --embedder mock --provider mock -x "tmp/**" -x "**/tmp/**" -x "**/*.egg-info/**" -x "uv.lock" -x "**/uv.lock" -x "*.bak" -x "**/*.bak" })
+            [void](Invoke-ProcessWithTimeout `
+                -FilePath "repowise" `
+                -Description "repowise init" `
+                -TimeoutSeconds $TimeoutSeconds `
+                -ArgumentList @("init", ".", "--index-only", "-y", "--no-claude-md", "--no-onboarding", "--skip-tests", "--skip-infra", "--commit-limit", [string]$CommitLimit, "--embedder", "mock", "--provider", "mock", "-x", "tmp/**", "-x", "**/tmp/**", "-x", "**/*.egg-info/**", "-x", "uv.lock", "-x", "**/uv.lock", "-x", "*.bak", "-x", "**/*.bak"))
         }
     }
 }
@@ -296,7 +371,11 @@ $status = $null
 $state = ""
 Push-Location $shadowPath
 try {
-    $status = Invoke-NativeCommand -Description "repowise status" -Script { repowise status --no-workspace }
+    $status = Invoke-ProcessWithTimeout `
+        -FilePath "repowise" `
+        -Description "repowise status" `
+        -TimeoutSeconds $TimeoutSeconds `
+        -ArgumentList @("status", "--no-workspace")
     if (Test-Path -LiteralPath $statePath -PathType Leaf) {
         $state = Get-Content -LiteralPath $statePath -Raw
     }

@@ -540,6 +540,10 @@ function Get-ExcludedSourceReason {
     $normalized = Normalize-RelativeFilePath $RelativePath
     $lower = $normalized.ToLowerInvariant()
     $parts = @($lower -split "/" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $topLevelExternalDirs = @("tools", "vendor", "third_party", "external")
+    if ($parts.Count -gt 0 -and $topLevelExternalDirs -contains $parts[0]) {
+        return "external_tooling_dir:$($parts[0])"
+    }
     $excludedParts = @(
         ".git", ".repowise", ".understand-anything", ".sentrux",
         "node_modules", ".pnpm", ".yarn",

@@ -100,6 +100,8 @@ Use `-Mode lite` for a cheap status check. Use `-Mode full` when a fresh Underst
 
 When a repo config defines `repowiseScopePaths` or `repowiseRootFiles`, the pipeline runs `repowise` inside a sparse shadow worktree under `%LOCALAPPDATA%\code-intel\repowise\<repo>` by default, or `CODE_INTEL_SHADOW_ROOT` when set. This is the default for noisy mono-repos with nested third-party repos.
 
+Scoped Repowise has a bounded timeout. Use `-RepowiseTimeoutSeconds <seconds>` when a huge or dirty repo should fail fast. A Repowise timeout is treated as an optional semantic-memory skip; Understand, Sentrux, and CodeNexus should still complete.
+
 4. If the report says the Understand graph is missing, tell the user or Claude-side agent to run:
 
 ```text

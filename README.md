@@ -156,6 +156,12 @@ vlang v0.2.0 [v] — V
 .\run-code-intel.ps1 -RepoPath C:\path\to\your\repo -Mode normal
 ```
 
+Repowise 是可选语义记忆层，默认单步超时 `180` 秒；超时会跳过 Repowise 并继续跑 Understand / Sentrux / CodeNexus，不会拖死整轮：
+
+```powershell
+.\run-code-intel.ps1 -RepoPath C:\path\to\your\repo -Mode normal -RepowiseTimeoutSeconds 60
+```
+
 稳定入口：
 
 ```powershell
@@ -173,6 +179,8 @@ vlang v0.2.0 [v] — V
 ```powershell
 .\run-code-intel.ps1 -RepoPath C:\path\to\your\repo -Mode normal -SentruxPath backend
 ```
+
+根目录可以扫，但治理指标会默认排除顶层 `tools/`、`vendor/`、`third_party/`、`external/`。这些目录通常是外部轮子、镜像源码或参考实现；如果要分析它们，把 scope 直接指过去，不要让它们污染主项目分数。
 
 ## Agent 工作流
 

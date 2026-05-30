@@ -56,6 +56,7 @@ function Test-SkippedPath {
     foreach ($part in $parts) {
         if ($part -in @(
             ".git", ".repowise", ".understand-anything", ".sentrux",
+            "tools", "vendor", "third_party", "external",
             "node_modules", ".pnpm", ".yarn",
             "target", "dist", "build", "out", "coverage",
             ".venv", "venv", "env", ".tox", "__pycache__",

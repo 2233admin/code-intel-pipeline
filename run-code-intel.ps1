@@ -15,6 +15,7 @@ param(
     [string]$RepowiseShadowRoot = "",
     [string[]]$RepowiseScopePaths = @(),
     [string[]]$RepowiseRootFiles = @(),
+    [int]$RepowiseTimeoutSeconds = 180,
     [string[]]$InventoryExclude = @(),
 
     [switch]$SaveSentruxBaseline,
@@ -148,6 +149,20 @@ function Invoke-LoggedStep {
     }
 
     return [pscustomobject]$entry
+}
+
+function Convert-OptionalRepowiseTimeout {
+    param([object]$Step)
+
+    if ($null -eq $Step) { return $Step }
+    $blob = (([string]$Step.error) + "`n" + ([string]$Step.output)).ToLowerInvariant()
+    if ([string]$Step.status -eq "failed" -and [string]$Step.name -like "repowise*" -and $blob -match "timed out after") {
+        $Step.status = "skipped"
+        $Step.exitCode = $null
+        $Step.output = "Optional Repowise step skipped after timeout. $($Step.error)"
+        $Step.error = ""
+    }
+    return $Step
 }
 
 function Get-RelativePathSafe {
@@ -607,23 +622,27 @@ if (-not $SkipRepowise) {
         if ($RepowiseScopePaths.Count -gt 0 -or $RepowiseRootFiles.Count -gt 0) {
             $scopedRepowiseScript = Join-Path $PSScriptRoot "Invoke-ScopedRepowise.ps1"
             if ($RepowiseDocs -and $Mode -ne "lite") {
-                $steps.Add((Invoke-LoggedStep "repowise scoped docs" {
+                $repowiseStep = Invoke-LoggedStep "repowise scoped docs" {
                     & $scopedRepowiseScript `
                         -RepoPath $repoPath `
                         -ShadowRoot $RepowiseShadowRoot `
                         -ScopePaths $RepowiseScopePaths `
                         -RootFiles $RepowiseRootFiles `
+                        -TimeoutSeconds $RepowiseTimeoutSeconds `
                         -Docs
-                }))
+                }
+                $steps.Add((Convert-OptionalRepowiseTimeout $repowiseStep))
             }
             else {
-                $steps.Add((Invoke-LoggedStep "repowise scoped index" {
+                $repowiseStep = Invoke-LoggedStep "repowise scoped index" {
                     & $scopedRepowiseScript `
                         -RepoPath $repoPath `
                         -ShadowRoot $RepowiseShadowRoot `
                         -ScopePaths $RepowiseScopePaths `
-                        -RootFiles $RepowiseRootFiles
-                }))
+                        -RootFiles $RepowiseRootFiles `
+                        -TimeoutSeconds $RepowiseTimeoutSeconds
+                }
+                $steps.Add((Convert-OptionalRepowiseTimeout $repowiseStep))
             }
         }
         else {
