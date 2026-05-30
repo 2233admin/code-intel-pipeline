@@ -192,9 +192,15 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTarget) -and (Test-Path -LiteralPa
     if ($null -eq $dsm -or $dsm.color_modes.Count -ne 9) {
         throw "Sentrux Agent DSM wrapper did not return 9 color modes."
     }
+    if ($null -eq $dsm.scope -or $null -eq $dsm.scope.excluded_by_reason) {
+        throw "Sentrux Agent DSM wrapper did not report governed source scope exclusions."
+    }
     $gitStats = & $sentruxAgentTool sentrux_git_stats $sentruxTarget | ConvertFrom-Json
     if ($null -eq $gitStats -or $null -eq $gitStats.summary -or $null -eq $gitStats.hotspots) {
         throw "Sentrux Agent git_stats wrapper did not return summary and hotspots."
+    }
+    if ($null -eq $gitStats.scope -or $null -eq $gitStats.scope.excluded_by_reason) {
+        throw "Sentrux Agent git_stats wrapper did not report governed source scope exclusions."
     }
     $sentruxAgentDsm = [ordered]@{
         defaultColorMode = $dsm.default_color_mode
@@ -202,6 +208,7 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTarget) -and (Test-Path -LiteralPa
         modules = $dsm.modules.Count
         files = $dsm.file_details.Count
         functions = [int](($dsm.file_details | Measure-Object -Property function_count -Sum).Sum)
+        excludedFiles = [int]$dsm.scope.excluded_files
     }
     $sentruxAgentGitStats = [ordered]@{
         files = [int]$gitStats.summary.files

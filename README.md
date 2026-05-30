@@ -310,7 +310,7 @@ codenexus-context.json
 
 ### repo 太大、vendor 太多
 
-不要扫根目录，指定 scope：
+根目录可以扫。Sentrux 会自动把 `node_modules`、`dist`、`build`、`static/assets` 这类依赖或构建产物隔离出治理图；只有要给核心模块单独打 baseline 时，才指定 scope：
 
 ```powershell
 .\run-code-intel.ps1 -RepoPath C:\path\to\repo -SentruxPath backend -Mode normal

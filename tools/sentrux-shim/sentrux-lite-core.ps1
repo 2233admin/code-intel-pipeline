@@ -39,9 +39,28 @@ function Resolve-TargetPath {
 function Test-SkippedPath {
     param([string]$Path)
 
-    $parts = @($Path -split "[\\/]" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $normalized = ($Path -replace "\\", "/").ToLowerInvariant()
+    if ($normalized -match "/(static|public|wwwroot)/assets/") {
+        return $true
+    }
+    $leaf = [System.IO.Path]::GetFileName(($Path -replace "\\", "/"))
+    $leafLower = $leaf.ToLowerInvariant()
+    if ($leafLower -match "(\.min|\.bundle)\.(js|jsx|mjs|cjs)$") {
+        return $true
+    }
+    if ($leaf -match ".+-[A-Za-z0-9_]{6,}\.(js|jsx|mjs|cjs)$" -and $leaf -match "[0-9]" -and $leaf -cmatch "[A-Z]") {
+        return $true
+    }
+
+    $parts = @($normalized -split "/" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     foreach ($part in $parts) {
-        if ($part -in @(".git", ".repowise", ".understand-anything", ".sentrux", "node_modules", "target", "dist", "build", ".venv", "__pycache__")) {
+        if ($part -in @(
+            ".git", ".repowise", ".understand-anything", ".sentrux",
+            "node_modules", ".pnpm", ".yarn",
+            "target", "dist", "build", "out", "coverage",
+            ".venv", "venv", "env", ".tox", "__pycache__",
+            ".next", ".nuxt", ".turbo", ".cache"
+        )) {
             return $true
         }
     }

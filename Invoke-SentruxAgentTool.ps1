@@ -258,16 +258,37 @@ function Find-ScopeCandidates {
 function Get-PollutionSignals {
     param([string]$TargetPath)
 
-    $noisyDirs = @("tools", "vendor", "vendors", "third_party", "third-party", "external", "research", "sandbox")
+    $noisyDirs = @(
+        [ordered]@{ path = "node_modules"; reason = "dependency directory excluded from governed source graph"; inspectNestedGit = $false },
+        [ordered]@{ path = ".pnpm"; reason = "dependency store excluded from governed source graph"; inspectNestedGit = $false },
+        [ordered]@{ path = ".yarn"; reason = "dependency store excluded from governed source graph"; inspectNestedGit = $false },
+        [ordered]@{ path = "vendor"; reason = "vendored code excluded from governed source graph"; inspectNestedGit = $true },
+        [ordered]@{ path = "vendors"; reason = "vendored code excluded from governed source graph"; inspectNestedGit = $true },
+        [ordered]@{ path = "third_party"; reason = "third-party code excluded from governed source graph"; inspectNestedGit = $true },
+        [ordered]@{ path = "third-party"; reason = "third-party code excluded from governed source graph"; inspectNestedGit = $true },
+        [ordered]@{ path = "external"; reason = "external code excluded from governed source graph"; inspectNestedGit = $true },
+        [ordered]@{ path = "research"; reason = "research or reference tree excluded from governed source graph"; inspectNestedGit = $true },
+        [ordered]@{ path = "sandbox"; reason = "sandbox tree excluded from governed source graph"; inspectNestedGit = $false },
+        [ordered]@{ path = "dist"; reason = "build output excluded from governed source graph"; inspectNestedGit = $false },
+        [ordered]@{ path = "build"; reason = "build output excluded from governed source graph"; inspectNestedGit = $false },
+        [ordered]@{ path = "target"; reason = "build output excluded from governed source graph"; inspectNestedGit = $false },
+        [ordered]@{ path = "static\assets"; reason = "bundled static assets excluded from governed source graph"; inspectNestedGit = $false },
+        [ordered]@{ path = "public\assets"; reason = "bundled static assets excluded from governed source graph"; inspectNestedGit = $false },
+        [ordered]@{ path = "tools"; reason = "common tool or generated-support directory"; inspectNestedGit = $true }
+    )
     $signals = @()
-    foreach ($dir in $noisyDirs) {
+    foreach ($entry in $noisyDirs) {
+        $dir = [string]$entry["path"]
         $full = Join-Path $TargetPath $dir
         if (-not (Test-Path -LiteralPath $full -PathType Container)) { continue }
-        $nestedGit = @(Get-ChildItem -LiteralPath $full -Recurse -Directory -Force -Filter ".git" -ErrorAction SilentlyContinue | Select-Object -First 5)
+        $nestedGit = @()
+        if ([bool]$entry["inspectNestedGit"]) {
+            $nestedGit = @(Get-ChildItem -LiteralPath $full -Recurse -Directory -Force -Filter ".git" -ErrorAction SilentlyContinue | Select-Object -First 5)
+        }
         $signals += [ordered]@{
             path = $dir
             nested_git_count_sample = $nestedGit.Count
-            reason = if ($nestedGit.Count -gt 0) { "contains nested repositories" } else { "common external or research directory" }
+            reason = if ($nestedGit.Count -gt 0) { "contains nested repositories" } else { [string]$entry["reason"] }
         }
     }
     return $signals
@@ -356,6 +377,7 @@ function Invoke-ScanTool {
     $rulesPath = Join-Path $TargetPath ".sentrux\rules.toml"
     $gate = Invoke-Gate $TargetPath
     $metrics = $gate["metrics"]
+    $inventory = Get-SourceFileInventory $TargetPath
     $pollutionSignals = @(Get-PollutionSignals $TargetPath)
     $scopeCandidates = @(Find-ScopeCandidates $TargetPath)
     $baselineExists = Test-Path -LiteralPath $baselinePath -PathType Leaf
@@ -371,6 +393,7 @@ function Invoke-ScanTool {
         bottleneck = $gate["bottleneck"]
         baseline_exists = $baselineExists
         rules_exists = $rulesExists
+        scope = $inventory["scope"]
         pollution_signals = $pollutionSignals
         scope_candidates = $scopeCandidates
         scope_hint = if ($pollutionSignals.Count -gt 0 -and $scopeCandidates.Count -gt 0) { "Use a scoped path instead of the repo root for Agent sessions." } else { $null }
@@ -394,6 +417,7 @@ function Invoke-HealthTool {
         bottleneck = $scan["bottleneck"]
         baseline_exists = $scan["baseline_exists"]
         rules_exists = $scan["rules_exists"]
+        scope = $scan["scope"]
         pollution_signals = $scan["pollution_signals"]
         scope_candidates = $scan["scope_candidates"]
         scope_hint = $scan["scope_hint"]
@@ -506,7 +530,49 @@ function Invoke-CheckRulesTool {
     }
 }
 
-function Get-SourceFiles {
+function Get-SourceExtensions {
+    return @(".ps1", ".psm1", ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".rs", ".go", ".java", ".cs")
+}
+
+function Get-ExcludedSourceReason {
+    param([string]$RelativePath)
+
+    $normalized = Normalize-RelativeFilePath $RelativePath
+    $lower = $normalized.ToLowerInvariant()
+    $parts = @($lower -split "/" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $excludedParts = @(
+        ".git", ".repowise", ".understand-anything", ".sentrux",
+        "node_modules", ".pnpm", ".yarn",
+        "target", "dist", "build", "out", "coverage",
+        ".venv", "venv", "env", ".tox", "__pycache__",
+        ".next", ".nuxt", ".turbo", ".cache"
+    )
+    foreach ($part in $parts) {
+        if ($excludedParts -contains $part) {
+            return "excluded_dir:$part"
+        }
+    }
+
+    if ($lower -match "^(static|public|wwwroot)/assets/") {
+        return "bundled_static_assets"
+    }
+
+    $leaf = [System.IO.Path]::GetFileName($normalized)
+    $leafLower = $leaf.ToLowerInvariant()
+    if ($leafLower -match "(\.min|\.bundle)\.(js|jsx|mjs|cjs)$") {
+        return "bundled_or_minified_file"
+    }
+    if ($leaf -match ".+-[A-Za-z0-9_]{6,}\.(js|jsx|mjs|cjs)$" -and $leaf -match "[0-9]" -and $leaf -cmatch "[A-Z]") {
+        return "hashed_bundle_file"
+    }
+    if ($lower -match "/assets/" -and $leaf -match "^(chunk-|vendor-|index-|assets?).+-[A-Za-z0-9_-]{6,}\.(js|jsx|mjs|cjs)$") {
+        return "hashed_static_asset"
+    }
+
+    return ""
+}
+
+function Get-SourceFileInventory {
     param([string]$TargetPath)
 
     Push-Location $TargetPath
@@ -516,11 +582,69 @@ function Get-SourceFiles {
     finally {
         Pop-Location
     }
-    $sourceExt = @(".ps1", ".psm1", ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".rs", ".go", ".java", ".cs")
-    return @($files | Where-Object {
-        $ext = [System.IO.Path]::GetExtension($_).ToLowerInvariant()
-        $sourceExt -contains $ext
-    })
+
+    $sourceExt = Get-SourceExtensions
+    $included = New-Object System.Collections.Generic.List[string]
+    $excluded = @{}
+
+    foreach ($file in @($files)) {
+        $normalized = Normalize-RelativeFilePath $file
+        $ext = [System.IO.Path]::GetExtension($normalized).ToLowerInvariant()
+        if ($sourceExt -notcontains $ext) { continue }
+
+        $reason = Get-ExcludedSourceReason $normalized
+        if ([string]::IsNullOrWhiteSpace($reason) -and $ext -in @(".js", ".jsx", ".mjs", ".cjs")) {
+            $fullPath = Join-Path $TargetPath $normalized
+            $item = Get-Item -LiteralPath $fullPath -ErrorAction SilentlyContinue
+            if ($null -ne $item -and $item.Length -gt 2097152) {
+                $reason = "oversized_generated_or_bundle"
+            }
+        }
+        if (-not [string]::IsNullOrWhiteSpace($reason)) {
+            if (-not $excluded.ContainsKey($reason)) {
+                $excluded[$reason] = [ordered]@{
+                    files = 0
+                    samples = New-Object System.Collections.Generic.List[string]
+                }
+            }
+            $excluded[$reason]["files"] = [int]$excluded[$reason]["files"] + 1
+            if ($excluded[$reason]["samples"].Count -lt 8) {
+                $excluded[$reason]["samples"].Add($normalized)
+            }
+            continue
+        }
+
+        $included.Add($normalized)
+    }
+
+    $excludedTotal = 0
+    $excludedByReason = @($excluded.Keys | ForEach-Object {
+        $excludedTotal += [int]$excluded[$_]["files"]
+        [ordered]@{
+            reason = $_
+            files = [int]$excluded[$_]["files"]
+            samples = @($excluded[$_]["samples"])
+        }
+    } | Sort-Object { $_["files"] } -Descending)
+
+    return [ordered]@{
+        files = @($included | Sort-Object)
+        scope = [ordered]@{
+            mode = "auto_governed_source"
+            included_files = $included.Count
+            excluded_files = $excludedTotal
+            excluded_by_reason = $excludedByReason
+            source_extensions = $sourceExt
+            note = "Root paths are allowed. Dependency, build-output, cache, and bundled static-asset code is excluded from governed source metrics."
+        }
+    }
+}
+
+function Get-SourceFiles {
+    param([string]$TargetPath)
+
+    $inventory = Get-SourceFileInventory $TargetPath
+    return @($inventory["files"])
 }
 
 function Get-ModuleName {
@@ -1287,7 +1411,8 @@ function Get-FileDetail {
 function Invoke-DsmTool {
     param([string]$TargetPath)
 
-    $files = Get-SourceFiles $TargetPath
+    $inventory = Get-SourceFileInventory $TargetPath
+    $files = @($inventory["files"])
     $gitSignals = Get-GitFileSignals $TargetPath $files
     $fileDetails = @($files | ForEach-Object { Get-FileDetail $TargetPath $_ $gitSignals })
     $modules = [ordered]@{}
@@ -1487,6 +1612,7 @@ function Invoke-DsmTool {
     return [ordered]@{
         tool = "dsm"
         path = $TargetPath
+        scope = $inventory["scope"]
         default_color_mode = "Risk"
         color_modes = $colorModes
         modules = $moduleOutput
@@ -1511,7 +1637,8 @@ function Test-IsTestFile {
 function Invoke-TestGapsTool {
     param([string]$TargetPath)
 
-    $files = Get-SourceFiles $TargetPath
+    $inventory = Get-SourceFileInventory $TargetPath
+    $files = @($inventory["files"])
     $byModule = [ordered]@{}
     foreach ($file in $files) {
         $module = Get-ModuleName $file
@@ -1548,6 +1675,7 @@ function Invoke-TestGapsTool {
     return [ordered]@{
         tool = "test_gaps"
         path = $TargetPath
+        scope = $inventory["scope"]
         modules = $gaps
         summary = [ordered]@{
             source_files = $sourceTotal
@@ -1560,7 +1688,8 @@ function Invoke-TestGapsTool {
 function Invoke-GitStatsTool {
     param([string]$TargetPath)
 
-    $files = @(Get-SourceFiles $TargetPath)
+    $inventory = Get-SourceFileInventory $TargetPath
+    $files = @($inventory["files"])
     $gitSignals = Get-GitFileSignals $TargetPath $files
     $authorSignals = Get-GitAuthorSignals $TargetPath $files
 
@@ -1653,6 +1782,7 @@ function Invoke-GitStatsTool {
     return [ordered]@{
         tool = "git_stats"
         path = $TargetPath
+        scope = $inventory["scope"]
         summary = [ordered]@{
             files = $files.Count
             tracked_files = $trackedFiles
@@ -2122,7 +2252,7 @@ function Invoke-WhatIfTool {
             -Affected $pollution `
             -Severity $(if ($pollution.Count -gt 0) { "high" } else { "ok" }) `
             -RecommendedRule "governed_scope = explicit" `
-            -Action "Run Sentrux on a project-owned scope; keep vendored/research/tool trees outside the gate.")
+            -Action "Keep scanning the root, but keep dependency, generated, and bundled asset code outside governed source metrics.")
     )
 
     $failed = @($scenarios | Where-Object { -not $_["pass"] })
@@ -2159,6 +2289,7 @@ function Invoke-WhatIfTool {
             failing = $failed.Count
             primary_risk = $primary
             scope_candidates = $scopeCandidates
+            source_scope = $dsm["scope"]
         }
         scenarios = $scenarios
         recommendations = $recommendations

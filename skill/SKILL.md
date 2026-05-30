@@ -137,7 +137,7 @@ D:\projects\_tools\code-intel-pipeline\Invoke-SentruxAgentTool.ps1 session_start
 D:\projects\_tools\code-intel-pipeline\Invoke-SentruxAgentTool.ps1 session_end <scope-path>
 ```
 
-It exposes exactly these tools: `scan`, `health`, `session_start`, `session_end`, `rescan`, `check_rules`, `evolution`, `dsm`, `test_gaps`, and `what_if`. Prefer scoped paths for noisy repos. If the repo root contains `tools`, `vendor`, `third_party`, `external`, `research`, or nested git repos, trust the wrapper's `scope_candidates` over the root signal.
+It exposes exactly these tools: `scan`, `health`, `session_start`, `session_end`, `rescan`, `check_rules`, `evolution`, `dsm`, `test_gaps`, and `what_if`. Root paths are valid inputs: the wrapper automatically excludes dependency, build-output, cache, and bundled static-asset code from governed source metrics, and reports the filtered material under `scope.excluded_by_reason`. Use narrower scopes only when the team intentionally wants a separate baseline for a subsystem.
 
 The `dsm` output is the visualization handoff. It includes 9 color modes: `Size`, `Coupling`, `TestGap`, `Age`, `Churn`, `Risk`, `Git`, `ExecDepth`, and `BlastRadius`. Every module includes raw `metrics` plus normalized heat `colors` with a `score` and hex `color`. It also includes `file_details` for a file detail panel: file stats plus per-function lines, LOC, complexity, parameter count, async, and public/exported flags.
 
