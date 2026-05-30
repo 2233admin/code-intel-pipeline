@@ -1,0 +1,74 @@
+name: code-intel-release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ripgrep
+        shell: pwsh
+        run: choco install ripgrep -y --no-progress
+
+      - name: Install portable pipeline
+        shell: pwsh
+        run: .\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -Json
+
+      - name: Doctor
+        shell: pwsh
+        run: .\check-code-intel-tools.ps1 -RepoPath .
+
+      - name: Smoke
+        shell: pwsh
+        run: .\test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -Mode normal
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $include = @(
+            "assets",
+            "docs",
+            "overlays",
+            "skill",
+            "templates",
+            ".github",
+            "*.ps1",
+            "*.py",
+            "pipeline.config.example.json",
+            "*.md"
+          )
+          $paths = foreach ($item in $include) {
+            Get-Item -Path $item -ErrorAction SilentlyContinue
+          }
+          Compress-Archive -Path $paths.FullName -DestinationPath "dist/code-intel-pipeline-$version.zip" -Force
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $asset = "dist/code-intel-pipeline-$tag.zip"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $asset --clobber
+          } else {
+            gh release create $tag $asset --title "Code Intel Pipeline $tag" --notes-file CHANGELOG.md
+          }
