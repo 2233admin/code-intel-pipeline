@@ -29,6 +29,10 @@ jobs:
         shell: pwsh
         run: .\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -Json
 
+      - name: Add pipeline tools to PATH
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_PATH -Value "$env:LOCALAPPDATA\code-intel\bin"
+
       - name: Doctor
         shell: pwsh
         run: .\check-code-intel-tools.ps1 -RepoPath .

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.1 - 2026-05-30
+
+Release infrastructure patch.
+
+- GitHub Actions now exports the installed Code Intel tool bin directory through `GITHUB_PATH`, so later CI steps can find the Sentrux shim.
+- Release workflow is idempotent: if a GitHub Release already exists for a tag, it uploads or replaces the zip asset instead of failing.
+- Release package avoids bundling local `pipeline.config.json`; it ships `pipeline.config.example.json` instead.
+
 ## v0.1.0 - 2026-05-30
 
 Code Intel Pipeline 的第一个公开版本。
