@@ -654,10 +654,26 @@ function Get-SourceFiles {
 function Get-ModuleName {
     param([string]$RelativePath)
 
-    $normalized = $RelativePath -replace "\\", "/"
+    $normalized = Normalize-RelativeFilePath $RelativePath
     $parts = @($normalized -split "/" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     if ($parts.Count -eq 0) { return "root" }
-    if ($parts[0] -eq "src" -and $parts.Count -gt 1) { return "src/$($parts[1])" }
+    if ($parts.Count -eq 1) { return $parts[0] }
+
+    if ($parts[0] -eq "backend") {
+        if ($parts.Count -ge 3 -and $parts[1] -in @("app", "src", "tests")) {
+            return "backend/$($parts[1])/$($parts[2])"
+        }
+        return "backend/$($parts[1])"
+    }
+
+    if ($parts[0] -in @("app", "src", "tests")) {
+        return "$($parts[0])/$($parts[1])"
+    }
+
+    if ($parts[0] -in @("frontend", "integrations", "research", "scripts", "services")) {
+        return "$($parts[0])/$($parts[1])"
+    }
+
     return $parts[0]
 }
 
