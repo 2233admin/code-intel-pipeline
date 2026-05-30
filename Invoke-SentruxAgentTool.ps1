@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet("scan", "health", "session_start", "session_end", "rescan", "check_rules", "evolution", "dsm", "test_gaps", "what_if")]
+    [ValidateSet("scan", "health", "session_start", "session_end", "rescan", "check_rules", "evolution", "dsm", "git_stats", "test_gaps", "what_if", "sentrux_scan", "sentrux_health", "sentrux_dsm", "sentrux_git_stats", "sentrux_test_gaps")]
     [string]$Tool,
 
     [Parameter(Position = 1)]
@@ -358,16 +358,19 @@ function Invoke-ScanTool {
     $metrics = $gate["metrics"]
     $pollutionSignals = @(Get-PollutionSignals $TargetPath)
     $scopeCandidates = @(Find-ScopeCandidates $TargetPath)
+    $baselineExists = Test-Path -LiteralPath $baselinePath -PathType Leaf
+    $rulesExists = Test-Path -LiteralPath $rulesPath -PathType Leaf
+    $status = if (-not $baselineExists) { "baseline_missing" } else { $gate["status"] }
 
     return [ordered]@{
         tool = $ToolName
         path = $TargetPath
-        status = $gate["status"]
+        status = $status
         quality_signal = $metrics["quality_signal"]
         files = if ($metrics["scan"].Contains("files")) { $metrics["scan"]["files"] } else { $null }
         bottleneck = $gate["bottleneck"]
-        baseline_exists = Test-Path -LiteralPath $baselinePath -PathType Leaf
-        rules_exists = Test-Path -LiteralPath $rulesPath -PathType Leaf
+        baseline_exists = $baselineExists
+        rules_exists = $rulesExists
         pollution_signals = $pollutionSignals
         scope_candidates = $scopeCandidates
         scope_hint = if ($pollutionSignals.Count -gt 0 -and $scopeCandidates.Count -gt 0) { "Use a scoped path instead of the repo root for Agent sessions." } else { $null }
@@ -513,7 +516,7 @@ function Get-SourceFiles {
     finally {
         Pop-Location
     }
-    $sourceExt = @(".py", ".ts", ".tsx", ".js", ".jsx", ".rs", ".go", ".java", ".cs")
+    $sourceExt = @(".ps1", ".psm1", ".py", ".ts", ".tsx", ".js", ".jsx", ".rs", ".go", ".java", ".cs")
     return @($files | Where-Object {
         $ext = [System.IO.Path]::GetExtension($_).ToLowerInvariant()
         $sourceExt -contains $ext
@@ -1163,6 +1166,34 @@ function Get-FunctionsFromJavaScriptLike {
     return $functions
 }
 
+function Get-FunctionsFromPowerShell {
+    param([string[]]$Lines)
+
+    $functions = @()
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $line = $Lines[$i]
+        $match = [regex]::Match($line, "^\s*function\s+([A-Za-z_][A-Za-z0-9_:-]*)")
+        if (-not $match.Success) { continue }
+        $end = Get-CLikeFunctionEndLine $Lines $i
+        $body = @($Lines[$i..$end])
+        $paramText = ""
+        $paramMatch = $body | Select-String -Pattern "^\s*param\s*\((.*)" -CaseSensitive:$false | Select-Object -First 1
+        if ($null -ne $paramMatch -and $paramMatch.Matches.Count -gt 0) {
+            $paramText = $paramMatch.Matches[0].Groups[1].Value
+        }
+        $functions += New-FunctionMetric `
+            -Name $match.Groups[1].Value `
+            -Kind "function" `
+            -StartLine ($i + 1) `
+            -EndLine ($end + 1) `
+            -BodyLines $body `
+            -Params $paramText `
+            -IsAsync $false `
+            -IsPublic $true
+    }
+    return $functions
+}
+
 function Get-FileDetail {
     param(
         [string]$TargetPath,
@@ -1184,6 +1215,8 @@ function Get-FileDetail {
         ".tsx" { "typescript" }
         ".js" { "javascript" }
         ".jsx" { "javascript" }
+        ".ps1" { "powershell" }
+        ".psm1" { "powershell" }
         ".go" { "go" }
         ".java" { "java" }
         ".cs" { "csharp" }
@@ -1195,6 +1228,7 @@ function Get-FileDetail {
         "rust" { Get-FunctionsFromRust $lines }
         "typescript" { Get-FunctionsFromJavaScriptLike $lines }
         "javascript" { Get-FunctionsFromJavaScriptLike $lines }
+        "powershell" { Get-FunctionsFromPowerShell $lines }
         default { @() }
     })
 
@@ -1518,6 +1552,125 @@ function Invoke-TestGapsTool {
             test_files = $testTotal
             largest_gap = if ($gaps.Count -gt 0) { $gaps[0] } else { $null }
         }
+    }
+}
+
+function Invoke-GitStatsTool {
+    param([string]$TargetPath)
+
+    $files = @(Get-SourceFiles $TargetPath)
+    $gitSignals = Get-GitFileSignals $TargetPath $files
+    $authorSignals = Get-GitAuthorSignals $TargetPath $files
+
+    $dirtyFiles = 0
+    $untrackedFiles = 0
+    $trackedFiles = 0
+    $totalChurn = 0
+    $ageValues = @()
+    $authorTotals = @{}
+    $moduleStats = @{}
+    $fileStats = @()
+
+    foreach ($file in $files) {
+        $key = Normalize-RelativeFilePath $file
+        $git = if ($gitSignals.ContainsKey($key)) { $gitSignals[$key] } else { $null }
+        $authors = if ($authorSignals.ContainsKey($key)) { $authorSignals[$key] } else { $null }
+        $module = Get-ModuleName $key
+
+        if (-not $moduleStats.ContainsKey($module)) {
+            $moduleStats[$module] = [ordered]@{
+                module = $module
+                files = 0
+                churn = 0
+                dirty_files = 0
+                untracked_files = 0
+                authors = @{}
+            }
+        }
+
+        $churn = if ($null -ne $git) { [int]$git["churn"] } else { 0 }
+        $dirty = $null -ne $git -and [bool]$git["dirty"]
+        $untracked = $null -ne $git -and [bool]$git["untracked"]
+        $ageDays = if ($null -ne $git) { $git["age_days"] } else { $null }
+
+        if ($dirty) { $dirtyFiles++ }
+        if ($untracked) { $untrackedFiles++ } else { $trackedFiles++ }
+        if ($null -ne $ageDays) { $ageValues += [int]$ageDays }
+        $totalChurn += $churn
+
+        $moduleStats[$module]["files"] = [int]$moduleStats[$module]["files"] + 1
+        $moduleStats[$module]["churn"] = [int]$moduleStats[$module]["churn"] + $churn
+        if ($dirty) { $moduleStats[$module]["dirty_files"] = [int]$moduleStats[$module]["dirty_files"] + 1 }
+        if ($untracked) { $moduleStats[$module]["untracked_files"] = [int]$moduleStats[$module]["untracked_files"] + 1 }
+
+        $fileAuthors = @()
+        if ($null -ne $authors) {
+            $fileAuthors = @(Convert-AuthorCounts $authors["authors"])
+            foreach ($author in $fileAuthors) {
+                $name = [string]$author["author"]
+                $touches = [int]$author["touches"]
+                if (-not $authorTotals.ContainsKey($name)) { $authorTotals[$name] = 0 }
+                if (-not $moduleStats[$module]["authors"].ContainsKey($name)) { $moduleStats[$module]["authors"][$name] = 0 }
+                $authorTotals[$name] = [int]$authorTotals[$name] + $touches
+                $moduleStats[$module]["authors"][$name] = [int]$moduleStats[$module]["authors"][$name] + $touches
+            }
+        }
+
+        $busEntry = New-BusFactorEntry (Get-StableId $key) $key $(if ($null -ne $authors) { $authors["authors"] } else { @{} }) 1
+        $fileStats += [ordered]@{
+            path = $key
+            module = $module
+            status = if ($null -ne $git) { [string]$git["status"] } else { "unknown" }
+            dirty = $dirty
+            untracked = $untracked
+            age_days = $ageDays
+            churn = $churn
+            last_commit_unix = if ($null -ne $git) { $git["last_commit_unix"] } else { $null }
+            last_author = if ($null -ne $authors) { $authors["last_author"] } else { $null }
+            author_count = $busEntry["bus_factor"]
+            bus_factor_risk = $busEntry["bus_factor_risk"]
+            authors = $fileAuthors
+        }
+    }
+
+    $moduleEntries = @($moduleStats.Keys | ForEach-Object {
+        $entry = $moduleStats[$_]
+        $bus = New-BusFactorEntry (Get-StableId $_) $_ $entry["authors"] ([int]$entry["files"]) ([ordered]@{
+            churn = [int]$entry["churn"]
+            dirty_files = [int]$entry["dirty_files"]
+            untracked_files = [int]$entry["untracked_files"]
+        })
+        [pscustomobject]$bus
+    } | Sort-Object { $_.bus_factor_risk }, { $_.churn } -Descending)
+
+    $authorEntries = @(Convert-AuthorCounts $authorTotals)
+    $avgAge = if ($ageValues.Count -gt 0) { [math]::Round((($ageValues | Measure-Object -Average).Average), 2) } else { $null }
+    $oldestAge = if ($ageValues.Count -gt 0) { [int](($ageValues | Measure-Object -Maximum).Maximum) } else { $null }
+    $newestAge = if ($ageValues.Count -gt 0) { [int](($ageValues | Measure-Object -Minimum).Minimum) } else { $null }
+
+    return [ordered]@{
+        tool = "git_stats"
+        path = $TargetPath
+        summary = [ordered]@{
+            files = $files.Count
+            tracked_files = $trackedFiles
+            dirty_files = $dirtyFiles
+            untracked_files = $untrackedFiles
+            total_churn = $totalChurn
+            avg_age_days = $avgAge
+            newest_age_days = $newestAge
+            oldest_age_days = $oldestAge
+            authors = $authorEntries.Count
+            modules = $moduleEntries.Count
+        }
+        hotspots = [ordered]@{
+            churn_files = @($fileStats | Sort-Object { $_["churn"] } -Descending | Select-Object -First 25)
+            stale_files = @($fileStats | Where-Object { $null -ne $_["age_days"] } | Sort-Object { $_["age_days"] } -Descending | Select-Object -First 25)
+            dirty_files = @($fileStats | Where-Object { $_["dirty"] -or $_["untracked"] } | Select-Object -First 25)
+            bus_factor_files = @($fileStats | Sort-Object { $_["bus_factor_risk"] } -Descending | Select-Object -First 25)
+        }
+        modules = $moduleEntries
+        authors = $authorEntries
     }
 }
 
@@ -2061,7 +2214,8 @@ function Invoke-EvolutionTool {
 }
 
 $targetPath = Resolve-Directory $Path
-$result = switch ($Tool) {
+$normalizedTool = if ($Tool.StartsWith("sentrux_")) { $Tool.Substring("sentrux_".Length) } else { $Tool }
+$result = switch ($normalizedTool) {
     "scan" { Invoke-ScanTool $targetPath }
     "health" { Invoke-HealthTool $targetPath }
     "session_start" { Invoke-SessionStartTool $targetPath $SessionId }
@@ -2070,6 +2224,7 @@ $result = switch ($Tool) {
     "check_rules" { Invoke-CheckRulesTool $targetPath }
     "evolution" { Invoke-EvolutionTool $targetPath $Recent }
     "dsm" { Invoke-DsmTool $targetPath }
+    "git_stats" { Invoke-GitStatsTool $targetPath }
     "test_gaps" { Invoke-TestGapsTool $targetPath }
     "what_if" { Invoke-WhatIfTool $targetPath }
 }

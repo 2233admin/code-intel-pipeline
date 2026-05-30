@@ -161,14 +161,26 @@ rescan
 check_rules
 evolution
 dsm
+git_stats
 test_gaps
 what_if
+```
+
+也支持 Agent/MCP 风格别名：
+
+```text
+sentrux_scan
+sentrux_health
+sentrux_dsm
+sentrux_git_stats
+sentrux_test_gaps
 ```
 
 常看三个：
 
 ```powershell
 .\Invoke-SentruxAgentTool.ps1 dsm C:\path\to\repo\backend
+.\Invoke-SentruxAgentTool.ps1 git_stats C:\path\to\repo\backend
 .\Invoke-SentruxAgentTool.ps1 evolution C:\path\to\repo\backend
 .\Invoke-SentruxAgentTool.ps1 what_if C:\path\to\repo\backend
 ```
@@ -176,6 +188,7 @@ what_if
 它们分别回答：
 
 - `dsm`：结构地图、9 种颜色模式、文件详情、函数复杂度。
+- `git_stats`：churn、age、dirty/untracked、作者分布、bus factor 风险。
 - `evolution`：热点、耦合、bus factor、历史趋势。
 - `what_if`：如果规则收紧，会卡住哪些模块/文件/函数。
 

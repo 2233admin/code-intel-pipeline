@@ -116,6 +116,8 @@ Then rerun the pipeline.
 
    The pipeline also writes `codenexus-context.json`. Read it when you need concrete hotspot files, recent commits, and reference hits instead of generic follow-up hints.
 
+   `Invoke-SentruxAgentTool.ps1` supports both short names and MCP-style aliases for common reads: `scan`/`sentrux_scan`, `health`/`sentrux_health`, `dsm`/`sentrux_dsm`, `git_stats`/`sentrux_git_stats`, and `test_gaps`/`sentrux_test_gaps`.
+
 6. Read `understanding.md` before handing results to a teammate or another agent. It is the understanding-first layer: assumptions, verified facts, unverified areas, human inspection, and next action.
 
 7. If the user asks whether the stack is healthy, answer from:

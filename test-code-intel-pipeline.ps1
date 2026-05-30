@@ -177,6 +177,7 @@ if ($null -eq $codeNexusArtifact.summary -or $null -eq $codeNexusArtifact.files)
 
 $sentruxAgentHealth = $null
 $sentruxAgentDsm = $null
+$sentruxAgentGitStats = $null
 $sentruxTarget = $null
 $sentruxPathProperty = $report.PSObject.Properties["sentruxPath"]
 if ($null -ne $sentruxPathProperty) {
@@ -191,12 +192,23 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTarget) -and (Test-Path -LiteralPa
     if ($null -eq $dsm -or $dsm.color_modes.Count -ne 9) {
         throw "Sentrux Agent DSM wrapper did not return 9 color modes."
     }
+    $gitStats = & $sentruxAgentTool sentrux_git_stats $sentruxTarget | ConvertFrom-Json
+    if ($null -eq $gitStats -or $null -eq $gitStats.summary -or $null -eq $gitStats.hotspots) {
+        throw "Sentrux Agent git_stats wrapper did not return summary and hotspots."
+    }
     $sentruxAgentDsm = [ordered]@{
         defaultColorMode = $dsm.default_color_mode
         colorModes = $dsm.color_modes.Count
         modules = $dsm.modules.Count
         files = $dsm.file_details.Count
         functions = [int](($dsm.file_details | Measure-Object -Property function_count -Sum).Sum)
+    }
+    $sentruxAgentGitStats = [ordered]@{
+        files = [int]$gitStats.summary.files
+        dirtyFiles = [int]$gitStats.summary.dirty_files
+        untrackedFiles = [int]$gitStats.summary.untracked_files
+        totalChurn = [int]$gitStats.summary.total_churn
+        authors = [int]$gitStats.summary.authors
     }
 }
 
@@ -214,6 +226,7 @@ $result = [ordered]@{
     failureCategories = $report.summary.failureCategories
     sentruxAgentHealth = $sentruxAgentHealth
     sentruxAgentDsm = $sentruxAgentDsm
+    sentruxAgentGitStats = $sentruxAgentGitStats
     codeNexusContext = [ordered]@{
         path = [string]$report.codeNexusContext.path
         files = [int]$report.codeNexusContext.files
