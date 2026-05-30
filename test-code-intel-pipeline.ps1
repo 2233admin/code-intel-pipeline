@@ -117,6 +117,16 @@ $graphMissingOnly = (
     [int]$report.summary.failureCategories.sentruxFail -eq 0
 )
 if ($pipelineExitCode -ne 0 -and -not ($AllowGraphMissing -and $graphMissingOnly)) {
+    $failedSteps = @($report.steps | Where-Object { $_.status -eq "failed" } | ForEach-Object {
+        [ordered]@{
+            name = $_.name
+            status = $_.status
+            error = $_.error
+        }
+    })
+    Write-Host "Pipeline exit code: $pipelineExitCode"
+    Write-Host "Failure categories: $($report.summary.failureCategories | ConvertTo-Json -Compress)"
+    Write-Host "Failed steps: $($failedSteps | ConvertTo-Json -Compress)"
     throw "Pipeline run failed for repo: $label"
 }
 if ($null -eq $report.sentruxInsight) {
