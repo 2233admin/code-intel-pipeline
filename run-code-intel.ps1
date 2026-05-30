@@ -612,6 +612,45 @@ function New-CodeIntelHospitalReport {
         $severity = "amber"
         $primaryDiagnosis = "known modernization debt"
     }
+    $nextProtocol = if ($FailureCounts.localToolError -gt 0) {
+        "triage"
+    }
+    elseif ($FailureCounts.graphMissing -gt 0) {
+        "diagnose"
+    }
+    elseif (-not [bool]$SentruxInsight["rulesExists"]) {
+        "govern"
+    }
+    elseif ($failingWhatIf.Count -gt 0) {
+        "surgery_plan"
+    }
+    else {
+        "post_op"
+    }
+    $disposition = if ($severity -eq "green") {
+        "discharge_ready"
+    }
+    elseif ($severity -eq "amber") {
+        "admit"
+    }
+    else {
+        "admit"
+    }
+    $admissionReason = switch ($primaryDiagnosis) {
+        "clean snapshot" { "No active inpatient issue; ready for discharge after post-op verification." }
+        "architecture graph missing" { "Admit for diagnostic imaging: Understand graph is missing or stale." }
+        "ungoverned structural scope" { "Admit for governance: rules are missing for the selected scope." }
+        "known modernization debt" { "Admit for planned surgery: what-if scenarios show debt that should be scheduled, not ignored." }
+        "architecture gate failure" { "Admit for structural treatment: Sentrux gate or rules failed." }
+        "local tool failure" { "Admit for triage: local toolchain failed before diagnosis can be trusted." }
+        default { "Admit until the next protocol clears the diagnosis." }
+    }
+    $dischargeCriteria = @(
+        "failure category counters are zero",
+        "Sentrux check and gate pass for the governed scope",
+        "hospital triage status is green or explicitly accepted for observation",
+        "session_end reports no quality regression after Agent edits"
+    )
 
     $findings = @()
     if ($inventoryFiles -gt 0) { $findings += "X-ray inventory found $inventoryFiles files." }
@@ -706,9 +745,12 @@ function New-CodeIntelHospitalReport {
         }
         triage = [ordered]@{
             status = $severity
+            disposition = $disposition
             primary_diagnosis = $primaryDiagnosis
             overall_score = $overallScore
-            next_protocol = if ($FailureCounts.localToolError -gt 0) { "triage" } elseif ($FailureCounts.graphMissing -gt 0) { "diagnose" } elseif (-not [bool]$SentruxInsight["rulesExists"]) { "govern" } elseif ($failingWhatIf.Count -gt 0) { "surgery_plan" } else { "post_op" }
+            next_protocol = $nextProtocol
+            admission_reason = $admissionReason
+            discharge_criteria = $dischargeCriteria
         }
         modalities = $modalities
         report_quality = [ordered]@{
@@ -750,7 +792,9 @@ function Convert-HospitalReportToMarkdown {
         "- Repo: $($Hospital.repo)",
         "- Mode: $($Hospital.mode)",
         "- Status: $($Hospital.triage.status)",
+        "- Disposition: $($Hospital.triage.disposition)",
         "- Primary diagnosis: $($Hospital.triage.primary_diagnosis)",
+        "- Admission reason: $($Hospital.triage.admission_reason)",
         "- Overall score: $($Hospital.triage.overall_score)",
         "- Next protocol: $($Hospital.triage.next_protocol)",
         "",
@@ -772,6 +816,11 @@ function Convert-HospitalReportToMarkdown {
     $lines += ""
     $lines += "## Treatment"
     foreach ($item in @($Hospital.treatment.plan)) {
+        $lines += "- $item"
+    }
+    $lines += ""
+    $lines += "## Discharge Criteria"
+    foreach ($item in @($Hospital.triage.discharge_criteria)) {
         $lines += "- $item"
     }
     $lines += ""
@@ -1427,6 +1476,7 @@ $report = [ordered]@{
         markdown = $hospitalMarkdownPath
         schema = $hospitalReport.schema
         status = $hospitalReport.triage.status
+        disposition = $hospitalReport.triage.disposition
         primaryDiagnosis = $hospitalReport.triage.primary_diagnosis
         overallScore = $hospitalReport.triage.overall_score
         nextProtocol = $hospitalReport.triage.next_protocol
@@ -1471,6 +1521,7 @@ $summaryLines = @(
     "- Graph missing: $($failureCounts.graphMissing)",
     "- Sentrux fail: $($failureCounts.sentruxFail)",
     "- Hospital status: $($hospitalReport.triage.status)",
+    "- Hospital disposition: $($hospitalReport.triage.disposition)",
     "- Hospital score: $($hospitalReport.triage.overall_score)",
     "- Next protocol: $($hospitalReport.triage.next_protocol)",
     "",
@@ -1484,7 +1535,9 @@ $summaryLines += "## Hospital"
 $summaryLines += "- Report: $hospitalReportPath"
 $summaryLines += "- Markdown: $hospitalMarkdownPath"
 $summaryLines += "- Status: $($hospitalReport.triage.status)"
+$summaryLines += "- Disposition: $($hospitalReport.triage.disposition)"
 $summaryLines += "- Primary diagnosis: $($hospitalReport.triage.primary_diagnosis)"
+$summaryLines += "- Admission reason: $($hospitalReport.triage.admission_reason)"
 $summaryLines += "- Overall score: $($hospitalReport.triage.overall_score)"
 $summaryLines += "- Next protocol: $($hospitalReport.triage.next_protocol)"
 foreach ($modality in @($hospitalReport.modalities)) {
@@ -1593,7 +1646,7 @@ $understandingLines = @(
     "- CodeNexus context: $(if ($null -ne $codeNexusContextSummary) { '``' + $codeNexusContextSummary.path + '``' } else { 'not generated' })",
     "- Tools: rg=$($toolState.rg), git=$($toolState.git), repowise=$($toolState.repowise), sentrux=$($toolState.sentrux)",
     "- Passed steps: $(Join-StatusNames $passedSteps)",
-    "- Hospital: status=$($hospitalReport.triage.status), score=$($hospitalReport.triage.overall_score), next=$($hospitalReport.triage.next_protocol)",
+    "- Hospital: status=$($hospitalReport.triage.status), disposition=$($hospitalReport.triage.disposition), score=$($hospitalReport.triage.overall_score), next=$($hospitalReport.triage.next_protocol)",
     "",
     "## Unverified Or Inferred",
     "- Understand graph: $(if ($graphStep.Count -gt 0) { $graphStep[0].status } else { 'not checked' })",

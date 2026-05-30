@@ -337,7 +337,13 @@ codenexus-context.json
 - `chart`：Repowise 项目病历和长期语义记忆。
 - `governance`：Sentrux rules + gate，执行架构院规。
 
-`hospital.md` 给人读，`hospital-report.json` 给 Agent/CI 读。核心字段是 `triage.primary_diagnosis`、`triage.overall_score` 和 `triage.next_protocol`。
+`hospital.md` 给人读，`hospital-report.json` 给 Agent/CI 读。核心字段是 `triage.disposition`、`triage.primary_diagnosis`、`triage.overall_score` 和 `triage.next_protocol`。
+
+`triage.disposition` 是总处置：
+
+- `admit`：住院。还有结构病灶、缺图谱、缺规则、门禁失败或待排期手术。
+- `observe`：留观。可接受但需要复查。
+- `discharge_ready`：可出院。规则、门禁、诊断和术后复查都满足放行标准。
 
 完整协议见 `docs/hospital-mode.md`。
 

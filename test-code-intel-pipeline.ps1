@@ -190,6 +190,18 @@ if ([string]$hospitalArtifact.schema -ne "code-intel-hospital.v1") {
 if ($null -eq $hospitalArtifact.triage -or [string]::IsNullOrWhiteSpace([string]$hospitalArtifact.triage.primary_diagnosis)) {
     throw "hospital-report.json is missing triage diagnosis."
 }
+if ([string]::IsNullOrWhiteSpace([string]$hospitalArtifact.triage.disposition)) {
+    throw "hospital-report.json is missing triage disposition."
+}
+if ($hospitalArtifact.triage.disposition -notin @("admit", "observe", "discharge_ready")) {
+    throw "hospital-report.json has an invalid triage disposition."
+}
+if ([string]::IsNullOrWhiteSpace([string]$hospitalArtifact.triage.admission_reason)) {
+    throw "hospital-report.json is missing admission reason."
+}
+if ($null -eq $hospitalArtifact.triage.discharge_criteria -or $hospitalArtifact.triage.discharge_criteria.Count -lt 1) {
+    throw "hospital-report.json is missing discharge criteria."
+}
 if ($null -eq $hospitalArtifact.report_quality -or $null -eq $hospitalArtifact.report_quality.dimensions -or $hospitalArtifact.report_quality.dimensions.Count -lt 5) {
     throw "hospital-report.json is missing report quality dimensions."
 }
@@ -263,6 +275,7 @@ $result = [ordered]@{
         path = [string]$report.hospital.path
         markdown = [string]$report.hospital.markdown
         status = [string]$report.hospital.status
+        disposition = [string]$report.hospital.disposition
         primaryDiagnosis = [string]$report.hospital.primaryDiagnosis
         overallScore = [int]$report.hospital.overallScore
         nextProtocol = [string]$report.hospital.nextProtocol

@@ -20,6 +20,14 @@ Hospital mode is the product layer of Code Intel Pipeline. It turns raw tool out
 - `surgery_plan`: choose one hotspot, one boundary, and one verification command before editing.
 - `post_op`: rerun the pipeline or `session_end` after Agent edits and compare score, signal, and rules.
 
+## Disposition
+
+Every hospital report carries `triage.disposition`.
+
+- `admit`: keep the project in the hospital. Use this for missing graph, missing rules, Sentrux failures, local tool failures, or scheduled modernization debt.
+- `observe`: the project can continue with explicit follow-up checks.
+- `discharge_ready`: the project can leave the hospital after post-op verification. Do not mark discharge-ready merely because a scan completed.
+
 ## Artifacts
 
 - `hospital.md`: human-facing diagnosis report.
@@ -28,8 +36,10 @@ Hospital mode is the product layer of Code Intel Pipeline. It turns raw tool out
 The most important machine fields are:
 
 - `triage.primary_diagnosis`
+- `triage.disposition`
 - `triage.overall_score`
 - `triage.next_protocol`
+- `triage.discharge_criteria`
 - `report_quality.dimensions`
 - `treatment.plan`
 
