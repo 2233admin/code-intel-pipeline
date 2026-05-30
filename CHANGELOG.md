@@ -5,6 +5,7 @@
 Release infrastructure patch.
 
 - GitHub Actions now exports the installed Code Intel tool bin directory through `GITHUB_PATH`, so later CI steps can find the Sentrux shim.
+- CI smoke tests can explicitly allow the expected `graph_missing` manual step while still failing on local tool errors and Sentrux regressions.
 - Release workflow is idempotent: if a GitHub Release already exists for a tag, it uploads or replaces the zip asset instead of failing.
 - Release package avoids bundling local `pipeline.config.json`; it ships `pipeline.config.example.json` instead.
 

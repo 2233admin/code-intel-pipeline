@@ -10,7 +10,8 @@ param(
     [string]$SentruxPath = "",
 
     [switch]$SkipRepowise,
-    [switch]$RepowiseDocs
+    [switch]$RepowiseDocs,
+    [switch]$AllowGraphMissing
 )
 
 Set-StrictMode -Version Latest
@@ -64,9 +65,7 @@ if ($RepowiseDocs) {
     $runnerParams.RepowiseDocs = $true
 }
 & $runner @runnerParams
-if ($LASTEXITCODE -ne 0) {
-    throw "Pipeline run failed for repo: $label"
-}
+$pipelineExitCode = $LASTEXITCODE
 
 $repoName = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) { Split-Path -Leaf (Get-Item -LiteralPath $RepoPath).FullName } else { $Repo }
 $artifactRoot = if ($doctorJson.checks -and $doctorJson.checks.config -and (Test-Path -LiteralPath $Config -PathType Leaf)) {
@@ -110,6 +109,15 @@ foreach ($key in $requiredCategories) {
 }
 if ($missingCategories.Count -gt 0) {
     throw "Missing failure category counters: $($missingCategories -join ', ')"
+}
+$graphMissingOnly = (
+    [int]$report.summary.failureCategories.graphMissing -gt 0 -and
+    [int]$report.summary.failureCategories.providerQuota -eq 0 -and
+    [int]$report.summary.failureCategories.localToolError -eq 0 -and
+    [int]$report.summary.failureCategories.sentruxFail -eq 0
+)
+if ($pipelineExitCode -ne 0 -and -not ($AllowGraphMissing -and $graphMissingOnly)) {
+    throw "Pipeline run failed for repo: $label"
 }
 if ($null -eq $report.sentruxInsight) {
     throw "Missing sentruxInsight in report.json"
@@ -286,6 +294,7 @@ $result = [ordered]@{
     report = $reportPath
     summary = $summaryPath
     understanding = $understandingPath
+    pipelineExitCode = $pipelineExitCode
     steps = $report.steps.Count
     failed = $report.summary.failed
     manualRequired = $report.summary.manualRequired
