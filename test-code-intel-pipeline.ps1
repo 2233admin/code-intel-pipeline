@@ -183,6 +183,12 @@ if ([string]::IsNullOrWhiteSpace([string]$report.hospital.path) -or -not (Test-P
 if ([string]::IsNullOrWhiteSpace([string]$report.hospital.markdown) -or -not (Test-Path -LiteralPath ([string]$report.hospital.markdown) -PathType Leaf)) {
     throw "Missing hospital.md artifact."
 }
+if ([string]::IsNullOrWhiteSpace([string]$report.hospital.surgeryPlan) -or -not (Test-Path -LiteralPath ([string]$report.hospital.surgeryPlan) -PathType Leaf)) {
+    throw "Missing surgery-plan.json artifact."
+}
+if ([string]::IsNullOrWhiteSpace([string]$report.hospital.surgeryPlanMarkdown) -or -not (Test-Path -LiteralPath ([string]$report.hospital.surgeryPlanMarkdown) -PathType Leaf)) {
+    throw "Missing surgery-plan.md artifact."
+}
 $hospitalArtifact = Read-JsonFile ([string]$report.hospital.path)
 if ([string]$hospitalArtifact.schema -ne "code-intel-hospital.v1") {
     throw "hospital-report.json has an unexpected schema."
@@ -202,6 +208,15 @@ if ([string]::IsNullOrWhiteSpace([string]$hospitalArtifact.triage.admission_reas
 if ($null -eq $hospitalArtifact.triage.discharge_criteria -or $hospitalArtifact.triage.discharge_criteria.Count -lt 1) {
     throw "hospital-report.json is missing discharge criteria."
 }
+if ($null -eq $hospitalArtifact.state_machine -or [string]::IsNullOrWhiteSpace([string]$hospitalArtifact.state_machine.current_state)) {
+    throw "hospital-report.json is missing state machine current state."
+}
+if ($null -eq $hospitalArtifact.state_machine.transitions -or $hospitalArtifact.state_machine.transitions.Count -lt 5) {
+    throw "hospital-report.json is missing state machine transitions."
+}
+if ($null -eq $hospitalArtifact.policies -or $null -eq $hospitalArtifact.policies.admission -or $null -eq $hospitalArtifact.policies.discharge) {
+    throw "hospital-report.json is missing admission/discharge policies."
+}
 if ($null -eq $hospitalArtifact.report_quality -or $null -eq $hospitalArtifact.report_quality.dimensions -or $hospitalArtifact.report_quality.dimensions.Count -lt 5) {
     throw "hospital-report.json is missing report quality dimensions."
 }
@@ -210,6 +225,13 @@ if ($null -eq $hospitalArtifact.modalities -or $hospitalArtifact.modalities.Coun
 }
 if ($null -eq $hospitalArtifact.protocols -or $hospitalArtifact.protocols.Count -lt 5) {
     throw "hospital-report.json is missing hospital protocols."
+}
+$surgeryArtifact = Read-JsonFile ([string]$report.hospital.surgeryPlan)
+if ([string]$surgeryArtifact.schema -ne "code-intel-surgery-plan.v1") {
+    throw "surgery-plan.json has an unexpected schema."
+}
+if ($null -eq $surgeryArtifact.primary_target -or $null -eq $surgeryArtifact.verification -or $surgeryArtifact.verification.Count -lt 1) {
+    throw "surgery-plan.json is missing target or verification steps."
 }
 
 $sentruxAgentHealth = $null
@@ -274,8 +296,11 @@ $result = [ordered]@{
     hospital = [ordered]@{
         path = [string]$report.hospital.path
         markdown = [string]$report.hospital.markdown
+        surgeryPlan = [string]$report.hospital.surgeryPlan
+        surgeryPlanMarkdown = [string]$report.hospital.surgeryPlanMarkdown
         status = [string]$report.hospital.status
         disposition = [string]$report.hospital.disposition
+        currentState = [string]$report.hospital.currentState
         primaryDiagnosis = [string]$report.hospital.primaryDiagnosis
         overallScore = [int]$report.hospital.overallScore
         nextProtocol = [string]$report.hospital.nextProtocol

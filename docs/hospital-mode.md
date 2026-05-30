@@ -20,6 +20,16 @@ Hospital mode is the product layer of Code Intel Pipeline. It turns raw tool out
 - `surgery_plan`: choose one hotspot, one boundary, and one verification command before editing.
 - `post_op`: rerun the pipeline or `session_end` after Agent edits and compare score, signal, and rules.
 
+## State Machine
+
+Hospital mode has a formal state machine:
+
+```text
+triage -> diagnose -> govern -> surgery_plan -> post_op -> discharge_ready
+```
+
+`hospital-report.json.state_machine` records the current state, guard values, and transition pass/fail results. This keeps the workflow computable instead of relying on prose.
+
 ## Disposition
 
 Every hospital report carries `triage.disposition`.
@@ -32,6 +42,8 @@ Every hospital report carries `triage.disposition`.
 
 - `hospital.md`: human-facing diagnosis report.
 - `hospital-report.json`: machine-facing report with `triage`, `modalities`, `report_quality`, `diagnosis`, `treatment`, and `protocols`.
+- `surgery-plan.md`: human-facing first operation plan.
+- `surgery-plan.json`: machine-facing surgical target, operating plan, verification commands, and discharge criteria.
 
 The most important machine fields are:
 
@@ -40,8 +52,11 @@ The most important machine fields are:
 - `triage.overall_score`
 - `triage.next_protocol`
 - `triage.discharge_criteria`
+- `state_machine.current_state`
+- `state_machine.transitions`
 - `report_quality.dimensions`
 - `treatment.plan`
+- `surgery_plan.status`
 
 ## Operating Rule
 

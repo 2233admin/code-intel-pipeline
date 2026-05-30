@@ -312,6 +312,8 @@ understanding.md
 ```text
 hospital.md
 hospital-report.json
+surgery-plan.md
+surgery-plan.json
 ```
 
 Sentrux 结构产物：
@@ -344,6 +346,10 @@ codenexus-context.json
 - `admit`：住院。还有结构病灶、缺图谱、缺规则、门禁失败或待排期手术。
 - `observe`：留观。可接受但需要复查。
 - `discharge_ready`：可出院。规则、门禁、诊断和术后复查都满足放行标准。
+
+`state_machine` 把住院流程形式化：`triage -> diagnose -> govern -> surgery_plan -> post_op -> discharge_ready`。每条转移都有 guard 和 pass/fail。
+
+当 `triage.next_protocol = surgery_plan` 时，`surgery-plan.md` 会给出第一手术目标、对应 what-if 场景、CodeNexus 入口和术后复查命令。
 
 完整协议见 `docs/hospital-mode.md`。
 

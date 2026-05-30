@@ -149,7 +149,7 @@ The `evolution` output carries session trend plus hotspot, coupling, and bus-fac
 
 Pipeline runs persist map data as `sentrux-dsm.json`, panel data as `sentrux-file-details.json`, sorted sidebar data as `sentrux-hotspots.json`, evolution data as `sentrux-evolution.json`, simulated gate data as `sentrux-what-if.json`, CodeNexus context as `codenexus-context.json`, and the hospital layer as `hospital.md` plus `hospital-report.json` next to `summary.md`, `report.json`, and `understanding.md`.
 
-The hospital layer is the default human/agent diagnosis surface. It groups checks into modalities: `xray` (rg inventory), `anatomy` (Understand graph), `ct` (Sentrux DSM/hotspots), `mri` (CodeNexus localization), `pet` (execution-risk proxy from evolution/what-if/test gaps), `chart` (Repowise memory), and `governance` (rules/gate). Read `hospital.md` after `summary.md` when deciding whether to triage, diagnose, govern, plan surgery, keep the project admitted, or run post-op verification. Machine readers should use `hospital-report.json` fields `triage.disposition`, `triage.primary_diagnosis`, `triage.overall_score`, `triage.next_protocol`, `triage.discharge_criteria`, `report_quality.dimensions`, and `treatment.plan`.
+The hospital layer is the default human/agent diagnosis surface. It groups checks into modalities: `xray` (rg inventory), `anatomy` (Understand graph), `ct` (Sentrux DSM/hotspots), `mri` (CodeNexus localization), `pet` (execution-risk proxy from evolution/what-if/test gaps), `chart` (Repowise memory), and `governance` (rules/gate). Read `hospital.md` after `summary.md` when deciding whether to triage, diagnose, govern, plan surgery, keep the project admitted, or run post-op verification. Machine readers should use `hospital-report.json` fields `triage.disposition`, `triage.primary_diagnosis`, `triage.overall_score`, `triage.next_protocol`, `triage.discharge_criteria`, `state_machine.current_state`, `state_machine.transitions`, `report_quality.dimensions`, and `treatment.plan`. When `next_protocol=surgery_plan`, read `surgery-plan.md` or `surgery-plan.json` for the first operation target and verification checklist.
 
 ## Provider Config
 
@@ -284,13 +284,14 @@ Check results in this order:
 3. summary counters
 4. failure category counters
 5. hospital disposition, triage status, overall score, and next protocol
-6. modality quality gaps in `hospital-report.json`
+6. state machine guards and modality quality gaps in `hospital-report.json`
 7. Understand graph state
 8. repowise state
 9. sentrux gate/check result
 10. sentrux insight deltas and CodeNexus hints
 11. exact missing tools or failed checks
 12. understanding report next action
+13. surgery plan target when `next_protocol=surgery_plan`
 
 For machine checks, use:
 
