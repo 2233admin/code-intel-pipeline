@@ -531,7 +531,7 @@ function Invoke-CheckRulesTool {
 }
 
 function Get-SourceExtensions {
-    return @(".ps1", ".psm1", ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".rs", ".go", ".java", ".cs")
+    return @(".ps1", ".psm1", ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".rs", ".go", ".java", ".cs", ".v")
 }
 
 function Get-ExcludedSourceReason {
@@ -1251,6 +1251,29 @@ function Get-FunctionsFromRust {
     return $functions
 }
 
+function Get-FunctionsFromV {
+    param([string[]]$Lines)
+
+    $functions = @()
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $line = $Lines[$i]
+        $match = [regex]::Match($line, "^\s*(pub\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)")
+        if (-not $match.Success) { continue }
+        $end = Get-CLikeFunctionEndLine $Lines $i
+        $body = @($Lines[$i..$end])
+        $functions += New-FunctionMetric `
+            -Name $match.Groups[2].Value `
+            -Kind "function" `
+            -StartLine ($i + 1) `
+            -EndLine ($end + 1) `
+            -BodyLines $body `
+            -Params $match.Groups[3].Value `
+            -IsAsync $false `
+            -IsPublic (-not [string]::IsNullOrWhiteSpace($match.Groups[1].Value))
+    }
+    return $functions
+}
+
 function Get-FunctionsFromJavaScriptLike {
     param([string[]]$Lines)
 
@@ -1346,6 +1369,7 @@ function Get-FileDetail {
         ".go" { "go" }
         ".java" { "java" }
         ".cs" { "csharp" }
+        ".v" { "vlang" }
         default { "unknown" }
     }
 
@@ -1355,6 +1379,7 @@ function Get-FileDetail {
         "typescript" { Get-FunctionsFromJavaScriptLike $lines }
         "javascript" { Get-FunctionsFromJavaScriptLike $lines }
         "powershell" { Get-FunctionsFromPowerShell $lines }
+        "vlang" { Get-FunctionsFromV $lines }
         default { @() }
     })
 
@@ -1462,7 +1487,7 @@ function Invoke-DsmTool {
     $edges = @{}
     foreach ($file in $files) {
         $ext = [System.IO.Path]::GetExtension($file).ToLowerInvariant()
-        if (@(".py", ".rs") -notcontains $ext) { continue }
+        if (@(".py", ".rs", ".v") -notcontains $ext) { continue }
         $from = Get-ModuleName $file
         $content = Get-Content -LiteralPath (Join-Path $TargetPath $file) -Raw -ErrorAction SilentlyContinue
         if ([string]::IsNullOrWhiteSpace($content)) { continue }
@@ -1484,6 +1509,18 @@ function Invoke-DsmTool {
                 $target = "src/$($match.Groups[1].Value).rs"
                 if ($modules.Contains($target)) {
                     Add-DsmEdge $edges $from $target
+                }
+            }
+        }
+        elseif ($ext -eq ".v") {
+            foreach ($match in [regex]::Matches($content, "(?m)^\s*import\s+([A-Za-z_][A-Za-z0-9_\.]*)")) {
+                $root = ($match.Groups[1].Value -split "\.")[0]
+                $targets = @($root, "$root.v", ($match.Groups[1].Value -replace "\.", "/"))
+                foreach ($target in $targets) {
+                    if ($modules.Contains($target)) {
+                        Add-DsmEdge $edges $from $target
+                        break
+                    }
                 }
             }
         }

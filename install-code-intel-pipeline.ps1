@@ -9,6 +9,7 @@ param(
     [switch]$AuditInstallPlan,
     [switch]$RequireRepowise,
     [switch]$RequireUnderstand,
+    [switch]$SkipSentruxVlangOverlay,
     [switch]$Json
 )
 
@@ -300,6 +301,37 @@ function Install-SentruxShim {
     }
 }
 
+function Install-SentruxVlangPluginOverlay {
+    param(
+        [System.Collections.Generic.List[object]]$Actions,
+        [string]$Root
+    )
+
+    if ($SkipSentruxVlangOverlay) {
+        Add-InstallAction $Actions "sentrux-vlang-overlay" "not_requested" "skipped by -SkipSentruxVlangOverlay" ""
+        return
+    }
+
+    $overlayScript = Join-Path $Root "Install-SentruxVlangOverlay.ps1"
+    if (-not (Test-Path -LiteralPath $overlayScript -PathType Leaf)) {
+        Add-InstallAction $Actions "sentrux-vlang-overlay" "install_failed" "missing $overlayScript" "Restore Install-SentruxVlangOverlay.ps1 from the repository."
+        return
+    }
+
+    try {
+        $output = & $overlayScript 2>&1
+        $text = ($output | ForEach-Object { $_.ToString() } | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0) {
+            Add-InstallAction $Actions "sentrux-vlang-overlay" "install_failed" $text "Run .\Install-SentruxVlangOverlay.ps1 manually and inspect sentrux plugin validate output."
+            return
+        }
+        Add-InstallAction $Actions "sentrux-vlang-overlay" "installed" $text "Run sentrux plugin list to confirm vlang is listed."
+    }
+    catch {
+        Add-InstallAction $Actions "sentrux-vlang-overlay" "install_failed" $_.Exception.Message "Run .\Install-SentruxVlangOverlay.ps1 manually after sentrux is installed."
+    }
+}
+
 function Test-CommandOutput {
     param(
         [System.Collections.Generic.List[object]]$Checks,
@@ -399,6 +431,7 @@ Add-InstallPlan $installPlan "python" "winget" "winget install --id Python.Pytho
 Add-InstallPlan $installPlan "repowise" "pip" "python -m pip install --upgrade repowise" "Semantic index and wiki/docs memory." "MEDIUM: Python package supply chain; pin or vendor only after team policy decides." "Skip repowise with -SkipRepowise for exact-search-only runs."
 Add-InstallPlan $installPlan "sentrux" "cargo" "cargo install sentrux --locked" "Structural quality and regression gate." "MEDIUM: cargo source must be trusted; no automatic install if cargo is absent." "The repo-owned sentrux-lite core keeps scan/check/gate usable until the real binary is installed."
 Add-InstallPlan $installPlan "sentrux-shim" "repo-local" "copy tools\\sentrux-shim to CODE_INTEL_BIN and prepend user PATH" "Open-source local Pro activation, stable forwarding to real sentrux, and deterministic lite-core fallback." "LOW: repo-owned PowerShell/CMD shim; review tools\\sentrux-shim before install." "Set SENTRUX_AUTO_PRO=0 to disable auto Pro activation."
+Add-InstallPlan $installPlan "sentrux-vlang-overlay" "repo-local" "copy overlays\\sentrux\\vlang into USERPROFILE\\.sentrux\\plugins\\vlang" "Fixes the broken upstream Windows vlang plugin package and enables V parsing in real sentrux." "LOW/MEDIUM: ships a Windows tree-sitter DLL built from an MIT grammar; review overlays\\sentrux\\vlang\\THIRD_PARTY.md." "Use -SkipSentruxVlangOverlay to skip this local plugin patch."
 
 Install-MissingTool $installActions "rg" { Invoke-RipgrepInstall } "Install ripgrep with winget (`winget install --id BurntSushi.ripgrep.MSVC -e`) or ensure rg is on PATH."
 Install-MissingTool $installActions "git" { Invoke-WingetInstall "Git.Git" "Git for Windows" } "Install Git for Windows (`winget install --id Git.Git -e`) or ensure git is on PATH."
@@ -406,10 +439,13 @@ Install-MissingTool $installActions "python" { Invoke-WingetInstall "Python.Pyth
 Install-MissingTool $installActions "repowise" { Invoke-PipInstall "repowise" } "Install repowise into the active Python environment (`python -m pip install --upgrade repowise`)."
 Install-MissingTool $installActions "sentrux" { Invoke-SentruxInstall } "Install sentrux or ensure sentrux.exe is on PATH."
 Install-SentruxShim $installActions $root
+Install-SentruxVlangPluginOverlay $installActions $root
 
 $requiredFiles = @(
     "check-code-intel-tools.ps1",
     "invoke-code-intel.ps1",
+    "Install-SentruxVlangOverlay.ps1",
+    "Test-SentruxVlangOverlay.ps1",
     "run-code-intel.ps1",
     "Invoke-SentruxAgentTool.ps1",
     "Invoke-ScopedRepowise.ps1",
@@ -428,6 +464,9 @@ Test-File $checks "config" $Config $true
 Test-File $checks "sentrux-shim:cmd" (Join-Path $root "tools\sentrux-shim\sentrux.cmd") $true
 Test-File $checks "sentrux-shim:ps1" (Join-Path $root "tools\sentrux-shim\sentrux-shim.ps1") $true
 Test-File $checks "sentrux-shim:lite-core" (Join-Path $root "tools\sentrux-shim\sentrux-lite-core.ps1") $true
+Test-File $checks "sentrux-vlang-overlay:plugin" (Join-Path $root "overlays\sentrux\vlang\plugin.toml") $true
+Test-File $checks "sentrux-vlang-overlay:query" (Join-Path $root "overlays\sentrux\vlang\queries\tags.scm") $true
+Test-File $checks "sentrux-vlang-overlay:dll" (Join-Path $root "overlays\sentrux\vlang\grammars\windows-x86_64.dll") $true
 
 Test-Tool $checks "rg" $true "Install ripgrep or ensure rg is on PATH."
 Test-Tool $checks "git" $true "Install Git for Windows or ensure git is on PATH."
@@ -544,6 +583,7 @@ $result = [ordered]@{
     auditInstallPlan = [bool]$AuditInstallPlan
     requireRepowise = [bool]$RequireRepowise
     requireUnderstand = [bool]$RequireUnderstand
+    sentruxVlangOverlaySkipped = [bool]$SkipSentruxVlangOverlay
     installPlan = $installPlan
     installActions = $installActions
     missingRequired = $missingRequired

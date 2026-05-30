@@ -70,7 +70,7 @@ function Test-SkippedPath {
 function Get-CodeFiles {
     param([string]$TargetPath)
 
-    $extensions = @(".ps1", ".psm1", ".py", ".rs", ".go", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".java", ".cs", ".cpp", ".c", ".h", ".hpp")
+    $extensions = @(".ps1", ".psm1", ".py", ".rs", ".go", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".java", ".cs", ".cpp", ".c", ".h", ".hpp", ".v")
     $files = Get-ChildItem -LiteralPath $TargetPath -Recurse -File -ErrorAction SilentlyContinue |
         Where-Object {
             -not (Test-SkippedPath $_.FullName) -and

@@ -1,0 +1,35 @@
+[plugin]
+name = "vlang"
+display_name = "V"
+version = "0.2.0"
+extensions = ["v"]
+min_sentrux_version = "0.4.0"
+color_rgb = [80, 130, 200]
+
+[plugin.metadata]
+author = "sentrux"
+license = "MIT"
+
+[grammar]
+source = "https://github.com/nedpals/tree-sitter-v"
+ref = "master"
+abi_version = 13
+
+[queries]
+capabilities = ["functions", "classes", "imports"]
+
+[checksums]
+
+[semantics]
+is_executable = true
+import_extractor = ""
+
+[semantics.project]
+manifest_files = ["v.mod"]
+ignored_dirs = [".vcache"]
+
+[semantics.complexity]
+branch_nodes = ["if_expression", "for_statement", "match_expression", "else_branch"]
+logic_nodes = ["binary_expression"]
+logic_operators = ["&&", "||"]
+nesting_nodes = ["if_expression", "for_statement", "match_expression"]

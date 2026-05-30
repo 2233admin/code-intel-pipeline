@@ -40,6 +40,8 @@ D:\projects\_tools\code-intel-pipeline\bootstrap-new-machine.ps1 -RepoPath <repo
 
 The installer also installs the repo-owned Sentrux shim into `CODE_INTEL_BIN` or `%LOCALAPPDATA%\code-intel\bin`, prepends that directory to the user PATH, and verifies `sentrux pro status`. The shim auto-activates local open-source Pro features, forwards all non-`pro` commands to the real `sentrux.exe` when present, and falls back to `sentrux-lite-core.ps1` for portable `scan`, `health`, `check`, and `gate`.
 
+The installer applies the repo-owned Sentrux V overlay by default because the upstream Windows `vlang` standard plugin package is incomplete in Sentrux 0.5.7. The overlay lives under `overlays\sentrux\vlang`, installs with `Install-SentruxVlangOverlay.ps1`, and should make `sentrux plugin list` show `vlang v0.2.0 [v]`. Use `Test-SentruxVlangOverlay.ps1` to prove the plugin builds a real V graph with 2 files, 1 import, and 1 call. Use `-SkipSentruxVlangOverlay` only when explicitly testing upstream plugin behavior.
+
 For machine-readable bootstrap status, add `-Json` and read `installActions` first. Valid statuses are `already_present`, `not_requested`, `installed`, `installed_restart_required`, and `install_failed`.
 
 Use `-AuditInstallPlan` before `-InstallMissing` when reviewing a new teammate machine. Read `installPlan` in JSON output for installer source, command, purpose, and supply-chain risk notes.

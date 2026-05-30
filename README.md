@@ -102,6 +102,46 @@ $env:SENTRUX_AUTO_PRO = "0"
 
 真实 Sentrux core 存在时，shim 会自动用真实 core；不存在时用 lite core。lite core 的作用是保证部署闭环不断，不是替代完整产品。
 
+## Sentrux V 插件覆盖包
+
+Sentrux 0.5.7 自带的 Windows `vlang` 插件包是坏的：缺 `[grammar]`，也缺 `windows-x86_64.dll`。安装脚本会自动把仓库里的覆盖包装到：
+
+```text
+%USERPROFILE%\.sentrux\plugins\vlang
+```
+
+覆盖包在 `overlays\sentrux\vlang`，包含：
+
+- `plugin.toml`
+- `queries\tags.scm`
+- `grammars\windows-x86_64.dll`
+
+单独重装：
+
+```powershell
+.\Install-SentruxVlangOverlay.ps1
+```
+
+验证：
+
+```powershell
+sentrux plugin validate $env:USERPROFILE\.sentrux\plugins\vlang
+sentrux plugin list
+.\Test-SentruxVlangOverlay.ps1
+```
+
+正常结果里应该能看到：
+
+```text
+vlang v0.2.0 [v] — V
+```
+
+如果你明确不想安装这个覆盖包：
+
+```powershell
+.\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\repo -SkipSentruxVlangOverlay
+```
+
 ## 最常用命令
 
 先跑 doctor：
