@@ -232,6 +232,33 @@ function Get-Bottleneck {
     return "none"
 }
 
+function Get-RelativePathSafe {
+    param(
+        [string]$Base,
+        [string]$Path
+    )
+
+    try {
+        return [System.IO.Path]::GetRelativePath($Base, $Path)
+    }
+    catch {
+        try {
+            $baseFull = [System.IO.Path]::GetFullPath($Base)
+            $pathFull = [System.IO.Path]::GetFullPath($Path)
+            if (-not $baseFull.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+                $baseFull = $baseFull + [System.IO.Path]::DirectorySeparatorChar
+            }
+            $relative = ([uri]$baseFull).MakeRelativeUri([uri]$pathFull).ToString()
+            $relative = [uri]::UnescapeDataString($relative).Replace("/", [System.IO.Path]::DirectorySeparatorChar)
+            if ([string]::IsNullOrWhiteSpace($relative)) { return "." }
+            return $relative
+        }
+        catch {
+            return $Path
+        }
+    }
+}
+
 function Find-ScopeCandidates {
     param([string]$TargetPath)
 
@@ -249,7 +276,7 @@ function Find-ScopeCandidates {
         $scope = Split-Path -Parent (Split-Path -Parent $_.FullName)
         [ordered]@{
             path = $scope
-            relative_path = [System.IO.Path]::GetRelativePath($TargetPath, $scope)
+            relative_path = Get-RelativePathSafe $TargetPath $scope
             baseline = $_.FullName
         }
     })

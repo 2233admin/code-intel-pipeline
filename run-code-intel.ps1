@@ -175,7 +175,20 @@ function Get-RelativePathSafe {
         return [System.IO.Path]::GetRelativePath($Base, $Path)
     }
     catch {
-        return $Path
+        try {
+            $baseFull = [System.IO.Path]::GetFullPath($Base)
+            $pathFull = [System.IO.Path]::GetFullPath($Path)
+            if (-not $baseFull.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+                $baseFull = $baseFull + [System.IO.Path]::DirectorySeparatorChar
+            }
+            $relative = ([uri]$baseFull).MakeRelativeUri([uri]$pathFull).ToString()
+            $relative = [uri]::UnescapeDataString($relative).Replace("/", [System.IO.Path]::DirectorySeparatorChar)
+            if ([string]::IsNullOrWhiteSpace($relative)) { return "." }
+            return $relative
+        }
+        catch {
+            return $Path
+        }
     }
 }
 
