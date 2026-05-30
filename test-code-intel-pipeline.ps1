@@ -164,6 +164,16 @@ if ($null -eq $whatIfArtifact.scenarios -or $whatIfArtifact.scenarios.Count -lt 
 if ($null -eq $whatIfArtifact.summary -or $null -eq $whatIfArtifact.recommendations) {
     throw "sentrux-what-if.json artifact is missing summary or recommendations."
 }
+if ($null -eq $report.codeNexusContext) {
+    throw "Missing codeNexusContext in report.json"
+}
+if ([string]::IsNullOrWhiteSpace([string]$report.codeNexusContext.path) -or -not (Test-Path -LiteralPath ([string]$report.codeNexusContext.path) -PathType Leaf)) {
+    throw "Missing codenexus-context.json artifact."
+}
+$codeNexusArtifact = Read-JsonFile ([string]$report.codeNexusContext.path)
+if ($null -eq $codeNexusArtifact.summary -or $null -eq $codeNexusArtifact.files) {
+    throw "codenexus-context.json artifact is missing summary or files."
+}
 
 $sentruxAgentHealth = $null
 $sentruxAgentDsm = $null
@@ -204,6 +214,12 @@ $result = [ordered]@{
     failureCategories = $report.summary.failureCategories
     sentruxAgentHealth = $sentruxAgentHealth
     sentruxAgentDsm = $sentruxAgentDsm
+    codeNexusContext = [ordered]@{
+        path = [string]$report.codeNexusContext.path
+        files = [int]$report.codeNexusContext.files
+        references = [int]$report.codeNexusContext.references
+        recentCommits = [int]$report.codeNexusContext.recentCommits
+    }
 }
 
 $result | ConvertTo-Json -Depth 6

@@ -2,6 +2,8 @@ param(
     [string]$Config = "",
     [string]$Repo = "",
     [string]$RepoPath = "",
+    [switch]$RequireRepowise,
+    [switch]$RequireUnderstand,
     [switch]$Json
 )
 
@@ -184,7 +186,7 @@ elseif (-not [string]::IsNullOrWhiteSpace([string]$repoPath)) {
 $tools = @(
     Test-Tool "rg" $true
     Test-Tool "git" $true
-    Test-Tool "repowise" $true
+    Test-Tool "repowise" ([bool]$RequireRepowise)
     Test-Tool "sentrux" $true
 )
 $sentruxCore = Test-CommandOutput "sentrux-core" { sentrux check --help } "Enforce architectural rules"
@@ -221,14 +223,18 @@ foreach ($tool in $tools) {
 }
 if (-not $sentruxCore.found) { $missing.Add("sentrux core") }
 if (-not $sentruxPro.found) { $missing.Add("sentrux pro auto-activation") }
-if (-not $checks.understandAnything.skillFound) { $missing.Add("Understand Anything skill") }
-if (-not $checks.understandAnything.pluginFound) { $missing.Add("Understand Anything plugin") }
+if ($RequireUnderstand -and -not $checks.understandAnything.skillFound) { $missing.Add("Understand Anything skill") }
+if ($RequireUnderstand -and -not $checks.understandAnything.pluginFound) { $missing.Add("Understand Anything plugin") }
 if ($repoState -and -not $repoState.exists) { $missing.Add("repo path") }
 
 $result = [ordered]@{
     ok = $missing.Count -eq 0
     missing = $missing
     checks = $checks
+    strict = [ordered]@{
+        requireRepowise = [bool]$RequireRepowise
+        requireUnderstand = [bool]$RequireUnderstand
+    }
 }
 
 if ($Json) {

@@ -23,6 +23,18 @@ cd code-intel-pipeline
 .\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo -RepairSkillLinks -InstallMissing
 ```
 
+更傻瓜的一条命令：
+
+```powershell
+.\bootstrap-new-machine.ps1 -RepoPath C:\path\to\your\repo
+```
+
+它会连续跑安装、doctor、smoke test，并把结果写到：
+
+```text
+%LOCALAPPDATA%\code-intel\bootstrap\
+```
+
 如果你只想检查环境，不想自动装缺失工具：
 
 ```powershell
@@ -53,7 +65,8 @@ ANTHROPIC_AUTH_TOKEN=<你的 key>
 
 - 第一次运行自动写本地 Pro license。
 - `sentrux pro status / activate / deactivate` 可以直接用。
-- 其他命令全部转发给真实的 `sentrux.exe`。
+- 其他命令优先转发给真实的 `sentrux.exe`。
+- 如果机器上没有真实 core，会自动启用仓库内置的 `sentrux-lite-core.ps1`，保底支持 `scan / health / check / gate`。
 
 也就是说，新机器部署后应该能直接看到：
 
@@ -86,6 +99,8 @@ sentrux pro activate OSS-LOCAL-PRO
 ```powershell
 $env:SENTRUX_AUTO_PRO = "0"
 ```
+
+真实 Sentrux core 存在时，shim 会自动用真实 core；不存在时用 lite core。lite core 的作用是保证部署闭环不断，不是替代完整产品。
 
 ## 最常用命令
 
@@ -239,7 +254,10 @@ sentrux-file-details.json
 sentrux-hotspots.json
 sentrux-evolution.json
 sentrux-what-if.json
+codenexus-context.json
 ```
+
+`codenexus-context.json` 是自动生成的 CodeNexus-lite 上下文：热点文件、近期提交、引用搜索、下一步查询建议。它解决的是“Agent 下一步该看哪里”，不是只在报告里写一句空建议。
 
 ## 模式
 
@@ -288,3 +306,19 @@ sentrux-what-if.json
 ## 给 Agent 的一句话
 
 先跑安装器，再跑 doctor，再跑 normal。读 `summary.md`，如果失败看 `report.json`，如果要交接看 `understanding.md`。不要跳过 Sentrux baseline 和 rules，否则 Agent 只是在高速制造结构债。
+
+## CI
+
+仓库自带 GitHub Actions：
+
+```text
+.github/workflows/ci.yml
+```
+
+每次 push / PR 会在 Windows runner 上跑：
+
+```text
+install -> doctor -> smoke
+```
+
+CI 使用 Sentrux lite core 保底，所以不会因为 runner 没装真实 `sentrux.exe` 直接完蛋。

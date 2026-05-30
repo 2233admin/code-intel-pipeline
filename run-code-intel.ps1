@@ -798,11 +798,13 @@ $sentruxFileDetailsPath = Join-Path $runDir "sentrux-file-details.json"
 $sentruxHotspotsPath = Join-Path $runDir "sentrux-hotspots.json"
 $sentruxEvolutionPath = Join-Path $runDir "sentrux-evolution.json"
 $sentruxWhatIfPath = Join-Path $runDir "sentrux-what-if.json"
+$codeNexusContextPath = Join-Path $runDir "codenexus-context.json"
 $sentruxDsmSummary = $null
 $sentruxFileDetailsSummary = $null
 $sentruxHotspotsSummary = $null
 $sentruxEvolutionSummary = $null
 $sentruxWhatIfSummary = $null
+$codeNexusContextSummary = $null
 $sentruxAgentTool = Join-Path $PSScriptRoot "Invoke-SentruxAgentTool.ps1"
 if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -LiteralPath $sentruxAgentTool -PathType Leaf)) {
     try {
@@ -958,6 +960,37 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -Liter
     }
 }
 
+$codeNexusLiteTool = Join-Path $PSScriptRoot "Invoke-CodeNexusLite.ps1"
+if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -LiteralPath $codeNexusLiteTool -PathType Leaf)) {
+    try {
+        $global:LASTEXITCODE = 0
+        & $codeNexusLiteTool `
+            -RepoPath $repoPath `
+            -TargetPath $sentruxTargetPath `
+            -RunDir $runDir `
+            -OutputPath $codeNexusContextPath `
+            -MaxCommitsPerFile 0 `
+            -Quiet
+        if ($global:LASTEXITCODE -ne 0) {
+            throw "CodeNexus-lite exited with code $global:LASTEXITCODE"
+        }
+        if (-not (Test-Path -LiteralPath $codeNexusContextPath -PathType Leaf)) {
+            throw "CodeNexus-lite did not write $codeNexusContextPath"
+        }
+        $codeNexusObject = Get-Content -LiteralPath $codeNexusContextPath -Raw | ConvertFrom-Json
+        $codeNexusContextSummary = [ordered]@{
+            path = $codeNexusContextPath
+            files = $codeNexusObject.summary.files
+            references = $codeNexusObject.summary.references
+            recentCommits = $codeNexusObject.summary.recentCommits
+            topFile = if (@($codeNexusObject.files).Count -gt 0) { [string]$codeNexusObject.files[0].path } else { "" }
+        }
+    }
+    catch {
+        $notes.Add("CodeNexus-lite context was not generated: $($_.Exception.Message)")
+    }
+}
+
 $report = [ordered]@{
     repo = $repoPath
     repoInput = $Repo
@@ -975,6 +1008,7 @@ $report = [ordered]@{
     sentruxHotspots = $sentruxHotspotsSummary
     sentruxEvolution = $sentruxEvolutionSummary
     sentruxWhatIf = $sentruxWhatIfSummary
+    codeNexusContext = $codeNexusContextSummary
     notes = $notes
     failureClassifications = $failureClassifications
     summary = [ordered]@{
@@ -1043,6 +1077,9 @@ if ($null -ne $sentruxEvolutionSummary) {
 }
 if ($null -ne $sentruxWhatIfSummary) {
     $summaryLines += "- What-if: $($sentruxWhatIfSummary.path) (scenarios=$($sentruxWhatIfSummary.scenarios), failing=$($sentruxWhatIfSummary.failing), primaryRisk=$($sentruxWhatIfSummary.primaryRisk), topScenario=$($sentruxWhatIfSummary.topScenario))"
+}
+if ($null -ne $codeNexusContextSummary) {
+    $summaryLines += "- CodeNexus context: $($codeNexusContextSummary.path) (files=$($codeNexusContextSummary.files), references=$($codeNexusContextSummary.references), commits=$($codeNexusContextSummary.recentCommits), topFile=$($codeNexusContextSummary.topFile))"
 }
 foreach ($metric in $sentruxMetrics) {
     $summaryLines += "- Metric $($metric.name): $($metric.before) -> $($metric.after) (delta $($metric.delta), regressed=$($metric.regressed))"
@@ -1116,6 +1153,7 @@ $understandingLines = @(
     "- Sentrux hotspots: $(if ($null -ne $sentruxHotspotsSummary) { '``' + $sentruxHotspotsSummary.path + '``' } else { 'not generated' })",
     "- Sentrux evolution: $(if ($null -ne $sentruxEvolutionSummary) { '``' + $sentruxEvolutionSummary.path + '``' } else { 'not generated' })",
     "- Sentrux what-if: $(if ($null -ne $sentruxWhatIfSummary) { '``' + $sentruxWhatIfSummary.path + '``' } else { 'not generated' })",
+    "- CodeNexus context: $(if ($null -ne $codeNexusContextSummary) { '``' + $codeNexusContextSummary.path + '``' } else { 'not generated' })",
     "- Tools: rg=$($toolState.rg), git=$($toolState.git), repowise=$($toolState.repowise), sentrux=$($toolState.sentrux)",
     "- Passed steps: $(Join-StatusNames $passedSteps)",
     "",

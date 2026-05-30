@@ -216,8 +216,18 @@ function Inject-ProHelp {
 function Invoke-Core {
     param([string[]]$CoreArgs)
     Ensure-AutoActivation
-    $core = Resolve-Core
-    & $core @CoreArgs
+    try {
+        $core = Resolve-Core
+        & $core @CoreArgs
+    }
+    catch {
+        $shimDir = Split-Path -Parent $PSCommandPath
+        $liteCore = Join-Path $shimDir "sentrux-lite-core.ps1"
+        if (-not (Test-Path -LiteralPath $liteCore -PathType Leaf)) {
+            throw "Sentrux core executable not found and lite core is missing. Install sentrux.exe or restore sentrux-lite-core.ps1."
+        }
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $liteCore @CoreArgs
+    }
     exit $LASTEXITCODE
 }
 
@@ -259,10 +269,18 @@ if ($RemainingArgs.Count -eq 0 -or $RemainingArgs[0] -in @("-h", "--help", "help
         exit 0
     }
     catch {
-        Write-Output "Live codebase visualization and structural quality gate"
-        Write-Output ""
-        Write-Output "Commands:"
-        Write-Output "  pro        Manage local open-source Pro activation"
+        $shimDir = Split-Path -Parent $PSCommandPath
+        $liteCore = Join-Path $shimDir "sentrux-lite-core.ps1"
+        if (Test-Path -LiteralPath $liteCore -PathType Leaf) {
+            $help = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $liteCore --help 2>&1 | Out-String
+            Write-Output (Inject-ProHelp $help)
+        }
+        else {
+            Write-Output "Live codebase visualization and structural quality gate"
+            Write-Output ""
+            Write-Output "Commands:"
+            Write-Output "  pro        Manage local open-source Pro activation"
+        }
         exit 0
     }
 }

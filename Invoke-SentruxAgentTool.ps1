@@ -37,7 +37,14 @@ function Invoke-Native {
 
     $global:LASTEXITCODE = 0
     $started = Get-Date
-    $output = & $Command @Arguments 2>&1
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = & $Command @Arguments 2>&1
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     $finished = Get-Date
 
     return [pscustomobject][ordered]@{

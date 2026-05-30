@@ -32,7 +32,13 @@ Team bootstrap:
 D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -RepoPath <repo-path> -CheckProvider -RepairSkillLinks -InstallMissing
 ```
 
-The installer also installs the repo-owned Sentrux shim into `CODE_INTEL_BIN` or `%LOCALAPPDATA%\code-intel\bin`, prepends that directory to the user PATH, and verifies `sentrux pro status`. The shim auto-activates local open-source Pro features and forwards all non-`pro` commands to the real `sentrux.exe`.
+For one-command teammate setup, use:
+
+```powershell
+D:\projects\_tools\code-intel-pipeline\bootstrap-new-machine.ps1 -RepoPath <repo-path>
+```
+
+The installer also installs the repo-owned Sentrux shim into `CODE_INTEL_BIN` or `%LOCALAPPDATA%\code-intel\bin`, prepends that directory to the user PATH, and verifies `sentrux pro status`. The shim auto-activates local open-source Pro features, forwards all non-`pro` commands to the real `sentrux.exe` when present, and falls back to `sentrux-lite-core.ps1` for portable `scan`, `health`, `check`, and `gate`.
 
 For machine-readable bootstrap status, add `-Json` and read `installActions` first. Valid statuses are `already_present`, `not_requested`, `installed`, `installed_restart_required`, and `install_failed`.
 
@@ -107,6 +113,8 @@ For a full graph rebuild:
 Then rerun the pipeline.
 
 5. After each run, read `summary.md` first. Its `Sentrux Insight` section shows parsed quality/coupling/cycle/god-file deltas, scan scale, next actions, and CodeNexus follow-up hints. Open `report.json` when the summary shows failure, manual action, a category count above zero, or when the raw `sentruxInsight` object matters.
+
+   The pipeline also writes `codenexus-context.json`. Read it when you need concrete hotspot files, recent commits, and reference hits instead of generic follow-up hints.
 
 6. Read `understanding.md` before handing results to a teammate or another agent. It is the understanding-first layer: assumptions, verified facts, unverified areas, human inspection, and next action.
 

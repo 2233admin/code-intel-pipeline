@@ -36,7 +36,7 @@ It is built around one rule: keep the entrypoint small, keep tool roles explicit
 
 These exist because some repos are too dirty or too nested for raw `repowise init` at the root.
 `Invoke-SentruxAgentTool.ps1` exists for a different reason: agents need a narrow JSON contract for structure governance, not raw terminal prose.
-`tools/sentrux-shim` makes Sentrux Pro activation reproducible on new machines: the installer puts the shim in a PATH-prepended Code Intel bin directory, the shim auto-activates local open-source Pro features, and normal Sentrux commands still forward to the real binary.
+`tools/sentrux-shim` makes Sentrux Pro activation reproducible on new machines: the installer puts the shim in a PATH-prepended Code Intel bin directory, the shim auto-activates local open-source Pro features, and normal Sentrux commands still forward to the real binary when one exists. If the real binary is missing, `sentrux-lite-core.ps1` provides deterministic `scan`, `health`, `check`, and `gate` so a new machine still has a closed feedback loop.
 
 ## Why The Wrapper Exists
 
@@ -68,6 +68,8 @@ This classification is written into:
 - `summary.md`
 
 `report.json` also includes `sentruxInsight`, a deterministic bridge between Sentrux output and agent action. It records parsed quality, coupling, cycle, and god-file deltas, scan scale, next actions, and CodeNexus hints so an operator can move from "score changed" to "inspect this dependency flow" without rereading raw gate text.
+
+`codenexus-context.json` is the portable CodeNexus-lite layer. It selects files from Sentrux hotspots and DSM risk, then attaches recent git commits and reference hits. A full CodeNexus backend can replace this layer later; the contract is already artifact-first.
 
 For live Agent sessions, `Invoke-SentruxAgentTool.ps1` exposes `scan`, `health`, `session_start`, `session_end`, `rescan`, `check_rules`, `evolution`, `dsm`, `test_gaps`, and `what_if`. `session_start` saves the chosen scope baseline; `session_end` compares the current structure against that baseline and returns `pass`, `signal_before`, `signal_after`, and a short summary. It also reports root pollution and scope candidates so a nested `tools/` directory cannot quietly become the architecture score. `dsm` is the visualization handoff and carries 9 color modes: `Size`, `Coupling`, `TestGap`, `Age`, `Churn`, `Risk`, `Git`, `ExecDepth`, and `BlastRadius`. It also carries file detail data for side panels, including per-function LOC, complexity, parameter count, async/public flags, and source line ranges. `evolution` adds trend, hotspots, coupling, and bus-factor details. `what_if` simulates stricter gates before the team encodes them as rules.
 

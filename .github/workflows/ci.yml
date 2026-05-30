@@ -1,0 +1,36 @@
+name: code-intel-ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  windows-smoke:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ripgrep
+        shell: pwsh
+        run: choco install ripgrep -y --no-progress
+
+      - name: Install portable pipeline
+        shell: pwsh
+        run: .\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -Json
+
+      - name: Doctor
+        shell: pwsh
+        run: .\check-code-intel-tools.ps1 -RepoPath .
+
+      - name: Smoke
+        shell: pwsh
+        run: .\test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -Mode normal

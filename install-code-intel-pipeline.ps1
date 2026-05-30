@@ -7,6 +7,8 @@ param(
     [switch]$CheckProvider,
     [switch]$InstallMissing,
     [switch]$AuditInstallPlan,
+    [switch]$RequireRepowise,
+    [switch]$RequireUnderstand,
     [switch]$Json
 )
 
@@ -266,7 +268,8 @@ function Install-SentruxShim {
     $sourceDir = Join-Path $Root "tools\sentrux-shim"
     $sourcePs1 = Join-Path $sourceDir "sentrux-shim.ps1"
     $sourceCmd = Join-Path $sourceDir "sentrux.cmd"
-    if (-not (Test-Path -LiteralPath $sourcePs1 -PathType Leaf) -or -not (Test-Path -LiteralPath $sourceCmd -PathType Leaf)) {
+    $sourceLite = Join-Path $sourceDir "sentrux-lite-core.ps1"
+    if (-not (Test-Path -LiteralPath $sourcePs1 -PathType Leaf) -or -not (Test-Path -LiteralPath $sourceCmd -PathType Leaf) -or -not (Test-Path -LiteralPath $sourceLite -PathType Leaf)) {
         Add-InstallAction $Actions "sentrux-shim" "install_failed" "missing shim source under $sourceDir" "Restore tools\sentrux-shim from the repository."
         return
     }
@@ -280,6 +283,7 @@ function Install-SentruxShim {
         }
         Copy-Item -LiteralPath $sourcePs1 -Destination (Join-Path $shimDir "sentrux-shim.ps1") -Force
         Copy-Item -LiteralPath $sourceCmd -Destination (Join-Path $shimDir "sentrux.cmd") -Force
+        Copy-Item -LiteralPath $sourceLite -Destination (Join-Path $shimDir "sentrux-lite-core.ps1") -Force
         Add-UserPathPrefix $shimDir
 
         $statusOutput = & (Join-Path $shimDir "sentrux.cmd") pro status 2>&1
@@ -393,8 +397,8 @@ Add-InstallPlan $installPlan "rg" "winget or scoop" "winget install --id BurntSu
 Add-InstallPlan $installPlan "git" "winget" "winget install --id Git.Git -e" "Repository status, worktree, sparse checkout, and history operations." "LOW: foundational tool; ensure official Git for Windows package source." ""
 Add-InstallPlan $installPlan "python" "winget" "winget install --id Python.Python.3.11 -e" "Runs provider preflight and scoped repowise docs helper." "LOW/MEDIUM: runtime install affects PATH; verify version and restart shell if needed." "Use an already managed Python 3.11+ runtime."
 Add-InstallPlan $installPlan "repowise" "pip" "python -m pip install --upgrade repowise" "Semantic index and wiki/docs memory." "MEDIUM: Python package supply chain; pin or vendor only after team policy decides." "Skip repowise with -SkipRepowise for exact-search-only runs."
-Add-InstallPlan $installPlan "sentrux" "cargo" "cargo install sentrux --locked" "Structural quality and regression gate." "MEDIUM: cargo source must be trusted; no automatic install if cargo is absent." "Install a reviewed sentrux.exe on PATH."
-Add-InstallPlan $installPlan "sentrux-shim" "repo-local" "copy tools\\sentrux-shim to CODE_INTEL_BIN and prepend user PATH" "Open-source local Pro activation plus stable forwarding to the real sentrux binary." "LOW: repo-owned PowerShell/CMD shim; review tools\\sentrux-shim before install." "Set SENTRUX_AUTO_PRO=0 to disable auto Pro activation."
+Add-InstallPlan $installPlan "sentrux" "cargo" "cargo install sentrux --locked" "Structural quality and regression gate." "MEDIUM: cargo source must be trusted; no automatic install if cargo is absent." "The repo-owned sentrux-lite core keeps scan/check/gate usable until the real binary is installed."
+Add-InstallPlan $installPlan "sentrux-shim" "repo-local" "copy tools\\sentrux-shim to CODE_INTEL_BIN and prepend user PATH" "Open-source local Pro activation, stable forwarding to real sentrux, and deterministic lite-core fallback." "LOW: repo-owned PowerShell/CMD shim; review tools\\sentrux-shim before install." "Set SENTRUX_AUTO_PRO=0 to disable auto Pro activation."
 
 Install-MissingTool $installActions "rg" { Invoke-RipgrepInstall } "Install ripgrep with winget (`winget install --id BurntSushi.ripgrep.MSVC -e`) or ensure rg is on PATH."
 Install-MissingTool $installActions "git" { Invoke-WingetInstall "Git.Git" "Git for Windows" } "Install Git for Windows (`winget install --id Git.Git -e`) or ensure git is on PATH."
@@ -410,6 +414,8 @@ $requiredFiles = @(
     "Invoke-SentruxAgentTool.ps1",
     "Invoke-ScopedRepowise.ps1",
     "Run-ScopedRepowiseDocs.py",
+    "Invoke-CodeNexusLite.ps1",
+    "bootstrap-new-machine.ps1",
     "test-code-intel-pipeline.ps1",
     "test-code-intel-provider.ps1",
     "update-code-intel-index.ps1"
@@ -421,13 +427,14 @@ foreach ($file in $requiredFiles) {
 Test-File $checks "config" $Config $true
 Test-File $checks "sentrux-shim:cmd" (Join-Path $root "tools\sentrux-shim\sentrux.cmd") $true
 Test-File $checks "sentrux-shim:ps1" (Join-Path $root "tools\sentrux-shim\sentrux-shim.ps1") $true
+Test-File $checks "sentrux-shim:lite-core" (Join-Path $root "tools\sentrux-shim\sentrux-lite-core.ps1") $true
 
 Test-Tool $checks "rg" $true "Install ripgrep or ensure rg is on PATH."
 Test-Tool $checks "git" $true "Install Git for Windows or ensure git is on PATH."
 Test-Tool $checks "python" $true "Install Python 3.11+ or ensure python is on PATH."
-Test-Tool $checks "repowise" $true "Install repowise into the active Python environment."
+Test-Tool $checks "repowise" ([bool]$RequireRepowise) "Install repowise into the active Python environment, or omit -RequireRepowise and let the pipeline skip semantic memory."
 Test-Tool $checks "sentrux" $true "Install sentrux or ensure sentrux.exe is on PATH."
-Test-CommandOutput $checks "tool:sentrux-core" "tool" { sentrux check --help } "Enforce architectural rules" "Install the real sentrux binary; the shim only handles local Pro activation and forwards other commands."
+Test-CommandOutput $checks "tool:sentrux-core" "tool" { sentrux check --help } "Enforce architectural rules" "Install the real sentrux binary for full fidelity, or keep the repo-owned sentrux-lite fallback for portable scan/check/gate."
 Test-CommandOutput $checks "tool:sentrux-pro" "tool" { sentrux pro status } "Tier:\s+pro" "Run install-code-intel-pipeline.ps1 again so the repo shim is installed and auto activation is enabled."
 
 $userProfile = if ([string]::IsNullOrWhiteSpace($env:USERPROFILE)) { "C:\Users\Administrator" } else { $env:USERPROFILE }
@@ -449,7 +456,7 @@ $understandDetail = "missing"
 if ($understandFound) {
     $understandDetail = "found"
 }
-Add-Check $checks "skill:Understand Anything" "skill" $true $understandFound $understandDetail "Install or link the Understand Anything skill/plugin."
+Add-Check $checks "skill:Understand Anything" "skill" ([bool]$RequireUnderstand) $understandFound $understandDetail "Install or link the Understand Anything skill/plugin, or omit -RequireUnderstand and let the pipeline emit the /understand command as a manual step."
 
 Test-EnvVar $checks "ANTHROPIC_BASE_URL" $false "https://api.minimaxi.com/anthropic"
 Test-EnvVar $checks "REPOWISE_PROVIDER" $false "anthropic"
@@ -488,12 +495,19 @@ Test-Directory $checks "artifactRoot" $ArtifactRoot $false "The pipeline will cr
 if (-not [string]::IsNullOrWhiteSpace($Repo) -or -not [string]::IsNullOrWhiteSpace($RepoPath)) {
     $doctor = Join-Path $root "check-code-intel-tools.ps1"
     try {
-        $doctorRaw = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
-            & $doctor -Config $Config -RepoPath $RepoPath -Json
+        $doctorParams = @{
+            Config = $Config
+            Json = $true
+        }
+        if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
+            $doctorParams.RepoPath = $RepoPath
         }
         else {
-            & $doctor -Config $Config -Repo $Repo -Json
+            $doctorParams.Repo = $Repo
         }
+        if ($RequireRepowise) { $doctorParams.RequireRepowise = $true }
+        if ($RequireUnderstand) { $doctorParams.RequireUnderstand = $true }
+        $doctorRaw = & $doctor @doctorParams
         $doctorResult = $doctorRaw | ConvertFrom-Json
         $doctorName = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) { $RepoPath } else { $Repo }
         Add-Check $checks "doctor:$doctorName" "doctor" $true ([bool]$doctorResult.ok) (($doctorResult.missing -join ",")) "Fix missing doctor checks before running the pipeline."
@@ -528,6 +542,8 @@ $result = [ordered]@{
     providerChecked = [bool]$CheckProvider
     installMissing = [bool]$InstallMissing
     auditInstallPlan = [bool]$AuditInstallPlan
+    requireRepowise = [bool]$RequireRepowise
+    requireUnderstand = [bool]$RequireUnderstand
     installPlan = $installPlan
     installActions = $installActions
     missingRequired = $missingRequired
