@@ -13,7 +13,7 @@ It is built around one rule: keep the entrypoint small, keep tool roles explicit
    Environment doctor. Verifies local tools, Understand Anything presence, repo path, and Sentrux scope state.
 
 3. `run-code-intel.ps1`
-   Main orchestrator. Produces artifacts, summary, report, and failure classification.
+   Main orchestrator. Produces artifacts, summary, report, hospital diagnosis, and failure classification.
 
 4. Tool adapters
    - `rg`: exact inventory
@@ -70,6 +70,18 @@ This classification is written into:
 `report.json` also includes `sentruxInsight`, a deterministic bridge between Sentrux output and agent action. It records parsed quality, coupling, cycle, and god-file deltas, scan scale, next actions, and CodeNexus hints so an operator can move from "score changed" to "inspect this dependency flow" without rereading raw gate text.
 
 `codenexus-context.json` is the portable CodeNexus-lite layer. It selects files from Sentrux hotspots and DSM risk, then attaches recent git commits and reference hits. A full CodeNexus backend can replace this layer later; the contract is already artifact-first.
+
+`hospital-report.json` is the diagnosis layer over those artifacts. It does not replace the tools; it organizes their output into modalities and protocols:
+
+- `xray`: rg file inventory and repo surface.
+- `anatomy`: Understand Anything graph freshness.
+- `ct`: Sentrux DSM, hotspots, and file/function detail.
+- `mri`: CodeNexus impact localization.
+- `pet`: execution-risk proxy from evolution, what-if, and test gaps.
+- `chart`: Repowise long-term semantic memory.
+- `governance`: Sentrux rules, check, and gate.
+
+The human version is `hospital.md`. The machine version exposes `triage.primary_diagnosis`, `triage.overall_score`, `triage.next_protocol`, `report_quality.dimensions`, and `treatment.plan`. This is the product boundary for "code hospital" behavior: the pipeline decides whether the operator should triage, diagnose, govern, plan surgery, or run post-op verification.
 
 For live Agent sessions, `Invoke-SentruxAgentTool.ps1` exposes `scan`, `health`, `session_start`, `session_end`, `rescan`, `check_rules`, `evolution`, `dsm`, `test_gaps`, and `what_if`. `session_start` saves the chosen scope baseline; `session_end` compares the current structure against that baseline and returns `pass`, `signal_before`, `signal_after`, and a short summary. Root paths are valid inputs: the wrapper automatically excludes dependency, build-output, cache, and bundled static-asset code from governed source metrics, while reporting those exclusions under `scope.excluded_by_reason`. `dsm` is the visualization handoff and carries 9 color modes: `Size`, `Coupling`, `TestGap`, `Age`, `Churn`, `Risk`, `Git`, `ExecDepth`, and `BlastRadius`. It also carries file detail data for side panels, including per-function LOC, complexity, parameter count, async/public flags, and source line ranges. `evolution` adds trend, hotspots, coupling, and bus-factor details. `what_if` simulates stricter gates before the team encodes them as rules.
 

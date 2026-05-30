@@ -1,0 +1,11 @@
+# Code Intel Pipeline self-governance rules.
+#
+# This repository is an orchestration layer over external tools. Keep the
+# first gate conservative so it prevents new regressions without pretending
+# the current scripts are already fully decomposed.
+
+[constraints]
+max_cycles = 0
+max_coupling = "B"
+max_cc = 70
+no_god_files = true

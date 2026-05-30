@@ -307,6 +307,13 @@ report.json
 understanding.md
 ```
 
+医院报告：
+
+```text
+hospital.md
+hospital-report.json
+```
+
 Sentrux 结构产物：
 
 ```text
@@ -319,6 +326,20 @@ codenexus-context.json
 ```
 
 `codenexus-context.json` 是自动生成的 CodeNexus-lite 上下文：热点文件、近期提交、引用搜索、下一步查询建议。它解决的是“Agent 下一步该看哪里”，不是只在报告里写一句空建议。
+
+`hospital-report.json` 是 Code Intel Pipeline 的医院层。它把工具输出重新组织成检查分型、报告质量、诊断、治疗方案和复查协议：
+
+- `xray`：`rg` 文件清单，快，看项目骨架。
+- `anatomy`：Understand 图谱，看系统解剖结构。
+- `ct`：Sentrux DSM、热点、文件/函数详情，看结构切片。
+- `mri`：CodeNexus-lite 上下文，看影响面和下一步定位。
+- `pet`：Sentrux evolution / what-if / test gap 代理真实执行风险。
+- `chart`：Repowise 项目病历和长期语义记忆。
+- `governance`：Sentrux rules + gate，执行架构院规。
+
+`hospital.md` 给人读，`hospital-report.json` 给 Agent/CI 读。核心字段是 `triage.primary_diagnosis`、`triage.overall_score` 和 `triage.next_protocol`。
+
+完整协议见 `docs/hospital-mode.md`。
 
 ## 模式
 

@@ -174,6 +174,31 @@ $codeNexusArtifact = Read-JsonFile ([string]$report.codeNexusContext.path)
 if ($null -eq $codeNexusArtifact.summary -or $null -eq $codeNexusArtifact.files) {
     throw "codenexus-context.json artifact is missing summary or files."
 }
+if ($null -eq $report.hospital) {
+    throw "Missing hospital summary in report.json"
+}
+if ([string]::IsNullOrWhiteSpace([string]$report.hospital.path) -or -not (Test-Path -LiteralPath ([string]$report.hospital.path) -PathType Leaf)) {
+    throw "Missing hospital-report.json artifact."
+}
+if ([string]::IsNullOrWhiteSpace([string]$report.hospital.markdown) -or -not (Test-Path -LiteralPath ([string]$report.hospital.markdown) -PathType Leaf)) {
+    throw "Missing hospital.md artifact."
+}
+$hospitalArtifact = Read-JsonFile ([string]$report.hospital.path)
+if ([string]$hospitalArtifact.schema -ne "code-intel-hospital.v1") {
+    throw "hospital-report.json has an unexpected schema."
+}
+if ($null -eq $hospitalArtifact.triage -or [string]::IsNullOrWhiteSpace([string]$hospitalArtifact.triage.primary_diagnosis)) {
+    throw "hospital-report.json is missing triage diagnosis."
+}
+if ($null -eq $hospitalArtifact.report_quality -or $null -eq $hospitalArtifact.report_quality.dimensions -or $hospitalArtifact.report_quality.dimensions.Count -lt 5) {
+    throw "hospital-report.json is missing report quality dimensions."
+}
+if ($null -eq $hospitalArtifact.modalities -or $hospitalArtifact.modalities.Count -lt 5) {
+    throw "hospital-report.json is missing imaging modalities."
+}
+if ($null -eq $hospitalArtifact.protocols -or $hospitalArtifact.protocols.Count -lt 5) {
+    throw "hospital-report.json is missing hospital protocols."
+}
 
 $sentruxAgentHealth = $null
 $sentruxAgentDsm = $null
@@ -234,6 +259,14 @@ $result = [ordered]@{
     sentruxAgentHealth = $sentruxAgentHealth
     sentruxAgentDsm = $sentruxAgentDsm
     sentruxAgentGitStats = $sentruxAgentGitStats
+    hospital = [ordered]@{
+        path = [string]$report.hospital.path
+        markdown = [string]$report.hospital.markdown
+        status = [string]$report.hospital.status
+        primaryDiagnosis = [string]$report.hospital.primaryDiagnosis
+        overallScore = [int]$report.hospital.overallScore
+        nextProtocol = [string]$report.hospital.nextProtocol
+    }
     codeNexusContext = [ordered]@{
         path = [string]$report.codeNexusContext.path
         files = [int]$report.codeNexusContext.files

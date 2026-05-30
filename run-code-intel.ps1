@@ -414,6 +414,374 @@ function New-SentruxInsight {
     }
 }
 
+function Get-StepMatch {
+    param(
+        [object[]]$Steps,
+        [string]$Pattern,
+        [switch]$Last
+    )
+
+    $matches = @($Steps | Where-Object { [string]$_.name -like $Pattern })
+    if ($matches.Count -eq 0) { return $null }
+    if ($Last) { return $matches[-1] }
+    return $matches[0]
+}
+
+function Get-StepScore {
+    param([object]$Step)
+
+    if ($null -eq $Step) { return 0 }
+    switch ([string]$Step.status) {
+        "passed" { return 100 }
+        "manual_required" { return 55 }
+        "skipped" { return 35 }
+        default { return 0 }
+    }
+}
+
+function Get-FirstLine {
+    param([string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) { return "" }
+    return (($Text -split "\r?\n") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1)
+}
+
+function New-QualityDimension {
+    param(
+        [string]$Name,
+        [int]$Score,
+        [string]$Status,
+        [string]$Evidence
+    )
+
+    return [ordered]@{
+        name = $Name
+        score = [math]::Max(0, [math]::Min(100, $Score))
+        status = $Status
+        evidence = $Evidence
+    }
+}
+
+function New-Modality {
+    param(
+        [string]$Name,
+        [string]$Role,
+        [object]$Step,
+        [int]$Confidence,
+        [string]$Artifact,
+        [string]$Finding,
+        [string]$Limit
+    )
+
+    $status = if ($null -ne $Step) {
+        [string]$Step.status
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($Artifact)) {
+        "generated"
+    }
+    else {
+        "not_run"
+    }
+    return [ordered]@{
+        name = $Name
+        role = $Role
+        status = $status
+        confidence = [math]::Max(0, [math]::Min(100, $Confidence))
+        artifact = $Artifact
+        finding = $Finding
+        limit = $Limit
+        durationMs = if ($null -eq $Step -or $null -eq $Step.durationMs) { $null } else { [int]$Step.durationMs }
+    }
+}
+
+function New-HospitalProtocol {
+    param(
+        [string]$Name,
+        [string]$Status,
+        [string]$Command,
+        [string]$ExitCriteria
+    )
+
+    return [ordered]@{
+        name = $Name
+        status = $Status
+        command = $Command
+        exit_criteria = $ExitCriteria
+    }
+}
+
+function New-CodeIntelHospitalReport {
+    param(
+        [string]$RepoPath,
+        [string]$Mode,
+        [string]$RunDir,
+        [string]$ReportPath,
+        [string]$SummaryPath,
+        [string]$UnderstandingPath,
+        [object[]]$Steps,
+        [object]$FailureCounts,
+        [object]$SentruxInsight,
+        [object]$SentruxDsmSummary,
+        [object]$SentruxFileDetailsSummary,
+        [object]$SentruxHotspotsSummary,
+        [object]$SentruxEvolutionSummary,
+        [object]$SentruxWhatIfSummary,
+        [object]$CodeNexusContextSummary,
+        [string]$UnderstandCommand,
+        [object]$ToolState
+    )
+
+    $gitStep = Get-StepMatch $Steps "git status"
+    $inventoryStep = Get-StepMatch $Steps "rg file inventory"
+    $understandStep = Get-StepMatch $Steps "understand graph"
+    $repowiseStep = Get-StepMatch $Steps "repowise*" -Last
+    $sentruxCheckStep = Get-StepMatch $Steps "sentrux check"
+    $sentruxGateStep = Get-StepMatch $Steps "sentrux gate*" -Last
+
+    $dsmObject = if ($null -ne $SentruxDsmSummary -and (Test-Path -LiteralPath ([string]$SentruxDsmSummary.path) -PathType Leaf)) {
+        Read-JsonFileSafe ([string]$SentruxDsmSummary.path)
+    } else { $null }
+    $hotspotsObject = if ($null -ne $SentruxHotspotsSummary -and (Test-Path -LiteralPath ([string]$SentruxHotspotsSummary.path) -PathType Leaf)) {
+        Read-JsonFileSafe ([string]$SentruxHotspotsSummary.path)
+    } else { $null }
+    $whatIfObject = if ($null -ne $SentruxWhatIfSummary -and (Test-Path -LiteralPath ([string]$SentruxWhatIfSummary.path) -PathType Leaf)) {
+        Read-JsonFileSafe ([string]$SentruxWhatIfSummary.path)
+    } else { $null }
+    $codeNexusObject = if ($null -ne $CodeNexusContextSummary -and (Test-Path -LiteralPath ([string]$CodeNexusContextSummary.path) -PathType Leaf)) {
+        Read-JsonFileSafe ([string]$CodeNexusContextSummary.path)
+    } else { $null }
+
+    $inventoryFiles = 0
+    $inventoryMatch = [regex]::Match([string]$inventoryStep.output, "files=([0-9]+)")
+    if ($inventoryMatch.Success) { $inventoryFiles = [int]$inventoryMatch.Groups[1].Value }
+    $scanFiles = if ($SentruxInsight["scan"].Contains("files")) { [int]$SentruxInsight["scan"]["files"] } else { 0 }
+    $unresolvedImports = if ($SentruxInsight["scan"].Contains("unresolvedImports")) { [int]$SentruxInsight["scan"]["unresolvedImports"] } else { 0 }
+    $resolvedImports = if ($SentruxInsight["scan"].Contains("resolvedImports")) { [int]$SentruxInsight["scan"]["resolvedImports"] } else { 0 }
+    $totalImports = $resolvedImports + $unresolvedImports
+    $resolvedRatio = if ($totalImports -gt 0) { [math]::Round(($resolvedImports * 100.0) / $totalImports, 1) } else { $null }
+    $excludedFiles = if ($null -ne $dsmObject -and $null -ne $dsmObject.scope -and $null -ne $dsmObject.scope.excluded_files) { [int]$dsmObject.scope.excluded_files } else { 0 }
+    $sourceScopeStatus = if ($inventoryFiles -gt 0 -and $scanFiles -gt 0) { "measured" } elseif ($inventoryFiles -gt 0) { "inventory_only" } else { "missing" }
+
+    $rulesScore = if ([bool]$SentruxInsight["rulesExists"]) { 100 } else { 45 }
+    $gateScore = Get-StepScore $sentruxGateStep
+    $checkScore = Get-StepScore $sentruxCheckStep
+    $graphScore = Get-StepScore $understandStep
+    $memoryScore = Get-StepScore $repowiseStep
+    $mriScore = if ($null -ne $CodeNexusContextSummary) { 100 } else { 35 }
+    $ctScore = if ($null -ne $SentruxDsmSummary -and $null -ne $SentruxFileDetailsSummary) { 100 } else { 35 }
+    $petScore = if ($null -ne $SentruxWhatIfSummary -and $null -ne $SentruxEvolutionSummary) { 70 } else { 25 }
+    $resolutionScore = if ($null -eq $resolvedRatio) { 50 } elseif ($resolvedRatio -ge 75) { 100 } elseif ($resolvedRatio -ge 50) { 75 } elseif ($resolvedRatio -ge 25) { 50 } else { 30 }
+    $pollutionScore = if ($excludedFiles -gt 0 -and $null -ne $dsmObject.scope.excluded_by_reason) { 100 } elseif ($excludedFiles -gt 0) { 60 } else { 80 }
+    $governanceScore = [int][math]::Round(($rulesScore + $gateScore + $checkScore) / 3.0)
+    $diagnosticScore = [int][math]::Round(($ctScore + $mriScore + $graphScore + $memoryScore) / 4.0)
+    $overallScore = [int][math]::Round(($diagnosticScore + $governanceScore + $resolutionScore + $pollutionScore) / 4.0)
+
+    $failingWhatIf = @()
+    if ($null -ne $whatIfObject -and $null -ne $whatIfObject.scenarios) {
+        $failingWhatIf = @($whatIfObject.scenarios | Where-Object { -not $_.pass })
+    }
+    $topFunction = ""
+    if ($null -ne $hotspotsObject -and $null -ne $hotspotsObject.functions -and @($hotspotsObject.functions).Count -gt 0) {
+        $topFunction = "{0} in {1} (cc={2})" -f $hotspotsObject.functions[0].name, $hotspotsObject.functions[0].file, $hotspotsObject.functions[0].complexity
+    }
+    $topModule = ""
+    if ($null -ne $hotspotsObject -and $null -ne $hotspotsObject.modules -and @($hotspotsObject.modules).Count -gt 0) {
+        $topModule = "{0} (risk={1})" -f $hotspotsObject.modules[0].name, $hotspotsObject.modules[0].risk
+    }
+    $topContextFile = if ($null -ne $CodeNexusContextSummary) { [string]$CodeNexusContextSummary.topFile } else { "" }
+
+    $severity = "green"
+    $primaryDiagnosis = "clean snapshot"
+    if ($FailureCounts.localToolError -gt 0) {
+        $severity = "red"
+        $primaryDiagnosis = "local tool failure"
+    }
+    elseif ($FailureCounts.sentruxFail -gt 0) {
+        $severity = "red"
+        $primaryDiagnosis = "architecture gate failure"
+    }
+    elseif ($FailureCounts.graphMissing -gt 0) {
+        $severity = "amber"
+        $primaryDiagnosis = "architecture graph missing"
+    }
+    elseif (-not [bool]$SentruxInsight["rulesExists"]) {
+        $severity = "amber"
+        $primaryDiagnosis = "ungoverned structural scope"
+    }
+    elseif ($failingWhatIf.Count -gt 0) {
+        $severity = "amber"
+        $primaryDiagnosis = "known modernization debt"
+    }
+
+    $findings = @()
+    if ($inventoryFiles -gt 0) { $findings += "X-ray inventory found $inventoryFiles files." }
+    if ($null -ne $SentruxFileDetailsSummary) { $findings += "CT structural scan found $($SentruxFileDetailsSummary.files) files and $($SentruxFileDetailsSummary.functions) functions." }
+    if (-not [string]::IsNullOrWhiteSpace($topFunction)) { $findings += "Top surgical hotspot: $topFunction." }
+    if (-not [string]::IsNullOrWhiteSpace($topModule)) { $findings += "Top module hotspot: $topModule." }
+    if ($resolvedRatio -ne $null) { $findings += "Import resolution ratio is $resolvedRatio% ($resolvedImports resolved, $unresolvedImports unresolved)." }
+    if ($excludedFiles -gt 0) { $findings += "$excludedFiles files were quarantined from governed source metrics." }
+
+    $treatment = @()
+    if ($FailureCounts.localToolError -gt 0) {
+        $treatment += "Fix local tool errors before interpreting architecture signals."
+    }
+    if ($FailureCounts.graphMissing -gt 0) {
+        $treatment += "Refresh Understand graph with: $UnderstandCommand"
+    }
+    if (-not [bool]$SentruxInsight["rulesExists"]) {
+        $treatment += "Add .sentrux/rules.toml for the chosen scope."
+    }
+    if ($failingWhatIf.Count -gt 0) {
+        $treatment += "Use what-if failures as the tightening roadmap; start with $($failingWhatIf[0].name)."
+    }
+    if (-not [string]::IsNullOrWhiteSpace($topContextFile)) {
+        $treatment += "Start CodeNexus review at $topContextFile."
+    }
+    if ($treatment.Count -eq 0) {
+        $treatment += "Keep this artifact as the current clean snapshot and compare the next session against it."
+    }
+
+    $xrayFinding = if ($inventoryFiles -gt 0) { "$inventoryFiles files inventoried" } else { "no inventory" }
+    $anatomyArtifact = Join-Path $RepoPath ".understand-anything\knowledge-graph.json"
+    $anatomyFinding = Get-FirstLine ([string]$understandStep.output)
+    $ctArtifact = if ($null -ne $SentruxDsmSummary) { [string]$SentruxDsmSummary.path } else { "" }
+    $ctFinding = if ($null -ne $SentruxDsmSummary) { "$($SentruxDsmSummary.modules) modules, $($SentruxFileDetailsSummary.functions) functions" } else { "not generated" }
+    $mriArtifact = if ($null -ne $CodeNexusContextSummary) { [string]$CodeNexusContextSummary.path } else { "" }
+    $mriFinding = if ($null -ne $CodeNexusContextSummary) { "$($CodeNexusContextSummary.files) files, $($CodeNexusContextSummary.references) references" } else { "not generated" }
+    $petArtifact = if ($null -ne $SentruxWhatIfSummary) { [string]$SentruxWhatIfSummary.path } else { "" }
+    $petFinding = if ($null -ne $SentruxWhatIfSummary) { "$($SentruxWhatIfSummary.failing) failing what-if scenarios" } else { "not generated" }
+    $chartFinding = if ($null -ne $repowiseStep) { [string]$repowiseStep.status } else { "not run" }
+    $governanceArtifact = if ([bool]$SentruxInsight["rulesExists"]) { [string]$SentruxInsight["rulesPath"] } else { "" }
+    $governanceFinding = "rules=$($SentruxInsight['rulesExists']); gate=$($SentruxInsight['gateStatus']); check=$($SentruxInsight['checkStatus'])"
+    $sourceCoverageScore = if ($scanFiles -gt 0) { 100 } elseif ($inventoryFiles -gt 0) { 70 } else { 0 }
+    $graphEvidence = Get-FirstLine ([string]$understandStep.output)
+    $importResolutionStatus = if ($resolvedRatio -eq $null) { "unknown" } else { "$resolvedRatio%" }
+    $pollutionStatus = if ($excludedFiles -gt 0) { "quarantined" } else { "clean_or_unknown" }
+    $governanceStatus = if ([bool]$SentruxInsight["rulesExists"]) { "rules_present" } else { "rules_missing" }
+    $governanceEvidence = "gate=$($SentruxInsight['gateStatus']); check=$($SentruxInsight['checkStatus'])"
+    $localizationStatus = if ($null -ne $CodeNexusContextSummary) { "available" } else { "missing" }
+    $memoryStatus = if ($null -ne $repowiseStep) { [string]$repowiseStep.status } else { "not_run" }
+    $memoryEvidence = if ($null -ne $repowiseStep) { Get-FirstLine ([string]$repowiseStep.output) } else { "" }
+    $governProtocolStatus = if ([bool]$SentruxInsight["rulesExists"]) { "active" } else { "needs_rules" }
+    $surgeryProtocolStatus = if ($failingWhatIf.Count -gt 0) { "available" } else { "low_risk" }
+
+    $modalities = @(
+        (New-Modality "xray" "fast file inventory and repo surface" $inventoryStep (Get-StepScore $inventoryStep) (Join-Path $RunDir "files.txt") $xrayFinding "Sees files, not semantic impact.")
+        (New-Modality "anatomy" "Understand Anything architecture graph" $understandStep $graphScore $anatomyArtifact $anatomyFinding "Requires a prebuilt graph from the Understand tool.")
+        (New-Modality "ct" "Sentrux DSM, hotspots, and structural slices" $sentruxGateStep $ctScore $ctArtifact $ctFinding "Static structure is not runtime truth.")
+        (New-Modality "mri" "CodeNexus context and impact localization" $null $mriScore $mriArtifact $mriFinding "Lite mode is local evidence, not a full semantic backend.")
+        (New-Modality "pet" "execution proxy: test gaps, evolution, and what-if risk" $null $petScore $petArtifact $petFinding "No live runtime trace is captured yet.")
+        (New-Modality "chart" "Repowise long-term project memory" $repowiseStep $memoryScore "" $chartFinding "Provider quota and index freshness can limit semantic memory.")
+        (New-Modality "governance" "rules, gate, and session safety rails" $sentruxCheckStep $governanceScore $governanceArtifact $governanceFinding "Rules only protect boundaries that have been encoded.")
+    )
+
+    $quality = @(
+        (New-QualityDimension "source_coverage" $sourceCoverageScore $sourceScopeStatus "inventory=$inventoryFiles; sentrux_scan=$scanFiles")
+        (New-QualityDimension "graph_freshness" $graphScore ([string]$understandStep.status) $graphEvidence)
+        (New-QualityDimension "import_resolution" $resolutionScore $importResolutionStatus "resolved=$resolvedImports; unresolved=$unresolvedImports")
+        (New-QualityDimension "pollution_control" $pollutionScore $pollutionStatus "excluded=$excludedFiles")
+        (New-QualityDimension "governance" $governanceScore $governanceStatus $governanceEvidence)
+        (New-QualityDimension "localization" $mriScore $localizationStatus "top_file=$topContextFile")
+        (New-QualityDimension "memory" $memoryScore $memoryStatus $memoryEvidence)
+    )
+
+    $protocols = @(
+        (New-HospitalProtocol "triage" "available" "run-code-intel.ps1 -RepoPath <repo> -Mode lite" "Classify provider/tool/graph/Sentrux failure bucket and choose next protocol.")
+        (New-HospitalProtocol "diagnose" "available" "run-code-intel.ps1 -RepoPath <repo> -Mode normal" "Produce summary.md, hospital.md, sentrux artifacts, and codenexus context.")
+        (New-HospitalProtocol "govern" $governProtocolStatus "sentrux check <scope>; sentrux gate <scope>" "Rules pass and gate reports no degradation.")
+        (New-HospitalProtocol "surgery_plan" $surgeryProtocolStatus "read sentrux-what-if.json and codenexus-context.json" "Choose one hotspot, one boundary, and one verification command before editing.")
+        (New-HospitalProtocol "post_op" "available" "Invoke-SentruxAgentTool.ps1 session_end <scope>" "Signal does not drop, rules pass, and touched hotspot is lower risk.")
+    )
+
+    return [ordered]@{
+        schema = "code-intel-hospital.v1"
+        generatedAt = (Get-Date).ToString("o")
+        repo = $RepoPath
+        mode = $Mode
+        artifacts = [ordered]@{
+            runDir = $RunDir
+            report = $ReportPath
+            summary = $SummaryPath
+            understanding = $UnderstandingPath
+        }
+        triage = [ordered]@{
+            status = $severity
+            primary_diagnosis = $primaryDiagnosis
+            overall_score = $overallScore
+            next_protocol = if ($FailureCounts.localToolError -gt 0) { "triage" } elseif ($FailureCounts.graphMissing -gt 0) { "diagnose" } elseif (-not [bool]$SentruxInsight["rulesExists"]) { "govern" } elseif ($failingWhatIf.Count -gt 0) { "surgery_plan" } else { "post_op" }
+        }
+        modalities = $modalities
+        report_quality = [ordered]@{
+            overall_score = $overallScore
+            diagnostic_score = $diagnosticScore
+            governance_score = $governanceScore
+            dimensions = $quality
+        }
+        diagnosis = [ordered]@{
+            findings = $findings
+            impression = $primaryDiagnosis
+            risk = $severity
+            evidence = [ordered]@{
+                top_function = $topFunction
+                top_module = $topModule
+                top_context_file = $topContextFile
+                failing_what_if = @($failingWhatIf | Select-Object -First 5)
+            }
+        }
+        treatment = [ordered]@{
+            plan = $treatment
+            follow_up = @(
+                "Rerun normal mode after code changes.",
+                "Compare hospital-report.json overall_score and Sentrux quality signal.",
+                "Use session_start/session_end around Agent edits."
+            )
+        }
+        protocols = $protocols
+        tools = $ToolState
+    }
+}
+
+function Convert-HospitalReportToMarkdown {
+    param([object]$Hospital)
+
+    $lines = @(
+        "# Code Intel Hospital Report",
+        "",
+        "- Repo: $($Hospital.repo)",
+        "- Mode: $($Hospital.mode)",
+        "- Status: $($Hospital.triage.status)",
+        "- Primary diagnosis: $($Hospital.triage.primary_diagnosis)",
+        "- Overall score: $($Hospital.triage.overall_score)",
+        "- Next protocol: $($Hospital.triage.next_protocol)",
+        "",
+        "## Imaging Modalities"
+    )
+    foreach ($item in @($Hospital.modalities)) {
+        $lines += "- $($item.name): $($item.status), confidence=$($item.confidence), finding=$($item.finding)"
+    }
+    $lines += ""
+    $lines += "## Report Quality"
+    foreach ($dimension in @($Hospital.report_quality.dimensions)) {
+        $lines += "- $($dimension.name): $($dimension.score) ($($dimension.status)) - $($dimension.evidence)"
+    }
+    $lines += ""
+    $lines += "## Diagnosis"
+    foreach ($finding in @($Hospital.diagnosis.findings)) {
+        $lines += "- $finding"
+    }
+    $lines += ""
+    $lines += "## Treatment"
+    foreach ($item in @($Hospital.treatment.plan)) {
+        $lines += "- $item"
+    }
+    $lines += ""
+    $lines += "## Protocols"
+    foreach ($protocol in @($Hospital.protocols)) {
+        $lines += "- $($protocol.name): $($protocol.status) - $($protocol.exit_criteria)"
+    }
+    return $lines
+}
+
 $configData = $null
 if ([string]::IsNullOrWhiteSpace($Config)) {
     $Config = Join-Path $PSScriptRoot "pipeline.config.json"
@@ -1010,6 +1378,32 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -Liter
     }
 }
 
+$reportPath = Join-Path $runDir "report.json"
+$understandingPath = Join-Path $runDir "understanding.md"
+$summaryPath = Join-Path $runDir "summary.md"
+$hospitalReportPath = Join-Path $runDir "hospital-report.json"
+$hospitalMarkdownPath = Join-Path $runDir "hospital.md"
+$hospitalReport = New-CodeIntelHospitalReport `
+    -RepoPath $repoPath `
+    -Mode $Mode `
+    -RunDir $runDir `
+    -ReportPath $reportPath `
+    -SummaryPath $summaryPath `
+    -UnderstandingPath $understandingPath `
+    -Steps $steps `
+    -FailureCounts $failureCounts `
+    -SentruxInsight $sentruxInsight `
+    -SentruxDsmSummary $sentruxDsmSummary `
+    -SentruxFileDetailsSummary $sentruxFileDetailsSummary `
+    -SentruxHotspotsSummary $sentruxHotspotsSummary `
+    -SentruxEvolutionSummary $sentruxEvolutionSummary `
+    -SentruxWhatIfSummary $sentruxWhatIfSummary `
+    -CodeNexusContextSummary $codeNexusContextSummary `
+    -UnderstandCommand $understandCommand `
+    -ToolState $toolState
+$hospitalReport | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $hospitalReportPath -Encoding UTF8
+Convert-HospitalReportToMarkdown $hospitalReport | Set-Content -LiteralPath $hospitalMarkdownPath -Encoding UTF8
+
 $report = [ordered]@{
     repo = $repoPath
     repoInput = $Repo
@@ -1028,6 +1422,16 @@ $report = [ordered]@{
     sentruxEvolution = $sentruxEvolutionSummary
     sentruxWhatIf = $sentruxWhatIfSummary
     codeNexusContext = $codeNexusContextSummary
+    hospital = [ordered]@{
+        path = $hospitalReportPath
+        markdown = $hospitalMarkdownPath
+        schema = $hospitalReport.schema
+        status = $hospitalReport.triage.status
+        primaryDiagnosis = $hospitalReport.triage.primary_diagnosis
+        overallScore = $hospitalReport.triage.overall_score
+        nextProtocol = $hospitalReport.triage.next_protocol
+        modalities = @($hospitalReport.modalities).Count
+    }
     notes = $notes
     failureClassifications = $failureClassifications
     summary = [ordered]@{
@@ -1039,12 +1443,9 @@ $report = [ordered]@{
     }
 }
 
-$reportPath = Join-Path $runDir "report.json"
-$understandingPath = Join-Path $runDir "understanding.md"
 $report["understanding"] = $understandingPath
 $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding UTF8
 
-$summaryPath = Join-Path $runDir "summary.md"
 $sentruxMetrics = @($sentruxInsight['metrics'])
 $sentruxNextActions = @($sentruxInsight['nextActions'])
 $sentruxCodeNexusHints = @($sentruxInsight['codeNexusHints'])
@@ -1056,6 +1457,7 @@ $summaryLines = @(
     "- Mode: $Mode",
     "- Report: $reportPath",
     "- Understanding: $understandingPath",
+    "- Hospital: $hospitalMarkdownPath",
     "- Understand command: ``$understandCommand``",
     "",
     "## Summary",
@@ -1068,11 +1470,25 @@ $summaryLines = @(
     "- Local tool error: $($failureCounts.localToolError)",
     "- Graph missing: $($failureCounts.graphMissing)",
     "- Sentrux fail: $($failureCounts.sentruxFail)",
+    "- Hospital status: $($hospitalReport.triage.status)",
+    "- Hospital score: $($hospitalReport.triage.overall_score)",
+    "- Next protocol: $($hospitalReport.triage.next_protocol)",
     "",
     "## Steps"
 )
 foreach ($step in $steps) {
     $summaryLines += "- $($step.status): $($step.name)"
+}
+$summaryLines += ""
+$summaryLines += "## Hospital"
+$summaryLines += "- Report: $hospitalReportPath"
+$summaryLines += "- Markdown: $hospitalMarkdownPath"
+$summaryLines += "- Status: $($hospitalReport.triage.status)"
+$summaryLines += "- Primary diagnosis: $($hospitalReport.triage.primary_diagnosis)"
+$summaryLines += "- Overall score: $($hospitalReport.triage.overall_score)"
+$summaryLines += "- Next protocol: $($hospitalReport.triage.next_protocol)"
+foreach ($modality in @($hospitalReport.modalities)) {
+    $summaryLines += "- Modality $($modality.name): $($modality.status), confidence=$($modality.confidence)"
 }
 $summaryLines += ""
 $summaryLines += "## Sentrux Insight"
@@ -1167,6 +1583,8 @@ $understandingLines = @(
     "- Artifact directory: ``$runDir``",
     "- Report: ``$reportPath``",
     "- Summary: ``$summaryPath``",
+    "- Hospital report: ``$hospitalReportPath``",
+    "- Hospital markdown: ``$hospitalMarkdownPath``",
     "- Sentrux DSM: $(if ($null -ne $sentruxDsmSummary) { '``' + $sentruxDsmSummary.path + '``' } else { 'not generated' })",
     "- Sentrux file details: $(if ($null -ne $sentruxFileDetailsSummary) { '``' + $sentruxFileDetailsSummary.path + '``' } else { 'not generated' })",
     "- Sentrux hotspots: $(if ($null -ne $sentruxHotspotsSummary) { '``' + $sentruxHotspotsSummary.path + '``' } else { 'not generated' })",
@@ -1175,6 +1593,7 @@ $understandingLines = @(
     "- CodeNexus context: $(if ($null -ne $codeNexusContextSummary) { '``' + $codeNexusContextSummary.path + '``' } else { 'not generated' })",
     "- Tools: rg=$($toolState.rg), git=$($toolState.git), repowise=$($toolState.repowise), sentrux=$($toolState.sentrux)",
     "- Passed steps: $(Join-StatusNames $passedSteps)",
+    "- Hospital: status=$($hospitalReport.triage.status), score=$($hospitalReport.triage.overall_score), next=$($hospitalReport.triage.next_protocol)",
     "",
     "## Unverified Or Inferred",
     "- Understand graph: $(if ($graphStep.Count -gt 0) { $graphStep[0].status } else { 'not checked' })",
@@ -1214,6 +1633,7 @@ Write-Host "Repo: $repoPath"
 Write-Host "Report: $reportPath"
 Write-Host "Summary: $summaryPath"
 Write-Host "Understanding: $understandingPath"
+Write-Host "Hospital: $hospitalMarkdownPath"
 if ($manual.Count -gt 0) {
     Write-Host "Manual step required: $understandCommand"
 }

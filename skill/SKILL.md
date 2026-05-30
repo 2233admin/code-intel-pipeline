@@ -147,7 +147,9 @@ The `dsm` output is the visualization handoff. It includes 9 color modes: `Size`
 
 The `evolution` output carries session trend plus hotspot, coupling, and bus-factor details. The `what_if` output simulates stricter governance gates for complexity, coupling, blast radius, tests, bus factor, and scope pollution before the team hardens `.sentrux/rules.toml`.
 
-Pipeline runs persist map data as `sentrux-dsm.json`, panel data as `sentrux-file-details.json`, sorted sidebar data as `sentrux-hotspots.json`, evolution data as `sentrux-evolution.json`, and simulated gate data as `sentrux-what-if.json` next to `summary.md`, `report.json`, and `understanding.md`.
+Pipeline runs persist map data as `sentrux-dsm.json`, panel data as `sentrux-file-details.json`, sorted sidebar data as `sentrux-hotspots.json`, evolution data as `sentrux-evolution.json`, simulated gate data as `sentrux-what-if.json`, CodeNexus context as `codenexus-context.json`, and the hospital layer as `hospital.md` plus `hospital-report.json` next to `summary.md`, `report.json`, and `understanding.md`.
+
+The hospital layer is the default human/agent diagnosis surface. It groups checks into modalities: `xray` (rg inventory), `anatomy` (Understand graph), `ct` (Sentrux DSM/hotspots), `mri` (CodeNexus localization), `pet` (execution-risk proxy from evolution/what-if/test gaps), `chart` (Repowise memory), and `governance` (rules/gate). Read `hospital.md` after `summary.md` when deciding whether to triage, diagnose, govern, plan surgery, or run post-op verification. Machine readers should use `hospital-report.json` fields `triage.primary_diagnosis`, `triage.overall_score`, `triage.next_protocol`, `report_quality.dimensions`, and `treatment.plan`.
 
 ## Provider Config
 
@@ -272,7 +274,7 @@ That path uses `Run-ScopedRepowiseDocs.py` with `coverage_pct=0.02`. If the prov
 
 ## Output Handling
 
-After each run, read `summary.md` first. Open `report.json` only when a step failed or details matter.
+After each run, read `summary.md` first. Then read `hospital.md` for diagnosis, modality quality, treatment plan, and next protocol. Open `report.json` or `hospital-report.json` only when a step failed, details matter, or another agent needs machine-readable fields.
 Read `understanding.md` before delegating follow-up work.
 
 Check results in this order:
@@ -281,12 +283,14 @@ Check results in this order:
 2. artifact path
 3. summary counters
 4. failure category counters
-5. Understand graph state
-6. repowise state
-7. sentrux gate result
-8. sentrux insight deltas and CodeNexus hints
-9. exact missing tools or failed checks
-10. understanding report next action
+5. hospital triage status, overall score, and next protocol
+6. modality quality gaps in `hospital-report.json`
+7. Understand graph state
+8. repowise state
+9. sentrux gate/check result
+10. sentrux insight deltas and CodeNexus hints
+11. exact missing tools or failed checks
+12. understanding report next action
 
 For machine checks, use:
 
