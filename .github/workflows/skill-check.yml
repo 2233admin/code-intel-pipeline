@@ -154,15 +154,30 @@ jobs:
         run: |
           python -m pip install pyyaml
           python <<'PYEOF'
-          import sys, yaml
+          import sys, yaml, subprocess
           from pathlib import Path
+
+          # Use `git ls-files` to enumerate tracked SKILL.md — avoids rglob crashes on
+          # broken symlinks / deleted-but-cached directories (e.g. .codex/ cache).
+          result = subprocess.run(
+              ["git", "ls-files", "-z", "--", "**/SKILL.md"],
+              capture_output=True, check=True
+          )
+          files = [Path(p.decode("utf-8")) for p in result.stdout.split(b"\0") if p]
 
           ok = 0
           bad = []
-          for f in Path(".").rglob("SKILL.md"):
+          for f in files:
               if "target" in str(f) or "node_modules" in str(f):
                   continue
-              content = f.read_text(encoding="utf-8", errors="ignore")
+              if not f.exists():
+                  # Tracked but missing on disk (stale checkout) — skip silently
+                  continue
+              try:
+                  content = f.read_text(encoding="utf-8", errors="ignore")
+              except (OSError, PermissionError) as e:
+                  bad.append((f, f"unreadable: {e}"))
+                  continue
               if not content.startswith("---"):
                   bad.append((f, "no frontmatter"))
                   continue
