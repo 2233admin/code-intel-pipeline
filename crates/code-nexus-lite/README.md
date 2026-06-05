@@ -117,3 +117,4 @@ curl -X POST http://127.0.0.1:49134/doctor \
 ## License
 
 Apache-2.0 (matches iii SDK).
+// test/skill-check smoke test 2026年06月 5日 15:01:20
