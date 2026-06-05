@@ -6,6 +6,13 @@
 
 [constraints]
 max_cycles = 0
+# Optional: directories to skip in what-if scope-pollution checks.
+# Default behavior includes a small built-in noisy list (node_modules, vendor, dist, tools ...).
+# Use only for local build/support directories you do not want to govern yet.
+# pollution_exclusions = ["tools", "third_party", "dist"]
+# Optional: exclude test↔production dependency edges from DSM coupling metrics.
+# Keep false if architectural review needs test-contract coupling to be measured.
+# ignore_test_dependencies = true
 
 [[layers]]
 name = "core"

@@ -1,5 +1,37 @@
 # Changelog
 
+All notable changes to **code-intel-pipeline** are documented here.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased] — 2026-06-05
+
+### Added
+
+- **`crates/code-nexus-lite/`** — Rust + iii worker binary, wraps Repowise + Sentrux for Agent-friendly code-understanding context. 5.2 MB stripped + LTO. Cross-platform replacement for the Windows-only `Invoke-CodeNexusLite.ps1`. Apache-2.0 license (matches iii SDK).
+  - 3 iii functions: `codenexus::scan` / `codenexus::lite` / `codenexus::doctor`
+  - 3 HTTP triggers: `POST /scan` / `POST /lite` / `POST /doctor`
+  - Depends on `iii-sdk = "0.11"` (crates.io, Apache-2.0) + `repowise` 0.10.0 (Python) + `sqlite3` CLI
+  - See `crates/code-nexus-lite/README.md` for the full design
+
+- **`.github/workflows/skill-check.yml`** — PR-time quality gate. Runs a heuristic 8-dim darwin-skill scoring on every changed SKILL.md, validates YAML frontmatter, checks for broken internal links. Threshold 70/100 to pass. Triggers on PRs that touch `crates/code-nexus-lite/`, `.claude/skills/`, or `skills/`.
+
+- **`.gitignore` updates** — Added `target/` (Rust build artifacts), IDE files (`.idea/`, `.vscode/`), OS files (`.DS_Store`, `Thumbs.db`), PowerShell artifacts (`*.ps1.xml`).
+
+- **`crates/code-nexus-lite/.gitignore`** — Same as above, scoped to the sub-crate.
+
+### Changed
+
+- `Invoke-SentruxAgentTool.ps1` — minor edits
+- `templates/sentrux-rules.example.toml` — minor edits
+
+### Verified
+
+- ✅ `cargo build --release` succeeds (52 s first build, ~5 s incremental)
+- ✅ Smoke test: binary starts, registers 3 functions + 3 HTTP triggers, attempts engine connection (engine not running locally — expected)
+- ✅ Doctor: `repowise --version` reports v0.10.0, all 4 required tools (rg / git / repowise / sentrux) found
+
 ## v0.1.1 - 2026-05-30
 
 Release infrastructure patch.

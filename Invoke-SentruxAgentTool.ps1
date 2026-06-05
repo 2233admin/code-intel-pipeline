@@ -7,7 +7,8 @@ param(
     [string]$Path = ".",
 
     [string]$SessionId = "",
-    [int]$Recent = 10
+    [int]$Recent = 10,
+    [string[]]$PollutionExclusions = @()
 )
 
 Set-StrictMode -Version Latest
@@ -286,7 +287,21 @@ function Find-ScopeCandidates {
 }
 
 function Get-PollutionSignals {
-    param([string]$TargetPath)
+    param(
+        [string]$TargetPath,
+        [string[]]$IgnoredPaths = @()
+    )
+
+    $ignored = @()
+    foreach ($entry in $IgnoredPaths) {
+        if ([string]::IsNullOrWhiteSpace($entry)) { continue }
+        $normalized = [string]$entry
+        $normalized = $normalized.Trim().TrimStart("\", "/").TrimEnd("\", "/")
+        if ([string]::IsNullOrWhiteSpace($normalized)) { continue }
+        $normalized = $normalized.ToLowerInvariant().Replace("/", [System.IO.Path]::DirectorySeparatorChar)
+        $ignored += $normalized
+    }
+    $ignored = @($ignored | Sort-Object -Unique)
 
     $noisyDirs = @(
         [ordered]@{ path = "node_modules"; reason = "dependency directory excluded from governed source graph"; inspectNestedGit = $false },
@@ -309,6 +324,8 @@ function Get-PollutionSignals {
     $signals = @()
     foreach ($entry in $noisyDirs) {
         $dir = [string]$entry["path"]
+        $normalizedDir = $dir.ToLowerInvariant()
+        if ($ignored -contains $normalizedDir) { continue }
         $full = Join-Path $TargetPath $dir
         if (-not (Test-Path -LiteralPath $full -PathType Container)) { continue }
         $nestedGit = @()
@@ -681,13 +698,125 @@ function Get-SourceFiles {
     return @($inventory["files"])
 }
 
+function Get-ModuleBucket {
+    param(
+        [Parameter(Mandatory = $true)][string]$Leaf,
+        [Parameter(Mandatory = $true)][string]$Domain
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Leaf)) {
+        return "__root__"
+    }
+    if ($Leaf -eq "__init__") {
+        return "__root__"
+    }
+
+    $normalized = $Leaf.ToLowerInvariant()
+    $testAwarePrefix = "app__$($Domain.ToLowerInvariant())__"
+    if ($normalized.StartsWith($testAwarePrefix)) {
+        $normalized = $normalized.Substring($testAwarePrefix.Length)
+    }
+
+    switch ($Domain) {
+        "strategy" {
+            if ($normalized -match "^(backtest)") { return "backtest" }
+            if ($normalized -match "^dialectical") { return "dialectical_filter" }
+            if ($normalized -match "^event") { return "event_tree" }
+            if ($normalized -match "^review") { return "review" }
+            if ($normalized -match "^factor") { return "factors" }
+            if ($normalized -match "^fusion") { return "fusion" }
+            if ($normalized -match "^sentiment") { return "sentiment" }
+            if ($normalized -match "^narrative") { return "narrative" }
+            if ($normalized -match "^engine") { return "engine" }
+            if ($normalized -match "^policy") { return "policy" }
+            if ($normalized -match "^signal") { return "signal" }
+            if ($normalized -match "^stock") { return "scanner" }
+            if ($normalized -match "^swing") { return "swing" }
+            if ($normalized -match "^quant") { return "adapter" }
+            if ($normalized -match "^(market_monitor|materialist_engine)") { return "market" }
+            return "misc"
+        }
+        "data" {
+            if ($normalized -match "^tdx") { return "tdx" }
+            if ($normalized -match "^(crypto|okx|futures|akshare|qmt|feed|kline|indicators|store|paths|device|cuda|gpu|hrhg|adata|ashare)") { return $matches[1] }
+            if ($normalized -match "^ashare") { return "ashare" }
+            return "misc"
+        }
+        "api" {
+            if ($normalized -match "^(crypto|okx_api)") { return "market" }
+            return "misc"
+        }
+        "cli" {
+            if ($normalized -match "^backtest") { return "backtest" }
+            if ($normalized -match "^strategy") { return "strategy" }
+            if ($normalized -match "^market") { return "market" }
+            if ($normalized -match "^macro") { return "macro" }
+            if ($normalized -match "^intelligence") { return "intelligence" }
+            if ($normalized -match "^ashare") { return "ashare" }
+            if ($normalized -match "^(okx|config_cmd|qmt|trade)") { return "market_control" }
+            if ($normalized -match "^(scan|review)") { return $matches[1] }
+            if ($normalized -match "^(config|output|exception)") { return $matches[1] }
+            if ($normalized -match "^ai") { return "ai_cmd" }
+            if ($normalized -match "^main") { return "main" }
+            return "misc"
+        }
+        "trading" {
+            if ($normalized -match "^(adapter|execution|okx|exchange|bridge|runner)") { return "market_execution" }
+            return "misc"
+        }
+        "brokers" {
+            if ($normalized -match "^(okx|bridge|execution|exchange)") { return "market_execution" }
+            return "misc"
+        }
+        "markets" {
+            if ($normalized -match "^ashare") { return "ashare" }
+            if ($normalized -match "^crypto") { return "crypto" }
+            if ($normalized -match "^okx_pit_writer") { return "market_integration_writer" }
+            if ($normalized -match "^okx_feed") { return "market_integration_feed" }
+            if ($normalized -match "^okx_ccxt_adapter") { return "market_integration_adapter" }
+            if ($normalized -match "^okx_t_runner") { return "market_integration_runner" }
+            if ($normalized -match "^okx_client") { return "market_integration_client" }
+            if ($normalized -match "^okx") { return "market_integration_misc" }
+            if ($normalized -match "^data") { return "market_data" }
+            return "misc"
+        }
+        default {
+            return "misc"
+        }
+    }
+}
+
 function Get-ModuleName {
     param([string]$RelativePath)
 
     $normalized = Normalize-RelativeFilePath $RelativePath
+    $normalizeTestLeaf = {
+        param([string]$Leaf)
+
+        if (-not $Leaf.StartsWith("test_", [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $Leaf
+        }
+
+        $withoutPrefix = $Leaf.Substring(5)
+        if ($withoutPrefix -match "^(.+\.\w+)_contract.*$") {
+            return $matches[1]
+        }
+
+        return $withoutPrefix
+    }
+
     $parts = @($normalized -split "/" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($parts.Count -gt 0) {
+        $parts[-1] = & $normalizeTestLeaf $parts[-1]
+    }
     if ($parts.Count -eq 0) { return "root" }
     if ($parts.Count -eq 1) { return $parts[0] }
+
+    if ($parts[0] -in @("app", "src", "tests") -and
+        $parts.Count -eq 2 -and
+        $parts[1] -match "\.[A-Za-z0-9_]+$") {
+        return $parts[0]
+    }
 
     if ($parts[0] -eq "backend") {
         if ($parts.Count -ge 3 -and $parts[1] -in @("app", "src", "tests")) {
@@ -697,7 +826,51 @@ function Get-ModuleName {
     }
 
     if ($parts[0] -in @("app", "src", "tests")) {
-        return "$($parts[0])/$($parts[1])"
+        if ($parts.Count -ge 4 -and $parts[1] -eq "markets") {
+            if ($parts.Count -eq 4) {
+                $leaf = [System.IO.Path]::GetFileNameWithoutExtension($parts[3]).ToLowerInvariant()
+                if ($leaf -eq "__init__") { $leaf = "__root__" }
+                $bucket = Get-ModuleBucket -Leaf $leaf -Domain $parts[1]
+                if ($bucket -ne "misc") {
+                    return "$($parts[0])/$($parts[1])/$($parts[2])/$bucket"
+                }
+                return "$($parts[0])/$($parts[1])/$($parts[2])/$leaf"
+            }
+            return "$($parts[0])/$($parts[1])/$($parts[2])/$($parts[3].ToLowerInvariant())"
+        }
+
+        if ($parts.Count -ge 3) {
+            if ($parts[1] -in @("strategy", "api", "trading", "brokers", "cli")) {
+                if ($parts[1] -eq "cli") {
+                    $leaf = [System.IO.Path]::GetFileNameWithoutExtension($parts[2]).ToLowerInvariant()
+                    $bucket = Get-ModuleBucket -Leaf $leaf -Domain $parts[1]
+                    if ($bucket -eq "market_control") {
+                        return "$($parts[0])/$($parts[1])/$bucket"
+                    }
+                    return "$($parts[0])/$($parts[1])/$($parts[2])"
+                }
+
+                $leaf = [System.IO.Path]::GetFileNameWithoutExtension($parts[2]).ToLowerInvariant()
+                $bucket = Get-ModuleBucket -Leaf $leaf -Domain $parts[1]
+                if ($bucket -ne "misc") {
+                    if ($parts[1] -in @("trading", "brokers")) {
+                        return "$($parts[0])/market/$bucket"
+                    }
+                    return "$($parts[0])/$($parts[1])/$bucket"
+                }
+            }
+            return "$($parts[0])/$($parts[1])/$($parts[2])"
+        }
+
+        $leafStem = [System.IO.Path]::GetFileNameWithoutExtension($parts[-1]).ToLowerInvariant()
+        $bucket = Get-ModuleBucket -Leaf $leafStem -Domain $parts[1]
+        return "$($parts[0])/$($parts[1])/$bucket"
+    }
+
+    if ($parts[0] -in @("frontend", "integrations", "research", "scripts", "services") -and
+        $parts.Count -eq 2 -and
+        $parts[1] -match "\.[A-Za-z0-9_]+$") {
+        return $parts[0]
     }
 
     if ($parts[0] -in @("frontend", "integrations", "research", "scripts", "services")) {
@@ -705,6 +878,13 @@ function Get-ModuleName {
     }
 
     return $parts[0]
+}
+
+function Test-IsTestModule {
+    param([string]$Module)
+
+    if ([string]::IsNullOrWhiteSpace($Module)) { return $false }
+    return ($Module -eq "tests" -or $Module.StartsWith("tests/"))
 }
 
 function Normalize-RelativeFilePath {
@@ -1035,7 +1215,7 @@ function Add-DsmEdge {
     if (-not $Edges.ContainsKey($key)) {
         $Edges[$key] = [ordered]@{ from = $From; to = $To; count = 0 }
     }
-    $Edges[$key]["count"]++
+    $Edges[$key]["count"] = 1
 }
 
 function ConvertTo-HeatColor {
@@ -1484,7 +1664,10 @@ function Get-FileDetail {
 }
 
 function Invoke-DsmTool {
-    param([string]$TargetPath)
+    param(
+        [string]$TargetPath,
+        [bool]$IgnoreTestDependencies = $false
+    )
 
     $inventory = Get-SourceFileInventory $TargetPath
     $files = @($inventory["files"])
@@ -1543,21 +1726,33 @@ function Invoke-DsmTool {
         if ([string]::IsNullOrWhiteSpace($content)) { continue }
         if ($ext -eq ".py") {
             foreach ($match in [regex]::Matches($content, "(?m)^\s*(?:from|import)\s+([A-Za-z_][A-Za-z0-9_\.]*)")) {
-                $root = ($match.Groups[1].Value -split "\.")[0]
-                if (-not $modules.Contains($root)) { continue }
-                Add-DsmEdge $edges $from $root
+                $importPath = $match.Groups[1].Value
+                $normalizedImport = $importPath -replace "\.", "/"
+                $target = Get-ModuleName $normalizedImport
+                if ($modules.Contains($target)) {
+                    if ($IgnoreTestDependencies -and ((Test-IsTestModule $from) -ne (Test-IsTestModule $target))) {
+                        continue
+                    }
+                    Add-DsmEdge $edges $from $target
+                }
             }
         }
         elseif ($ext -eq ".rs") {
             foreach ($match in [regex]::Matches($content, "(?m)^\s*mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;")) {
                 $target = "src/$($match.Groups[1].Value).rs"
                 if ($modules.Contains($target)) {
+                    if ($IgnoreTestDependencies -and ((Test-IsTestModule $from) -ne (Test-IsTestModule $target))) {
+                        continue
+                    }
                     Add-DsmEdge $edges $from $target
                 }
             }
             foreach ($match in [regex]::Matches($content, "use\s+crate::([A-Za-z_][A-Za-z0-9_]*)")) {
                 $target = "src/$($match.Groups[1].Value).rs"
                 if ($modules.Contains($target)) {
+                    if ($IgnoreTestDependencies -and ((Test-IsTestModule $from) -ne (Test-IsTestModule $target))) {
+                        continue
+                    }
                     Add-DsmEdge $edges $from $target
                 }
             }
@@ -1568,6 +1763,9 @@ function Invoke-DsmTool {
                 $targets = @($root, "$root.v", ($match.Groups[1].Value -replace "\.", "/"))
                 foreach ($target in $targets) {
                     if ($modules.Contains($target)) {
+                        if ($IgnoreTestDependencies -and ((Test-IsTestModule $from) -ne (Test-IsTestModule $target))) {
+                            continue
+                        }
                         Add-DsmEdge $edges $from $target
                         break
                     }
@@ -2099,6 +2297,8 @@ function Read-SentruxRuleHints {
         max_coupling = $null
         max_cc = $null
         no_god_files = $null
+        ignore_test_dependencies = $false
+        pollution_exclusions = @()
     }
     if (-not (Test-Path -LiteralPath $rulesPath -PathType Leaf)) {
         return [ordered]@{
@@ -2122,6 +2322,29 @@ function Read-SentruxRuleHints {
     $godMatch = [regex]::Match($text, '(?m)^\s*no_god_files\s*=\s*(true|false)\s*$', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
     if ($godMatch.Success) {
         $constraints["no_god_files"] = [bool]::Parse($godMatch.Groups[1].Value)
+    }
+    $testDepsMatch = [regex]::Match($text, '(?m)^\s*ignore_test_dependencies\s*=\s*(true|false)\s*$', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($testDepsMatch.Success) {
+        $constraints["ignore_test_dependencies"] = [bool]::Parse($testDepsMatch.Groups[1].Value)
+    }
+    $pollutionMatch = [regex]::Match($text, '(?m)^\s*pollution_exclusions\s*=\s*(.+?)\s*$')
+    if ($pollutionMatch.Success) {
+        $rawPollution = ($pollutionMatch.Groups[1].Value -replace "#.*$", "").Trim()
+        $pollutionList = @()
+        if ($rawPollution -match "^\[") {
+            $pollutionList = @($rawPollution.Trim("[", "]") -split ",")
+        }
+        else {
+            $pollutionList = @($rawPollution)
+        }
+
+        foreach ($item in $pollutionList) {
+            $normalizedPollution = [string]$item
+            $normalizedPollution = $normalizedPollution.Trim().Trim("'", '"').TrimStart("\", "/").TrimEnd("\", "/")
+            if ([string]::IsNullOrWhiteSpace($normalizedPollution)) { continue }
+            $constraints["pollution_exclusions"] += $normalizedPollution.ToLowerInvariant().Replace("/", [System.IO.Path]::DirectorySeparatorChar)
+        }
+        $constraints["pollution_exclusions"] = @($constraints["pollution_exclusions"] | Sort-Object -Unique)
     }
 
     return [ordered]@{
@@ -2249,9 +2472,9 @@ function Get-WhatIfModuleMetricViolations {
 function Invoke-WhatIfTool {
     param([string]$TargetPath)
 
-    $dsm = Invoke-DsmTool $TargetPath
     $ruleHints = Read-SentruxRuleHints $TargetPath
     $constraints = $ruleHints["constraints"]
+    $dsm = Invoke-DsmTool $TargetPath -IgnoreTestDependencies $constraints["ignore_test_dependencies"]
     $maxCc = if ($null -ne $constraints["max_cc"]) { [int]$constraints["max_cc"] } else { 25 }
     $strictCc = if ($maxCc -gt 15) { 15 } else { $maxCc }
     $hardCc = if ($strictCc -gt 10) { 10 } else { $strictCc }
@@ -2270,9 +2493,29 @@ function Invoke-WhatIfTool {
     $testGaps = @(Get-WhatIfModuleMetricViolations $dsm "test_gap" 0)
     $busFactor = New-EvolutionBusFactorDetails $TargetPath $dsm
     $busFactorRisk = @($busFactor["modules"] |
-        Where-Object { [int]$_["bus_factor_risk"] -ge $busRiskLimit } |
+        Where-Object {
+            [int]$_["bus_factor_risk"] -ge $busRiskLimit -and
+            [int]$_["touches"] -gt 0
+        } |
+        ForEach-Object {
+            [ordered]@{
+                id = $_["id"]
+                name = $_["name"]
+                value = $_["bus_factor_risk"]
+                risk = $_["bus_factor_risk"]
+                files = $_["files"]
+                bus_factor = $_["bus_factor"]
+                touches = $_["touches"]
+                top_author = $_["top_author"]
+                top_author_share = $_["top_author_share"]
+            }
+        } |
         Select-Object -First 20)
-    $pollution = @(Get-PollutionSignals $TargetPath)
+    $pollutionExclusions = @()
+    $pollutionExclusions += $ruleHints["constraints"]["pollution_exclusions"]
+    $pollutionExclusions += $PollutionExclusions
+    $pollutionExclusions = @($pollutionExclusions | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+    $pollution = @(Get-PollutionSignals -TargetPath $TargetPath -IgnoredPaths $pollutionExclusions)
     $scopeCandidates = @(Find-ScopeCandidates $TargetPath)
 
     $scenarios = @(
@@ -2415,7 +2658,9 @@ function Invoke-EvolutionTool {
         }
     }
 
-    $dsm = Invoke-DsmTool $TargetPath
+    $ruleHints = Read-SentruxRuleHints $TargetPath
+    $constraints = $ruleHints["constraints"]
+    $dsm = Invoke-DsmTool $TargetPath -IgnoreTestDependencies $constraints["ignore_test_dependencies"]
     $hotspots = New-EvolutionHotspots $dsm
     $coupling = New-EvolutionCouplingDetails $dsm
     $busFactor = New-EvolutionBusFactorDetails $TargetPath $dsm
@@ -2443,7 +2688,10 @@ $result = switch ($normalizedTool) {
     "rescan" { Invoke-ScanTool $targetPath "rescan" }
     "check_rules" { Invoke-CheckRulesTool $targetPath }
     "evolution" { Invoke-EvolutionTool $targetPath $Recent }
-    "dsm" { Invoke-DsmTool $targetPath }
+    "dsm" {
+        $ruleHints = Read-SentruxRuleHints $targetPath
+        Invoke-DsmTool $targetPath -IgnoreTestDependencies $ruleHints["constraints"]["ignore_test_dependencies"]
+    }
     "git_stats" { Invoke-GitStatsTool $targetPath }
     "test_gaps" { Invoke-TestGapsTool $targetPath }
     "what_if" { Invoke-WhatIfTool $targetPath }

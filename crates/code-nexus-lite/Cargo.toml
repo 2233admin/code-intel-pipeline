@@ -1,0 +1,33 @@
+[package]
+name = "code-nexus-lite"
+version = "0.1.0"
+edition = "2021"
+description = "CodeNexus Lite — iii Rust worker, wraps Repowise + Sentrux for Agent-friendly code-understanding"
+license = "Apache-2.0"
+repository = "https://github.com/2233admin/code-intel-pipeline"
+
+[dependencies]
+# iii SDK — 3 primitives (Worker / Function / Trigger), Apache-2.0
+iii-sdk = "0.11"
+
+# Async runtime
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "fs", "time", "signal"] }
+
+# Serde + JSON schema (iii-sdk needs JsonSchema on function input types)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "0.8"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

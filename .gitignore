@@ -15,3 +15,20 @@ __pycache__/
 .sentrux/cache/
 artifacts/
 cache/
+
+# Rust build artifacts (CodeNexus Lite + future crates)
+target/
+**/target/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PowerShell artifacts
+*.ps1.xml

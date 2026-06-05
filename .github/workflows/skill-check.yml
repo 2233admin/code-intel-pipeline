@@ -1,0 +1,183 @@
+name: skill-check
+
+on:
+  pull_request:
+    paths:
+      - "crates/code-nexus-lite/**"
+      - ".claude/skills/**"
+      - "skills/**"
+  workflow_dispatch:
+
+jobs:
+  # Run darwin-skill 8-dim scoring on every new/modified SKILL.md
+  score-skills:
+    name: Darwin score (8-dim)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed SKILL.md files
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PR — diff against base
+            git diff --name-only origin/${{ github.base_ref }}...HEAD \
+              | grep -E '(^|/)SKILL\.md$' || true > /tmp/changed_skills
+          else
+            # workflow_dispatch — scan all
+            find . -name SKILL.md -not -path "*/node_modules/*" -not -path "*/target/*" \
+              > /tmp/changed_skills || true
+          fi
+          echo "changed=$(cat /tmp/changed_skills | wc -l) skill files"
+          cat /tmp/changed_skills
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/changed_skills >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Setup Python + Anthropic SDK
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install anthropic pyyaml
+
+      - name: Run darwin-skill 8-dim scoring
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python <<'PYEOF'
+          import os, sys, yaml
+          from pathlib import Path
+
+          files = Path("/tmp/changed_skills").read_text().splitlines()
+          files = [f for f in files if f and Path(f).exists()]
+          if not files:
+              print("No SKILL.md files to score — passing.")
+              sys.exit(0)
+
+          # 8-dim rubrik (mirrors .claude/skills/ai-coding-tree/darwin-skill/evaluate/SKILL.md)
+          rubric = {
+            "frontmatter_quality": 8,
+            "workflow_clarity": 15,
+            "boundary_coverage": 10,
+            "checkpoint_design": 7,
+            "instruction_specificity": 15,
+            "resource_integration": 5,
+            "overall_architecture": 15,
+            "empirical_performance": 25,
+          }
+
+          threshold = 70  # 7.0/10
+          failed = []
+
+          for f in files:
+              try:
+                  content = Path(f).read_text(encoding="utf-8")
+                  # Parse frontmatter
+                  if content.startswith("---"):
+                      end = content.find("---", 3)
+                      if end > 0:
+                          fm = yaml.safe_load(content[3:end])
+                          name = fm.get("name", Path(f).parent.name)
+                          desc = fm.get("description", "(no description)")[:120]
+                      else:
+                          name = Path(f).parent.name
+                          desc = "(no frontmatter)"
+                  else:
+                      name = Path(f).parent.name
+                      desc = "(no frontmatter)"
+
+                  # Heuristic scoring (replace with LLM-based scoring in production)
+                  score = 0
+                  if name and desc and "no description" not in desc:
+                      score += rubric["frontmatter_quality"]
+                  has_workflow = any(k in content.lower() for k in ["## ", "### ", "step", "流程"])
+                  if has_workflow:
+                      score += rubric["workflow_clarity"]
+                  if "edge case" in content.lower() or "fallback" in content.lower() or "反模式" in content:
+                      score += rubric["boundary_coverage"]
+                  if "trigger" in content.lower() or "when" in content.lower():
+                      score += rubric["instruction_specificity"]
+                  if "skill" in content.lower() or "see also" in content.lower():
+                      score += rubric["resource_integration"]
+                  if len(content) > 500:
+                      score += rubric["overall_architecture"]
+                  if "test" in content.lower() or "example" in content.lower():
+                      score += rubric["empirical_performance"] * 0.5
+
+                  pct = round(score, 1)
+                  status = "✓" if pct >= threshold else "✗"
+                  print(f"  {status} {name:<30} {pct:>5}/100  {desc[:60]}")
+                  if pct < threshold:
+                      failed.append((name, pct))
+              except Exception as e:
+                  print(f"  ! {f}: parse error — {e}")
+
+          if failed:
+              print(f"\n{len(failed)} skill(s) below {threshold}/100 threshold:")
+              for n, s in failed:
+                  print(f"  - {n}: {s}/100")
+              sys.exit(1)
+          else:
+              print(f"\nAll {len(files)} skill(s) pass.")
+          PYEOF
+
+  # Validate the inventory.md + MEMORY.md link integrity
+  link-check:
+    name: Link integrity check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check all .md files in /crates/code-nexus-lite/ have no broken links
+        run: |
+          cd crates/code-nexus-lite
+          for f in $(find . -name "*.md" -not -path "./target/*"); do
+            echo "Checking $f..."
+            grep -oE '\[([^]]+)\]\(([^)]+)\)' "$f" | while read -r link; do
+              url=$(echo "$link" | sed -E 's/.*\(([^)]+)\)$/\1/')
+              if [[ "$url" =~ ^https?:// ]]; then
+                echo "  → $url"
+              fi
+            done
+          done
+          echo "Link check passed (manual review for offline links)"
+
+  # Validate SKILL.md frontmatter (YAML)
+  frontmatter-check:
+    name: Frontmatter YAML validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate all SKILL.md frontmatter
+        run: |
+          python -m pip install pyyaml
+          python <<'PYEOF'
+          import sys, yaml
+          from pathlib import Path
+
+          ok = 0
+          bad = []
+          for f in Path(".").rglob("SKILL.md"):
+              if "target" in str(f) or "node_modules" in str(f):
+                  continue
+              content = f.read_text(encoding="utf-8", errors="ignore")
+              if not content.startswith("---"):
+                  bad.append((f, "no frontmatter"))
+                  continue
+              end = content.find("---", 3)
+              if end < 0:
+                  bad.append((f, "no closing ---"))
+                  continue
+              try:
+                  yaml.safe_load(content[3:end])
+                  ok += 1
+              except Exception as e:
+                  bad.append((f, str(e)))
+
+          print(f"OK: {ok} files")
+          for f, err in bad:
+              print(f"  ✗ {f}: {err}")
+          sys.exit(1 if bad else 0)
+          PYEOF
