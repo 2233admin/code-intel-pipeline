@@ -7,5 +7,13 @@
     "!**/third_party/**",
     "!**/external/**"
   ],
-  "repos": {}
+  "repos": {
+    "k-atana": {
+      "path": "D:\\projects\\k-atana",
+      "language": "zh",
+      "sentruxPath": "backend",
+      "repowiseScopePaths": ["backend"],
+      "repowiseRootFiles": ["README.md", "CLAUDE.md", "pyproject.toml", "requirements.txt", ".env.example", ".gitignore"]
+    }
+  }
 }
