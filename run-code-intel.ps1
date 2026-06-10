@@ -15,7 +15,7 @@ param(
     [string]$RepowiseShadowRoot = "",
     [string[]]$RepowiseScopePaths = @(),
     [string[]]$RepowiseRootFiles = @(),
-    [int]$RepowiseTimeoutSeconds = 180,
+    [int]$RepowiseTimeoutSeconds = 600,
     [string[]]$InventoryExclude = @(),
 
     [switch]$SaveSentruxBaseline,

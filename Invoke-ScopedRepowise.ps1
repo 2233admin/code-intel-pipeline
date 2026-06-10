@@ -6,7 +6,7 @@ param(
     [string[]]$ScopePaths = @(),
     [string[]]$RootFiles = @(),
     [int]$CommitLimit = 25,
-    [int]$TimeoutSeconds = 180,
+    [int]$TimeoutSeconds = 600,
     [switch]$Docs
 )
 
@@ -190,7 +190,7 @@ function Invoke-ProcessWithTimeout {
         [string]$FilePath,
         [string[]]$ArgumentList = @(),
         [string]$Description = "process",
-        [int]$TimeoutSeconds = 180,
+        [int]$TimeoutSeconds = 600,
         [string]$WorkingDirectory = (Get-Location).Path
     )
 
@@ -274,7 +274,7 @@ else {
 Push-Location $shadowPath
 try {
     [void](Invoke-NativeCommand -Description "git reset shadow" -Script { git -C $shadowPath reset --hard HEAD })
-    [void](Invoke-NativeCommand -Description "git clean shadow" -Script { git -C $shadowPath clean -fdx })
+    [void](Invoke-NativeCommand -Description "git clean shadow" -Script { git -C $shadowPath clean -fdx -e .repowise })
     git sparse-checkout init --no-cone 2>&1 | Out-Null
     $patterns = New-Object System.Collections.Generic.List[string]
     foreach ($dir in $scopeDirs) {
