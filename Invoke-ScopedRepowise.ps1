@@ -63,6 +63,7 @@ function Invoke-RobocopyMirror {
     if ($LASTEXITCODE -gt 7) {
         throw "robocopy failed for $Source -> $Destination (exit $LASTEXITCODE)"
     }
+    $global:LASTEXITCODE = 0
 }
 
 function Copy-ScopedFile {
@@ -405,6 +406,7 @@ if ((-not (Test-Path -LiteralPath $statePath -PathType Leaf)) -and (-not (Test-P
     throw "Scoped repowise finished without .repowise\state.json or .repowise\wiki.db: $shadowPath"
 }
 
+$global:LASTEXITCODE = 0
 Write-Output "Scoped repowise complete"
 Write-Output "Shadow: $shadowPath"
 Write-Output "HEAD: $head"
