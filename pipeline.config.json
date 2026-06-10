@@ -7,5 +7,9 @@
     "!**/third_party/**",
     "!**/external/**"
   ],
-  "repos": {}
+  "repos": {
+    "projects": {
+      "path": "D:\\projects"
+    }
+  }
 }
