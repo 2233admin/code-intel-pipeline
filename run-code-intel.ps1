@@ -1642,12 +1642,12 @@ if (-not $SkipRepowise) {
                     $repowiseDbPath = Join-Path $repowiseDir "wiki.db"
                     if ((Test-Path -LiteralPath $repowiseStatePath -PathType Leaf) -or (Test-Path -LiteralPath $repowiseDbPath -PathType Leaf)) {
                         $steps.Add((Invoke-LoggedStep "repowise update" {
-                            repowise update --no-workspace --index-only
+                            cmd /c "exit" | repowise update --no-workspace --index-only
                         }))
                     }
                     else {
                         $steps.Add((Invoke-LoggedStep "repowise init" {
-                            @("n") | repowise init . --index-only -y --no-claude-md --no-onboarding --embedder mock --provider mock
+                            cmd /c "echo n" | repowise init . --index-only -y --no-claude-md --no-onboarding --embedder mock --provider mock
                         }))
                     }
 
