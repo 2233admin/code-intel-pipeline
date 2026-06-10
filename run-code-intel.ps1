@@ -1647,7 +1647,7 @@ if (-not $SkipRepowise) {
                     }
                     else {
                         $steps.Add((Invoke-LoggedStep "repowise init" {
-                            @("all") | repowise init . --index-only -y --no-claude-md --embedder mock --provider mock
+                            @("all", "1") | repowise init . --index-only -y --no-claude-md --embedder mock --provider mock
                         }))
                     }
 
