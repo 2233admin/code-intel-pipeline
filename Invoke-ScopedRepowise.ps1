@@ -349,7 +349,7 @@ try {
                 -FilePath "repowise" `
                 -Description "repowise init" `
                 -TimeoutSeconds $TimeoutSeconds `
-                -ArgumentList @("init", ".", "--index-only", "-y", "--no-claude-md", "--no-onboarding", "--skip-tests", "--skip-infra", "--commit-limit", [string]$CommitLimit, "--embedder", "mock", "--provider", "mock"))
+                -ArgumentList @("init", ".", "--index-only", "-y", "--no-claude-md", "--skip-tests", "--skip-infra", "--commit-limit", [string]$CommitLimit, "--embedder", "mock", "--provider", "mock"))
         }
         $dbPath = Join-Path $shadowPath ".repowise\wiki.db"
         if (Test-Path -LiteralPath $dbPath -PathType Leaf) {
@@ -375,7 +375,7 @@ try {
                 -FilePath "repowise" `
                 -Description "repowise init" `
                 -TimeoutSeconds $TimeoutSeconds `
-                -ArgumentList @("init", ".", "--index-only", "-y", "--no-claude-md", "--no-onboarding", "--skip-tests", "--skip-infra", "--commit-limit", [string]$CommitLimit, "--embedder", "mock", "--provider", "mock"))
+                -ArgumentList @("init", ".", "--index-only", "-y", "--no-claude-md", "--skip-tests", "--skip-infra", "--commit-limit", [string]$CommitLimit, "--embedder", "mock", "--provider", "mock"))
         }
     }
 }
