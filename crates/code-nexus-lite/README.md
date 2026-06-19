@@ -44,17 +44,17 @@ cd myapp
 iii                       # start the engine (default ws://127.0.0.1:49134)
 
 # 2. In another shell — start this worker
-cd D:\projects\_tools\code-intel-pipeline\crates\code-nexus-lite
-./target/release/code-nexus-lite.exe
+cd "$CODE_INTEL_HOME/crates/code-nexus-lite"
+./target/release/code-nexus-lite
 
 # 3. In a third shell — call functions
 curl -X POST http://127.0.0.1:49134/scan \
   -H 'Content-Type: application/json' \
-  -d '{"repo": "D:\\projects\\code-intel-pipeline", "skip_init_if_cached": false}'
+  -d '{"repo": "<repo-path>", "skip_init_if_cached": false}'
 
 curl -X POST http://127.0.0.1:49134/lite \
   -H 'Content-Type: application/json' \
-  -d '{"repo": "D:\\projects\\code-intel-pipeline"}'
+  -d '{"repo": "<repo-path>"}'
 
 curl -X POST http://127.0.0.1:49134/doctor \
   -H 'Content-Type: application/json' \

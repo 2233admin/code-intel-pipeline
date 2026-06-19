@@ -109,7 +109,7 @@ install -> doctor -> smoke test
 结果写到：
 
 ```text
-%LOCALAPPDATA%\code-intel\bootstrap\
+<platform code-intel data root>/bootstrap/
 ```
 
 只检查环境，不自动安装缺失工具：
@@ -138,7 +138,7 @@ install -> doctor -> smoke test
 每次运行会创建一个带时间戳的目录：
 
 ```text
-%LOCALAPPDATA%\code-intel\artifacts\<repo-name>\<timestamp>\
+<platform code-intel data root>/artifacts/<repo-name>/<timestamp>/
 ```
 
 核心报告：
@@ -285,15 +285,15 @@ sentrux_test_gaps
 `sentrux` 是 MIT/开源项目，本仓库会安装一个很薄的 shim：
 
 ```text
-%LOCALAPPDATA%\code-intel\bin\sentrux.cmd
-%LOCALAPPDATA%\code-intel\bin\sentrux-shim.ps1
+<platform code-intel data root>/bin/sentrux
+<platform code-intel data root>/bin/sentrux-shim.ps1
 ```
 
 它做几件事：
 
 - 第一次运行自动写本地 Pro license。
 - `sentrux pro status / activate / deactivate` 可直接用。
-- 优先转发给真实 `sentrux.exe`。
+- 优先转发给真实 `sentrux` core。
 - 没有真实 core 时，使用仓库内置 `sentrux-lite-core.ps1` 保底。
 
 检查：
@@ -327,16 +327,16 @@ sentrux pro activate OSS-LOCAL-PRO
 
 ## Sentrux V 插件覆盖包
 
-Sentrux 0.5.7 自带的 Windows `vlang` 插件包缺 `[grammar]` 和 `windows-x86_64.dll`。安装脚本会自动把覆盖包放到：
+Sentrux 0.5.7 自带的 Windows `vlang` 插件包缺 `[grammar]` 和平台 grammar artifact。安装脚本会在当前平台存在 bundled grammar 时自动把覆盖包放到：
 
 ```text
-%USERPROFILE%\.sentrux\plugins\vlang
+~/.sentrux/plugins/vlang
 ```
 
 覆盖包位置：
 
 ```text
-overlays\sentrux\vlang
+overlays/sentrux/vlang
 ```
 
 单独安装：
@@ -348,7 +348,7 @@ overlays\sentrux\vlang
 验证：
 
 ```powershell
-sentrux plugin validate $env:USERPROFILE\.sentrux\plugins\vlang
+sentrux plugin validate ~/.sentrux/plugins/vlang
 sentrux plugin list
 .\Test-SentruxVlangOverlay.ps1
 ```
@@ -480,13 +480,13 @@ tools
 
 ```text
 本项目完整链路：
-test-code-intel-pipeline.ps1 -RepoPath D:\projects\_tools\code-intel-pipeline -Mode normal
+test-code-intel-pipeline.ps1 -RepoPath $env:CODE_INTEL_HOME -Mode normal
 
 GitHub fresh clone：
-test-code-intel-pipeline.ps1 -RepoPath C:\tmp\code-intel-pipeline-online-test-20260530 -Mode normal
+test-code-intel-pipeline.ps1 -RepoPath <tmp>/code-intel-pipeline-online-test -Mode normal
 
 Katana 大仓库 scoped：
-test-code-intel-pipeline.ps1 -RepoPath D:\projects\_quant\k-atana -SentruxPath backend -Mode normal
+test-code-intel-pipeline.ps1 -RepoPath <k-atana-path> -SentruxPath backend -Mode normal
 ```
 
 Katana 结果示例：
@@ -517,7 +517,7 @@ primaryTarget=simulate_engine
 install -> doctor -> smoke
 ```
 
-CI 使用 Sentrux lite core 保底，所以 runner 没装真实 `sentrux.exe` 时也不会直接断链。
+CI 使用 Sentrux lite core 保底，所以 runner 没装真实 `sentrux` 时也不会直接断链。
 
 ## 常见问题
 

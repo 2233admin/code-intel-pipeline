@@ -1,3 +1,5 @@
+#requires -Version 7.2
+
 param(
     [Parameter(Mandatory = $true, Position = 0)]
     [ValidateSet("scan", "health", "session_start", "session_end", "rescan", "check_rules", "evolution", "dsm", "git_stats", "test_gaps", "what_if", "sentrux_scan", "sentrux_health", "sentrux_dsm", "sentrux_git_stats", "sentrux_test_gaps")]
@@ -8,6 +10,8 @@ param(
 
     [string]$SessionId = "",
     [int]$Recent = 10,
+    [ValidateSet("auto", "windows", "macos", "linux")]
+    [string]$Platform = "auto",
     [string[]]$PollutionExclusions = @()
 )
 
@@ -200,7 +204,7 @@ function Parse-SentruxOutput {
 function Get-BaselineMetrics {
     param([string]$TargetPath)
 
-    $baselinePath = Join-Path $TargetPath ".sentrux\baseline.json"
+    $baselinePath = Join-Path (Join-Path $TargetPath ".sentrux") "baseline.json"
     $baseline = Read-JsonFileSafe $baselinePath
     if ($null -eq $baseline) { return $null }
 
@@ -317,8 +321,8 @@ function Get-PollutionSignals {
         [ordered]@{ path = "dist"; reason = "build output excluded from governed source graph"; inspectNestedGit = $false },
         [ordered]@{ path = "build"; reason = "build output excluded from governed source graph"; inspectNestedGit = $false },
         [ordered]@{ path = "target"; reason = "build output excluded from governed source graph"; inspectNestedGit = $false },
-        [ordered]@{ path = "static\assets"; reason = "bundled static assets excluded from governed source graph"; inspectNestedGit = $false },
-        [ordered]@{ path = "public\assets"; reason = "bundled static assets excluded from governed source graph"; inspectNestedGit = $false },
+        [ordered]@{ path = "static/assets"; reason = "bundled static assets excluded from governed source graph"; inspectNestedGit = $false },
+        [ordered]@{ path = "public/assets"; reason = "bundled static assets excluded from governed source graph"; inspectNestedGit = $false },
         [ordered]@{ path = "tools"; reason = "common tool or generated-support directory"; inspectNestedGit = $true }
     )
     $signals = @()
@@ -344,7 +348,7 @@ function Get-PollutionSignals {
 function Get-SessionDir {
     param([string]$TargetPath)
 
-    return Join-Path $TargetPath ".sentrux\agent-sessions"
+    return Join-Path (Join-Path $TargetPath ".sentrux") "agent-sessions"
 }
 
 function New-SessionId {
@@ -420,8 +424,8 @@ function Invoke-ScanTool {
         [string]$ToolName = "scan"
     )
 
-    $baselinePath = Join-Path $TargetPath ".sentrux\baseline.json"
-    $rulesPath = Join-Path $TargetPath ".sentrux\rules.toml"
+    $baselinePath = Join-Path (Join-Path $TargetPath ".sentrux") "baseline.json"
+    $rulesPath = Join-Path (Join-Path $TargetPath ".sentrux") "rules.toml"
     $gate = Invoke-Gate $TargetPath
     $metrics = $gate["metrics"]
     $inventory = Get-SourceFileInventory $TargetPath
@@ -510,7 +514,7 @@ function Invoke-SessionEndTool {
     $start = Read-JsonFileSafe $startPath
     $gate = Invoke-Gate $TargetPath
     $metrics = $gate["metrics"]
-    $rulesPath = Join-Path $TargetPath ".sentrux\rules.toml"
+    $rulesPath = Join-Path (Join-Path $TargetPath ".sentrux") "rules.toml"
     $rules = $null
     if (Test-Path -LiteralPath $rulesPath -PathType Leaf) {
         $rules = Invoke-CheckRulesTool $TargetPath
@@ -548,8 +552,8 @@ function Invoke-SessionEndTool {
 function Invoke-CheckRulesTool {
     param([string]$TargetPath)
 
-    $rulesPath = Join-Path $TargetPath ".sentrux\rules.toml"
-    $templatePath = Join-Path $PSScriptRoot "templates\sentrux-rules.example.toml"
+    $rulesPath = Join-Path (Join-Path $TargetPath ".sentrux") "rules.toml"
+    $templatePath = Join-Path (Join-Path $PSScriptRoot "templates") "sentrux-rules.example.toml"
     if (-not (Test-Path -LiteralPath $rulesPath -PathType Leaf)) {
         return [ordered]@{
             tool = "check_rules"
@@ -2291,7 +2295,7 @@ function New-SessionTrend {
 function Read-SentruxRuleHints {
     param([string]$TargetPath)
 
-    $rulesPath = Join-Path $TargetPath ".sentrux\rules.toml"
+    $rulesPath = Join-Path (Join-Path $TargetPath ".sentrux") "rules.toml"
     $constraints = [ordered]@{
         max_cycles = $null
         max_coupling = $null

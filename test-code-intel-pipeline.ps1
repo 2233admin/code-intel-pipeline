@@ -1,8 +1,13 @@
+#requires -Version 7.2
+
 param(
     [string]$Repo = "",
     [string]$RepoPath = "",
 
     [string]$Config = "",
+
+    [ValidateSet("auto", "windows", "macos", "linux")]
+    [string]$Platform = "auto",
 
     [ValidateSet("lite", "normal", "full")]
     [string]$Mode = "normal",
@@ -12,11 +17,16 @@ param(
     [switch]$SkipRepowise,
     [switch]$RepowiseDocs,
     [switch]$AllowGraphMissing,
+    [switch]$SkipSentruxCheck,
     [switch]$SkipSentruxGate
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$platformModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-intel-platform.psm1"
+Import-Module $platformModule -Force
+$effectivePlatform = Get-CodeIntelPlatform -Platform $Platform
 
 function Read-JsonFile {
     param([string]$Path)
@@ -37,10 +47,10 @@ if ([string]::IsNullOrWhiteSpace($label)) {
 }
 
 $doctorJson = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
-    & $doctor -Config $Config -RepoPath $RepoPath -Json | ConvertFrom-Json
+    & $doctor -Config $Config -RepoPath $RepoPath -Platform $effectivePlatform -Json | ConvertFrom-Json
 }
 else {
-    & $doctor -Config $Config -Repo $Repo -Json | ConvertFrom-Json
+    & $doctor -Config $Config -Repo $Repo -Platform $effectivePlatform -Json | ConvertFrom-Json
 }
 if (-not $doctorJson.ok) {
     throw "Doctor failed: $($doctorJson.missing -join ', ')"
@@ -49,6 +59,7 @@ if (-not $doctorJson.ok) {
 $runnerParams = @{
     Config = $Config
     Mode = $Mode
+    Platform = $effectivePlatform
 }
 if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
     $runnerParams.RepoPath = $RepoPath
@@ -65,6 +76,9 @@ if ($SkipRepowise) {
 if ($RepowiseDocs) {
     $runnerParams.RepowiseDocs = $true
 }
+if ($SkipSentruxCheck) {
+    $runnerParams.SkipSentruxCheck = $true
+}
 if ($SkipSentruxGate) {
     $runnerParams.SkipSentruxGate = $true
 }
@@ -78,8 +92,7 @@ $artifactRoot = if ($doctorJson.checks -and $doctorJson.checks.config -and (Test
 }
 else { "" }
 if ([string]::IsNullOrWhiteSpace($artifactRoot)) {
-    $base = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $env:LOCALAPPDATA } else { (Join-Path $HOME ".code-intel") }
-    $artifactRoot = Join-Path $base "code-intel\artifacts"
+    $artifactRoot = Get-CodeIntelArtifactRoot -Platform $effectivePlatform
 }
 
 $artifactDir = Get-ChildItem -Path (Join-Path $artifactRoot $repoName) -Directory |
@@ -305,6 +318,14 @@ $result = [ordered]@{
     ok = $true
     repo = $label
     mode = $Mode
+    platform = [ordered]@{
+        os = $effectivePlatform
+        shell = $PSVersionTable.PSEdition
+        psVersion = $PSVersionTable.PSVersion.ToString()
+    }
+    paths = [ordered]@{
+        artifactRoot = $artifactRoot
+    }
     artifactDir = $artifactDir.FullName
     report = $reportPath
     summary = $summaryPath

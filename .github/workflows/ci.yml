@@ -7,8 +7,16 @@ on:
   pull_request:
 
 jobs:
-  windows-smoke:
-    runs-on: windows-latest
+  cross-platform-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+          - ubuntu-latest
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -21,20 +29,41 @@ jobs:
 
       - name: Install ripgrep
         shell: pwsh
-        run: choco install ripgrep -y --no-progress
+        run: |
+          if ($IsWindows) {
+            choco install ripgrep -y --no-progress
+          }
+          elseif ($IsMacOS) {
+            brew install ripgrep
+          }
+          else {
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+          }
 
       - name: Install portable pipeline
         shell: pwsh
-        run: .\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -Json
-
-      - name: Add pipeline tools to PATH
-        shell: pwsh
-        run: Add-Content -Path $env:GITHUB_PATH -Value "$env:LOCALAPPDATA\code-intel\bin"
+        run: |
+          $result = ./install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -Json | ConvertFrom-Json
+          Add-Content -Path $env:GITHUB_PATH -Value $result.paths.bin
 
       - name: Doctor
         shell: pwsh
-        run: .\check-code-intel-tools.ps1 -RepoPath .
+        run: ./check-code-intel-tools.ps1 -RepoPath . -Json
 
       - name: Smoke
         shell: pwsh
-        run: .\test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -Mode normal
+        run: ./test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxCheck -SkipSentruxGate -Mode normal
+
+      - name: Hardcoded path scan
+        shell: pwsh
+        run: |
+          $patterns = 'D:\\|C:\\Users\\Administrator|LOCALAPPDATA|USERPROFILE|APPDATA|powershell\.exe'
+          $hits = rg -n $patterns -g '*.ps1' -g '*.psm1' -g '*.md' -g '*.yml'
+          if ($LASTEXITCODE -eq 0) {
+            $hits
+            throw "Hardcoded machine or Windows-only path references found."
+          }
+          if ($LASTEXITCODE -gt 1) {
+            throw "Hardcoded path scan failed with exit code $LASTEXITCODE."
+          }

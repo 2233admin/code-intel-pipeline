@@ -1,3 +1,5 @@
+#requires -Version 7.2
+
 [CmdletBinding()]
 param(
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
@@ -18,6 +20,7 @@ function Show-Help {
     Write-Output "  health     Print a compact health signal"
     Write-Output "  check      Enforce architectural rules from .sentrux/rules.toml"
     Write-Output "  gate       Compare current structure with .sentrux/baseline.json"
+    Write-Output "  plugin     Validate or list local plugins"
     Write-Output "  pro        Manage local open-source Pro activation"
     Write-Output ""
     Write-Output "check: Enforce architectural rules"
@@ -269,7 +272,7 @@ function Invoke-Check {
     if (-not (Test-Path -LiteralPath $rulesPath -PathType Leaf)) {
         Write-Output "No .sentrux/rules.toml found"
         Write-Output "Quality: not gated"
-        return 0
+        exit 0
     }
 
     $rules = Get-Content -LiteralPath $rulesPath -Raw
@@ -300,11 +303,11 @@ function Invoke-Check {
         foreach ($violation in $violations) {
             Write-Output "- $violation"
         }
-        return 1
+        exit 1
     }
 
     Write-Output "All rules passed - Quality: $($metrics.quality_signal)"
-    return 0
+    exit 0
 }
 
 function Invoke-Gate {
@@ -353,6 +356,94 @@ function Invoke-Gate {
     exit 0
 }
 
+function Get-PluginRoot {
+    $homeDir = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+    if ([string]::IsNullOrWhiteSpace($homeDir)) { $homeDir = $HOME }
+    return (Join-Path (Join-Path $homeDir ".sentrux") "plugins")
+}
+
+function Invoke-PluginValidate {
+    param([string]$PluginPath)
+
+    if ([string]::IsNullOrWhiteSpace($PluginPath)) {
+        throw "missing plugin path: sentrux plugin validate <path>"
+    }
+
+    $pluginItem = Get-Item -LiteralPath $PluginPath -ErrorAction Stop
+    if (-not $pluginItem.PSIsContainer) {
+        throw "plugin path is not a directory: $PluginPath"
+    }
+
+    $pluginToml = Join-Path $pluginItem.FullName "plugin.toml"
+    if (-not (Test-Path -LiteralPath $pluginToml -PathType Leaf)) {
+        throw "plugin.toml missing: $pluginToml"
+    }
+
+    $toml = Get-Content -LiteralPath $pluginToml -Raw
+    if ($toml -match "(?m)^\s*\[grammar\]\s*$") {
+        $grammarDir = Join-Path $pluginItem.FullName "grammars"
+        $grammarFiles = @()
+        if (Test-Path -LiteralPath $grammarDir -PathType Container) {
+            $grammarFiles = @(Get-ChildItem -LiteralPath $grammarDir -File -ErrorAction SilentlyContinue)
+        }
+        if ($grammarFiles.Count -eq 0) {
+            throw "grammar artifact missing under $grammarDir"
+        }
+    }
+
+    $tagsQuery = Join-Path (Join-Path $pluginItem.FullName "queries") "tags.scm"
+    if (-not (Test-Path -LiteralPath $tagsQuery -PathType Leaf)) {
+        throw "queries/tags.scm missing: $tagsQuery"
+    }
+
+    Write-Output "Plugin valid: $($pluginItem.FullName)"
+    return
+}
+
+function Invoke-PluginList {
+    $pluginRoot = Get-PluginRoot
+    if (-not (Test-Path -LiteralPath $pluginRoot -PathType Container)) {
+        Write-Output "No plugins installed at $pluginRoot"
+        return
+    }
+
+    $plugins = @(Get-ChildItem -LiteralPath $pluginRoot -Directory -ErrorAction SilentlyContinue)
+    if ($plugins.Count -eq 0) {
+        Write-Output "No plugins installed at $pluginRoot"
+        return
+    }
+
+    foreach ($plugin in $plugins) {
+        Write-Output $plugin.Name
+    }
+    return
+}
+
+function Invoke-Plugin {
+    param([string[]]$PluginArgs)
+
+    if ($PluginArgs.Count -eq 0 -or $PluginArgs[0] -in @("-h", "--help", "help")) {
+        Write-Output "Usage: sentrux plugin <validate|list> [path]"
+        exit 0
+    }
+
+    switch ($PluginArgs[0]) {
+        "validate" {
+            Invoke-PluginValidate ($(if ($PluginArgs.Count -gt 1) { $PluginArgs[1] } else { "" }))
+            exit 0
+        }
+        "list" {
+            Invoke-PluginList
+            exit 0
+        }
+        default {
+            Write-Output "sentrux-lite: unknown plugin command '$($PluginArgs[0])'"
+            Write-Output "Usage: sentrux plugin <validate|list> [path]"
+            exit 1
+        }
+    }
+}
+
 if ($RemainingArgs.Count -eq 0 -or $RemainingArgs[0] -in @("-h", "--help", "help")) {
     Show-Help
     exit 0
@@ -374,11 +465,13 @@ switch ($command) {
             Show-Help
             exit 0
         }
-        $code = Invoke-Check ($(if ($tail.Count -gt 0) { $tail[0] } else { "" }))
-        exit $code
+        Invoke-Check ($(if ($tail.Count -gt 0) { $tail[0] } else { "" }))
     }
     "gate" {
         Invoke-Gate $tail
+    }
+    "plugin" {
+        Invoke-Plugin $tail
     }
     default {
         Write-Output "sentrux-lite: unknown command '$command'"

@@ -1,8 +1,13 @@
+#requires -Version 7.2
+
 param(
     [string]$Repo = "",
     [string]$RepoPath = "",
 
     [string]$Config = "",
+
+    [ValidateSet("auto", "windows", "macos", "linux")]
+    [string]$Platform = "auto",
 
     [ValidateSet("lite", "normal", "full")]
     [string]$Mode = "normal",
@@ -31,6 +36,11 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$platformModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-intel-platform.psm1"
+Import-Module $platformModule -Force
+$effectivePlatform = Get-CodeIntelPlatform -Platform $Platform
+$codeIntelPaths = Get-CodeIntelPaths -Platform $effectivePlatform -Root $PSScriptRoot
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
@@ -68,19 +78,11 @@ function Get-JsonProperty {
 }
 
 function Get-DefaultArtifactRoot {
-    $fromEnv = [Environment]::GetEnvironmentVariable("CODE_INTEL_ARTIFACT_ROOT", "User")
-    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) { return $fromEnv }
-    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_ARTIFACT_ROOT)) { return $env:CODE_INTEL_ARTIFACT_ROOT }
-    $base = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $env:LOCALAPPDATA } else { (Join-Path $HOME ".code-intel") }
-    return (Join-Path $base "code-intel\artifacts")
+    return (Get-CodeIntelArtifactRoot -Platform $effectivePlatform)
 }
 
 function Get-DefaultShadowRoot {
-    $fromEnv = [Environment]::GetEnvironmentVariable("CODE_INTEL_SHADOW_ROOT", "User")
-    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) { return $fromEnv }
-    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_SHADOW_ROOT)) { return $env:CODE_INTEL_SHADOW_ROOT }
-    $base = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $env:LOCALAPPDATA } else { (Join-Path $HOME ".code-intel") }
-    return (Join-Path $base "code-intel\repowise")
+    return (Get-CodeIntelShadowRoot -Platform $effectivePlatform)
 }
 
 function Resolve-ChildPath {
@@ -326,7 +328,7 @@ function New-SentruxInsight {
 
     $gateStep = @($Steps | Where-Object { $_.name -like "sentrux gate*" } | Select-Object -Last 1)
     $checkStep = @($Steps | Where-Object { $_.name -eq "sentrux check" } | Select-Object -First 1)
-    $rulesPath = if ([string]::IsNullOrWhiteSpace($TargetPath)) { "" } else { Join-Path $TargetPath ".sentrux\rules.toml" }
+    $rulesPath = if ([string]::IsNullOrWhiteSpace($TargetPath)) { "" } else { Join-Path (Join-Path $TargetPath ".sentrux") "rules.toml" }
     $baseline = Read-JsonFileSafe $BaselinePath
     $gateOutput = if ($gateStep.Count -gt 0) { [string]$gateStep[0].output } else { "" }
 
@@ -918,7 +920,7 @@ function New-HospitalModalities {
 
     return @(
         (New-Modality "xray" "fast file inventory and repo surface" $InventoryStep (Get-StepScore $InventoryStep) (Join-Path $RunDir "files.txt") $xrayFinding "Sees files, not semantic impact.")
-        (New-Modality "anatomy" "Understand Anything architecture graph" $UnderstandStep $GraphScore (Join-Path $RepoPath ".understand-anything\knowledge-graph.json") (Get-FirstLine ([string]$UnderstandStep.output)) "Requires a prebuilt graph from the Understand tool.")
+        (New-Modality "anatomy" "Understand Anything architecture graph" $UnderstandStep $GraphScore (Join-Path (Join-Path $RepoPath ".understand-anything") "knowledge-graph.json") (Get-FirstLine ([string]$UnderstandStep.output)) "Requires a prebuilt graph from the Understand tool.")
         (New-Modality "ct" "Sentrux DSM, hotspots, and structural slices" $SentruxGateStep $CtScore $ctArtifact $ctFinding "Static structure is not runtime truth.")
         (New-Modality "mri" "CodeNexus context and impact localization" $null $MriScore $mriArtifact $mriFinding "Lite mode is local evidence, not a full semantic backend.")
         (New-Modality "pet" "execution proxy: test gaps, evolution, and what-if risk" $null $PetScore $petArtifact $petFinding "No live runtime trace is captured yet.")
@@ -2053,6 +2055,17 @@ $report = [ordered]@{
     repoName = $repoName
     mode = $Mode
     language = $Language
+    platform = [ordered]@{
+        os = $effectivePlatform
+        shell = $PSVersionTable.PSEdition
+        psVersion = $PSVersionTable.PSVersion.ToString()
+    }
+    paths = [ordered]@{
+        home = $codeIntelPaths.home
+        dataRoot = $codeIntelPaths.dataRoot
+        bin = $codeIntelPaths.bin
+        codeIntelHome = $codeIntelPaths.codeIntelHome
+    }
     artifactDir = $runDir
     sentruxPath = if ([string]::IsNullOrWhiteSpace($SentruxPath)) { $repoPath } else { (Resolve-ChildPath $repoPath $SentruxPath) }
     tools = $toolState

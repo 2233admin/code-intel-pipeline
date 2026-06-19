@@ -113,47 +113,47 @@ This keeps nested external repos from poisoning indexing and keeps current worki
 Install check:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\repo -CheckProvider
+& "$env:CODE_INTEL_HOME/install-code-intel-pipeline.ps1" -RepoPath <repo-path> -CheckProvider
 ```
 
 Install or repair a teammate machine:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\repo -CheckProvider -RepairSkillLinks -InstallMissing
+& "$env:CODE_INTEL_HOME/install-code-intel-pipeline.ps1" -RepoPath <repo-path> -CheckProvider -RepairSkillLinks -InstallMissing
 ```
 
 `-InstallMissing` is explicit by design. The default installer is a doctor; the install mode attempts supported CLI installs and records every attempt in `installActions`.
 
-`-RepairSkillLinks` installs the bundled `skill\` copy into the user profile when the shared `.agents` skill is absent, then links Codex and Claude to that shared copy.
+`-RepairSkillLinks` installs the bundled `skill/` copy into the user profile when the shared `.agents` skill is absent, then links Codex and Claude to that shared copy.
 
 Doctor and normal run:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\invoke-code-intel.ps1 -RepoPath C:\path\to\repo -Mode normal
+& "$env:CODE_INTEL_HOME/invoke-code-intel.ps1" -RepoPath <repo-path> -Mode normal
 ```
 
 Docs-enabled run:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\invoke-code-intel.ps1 -RepoPath C:\path\to\repo -Mode normal -RepowiseDocs
+& "$env:CODE_INTEL_HOME/invoke-code-intel.ps1" -RepoPath <repo-path> -Mode normal -RepowiseDocs
 ```
 
 Batch run:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\invoke-code-intel.ps1 -Config D:\projects\_tools\code-intel-pipeline\pipeline.config.json -All -Mode lite
+& "$env:CODE_INTEL_HOME/invoke-code-intel.ps1" -Config "$env:CODE_INTEL_HOME/pipeline.config.json" -All -Mode lite
 ```
 
 Smoke test:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\test-code-intel-pipeline.ps1 -RepoPath C:\path\to\repo
+& "$env:CODE_INTEL_HOME/test-code-intel-pipeline.ps1" -RepoPath <repo-path>
 ```
 
 Artifact index:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\update-code-intel-index.ps1
+& "$env:CODE_INTEL_HOME/update-code-intel-index.ps1"
 ```
 
 ## Design Rule
