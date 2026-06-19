@@ -1,3 +1,5 @@
+#requires -Version 7.2
+
 [CmdletBinding()]
 param(
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
@@ -372,7 +374,7 @@ function Get-PluginRoot {
         return $env:SENTRUX_PLUGIN_ROOT
     }
     $userProfile = if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) { $env:USERPROFILE } else { $HOME }
-    return (Join-Path $userProfile ".sentrux\plugins")
+    return (Join-Path $userProfile (Join-Path ".sentrux" "plugins"))
 }
 
 function Read-PluginTomlField {
@@ -406,10 +408,10 @@ function Test-PluginPath {
         return
     }
     $pluginToml = Join-Path $target "plugin.toml"
-    $queryPath = Join-Path $target "queries\tags.scm"
-    $grammarPath = Join-Path $target "grammars\windows-x86_64.dll"
+    $queryPath = Join-Path $target (Join-Path "queries" "tags.scm")
+    $grammarDir = Join-Path $target "grammars"
 
-    foreach ($required in @($pluginToml, $queryPath, $grammarPath)) {
+    foreach ($required in @($pluginToml, $queryPath)) {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
             Write-Output "plugin invalid: missing $required"
             $script:SentruxLiteExitCode = 1
@@ -418,6 +420,18 @@ function Test-PluginPath {
     }
 
     $toml = Get-Content -LiteralPath $pluginToml -Raw
+    if ($toml -match "(?m)^\s*\[grammar\]\s*$") {
+        $grammarFiles = @()
+        if (Test-Path -LiteralPath $grammarDir -PathType Container) {
+            $grammarFiles = @(Get-ChildItem -LiteralPath $grammarDir -File -ErrorAction SilentlyContinue)
+        }
+        if ($grammarFiles.Count -eq 0) {
+            Write-Output "plugin invalid: grammar artifact missing under $grammarDir"
+            $script:SentruxLiteExitCode = 1
+            return
+        }
+    }
+
     $name = Read-PluginTomlField $toml "name"
     $version = Read-PluginTomlField $toml "version"
     $extensions = @(Read-PluginExtensions $toml)

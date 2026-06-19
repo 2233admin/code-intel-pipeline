@@ -1,3 +1,5 @@
+#requires -Version 7.2
+
 [CmdletBinding()]
 param(
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
@@ -22,10 +24,26 @@ function Get-LicensePath {
     if (-not [string]::IsNullOrWhiteSpace($env:SENTRUX_LICENSE_FILE)) {
         return $env:SENTRUX_LICENSE_FILE
     }
-    if (-not [string]::IsNullOrWhiteSpace($env:APPDATA)) {
-        return (Join-Path $env:APPDATA "sentrux\license.json")
+
+    $homeDir = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+    if ([string]::IsNullOrWhiteSpace($homeDir)) { $homeDir = $HOME }
+
+    if ($IsWindows) {
+        $base = [Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)
+        if ([string]::IsNullOrWhiteSpace($base)) { $base = $homeDir }
+        return (Join-Path (Join-Path $base "sentrux") "license.json")
     }
-    return (Join-Path $HOME ".sentrux\license.json")
+    if ($IsMacOS) {
+        return (Join-Path (Join-Path (Join-Path $homeDir "Library") "Application Support") (Join-Path "sentrux" "license.json"))
+    }
+
+    $configBase = if (-not [string]::IsNullOrWhiteSpace($env:XDG_CONFIG_HOME)) {
+        $env:XDG_CONFIG_HOME
+    }
+    else {
+        Join-Path $homeDir ".config"
+    }
+    return (Join-Path (Join-Path $configBase "sentrux") "license.json")
 }
 
 function Get-AutoDisabledPath {
@@ -171,26 +189,33 @@ function Resolve-Core {
         $candidates.Add($path)
     }
 
-    $pathEntries = @($env:PATH -split ";" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $separator = [System.IO.Path]::PathSeparator
+    $pathEntries = @($env:PATH -split [regex]::Escape([string]$separator) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     foreach ($entry in $pathEntries) {
         $fullEntry = try { (Get-Item -LiteralPath $entry -ErrorAction Stop).FullName } catch { $entry }
-        if ([string]::Equals($fullEntry.TrimEnd('\'), $shimDir.TrimEnd('\'), [System.StringComparison]::OrdinalIgnoreCase)) {
+        $fullEntryTrimmed = $fullEntry.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+        $shimDirTrimmed = $shimDir.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+        if ([string]::Equals($fullEntryTrimmed, $shimDirTrimmed, [System.StringComparison]::OrdinalIgnoreCase)) {
             continue
         }
         $candidates.Add((Join-Path $entry "sentrux.exe"))
         $candidates.Add((Join-Path $entry "sentrux-core.exe"))
+        $candidates.Add((Join-Path $entry "sentrux"))
+        $candidates.Add((Join-Path $entry "sentrux-core"))
     }
 
     $selfCmd = Join-Path $shimDir "sentrux.cmd"
+    $selfShell = Join-Path $shimDir "sentrux"
     foreach ($candidate in $candidates) {
         if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
         $full = (Get-Item -LiteralPath $candidate).FullName
         if ([string]::Equals($full, $selfCmd, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        if ([string]::Equals($full, $selfShell, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
         if ([string]::Equals($full, $PSCommandPath, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
         return $full
     }
 
-    throw "Sentrux core executable not found. Install sentrux.exe or set SENTRUX_CORE_EXE."
+    throw "Sentrux core executable not found. Install sentrux or set SENTRUX_CORE_EXE."
 }
 
 function Inject-ProHelp {
@@ -224,9 +249,9 @@ function Invoke-Core {
         $shimDir = Split-Path -Parent $PSCommandPath
         $liteCore = Join-Path $shimDir "sentrux-lite-core.ps1"
         if (-not (Test-Path -LiteralPath $liteCore -PathType Leaf)) {
-            throw "Sentrux core executable not found and lite core is missing. Install sentrux.exe or restore sentrux-lite-core.ps1."
+            throw "Sentrux core executable not found and lite core is missing. Install sentrux or restore sentrux-lite-core.ps1."
         }
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $liteCore @CoreArgs
+        & $liteCore @CoreArgs
     }
     exit $LASTEXITCODE
 }
@@ -272,7 +297,7 @@ if ($RemainingArgs.Count -eq 0 -or $RemainingArgs[0] -in @("-h", "--help", "help
         $shimDir = Split-Path -Parent $PSCommandPath
         $liteCore = Join-Path $shimDir "sentrux-lite-core.ps1"
         if (Test-Path -LiteralPath $liteCore -PathType Leaf) {
-            $help = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $liteCore --help 2>&1 | Out-String
+            $help = & $liteCore --help 2>&1 | Out-String
             Write-Output (Inject-ProHelp $help)
         }
         else {

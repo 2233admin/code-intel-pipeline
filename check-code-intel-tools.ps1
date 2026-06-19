@@ -1,7 +1,11 @@
+#requires -Version 7.2
+
 param(
     [string]$Config = "",
     [string]$Repo = "",
     [string]$RepoPath = "",
+    [ValidateSet("auto", "windows", "macos", "linux")]
+    [string]$Platform = "auto",
     [switch]$RequireRepowise,
     [switch]$RequireUnderstand,
     [switch]$Json
@@ -9,6 +13,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$platformModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-intel-platform.psm1"
+Import-Module $platformModule -Force
+$effectivePlatform = Get-CodeIntelPlatform -Platform $Platform
 
 function Get-JsonProperty {
     param(
@@ -89,7 +97,7 @@ function Test-Tool {
         [bool]$Required = $true
     )
 
-    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+    $cmd = if ($Name -eq "python") { Get-CodeIntelPythonCommand } else { Get-Command $Name -ErrorAction SilentlyContinue }
     [pscustomobject][ordered]@{
         name = $Name
         required = $Required
@@ -144,15 +152,17 @@ else {
 }
 $sentruxScope = Resolve-SentruxScope $repoPath $repoConfig
 
-$userProfile = if ([string]::IsNullOrWhiteSpace($env:USERPROFILE)) { $HOME } else { $env:USERPROFILE }
+$pipelineRoot = Split-Path -Parent $PSCommandPath
+$paths = Get-CodeIntelPaths -Platform $effectivePlatform -Root $pipelineRoot
+$userProfile = Get-CodeIntelHomeDirectory
 $understandSkillCandidates = @(
-    (Join-Path $userProfile ".claude\skills\understand\SKILL.md"),
-    (Join-Path $userProfile ".agents\skills\understand\SKILL.md"),
-    (Join-Path $userProfile ".codex\skills\understand\SKILL.md")
+    (Join-Path (Join-Path (Join-Path (Join-Path $userProfile ".claude") "skills") "understand") "SKILL.md"),
+    (Join-Path (Join-Path (Join-Path (Join-Path $userProfile ".agents") "skills") "understand") "SKILL.md"),
+    (Join-Path (Join-Path (Join-Path (Join-Path $userProfile ".codex") "skills") "understand") "SKILL.md")
 )
 $repoParentForCandidates = if (-not [string]::IsNullOrWhiteSpace([string]$repoPath)) { Split-Path -Parent $repoPath } else { $pipelineRoot }
 $understandPluginCandidates = @(
-    (Join-Path $userProfile ".claude\plugins\cache\understand-anything"),
+    (Join-Path (Join-Path (Join-Path $userProfile ".claude") "plugins") (Join-Path "cache" "understand-anything")),
     (Join-Path $userProfile ".understand-anything-plugin"),
     (Join-Path $repoParentForCandidates "Understand-Anything")
 )
@@ -162,7 +172,7 @@ $understandPlugin = $understandPluginCandidates | Where-Object { Test-Path -Lite
 
 $repoState = $null
 if (-not [string]::IsNullOrWhiteSpace([string]$repoPath) -and (Test-Path -LiteralPath $repoPath -PathType Container)) {
-    $knowledgeGraph = Join-Path $repoPath ".understand-anything\knowledge-graph.json"
+    $knowledgeGraph = Join-Path (Join-Path $repoPath ".understand-anything") "knowledge-graph.json"
     $repowiseDir = Join-Path $repoPath ".repowise"
     $sentruxDir = Join-Path $sentruxScope ".sentrux"
     $repoState = [ordered]@{
@@ -186,6 +196,7 @@ elseif (-not [string]::IsNullOrWhiteSpace([string]$repoPath)) {
 $tools = @(
     Test-Tool "rg" $true
     Test-Tool "git" $true
+    Test-Tool "python" $true
     Test-Tool "repowise" ([bool]$RequireRepowise)
     Test-Tool "repomix" $false
     Test-Tool "sentrux" $true
@@ -214,6 +225,13 @@ $checks = [ordered]@{
         pluginPath = if ($understandPlugin) { [string]$understandPlugin } else { "" }
     }
     repo = $repoState
+    env = [ordered]@{
+        codeIntelHome = [ordered]@{
+            expected = $paths.codeIntelHome
+            value = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_HOME)) { "" } else { $env:CODE_INTEL_HOME }
+            ok = (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_HOME) -and (Resolve-CodeIntelPath $env:CODE_INTEL_HOME) -eq $paths.codeIntelHome)
+        }
+    }
 }
 
 $missing = New-Object System.Collections.Generic.List[string]
@@ -231,6 +249,17 @@ if ($repoState -and -not $repoState.exists) { $missing.Add("repo path") }
 $result = [ordered]@{
     ok = $missing.Count -eq 0
     missing = $missing
+    platform = [ordered]@{
+        os = $effectivePlatform
+        shell = $PSVersionTable.PSEdition
+        psVersion = $PSVersionTable.PSVersion.ToString()
+    }
+    paths = [ordered]@{
+        home = $paths.home
+        dataRoot = $paths.dataRoot
+        bin = $paths.bin
+        codeIntelHome = $paths.codeIntelHome
+    }
     checks = $checks
     strict = [ordered]@{
         requireRepowise = [bool]$RequireRepowise
