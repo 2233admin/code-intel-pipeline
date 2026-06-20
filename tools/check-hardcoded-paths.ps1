@@ -12,12 +12,12 @@ $PSNativeCommandUseErrorActionPreference = $false
 $root = Split-Path -Parent $PSScriptRoot
 $slash = [string][char]92
 $patterns = @(
-    ("D:" + $slash + $slash),
-    ("C:" + $slash + $slash + "Users" + $slash + $slash + "Administrator"),
-    ("LOCAL" + "APPDATA"),
-    ("USER" + "PROFILE"),
+    ("D:" + $slash),
+    ("C:" + $slash + "Users" + $slash + "Administrator"),
+    ("LOCAL" + "APP" + "DATA"),
+    ("USER" + "PRO" + "FILE"),
     ("APP" + "DATA"),
-    ("power" + "shell.exe")
+    ("power" + "shell" + ".exe")
 )
 $pattern = [regex](($patterns | ForEach-Object { [regex]::Escape($_) }) -join "|")
 $globs = @("*.ps1", "*.psm1", "*.md", "*.yml")
