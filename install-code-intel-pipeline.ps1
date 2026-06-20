@@ -310,7 +310,7 @@ function Install-MissingTool {
 
     try {
         & $Installer
-        $after = Get-Command $CommandName -ErrorAction SilentlyContinue
+        $after = if ($CommandName -eq "python") { Get-CodeIntelPythonCommand } else { Get-Command $CommandName -ErrorAction SilentlyContinue }
         if ($after) {
             Add-InstallAction $Actions $CommandName "installed" $after.Source "" $metadata.packageManager ([bool]$metadata.requiresElevation)
         }

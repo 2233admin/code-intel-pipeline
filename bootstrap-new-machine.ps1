@@ -96,6 +96,7 @@ if (-not $SkipSmoke) {
     $smokeParams = @{
         RepoPath = $repo
         Mode = $Mode
+        Platform = $effectivePlatform
         SkipRepowise = $true
     }
     $smokeResult = Invoke-JsonScript (Join-Path $root "test-code-intel-pipeline.ps1") $smokeParams

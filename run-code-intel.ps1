@@ -3107,6 +3107,7 @@ if (-not $SkipRepowise) {
                 $repowiseStep = Invoke-LoggedStep "repowise scoped docs" {
                     & $scopedRepowiseScript `
                         -RepoPath $repoPath `
+                        -Platform $effectivePlatform `
                         -ShadowRoot $RepowiseShadowRoot `
                         -ScopePaths $RepowiseScopePaths `
                         -RootFiles $RepowiseRootFiles `
@@ -3119,6 +3120,7 @@ if (-not $SkipRepowise) {
                 $repowiseStep = Invoke-LoggedStep "repowise scoped index" {
                     & $scopedRepowiseScript `
                         -RepoPath $repoPath `
+                        -Platform $effectivePlatform `
                         -ShadowRoot $RepowiseShadowRoot `
                         -ScopePaths $RepowiseScopePaths `
                         -RootFiles $RepowiseRootFiles `
@@ -3144,7 +3146,7 @@ if ($Mode -ne "lite") {
 
     if ($hasRepowiseState -and $hasRepowiseWorkspace) {
         $steps.Add((Invoke-LoggedStep "repowise update" {
-            cmd /c "exit" | repowise update --workspace --index-only
+            repowise update --workspace --index-only
         }))
     }
 elseif ($hasRepowiseState) {
@@ -3163,7 +3165,7 @@ elseif ($hasRepowiseState) {
 }
 else {
     $steps.Add((Invoke-LoggedStep "repowise init" {
-        cmd /c "(echo all& echo 1)" | repowise init . --index-only -y --no-claude-md --no-onboarding --embedder mock --provider mock
+        repowise init . --index-only -y --no-claude-md --no-onboarding --embedder mock --provider mock
     }))
 }
 

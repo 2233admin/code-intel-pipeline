@@ -75,7 +75,7 @@ foreach ($relativePath in $requiredFiles) {
                 missing = $sourcePath
                 message = "No vlang grammar artifact is bundled for this platform; skipping overlay install."
             } | ConvertTo-Json -Depth 4
-            exit 0
+            return
         }
         throw "Overlay file missing: $sourcePath"
     }

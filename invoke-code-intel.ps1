@@ -151,6 +151,7 @@ if (-not $NoIndexUpdate -and (Test-Path -LiteralPath $indexer -PathType Leaf)) {
             $indexParams.ArtifactRoot = [string]$configuredArtifactRoot
         }
     }
+    $indexParams.Platform = $Platform
     & $indexer @indexParams | Out-Host
 }
 

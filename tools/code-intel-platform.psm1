@@ -161,7 +161,7 @@ function Set-CodeIntelUserEnv {
     New-Item -ItemType Directory -Force -Path $configDir | Out-Null
     $envFile = Join-Path $configDir "env.ps1"
     $escaped = $Value.Replace("'", "''")
-    "`$env:$Name = '$escaped'" | Set-Content -LiteralPath $envFile -Encoding UTF8
+    "`$env:$Name = '$escaped'" | Add-Content -LiteralPath $envFile -Encoding UTF8
     return [pscustomobject][ordered]@{
         name = $Name
         persisted = $false
@@ -221,7 +221,9 @@ function New-CodeIntelLink {
     }
 
     $parent = Split-Path -Parent $Path
-    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    if (-not [string]::IsNullOrWhiteSpace($parent)) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
     $os = Get-CodeIntelPlatform -Platform $Platform
 
     try {

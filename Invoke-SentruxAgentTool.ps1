@@ -273,7 +273,7 @@ function Find-ScopeCandidates {
     $items = @()
     try {
         $items = Get-ChildItem -LiteralPath $TargetPath -Recurse -Filter "baseline.json" -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match "\\.sentrux\\baseline\.json$" } |
+            Where-Object { $_.FullName -match "[\\/]\.sentrux[\\/]baseline\.json$" } |
             Select-Object -First 12
     }
     catch {
@@ -328,7 +328,7 @@ function Get-PollutionSignals {
     $signals = @()
     foreach ($entry in $noisyDirs) {
         $dir = [string]$entry["path"]
-        $normalizedDir = $dir.ToLowerInvariant()
+        $normalizedDir = $dir.ToLowerInvariant().Replace("/", [System.IO.Path]::DirectorySeparatorChar)
         if ($ignored -contains $normalizedDir) { continue }
         $full = Join-Path $TargetPath $dir
         if (-not (Test-Path -LiteralPath $full -PathType Container)) { continue }

@@ -71,6 +71,42 @@ function Invoke-RobocopyMirror {
         return
     }
 
+    if ($effectivePlatform -ne "windows" -and (Get-Command rsync -ErrorAction SilentlyContinue)) {
+        New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+        $sourceArg = $Source.TrimEnd("/", "\") + "/"
+        $destinationArg = $Destination.TrimEnd("/", "\") + "/"
+        $rsyncArgs = @(
+            "-a",
+            "--delete",
+            "--exclude=.git",
+            "--exclude=.repowise",
+            "--exclude=node_modules",
+            "--exclude=.venv",
+            "--exclude=venv",
+            "--exclude=__pycache__",
+            "--exclude=.pytest_cache",
+            "--exclude=.mypy_cache",
+            "--exclude=tmp",
+            "--exclude=dist",
+            "--exclude=build",
+            "--exclude=target",
+            "--exclude=.understand-anything",
+            "--exclude=.sentrux",
+            "--exclude=*.egg-info",
+            "--exclude=uv.lock",
+            "--exclude=uv.lock.bak",
+            "--exclude=*.bak",
+            "--exclude==*",
+            $sourceArg,
+            $destinationArg
+        )
+        & rsync @rsyncArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "rsync failed for $Source -> $Destination (exit $LASTEXITCODE)"
+        }
+        return
+    }
+
     if (Test-Path -LiteralPath $Destination -PathType Container) {
         Remove-Item -LiteralPath $Destination -Recurse -Force
     }
@@ -209,14 +245,18 @@ function Invoke-ProcessWithTimeout {
     $stdout = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-{0}-out.txt" -f ([System.Guid]::NewGuid().ToString("N")))
     $stderr = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-{0}-err.txt" -f ([System.Guid]::NewGuid().ToString("N")))
     try {
-        $process = Start-Process `
-            -FilePath $FilePath `
-            -ArgumentList $ArgumentList `
-            -WorkingDirectory $WorkingDirectory `
-            -RedirectStandardOutput $stdout `
-            -RedirectStandardError $stderr `
-            -PassThru `
-            -WindowStyle Hidden
+        $startProcessParams = @{
+            FilePath = $FilePath
+            ArgumentList = $ArgumentList
+            WorkingDirectory = $WorkingDirectory
+            RedirectStandardOutput = $stdout
+            RedirectStandardError = $stderr
+            PassThru = $true
+        }
+        if ($effectivePlatform -eq "windows") {
+            $startProcessParams.WindowStyle = "Hidden"
+        }
+        $process = Start-Process @startProcessParams
 
         $finished = $process.WaitForExit([math]::Max(1, $TimeoutSeconds) * 1000)
         if (-not $finished) {
