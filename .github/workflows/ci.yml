@@ -283,13 +283,4 @@ jobs:
 
       - name: Hardcoded path scan
         shell: pwsh
-        run: |
-          $patterns = 'D:\\|C:\\Users\\Administrator|LOCALAPPDATA|USERPROFILE|APPDATA|powershell\.exe'
-          $hits = rg -n $patterns -g '*.ps1' -g '*.psm1' -g '*.md' -g '*.yml'
-          if ($LASTEXITCODE -eq 0) {
-            $hits
-            throw "Hardcoded machine or Windows-only path references found."
-          }
-          if ($LASTEXITCODE -gt 1) {
-            throw "Hardcoded path scan failed with exit code $LASTEXITCODE."
-          }
+        run: ./tools/check-hardcoded-paths.ps1
