@@ -5,9 +5,13 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  windows-smoke:
+  windows-build-test-package:
     runs-on: windows-latest
 
     steps:
@@ -19,6 +23,74 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Setup Rust
+        shell: pwsh
+        run: rustup default stable
+
+      - name: Rust format
+        shell: pwsh
+        run: cargo fmt -p code-intel -- --check
+
+      - name: Rust check
+        shell: pwsh
+        run: cargo check
+
+      - name: Rust tests
+        shell: pwsh
+        run: cargo test -p code-intel
+
+      - name: Build Rust CLI
+        shell: pwsh
+        run: cargo build -p code-intel --release
+
+      - name: PowerShell parser checks
+        shell: pwsh
+        run: |
+          $files = @(
+            "run-code-intel.ps1",
+            "Invoke-GitHubSolutionResearch.ps1",
+            "test-code-intel-pipeline.ps1",
+            "test-github-solution-research.ps1",
+            "test-skill-development-benchmark.ps1"
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $errs = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$errs)
+            if ($errs) {
+              Write-Host $file
+              $errs | Select-Object Message,Extent | Format-List
+              exit 1
+            }
+          }
+
+      - name: Secret pattern guard
+        shell: pwsh
+        run: |
+          $patterns = @(
+            "sk-[A-Za-z0-9_-]{20,}",
+            "ghp_[A-Za-z0-9_]{20,}",
+            "github_pat_[A-Za-z0-9_]{20,}",
+            "AKIA[0-9A-Z]{16}"
+          )
+          $files = git ls-files
+          $hits = @()
+          foreach ($file in $files) {
+            if ($file -match "^(target/|artifacts/|cache/)" -or $file -match "\.(png|jpg|jpeg|gif|zip|exe)$") {
+              continue
+            }
+            $text = Get-Content -LiteralPath $file -Raw -ErrorAction SilentlyContinue
+            foreach ($pattern in $patterns) {
+              if ($text -match $pattern) {
+                $hits += "$file matches $pattern"
+              }
+            }
+          }
+          if ($hits.Count -gt 0) {
+            $hits | ForEach-Object { Write-Host $_ }
+            throw "Secret-like patterns found."
+          }
+
       - name: Install ripgrep
         shell: pwsh
         run: choco install ripgrep -y --no-progress
@@ -27,7 +99,7 @@ jobs:
         shell: pwsh
         run: .\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -Json
 
-      - name: Add pipeline tools to PATH
+      - name: Add pipeline tools PATH
         shell: pwsh
         run: Add-Content -Path $env:GITHUB_PATH -Value "$env:LOCALAPPDATA\code-intel\bin"
 
@@ -35,6 +107,36 @@ jobs:
         shell: pwsh
         run: .\check-code-intel-tools.ps1 -RepoPath .
 
-      - name: Smoke
+      - name: GitHub research contract tests
         shell: pwsh
-        run: .\test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -Mode normal
+        run: .\test-github-solution-research.ps1 -RepoPath .
+
+      - name: Skill development benchmark contract tests
+        shell: pwsh
+        run: .\test-skill-development-benchmark.ps1 -RepoPath .
+
+      - name: Pipeline smoke
+        shell: pwsh
+        run: .\test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -SkipGitHubResearch -Mode normal
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist\code-intel-pipeline\bin | Out-Null
+          $files = git ls-files
+          foreach ($file in $files) {
+            if ($file -match "^\.gitignore$") {
+              continue
+            }
+            $target = Join-Path "dist\code-intel-pipeline" $file
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+            Copy-Item -LiteralPath $file -Destination $target -Force
+          }
+          Copy-Item -LiteralPath target\release\code-intel.exe -Destination dist\code-intel-pipeline\bin\code-intel.exe -Force
+          Compress-Archive -Path dist\code-intel-pipeline -DestinationPath dist\code-intel-pipeline-windows.zip -Force
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-intel-pipeline-windows
+          path: dist/code-intel-pipeline-windows.zip

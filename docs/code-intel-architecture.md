@@ -6,6 +6,8 @@ It is built around one rule: keep the entrypoint small, keep tool roles explicit
 
 ## Layers
 
+Artifact ownership and reader/writer boundaries are defined in `docs/artifact-data-contract.md`.
+
 1. `invoke-code-intel.ps1`
    Thin operator entrypoint. Runs doctor first, then the pipeline. Supports one direct repo path, one configured repo alias, a repo list, or all configured repos.
 

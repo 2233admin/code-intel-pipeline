@@ -21,6 +21,26 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Setup Rust
+        shell: pwsh
+        run: rustup default stable
+
+      - name: Rust format
+        shell: pwsh
+        run: cargo fmt -p code-intel -- --check
+
+      - name: Rust check
+        shell: pwsh
+        run: cargo check
+
+      - name: Rust tests
+        shell: pwsh
+        run: cargo test -p code-intel
+
+      - name: Build Rust CLI
+        shell: pwsh
+        run: cargo build -p code-intel --release
+
       - name: Install ripgrep
         shell: pwsh
         run: choco install ripgrep -y --no-progress
@@ -29,7 +49,7 @@ jobs:
         shell: pwsh
         run: .\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -Json
 
-      - name: Add pipeline tools to PATH
+      - name: Add pipeline tools PATH
         shell: pwsh
         run: Add-Content -Path $env:GITHUB_PATH -Value "$env:LOCALAPPDATA\code-intel\bin"
 
@@ -37,31 +57,34 @@ jobs:
         shell: pwsh
         run: .\check-code-intel-tools.ps1 -RepoPath .
 
-      - name: Smoke
+      - name: GitHub research contract tests
         shell: pwsh
-        run: .\test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -Mode normal
+        run: .\test-github-solution-research.ps1 -RepoPath .
+
+      - name: Skill development benchmark contract tests
+        shell: pwsh
+        run: .\test-skill-development-benchmark.ps1 -RepoPath .
+
+      - name: Pipeline smoke
+        shell: pwsh
+        run: .\test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -SkipGitHubResearch -Mode normal
 
       - name: Package
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}"
-          New-Item -ItemType Directory -Force dist | Out-Null
-          $include = @(
-            "assets",
-            "docs",
-            "overlays",
-            "skill",
-            "templates",
-            ".github",
-            "*.ps1",
-            "*.py",
-            "pipeline.config.example.json",
-            "*.md"
-          )
-          $paths = foreach ($item in $include) {
-            Get-Item -Path $item -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force dist\code-intel-pipeline\bin | Out-Null
+          $files = git ls-files
+          foreach ($file in $files) {
+            if ($file -match "^\.gitignore$") {
+              continue
+            }
+            $target = Join-Path "dist\code-intel-pipeline" $file
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+            Copy-Item -LiteralPath $file -Destination $target -Force
           }
-          Compress-Archive -Path $paths.FullName -DestinationPath "dist/code-intel-pipeline-$version.zip" -Force
+          Copy-Item -LiteralPath target\release\code-intel.exe -Destination dist\code-intel-pipeline\bin\code-intel.exe -Force
+          Compress-Archive -Path dist\code-intel-pipeline -DestinationPath "dist\code-intel-pipeline-$version-windows.zip" -Force
 
       - name: Create GitHub Release
         shell: pwsh
@@ -69,10 +92,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "${{ github.ref_name }}"
-          $asset = "dist/code-intel-pipeline-$tag.zip"
+          $asset = "dist\code-intel-pipeline-$tag-windows.zip"
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $asset --clobber
-          } else {
-            gh release create $tag $asset --title "Code Intel Pipeline $tag" --notes-file CHANGELOG.md
+          }
+          else {
+            gh release create $tag $asset --title $tag --notes "Code Intel Pipeline $tag"
           }

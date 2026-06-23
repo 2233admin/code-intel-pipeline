@@ -14,6 +14,10 @@ Canonical files:
 - Sentrux Agent tools: `D:\projects\_tools\code-intel-pipeline\Invoke-SentruxAgentTool.ps1`
 - Config: `D:\projects\_tools\code-intel-pipeline\pipeline.config.json`
 - Artifacts: `%LOCALAPPDATA%\code-intel\artifacts\<repo>\<timestamp>\` by default, or `CODE_INTEL_ARTIFACT_ROOT` when set.
+- Artifact data contract: `D:\projects\_tools\code-intel-pipeline\docs\artifact-data-contract.md`
+- Agent goal intake: `D:\projects\_tools\code-intel-pipeline\docs\agent-goal-intake.md`
+- Harness factory reference: `D:\projects\_tools\code-intel-pipeline\docs\harness-factory-reference.md`
+- Skill development benchmark: `D:\projects\_tools\code-intel-pipeline\docs\skill-development-benchmark.md`
 - Templates: `D:\projects\_tools\code-intel-pipeline\templates\`
 
 ## Required First Step

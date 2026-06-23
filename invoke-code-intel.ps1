@@ -11,9 +11,10 @@ param(
 
     [switch]$RepowiseDocs,
     [switch]$SaveSentruxBaseline,
-    [switch]$AutoSaveMissingSentruxBaseline,
-    [switch]$RequireUnderstandGraph,
-    [switch]$NoIndexUpdate
+[switch]$AutoSaveMissingSentruxBaseline,
+[switch]$RequireUnderstandGraph,
+[switch]$SkipGitHubResearch,
+[switch]$NoIndexUpdate
 )
 
 Set-StrictMode -Version Latest
@@ -64,7 +65,7 @@ function Invoke-OneRepo {
     }
 
     Write-Host "Code intel invoke: pipeline $label"
-    if ($RepowiseDocs -or $SaveSentruxBaseline -or $AutoSaveMissingSentruxBaseline -or $RequireUnderstandGraph) {
+    if ($RepowiseDocs -or $SaveSentruxBaseline -or $AutoSaveMissingSentruxBaseline -or $RequireUnderstandGraph -or $SkipGitHubResearch) {
         $invokeParams = @{
             Config = $Config
             Mode = $Mode
@@ -74,6 +75,7 @@ function Invoke-OneRepo {
         if ($SaveSentruxBaseline) { $invokeParams.SaveSentruxBaseline = $true }
         if ($AutoSaveMissingSentruxBaseline) { $invokeParams.AutoSaveMissingSentruxBaseline = $true }
         if ($RequireUnderstandGraph) { $invokeParams.RequireUnderstandGraph = $true }
+        if ($SkipGitHubResearch) { $invokeParams.SkipGitHubResearch = $true }
         & $runner @invokeParams
     }
     else {

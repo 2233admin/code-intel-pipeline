@@ -1,0 +1,10 @@
+[package]
+name = "code-intel"
+version = "0.1.0"
+edition = "2021"
+description = "Local Code Intel Pipeline CLI for artifact resume and contract checks"
+license = "Apache-2.0"
+repository = "https://github.com/2233admin/code-intel-pipeline"
+
+[dependencies]
+serde_json = "1"

@@ -86,6 +86,18 @@ cd code-intel-pipeline
 .\test-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo
 ```
 
+GitHub research artifact contract 离线测试：
+
+```powershell
+.\test-github-solution-research.ps1 -RepoPath C:\path\to\your\repo
+```
+
+Skill development benchmark contract 测试：
+
+```powershell
+.\test-skill-development-benchmark.ps1 -RepoPath C:\path\to\your\repo
+```
+
 大仓库建议指定核心范围：
 
 ```powershell
@@ -152,6 +164,15 @@ hospital-report.json
 surgery-plan.md
 surgery-plan.json
 ```
+
+Artifact ownership and stable routing fields are defined in
+[`docs/artifact-data-contract.md`](docs/artifact-data-contract.md).
+For vague or long-running Agent work, define the task contract first with
+[`docs/agent-goal-intake.md`](docs/agent-goal-intake.md).
+Future packaging and distribution guidance lives in
+[`docs/harness-factory-reference.md`](docs/harness-factory-reference.md).
+Skill quality guidance lives in
+[`docs/skill-development-benchmark.md`](docs/skill-development-benchmark.md).
 
 结构产物：
 
@@ -584,3 +605,18 @@ CI 使用 Sentrux lite core 保底，所以 runner 没装真实 `sentrux.exe` �
 ## License
 
 MIT
+
+## Rust CLI resume preview
+
+```powershell
+cargo build -p code-intel
+.\target\debug\code-intel.exe resume --repo C:\path\to\your\repo
+.\target\debug\code-intel.exe resume --repo C:\path\to\your\repo --artifact-root C:\path\to\artifacts
+.\target\debug\code-intel.exe resume --repo C:\path\to\your\repo --json
+.\target\debug\code-intel.exe classify --report C:\path\to\artifact\report.json
+```
+
+The Rust CLI is currently a cross-session artifact reader. It does not replace
+the PowerShell scanner yet; it locates the latest artifact run, reads
+`report.json` and `hospital-report.json`, then prints the next protocol and the
+next file an Agent should read.

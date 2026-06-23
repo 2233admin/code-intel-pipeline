@@ -24,12 +24,13 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             # PR — diff against base
             git diff --name-only origin/${{ github.base_ref }}...HEAD \
-              | grep -E '(^|/)SKILL\.md$' || true > /tmp/changed_skills
+              | grep -E '(^|/)SKILL\.md$' > /tmp/changed_skills || true
           else
             # workflow_dispatch — scan all
             find . -name SKILL.md -not -path "*/node_modules/*" -not -path "*/target/*" \
               > /tmp/changed_skills || true
           fi
+          touch /tmp/changed_skills
           echo "changed=$(cat /tmp/changed_skills | wc -l) skill files"
           cat /tmp/changed_skills
           echo "files<<EOF" >> $GITHUB_OUTPUT
