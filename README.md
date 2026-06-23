@@ -80,10 +80,38 @@ cd code-intel-pipeline
 .\invoke-code-intel.ps1 -RepoPath C:\path\to\your\repo -Mode normal
 ```
 
+先找候选项目：
+
+```powershell
+.\Find-CodeIntelProjects.ps1 -Root D:\projects -Json
+.\Find-CodeIntelProjects.ps1 -Root D:\projects -WizTreeExe WizTree64.exe -Json
+.\Find-CodeIntelProjects.ps1 -WizTreeCsv C:\tmp\wiztree.csv -Json
+```
+
+WizTree CLI/CSV 只是项目发现加速输入；真正选中项目后再运行 `invoke-code-intel.ps1`。
+
 完整 smoke test：
 
 ```powershell
 .\test-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo
+```
+
+GitHub research artifact contract 离线测试：
+
+```powershell
+.\test-github-solution-research.ps1 -RepoPath C:\path\to\your\repo
+```
+
+Skill development benchmark contract 测试：
+
+```powershell
+.\test-skill-development-benchmark.ps1 -RepoPath C:\path\to\your\repo
+```
+
+Project management support contract 测试：
+
+```powershell
+.\test-project-management-support.ps1 -RepoPath C:\path\to\your\repo
 ```
 
 大仓库建议指定核心范围：
@@ -152,6 +180,24 @@ hospital-report.json
 surgery-plan.md
 surgery-plan.json
 ```
+
+Artifact ownership and stable routing fields are defined in
+[`docs/artifact-data-contract.md`](docs/artifact-data-contract.md).
+For vague or long-running Agent work, define the task contract first with
+[`docs/agent-goal-intake.md`](docs/agent-goal-intake.md).
+Future packaging and distribution guidance lives in
+[`docs/harness-factory-reference.md`](docs/harness-factory-reference.md).
+Skill quality guidance lives in
+[`docs/skill-development-benchmark.md`](docs/skill-development-benchmark.md).
+
+Implementation minimalism guidance lives in
+[`docs/implementation-minimalism-benchmark.md`](docs/implementation-minimalism-benchmark.md).
+
+Measured minimalism impact lives in
+[`docs/ponytail-impact-scoreboard.md`](docs/ponytail-impact-scoreboard.md).
+
+Project management intake, Linear, and Obsidian/LLM wiki boundaries live in
+[`docs/project-management-support.md`](docs/project-management-support.md).
 
 结构产物：
 
@@ -584,3 +630,18 @@ CI 使用 Sentrux lite core 保底，所以 runner 没装真实 `sentrux.exe` �
 ## License
 
 MIT
+
+## Rust CLI resume preview
+
+```powershell
+cargo build -p code-intel
+.\target\debug\code-intel.exe resume --repo C:\path\to\your\repo
+.\target\debug\code-intel.exe resume --repo C:\path\to\your\repo --artifact-root C:\path\to\artifacts
+.\target\debug\code-intel.exe resume --repo C:\path\to\your\repo --json
+.\target\debug\code-intel.exe classify --report C:\path\to\artifact\report.json
+```
+
+The Rust CLI is currently a cross-session artifact reader. It does not replace
+the PowerShell scanner yet; it locates the latest artifact run, reads
+`report.json` and `hospital-report.json`, then prints the next protocol and the
+next file an Agent should read.

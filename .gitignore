@@ -15,6 +15,7 @@ __pycache__/
 .sentrux/cache/
 artifacts/
 cache/
+dist/
 
 # Rust build artifacts (CodeNexus Lite + future crates)
 target/

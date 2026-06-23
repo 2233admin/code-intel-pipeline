@@ -23,10 +23,11 @@ param(
     [switch]$SkipRepowise,
     [switch]$RepowiseDocs,
     [switch]$SkipSentrux,
-    [switch]$SkipSentruxCheck,
-    [switch]$SkipSentruxGate,
-    [switch]$RequireUnderstandGraph,
-    [switch]$WorkspaceAdd
+[switch]$SkipSentruxCheck,
+[switch]$SkipSentruxGate,
+[switch]$RequireUnderstandGraph,
+[switch]$SkipGitHubResearch,
+[switch]$WorkspaceAdd
 )
 
 Set-StrictMode -Version Latest
@@ -215,6 +216,31 @@ function Get-StepFailureCategory {
         return "local_tool_error"
     }
     return $null
+}
+
+function Test-GitHubSolutionResearchRequired {
+param([object]$FailureCounts)
+
+    if ($null -eq $FailureCounts) { return $false }
+    if ($FailureCounts.localToolError -gt 0) { return $true }
+    if ($FailureCounts.sentruxFail -gt 0) { return $true }
+    if ($FailureCounts.providerQuota -gt 0) { return $true }
+
+    return $false
+}
+
+function New-GitHubSolutionResearchNotApplicable {
+    return [ordered]@{
+        status = "not_applicable"
+        required = $false
+        path = ""
+        markdown = ""
+        reason = "No blocker category requires GitHub solution research."
+        candidates = 0
+        queries = 0
+        evidenceLinks = @()
+        exitCriteria = @("GitHub research is not required for clean, graph-missing, governance-only, or surgery-plan-only scans.")
+    }
 }
 
 function Join-StatusNames {
@@ -772,9 +798,11 @@ function Get-HospitalNextProtocol {
     param(
         [object]$FailureCounts,
         [bool]$RulesExists,
-        [int]$FailingWhatIfCount
+        [int]$FailingWhatIfCount,
+        [object]$GitHubResearch
     )
 
+    if ($null -ne $GitHubResearch -and [bool]$GitHubResearch.required) { return "github_solution_research" }
     if ($FailureCounts.localToolError -gt 0) { return "triage" }
     if ($FailureCounts.graphMissing -gt 0) { return "diagnose" }
     if (-not $RulesExists) { return "govern" }
@@ -825,11 +853,12 @@ function New-HospitalDecisionBlock {
         [string]$CheckStatus,
         [int]$FailingWhatIfCount,
         [string]$UnderstandCommand,
-        [string]$TopContextFile
+        [string]$TopContextFile,
+        [object]$GitHubResearch
     )
 
     $diagnosis = Get-HospitalDiagnosis $FailureCounts $RulesExists $FailingWhatIfCount
-    $nextProtocol = Get-HospitalNextProtocol $FailureCounts $RulesExists $FailingWhatIfCount
+    $nextProtocol = Get-HospitalNextProtocol $FailureCounts $RulesExists $FailingWhatIfCount $GitHubResearch
     $disposition = if ($diagnosis.severity -eq "green") { "discharge_ready" } else { "admit" }
     $admissionReason = Get-HospitalAdmissionReason $diagnosis.primaryDiagnosis
     $dischargeCriteria = @(
@@ -838,6 +867,9 @@ function New-HospitalDecisionBlock {
         "hospital triage status is green or explicitly accepted for observation",
         "session_end reports no quality regression after Agent edits"
     )
+    if ($null -ne $GitHubResearch -and [bool]$GitHubResearch.required) {
+        $dischargeCriteria += "GitHub evidence linked or GitHub evidence insufficiency recorded in github-solution-research artifacts"
+    }
     $treatment = Get-HospitalTreatmentPlan $FailureCounts $RulesExists $FailingWhatIfCount $UnderstandCommand $TopContextFile
 
     $stateMachine = New-HospitalStateMachine `
@@ -1167,12 +1199,13 @@ function New-CodeIntelHospitalReport {
         [object]$SentruxDsmSummary,
         [object]$SentruxFileDetailsSummary,
         [object]$SentruxHotspotsSummary,
-        [object]$SentruxEvolutionSummary,
-        [object]$SentruxWhatIfSummary,
-        [object]$CodeNexusContextSummary,
-        [string]$UnderstandCommand,
-        [object]$ToolState
-    )
+[object]$SentruxEvolutionSummary,
+[object]$SentruxWhatIfSummary,
+[object]$CodeNexusContextSummary,
+[string]$UnderstandCommand,
+[object]$ToolState,
+[object]$GitHubResearch
+)
 
     $gitStep = Get-StepMatch $Steps "git status"
     $inventoryStep = Get-StepMatch $Steps "rg file inventory"
@@ -1202,9 +1235,10 @@ function New-CodeIntelHospitalReport {
         -RulesExists $scores.rules_exists `
         -GateStatus $scores.gate_status `
         -CheckStatus $scores.check_status `
-        -FailingWhatIfCount @($evidence.failing_what_if).Count `
-        -UnderstandCommand $UnderstandCommand `
-        -TopContextFile $evidence.top_context_file
+-FailingWhatIfCount @($evidence.failing_what_if).Count `
+-UnderstandCommand $UnderstandCommand `
+-TopContextFile $evidence.top_context_file `
+-GitHubResearch $GitHubResearch
 
     $findings = New-HospitalFindings `
         -InventoryFiles $measurements.inventory_files `
@@ -1272,18 +1306,23 @@ function New-CodeIntelHospitalReport {
         artifacts = [ordered]@{
             runDir = $RunDir
             report = $ReportPath
-            summary = $SummaryPath
-            understanding = $UnderstandingPath
-        }
-        triage = [ordered]@{
-            status = $decision.severity
-            disposition = $decision.disposition
-            primary_diagnosis = $decision.primaryDiagnosis
-            overall_score = $scores.overall_score
-            next_protocol = $decision.nextProtocol
-            admission_reason = $decision.admissionReason
-            discharge_criteria = $decision.dischargeCriteria
-        }
+        summary = $SummaryPath
+        understanding = $UnderstandingPath
+        github_solution_research = if ($null -ne $GitHubResearch) { [string]$GitHubResearch.path } else { "" }
+        github_solution_research_markdown = if ($null -ne $GitHubResearch) { [string]$GitHubResearch.markdown } else { "" }
+    }
+    triage = [ordered]@{
+        status = $decision.severity
+        disposition = $decision.disposition
+        primary_diagnosis = $decision.primaryDiagnosis
+        overall_score = $scores.overall_score
+        next_protocol = $decision.nextProtocol
+        research_status = if ($null -ne $GitHubResearch) { [string]$GitHubResearch.status } else { "not_applicable" }
+        research_required = if ($null -ne $GitHubResearch) { [bool]$GitHubResearch.required } else { $false }
+        exit_criteria = if ($null -ne $GitHubResearch) { @($GitHubResearch.exitCriteria) } else { @() }
+        admission_reason = $decision.admissionReason
+        discharge_criteria = $decision.dischargeCriteria
+    }
         state_machine = $decision.stateMachine
         modalities = $modalities
         policies = [ordered]@{
@@ -1344,13 +1383,22 @@ function Convert-HospitalReportToMarkdown {
         "- Disposition: $($Hospital.triage.disposition)",
         "- Primary diagnosis: $($Hospital.triage.primary_diagnosis)",
         "- Admission reason: $($Hospital.triage.admission_reason)",
-        "- Overall score: $($Hospital.triage.overall_score)",
-        "- Next protocol: $($Hospital.triage.next_protocol)",
-        "- Current state: $($Hospital.state_machine.current_state)",
-        "",
-        "## Imaging Modalities"
-    )
-    foreach ($item in @($Hospital.modalities)) {
+"- Overall score: $($Hospital.triage.overall_score)",
+"- Next protocol: $($Hospital.triage.next_protocol)",
+"- Research status: $($Hospital.triage.research_status)",
+"- Research required: $($Hospital.triage.research_required)",
+"- Current state: $($Hospital.state_machine.current_state)",
+"",
+"## Imaging Modalities"
+)
+if ($null -ne $Hospital.triage.exit_criteria -and @($Hospital.triage.exit_criteria).Count -gt 0) {
+    $lines += ""
+    $lines += "## Exit Criteria"
+    foreach ($criterion in @($Hospital.triage.exit_criteria)) {
+        $lines += "- $criterion"
+    }
+}
+foreach ($item in @($Hospital.modalities)) {
         $lines += "- $($item.name): $($item.status), confidence=$($item.confidence), finding=$($item.finding)"
     }
     $lines += ""
@@ -1789,10 +1837,59 @@ $failureClassifications = @(
     Where-Object { $null -ne $_ }
 )
 $failureCounts = [ordered]@{
-    providerQuota = @($failureClassifications | Where-Object { $_.category -eq "provider_quota" }).Count
-    localToolError = @($failureClassifications | Where-Object { $_.category -eq "local_tool_error" }).Count
-    graphMissing = @($failureClassifications | Where-Object { $_.category -eq "graph_missing" }).Count
-    sentruxFail = @($failureClassifications | Where-Object { $_.category -eq "sentrux_fail" }).Count
+providerQuota = @($failureClassifications | Where-Object { $_.category -eq "provider_quota" }).Count
+localToolError = @($failureClassifications | Where-Object { $_.category -eq "local_tool_error" }).Count
+graphMissing = @($failureClassifications | Where-Object { $_.category -eq "graph_missing" }).Count
+sentruxFail = @($failureClassifications | Where-Object { $_.category -eq "sentrux_fail" }).Count
+}
+
+$githubResearch = New-GitHubSolutionResearchNotApplicable
+if (Test-GitHubSolutionResearchRequired $failureCounts) {
+    $githubResearchScript = Join-Path $root "Invoke-GitHubSolutionResearch.ps1"
+    $failedResearchSteps = @($steps | Where-Object { $_.status -eq "failed" -or $_.status -eq "manual_required" } | ForEach-Object {
+        [ordered]@{
+            name = $_.name
+            status = $_.status
+            error = $_.error
+            output = $_.output
+        }
+    })
+    try {
+        $githubResearch = & $githubResearchScript `
+            -RepoPath $repoPath `
+            -ArtifactDir $runDir `
+            -FailedSteps $failedResearchSteps `
+            -FailureClassifications $failureClassifications `
+            -Mode $Mode `
+            -SkipGitHubResearch:$SkipGitHubResearch
+    }
+    catch {
+        $researchJsonPath = Join-Path $runDir "github-solution-research.json"
+        $researchMarkdownPath = Join-Path $runDir "github-solution-research.md"
+        $githubResearch = [ordered]@{
+            status = "manual_required"
+            required = $true
+            path = $researchJsonPath
+            markdown = $researchMarkdownPath
+            reason = "GitHub solution research helper failed: $($_.Exception.Message)"
+            candidates = 0
+            queries = 0
+            evidenceLinks = @()
+            exitCriteria = @(
+                "GitHub evidence linked or GitHub evidence insufficiency recorded",
+                "helper failure recorded before local-only diagnosis continues"
+            )
+        }
+        $githubResearch | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $researchJsonPath -Encoding UTF8
+        @(
+            "# GitHub Solution Research",
+            "",
+            "- Status: manual_required",
+            "- Reason: $($githubResearch.reason)",
+            "",
+            "Run github-solution-research manually with the failed pipeline step details."
+        ) | Set-Content -LiteralPath $researchMarkdownPath -Encoding UTF8
+    }
 }
 
 $sentruxInsight = New-SentruxInsight -RepoName $repoName -TargetPath $sentruxTargetPath -BaselinePath $baselinePath -Steps $steps
@@ -2015,10 +2112,11 @@ $hospitalReport = New-CodeIntelHospitalReport `
     -SentruxFileDetailsSummary $sentruxFileDetailsSummary `
     -SentruxHotspotsSummary $sentruxHotspotsSummary `
     -SentruxEvolutionSummary $sentruxEvolutionSummary `
-    -SentruxWhatIfSummary $sentruxWhatIfSummary `
-    -CodeNexusContextSummary $codeNexusContextSummary `
-    -UnderstandCommand $understandCommand `
-    -ToolState $toolState
+-SentruxWhatIfSummary $sentruxWhatIfSummary `
+-CodeNexusContextSummary $codeNexusContextSummary `
+-UnderstandCommand $understandCommand `
+-ToolState $toolState `
+-GitHubResearch $githubResearch
 $hotspotsForSurgery = if ($null -ne $sentruxHotspotsSummary) { [string]$sentruxHotspotsSummary.path } else { "" }
 $whatIfForSurgery = if ($null -ne $sentruxWhatIfSummary) { [string]$sentruxWhatIfSummary.path } else { "" }
 $codeNexusForSurgery = if ($null -ne $codeNexusContextSummary) { [string]$codeNexusContextSummary.path } else { "" }
@@ -2062,10 +2160,11 @@ $report = [ordered]@{
     sentruxDsm = $sentruxDsmSummary
     sentruxFileDetails = $sentruxFileDetailsSummary
     sentruxHotspots = $sentruxHotspotsSummary
-    sentruxEvolution = $sentruxEvolutionSummary
-    sentruxWhatIf = $sentruxWhatIfSummary
-    codeNexusContext = $codeNexusContextSummary
-    hospital = [ordered]@{
+sentruxEvolution = $sentruxEvolutionSummary
+sentruxWhatIf = $sentruxWhatIfSummary
+codeNexusContext = $codeNexusContextSummary
+githubResearch = $githubResearch
+hospital = [ordered]@{
         path = $hospitalReportPath
         markdown = $hospitalMarkdownPath
         surgeryPlan = $surgeryPlanPath
@@ -2076,9 +2175,11 @@ $report = [ordered]@{
         primaryDiagnosis = $hospitalReport.triage.primary_diagnosis
         overallScore = $hospitalReport.triage.overall_score
         nextProtocol = $hospitalReport.triage.next_protocol
-        currentState = $hospitalReport.state_machine.current_state
-        modalities = @($hospitalReport.modalities).Count
-    }
+currentState = $hospitalReport.state_machine.current_state
+modalities = @($hospitalReport.modalities).Count
+researchStatus = $hospitalReport.triage.research_status
+researchRequired = $hospitalReport.triage.research_required
+}
     notes = $notes
     failureClassifications = $failureClassifications
     summary = [ordered]@{
@@ -2097,6 +2198,10 @@ $sentruxMetrics = @($sentruxInsight['metrics'])
 $sentruxNextActions = @($sentruxInsight['nextActions'])
 $sentruxCodeNexusHints = @($sentruxInsight['codeNexusHints'])
 $sentruxScan = $sentruxInsight['scan']
+$githubResearchSummary = [string]$githubResearch.status
+if ([bool]$githubResearch.required) {
+    $githubResearchSummary = "$githubResearchSummary ($($githubResearch.markdown))"
+}
 $summaryLines = @(
     "# Code Intel Pipeline",
     "",
@@ -2119,11 +2224,12 @@ $summaryLines = @(
     "- Sentrux fail: $($failureCounts.sentruxFail)",
     "- Hospital status: $($hospitalReport.triage.status)",
     "- Hospital disposition: $($hospitalReport.triage.disposition)",
-    "- Hospital state: $($hospitalReport.state_machine.current_state)",
-    "- Hospital score: $($hospitalReport.triage.overall_score)",
-    "- Next protocol: $($hospitalReport.triage.next_protocol)",
-    "",
-    "## Steps"
+"- Hospital state: $($hospitalReport.state_machine.current_state)",
+"- Hospital score: $($hospitalReport.triage.overall_score)",
+"- Next protocol: $($hospitalReport.triage.next_protocol)",
+"- GitHub research: $githubResearchSummary",
+"",
+"## Steps"
 )
 foreach ($step in $steps) {
     $summaryLines += "- $($step.status): $($step.name)"
@@ -2241,11 +2347,12 @@ $understandingLines = @(
     "- Sentrux DSM: $(if ($null -ne $sentruxDsmSummary) { '``' + $sentruxDsmSummary.path + '``' } else { 'not generated' })",
     "- Sentrux file details: $(if ($null -ne $sentruxFileDetailsSummary) { '``' + $sentruxFileDetailsSummary.path + '``' } else { 'not generated' })",
     "- Sentrux hotspots: $(if ($null -ne $sentruxHotspotsSummary) { '``' + $sentruxHotspotsSummary.path + '``' } else { 'not generated' })",
-    "- Sentrux evolution: $(if ($null -ne $sentruxEvolutionSummary) { '``' + $sentruxEvolutionSummary.path + '``' } else { 'not generated' })",
-    "- Sentrux what-if: $(if ($null -ne $sentruxWhatIfSummary) { '``' + $sentruxWhatIfSummary.path + '``' } else { 'not generated' })",
-    "- CodeNexus context: $(if ($null -ne $codeNexusContextSummary) { '``' + $codeNexusContextSummary.path + '``' } else { 'not generated' })",
-    "- Tools: rg=$($toolState.rg), git=$($toolState.git), repowise=$($toolState.repowise), sentrux=$($toolState.sentrux)",
-    "- Passed steps: $(Join-StatusNames $passedSteps)",
+"- Sentrux evolution: $(if ($null -ne $sentruxEvolutionSummary) { '``' + $sentruxEvolutionSummary.path + '``' } else { 'not generated' })",
+"- Sentrux what-if: $(if ($null -ne $sentruxWhatIfSummary) { '``' + $sentruxWhatIfSummary.path + '``' } else { 'not generated' })",
+"- CodeNexus context: $(if ($null -ne $codeNexusContextSummary) { '``' + $codeNexusContextSummary.path + '``' } else { 'not generated' })",
+"- GitHub research: $githubResearchSummary",
+"- Tools: rg=$($toolState.rg), git=$($toolState.git), repowise=$($toolState.repowise), sentrux=$($toolState.sentrux)",
+"- Passed steps: $(Join-StatusNames $passedSteps)",
     "- Hospital: status=$($hospitalReport.triage.status), disposition=$($hospitalReport.triage.disposition), state=$($hospitalReport.state_machine.current_state), score=$($hospitalReport.triage.overall_score), next=$($hospitalReport.triage.next_protocol)",
     "",
     "## Unverified Or Inferred",

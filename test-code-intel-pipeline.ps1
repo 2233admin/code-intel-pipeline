@@ -9,10 +9,11 @@ param(
 
     [string]$SentruxPath = "",
 
-    [switch]$SkipRepowise,
-    [switch]$RepowiseDocs,
-    [switch]$AllowGraphMissing,
-    [switch]$SkipSentruxGate
+[switch]$SkipRepowise,
+[switch]$RepowiseDocs,
+[switch]$AllowGraphMissing,
+[switch]$SkipSentruxGate,
+[switch]$SkipGitHubResearch
 )
 
 Set-StrictMode -Version Latest
@@ -68,6 +69,9 @@ if ($RepowiseDocs) {
 if ($SkipSentruxGate) {
     $runnerParams.SkipSentruxGate = $true
 }
+if ($SkipGitHubResearch) {
+    $runnerParams.SkipGitHubResearch = $true
+}
 & $runner @runnerParams
 $pipelineExitCode = $LASTEXITCODE
 
@@ -120,6 +124,7 @@ $graphMissingOnly = (
     [int]$report.summary.failureCategories.localToolError -eq 0 -and
     [int]$report.summary.failureCategories.sentruxFail -eq 0
 )
+$pipelineFailureMessage = ""
 if ($pipelineExitCode -ne 0 -and -not ($AllowGraphMissing -and $graphMissingOnly)) {
     $failedSteps = @($report.steps | Where-Object { $_.status -eq "failed" } | ForEach-Object {
         [ordered]@{
@@ -132,7 +137,7 @@ if ($pipelineExitCode -ne 0 -and -not ($AllowGraphMissing -and $graphMissingOnly
     Write-Host "Pipeline exit code: $pipelineExitCode"
     Write-Host "Failure categories: $($report.summary.failureCategories | ConvertTo-Json -Compress)"
     Write-Host "Failed steps: $($failedSteps | ConvertTo-Json -Compress)"
-    throw "Pipeline run failed for repo: $label"
+    $pipelineFailureMessage = "Pipeline run failed for repo: $label"
 }
 if ($null -eq $report.sentruxInsight) {
     throw "Missing sentruxInsight in report.json"
@@ -200,6 +205,9 @@ if ($null -eq $codeNexusArtifact.summary -or $null -eq $codeNexusArtifact.files)
 if ($null -eq $report.hospital) {
     throw "Missing hospital summary in report.json"
 }
+if ($null -eq $report.githubResearch) {
+    throw "Missing githubResearch in report.json"
+}
 if ([string]::IsNullOrWhiteSpace([string]$report.hospital.path) -or -not (Test-Path -LiteralPath ([string]$report.hospital.path) -PathType Leaf)) {
     throw "Missing hospital-report.json artifact."
 }
@@ -218,6 +226,45 @@ if ([string]$hospitalArtifact.schema -ne "code-intel-hospital.v1") {
 }
 if ($null -eq $hospitalArtifact.triage -or [string]::IsNullOrWhiteSpace([string]$hospitalArtifact.triage.primary_diagnosis)) {
     throw "hospital-report.json is missing triage diagnosis."
+}
+if ([string]::IsNullOrWhiteSpace([string]$hospitalArtifact.triage.research_status)) {
+    throw "hospital-report.json missing research_status."
+}
+if ($null -eq $hospitalArtifact.triage.research_required) {
+    throw "hospital-report.json missing research_required."
+}
+$researchRequired = (
+    [int]$report.summary.failureCategories.providerQuota -gt 0 -or
+    [int]$report.summary.failureCategories.localToolError -gt 0 -or
+    [int]$report.summary.failureCategories.sentruxFail -gt 0
+)
+if ($researchRequired) {
+    if (-not [bool]$report.githubResearch.required) {
+        throw "githubResearch.required should be true for research-routable blockers."
+    }
+    if ([string]$hospitalArtifact.triage.next_protocol -ne "github_solution_research") {
+        throw "Hospital did not route research-routable blocker to github_solution_research."
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$report.githubResearch.path) -or -not (Test-Path -LiteralPath ([string]$report.githubResearch.path) -PathType Leaf)) {
+        throw "Missing github-solution-research.json artifact."
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$report.githubResearch.markdown) -or -not (Test-Path -LiteralPath ([string]$report.githubResearch.markdown) -PathType Leaf)) {
+        throw "Missing github-solution-research.md artifact."
+    }
+    if ([string]$hospitalArtifact.triage.research_status -notin @("auto_generated", "manual_required")) {
+        throw "Unexpected GitHub research status for required blocker: $($hospitalArtifact.triage.research_status)"
+    }
+}
+else {
+    if ([bool]$report.githubResearch.required) {
+        throw "githubResearch.required should be false when no research-routable blocker exists."
+    }
+    if ([string]$report.githubResearch.status -ne "not_applicable") {
+        throw "Clean/non-research run should report GitHub research as not_applicable."
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$report.githubResearch.path) -and (Test-Path -LiteralPath ([string]$report.githubResearch.path) -PathType Leaf)) {
+        throw "Clean/non-research run should not force github-solution-research.json artifact generation."
+    }
 }
 if ([string]::IsNullOrWhiteSpace([string]$hospitalArtifact.triage.disposition)) {
     throw "hospital-report.json is missing triage disposition."
@@ -301,6 +348,10 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTarget) -and (Test-Path -LiteralPa
     }
 }
 
+if (-not [string]::IsNullOrWhiteSpace($pipelineFailureMessage)) {
+    throw $pipelineFailureMessage
+}
+
 $result = [ordered]@{
     ok = $true
     repo = $label
@@ -313,10 +364,16 @@ $result = [ordered]@{
     steps = $report.steps.Count
     failed = $report.summary.failed
     manualRequired = $report.summary.manualRequired
-    failureCategories = $report.summary.failureCategories
-    sentruxAgentHealth = $sentruxAgentHealth
-    sentruxAgentDsm = $sentruxAgentDsm
-    sentruxAgentGitStats = $sentruxAgentGitStats
+failureCategories = $report.summary.failureCategories
+githubResearch = [ordered]@{
+status = [string]$report.githubResearch.status
+required = [bool]$report.githubResearch.required
+path = [string]$report.githubResearch.path
+markdown = [string]$report.githubResearch.markdown
+}
+sentruxAgentHealth = $sentruxAgentHealth
+sentruxAgentDsm = $sentruxAgentDsm
+sentruxAgentGitStats = $sentruxAgentGitStats
     hospital = [ordered]@{
         path = [string]$report.hospital.path
         markdown = [string]$report.hospital.markdown

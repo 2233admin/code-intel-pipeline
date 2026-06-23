@@ -10,10 +10,21 @@ Use the local pipeline instead of inventing another code-indexing stack.
 Canonical files:
 
 - Pipeline: `D:\projects\_tools\code-intel-pipeline\run-code-intel.ps1`
+- Project discovery: `D:\projects\_tools\code-intel-pipeline\Find-CodeIntelProjects.ps1`
 - Doctor: `D:\projects\_tools\code-intel-pipeline\check-code-intel-tools.ps1`
 - Sentrux Agent tools: `D:\projects\_tools\code-intel-pipeline\Invoke-SentruxAgentTool.ps1`
 - Config: `D:\projects\_tools\code-intel-pipeline\pipeline.config.json`
 - Artifacts: `%LOCALAPPDATA%\code-intel\artifacts\<repo>\<timestamp>\` by default, or `CODE_INTEL_ARTIFACT_ROOT` when set.
+- Artifact data contract: `D:\projects\_tools\code-intel-pipeline\docs\artifact-data-contract.md`
+- Agent goal intake: `D:\projects\_tools\code-intel-pipeline\docs\agent-goal-intake.md`
+- Harness factory reference: `D:\projects\_tools\code-intel-pipeline\docs\harness-factory-reference.md`
+- Skill development benchmark: `D:\projects\_tools\code-intel-pipeline\docs\skill-development-benchmark.md`
+- Implementation minimalism benchmark: `D:\projects\_tools\code-intel-pipeline\docs\implementation-minimalism-benchmark.md`
+- Ponytail impact scoreboard: `D:\projects\_tools\code-intel-pipeline\docs\ponytail-impact-scoreboard.md`
+- Project management support: `D:\projects\_tools\code-intel-pipeline\docs\project-management-support.md`
+- Issue tracker config: `D:\projects\_tools\code-intel-pipeline\docs\agents\issue-tracker.md`
+- Triage label config: `D:\projects\_tools\code-intel-pipeline\docs\agents\triage-labels.md`
+- Domain docs config: `D:\projects\_tools\code-intel-pipeline\docs\agents\domain.md`
 - Templates: `D:\projects\_tools\code-intel-pipeline\templates\`
 
 ## Required First Step
@@ -53,6 +64,16 @@ D:\projects\_tools\code-intel-pipeline\check-code-intel-tools.ps1 -RepoPath <rep
 ```
 
 Use `-Json` when another agent needs machine-readable output.
+
+Find candidate repositories before choosing a `RepoPath`:
+
+```powershell
+D:\projects\_tools\code-intel-pipeline\Find-CodeIntelProjects.ps1 -Root D:\projects -Json
+D:\projects\_tools\code-intel-pipeline\Find-CodeIntelProjects.ps1 -Root D:\projects -WizTreeExe WizTree64.exe -Json
+D:\projects\_tools\code-intel-pipeline\Find-CodeIntelProjects.ps1 -WizTreeCsv C:\tmp\wiztree.csv -Json
+```
+
+WizTree CLI/CSV is optional acceleration for project discovery only. It is not a scanner dependency.
 
 Preferred stable wrapper:
 
@@ -199,6 +220,9 @@ Use only these absorbed rules from the Karpathy skills repo:
 - Idea file first for nontrivial pipeline changes: use `templates\idea-file.md`.
 - Agentic loop: doctor -> lite -> normal -> read summary -> read understanding -> fix -> rerun -> commit.
 - Minimalism: keep this as an orchestration shell over `rg`, `repowise`, Understand Anything, and `sentrux`; do not copy tool internals into this repo.
+- Implementation minimalism: before coding choose the first sufficient rung from `docs\implementation-minimalism-benchmark.md`: do nothing, reuse this repository, standard library, platform native capability, already-installed dependency, one-liner, then smallest local implementation.
+- Lazy about solution, never lazy about reading/evidence/safety: implementation minimalism cannot remove verification, error handling, security, accessibility, data-loss prevention, or artifact contract guarantees.
+- Project management intake: before turning findings into tracked work, read `docs\project-management-support.md` and `docs\agents\*.md`. Linear and Obsidian/LLM wiki support is optional intake/output, not scanner runtime or credential storage.
 - Supply-chain hygiene: inspect `installPlan` before approving new install surfaces.
 - Understanding-first: never report a run as handled without knowing the next action from `understanding.md`.
 
