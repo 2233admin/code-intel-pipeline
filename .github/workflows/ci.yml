@@ -48,9 +48,12 @@ jobs:
         run: |
           $files = @(
             "run-code-intel.ps1",
+            "Find-CodeIntelProjects.ps1",
             "Invoke-GitHubSolutionResearch.ps1",
             "test-code-intel-pipeline.ps1",
             "test-github-solution-research.ps1",
+            "test-project-discovery.ps1",
+            "test-project-management-support.ps1",
             "test-skill-development-benchmark.ps1"
           )
           foreach ($file in $files) {
@@ -110,6 +113,14 @@ jobs:
       - name: GitHub research contract tests
         shell: pwsh
         run: .\test-github-solution-research.ps1 -RepoPath .
+
+      - name: Project discovery contract tests
+        shell: pwsh
+        run: .\test-project-discovery.ps1 -RepoPath .
+
+      - name: Project management support contract tests
+        shell: pwsh
+        run: .\test-project-management-support.ps1 -RepoPath .
 
       - name: Skill development benchmark contract tests
         shell: pwsh

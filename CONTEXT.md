@@ -19,6 +19,18 @@ _Avoid_: Scanner, Agent Goal Intake, runtime dependency
 **Skill Development Benchmark**: A quality baseline for creating and hardening reusable skills, including trigger design, evaluation evidence, portability, release gates, failure cases, and review artifacts.
 _Avoid_: Runtime dependency, scanner contract, prompt style guide
 
+**Implementation Minimalism Benchmark**: An implementation-choice baseline requiring Agent code work to choose the smallest sufficient option before writing code: do nothing, reuse this repository, standard library, platform native capability, already-installed dependency, one-liner, then smallest local implementation.
+_Avoid_: Runtime dependency, scanner contract, permission to skip evidence or safety
+
+**Project Management Support**: agent-intake layer turning repository evidence into trackable work and durable project knowledge through issue tracker selection, triage labels, domain docs, and optional wiki surfaces.
+_Avoid_: Scanner runtime, artifact producer, hidden credential store
+
+**Linear Issue Tracker**: optional external project-management queue where verified Code Intel plans and artifact links can become actionable issues.
+_Avoid_: Scanner dependency, default external write target, token storage
+
+**Obsidian/LLM Wiki**: optional knowledge surface that mirrors, indexes, or links repo docs and artifact summaries for project navigation.
+_Avoid_: Artifact authority, source of truth, replacement for ADRs or scanner evidence
+
 **Target Repository**: The repository being examined by a pipeline run.
 _Avoid_: Project, workspace, source tree
 

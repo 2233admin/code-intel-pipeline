@@ -80,6 +80,16 @@ cd code-intel-pipeline
 .\invoke-code-intel.ps1 -RepoPath C:\path\to\your\repo -Mode normal
 ```
 
+先找候选项目：
+
+```powershell
+.\Find-CodeIntelProjects.ps1 -Root D:\projects -Json
+.\Find-CodeIntelProjects.ps1 -Root D:\projects -WizTreeExe WizTree64.exe -Json
+.\Find-CodeIntelProjects.ps1 -WizTreeCsv C:\tmp\wiztree.csv -Json
+```
+
+WizTree CLI/CSV 只是项目发现加速输入；真正选中项目后再运行 `invoke-code-intel.ps1`。
+
 完整 smoke test：
 
 ```powershell
@@ -96,6 +106,12 @@ Skill development benchmark contract 测试：
 
 ```powershell
 .\test-skill-development-benchmark.ps1 -RepoPath C:\path\to\your\repo
+```
+
+Project management support contract 测试：
+
+```powershell
+.\test-project-management-support.ps1 -RepoPath C:\path\to\your\repo
 ```
 
 大仓库建议指定核心范围：
@@ -173,6 +189,15 @@ Future packaging and distribution guidance lives in
 [`docs/harness-factory-reference.md`](docs/harness-factory-reference.md).
 Skill quality guidance lives in
 [`docs/skill-development-benchmark.md`](docs/skill-development-benchmark.md).
+
+Implementation minimalism guidance lives in
+[`docs/implementation-minimalism-benchmark.md`](docs/implementation-minimalism-benchmark.md).
+
+Measured minimalism impact lives in
+[`docs/ponytail-impact-scoreboard.md`](docs/ponytail-impact-scoreboard.md).
+
+Project management intake, Linear, and Obsidian/LLM wiki boundaries live in
+[`docs/project-management-support.md`](docs/project-management-support.md).
 
 结构产物：
 
