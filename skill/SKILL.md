@@ -139,6 +139,8 @@ Then rerun the pipeline.
 
 5. After each run, read `summary.md` first. Its `Sentrux Insight` section shows parsed quality/coupling/cycle/god-file deltas, scan scale, next actions, and CodeNexus follow-up hints. Open `report.json` when the summary shows failure, manual action, a category count above zero, or when the raw `sentruxInsight` object matters.
 
+   If `summary.md` or `report.json` contains `node lint hygiene: manual_required`, treat it as a pre-push hygiene warning: root ESLint may scan generated/vendor static assets such as `apps/*/public/charting_library`, `apps/*/public/datafeeds`, or `packages/*/vendor`. Add explicit ESLint ignores or run root lint before pushing.
+
    The pipeline also writes `codenexus-context.json`. Read it when you need concrete hotspot files, recent commits, and reference hits instead of generic follow-up hints.
 
    `Invoke-SentruxAgentTool.ps1` supports both short names and MCP-style aliases for common reads: `scan`/`sentrux_scan`, `health`/`sentrux_health`, `dsm`/`sentrux_dsm`, `git_stats`/`sentrux_git_stats`, and `test_gaps`/`sentrux_test_gaps`.

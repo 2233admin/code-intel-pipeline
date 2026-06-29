@@ -229,6 +229,148 @@ param([object]$FailureCounts)
     return $false
 }
 
+function Complete-NodeLintHygieneStep {
+    param(
+        [System.Collections.Specialized.OrderedDictionary]$Step,
+        [datetime]$Started
+    )
+
+    $finished = Get-Date
+    $Step["finishedAt"] = $finished.ToString("o")
+    $Step["durationMs"] = [int]($finished - $Started).TotalMilliseconds
+    return [pscustomobject]$Step
+}
+
+function Get-NodeLintHygieneStep {
+    param(
+        [string]$RepoPath,
+        [bool]$RgAvailable
+    )
+
+    $started = Get-Date
+    $step = [ordered]@{
+        name = "node lint hygiene"
+        startedAt = $started.ToString("o")
+        status = "skipped"
+        exitCode = $null
+        output = ""
+        error = ""
+        finishedAt = ""
+        durationMs = 0
+    }
+
+    try {
+        $packageJson = Join-Path $RepoPath "package.json"
+        if (-not (Test-Path -LiteralPath $packageJson -PathType Leaf)) {
+            $step["output"] = "No package.json found."
+            return (Complete-NodeLintHygieneStep -Step $step -Started $started)
+        }
+
+        $package = Get-Content -LiteralPath $packageJson -Raw | ConvertFrom-Json
+        $scripts = Get-JsonProperty $package "scripts"
+        $lintScript = [string](Get-JsonProperty $scripts "lint")
+        if ([string]::IsNullOrWhiteSpace($lintScript) -or $lintScript -notmatch "\beslint\b") {
+            $step["output"] = "No root ESLint lint script detected."
+            return (Complete-NodeLintHygieneStep -Step $step -Started $started)
+        }
+
+        if (-not $RgAvailable) {
+            $step["output"] = "rg unavailable; skip static ESLint asset-boundary check."
+            return (Complete-NodeLintHygieneStep -Step $step -Started $started)
+        }
+
+        $rgArgs = @(
+            "--files",
+            "--hidden",
+            "--no-ignore",
+            "-g", "!**/.git/**",
+            "-g", "!**/node_modules/**",
+            "-g", "!**/dist/**",
+            "-g", "!**/build/**",
+            $RepoPath
+        )
+        $repoFiles = @(& rg @rgArgs 2>$null)
+        $global:LASTEXITCODE = 0
+        $normalizedFiles = @($repoFiles | ForEach-Object { ([string]$_).Replace("\", "/") })
+
+        $assetPatterns = New-Object System.Collections.Generic.List[string]
+        if (@($normalizedFiles | Where-Object { $_ -match "(^|/)apps/[^/]+/public/charting_library/" } | Select-Object -First 1).Count -gt 0) {
+            $assetPatterns.Add("apps/*/public/charting_library/**")
+        }
+        if (@($normalizedFiles | Where-Object { $_ -match "(^|/)apps/[^/]+/public/datafeeds/" } | Select-Object -First 1).Count -gt 0) {
+            $assetPatterns.Add("apps/*/public/datafeeds/**")
+        }
+        if (@($normalizedFiles | Where-Object { $_ -match "(^|/)packages/[^/]+/vendor/" } | Select-Object -First 1).Count -gt 0) {
+            $assetPatterns.Add("packages/*/vendor/**")
+        }
+        if (@($normalizedFiles | Where-Object { $_ -match "(^|/)vendor/" } | Select-Object -First 1).Count -gt 0) {
+            $assetPatterns.Add("vendor/**")
+        }
+
+        if ($assetPatterns.Count -eq 0) {
+            $step["status"] = "passed"
+            $step["exitCode"] = 0
+            $step["output"] = "Root ESLint lint script detected; no known generated/vendor static asset directories found."
+            return (Complete-NodeLintHygieneStep -Step $step -Started $started)
+        }
+
+        $configNames = @("eslint.config.js", "eslint.config.mjs", "eslint.config.cjs", ".eslintignore", ".eslintrc", ".eslintrc.json", ".eslintrc.js", ".eslintrc.cjs")
+        $configFiles = @($configNames | ForEach-Object {
+                $candidate = Join-Path $RepoPath $_
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) { $candidate }
+            })
+        if ($configFiles.Count -eq 0) {
+            $step["status"] = "manual_required"
+            $step["exitCode"] = 0
+            $step["output"] = "Root lint script uses ESLint and known generated/vendor static asset dirs exist, but no root ESLint config or ignore file was found. Add ignores for: $($assetPatterns -join ', '), then run root lint before push."
+            return (Complete-NodeLintHygieneStep -Step $step -Started $started)
+        }
+
+        $configText = (($configFiles | ForEach-Object { Get-Content -LiteralPath $_ -Raw }) -join [Environment]::NewLine).Replace("\", "/")
+        $missing = New-Object System.Collections.Generic.List[string]
+        foreach ($pattern in $assetPatterns) {
+            $covered = $false
+            if ($pattern -eq "apps/*/public/charting_library/**") {
+                $covered = ($configText -match "charting_library|apps/\*/public|\*\*/public|public/\*\*")
+            }
+            elseif ($pattern -eq "apps/*/public/datafeeds/**") {
+                $covered = ($configText -match "datafeeds|apps/\*/public|\*\*/public|public/\*\*")
+            }
+            elseif ($pattern -eq "packages/*/vendor/**" -or $pattern -eq "vendor/**") {
+                $covered = ($configText -match "vendor")
+            }
+
+            if (-not $covered) {
+                $missing.Add($pattern)
+            }
+        }
+
+        if ($missing.Count -gt 0) {
+            $step["status"] = "manual_required"
+            $step["exitCode"] = 0
+            $step["output"] = "Root lint script uses ESLint and known generated/vendor static asset dirs exist, but ignore coverage appears incomplete for: $($missing -join ', '). Add explicit ESLint ignores or run root lint before push."
+        }
+        else {
+            $step["status"] = "passed"
+            $step["exitCode"] = 0
+            $step["output"] = "Root ESLint lint script has ignore coverage for known generated/vendor static asset dirs: $($assetPatterns -join ', ')."
+        }
+    }
+    catch {
+        $step["status"] = "manual_required"
+        $step["exitCode"] = 0
+        $step["output"] = "Node lint hygiene check could not complete. Run root lint before push and inspect generated/vendor asset ignores."
+        $step["error"] = $_.Exception.Message
+    }
+    finally {
+        $finished = Get-Date
+        $step["finishedAt"] = $finished.ToString("o")
+        $step["durationMs"] = [int]($finished - $started).TotalMilliseconds
+    }
+
+    return (Complete-NodeLintHygieneStep -Step $step -Started $started)
+}
+
 function New-GitHubSolutionResearchNotApplicable {
     return [ordered]@{
         status = "not_applicable"
@@ -1599,6 +1741,13 @@ $steps.Add((Invoke-LoggedStep "rg file inventory" {
     $files | Set-Content -LiteralPath $fileListPath -Encoding UTF8
     "files=$($files.Count)"
 }))
+
+
+$nodeLintHygieneStep = Get-NodeLintHygieneStep -RepoPath $repoPath -RgAvailable $toolState.rg
+$steps.Add($nodeLintHygieneStep)
+if ($nodeLintHygieneStep.status -eq "manual_required") {
+    $notes.Add([string]$nodeLintHygieneStep.output)
+}
 
 $understandDir = Join-Path $repoPath ".understand-anything"
 $knowledgeGraph = Join-Path $understandDir "knowledge-graph.json"
