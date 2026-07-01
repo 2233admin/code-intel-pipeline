@@ -144,7 +144,7 @@ function Measure-File {
     if ($File.Extension.ToLowerInvariant() -eq ".v") {
         $importMatches = @([regex]::Matches($text, "(?m)^\s*import\s+([A-Za-z_][\w.]*)") |
             Where-Object { $_.Groups[1].Value -notin @("os", "time", "json", "strings", "arrays", "maps", "math") })
-        $callMatches = @([regex]::Matches($text, "\b([A-Za-z_]\w*)\.([A-Za-z_]\w*)\s*\(") |
+        $callMatches = @([regex]::Matches($text, "\b(?:([A-Za-z_]\w*)\.)?([A-Za-z_]\w*)\s*\(") |
             Where-Object { $_.Groups[1].Value -notin @("os", "time", "json", "strings", "arrays", "maps", "math") })
     }
     else {
@@ -371,7 +371,8 @@ function Get-PluginRoot {
     if (-not [string]::IsNullOrWhiteSpace($env:SENTRUX_PLUGIN_ROOT)) {
         return $env:SENTRUX_PLUGIN_ROOT
     }
-    return (Join-Path $env:USERPROFILE ".sentrux\plugins")
+    $userProfile = if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) { $env:USERPROFILE } else { $HOME }
+    return (Join-Path $userProfile ".sentrux\plugins")
 }
 
 function Read-PluginTomlField {
@@ -380,7 +381,7 @@ function Read-PluginTomlField {
         [string]$Name
     )
 
-    $match = [regex]::Match($Toml, "(?m)^\s*$([regex]::Escape($Name))\s*=\s*""([^""]+)""")
+    $match = [regex]::Match($Toml, "(?m)^\s*$([regex]::Escape($Name))\s*=\s*['""]([^'""]+)['""]")
     if ($match.Success) { return $match.Groups[1].Value }
     return ""
 }
@@ -390,13 +391,20 @@ function Read-PluginExtensions {
 
     $match = [regex]::Match($Toml, "(?m)^\s*extensions\s*=\s*\[([^\]]*)\]")
     if (-not $match.Success) { return @() }
-    return @([regex]::Matches($match.Groups[1].Value, """([^""]+)""") | ForEach-Object { $_.Groups[1].Value })
+    return @([regex]::Matches($match.Groups[1].Value, "['""]([^'""]+)['""]") | ForEach-Object { $_.Groups[1].Value })
 }
 
 function Test-PluginPath {
     param([string]$PluginPath)
 
-    $target = Resolve-TargetPath $PluginPath
+    $target = try {
+        Resolve-TargetPath $PluginPath
+    }
+    catch {
+        Write-Output "plugin invalid: path does not exist or is not a directory: $PluginPath"
+        $script:SentruxLiteExitCode = 1
+        return
+    }
     $pluginToml = Join-Path $target "plugin.toml"
     $queryPath = Join-Path $target "queries\tags.scm"
     $grammarPath = Join-Path $target "grammars\windows-x86_64.dll"
