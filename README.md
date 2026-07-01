@@ -9,12 +9,27 @@
 </p>
 
 <p align="center">
-  <code>rg</code> + <code>Repowise</code> + <code>Understand Anything</code> + <code>Sentrux</code> + <code>CodeNexus-lite</code>
+  <code>rg</code> + <code>Repowise</code> + <code>Understand Anything</code> + <code>Sentrux</code> + <code>CodeNexus context</code>
   <br>
   一条给 AI Agent 用的本地代码理解流水线。
 </p>
 
 ---
+
+## 仓库入口
+
+这个仓库的根目录暂时保留 PowerShell 入口，是为了兼容已发布包和团队脚本。真正的治理边界见 [Repository Layout](docs/repository-layout.md)。
+
+公共入口：
+
+- `invoke-code-intel.ps1`: 推荐人工入口，先 doctor 再运行 pipeline。
+- `run-code-intel.ps1`: 当前 PowerShell orchestrator，负责生成 artifacts。
+- `check-code-intel-tools.ps1`: 环境 doctor。
+- `install-code-intel-pipeline.ps1`: 安装和修复入口。
+- `Find-CodeIntelProjects.ps1`: 项目发现入口。
+- `crates/code-intel-cli`: Rust policy/artifact CLI core。
+
+内部脚本、benchmark、实验入口后续分批迁到 `scripts/` 或 incubator 目录；每次迁移必须保留兼容 shim 或同步更新 CI/release。
 
 ## 这是什么
 

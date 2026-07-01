@@ -244,32 +244,133 @@ fn cmd_classify(args: &Args) -> Result<()> {
         .as_ref()
         .ok_or("classify requires --report <path>")?;
     let report = read_json(report_path)?;
-    let provider_quota = int_at(&report, &["summary", "failureCategories", "providerQuota"]);
-    let local_tool_error = int_at(&report, &["summary", "failureCategories", "localToolError"]);
-    let graph_missing = int_at(&report, &["summary", "failureCategories", "graphMissing"]);
-    let sentrux_fail = int_at(&report, &["summary", "failureCategories", "sentruxFail"]);
-    let research_required = provider_quota > 0 || local_tool_error > 0 || sentrux_fail > 0;
+    let policy = classify_report_policy(&report);
     if args.json {
         let out = serde_json::json!({
             "report": report_path,
             "failureCategories": {
-                "providerQuota": provider_quota,
-                "localToolError": local_tool_error,
-                "graphMissing": graph_missing,
-                "sentruxFail": sentrux_fail
+                "providerQuota": policy.provider_quota,
+                "localToolError": policy.local_tool_error,
+                "graphMissing": policy.graph_missing,
+                "sentruxFail": policy.sentrux_fail
             },
-            "githubResearchRequired": research_required
+            "effectiveFailureCategories": {
+                "providerQuota": policy.effective_provider_quota,
+                "localToolError": policy.effective_local_tool_error,
+                "graphMissing": policy.effective_graph_missing,
+                "sentruxFail": policy.effective_sentrux_fail
+            },
+            "blockingSentruxDebt": policy.blocking_sentrux_debt,
+            "knownSentruxDebt": policy.known_sentrux_debt,
+            "knownDebtOnly": policy.known_debt_only,
+            "pipelineBlocking": policy.pipeline_blocking,
+            "githubResearchRequired": policy.github_research_required,
+            "nextProtocol": policy.next_protocol,
+            "exitCode": policy.exit_code
         });
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
         println!("Report: {}", report_path.display());
-        println!("providerQuota={provider_quota}");
-        println!("localToolError={local_tool_error}");
-        println!("graphMissing={graph_missing}");
-        println!("sentruxFail={sentrux_fail}");
-        println!("githubResearchRequired={research_required}");
+        println!("providerQuota={}", policy.provider_quota);
+        println!("localToolError={}", policy.local_tool_error);
+        println!("graphMissing={}", policy.graph_missing);
+        println!("sentruxFail={}", policy.sentrux_fail);
+        println!("effectiveSentruxFail={}", policy.effective_sentrux_fail);
+        println!("blockingSentruxDebt={}", policy.blocking_sentrux_debt);
+        println!("knownSentruxDebt={}", policy.known_sentrux_debt);
+        println!("knownDebtOnly={}", policy.known_debt_only);
+        println!("pipelineBlocking={}", policy.pipeline_blocking);
+        println!("githubResearchRequired={}", policy.github_research_required);
+        println!("nextProtocol={}", policy.next_protocol);
+        println!("exitCode={}", policy.exit_code);
     }
     Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ClassifyPolicy {
+    provider_quota: i64,
+    local_tool_error: i64,
+    graph_missing: i64,
+    sentrux_fail: i64,
+    effective_provider_quota: i64,
+    effective_local_tool_error: i64,
+    effective_graph_missing: i64,
+    effective_sentrux_fail: i64,
+    blocking_sentrux_debt: i64,
+    known_sentrux_debt: i64,
+    known_debt_only: bool,
+    pipeline_blocking: bool,
+    github_research_required: bool,
+    next_protocol: String,
+    exit_code: i64,
+}
+
+fn classify_report_policy(report: &Value) -> ClassifyPolicy {
+    let provider_quota = int_at(report, &["summary", "failureCategories", "providerQuota"]);
+    let local_tool_error = int_at(report, &["summary", "failureCategories", "localToolError"]);
+    let graph_missing = int_at(report, &["summary", "failureCategories", "graphMissing"]);
+    let sentrux_fail = int_at(report, &["summary", "failureCategories", "sentruxFail"]);
+
+    let effective_provider_quota = effective_category(report, "providerQuota", provider_quota);
+    let effective_local_tool_error = effective_category(report, "localToolError", local_tool_error);
+    let effective_graph_missing = effective_category(report, "graphMissing", graph_missing);
+    let effective_sentrux_fail = effective_category(report, "sentruxFail", sentrux_fail);
+    let blocking_sentrux_debt = int_at(report, &["summary", "blockingSentruxDebt"]);
+    let known_sentrux_debt = int_at(report, &["summary", "knownSentruxDebt"]);
+
+    let pipeline_blocking = effective_provider_quota > 0
+        || effective_local_tool_error > 0
+        || effective_sentrux_fail > 0;
+    let github_research_required = pipeline_blocking;
+    let known_debt_only = sentrux_fail > 0
+        && effective_sentrux_fail == 0
+        && blocking_sentrux_debt == 0
+        && known_sentrux_debt > 0;
+    let next_protocol = string_at(report, &["hospital", "nextProtocol"])
+        .or_else(|| string_at(report, &["hospital", "next_protocol"]))
+        .unwrap_or_else(|| {
+            if github_research_required {
+                "github_solution_research".to_string()
+            } else if effective_graph_missing > 0 {
+                "understanding".to_string()
+            } else {
+                "understanding".to_string()
+            }
+        });
+    let exit_code = if pipeline_blocking { 1 } else { 0 };
+
+    ClassifyPolicy {
+        provider_quota,
+        local_tool_error,
+        graph_missing,
+        sentrux_fail,
+        effective_provider_quota,
+        effective_local_tool_error,
+        effective_graph_missing,
+        effective_sentrux_fail,
+        blocking_sentrux_debt,
+        known_sentrux_debt,
+        known_debt_only,
+        pipeline_blocking,
+        github_research_required,
+        next_protocol,
+        exit_code,
+    }
+}
+
+fn effective_category(report: &Value, name: &str, fallback: i64) -> i64 {
+    let value = int_at(report, &["summary", "effectiveFailureCategories", name]);
+    if value > 0
+        || report
+            .get("summary")
+            .and_then(|summary| summary.get("effectiveFailureCategories"))
+            .is_some()
+    {
+        value
+    } else {
+        fallback
+    }
 }
 
 fn cmd_sentrux_normalize(args: &Args) -> Result<()> {
@@ -1177,5 +1278,64 @@ mod tests {
         let sentrux_fail = int_at(&report, &["summary", "failureCategories", "sentruxFail"]);
 
         assert!(provider_quota > 0 || local_tool_error > 0 || sentrux_fail > 0);
+    }
+
+    #[test]
+    fn classify_policy_does_not_block_known_sentrux_debt() {
+        let report = json!({
+            "summary": {
+                "failureCategories": {
+                    "providerQuota": 0,
+                    "localToolError": 0,
+                    "graphMissing": 1,
+                    "sentruxFail": 1
+                },
+                "effectiveFailureCategories": {
+                    "providerQuota": 0,
+                    "localToolError": 0,
+                    "graphMissing": 1,
+                    "sentruxFail": 0
+                },
+                "blockingSentruxDebt": 0,
+                "knownSentruxDebt": 1
+            }
+        });
+
+        let policy = classify_report_policy(&report);
+
+        assert!(policy.known_debt_only);
+        assert!(!policy.pipeline_blocking);
+        assert!(!policy.github_research_required);
+        assert_eq!(policy.exit_code, 0);
+    }
+
+    #[test]
+    fn classify_policy_blocks_effective_sentrux_failure() {
+        let report = json!({
+            "summary": {
+                "failureCategories": {
+                    "providerQuota": 0,
+                    "localToolError": 0,
+                    "graphMissing": 0,
+                    "sentruxFail": 1
+                },
+                "effectiveFailureCategories": {
+                    "providerQuota": 0,
+                    "localToolError": 0,
+                    "graphMissing": 0,
+                    "sentruxFail": 1
+                },
+                "blockingSentruxDebt": 1,
+                "knownSentruxDebt": 0
+            }
+        });
+
+        let policy = classify_report_policy(&report);
+
+        assert!(!policy.known_debt_only);
+        assert!(policy.pipeline_blocking);
+        assert!(policy.github_research_required);
+        assert_eq!(policy.next_protocol, "github_solution_research");
+        assert_eq!(policy.exit_code, 1);
     }
 }
