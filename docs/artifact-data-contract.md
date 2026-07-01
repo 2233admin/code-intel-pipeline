@@ -6,6 +6,8 @@ Code Intel artifact files are the handoff surface between the scanner, CLI consu
 
 `run-code-intel.ps1` is the only producer of fresh artifact runs. `code-intel resume`, `code-intel classify`, `code-intel doctor`, and indexers consume existing runs; they do not replace scanner evidence.
 
+Agent Goal Intake is an upstream product boundary. It may shape the operator's goal before a scan starts, but it must not produce, mutate, or reinterpret artifact-run files after scanner execution.
+
 An artifact run is one timestamped directory for one target repository:
 
 ```text
