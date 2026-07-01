@@ -286,7 +286,7 @@ if ($null -eq $hospitalArtifact.triage.research_required) {
 $researchRequired = (
     [int]$report.summary.failureCategories.providerQuota -gt 0 -or
     [int]$report.summary.failureCategories.localToolError -gt 0 -or
-    [int]$report.summary.failureCategories.sentruxFail -gt 0
+    [int]$report.summary.effectiveFailureCategories.sentruxFail -gt 0
 )
 if ($researchRequired) {
     if (-not [bool]$report.githubResearch.required) {
