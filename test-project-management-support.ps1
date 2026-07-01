@@ -136,7 +136,7 @@ $checks = @(
     },
     @{
         Path = $skillPath
-        Pattern = "docs\\project-management-support.md"
+        Pattern = "docs/project-management-support.md"
         Message = "skill/SKILL.md must link project management support doc."
     }
 )
