@@ -593,7 +593,7 @@ if (-not [string]::IsNullOrWhiteSpace($Repo) -or -not [string]::IsNullOrWhiteSpa
         else {
             $doctorParams.Repo = $Repo
         }
-        if ($RequireRepowise) { $doctorParams.RequireRepowise = $true }
+        $doctorParams.RequireRepowise = [bool]$RequireRepowise
         if ($RequireUnderstand) { $doctorParams.RequireUnderstand = $true }
         $doctorRaw = & $doctor @doctorParams
         $doctorResult = $doctorRaw | ConvertFrom-Json
