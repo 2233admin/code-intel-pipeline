@@ -31,7 +31,9 @@ param(
 [switch]$SkipSentruxGate,
 [switch]$RequireUnderstandGraph,
 [switch]$SkipGitHubResearch,
-[switch]$WorkspaceAdd
+[switch]$WorkspaceAdd,
+[switch]$SkipOpenSpec,
+[switch]$AutoOpenSpec
 )
 
 Set-StrictMode -Version Latest
@@ -66,6 +68,286 @@ param([string]$Path)
 if (-not (Test-CommandAvailable "git")) { return $false }
 $output = & git -C $Path rev-parse --is-inside-work-tree 2>$null
 return ($LASTEXITCODE -eq 0 -and [string]$output -eq "true")
+}
+
+# ============ OpenSpec Enterprise 检测器 ============
+
+function Get-CodeMetrics {
+    param([string]$Path)
+
+    $quickDirs = @("src", "lib", "app", "packages", "crates")
+    $totalLines = 0
+    $totalFiles = 0
+
+    foreach ($dir in $quickDirs) {
+        $dirPath = Join-Path $Path $dir
+        if (Test-Path $dirPath) {
+            $files = @(Get-ChildItem -Path $dirPath -Recurse -File -Include *.ts,*.tsx,*.js,*.jsx,*.rs,*.py,*.go -ErrorAction SilentlyContinue)
+            $totalFiles += $files.Count
+            foreach ($file in $files) {
+                try {
+                    $totalLines += (Get-Content $file.FullName -ErrorAction SilentlyContinue | Measure-Object -Line).Lines
+                }
+                catch { }
+            }
+        }
+    }
+
+    if ($totalFiles -eq 0) {
+        $files = @(Get-ChildItem -Path $Path -File -Include *.ts,*.tsx,*.js,*.jsx,*.rs,*.py,*.go -ErrorAction SilentlyContinue | Select-Object -First 100)
+        $totalFiles = $files.Count
+        foreach ($file in $files) {
+            try {
+                $totalLines += (Get-Content $file.FullName -ErrorAction SilentlyContinue | Measure-Object -Line).Lines
+            }
+            catch { }
+        }
+        $totalLines = $totalLines * 10
+    }
+
+    return @{
+        lines = $totalLines
+        files = $totalFiles
+        estimated = ($totalFiles -eq 0)
+    }
+}
+
+function Get-GovernanceIndicators {
+    param([string]$Path)
+
+    return @{
+        hasDesign = Test-Path "$Path/design.md"
+        hasSpecs = Test-Path "$Path/specs"
+        hasSecurityReview = (Test-Path "$Path/security-review.md") -or (Test-Path "$Path/docs/security-review.md")
+        hasArchitecture = Test-Path "$Path/architecture.md"
+        hasOpenSpec = Test-Path "$Path/openspec"
+        hasADRs = (Test-Path "$Path/docs/adr") -or (Test-Path "$Path/adr")
+        hasConstitution = Test-Path "$Path/constitution.md"
+    }
+}
+
+function Get-CollaborationMetrics {
+    param([string]$Path)
+
+    try {
+        $contributors = @(& git -C $Path log --format=%ae 2>$null | Sort-Object -Unique)
+        $lastCommit = & git -C $Path log -1 --format=%ci 2>$null
+        $repoAge = if ($lastCommit) {
+            ((Get-Date) - [DateTime]::Parse($lastCommit)).Days
+        } else { 0 }
+
+        return @{
+            contributors = $contributors.Count
+            repoAgeDays = $repoAge
+        }
+    }
+    catch {
+        return @{
+            contributors = 0
+            repoAgeDays = 0
+        }
+    }
+}
+
+function Get-CICDScore {
+    param([string]$Path)
+
+    $score = 0
+
+    if (Test-Path "$Path/.github/workflows") { $score += 10 }
+    if (Test-Path "$Path/.gitlab-ci.yml") { $score += 10 }
+    if (Test-Path "$Path/Jenkinsfile") { $score += 10 }
+    if (Test-Path "$Path/azure-pipelines.yml") { $score += 10 }
+    if (Test-Path "$Path/.circleci") { $score += 10 }
+
+    return $score
+}
+
+function Get-TestCoverage {
+    param([string]$Path)
+
+    $hasTests = $false
+    $testPatterns = @("*/test/*", "*/tests/*", "*/__tests__/*", "*_test.*", "*_tests.*", "*.spec.*", "*.test.*")
+
+    foreach ($pattern in $testPatterns) {
+        $found = @(Get-ChildItem -Path $Path -Recurse -Include $pattern -ErrorAction SilentlyContinue)
+        if ($found.Count -gt 0) {
+            $hasTests = $true
+            break
+        }
+    }
+
+    return $hasTests
+}
+
+function Get-OpenSpecRecommendation {
+    param(
+        [hashtable]$Metrics,
+        [hashtable]$Governance,
+        [hashtable]$Collaboration,
+        [int]$CICDScore,
+        [bool]$HasTests
+    )
+
+    $score = 0
+    $reasons = @()
+
+    # Already using OpenSpec
+    if ($Governance.hasOpenSpec) {
+        return @{
+            recommendation = "already_using"
+            score = 100
+            schema = "spec-driven-enterprise"
+            message = "Project already uses OpenSpec"
+            reasons = @("Detected openspec/ directory")
+        }
+    }
+
+    # Code size scoring
+    if ($Metrics.lines -gt 50000) {
+        $score += 40
+        $reasons += "Large codebase ($($Metrics.lines) lines)"
+    }
+    elseif ($Metrics.lines -gt 10000) {
+        $score += 25
+        $reasons += "Medium codebase ($($Metrics.lines) lines)"
+    }
+    elseif ($Metrics.lines -gt 5000) {
+        $score += 10
+        $reasons += "Small codebase ($($Metrics.lines) lines)"
+    }
+
+    # Governance file scoring
+    if ($Governance.hasDesign) { $score += 20; $reasons += "design.md exists" }
+    if ($Governance.hasArchitecture) { $score += 15; $reasons += "architecture.md exists" }
+    if ($Governance.hasSpecs) { $score += 25; $reasons += "specs/ directory exists" }
+    if ($Governance.hasSecurityReview) { $score += 25; $reasons += "Security review file exists" }
+    if ($Governance.hasADRs) { $score += 15; $reasons += "ADR documentation exists" }
+    if ($Governance.hasConstitution) { $score += 20; $reasons += "constitution.md exists" }
+
+    # Collaboration scoring
+    if ($Collaboration.contributors -gt 5) {
+        $score += 25
+        $reasons += "Multi-contributor ($($Collaboration.contributors) people)"
+    }
+    elseif ($Collaboration.contributors -gt 2) {
+        $score += 15
+        $reasons += "Small team ($($Collaboration.contributors) people)"
+    }
+
+    if ($Collaboration.repoAgeDays -gt 365) {
+        $score += 10
+        $reasons += "Mature project ($($Collaboration.repoAgeDays) days)"
+    }
+
+    # CI/CD scoring
+    if ($CICDScore -gt 0) {
+        $score += $CICDScore
+        $reasons += "CI/CD pipeline detected"
+    }
+
+    # Test scoring
+    if ($HasTests) { $score += 5 } else { $score -= 5 }
+
+    # Infer result
+    $schema = if ($score -ge 80) { "spec-driven-enterprise" }
+              elseif ($score -ge 50) { "spec-driven" }
+              else { $null }
+
+    $recommendation = if ($score -ge 80) { "strongly_recommended" }
+                      elseif ($score -ge 50) { "recommended" }
+                      elseif ($score -ge 30) { "optional" }
+                      else { "not_needed" }
+
+    return @{
+        score = $score
+        recommendation = $recommendation
+        schema = $schema
+        reasons = $reasons
+        metrics = $Metrics
+        governance = $Governance
+        collaboration = $Collaboration
+    }
+}
+
+function Invoke-OpenSpecDetector {
+    param(
+        [string]$RepoPath,
+        [bool]$AutoMode = $false
+    )
+
+    $metrics = Get-CodeMetrics -Path $RepoPath
+    $governance = Get-GovernanceIndicators -Path $RepoPath
+    $collaboration = Get-CollaborationMetrics -Path $RepoPath
+    $cicdScore = Get-CICDScore -Path $RepoPath
+    $hasTests = Get-TestCoverage -Path $RepoPath
+
+    $result = Get-OpenSpecRecommendation -Metrics $metrics -Governance $governance -Collaboration $collaboration -CICDScore $cicdScore -HasTests $hasTests
+
+    # Format output
+    $emoji = switch ($result.recommendation) {
+        "already_using" { "[OK]" }
+        "strongly_recommended" { "[HOT]" }
+        "recommended" { "[IDE]" }
+        "optional" { "[?]" }
+        default { "[---]" }
+    }
+
+    $schemaNote = if ($result.schema -eq "spec-driven-enterprise") {
+        " - DAG dependency management`n - Enterprise governance`n - Agent protocol"
+    } elseif ($result.schema -eq "spec-driven") {
+        " - Lightweight DAG`n - Spec-driven workflow"
+    } else { "" }
+
+    $message = @"
+
+$emoji OpenSpec Workflow Suggestion
+
+Recommendation: $($result.recommendation -replace '_', ' ')
+Score: $($result.score)/100
+
+Detected Features:
+$($result.reasons -join "`n- ")
+
+$schemaNote
+
+"@
+
+    $result.message = $message.Trim()
+    return $result
+}
+
+function Show-OpenSpecSuggestion {
+    param(
+        [hashtable]$Result,
+        [bool]$AutoMode = $false
+    )
+
+    Write-Host $Result.message
+
+    if (-not $AutoMode -and $Result.recommendation -eq "strongly_recommended") {
+        $response = Read-Host "`nInitialize OpenSpec Enterprise workflow? (Y/n)"
+        if ($response -ne "n" -and $response -ne "N") {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Initialize-OpenSpecWorkflow {
+    param(
+        [string]$Path,
+        [string]$Schema = "spec-driven"
+    )
+
+    $openSpecDir = Join-Path $Path "openspec"
+
+    # Create directory structure
+    $null = New-Item -Path "$openSpecDir/changes" -ItemType Directory -Force
+    $null = New-Item -Path "$openSpecDir/schemas" -ItemType Directory -Force
+
+    Write-Host "OpenSpec workflow initialized: $openSpecDir"
+    Write-Host "Next: Clone schema from Gitea or use local openspec-enterprise repo"
 }
 
 function Get-JsonProperty {
@@ -2645,6 +2927,13 @@ $toolState = [ordered]@{
     git = Test-CommandAvailable "git"
 }
 
+# OpenSpec Enterprise detection (Plan B: auto-detect + user confirmation)
+$openSpecResult = $null
+if (-not $SkipOpenSpec) {
+    $openSpecResult = Invoke-OpenSpecDetector -RepoPath $repoPath -AutoMode $AutoOpenSpec
+    $notes.Add("OpenSpec score: $($openSpecResult.score)/100 ($($openSpecResult.recommendation))")
+}
+
 if (-not $toolState.rg) {
     throw "Missing required tool: rg"
 }
@@ -3408,6 +3697,12 @@ $report = [ordered]@{
         codeEvidence = $codeEvidence
         repomixPack = $repomixPack
         githubResearch = $githubResearch
+    openSpec = [ordered]@{
+        recommendation = $openSpecResult.recommendation
+        score = $openSpecResult.score
+        schema = $openSpecResult.schema
+        reasons = $openSpecResult.reasons
+    }
 hospital = [ordered]@{
         path = $hospitalReportPath
         markdown = $hospitalMarkdownPath
@@ -3459,6 +3754,13 @@ $summaryLines = @(
     "- Understanding: $understandingPath",
     "- Hospital: $hospitalMarkdownPath",
     "- Understand command: ``$understandCommand``",
+    "",
+    "## OpenSpec Enterprise",
+    "",
+    "- Recommendation: $($openSpecResult.recommendation -replace '_', ' ')",
+    "- Score: $($openSpecResult.score)/100",
+    "- Schema: $($openSpecResult.schema)",
+    "- Reasons: $($openSpecResult.reasons -join ', ')",
     "",
     "## Summary",
     "",
