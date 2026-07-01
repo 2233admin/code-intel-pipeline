@@ -90,15 +90,30 @@ if (-not $NoReadOnlyLock) {
     }
 }
 
+$validationStatus = "skipped"
+$validationDetail = ""
+
 if (-not $SkipValidate) {
     if (-not (Get-Command sentrux -ErrorAction SilentlyContinue)) {
         throw "sentrux CLI not found in PATH"
     }
-    & sentrux plugin validate $targetRoot
+    $validateOutput = & sentrux plugin validate $targetRoot 2>&1
+    $validationDetail = ($validateOutput | ForEach-Object { $_.ToString() } | Out-String).Trim()
     if ($LASTEXITCODE -ne 0) {
+        if ($validationDetail -match "unknown command 'plugin'" -or $validationDetail -match "unknown command `"plugin`"") {
+            $validationStatus = "skipped"
+            $validationDetail = "current sentrux is lite/shim and has no plugin command"
+        }
+        else {
         throw "sentrux plugin validate failed for $targetRoot"
+        }
+    }
+    else {
+        $validationStatus = "passed"
     }
 }
+
+$global:LASTEXITCODE = 0
 
 [pscustomobject][ordered]@{
     status = "installed"
@@ -106,4 +121,6 @@ if (-not $SkipValidate) {
     target = $targetRoot
     backup = if (Test-Path -LiteralPath $backupPath) { $backupPath } else { $null }
     readOnlyLock = -not $NoReadOnlyLock
+    validation = $validationStatus
+    validationDetail = $validationDetail
 } | ConvertTo-Json -Depth 4

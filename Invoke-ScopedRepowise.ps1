@@ -92,9 +92,16 @@ function Write-ScopedConfig {
     $configDir = Join-Path $ShadowPath ".repowise"
     New-Item -ItemType Directory -Force -Path $configDir | Out-Null
     $configPath = Join-Path $configDir "config.yaml"
+    $model = [Environment]::GetEnvironmentVariable("CODE_INTEL_MODEL", "Process")
+    if ([string]::IsNullOrWhiteSpace($model)) {
+        $model = [Environment]::GetEnvironmentVariable("CODE_INTEL_MODEL", "User")
+    }
+    if ([string]::IsNullOrWhiteSpace($model)) {
+        $model = "MiniMax-M3"
+    }
     $lines = @(
         "provider: anthropic",
-        "model: MiniMax-M2.7",
+        "model: $model",
         "embedder: mock",
         "reasoning: auto",
         "commit_limit: $CommitLimit",
@@ -329,6 +336,7 @@ $env:REPOWISE_SKIP_HOOK_INSTALL = "1"
 Set-EnvFromUserRegistry "ANTHROPIC_API_KEY"
 Set-EnvFromUserRegistry "ANTHROPIC_BASE_URL"
 Set-EnvFromUserRegistry "REPOWISE_PROVIDER"
+Set-EnvFromUserRegistry "CODE_INTEL_MODEL"
 
 $statePath = Join-Path $shadowPath ".repowise\state.json"
 $docsEnabled = $false
@@ -356,11 +364,17 @@ try {
             Remove-Item -LiteralPath $dbPath -Force
         }
         $scriptPath = Join-Path $PSScriptRoot "Run-ScopedRepowiseDocs.py"
+        $docsCommand = "python"
+        $docsArguments = @($scriptPath, "--repo", $shadowPath, "--coverage-pct", "0.02", "--concurrency", "1")
+        if (Get-Command uv -ErrorAction SilentlyContinue) {
+            $docsCommand = "uv"
+            $docsArguments = @("run", "--with", "repowise", "python", $scriptPath, "--repo", $shadowPath, "--coverage-pct", "0.02", "--concurrency", "1")
+        }
         [void](Invoke-ProcessWithTimeout `
-            -FilePath "python" `
+            -FilePath $docsCommand `
             -Description "repowise scoped docs" `
             -TimeoutSeconds $TimeoutSeconds `
-            -ArgumentList @($scriptPath, "--repo", $shadowPath, "--coverage-pct", "0.02", "--concurrency", "1"))
+            -ArgumentList $docsArguments)
     }
     else {
         if (Test-Path -LiteralPath $statePath -PathType Leaf) {

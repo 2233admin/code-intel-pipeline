@@ -31,6 +31,25 @@ if ([string]::IsNullOrWhiteSpace($Config)) {
 $doctor = Join-Path $root "check-code-intel-tools.ps1"
 $runner = Join-Path $root "run-code-intel.ps1"
 $sentruxAgentTool = Join-Path $root "Invoke-SentruxAgentTool.ps1"
+$rustCli = Join-Path $root "target\debug\code-intel.exe"
+
+if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
+    Push-Location $root
+    try {
+        & cargo build -p code-intel | Out-Host
+    }
+    finally {
+        Pop-Location
+    }
+}
+if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
+    throw "Missing Rust integration orchestrator: $rustCli"
+}
+
+& $rustCli orchestrate --action Validate | Out-Host
+if ($LASTEXITCODE -ne 0) {
+    throw "Integration orchestration validation failed"
+}
 
 $label = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) { $RepoPath } else { $Repo }
 if ([string]::IsNullOrWhiteSpace($label)) {

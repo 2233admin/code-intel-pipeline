@@ -60,7 +60,7 @@ async def generate_docs(repo_path: Path, coverage_pct: float, concurrency: int) 
 
     provider = get_provider(
         "anthropic",
-        model="MiniMax-M2.7",
+        model=os.environ.get("CODE_INTEL_MODEL", "MiniMax-M3"),
         api_key=os.environ["ANTHROPIC_API_KEY"],
         base_url=os.environ.get("ANTHROPIC_BASE_URL"),
         with_rate_limiter=False,

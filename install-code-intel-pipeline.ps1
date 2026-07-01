@@ -13,6 +13,10 @@ param(
     [switch]$Json
 )
 
+if (-not $PSBoundParameters.ContainsKey("RequireRepowise")) {
+    $RequireRepowise = $true
+}
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -108,19 +112,41 @@ function Invoke-RipgrepInstall {
     throw "no supported installer found for ripgrep; install winget or scoop first"
 }
 
-function Invoke-PipInstall {
+function Invoke-PythonToolInstall {
     param(
         [string]$PackageName
     )
 
-    $python = Get-Command python -ErrorAction SilentlyContinue
-    if (-not $python) {
-        throw "python is not on PATH; install Python and rerun this script in a new shell"
+    $uv = Get-Command uv -ErrorAction SilentlyContinue
+    if ($uv) {
+        & uv tool install $PackageName
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+        throw "uv tool install failed for $PackageName with exit code $LASTEXITCODE"
     }
 
-    & python -m pip install --upgrade $PackageName
+    $pipx = Get-Command pipx -ErrorAction SilentlyContinue
+    if ($pipx) {
+        & pipx install $PackageName
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+        throw "pipx install failed for $PackageName with exit code $LASTEXITCODE"
+    }
+
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $python) {
+        throw "no supported Python tool installer found; install uv, pipx, or Python and rerun this script"
+    }
+
+    $pipOutput = & python -m pip install --upgrade $PackageName 2>&1
     if ($LASTEXITCODE -ne 0) {
-        throw "pip install failed for $PackageName with exit code $LASTEXITCODE"
+        $pipText = ($pipOutput | ForEach-Object { $_.ToString() } | Out-String).Trim()
+        if ($pipText -match "externally-managed-environment" -or $pipText -match "PEP 668") {
+            throw "pip refused to modify an externally managed Python environment. Install uv and run 'uv tool install $PackageName', or install pipx and run 'pipx install $PackageName'."
+        }
+        throw "pip install failed for $PackageName with exit code $LASTEXITCODE`: $pipText"
     }
 }
 
@@ -322,7 +348,19 @@ function Install-SentruxVlangPluginOverlay {
         $output = & $overlayScript 2>&1
         $text = ($output | ForEach-Object { $_.ToString() } | Out-String).Trim()
         if ($LASTEXITCODE -ne 0) {
+            if ($text -match "unknown command 'plugin'" -or $text -match "unknown command `"plugin`"") {
+                $skipOutput = & $overlayScript -SkipValidate 2>&1
+                $skipText = ($skipOutput | ForEach-Object { $_.ToString() } | Out-String).Trim()
+                if ($LASTEXITCODE -eq 0) {
+                    Add-InstallAction $Actions "sentrux-vlang-overlay" "installed" "$skipText validation skipped: current sentrux is lite/shim and has no plugin command." "Install the real sentrux binary if plugin validation or plugin list is required."
+                    return
+                }
+            }
             Add-InstallAction $Actions "sentrux-vlang-overlay" "install_failed" $text "Run .\Install-SentruxVlangOverlay.ps1 manually and inspect sentrux plugin validate output."
+            return
+        }
+        if ($text -match '"validation"\s*:\s*"skipped"') {
+            Add-InstallAction $Actions "sentrux-vlang-overlay" "installed" $text "Validation was skipped because current sentrux has no plugin command; install the real sentrux binary if plugin validation is required."
             return
         }
         Add-InstallAction $Actions "sentrux-vlang-overlay" "installed" $text "Run sentrux plugin list to confirm vlang is listed."
@@ -428,7 +466,7 @@ if ([string]::IsNullOrWhiteSpace($Config)) {
 Add-InstallPlan $installPlan "rg" "winget or scoop" "winget install --id BurntSushi.ripgrep.MSVC -e" "Exact file inventory and fast text search." "LOW: established CLI tool; install source should still be package-manager controlled." "Use the rg bundled with Codex if available."
 Add-InstallPlan $installPlan "git" "winget" "winget install --id Git.Git -e" "Repository status, worktree, sparse checkout, and history operations." "LOW: foundational tool; ensure official Git for Windows package source." ""
 Add-InstallPlan $installPlan "python" "winget" "winget install --id Python.Python.3.11 -e" "Runs provider preflight and scoped repowise docs helper." "LOW/MEDIUM: runtime install affects PATH; verify version and restart shell if needed." "Use an already managed Python 3.11+ runtime."
-Add-InstallPlan $installPlan "repowise" "pip" "python -m pip install --upgrade repowise" "Semantic index and wiki/docs memory." "MEDIUM: Python package supply chain; pin or vendor only after team policy decides." "Skip repowise with -SkipRepowise for exact-search-only runs."
+Add-InstallPlan $installPlan "repowise" "uv tool / pipx / pip" "uv tool install repowise" "Required semantic index and wiki/docs memory. Repowise status/index works even when model-backed docs are unavailable." "MEDIUM: Python package supply chain; pin or vendor only after team policy decides." "Use pipx install repowise, or run an explicitly requested emergency exact-search-only flow outside this skill."
 Add-InstallPlan $installPlan "sentrux" "cargo" "cargo install sentrux --locked" "Structural quality and regression gate." "MEDIUM: cargo source must be trusted; no automatic install if cargo is absent." "The repo-owned sentrux-lite core keeps scan/check/gate usable until the real binary is installed."
 Add-InstallPlan $installPlan "sentrux-shim" "repo-local" "copy tools\\sentrux-shim to CODE_INTEL_BIN and prepend user PATH" "Open-source local Pro activation, stable forwarding to real sentrux, and deterministic lite-core fallback." "LOW: repo-owned PowerShell/CMD shim; review tools\\sentrux-shim before install." "Set SENTRUX_AUTO_PRO=0 to disable auto Pro activation."
 Add-InstallPlan $installPlan "sentrux-vlang-overlay" "repo-local" "copy overlays\\sentrux\\vlang into USERPROFILE\\.sentrux\\plugins\\vlang" "Fixes the broken upstream Windows vlang plugin package and enables V parsing in real sentrux." "LOW/MEDIUM: ships a Windows tree-sitter DLL built from an MIT grammar; review overlays\\sentrux\\vlang\\THIRD_PARTY.md." "Use -SkipSentruxVlangOverlay to skip this local plugin patch."
@@ -436,7 +474,7 @@ Add-InstallPlan $installPlan "sentrux-vlang-overlay" "repo-local" "copy overlays
 Install-MissingTool $installActions "rg" { Invoke-RipgrepInstall } "Install ripgrep with winget (`winget install --id BurntSushi.ripgrep.MSVC -e`) or ensure rg is on PATH."
 Install-MissingTool $installActions "git" { Invoke-WingetInstall "Git.Git" "Git for Windows" } "Install Git for Windows (`winget install --id Git.Git -e`) or ensure git is on PATH."
 Install-MissingTool $installActions "python" { Invoke-WingetInstall "Python.Python.3.11" "Python 3.11" } "Install Python 3.11+ (`winget install --id Python.Python.3.11 -e`) or ensure python is on PATH."
-Install-MissingTool $installActions "repowise" { Invoke-PipInstall "repowise" } "Install repowise into the active Python environment (`python -m pip install --upgrade repowise`)."
+Install-MissingTool $installActions "repowise" { Invoke-PythonToolInstall "repowise" } "Install repowise with uv tool install repowise or pipx install repowise."
 Install-MissingTool $installActions "sentrux" { Invoke-SentruxInstall } "Install sentrux or ensure sentrux.exe is on PATH."
 Install-SentruxShim $installActions $root
 Install-SentruxVlangPluginOverlay $installActions $root
@@ -444,6 +482,22 @@ Install-SentruxVlangPluginOverlay $installActions $root
 $requiredFiles = @(
     "check-code-intel-tools.ps1",
     "invoke-code-intel.ps1",
+    "Invoke-CodeIntelOrchestrator.ps1",
+    "Cargo.toml",
+    "crates\code-intel-cli\Cargo.toml",
+    "crates\code-intel-cli\src\main.rs",
+    "crates\code-intel-cli\src\artifacts.rs",
+    "crates\code-intel-cli\src\artifacts_tests.rs",
+    "crates\code-intel-cli\src\graph.rs",
+    "crates\code-intel-cli\src\orchestration.rs",
+    "crates\code-intel-cli\src\providers.rs",
+    "crates\code-intel-cli\src\routes.rs",
+    "crates\code-intel-cli\src\sentrux.rs",
+    "crates\code-nexus-lite\Cargo.toml",
+    "crates\code-nexus-lite\src\main.rs",
+    "crates\code-nexus-lite\src\functions.rs",
+    "crates\code-nexus-lite\src\functions\repowise.rs",
+    "crates\code-nexus-lite\src\triggers.rs",
     "Install-SentruxVlangOverlay.ps1",
     "Test-SentruxVlangOverlay.ps1",
     "run-code-intel.ps1",
@@ -453,8 +507,11 @@ $requiredFiles = @(
     "Invoke-CodeNexusLite.ps1",
     "bootstrap-new-machine.ps1",
     "test-code-intel-pipeline.ps1",
+    "test-integration-orchestration.ps1",
     "test-code-intel-provider.ps1",
-    "update-code-intel-index.ps1"
+    "update-code-intel-index.ps1",
+    "orchestration\integrations.json",
+    "docs\integration-orchestration.md"
 )
 
 foreach ($file in $requiredFiles) {
@@ -471,7 +528,7 @@ Test-File $checks "sentrux-vlang-overlay:dll" (Join-Path $root "overlays\sentrux
 Test-Tool $checks "rg" $true "Install ripgrep or ensure rg is on PATH."
 Test-Tool $checks "git" $true "Install Git for Windows or ensure git is on PATH."
 Test-Tool $checks "python" $true "Install Python 3.11+ or ensure python is on PATH."
-Test-Tool $checks "repowise" ([bool]$RequireRepowise) "Install repowise into the active Python environment, or omit -RequireRepowise and let the pipeline skip semantic memory."
+Test-Tool $checks "repowise" ([bool]$RequireRepowise) "Install repowise into the active Python environment; this skill treats Repowise as required unless the user explicitly requests an emergency exact-search-only run."
 Test-Tool $checks "sentrux" $true "Install sentrux or ensure sentrux.exe is on PATH."
 Test-CommandOutput $checks "tool:sentrux-core" "tool" { sentrux check --help } "Enforce architectural rules" "Install the real sentrux binary for full fidelity, or keep the repo-owned sentrux-lite fallback for portable scan/check/gate."
 Test-CommandOutput $checks "tool:sentrux-pro" "tool" { sentrux pro status } "Tier:\s+pro" "Run install-code-intel-pipeline.ps1 again so the repo shim is installed and auto activation is enabled."
@@ -495,7 +552,8 @@ $understandDetail = "missing"
 if ($understandFound) {
     $understandDetail = "found"
 }
-Add-Check $checks "skill:Understand Anything" "skill" ([bool]$RequireUnderstand) $understandFound $understandDetail "Install or link the Understand Anything skill/plugin, or omit -RequireUnderstand and let the pipeline emit the /understand command as a manual step."
+Add-Check $checks "skill:Understand Anything external fallback" "skill" $false $understandFound $understandDetail "Optional richer graph fallback only. Normal graph generation uses the repo-owned Rust provider."
+Add-Check $checks "runtime:internal graph provider" "runtime" $true (Test-Path -LiteralPath (Join-Path $root "crates\code-intel-cli\src\graph.rs") -PathType Leaf) "source=crates\code-intel-cli\src\graph.rs" "Restore the repo-owned Rust graph provider; external /understand is compatibility fallback only."
 
 Test-EnvVar $checks "ANTHROPIC_BASE_URL" $false "https://api.minimaxi.com/anthropic"
 Test-EnvVar $checks "REPOWISE_PROVIDER" $false "anthropic"
@@ -558,14 +616,22 @@ if (-not [string]::IsNullOrWhiteSpace($Repo) -or -not [string]::IsNullOrWhiteSpa
 
 if ($CheckProvider) {
     $providerScript = Join-Path $root "test-code-intel-provider.ps1"
+    $providerModel = [Environment]::GetEnvironmentVariable("CODE_INTEL_MODEL", "Process")
+    if ([string]::IsNullOrWhiteSpace($providerModel)) {
+        $providerModel = [Environment]::GetEnvironmentVariable("CODE_INTEL_MODEL", "User")
+    }
+    if ([string]::IsNullOrWhiteSpace($providerModel)) {
+        $providerModel = "MiniMax-M3"
+    }
+    $providerCheckName = "provider:$providerModel"
     try {
-        $providerRaw = & $providerScript -Json
+        $providerRaw = & $providerScript -Model $providerModel -Json
         $providerResult = $providerRaw | ConvertFrom-Json
         $detail = if ($providerResult.ok) { $providerResult.message } else { "$($providerResult.category): $($providerResult.message)" }
-        Add-Check $checks "provider:MiniMax-M2.7" "provider" $true ([bool]$providerResult.ok) $detail "Check provider quota or user-scoped Anthropic-compatible env vars."
+        Add-Check $checks $providerCheckName "provider" $true ([bool]$providerResult.ok) $detail "Check provider quota or user-scoped Anthropic-compatible env vars."
     }
     catch {
-        Add-Check $checks "provider:MiniMax-M2.7" "provider" $true $false $_.Exception.Message "Run test-code-intel-provider.ps1 -Json manually."
+        Add-Check $checks $providerCheckName "provider" $true $false $_.Exception.Message "Run test-code-intel-provider.ps1 -Json manually."
     }
 }
 

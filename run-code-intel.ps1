@@ -170,10 +170,10 @@ function Convert-OptionalRepowiseTimeout {
     if ($null -eq $Step) { return $Step }
     $blob = (([string]$Step.error) + "`n" + ([string]$Step.output)).ToLowerInvariant()
     if ([string]$Step.status -eq "failed" -and [string]$Step.name -like "repowise*" -and $blob -match "timed out after") {
-        $Step.status = "skipped"
-        $Step.exitCode = $null
-        $Step.output = "Optional Repowise step skipped after timeout. $($Step.error)"
-        $Step.error = ""
+        $Step.status = "failed"
+        $Step.exitCode = 1
+        $Step.output = "Required Repowise step timed out. $($Step.error)"
+        $Step.error = "repowise timeout"
     }
     return $Step
 }
@@ -717,7 +717,13 @@ $content = Get-Content -LiteralPath $fullPath -Raw -ErrorAction SilentlyContinue
         if ($null -eq $content) { $content = "" }
         $lines = if ([string]::IsNullOrEmpty($content)) { @() } else { @($content -split "`r?`n") }
         $lines = @($lines)
-        $hashBytes = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($content))
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $hashBytes = $sha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($content))
+        }
+        finally {
+            $sha256.Dispose()
+        }
 $hash = [System.BitConverter]::ToString($hashBytes).Replace("-", "").ToLowerInvariant()
 
 $fileRows.Add([ordered]@{
@@ -1443,7 +1449,7 @@ function Get-HospitalTreatmentPlan {
 
     $treatment = @()
     if ($FailureCounts.localToolError -gt 0) { $treatment += "Fix local tool errors before interpreting architecture signals." }
-    if ($FailureCounts.graphMissing -gt 0) { $treatment += "Refresh Understand graph with: $UnderstandCommand" }
+    if ($FailureCounts.graphMissing -gt 0) { $treatment += "Refresh Understand-compatible graph with: $UnderstandCommand" }
     if (-not $RulesExists) { $treatment += "Add .sentrux/rules.toml for the chosen scope." }
     if ($FailingWhatIfCount -gt 0) { $treatment += "Use what-if failures as the tightening roadmap; start with the first failing scenario." }
     if (-not [string]::IsNullOrWhiteSpace($TopContextFile)) { $treatment += "Start CodeNexus review at $TopContextFile." }
@@ -2761,27 +2767,64 @@ if ($nodeLintHygieneStep.status -eq "manual_required") {
 
 $understandDir = Join-Path $repoPath ".understand-anything"
 $knowledgeGraph = Join-Path $understandDir "knowledge-graph.json"
+$codeIntelExe = Join-Path $PSScriptRoot "target\debug\code-intel.exe"
+$codeIntelGraphCommand = "target\debug\code-intel.exe provider --action Invoke --provider understand --operation graph --repo $repoPath --language $Language --write --json"
 $understandCommand = "/understand $repoPath --language $Language"
 if ($Mode -eq "full") {
+    $codeIntelGraphCommand = "target\debug\code-intel.exe provider --action Invoke --provider understand --operation graph_full --repo $repoPath --language $Language --write --json"
     $understandCommand = "$understandCommand --full"
+}
+
+$graphWasGenerated = $false
+if ((-not (Test-Path -LiteralPath $knowledgeGraph)) -or $Mode -eq "full") {
+    $rustGraphStep = Invoke-LoggedStep "provider understand graph" {
+        if (-not (Test-Path -LiteralPath $codeIntelExe -PathType Leaf)) {
+            $cargo = Get-Command cargo -ErrorAction SilentlyContinue
+            if (-not $cargo) {
+                throw "cargo not found; cannot build provider runtime"
+            }
+            & cargo build -p code-intel
+            if ($LASTEXITCODE -ne 0) {
+                throw "cargo build -p code-intel failed with exit code $LASTEXITCODE"
+            }
+        }
+
+        $graphOperation = "graph"
+        if ($Mode -eq "full") {
+            $graphOperation = "graph_full"
+        }
+        $graphArgs = @("provider", "--action", "Invoke", "--provider", "understand", "--operation", $graphOperation, "--repo", $repoPath, "--language", $Language, "--write", "--json")
+
+        & $codeIntelExe @graphArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "provider understand graph failed with exit code $LASTEXITCODE"
+        }
+    }
+    $steps.Add($rustGraphStep)
+    if ($rustGraphStep.status -eq "passed" -and (Test-Path -LiteralPath $knowledgeGraph)) {
+        $graphWasGenerated = $true
+        $notes.Add("Internal code-intel graph generated: $knowledgeGraph")
+    }
 }
 
 if (Test-Path -LiteralPath $knowledgeGraph) {
     $graphItem = Get-Item -LiteralPath $knowledgeGraph
-    $notes.Add("Understand graph found: $knowledgeGraph")
+    if (-not $graphWasGenerated) {
+        $notes.Add("Understand-compatible graph found: $knowledgeGraph")
+    }
     $steps.Add([pscustomobject][ordered]@{
         name = "understand graph"
         startedAt = (Get-Date).ToString("o")
         status = "passed"
         exitCode = 0
-        output = "path=$knowledgeGraph; bytes=$($graphItem.Length); updated=$($graphItem.LastWriteTime.ToString("o"))"
+        output = "path=$knowledgeGraph; provider=code-intel-rust-graph; bytes=$($graphItem.Length); updated=$($graphItem.LastWriteTime.ToString("o"))"
         error = ""
         finishedAt = (Get-Date).ToString("o")
         durationMs = 0
     })
 }
 else {
-    $message = "Understand graph missing. Run in Claude: $understandCommand"
+    $message = "Understand-compatible graph missing. Run internal provider: $codeIntelGraphCommand. External fallback: $understandCommand"
     $notes.Add($message)
     $status = if ($RequireUnderstandGraph) { "failed" } else { "manual_required" }
     $steps.Add([pscustomobject][ordered]@{
@@ -2801,10 +2844,10 @@ if (-not $SkipRepowise) {
         $steps.Add([pscustomobject][ordered]@{
             name = "repowise"
             startedAt = (Get-Date).ToString("o")
-            status = "skipped"
-            exitCode = $null
+            status = "failed"
+            exitCode = 1
             output = ""
-            error = "repowise not found"
+            error = "Missing required tool: repowise"
             finishedAt = (Get-Date).ToString("o")
             durationMs = 0
         })
@@ -2840,42 +2883,43 @@ if (-not $SkipRepowise) {
             Push-Location $repoPath
             try {
                 $steps.Add((Invoke-LoggedStep "repowise status" {
-                    repowise status --no-workspace
+                    if (-not (Test-Path -LiteralPath $codeIntelExe -PathType Leaf)) {
+                        & cargo build -p code-intel
+                    }
+                    & $codeIntelExe provider --action Invoke --provider repowise --operation status --repo $repoPath --json
                 }))
 
-if ($Mode -ne "lite") {
-    $repowiseDir = Join-Path $repoPath ".repowise"
-    $repowiseWorkspacePath = Join-Path $repoPath ".repowise-workspace.yaml"
-    $repowiseStatePath = Join-Path $repowiseDir "state.json"
-    $repowiseDbPath = Join-Path $repowiseDir "wiki.db"
-    $hasRepowiseState = (Test-Path -LiteralPath $repowiseStatePath -PathType Leaf) -or (Test-Path -LiteralPath $repowiseDbPath -PathType Leaf)
-    $hasRepowiseWorkspace = Test-Path -LiteralPath $repowiseWorkspacePath -PathType Leaf
-
-    if ($hasRepowiseState -and $hasRepowiseWorkspace) {
-        $steps.Add((Invoke-LoggedStep "repowise update" {
-            cmd /c "exit" | repowise update --workspace --index-only
-        }))
-    }
-elseif ($hasRepowiseState) {
-    $message = "Repowise state exists without .repowise-workspace.yaml; skipped index-only update to avoid interactive init."
-    $notes.Add($message)
-    $steps.Add([pscustomobject][ordered]@{
-        name = "repowise update"
-        startedAt = (Get-Date).ToString("o")
-        status = "skipped"
-        exitCode = $null
-        output = $message
-        error = ""
-        finishedAt = (Get-Date).ToString("o")
-        durationMs = 0
-    })
-}
-else {
-    $steps.Add((Invoke-LoggedStep "repowise init" {
-        cmd /c "(echo all& echo 1)" | repowise init . --index-only -y --no-claude-md --no-onboarding --embedder mock --provider mock
-    }))
-}
-
+                if ($Mode -ne "lite") {
+                    $repowiseDir = Join-Path $repoPath ".repowise"
+                    $repowiseWorkspacePath = Join-Path $repoPath ".repowise-workspace.yaml"
+                    $repowiseStatePath = Join-Path $repowiseDir "state.json"
+                    $repowiseDbPath = Join-Path $repowiseDir "wiki.db"
+                    $hasRepowiseState = (Test-Path -LiteralPath $repowiseStatePath -PathType Leaf) -or (Test-Path -LiteralPath $repowiseDbPath -PathType Leaf)
+                    $hasRepowiseWorkspace = Test-Path -LiteralPath $repowiseWorkspacePath -PathType Leaf
+                    if ($hasRepowiseState -and $hasRepowiseWorkspace) {
+                        $steps.Add((Invoke-LoggedStep "repowise update" {
+                            & $codeIntelExe provider --action Invoke --provider repowise --operation index --repo $repoPath --json
+                        }))
+                    }
+                    elseif ($hasRepowiseState) {
+                        $message = "Repowise state exists without .repowise-workspace.yaml; skipped index-only update to avoid interactive init."
+                        $notes.Add($message)
+                        $steps.Add([pscustomobject][ordered]@{
+                            name = "repowise update"
+                            startedAt = (Get-Date).ToString("o")
+                            status = "skipped"
+                            exitCode = $null
+                            output = $message
+                            error = ""
+                            finishedAt = (Get-Date).ToString("o")
+                            durationMs = 0
+                        })
+                    }
+                    else {
+                        $steps.Add((Invoke-LoggedStep "repowise init" {
+                            cmd /c "(echo all& echo 1)" | repowise init . --index-only -y --no-claude-md --no-onboarding --embedder mock --provider mock
+                        }))
+                    }
 
                     if ($RepowiseDocs) {
                         $steps.Add((Invoke-LoggedStep "repowise docs" {
@@ -2940,7 +2984,7 @@ elseif (-not $SkipSentrux) {
 
         if ($hasSentruxConfig -and -not $SkipSentruxCheck) {
             $steps.Add((Invoke-LoggedStep "sentrux check" {
-                sentrux check $sentruxTargetPath
+                & $codeIntelExe sentrux check $sentruxTargetPath
             }))
         }
         else {
@@ -2972,7 +3016,7 @@ elseif (-not $SkipSentrux) {
         }
         elseif ($SaveSentruxBaseline -or ($AutoSaveMissingSentruxBaseline -and -not (Test-Path -LiteralPath $baselinePath))) {
             $steps.Add((Invoke-LoggedStep "sentrux gate save" {
-                sentrux gate --save $sentruxTargetPath
+                & $codeIntelExe sentrux gate_save $sentruxTargetPath
             }))
         }
         elseif (-not (Test-Path -LiteralPath $baselinePath)) {
@@ -2991,7 +3035,7 @@ elseif (-not $SkipSentrux) {
         }
         else {
             $steps.Add((Invoke-LoggedStep "sentrux gate" {
-                sentrux gate $sentruxTargetPath
+                & $codeIntelExe sentrux gate $sentruxTargetPath
             }))
         }
     }
@@ -3332,7 +3376,7 @@ $hospitalReport = New-CodeIntelHospitalReport `
     -SentruxEvolutionSummary $sentruxEvolutionSummary `
 -SentruxWhatIfSummary $sentruxWhatIfSummary `
 -CodeNexusContextSummary $codeNexusContextSummary `
--UnderstandCommand $understandCommand `
+-UnderstandCommand $codeIntelGraphCommand `
 -ToolState $toolState `
 -GitHubResearch $githubResearch
 $hotspotsForSurgery = if ($null -ne $sentruxHotspotsSummary) { [string]$sentruxHotspotsSummary.path } else { "" }
@@ -3394,6 +3438,7 @@ $report = [ordered]@{
     artifactDir = $runDir
     sentruxPath = if ([string]::IsNullOrWhiteSpace($SentruxPath)) { $repoPath } else { (Resolve-ChildPath $repoPath $SentruxPath) }
     tools = $toolState
+    graphCommand = $codeIntelGraphCommand
     understandCommand = $understandCommand
     steps = $steps
     sentruxInsight = $sentruxInsight
@@ -3458,7 +3503,8 @@ $summaryLines = @(
     "- Report: $reportPath",
     "- Understanding: $understandingPath",
     "- Hospital: $hospitalMarkdownPath",
-    "- Understand command: ``$understandCommand``",
+    "- Graph command: ``$codeIntelGraphCommand``",
+    "- External fallback: ``$understandCommand``",
     "",
     "## Summary",
     "",
@@ -3614,7 +3660,7 @@ $understandingLines = @(
     "## Key Assumptions",
     "- The repo path resolved to ``$repoPath``.",
     "- Mode ``$Mode`` reflects the intended confidence level for this run.",
-    "- ``rg`` is exact inventory, ``repowise`` is semantic memory, Understand Anything is architecture graph context, and Sentrux is the structural gate.",
+    "- ``rg`` is exact inventory, ``repowise`` is semantic memory, ``code-intel graph`` is Understand-compatible architecture graph context, and Sentrux is the structural gate.",
     "- Generated artifacts are local evidence, not a replacement for human review.",
     "",
     "## Verified",
@@ -3641,14 +3687,14 @@ $understandingLines = @(
     "$(if ([string]$repomixPack.status -eq "ok" -and -not [string]::IsNullOrWhiteSpace([string]$repomixPack.path)) { '1. Start: ``' + $repomixPack.path + '`` complete repository pack.' + [Environment]::NewLine + '2. Then: ``summary.md`` run status, failures.' + [Environment]::NewLine + '3. Navigate: ``code-evidence/merged/agent/index.md`` ranked files, symbols.' + [Environment]::NewLine + '4. Govern: ``hospital.md`` plus ``surgery-plan.md``.' } else { '1. Start: ``summary.md`` run status, failures.' + [Environment]::NewLine + '2. Navigate: ``code-evidence/merged/agent/index.md`` ranked files, symbols.' + [Environment]::NewLine + '3. Govern: ``hospital.md`` plus ``surgery-plan.md``.' })",
     "",
     "## Unverified Or Inferred",
-    "- Understand graph: $(if ($graphStep.Count -gt 0) { $graphStep[0].status } else { 'not checked' })",
-"- Repowise state: $(Join-StatusNames $repowiseSteps)",
-"- Sentrux state: $(Join-StatusNames $sentruxSteps)",
-"- Sentrux gate insight: gate=$($sentruxInsight['gateStatus']), noDegradation=$($sentruxInsight['noDegradation']), rules=$($sentruxInsight['rulesExists'])",
-"- Sentrux failures: ``$sentruxFailuresPath`` status=$($sentruxFailures.status), records=$(@($sentruxFailures.records).Count), conflicts=$(@($sentruxFailures.conflicts).Count)",
-"- Sentrux debt register: ``$sentruxDebtRegisterPath`` known=$($sentruxDebtRegister.summary.knownDebt), new=$($sentruxDebtRegister.summary.newDebt), worsened=$($sentruxDebtRegister.summary.worsenedDebt), blocking=$($sentruxDebtRegister.summary.blocking), informational=$($sentruxDebtRegister.summary.informational)",
-"- Sentrux authoritative primary: $(if ($null -ne $sentruxFailures.primary) { [string]$sentruxFailures.primary.id + ' target=' + [string]$sentruxFailures.primary.target.status } else { 'none' })",
-"- Skipped steps: $(Join-StatusNames $skippedSteps)",
+    "- Understand-compatible graph: $(if ($graphStep.Count -gt 0) { $graphStep[0].status } else { 'not checked' })",
+    "- Repowise state: $(Join-StatusNames $repowiseSteps)",
+    "- Sentrux state: $(Join-StatusNames $sentruxSteps)",
+    "- Sentrux gate insight: gate=$($sentruxInsight['gateStatus']), noDegradation=$($sentruxInsight['noDegradation']), rules=$($sentruxInsight['rulesExists'])",
+    "- Sentrux failures: ``$sentruxFailuresPath`` status=$($sentruxFailures.status), records=$(@($sentruxFailures.records).Count), conflicts=$(@($sentruxFailures.conflicts).Count)",
+    "- Sentrux debt register: ``$sentruxDebtRegisterPath`` known=$($sentruxDebtRegister.summary.knownDebt), new=$($sentruxDebtRegister.summary.newDebt), worsened=$($sentruxDebtRegister.summary.worsenedDebt), blocking=$($sentruxDebtRegister.summary.blocking), informational=$($sentruxDebtRegister.summary.informational)",
+    "- Sentrux authoritative primary: $(if ($null -ne $sentruxFailures.primary) { [string]$sentruxFailures.primary.id + ' target=' + [string]$sentruxFailures.primary.target.status } else { 'none' })",
+    "- Skipped steps: $(Join-StatusNames $skippedSteps)",
     "",
     "## Sentrux Structural Signal",
     "$(if ($sentruxMetrics.Count -gt 0) { ($sentruxMetrics | ForEach-Object { '- ' + $_.name + ': ' + $_.before + ' -> ' + $_.after + ' (delta ' + $_.delta + ', regressed=' + $_.regressed + ')' }) -join [Environment]::NewLine } else { '- no parsed metrics' })",
@@ -3664,8 +3710,8 @@ $understandingLines = @(
     "- effective_failed: $($effectiveFailed.Count)",
     "",
     "## Human Inspection Required",
-    "- If Repomix status is ``ok``, read ``repomix-output.*`` first for whole-repo orientation; otherwise read ``summary.md`` first.",
-    "- If `graph_missing > 0`, run: ``$understandCommand``",
+    "- Read `summary.md` first.",
+    "- If `graph_missing > 0`, run: ``$codeIntelGraphCommand``. Use ``$understandCommand`` only as external compatibility fallback.",
     "- If ``sentrux_fail > 0``, inspect Sentrux output in ``report.json`` before saving a new baseline.",
     "- If ``provider_quota > 0``, treat it as an upstream quota/rate issue, not a local indexing failure.",
     "- If ``local_tool_error > 0``, inspect command output and PATH/tool installation before changing repo code.",
@@ -3685,7 +3731,7 @@ Write-Host "Summary: $summaryPath"
 Write-Host "Understanding: $understandingPath"
 Write-Host "Hospital: $hospitalMarkdownPath"
 if ($manual.Count -gt 0) {
-    Write-Host "Manual step required: $understandCommand"
+    Write-Host "Manual step required: $codeIntelGraphCommand"
 }
 if ($effectiveFailed.Count -gt 0) {
     Write-Host "Failed steps: $($failed.Count)"

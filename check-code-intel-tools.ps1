@@ -7,6 +7,10 @@ param(
     [switch]$Json
 )
 
+if (-not $PSBoundParameters.ContainsKey("RequireRepowise")) {
+    $RequireRepowise = $true
+}
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -134,6 +138,9 @@ if (Test-Path -LiteralPath $Config -PathType Leaf) {
 
 $pipelineRoot = Split-Path -Parent $PSCommandPath
 $pipelineScript = Join-Path $pipelineRoot "run-code-intel.ps1"
+$codeIntelCargo = Join-Path $pipelineRoot "crates\code-intel-cli\Cargo.toml"
+$codeIntelGraphSource = Join-Path $pipelineRoot "crates\code-intel-cli\src\graph.rs"
+$codeIntelGraphBinary = Join-Path $pipelineRoot "target\debug\code-intel.exe"
 $repoConfig = Resolve-RepoConfig $Repo $configData
 $repoInput = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) { $RepoPath } else { $Repo }
 $repoPath = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
@@ -213,6 +220,12 @@ $checks = [ordered]@{
         pluginFound = [bool]$understandPlugin
         pluginPath = if ($understandPlugin) { [string]$understandPlugin } else { "" }
     }
+    graphProvider = [ordered]@{
+        sourceFound = (Test-Path -LiteralPath $codeIntelGraphSource -PathType Leaf)
+        cargoFound = (Test-Path -LiteralPath $codeIntelCargo -PathType Leaf)
+        binaryFound = (Test-Path -LiteralPath $codeIntelGraphBinary -PathType Leaf)
+        command = "$codeIntelGraphBinary graph --repo <repo-path> --language zh --write --json"
+    }
     repo = $repoState
 }
 
@@ -224,8 +237,8 @@ foreach ($tool in $tools) {
 }
 if (-not $sentruxCore.found) { $missing.Add("sentrux core") }
 if (-not $sentruxPro.found) { $missing.Add("sentrux pro auto-activation") }
-if ($RequireUnderstand -and -not $checks.understandAnything.skillFound) { $missing.Add("Understand Anything skill") }
-if ($RequireUnderstand -and -not $checks.understandAnything.pluginFound) { $missing.Add("Understand Anything plugin") }
+if ($RequireUnderstand -and -not $checks.graphProvider.sourceFound) { $missing.Add("internal graph provider source") }
+if ($RequireUnderstand -and -not $checks.graphProvider.cargoFound) { $missing.Add("code-intel Rust runtime") }
 if ($repoState -and -not $repoState.exists) { $missing.Add("repo path") }
 
 $result = [ordered]@{
@@ -260,7 +273,9 @@ else {
     Write-Host "$coreMark sentrux-core $($sentruxCore.output)"
     Write-Host "$proMark sentrux-pro $($sentruxPro.output)"
     $uaMark = if ($checks.understandAnything.skillFound -and $checks.understandAnything.pluginFound) { "OK" } else { "MISSING" }
-    Write-Host "$uaMark Understand Anything skill=$($checks.understandAnything.skillPath) plugin=$($checks.understandAnything.pluginPath)"
+    $graphMark = if ($checks.graphProvider.sourceFound -and $checks.graphProvider.cargoFound) { "OK" } else { "MISSING" }
+    Write-Host "$graphMark internal graph provider source=$($checks.graphProvider.sourceFound) cargo=$($checks.graphProvider.cargoFound) binary=$($checks.graphProvider.binaryFound)"
+    Write-Host "$uaMark external Understand fallback skill=$($checks.understandAnything.skillPath) plugin=$($checks.understandAnything.pluginPath)"
     if ($repoState) {
         Write-Host "Repo: $($repoState.path)"
         Write-Host "Repo exists: $($repoState.exists)"

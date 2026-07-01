@@ -64,6 +64,9 @@ function Test-SkippedPath {
         )) {
             return $true
         }
+        if ($part -match "^(\.venv|venv|env)-") {
+            return $true
+        }
     }
     return $false
 }
@@ -120,6 +123,9 @@ function Measure-File {
     $text = ""
     try {
         $text = Get-Content -LiteralPath $File.FullName -Raw -ErrorAction Stop
+        if ($null -eq $text) {
+            $text = ""
+        }
     }
     catch {
         $text = ""

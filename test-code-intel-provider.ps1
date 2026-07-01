@@ -1,6 +1,6 @@
 param(
     [string]$Provider = "anthropic",
-    [string]$Model = "MiniMax-M2.7",
+    [string]$Model = "MiniMax-M3",
     [switch]$Json
 )
 
@@ -28,7 +28,7 @@ import os
 import sys
 
 provider = os.environ.get("CODE_INTEL_PROVIDER", "anthropic")
-model = os.environ.get("CODE_INTEL_MODEL", "MiniMax-M2.7")
+model = os.environ.get("CODE_INTEL_MODEL", "MiniMax-M3")
 
 result = {
     "ok": False,
@@ -68,7 +68,12 @@ sys.exit(0 if result["ok"] else 1)
 
 $env:CODE_INTEL_PROVIDER = $Provider
 $env:CODE_INTEL_MODEL = $Model
-$raw = & python -c $python
+if (Get-Command uv -ErrorAction SilentlyContinue) {
+    $raw = & uv --quiet run --with anthropic python -c $python
+}
+else {
+    $raw = & python -c $python
+}
 $exitCode = $LASTEXITCODE
 $result = $raw | ConvertFrom-Json
 
