@@ -57,10 +57,10 @@ if ([string]::IsNullOrWhiteSpace($label)) {
 }
 
 $doctorJson = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
-    & $doctor -Config $Config -RepoPath $RepoPath -Json | ConvertFrom-Json
+    & $doctor -Config $Config -RepoPath $RepoPath -RequireRepowise:([bool](-not $SkipRepowise)) -Json | ConvertFrom-Json
 }
 else {
-    & $doctor -Config $Config -Repo $Repo -Json | ConvertFrom-Json
+    & $doctor -Config $Config -Repo $Repo -RequireRepowise:([bool](-not $SkipRepowise)) -Json | ConvertFrom-Json
 }
 if (-not $doctorJson.ok) {
     throw "Doctor failed: $($doctorJson.missing -join ', ')"
