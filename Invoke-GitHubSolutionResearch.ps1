@@ -8,10 +8,12 @@ param(
     [object[]]$FailedSteps = @(),
     [object[]]$FailureClassifications = @(),
 
-    [ValidateSet("lite", "normal", "full")]
-    [string]$Mode = "normal",
+[ValidateSet("lite", "normal", "full")]
+[string]$Mode = "normal",
 
-    [switch]$SkipGitHubResearch
+[object]$SentruxFailures = $null,
+
+[switch]$SkipGitHubResearch
 )
 
 Set-StrictMode -Version Latest
@@ -47,9 +49,10 @@ function New-ManualResult {
     param(
         [string]$Reason,
         [object[]]$Queries,
-        [object[]]$FailedSteps,
-        [object[]]$FailureClassifications,
-        [string[]]$EvidenceLinks = @()
+[object[]]$FailedSteps,
+[object[]]$FailureClassifications,
+[object]$SentruxFailures = $null,
+[string[]]$EvidenceLinks = @()
     )
 
     return [ordered]@{
@@ -62,14 +65,27 @@ function New-ManualResult {
         queries = $Queries
         candidates = @()
         evidenceLinks = $EvidenceLinks
-        failedSteps = $FailedSteps
-        failureClassifications = $FailureClassifications
-        nextStep = "Run github-solution-research with the failed step names, first error lines, tool/package names, and any version constraints."
+failedSteps = $FailedSteps
+failureClassifications = $FailureClassifications
+sentruxFailures = $SentruxFailures
+nextStep = "Run github-solution-research with the failed step names, first error lines, tool/package names, and any version constraints."
         exitCriteria = @(
             "GitHub issue, PR, code, release, or repository evidence explains an applicable solution",
             "or GitHub evidence is explicitly recorded as insufficient and local-only diagnosis continues"
         )
     }
+}
+
+function Get-JsonProperty {
+    param(
+        [object]$Object,
+        [string]$Name
+    )
+
+    if ($null -eq $Object) { return $null }
+    $prop = $Object.PSObject.Properties[$Name]
+    if ($null -eq $prop) { return $null }
+    return $prop.Value
 }
 
 function Invoke-GhJson {
@@ -88,6 +104,24 @@ $jsonPath = Join-Path $ArtifactDir "github-solution-research.json"
 $markdownPath = Join-Path $ArtifactDir "github-solution-research.md"
 
 $queries = [System.Collections.Generic.List[object]]::new()
+if ($null -ne $SentruxFailures -and $null -ne $SentruxFailures.primary) {
+    $primary = $SentruxFailures.primary
+    $targetText = if ($null -ne $primary.target -and [string]$primary.target.status -eq "resolved") {
+        "{0} {1}" -f [string]$primary.target.file, [string]$primary.target.symbol
+    }
+    else {
+        [string]$primary.kind
+    }
+    $query = ("sentrux {0} {1}" -f [string]$primary.kind, $targetText).Trim()
+    if (-not [string]::IsNullOrWhiteSpace($query)) {
+        $queries.Add([ordered]@{
+            step = "sentrux normalized failure"
+            query = $query
+            firstErrorLine = [string]$primary.stdout_excerpt
+            tokens = @()
+        })
+    }
+}
 foreach ($step in @($FailedSteps)) {
     $name = [string]$step.name
     $detail = if (-not [string]::IsNullOrWhiteSpace([string]$step.error)) { [string]$step.error } else { [string]$step.output }
@@ -117,9 +151,9 @@ if ($queries.Count -eq 0) {
 }
 
 if ($SkipGitHubResearch) {
-    $result = New-ManualResult -Reason "GitHub research skipped by -SkipGitHubResearch." -Queries @($queries) -FailedSteps $FailedSteps -FailureClassifications $FailureClassifications
+$result = New-ManualResult -Reason "GitHub research skipped by -SkipGitHubResearch." -Queries @($queries) -FailedSteps $FailedSteps -FailureClassifications $FailureClassifications -SentruxFailures $SentruxFailures
 } elseif (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-    $result = New-ManualResult -Reason "GitHub CLI 'gh' is not available on PATH." -Queries @($queries) -FailedSteps $FailedSteps -FailureClassifications $FailureClassifications
+    $result = New-ManualResult -Reason "GitHub CLI 'gh' is not available on PATH." -Queries @($queries) -FailedSteps $FailedSteps -FailureClassifications $FailureClassifications -SentruxFailures $SentruxFailures
 } else {
     $candidates = [System.Collections.Generic.List[object]]::new()
     $evidenceLinks = [System.Collections.Generic.List[string]]::new()
@@ -152,29 +186,40 @@ if ($SkipGitHubResearch) {
             }
 
             foreach ($item in ($items | Select-Object -First 3)) {
-                $url = [string]$item.url
+                $url = [string](Get-JsonProperty $item "url")
                 if (-not [string]::IsNullOrWhiteSpace($url) -and -not $evidenceLinks.Contains($url)) {
                     $evidenceLinks.Add($url)
                 }
                 $repoName = ""
-                if ($null -ne $item.repository) {
-                    if ($null -ne $item.repository.fullName) { $repoName = [string]$item.repository.fullName }
-                    elseif ($null -ne $item.repository.nameWithOwner) { $repoName = [string]$item.repository.nameWithOwner }
-                } elseif ($null -ne $item.fullName) {
-                    $repoName = [string]$item.fullName
+                $itemRepository = Get-JsonProperty $item "repository"
+                $itemFullName = Get-JsonProperty $item "fullName"
+                if ($null -ne $itemRepository) {
+                    $repoFullName = Get-JsonProperty $itemRepository "fullName"
+                    $repoNameWithOwner = Get-JsonProperty $itemRepository "nameWithOwner"
+                    if ($null -ne $repoFullName) { $repoName = [string]$repoFullName }
+                    elseif ($null -ne $repoNameWithOwner) { $repoName = [string]$repoNameWithOwner }
+                } elseif ($null -ne $itemFullName) {
+                    $repoName = [string]$itemFullName
                 }
+                $itemTitle = Get-JsonProperty $item "title"
+                $itemPath = Get-JsonProperty $item "path"
+                $itemState = Get-JsonProperty $item "state"
+                $itemStars = Get-JsonProperty $item "stargazersCount"
+                $itemLanguage = Get-JsonProperty $item "language"
+                $itemUpdatedAt = Get-JsonProperty $item "updatedAt"
+                $itemPushedAt = Get-JsonProperty $item "pushedAt"
                 $candidates.Add([ordered]@{
                     surface = $surface
                     query = $query
-                    title = if ($null -ne $item.title) { [string]$item.title } elseif ($null -ne $item.fullName) { [string]$item.fullName } else { [string]$item.path }
+                    title = if ($null -ne $itemTitle) { [string]$itemTitle } elseif ($null -ne $itemFullName) { [string]$itemFullName } else { [string]$itemPath }
                     repository = $repoName
                     url = $url
-                    state = if ($null -ne $item.state) { [string]$item.state } else { "" }
-                    stars = if ($null -ne $item.stargazersCount) { [int]$item.stargazersCount } else { $null }
-                    language = if ($null -ne $item.language) { [string]$item.language } else { "" }
-                    updatedAt = if ($null -ne $item.updatedAt) { [string]$item.updatedAt } elseif ($null -ne $item.pushedAt) { [string]$item.pushedAt } else { "" }
+                    state = if ($null -ne $itemState) { [string]$itemState } else { "" }
+                    stars = if ($null -ne $itemStars) { [int]$itemStars } else { $null }
+                    language = if ($null -ne $itemLanguage) { [string]$itemLanguage } else { "" }
+                    updatedAt = if ($null -ne $itemUpdatedAt) { [string]$itemUpdatedAt } elseif ($null -ne $itemPushedAt) { [string]$itemPushedAt } else { "" }
                 })
-            }
+}
         }
 
         if ($failureReason -match "(?i)403|429|rate.?limit|api rate limit|authentication|not logged in") {
@@ -184,7 +229,7 @@ if ($SkipGitHubResearch) {
 
     if ($candidates.Count -eq 0) {
         $reason = if ([string]::IsNullOrWhiteSpace($failureReason)) { "No strong GitHub evidence returned for the generated blocker queries." } else { $failureReason }
-        $result = New-ManualResult -Reason $reason -Queries @($queries) -FailedSteps $FailedSteps -FailureClassifications $FailureClassifications
+        $result = New-ManualResult -Reason $reason -Queries @($queries) -FailedSteps $FailedSteps -FailureClassifications $FailureClassifications -SentruxFailures $SentruxFailures
     } else {
         $result = [ordered]@{
             schema = "github-solution-research.v1"
@@ -198,6 +243,7 @@ if ($SkipGitHubResearch) {
             evidenceLinks = @($evidenceLinks)
             failedSteps = $FailedSteps
             failureClassifications = $FailureClassifications
+            sentruxFailures = $SentruxFailures
             nextStep = "Review candidate evidence, confirm applicability, then adapt the smallest local fix."
             exitCriteria = @(
                 "GitHub evidence is linked and judged applicable",

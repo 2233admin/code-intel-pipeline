@@ -187,6 +187,7 @@ $tools = @(
     Test-Tool "rg" $true
     Test-Tool "git" $true
     Test-Tool "repowise" ([bool]$RequireRepowise)
+    Test-Tool "repomix" $false
     Test-Tool "sentrux" $true
 )
 $sentruxCore = Test-CommandOutput "sentrux-core" { sentrux check --help } "Enforce architectural rules"

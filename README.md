@@ -154,6 +154,7 @@ install -> doctor -> smoke test
 | --- | --- | --- |
 | `rg` | 快速文件清单、文本搜索 | `files.txt` |
 | `Repowise` | 语义索引、长期记忆、项目上下文 | `.repowise/` 或 scoped shadow |
+| `Repomix` | 把本地或远程仓库打包成 AI 友好的单文件上下文 | `repomix-output.md`、`repomix-summary.json` |
 | `Understand Anything` | 架构图谱快照 | `.understand-anything/knowledge-graph.json` |
 | `Sentrux` | 结构质量、规则门禁、Agent 会话回归 | DSM、hotspots、what-if、evolution |
 | `CodeNexus-lite` | 热点定位、引用搜索、下一步上下文 | `codenexus-context.json` |
@@ -205,18 +206,23 @@ Project management intake, Linear, and Obsidian/LLM wiki boundaries live in
 sentrux-dsm.json
 sentrux-file-details.json
 sentrux-hotspots.json
+sentrux-failures.json
+sentrux-debt-register.json
 sentrux-evolution.json
 sentrux-what-if.json
 codenexus-context.json
+repomix-output.md
+repomix-summary.json
 ```
 
 读报告顺序：
 
-1. 先看 `summary.md`，它是整轮运行的入口页。
-2. 失败时看 `report.json`，它有完整步骤和失败分类。
-3. 交接给人或 Agent 前看 `understanding.md`。
-4. 做治理判断看 `hospital.md`。
-5. 要开工修结构看 `surgery-plan.md`。
+1. Repomix 成功时先看 `repomix-output.*`，它是给人和 Agent 快速理解陌生仓库的整仓包。
+2. 再看 `summary.md`，它是整轮运行状态、失败分类、关键 artifact 的入口页。
+3. 用 `code-evidence/merged/agent/index.md` 做 ranked 文件 / 符号导航。
+4. 交接给人或 Agent 前看 `understanding.md`。
+5. 做治理判断看 `hospital.md`。
+6. 要开工修结构看 `surgery-plan.md`。
 
 ## Governance Mode
 

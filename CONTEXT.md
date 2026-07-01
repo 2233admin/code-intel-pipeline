@@ -49,6 +49,12 @@ _Avoid_: JSON shape, output format, file schema
 **Artifact Consumer**: A tool or Agent that reads existing artifact runs without producing new repository evidence.
 _Avoid_: Scanner, producer, runner
 
+**Code Evidence Layer**: Optional post-scan evidence layer that produces measurable code-structure artifacts such as symbols, chunks, relationships, and metrics. It supplements an Artifact Run but does not own scanner success semantics.
+_Avoid_: Scanner, AST platform, semantic search tool
+
+**Agent Code Slice**: Curated, task-oriented view of Code Evidence Layer artifacts for Agent consumption. It points into full evidence dumps instead of replacing them.
+_Avoid_: Full AST dump, summary, report
+
 **Artifact Index**: A derived cross-repository view of artifact runs.
 _Avoid_: Artifact run, cache, database
 

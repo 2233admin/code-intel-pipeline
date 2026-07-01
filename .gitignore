@@ -24,6 +24,8 @@ target/
 # IDE
 .idea/
 .vscode/
+.omx/
+.serena/
 *.swp
 *.swo
 
@@ -33,3 +35,6 @@ Thumbs.db
 
 # PowerShell artifacts
 *.ps1.xml
+
+# Local command scratch
+-o

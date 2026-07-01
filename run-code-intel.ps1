@@ -22,6 +22,10 @@ param(
     [switch]$AutoSaveMissingSentruxBaseline,
     [switch]$SkipRepowise,
     [switch]$RepowiseDocs,
+    [switch]$SkipRepomix,
+    [ValidateSet("xml", "markdown", "json", "plain")]
+    [string]$RepomixStyle = "markdown",
+    [switch]$RepomixCompress,
     [switch]$SkipSentrux,
 [switch]$SkipSentruxCheck,
 [switch]$SkipSentruxGate,
@@ -54,6 +58,14 @@ function Resolve-Repo {
 function Test-CommandAvailable {
     param([string]$Name)
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
+}
+
+function Test-GitRepository {
+param([string]$Path)
+
+if (-not (Test-CommandAvailable "git")) { return $false }
+$output = & git -C $Path rev-parse --is-inside-work-tree 2>$null
+return ($LASTEXITCODE -eq 0 -and [string]$output -eq "true")
 }
 
 function Get-JsonProperty {
@@ -407,6 +419,459 @@ function Read-JsonFileSafe {
     catch {
         return $null
     }
+}
+
+function Get-CodeEvidenceLanguage {
+    param([string]$Extension)
+
+    switch ($Extension.ToLowerInvariant()) {
+        ".ps1" { return "powershell" }
+        ".psm1" { return "powershell" }
+        ".py" { return "python" }
+        ".js" { return "javascript" }
+        ".jsx" { return "javascript" }
+        ".mjs" { return "javascript" }
+        ".cjs" { return "javascript" }
+        ".ts" { return "typescript" }
+        ".tsx" { return "typescript" }
+        ".rs" { return "rust" }
+        ".go" { return "go" }
+        ".java" { return "java" }
+        ".cs" { return "csharp" }
+        default { return "text" }
+    }
+}
+
+function Get-CodeEvidenceSymbols {
+    param(
+        [string]$RelativePath,
+        [string]$Language,
+        [string[]]$Lines
+    )
+
+    $symbols = New-Object System.Collections.Generic.List[object]
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $line = [string]$Lines[$i]
+        $kind = ""
+        $name = ""
+        if ($Language -eq "powershell" -and $line -match '^\s*function\s+([A-Za-z0-9_\-:]+)') {
+            $kind = "function"
+            $name = $Matches[1]
+        } elseif ($Language -eq "python" -and $line -match '^\s*(def|class)\s+([A-Za-z_][A-Za-z0-9_]*)') {
+            $kind = if ($Matches[1] -eq "class") { "class" } else { "function" }
+            $name = $Matches[2]
+        } elseif ($Language -in @("javascript", "typescript") -and $line -match '^\s*(export\s+)?(async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)') {
+            $kind = "function"
+            $name = $Matches[3]
+        } elseif ($Language -in @("javascript", "typescript") -and $line -match '^\s*(export\s+)?(const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(async\s*)?(\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>') {
+            $kind = "function"
+            $name = $Matches[3]
+        } elseif ($Language -in @("javascript", "typescript") -and $line -match '^\s*(export\s+)?(class|interface)\s+([A-Za-z_$][A-Za-z0-9_$]*)') {
+            $kind = $Matches[2]
+            $name = $Matches[3]
+        } elseif ($Language -eq "rust" -and $line -match '^\s*(pub\s+)?(async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)') {
+            $kind = "function"
+            $name = $Matches[3]
+        } elseif ($Language -eq "go" -and $line -match '^\s*func\s+(\([^)]+\)\s*)?([A-Za-z_][A-Za-z0-9_]*)') {
+            $kind = "function"
+            $name = $Matches[2]
+        } elseif ($Language -eq "java" -and $line -match '^\s*(public|private|protected)?\s*(class|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)') {
+            $kind = $Matches[2]
+            $name = $Matches[3]
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($name)) {
+            $symbols.Add([ordered]@{
+                id = "$RelativePath#$kind`:$name"
+                kind = $kind
+                name = $name
+                file = $RelativePath
+                startLine = $i + 1
+                endLine = $i + 1
+                language = $Language
+                confidence = 0.55
+                source = "native-minimal"
+            })
+        }
+    }
+    return $symbols.ToArray()
+}
+
+function Get-CodeEvidenceImports {
+param(
+[string]$RelativePath,
+[string]$Language,
+[string[]]$Lines
+    )
+
+    $imports = New-Object System.Collections.Generic.List[object]
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $line = [string]$Lines[$i]
+        $target = ""
+        if ($Language -in @("javascript", "typescript") -and $line -match 'from\s+["'']([^"'']+)["'']') {
+            $target = $Matches[1]
+        } elseif ($Language -in @("javascript", "typescript") -and $line -match 'require\(["'']([^"'']+)["'']\)') {
+            $target = $Matches[1]
+        } elseif ($Language -eq "python" -and $line -match '^\s*(from|import)\s+([A-Za-z0-9_\.]+)') {
+            $target = $Matches[2]
+        } elseif ($Language -eq "rust" -and $line -match '^\s*use\s+([^;]+);') {
+            $target = $Matches[1].Trim()
+        } elseif ($Language -eq "go" -and $line -match '^\s*import\s+["'']([^"'']+)["'']') {
+            $target = $Matches[1]
+        } elseif ($line -match '^\s*#include\s+[<"]([^>"]+)[>"]') {
+            $target = $Matches[1]
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($target)) {
+            $imports.Add([ordered]@{
+                file = $RelativePath
+                line = $i + 1
+                target = $target
+                language = $Language
+                confidence = 0.6
+                source = "native-minimal"
+            })
+        }
+    }
+return $imports.ToArray()
+}
+
+function New-AgentCodeSliceRanking {
+param(
+[object[]]$Files,
+[object[]]$Symbols,
+[object[]]$Imports
+)
+
+$symbolsByFile = @{}
+foreach ($symbol in @($Symbols)) {
+$file = [string]$symbol.file
+if ([string]::IsNullOrWhiteSpace($file)) { continue }
+if (-not $symbolsByFile.ContainsKey($file)) {
+$symbolsByFile[$file] = New-Object System.Collections.Generic.List[object]
+}
+$symbolsByFile[$file].Add($symbol)
+}
+
+$importsByFile = @{}
+foreach ($import in @($Imports)) {
+$file = [string]$import.file
+if ([string]::IsNullOrWhiteSpace($file)) { continue }
+if (-not $importsByFile.ContainsKey($file)) {
+$importsByFile[$file] = New-Object System.Collections.Generic.List[object]
+}
+$importsByFile[$file].Add($import)
+}
+
+$rankedFiles = New-Object System.Collections.Generic.List[object]
+foreach ($file in @($Files)) {
+$path = [string]$file.path
+if ([string]::IsNullOrWhiteSpace($path)) { continue }
+
+$reasons = New-Object System.Collections.Generic.List[string]
+$score = 0
+if ($path -match '(^|/)(index|main|app|server|cli)\.') {
+$reasons.Add("entrypoint")
+$score += 40
+}
+if ($path -match '(test|spec)\.' -or $path -match '(^|/)(tests?|spec)/') {
+$reasons.Add("test")
+$score += 35
+}
+if ($symbolsByFile.ContainsKey($path) -and $symbolsByFile[$path].Count -gt 0) {
+$reasons.Add("symbols")
+$score += [Math]::Min(20, 5 * $symbolsByFile[$path].Count)
+}
+if ($importsByFile.ContainsKey($path) -and $importsByFile[$path].Count -gt 0) {
+$reasons.Add("imports")
+$score += [Math]::Min(15, 5 * $importsByFile[$path].Count)
+}
+if ($score -eq 0) {
+$reasons.Add("inventory")
+$score = 1
+}
+
+$rankedFiles.Add([ordered]@{
+path = $path
+language = [string]$file.language
+score = $score
+reasons = @($reasons.ToArray())
+symbols = if ($symbolsByFile.ContainsKey($path)) { @($symbolsByFile[$path] | ForEach-Object { $_.name }) } else { @() }
+imports = if ($importsByFile.ContainsKey($path)) { @($importsByFile[$path] | ForEach-Object { $_.target }) } else { @() }
+})
+}
+
+$ordered = @($rankedFiles.ToArray() | Sort-Object -Property @{ Expression = "score"; Descending = $true }, @{ Expression = "path"; Descending = $false })
+return [ordered]@{
+schema = "agent-code-slice-ranking.v1"
+strategy = "native-evidence-default"
+files = $ordered
+}
+}
+
+function Write-CodeEvidenceAgentSlices {
+param(
+[string]$AgentDir,
+[string]$SliceDir,
+[object[]]$Files,
+[object[]]$Symbols,
+[object[]]$Imports,
+[object]$CocoOutcome
+)
+
+$ranking = New-AgentCodeSliceRanking -Files $Files -Symbols $Symbols -Imports $Imports
+$rankingPath = Join-Path $AgentDir "ranking.json"
+$ranking | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $rankingPath -Encoding UTF8
+
+$agentIndexPath = Join-Path $AgentDir "index.md"
+@(
+"# Agent Code Map",
+"",
+"## Status",
+"- Code Evidence Layer: ok",
+"- Native minimal layer: enabled",
+"- Ranking: [ranking.json](ranking.json)",
+"- Native retrieval slice: [native-retrieval](slices/native-retrieval.md)",
+"- cocoindex-code adapter: $($CocoOutcome.status) ($($CocoOutcome.reasonCode))",
+"",
+"## Full Dumps",
+"- [files](../full/files.json)",
+"- [symbols](../full/symbols.json)",
+"- [chunks](../full/chunks.json)",
+"- [symbol chunks](../full/symbol-chunks.json)",
+"- [imports](../full/imports.json)",
+"",
+"## Slices",
+"- [native retrieval](slices/native-retrieval.md)",
+"- [entrypoints](slices/entrypoints.md)",
+"- [tests](slices/tests.md)",
+"- [risk hotspots](slices/risk-hotspots.md)"
+) | Set-Content -LiteralPath $agentIndexPath -Encoding UTF8
+
+$topRanked = @($ranking.files | Select-Object -First 20)
+@(
+"# Native Retrieval Slice",
+"",
+"- Strategy: native-evidence-default",
+"- Source: Code Evidence files/symbols/imports only",
+"",
+"## Ranked Files"
+) + @($topRanked | ForEach-Object {
+"- $($_.path) score=$($_.score) reasons=$(@($_.reasons) -join ',')"
+}) | Set-Content -LiteralPath (Join-Path $SliceDir "native-retrieval.md") -Encoding UTF8
+
+$entrypoints = @($Files | Where-Object { $_.path -match '(^|/)(index|main|app|server|cli)\.' } | Select-Object -First 20)
+@("# Entrypoints", "") + @($entrypoints | ForEach-Object { "- $($_.path) ($($_.language))" }) | Set-Content -LiteralPath (Join-Path $SliceDir "entrypoints.md") -Encoding UTF8
+
+$tests = @($Files | Where-Object { $_.path -match '(test|spec)\.' -or $_.path -match '(^|/)(tests?|spec)/' } | Select-Object -First 30)
+@("# Tests", "") + @($tests | ForEach-Object { "- $($_.path) ($($_.language))" }) | Set-Content -LiteralPath (Join-Path $SliceDir "tests.md") -Encoding UTF8
+
+@(
+"# Risk Hotspots",
+"",
+"- Native minimal layer does not calculate complexity.",
+"- Treat file-sized chunks as fallback evidence until structural chunking is enabled.",
+"- cocoindex-code adapter outcome: $($CocoOutcome.status) ($($CocoOutcome.reasonCode))."
+) | Set-Content -LiteralPath (Join-Path $SliceDir "risk-hotspots.md") -Encoding UTF8
+
+return [ordered]@{
+agentIndex = $agentIndexPath
+ranking = $rankingPath
+nativeRetrieval = Join-Path $SliceDir "native-retrieval.md"
+}
+}
+
+function New-CodeEvidenceLayer {
+param(
+[string]$RepoPath,
+[string]$RunDir,
+[object[]]$Files,
+[object]$CodeEvidenceConfig = $null
+)
+
+$root = Join-Path $RunDir "code-evidence"
+$fullDir = Join-Path $root "merged\full"
+$agentDir = Join-Path $root "merged\agent"
+$sliceDir = Join-Path $agentDir "slices"
+$adapterDir = Join-Path $root "adapters\cocoindex-code"
+foreach ($dir in @($fullDir, $agentDir, $sliceDir, $adapterDir)) {
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+}
+
+$fileRows = New-Object System.Collections.Generic.List[object]
+$symbols = New-Object System.Collections.Generic.List[object]
+$chunks = New-Object System.Collections.Generic.List[object]
+$symbolChunks = New-Object System.Collections.Generic.List[object]
+$imports = New-Object System.Collections.Generic.List[object]
+
+foreach ($file in @($Files)) {
+$fileText = [string]$file
+if ([string]::IsNullOrWhiteSpace($fileText)) { continue }
+$fullPath = if ([System.IO.Path]::IsPathRooted($fileText)) { $fileText } else { Join-Path $RepoPath $fileText }
+if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) { continue }
+
+$relativePath = (Get-RelativePathSafe $RepoPath $fullPath).Replace("\", "/")
+$extension = [System.IO.Path]::GetExtension($fullPath)
+$language = Get-CodeEvidenceLanguage -Extension $extension
+$content = Get-Content -LiteralPath $fullPath -Raw -ErrorAction SilentlyContinue
+        if ($null -eq $content) { $content = "" }
+        $lines = if ([string]::IsNullOrEmpty($content)) { @() } else { @($content -split "`r?`n") }
+        $lines = @($lines)
+        $hashBytes = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($content))
+$hash = [System.BitConverter]::ToString($hashBytes).Replace("-", "").ToLowerInvariant()
+
+$fileRows.Add([ordered]@{
+path = $relativePath
+language = $language
+bytes = (Get-Item -LiteralPath $fullPath).Length
+lines = $lines.Count
+textHash = $hash
+source = "native-minimal"
+})
+
+$fileSymbols = @(Get-CodeEvidenceSymbols -RelativePath $relativePath -Language $language -Lines $lines)
+foreach ($symbol in $fileSymbols) { $symbols.Add($symbol) }
+
+$chunkId = "$relativePath#file"
+$chunks.Add([ordered]@{
+id = $chunkId
+file = $relativePath
+startLine = 1
+endLine = [Math]::Max(1, $lines.Count)
+kind = "file"
+containsSymbols = @($fileSymbols | ForEach-Object { $_.id })
+textHash = $hash
+source = "native-minimal"
+})
+
+foreach ($symbol in $fileSymbols) {
+$symbolChunks.Add([ordered]@{
+symbolId = $symbol.id
+chunkId = $chunkId
+relation = "contained_by"
+confidence = 0.55
+})
+}
+
+foreach ($import in @(Get-CodeEvidenceImports -RelativePath $relativePath -Language $language -Lines $lines)) {
+$imports.Add($import)
+}
+}
+
+$fileRowsArray = @($fileRows.ToArray())
+$symbolsArray = @($symbols.ToArray())
+$chunksArray = @($chunks.ToArray())
+$symbolChunksArray = @($symbolChunks.ToArray())
+$importsArray = @($imports.ToArray())
+
+([ordered]@{ schema = "code-evidence-files.v1"; files = $fileRowsArray }) | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $fullDir "files.json") -Encoding UTF8
+([ordered]@{ schema = "code-evidence-symbols.v1"; symbols = $symbolsArray }) | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $fullDir "symbols.json") -Encoding UTF8
+([ordered]@{ schema = "code-evidence-chunks.v1"; chunks = $chunksArray }) | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $fullDir "chunks.json") -Encoding UTF8
+([ordered]@{ schema = "code-evidence-symbol-chunks.v1"; mappings = $symbolChunksArray }) | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $fullDir "symbol-chunks.json") -Encoding UTF8
+([ordered]@{ schema = "code-evidence-imports.v1"; imports = $importsArray }) | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $fullDir "imports.json") -Encoding UTF8
+
+$adapterConfig = $null
+if ($null -ne $CodeEvidenceConfig) {
+$adapters = Get-JsonProperty $CodeEvidenceConfig "adapters" $null
+if ($null -ne $adapters) { $adapterConfig = Get-JsonProperty $adapters "cocoindex-code" $null }
+}
+$cocoEnabled = [bool](Get-JsonProperty $adapterConfig "enabled" $false)
+$cocoRequired = [bool](Get-JsonProperty $adapterConfig "required" $false)
+$cocoCommand = [string](Get-JsonProperty $adapterConfig "command" "ccc")
+if ([string]::IsNullOrWhiteSpace($cocoCommand)) { $cocoCommand = "ccc" }
+
+if (-not $cocoEnabled) {
+$cocoOutcome = [ordered]@{
+schema = "code-evidence-adapter-outcome.v1"
+adapter = "cocoindex-code"
+enabled = $false
+required = $cocoRequired
+status = "skipped"
+fatal = $false
+reasonCode = "disabled"
+reason = "cocoindex-code adapter disabled by config."
+command = $cocoCommand
+}
+} elseif (-not (Test-CommandAvailable $cocoCommand)) {
+$cocoOutcome = [ordered]@{
+schema = "code-evidence-adapter-outcome.v1"
+adapter = "cocoindex-code"
+enabled = $true
+required = $cocoRequired
+status = "skipped"
+fatal = $false
+reasonCode = "command_unavailable"
+reason = "cocoindex-code command '$cocoCommand' was not found."
+command = $cocoCommand
+}
+} else {
+$cocoOutcome = [ordered]@{
+schema = "code-evidence-adapter-outcome.v1"
+adapter = "cocoindex-code"
+enabled = $true
+required = $cocoRequired
+status = "available"
+fatal = $false
+reasonCode = "available"
+reason = "cocoindex-code command '$cocoCommand' is available; native minimal layer remains default."
+command = $cocoCommand
+}
+}
+
+$cocoOutcomePath = Join-Path $adapterDir "outcome.json"
+$cocoOutcome | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $cocoOutcomePath -Encoding UTF8
+
+$scorecard = [ordered]@{
+schema = "code-evidence-scorecard.v1"
+status = "ok"
+nativeMinimal = $true
+adapters = @($cocoOutcome)
+metrics = [ordered]@{
+files = $fileRowsArray.Count
+symbols = $symbolsArray.Count
+chunks = $chunksArray.Count
+imports = $importsArray.Count
+symbolContainmentRate = if ($symbolsArray.Count -gt 0) { 1.0 } else { $null }
+fallbackChunkRate = 1.0
+}
+}
+$scorecardPath = Join-Path $root "merged\scorecard.json"
+$scorecard | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $scorecardPath -Encoding UTF8
+$scorecardMarkdownPath = Join-Path $root "merged\scorecard.md"
+@(
+"# Code Evidence Scorecard",
+"",
+"- Status: ok",
+"- Native minimal: true",
+"- Files: $($fileRowsArray.Count)",
+"- Symbols: $($symbolsArray.Count)",
+"- Chunks: $($chunksArray.Count)",
+"- Imports: $($importsArray.Count)",
+"- cocoindex-code: $($cocoOutcome.status) ($($cocoOutcome.reasonCode))"
+) | Set-Content -LiteralPath $scorecardMarkdownPath -Encoding UTF8
+
+$agentSlices = Write-CodeEvidenceAgentSlices `
+-AgentDir $agentDir `
+-SliceDir $sliceDir `
+-Files $fileRowsArray `
+-Symbols $symbolsArray `
+-Imports $importsArray `
+-CocoOutcome $cocoOutcome
+
+return [ordered]@{
+schema = "code-evidence-summary.v1"
+status = "ok"
+fatal = $false
+root = $root
+agentIndex = $agentSlices.agentIndex
+scorecard = $scorecardPath
+scorecardMarkdown = $scorecardMarkdownPath
+files = $fileRowsArray.Count
+symbols = $symbolsArray.Count
+chunks = $chunksArray.Count
+imports = $importsArray.Count
+adapters = @($cocoOutcome)
+}
 }
 
 function ConvertTo-NullableDouble {
@@ -1584,6 +2049,480 @@ foreach ($item in @($Hospital.modalities)) {
     return $lines
 }
 
+function Get-CodeIntelSentruxStep {
+    param(
+        [object[]]$Steps,
+        [string]$NamePattern,
+        [switch]$Last
+    )
+
+    $matches = @($Steps | Where-Object { [string]$_.name -like $NamePattern })
+    if ($matches.Count -eq 0) { return $null }
+    if ($Last) { return $matches[-1] }
+    return $matches[0]
+}
+
+function Get-CodeIntelBoundedExcerpt {
+    param(
+        [string]$Text,
+        [int]$MaxLength = 500
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Text)) { return "" }
+    $singleLine = (($Text -split "`r?`n") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 8) -join " | "
+    if ($singleLine.Length -le $MaxLength) { return $singleLine }
+    return $singleLine.Substring(0, $MaxLength)
+}
+
+function New-CodeIntelSentruxTarget {
+    param(
+        [ValidateSet("resolved", "unresolved", "aggregate", "not_applicable")]
+        [string]$Status,
+        [string]$File = "",
+        [string]$Symbol = ""
+    )
+
+    $target = [ordered]@{ status = $Status }
+    if (-not [string]::IsNullOrWhiteSpace($File)) { $target["file"] = $File }
+    if (-not [string]::IsNullOrWhiteSpace($Symbol)) { $target["symbol"] = $Symbol }
+    return $target
+}
+
+function New-CodeIntelSentruxRecord {
+    param(
+        [string]$Id,
+        [string]$Kind,
+        [string]$Source,
+        [string]$SourceStep,
+        [string]$RawOutputPath,
+        [string]$Stdout,
+        [object]$Target,
+        [string]$Metric = "",
+        [Nullable[int]]$Value = $null,
+        [Nullable[int]]$Threshold = $null,
+        [Nullable[int]]$Before = $null,
+        [Nullable[int]]$After = $null
+    )
+
+    $record = [ordered]@{
+        id = $Id
+        kind = $Kind
+        source = $Source
+        source_step = $SourceStep
+        provenance = "stdout"
+        raw_output_path = $RawOutputPath
+        stdout_excerpt = Get-CodeIntelBoundedExcerpt $Stdout
+        parsed_at = (Get-Date).ToString("o")
+        target = $Target
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Metric)) { $record["metric"] = $Metric }
+    if ($null -ne $Value) { $record["value"] = [int]$Value }
+    if ($null -ne $Threshold) { $record["threshold"] = [int]$Threshold }
+    if ($null -ne $Before) { $record["before"] = [int]$Before }
+    if ($null -ne $After) { $record["after"] = [int]$After }
+    return $record
+}
+
+function Get-CodeIntelObjectValue {
+    param(
+        [object]$Object,
+        [string]$Name
+    )
+
+    if ($null -eq $Object) { return $null }
+    if ($Object -is [System.Collections.IDictionary] -and $Object.Contains($Name)) {
+        return $Object[$Name]
+    }
+    return Get-JsonProperty $Object $Name
+}
+
+function New-CodeIntelSentruxConflict {
+    param(
+        [object]$Authoritative,
+        [object]$Conflicting,
+        [string]$ConflictingSource,
+        [string]$RawPointer
+    )
+
+    if ($null -eq $Authoritative -or $null -eq $Conflicting) { return $null }
+    $authoritativeValue = ConvertTo-NullableDouble (Get-CodeIntelObjectValue $Authoritative "value")
+    $conflictingValue = ConvertTo-NullableDouble (Get-CodeIntelObjectValue $Conflicting "complexity")
+    if ($null -eq $authoritativeValue -or $null -eq $conflictingValue) { return $null }
+    if ([int]$authoritativeValue -eq [int]$conflictingValue) { return $null }
+
+    $conflictingId = "{0}:max_cc:{1}:{2}" -f $ConflictingSource, [string](Get-CodeIntelObjectValue $Conflicting "file"), [string](Get-CodeIntelObjectValue $Conflicting "name")
+    return [ordered]@{
+        kind = "metric_conflict"
+        authoritative_record_id = [string](Get-CodeIntelObjectValue $Authoritative "id")
+        conflicting_record_id = $conflictingId
+        metric = "cyclomatic_complexity"
+        authoritative_value = [int]$authoritativeValue
+        conflicting_value = [int]$conflictingValue
+        authoritative_source = [string](Get-CodeIntelObjectValue $Authoritative "source")
+        conflicting_source = $ConflictingSource
+        raw_output_path = $RawPointer
+        stdout_excerpt = Get-CodeIntelBoundedExcerpt ("{0} {1} (cc={2})" -f [string](Get-CodeIntelObjectValue $Conflicting "name"), [string](Get-CodeIntelObjectValue $Conflicting "file"), [string](Get-CodeIntelObjectValue $Conflicting "complexity"))
+        parsed_at = (Get-Date).ToString("o")
+        resolution = "authoritative_stdout_wins"
+    }
+}
+
+function New-CodeIntelSentruxFailures {
+    param(
+        [object[]]$Steps,
+        [string]$OutputPath = "",
+        [string]$HotspotsPath = "",
+        [string]$FileDetailsPath = ""
+    )
+
+    $checkStep = Get-CodeIntelSentruxStep -Steps $Steps -NamePattern "sentrux check"
+    $gateStep = Get-CodeIntelSentruxStep -Steps $Steps -NamePattern "sentrux gate*" -Last
+    $records = [System.Collections.Generic.List[object]]::new()
+    $parserNotes = [System.Collections.Generic.List[string]]::new()
+    $parserErrors = [System.Collections.Generic.List[string]]::new()
+
+    if ($null -ne $checkStep) {
+        $checkStatus = [string]$checkStep.status
+        $checkText = (([string]$checkStep.output) + "`n" + ([string]$checkStep.error)).Trim()
+        if ($checkStatus -eq "failed" -or $checkStatus -eq "manual_required") {
+            $namedMatches = @([regex]::Matches($checkText, "(?im)(?<file>[^\s:()]+(?:\.ps1|\.psm1|\.ts|\.tsx|\.js|\.jsx|\.py|\.rs|\.go|\.cs|\.java|\.kt|\.v)):(?<symbol>[A-Za-z_][A-Za-z0-9_.:-]*)\s*\(cc=(?<cc>\d+)\)"))
+            if ($namedMatches.Count -gt 0) {
+                foreach ($match in $namedMatches) {
+                    $file = [string]$match.Groups["file"].Value
+                    $symbol = [string]$match.Groups["symbol"].Value
+                    $value = [int]$match.Groups["cc"].Value
+                    $records.Add((New-CodeIntelSentruxRecord `
+                        -Id ("check:max_cc:{0}:{1}" -f $file, $symbol) `
+                        -Kind "max_cc" `
+                        -Source "sentrux check" `
+                        -SourceStep "sentrux check" `
+                        -RawOutputPath "report.json#/steps/sentrux check/output" `
+                        -Stdout $checkText `
+                        -Metric "cyclomatic_complexity" `
+                        -Value $value `
+                        -Threshold 70 `
+                        -Target (New-CodeIntelSentruxTarget -Status "resolved" -File $file -Symbol $symbol)))
+                }
+            }
+            elseif ($checkText -match "(?i)max[_ -]?cc|cyclomatic|complex") {
+                $value = $null
+                $valueMatch = [regex]::Match($checkText, "(?i)(?:max[_ -]?cc|cc|cyclomatic[^0-9]*)(?:\D+)(?<cc>\d+)")
+                if ($valueMatch.Success) { $value = [int]$valueMatch.Groups["cc"].Value }
+                $records.Add((New-CodeIntelSentruxRecord `
+                    -Id "check:max_cc:unresolved" `
+                    -Kind "max_cc" `
+                    -Source "sentrux check" `
+                    -SourceStep "sentrux check" `
+                    -RawOutputPath "report.json#/steps/sentrux check/output" `
+                    -Stdout $checkText `
+                    -Metric "cyclomatic_complexity" `
+                    -Value $value `
+                    -Threshold 70 `
+                    -Target (New-CodeIntelSentruxTarget -Status "unresolved")))
+            }
+            else {
+                $parserErrors.Add("sentrux check failed but stdout did not match known max_cc formats.")
+            }
+        }
+    }
+
+    if ($null -ne $gateStep) {
+        $gateStatus = [string]$gateStep.status
+        $gateText = (([string]$gateStep.output) + "`n" + ([string]$gateStep.error)).Trim()
+        if ($gateStatus -eq "failed" -or $gateStatus -eq "manual_required") {
+            $gateMatches = @([regex]::Matches($gateText, "(?im)(?<label>Complex functions|God files|Cycles|Coupling|Quality)[^\r\n:]*:\s*(?<before>\d+)\s*(?:->|→)\s*(?<after>\d+)"))
+            if ($gateMatches.Count -gt 0) {
+                foreach ($match in $gateMatches) {
+                    $label = ([string]$match.Groups["label"].Value).ToLowerInvariant().Replace(" ", "_")
+                    $records.Add((New-CodeIntelSentruxRecord `
+                        -Id ("gate:{0}" -f $label) `
+                        -Kind $label `
+                        -Source "sentrux gate" `
+                        -SourceStep "sentrux gate" `
+                        -RawOutputPath "report.json#/steps/sentrux gate/output" `
+                        -Stdout $gateText `
+                        -Before ([int]$match.Groups["before"].Value) `
+                        -After ([int]$match.Groups["after"].Value) `
+                        -Target (New-CodeIntelSentruxTarget -Status "aggregate")))
+                }
+            }
+            elseif ($gateStatus -eq "manual_required") {
+                $records.Add((New-CodeIntelSentruxRecord `
+                    -Id "gate:manual_required" `
+                    -Kind "manual_required" `
+                    -Source "sentrux gate" `
+                    -SourceStep "sentrux gate" `
+                    -RawOutputPath "report.json#/steps/sentrux gate/output" `
+                    -Stdout $gateText `
+                    -Target (New-CodeIntelSentruxTarget -Status "not_applicable")))
+            }
+            elseif (-not [string]::IsNullOrWhiteSpace($gateText)) {
+                $parserErrors.Add("sentrux gate failed but stdout did not match known gate regression formats.")
+            }
+        }
+    }
+
+    $conflicts = [System.Collections.Generic.List[object]]::new()
+    $primary = @($records | Where-Object { [string]$_.source -eq "sentrux check" } | Select-Object -First 1)
+    if ($primary.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($HotspotsPath) -and (Test-Path -LiteralPath $HotspotsPath -PathType Leaf)) {
+        $hotspots = Read-JsonFileSafe $HotspotsPath
+        $topFunction = $null
+        if ($null -ne $hotspots -and $null -ne $hotspots.functions -and @($hotspots.functions).Count -gt 0) {
+            $topFunction = @($hotspots.functions)[0]
+        }
+        $conflict = New-CodeIntelSentruxConflict -Authoritative $primary[0] -Conflicting $topFunction -ConflictingSource "sentrux-hotspots" -RawPointer "sentrux-hotspots.json#/functions/0"
+        if ($null -ne $conflict) { $conflicts.Add($conflict) }
+    }
+
+    $artifactStatus = "ok"
+    if ($null -eq $checkStep -and $null -eq $gateStep) {
+        $artifactStatus = "not_run"
+    }
+    elseif (@($Steps | Where-Object { [string]$_.name -like "sentrux*" -and [string]$_.status -eq "skipped" }).Count -gt 0 -and $records.Count -eq 0) {
+        $artifactStatus = "skipped"
+    }
+    elseif (@($Steps | Where-Object { [string]$_.name -like "sentrux*" -and [string]$_.status -eq "manual_required" }).Count -gt 0) {
+        $artifactStatus = "manual_required"
+    }
+    elseif ($records.Count -gt 0) {
+        $artifactStatus = if ($parserErrors.Count -gt 0) { "partial" } else { "failed" }
+    }
+    elseif ($parserErrors.Count -gt 0) {
+        $artifactStatus = "unparsed"
+    }
+
+    $gate = @($records | Where-Object { [string]$_.source -eq "sentrux gate" } | Select-Object -First 1)
+    $artifact = [ordered]@{
+        schema = "code-intel-sentrux-failures.v1"
+        status = $artifactStatus
+        generatedAt = (Get-Date).ToString("o")
+        primary = if ($primary.Count -gt 0) { $primary[0] } else { $null }
+        gate = if ($gate.Count -gt 0) { $gate[0] } else { $null }
+        records = @($records)
+        conflicts = @($conflicts)
+        parser = [ordered]@{
+            status = if ($parserErrors.Count -gt 0) { "partial" } else { "ok" }
+            notes = @($parserNotes)
+            errors = @($parserErrors)
+            enrichment = [ordered]@{
+                hotspots = $HotspotsPath
+                fileDetails = $FileDetailsPath
+            }
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
+        $artifact | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $OutputPath -Encoding UTF8
+    }
+    return $artifact
+}
+
+function Get-CodeIntelSentruxFailureSummary {
+    param([object]$Failures, [string]$Path = "")
+
+    if ($null -eq $Failures) { return $null }
+    return [ordered]@{
+        path = $Path
+        schema = [string]$Failures.schema
+        status = [string]$Failures.status
+        primaryId = if ($null -ne $Failures.primary) { [string]$Failures.primary.id } else { "" }
+        primaryTargetStatus = if ($null -ne $Failures.primary -and $null -ne $Failures.primary.target) { [string]$Failures.primary.target.status } else { "" }
+        gateId = if ($null -ne $Failures.gate) { [string]$Failures.gate.id } else { "" }
+        records = @($Failures.records).Count
+        conflicts = @($Failures.conflicts).Count
+    }
+}
+
+function Get-CodeIntelSentruxPrimaryTargetText {
+    param([object]$Failures)
+
+    if ($null -eq $Failures -or $null -eq $Failures.primary -or $null -eq $Failures.primary.target) { return "" }
+    $target = $Failures.primary.target
+    if ([string]$target.status -eq "resolved") {
+        return "{0} in {1} (cc={2})" -f [string]$target.symbol, [string]$target.file, [string]$Failures.primary.value
+    }
+    if ([string]$target.status -eq "unresolved") {
+        return "Sentrux check reported max_cc failure without authoritative symbol target"
+    }
+    return ""
+}
+
+function New-CodeIntelSentruxDebtEntry {
+    param(
+        [object]$Record,
+        [string]$Classification,
+        [string]$Reason,
+        [string]$RunTimestamp
+    )
+
+    $target = if ($null -ne $Record -and $null -ne $Record.target) { $Record.target } else { $null }
+    return [ordered]@{
+        id = if ($null -ne $Record) { [string]$Record.id } else { "" }
+        classification = $Classification
+        blocking = ($Classification -in @("new_debt", "worsened_debt"))
+        reason = $Reason
+        firstSeen = $RunTimestamp
+        source = if ($null -ne $Record) { [string]$Record.source } else { "" }
+        kind = if ($null -ne $Record) { [string]$Record.kind } else { "" }
+        value = if ($null -ne (Get-CodeIntelObjectValue $Record "value")) { [int](Get-CodeIntelObjectValue $Record "value") } else { $null }
+        threshold = if ($null -ne (Get-CodeIntelObjectValue $Record "threshold")) { [int](Get-CodeIntelObjectValue $Record "threshold") } else { $null }
+        before = if ($null -ne (Get-CodeIntelObjectValue $Record "before")) { [int](Get-CodeIntelObjectValue $Record "before") } else { $null }
+        after = if ($null -ne (Get-CodeIntelObjectValue $Record "after")) { [int](Get-CodeIntelObjectValue $Record "after") } else { $null }
+        target = [ordered]@{
+            status = if ($null -ne $target) { [string](Get-CodeIntelObjectValue $target "status") } else { "not_applicable" }
+            file = if ($null -ne $target) { [string](Get-CodeIntelObjectValue $target "file") } else { "" }
+            symbol = if ($null -ne $target) { [string](Get-CodeIntelObjectValue $target "symbol") } else { "" }
+        }
+    }
+}
+
+function Get-CodeIntelSentruxDebtClassification {
+    param([object]$Record)
+
+    if ($null -eq $Record) {
+        return [ordered]@{ classification = "informational"; reason = "No Sentrux failure record." }
+    }
+
+    $source = [string]$Record.source
+    $kind = [string]$Record.kind
+    $target = $Record.target
+    $targetStatus = if ($null -ne $target) { [string](Get-CodeIntelObjectValue $target "status") } else { "" }
+    $targetFile = if ($null -ne $target) { [string](Get-CodeIntelObjectValue $target "file") } else { "" }
+    $targetSymbol = if ($null -ne $target) { [string](Get-CodeIntelObjectValue $target "symbol") } else { "" }
+
+    if ($kind -in @("manual_required", "skipped", "unparsed") -or $targetStatus -eq "not_applicable") {
+        return [ordered]@{
+            classification = "informational"
+            reason = "Sentrux record is not an actionable structural debt target."
+        }
+    }
+
+    if ($source -eq "sentrux check" -and $kind -eq "max_cc" -and
+        $targetStatus -eq "resolved" -and
+        $targetFile -eq "run-code-intel.ps1" -and
+        $targetSymbol -eq "Get-CodeEvidenceSymbols") {
+        return [ordered]@{
+            classification = "known_debt"
+            reason = "Current pipeline historical max_cc debt; tracked but not blocking understanding artifacts."
+        }
+    }
+
+    if ($source -eq "sentrux check" -and $kind -eq "max_cc" -and $targetStatus -eq "unresolved") {
+        return [ordered]@{
+            classification = "informational"
+            reason = "Aggregate max_cc output has no authoritative symbol target; do not invent a debt owner."
+        }
+    }
+
+    $before = Get-CodeIntelObjectValue $Record "before"
+    $after = Get-CodeIntelObjectValue $Record "after"
+    if ($source -eq "sentrux gate" -and $null -ne $before -and $null -ne $after -and [int]$after -gt [int]$before) {
+        return [ordered]@{
+            classification = "worsened_debt"
+            reason = "Sentrux gate reports a structural metric increased in this run."
+        }
+    }
+
+    if ($source -eq "sentrux gate" -and $null -ne $before -and $null -ne $after -and [int]$after -le [int]$before) {
+        return [ordered]@{
+            classification = "informational"
+            reason = "Sentrux gate metric did not increase in this run."
+        }
+    }
+
+    if ($source -eq "sentrux gate" -or $source -eq "sentrux check") {
+        return [ordered]@{
+            classification = "new_debt"
+            reason = "Sentrux reported a structural failure not matched by known historical debt policy."
+        }
+    }
+
+    return [ordered]@{
+        classification = "informational"
+        reason = "Sentrux status is informational for blocking policy."
+    }
+}
+
+function New-CodeIntelSentruxDebtRegister {
+    param(
+        [object]$Failures,
+        [string]$RepoPath = "",
+        [string]$RunTimestamp = "",
+        [string]$OutputPath = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RunTimestamp)) {
+        $RunTimestamp = (Get-Date).ToString("o")
+    }
+
+    $entries = [System.Collections.Generic.List[object]]::new()
+    foreach ($record in @($Failures.records)) {
+        $classification = Get-CodeIntelSentruxDebtClassification -Record $record
+        $entries.Add((New-CodeIntelSentruxDebtEntry `
+            -Record $record `
+            -Classification ([string]$classification.classification) `
+            -Reason ([string]$classification.reason) `
+            -RunTimestamp $RunTimestamp))
+    }
+
+    if ($entries.Count -eq 0) {
+        $status = if ($null -ne $Failures) { [string]$Failures.status } else { "not_run" }
+        if ($status -in @("manual_required", "skipped", "unparsed", "not_run")) {
+            $entries.Add((New-CodeIntelSentruxDebtEntry `
+                -Record $null `
+                -Classification "informational" `
+                -Reason "Sentrux status '$status' does not represent actionable structural debt." `
+                -RunTimestamp $RunTimestamp))
+        }
+    }
+
+    $known = @($entries | Where-Object { [string]$_.classification -eq "known_debt" })
+    $new = @($entries | Where-Object { [string]$_.classification -eq "new_debt" })
+    $worsened = @($entries | Where-Object { [string]$_.classification -eq "worsened_debt" })
+    $informational = @($entries | Where-Object { [string]$_.classification -eq "informational" })
+    $blocking = @($entries | Where-Object { [bool]$_.blocking })
+
+    $artifact = [ordered]@{
+        schema = "code-intel-sentrux-debt-register.v1"
+        generatedAt = $RunTimestamp
+        repoPath = $RepoPath
+        source = "sentrux-failures.json"
+        policy = [ordered]@{
+            knownDebtBlocks = $false
+            blockingClassifications = @("new_debt", "worsened_debt")
+            informationalClassifications = @("informational")
+        }
+        summary = [ordered]@{
+            knownDebt = $known.Count
+            newDebt = $new.Count
+            worsenedDebt = $worsened.Count
+            informational = $informational.Count
+            blocking = $blocking.Count
+        }
+        entries = @($entries)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($OutputPath)) {
+        $artifact | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $OutputPath -Encoding UTF8
+    }
+    return $artifact
+}
+
+function Get-CodeIntelSentruxDebtSummary {
+    param([object]$DebtRegister, [string]$Path = "")
+
+    if ($null -eq $DebtRegister) { return $null }
+    return [ordered]@{
+        path = $Path
+        schema = [string]$DebtRegister.schema
+        knownDebt = [int]$DebtRegister.summary.knownDebt
+        newDebt = [int]$DebtRegister.summary.newDebt
+        worsenedDebt = [int]$DebtRegister.summary.worsenedDebt
+        informational = [int]$DebtRegister.summary.informational
+        blocking = [int]$DebtRegister.summary.blocking
+    }
+}
+
 $configData = $null
 if ([string]::IsNullOrWhiteSpace($Config)) {
     $Config = Join-Path $PSScriptRoot "pipeline.config.json"
@@ -1701,6 +2640,7 @@ $notes = New-Object System.Collections.Generic.List[string]
 $toolState = [ordered]@{
     rg = Test-CommandAvailable "rg"
     repowise = Test-CommandAvailable "repowise"
+    repomix = Test-CommandAvailable "repomix"
     sentrux = Test-CommandAvailable "sentrux"
     git = Test-CommandAvailable "git"
 }
@@ -1724,10 +2664,35 @@ if ($RepowiseDocs -and -not $SkipRepowise) {
     }
 }
 
-$steps.Add((Invoke-LoggedStep "git status" {
-    if (-not $toolState.git) { throw "git not found" }
-    git -C $repoPath status --short --branch
-}))
+if (-not $toolState.git) {
+    $steps.Add([pscustomobject][ordered]@{
+        name = "git status"
+        startedAt = (Get-Date).ToString("o")
+        status = "skipped"
+        exitCode = $null
+        output = "git not found"
+        error = ""
+        finishedAt = (Get-Date).ToString("o")
+        durationMs = 0
+    })
+}
+elseif (-not (Test-GitRepository $repoPath)) {
+    $steps.Add([pscustomobject][ordered]@{
+        name = "git status"
+        startedAt = (Get-Date).ToString("o")
+        status = "skipped"
+        exitCode = $null
+        output = "Not a git repository: $repoPath"
+        error = ""
+        finishedAt = (Get-Date).ToString("o")
+        durationMs = 0
+    })
+}
+else {
+    $steps.Add((Invoke-LoggedStep "git status" {
+        git -C $repoPath status --short --branch
+    }))
+}
 
 $steps.Add((Invoke-LoggedStep "rg file inventory" {
     $rgArgs = @("--files", "--hidden")
@@ -1739,9 +2704,54 @@ $steps.Add((Invoke-LoggedStep "rg file inventory" {
 
     $fileListPath = Join-Path $runDir "files.txt"
     $files | Set-Content -LiteralPath $fileListPath -Encoding UTF8
-    "files=$($files.Count)"
+"files=$($files.Count)"
 }))
 
+$inventoryFileListPath = Join-Path $runDir "files.txt"
+$inventoryFiles = if (Test-Path -LiteralPath $inventoryFileListPath -PathType Leaf) {
+    @(Get-Content -LiteralPath $inventoryFileListPath)
+} else {
+    @()
+}
+$codeEvidenceConfig = Get-JsonProperty $configData "codeEvidence"
+$codeEvidence = New-CodeEvidenceLayer -RepoPath $repoPath -RunDir $runDir -Files $inventoryFiles -CodeEvidenceConfig $codeEvidenceConfig
+$repomixConfig = Get-JsonProperty $configData "repomix"
+if ($null -ne $repomixConfig) {
+    $configuredRepomixStyle = Get-JsonProperty $repomixConfig "style"
+    if (-not [string]::IsNullOrWhiteSpace([string]$configuredRepomixStyle) -and [string]$configuredRepomixStyle -in @("xml", "markdown", "json", "plain")) {
+        $RepomixStyle = [string]$configuredRepomixStyle
+    }
+    $configuredRepomixCompress = Get-JsonProperty $repomixConfig "compress"
+    if ($null -ne $configuredRepomixCompress) {
+        $RepomixCompress = [bool]$configuredRepomixCompress
+    }
+    $configuredRepomixEnabled = Get-JsonProperty $repomixConfig "enabled"
+    if ($null -ne $configuredRepomixEnabled -and -not [bool]$configuredRepomixEnabled) {
+        $SkipRepomix = $true
+    }
+}
+$repomixPack = [ordered]@{
+    schema = "code-intel-repomix-pack.v1"
+    status = "skipped"
+    reason = "repomix disabled or unavailable"
+    style = $RepomixStyle
+    path = ""
+    summaryPath = ""
+}
+$repomixTool = Join-Path $PSScriptRoot "Invoke-RepomixCodePack.ps1"
+if (-not $SkipRepomix -and (Test-Path -LiteralPath $repomixTool -PathType Leaf)) {
+    $repomixPack = & $repomixTool `
+        -RepoPath $repoPath `
+        -ArtifactDir $runDir `
+        -Style $RepomixStyle `
+        -Compress:$RepomixCompress
+    if ([string]$repomixPack.status -eq "failed") {
+        $notes.Add("Repomix pack failed: $($repomixPack.error)")
+    }
+}
+elseif ($SkipRepomix) {
+    $repomixPack["reason"] = "Skipped by -SkipRepomix."
+}
 
 $nodeLintHygieneStep = Get-NodeLintHygieneStep -RepoPath $repoPath -RgAvailable $toolState.rg
 $steps.Add($nodeLintHygieneStep)
@@ -1833,20 +2843,39 @@ if (-not $SkipRepowise) {
                     repowise status --no-workspace
                 }))
 
-                if ($Mode -ne "lite") {
-                    $repowiseDir = Join-Path $repoPath ".repowise"
-                    $repowiseStatePath = Join-Path $repowiseDir "state.json"
-                    $repowiseDbPath = Join-Path $repowiseDir "wiki.db"
-                    if ((Test-Path -LiteralPath $repowiseStatePath -PathType Leaf) -or (Test-Path -LiteralPath $repowiseDbPath -PathType Leaf)) {
-                        $steps.Add((Invoke-LoggedStep "repowise update" {
-                            cmd /c "exit" | repowise update --workspace --index-only
-                        }))
-                    }
-                    else {
-                        $steps.Add((Invoke-LoggedStep "repowise init" {
-                            cmd /c "echo n" | repowise init . --index-only -y --no-claude-md --no-onboarding --embedder mock --provider mock
-                        }))
-                    }
+if ($Mode -ne "lite") {
+    $repowiseDir = Join-Path $repoPath ".repowise"
+    $repowiseWorkspacePath = Join-Path $repoPath ".repowise-workspace.yaml"
+    $repowiseStatePath = Join-Path $repowiseDir "state.json"
+    $repowiseDbPath = Join-Path $repowiseDir "wiki.db"
+    $hasRepowiseState = (Test-Path -LiteralPath $repowiseStatePath -PathType Leaf) -or (Test-Path -LiteralPath $repowiseDbPath -PathType Leaf)
+    $hasRepowiseWorkspace = Test-Path -LiteralPath $repowiseWorkspacePath -PathType Leaf
+
+    if ($hasRepowiseState -and $hasRepowiseWorkspace) {
+        $steps.Add((Invoke-LoggedStep "repowise update" {
+            cmd /c "exit" | repowise update --workspace --index-only
+        }))
+    }
+elseif ($hasRepowiseState) {
+    $message = "Repowise state exists without .repowise-workspace.yaml; skipped index-only update to avoid interactive init."
+    $notes.Add($message)
+    $steps.Add([pscustomobject][ordered]@{
+        name = "repowise update"
+        startedAt = (Get-Date).ToString("o")
+        status = "skipped"
+        exitCode = $null
+        output = $message
+        error = ""
+        finishedAt = (Get-Date).ToString("o")
+        durationMs = 0
+    })
+}
+else {
+    $steps.Add((Invoke-LoggedStep "repowise init" {
+        cmd /c "(echo all& echo 1)" | repowise init . --index-only -y --no-claude-md --no-onboarding --embedder mock --provider mock
+    }))
+}
+
 
                     if ($RepowiseDocs) {
                         $steps.Add((Invoke-LoggedStep "repowise docs" {
@@ -1986,15 +3015,32 @@ $failureClassifications = @(
     Where-Object { $null -ne $_ }
 )
 $failureCounts = [ordered]@{
-providerQuota = @($failureClassifications | Where-Object { $_.category -eq "provider_quota" }).Count
-localToolError = @($failureClassifications | Where-Object { $_.category -eq "local_tool_error" }).Count
-graphMissing = @($failureClassifications | Where-Object { $_.category -eq "graph_missing" }).Count
-sentruxFail = @($failureClassifications | Where-Object { $_.category -eq "sentrux_fail" }).Count
+    providerQuota = @($failureClassifications | Where-Object { $_.category -eq "provider_quota" }).Count
+    localToolError = @($failureClassifications | Where-Object { $_.category -eq "local_tool_error" }).Count
+    graphMissing = @($failureClassifications | Where-Object { $_.category -eq "graph_missing" }).Count
+    sentruxFail = @($failureClassifications | Where-Object { $_.category -eq "sentrux_fail" }).Count
 }
 
+$preliminarySentruxFailures = New-CodeIntelSentruxFailures -Steps $steps
+$preliminarySentruxDebtRegister = New-CodeIntelSentruxDebtRegister `
+    -Failures $preliminarySentruxFailures `
+    -RepoPath $repoPath `
+    -RunTimestamp $timestamp
+$effectiveFailureCounts = [ordered]@{
+    providerQuota = [int]$failureCounts.providerQuota
+    localToolError = [int]$failureCounts.localToolError
+    graphMissing = [int]$failureCounts.graphMissing
+    sentruxFail = [int]$preliminarySentruxDebtRegister.summary.blocking
+}
+$effectiveFailed = @($failed | Where-Object {
+    $category = Get-StepFailureCategory $_
+    if ($null -eq $category) { return $true }
+    if ([string](Get-CodeIntelObjectValue $category "category") -ne "sentrux_fail") { return $true }
+    return ([int]$preliminarySentruxDebtRegister.summary.blocking -gt 0)
+})
 $githubResearch = New-GitHubSolutionResearchNotApplicable
-if (Test-GitHubSolutionResearchRequired $failureCounts) {
-    $githubResearchScript = Join-Path $root "Invoke-GitHubSolutionResearch.ps1"
+if ((-not $SkipGitHubResearch) -and (Test-GitHubSolutionResearchRequired $effectiveFailureCounts)) {
+    $githubResearchScript = Join-Path $PSScriptRoot "Invoke-GitHubSolutionResearch.ps1"
     $failedResearchSteps = @($steps | Where-Object { $_.status -eq "failed" -or $_.status -eq "manual_required" } | ForEach-Object {
         [ordered]@{
             name = $_.name
@@ -2010,6 +3056,7 @@ if (Test-GitHubSolutionResearchRequired $failureCounts) {
             -FailedSteps $failedResearchSteps `
             -FailureClassifications $failureClassifications `
             -Mode $Mode `
+            -SentruxFailures $preliminarySentruxFailures `
             -SkipGitHubResearch:$SkipGitHubResearch
     }
     catch {
@@ -2247,6 +3294,28 @@ $hospitalReportPath = Join-Path $runDir "hospital-report.json"
 $hospitalMarkdownPath = Join-Path $runDir "hospital.md"
 $surgeryPlanPath = Join-Path $runDir "surgery-plan.json"
 $surgeryMarkdownPath = Join-Path $runDir "surgery-plan.md"
+$sentruxFailuresPath = Join-Path $runDir "sentrux-failures.json"
+$sentruxDebtRegisterPath = Join-Path $runDir "sentrux-debt-register.json"
+$sentruxFailures = New-CodeIntelSentruxFailures `
+    -Steps $steps `
+    -OutputPath $sentruxFailuresPath `
+    -HotspotsPath $(if ($null -ne $sentruxHotspotsSummary) { [string]$sentruxHotspotsSummary.path } else { "" }) `
+    -FileDetailsPath $(if ($null -ne $sentruxFileDetailsSummary) { [string]$sentruxFileDetailsSummary.path } else { "" })
+$sentruxDebtRegister = New-CodeIntelSentruxDebtRegister `
+    -Failures $sentruxFailures `
+    -RepoPath $repoPath `
+    -RunTimestamp $timestamp `
+    -OutputPath $sentruxDebtRegisterPath
+$effectiveFailureCounts["sentruxFail"] = [int]$sentruxDebtRegister.summary.blocking
+$effectiveFailed = @($failed | Where-Object {
+    $category = Get-StepFailureCategory $_
+    if ($null -eq $category) { return $true }
+    if ([string](Get-CodeIntelObjectValue $category "category") -ne "sentrux_fail") { return $true }
+    return ([int]$sentruxDebtRegister.summary.blocking -gt 0)
+})
+$sentruxInsight["failures"] = Get-CodeIntelSentruxFailureSummary -Failures $sentruxFailures -Path $sentruxFailuresPath
+$sentruxInsight["debtRegister"] = Get-CodeIntelSentruxDebtSummary -DebtRegister $sentruxDebtRegister -Path $sentruxDebtRegisterPath
+$sentruxInsight["authoritativePrimaryTarget"] = Get-CodeIntelSentruxPrimaryTargetText -Failures $sentruxFailures
 $hospitalReport = New-CodeIntelHospitalReport `
     -RepoPath $repoPath `
     -Mode $Mode `
@@ -2255,7 +3324,7 @@ $hospitalReport = New-CodeIntelHospitalReport `
     -SummaryPath $summaryPath `
     -UnderstandingPath $understandingPath `
     -Steps $steps `
-    -FailureCounts $failureCounts `
+    -FailureCounts $effectiveFailureCounts `
     -SentruxInsight $sentruxInsight `
     -SentruxDsmSummary $sentruxDsmSummary `
     -SentruxFileDetailsSummary $sentruxFileDetailsSummary `
@@ -2276,10 +3345,32 @@ $surgeryPlan = New-CodeIntelSurgeryPlan `
     -HotspotsPath $hotspotsForSurgery `
     -WhatIfPath $whatIfForSurgery `
     -CodeNexusPath $codeNexusForSurgery
+if ($null -ne $sentruxFailures -and $null -ne $sentruxFailures.primary -and $null -ne $sentruxFailures.primary.target) {
+    $normalizedTarget = $sentruxFailures.primary.target
+    if ($null -ne $surgeryPlan.primary_target) {
+        if ([string]$normalizedTarget.status -eq "resolved") {
+            $surgeryPlan.primary_target["file"] = [string]$normalizedTarget.file
+            $surgeryPlan.primary_target["name"] = [string]$normalizedTarget.symbol
+            $surgeryPlan.primary_target["complexity"] = $sentruxFailures.primary.value
+        }
+        elseif ([string]$normalizedTarget.status -eq "unresolved") {
+            $surgeryPlan.primary_target["file"] = ""
+            $surgeryPlan.primary_target["name"] = "unresolved sentrux max_cc"
+            $surgeryPlan.primary_target["complexity"] = $sentruxFailures.primary.value
+        }
+        $surgeryPlan.primary_target["authority"] = "sentrux-failures.json"
+        $surgeryPlan.primary_target["target_status"] = [string]$normalizedTarget.status
+    }
+    $hospitalReport.diagnosis.evidence["top_function"] = Get-CodeIntelSentruxPrimaryTargetText -Failures $sentruxFailures
+}
 $surgeryPlan | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $surgeryPlanPath -Encoding UTF8
 Convert-SurgeryPlanToMarkdown $surgeryPlan | Set-Content -LiteralPath $surgeryMarkdownPath -Encoding UTF8
 $hospitalReport["artifacts"]["surgeryPlan"] = $surgeryPlanPath
 $hospitalReport["artifacts"]["surgeryPlanMarkdown"] = $surgeryMarkdownPath
+$hospitalReport["artifacts"]["sentruxFailures"] = $sentruxFailuresPath
+$hospitalReport["artifacts"]["sentruxDebtRegister"] = $sentruxDebtRegisterPath
+$hospitalReport["diagnosis"]["sentrux_failures"] = Get-CodeIntelSentruxFailureSummary -Failures $sentruxFailures -Path $sentruxFailuresPath
+$hospitalReport["diagnosis"]["sentrux_debt"] = Get-CodeIntelSentruxDebtSummary -DebtRegister $sentruxDebtRegister -Path $sentruxDebtRegisterPath
 $hospitalReport["surgery_plan"] = [ordered]@{
     path = $surgeryPlanPath
     markdown = $surgeryMarkdownPath
@@ -2306,13 +3397,17 @@ $report = [ordered]@{
     understandCommand = $understandCommand
     steps = $steps
     sentruxInsight = $sentruxInsight
-    sentruxDsm = $sentruxDsmSummary
+    sentruxFailures = Get-CodeIntelSentruxFailureSummary -Failures $sentruxFailures -Path $sentruxFailuresPath
+    sentruxDebtRegister = Get-CodeIntelSentruxDebtSummary -DebtRegister $sentruxDebtRegister -Path $sentruxDebtRegisterPath
+        sentruxDsm = $sentruxDsmSummary
     sentruxFileDetails = $sentruxFileDetailsSummary
     sentruxHotspots = $sentruxHotspotsSummary
-sentruxEvolution = $sentruxEvolutionSummary
-sentruxWhatIf = $sentruxWhatIfSummary
-codeNexusContext = $codeNexusContextSummary
-githubResearch = $githubResearch
+    sentruxEvolution = $sentruxEvolutionSummary
+        sentruxWhatIf = $sentruxWhatIfSummary
+        codeNexusContext = $codeNexusContextSummary
+        codeEvidence = $codeEvidence
+        repomixPack = $repomixPack
+        githubResearch = $githubResearch
 hospital = [ordered]@{
         path = $hospitalReportPath
         markdown = $hospitalMarkdownPath
@@ -2333,10 +3428,14 @@ researchRequired = $hospitalReport.triage.research_required
     failureClassifications = $failureClassifications
     summary = [ordered]@{
         failed = $failed.Count
+        effectiveFailed = $effectiveFailed.Count
         manualRequired = $manual.Count
         passed = @($steps | Where-Object { $_.status -eq "passed" }).Count
         skipped = @($steps | Where-Object { $_.status -eq "skipped" }).Count
         failureCategories = $failureCounts
+        effectiveFailureCategories = $effectiveFailureCounts
+        blockingSentruxDebt = [int]$sentruxDebtRegister.summary.blocking
+        knownSentruxDebt = [int]$sentruxDebtRegister.summary.knownDebt
     }
 }
 
@@ -2365,12 +3464,15 @@ $summaryLines = @(
     "",
     "- Passed: $(@($steps | Where-Object { $_.status -eq 'passed' }).Count)",
     "- Failed: $($failed.Count)",
+    "- Effective failed: $($effectiveFailed.Count)",
     "- Manual required: $($manual.Count)",
     "- Skipped: $(@($steps | Where-Object { $_.status -eq 'skipped' }).Count)",
     "- Provider quota: $($failureCounts.providerQuota)",
     "- Local tool error: $($failureCounts.localToolError)",
     "- Graph missing: $($failureCounts.graphMissing)",
     "- Sentrux fail: $($failureCounts.sentruxFail)",
+    "- Blocking Sentrux debt: $($sentruxDebtRegister.summary.blocking)",
+    "- Known Sentrux debt: $($sentruxDebtRegister.summary.knownDebt)",
     "- Hospital status: $($hospitalReport.triage.status)",
     "- Hospital disposition: $($hospitalReport.triage.disposition)",
 "- Hospital state: $($hospitalReport.state_machine.current_state)",
@@ -2399,6 +3501,21 @@ foreach ($modality in @($hospitalReport.modalities)) {
     $summaryLines += "- Modality $($modality.name): $($modality.status), confidence=$($modality.confidence)"
 }
 $summaryLines += ""
+$summaryLines += "## Code Evidence"
+$summaryLines += "- Status: $($codeEvidence.status)"
+$summaryLines += "- Agent Code Slice: $($codeEvidence.agentIndex)"
+$summaryLines += "- Scorecard: $($codeEvidence.scorecard)"
+$summaryLines += "- Files: $($codeEvidence.files), symbols: $($codeEvidence.symbols), chunks: $($codeEvidence.chunks), imports: $($codeEvidence.imports)"
+$summaryLines += ""
+$summaryLines += "## Repomix Pack"
+$summaryLines += "- Status: $($repomixPack.status)"
+$summaryLines += "- Style: $($repomixPack.style)"
+$summaryLines += "- Output: $($repomixPack.path)"
+$summaryLines += "- Summary: $($repomixPack.summaryPath)"
+if ([string]$repomixPack.status -eq "ok" -and -not [string]::IsNullOrWhiteSpace([string]$repomixPack.path)) {
+    $summaryLines += "- Agent read order: read this pack first for whole-repo orientation, then use Code Evidence slices for ranked navigation."
+}
+$summaryLines += ""
 $summaryLines += "## Sentrux Insight"
 $summaryLines += "- Target: $($sentruxInsight['targetPath'])"
 $summaryLines += "- Baseline: $($sentruxInsight['baselinePath'])"
@@ -2406,6 +3523,16 @@ $summaryLines += "- Rules: $($sentruxInsight['rulesPath'])"
 $summaryLines += "- Gate: $($sentruxInsight['gateStatus'])"
 $summaryLines += "- Check: $($sentruxInsight['checkStatus'])"
 $summaryLines += "- No degradation: $($sentruxInsight['noDegradation'])"
+$summaryLines += "- Failures artifact: $sentruxFailuresPath (status=$($sentruxFailures.status), records=$(@($sentruxFailures.records).Count), conflicts=$(@($sentruxFailures.conflicts).Count))"
+$summaryLines += "- Debt register: $sentruxDebtRegisterPath (known=$($sentruxDebtRegister.summary.knownDebt), new=$($sentruxDebtRegister.summary.newDebt), worsened=$($sentruxDebtRegister.summary.worsenedDebt), blocking=$($sentruxDebtRegister.summary.blocking), informational=$($sentruxDebtRegister.summary.informational))"
+if ($null -ne $sentruxFailures.primary) {
+    $summaryLines += "- Authoritative primary: $($sentruxFailures.primary.id) target=$($sentruxFailures.primary.target.status)"
+}
+if (@($sentruxFailures.conflicts).Count -gt 0) {
+    foreach ($conflict in @($sentruxFailures.conflicts)) {
+        $summaryLines += "- Conflict: $($conflict.kind) $($conflict.authoritative_record_id) vs $($conflict.conflicting_record_id)"
+    }
+}
 if ($null -ne $sentruxDsmSummary) {
     $summaryLines += "- DSM: $($sentruxDsmSummary.path) (modes=$($sentruxDsmSummary.colorModes), modules=$($sentruxDsmSummary.modules), default=$($sentruxDsmSummary.defaultColorMode))"
 }
@@ -2468,8 +3595,11 @@ elseif ($failureCounts.localToolError -gt 0) {
 elseif ($failureCounts.graphMissing -gt 0) {
     $nextAction = "Run the emitted Understand Anything command in Claude, then rerun the pipeline."
 }
+elseif ($effectiveFailureCounts.sentruxFail -gt 0) {
+    $nextAction = "Inspect blocking Sentrux debt in sentrux-debt-register.json before changing code or saving a baseline."
+}
 elseif ($failureCounts.sentruxFail -gt 0) {
-    $nextAction = "Inspect the Sentrux violation or regression before changing or saving a baseline."
+    $nextAction = "Known or informational Sentrux debt is recorded in sentrux-debt-register.json; understanding artifacts are usable."
 }
 elseif (-not [bool]$sentruxInsight['rulesExists']) {
     $nextAction = "Add real Sentrux boundary rules at $($sentruxInsight['rulesPath']) before treating this scope as governed."
@@ -2491,7 +3621,10 @@ $understandingLines = @(
     "- Artifact directory: ``$runDir``",
     "- Report: ``$reportPath``",
     "- Summary: ``$summaryPath``",
-    "- Hospital report: ``$hospitalReportPath``",
+    "- Agent Code Slice: ``code-evidence/merged/agent/index.md``",
+"- Code Evidence scorecard: ``code-evidence/merged/scorecard.json``",
+"- Repomix pack: $(if (-not [string]::IsNullOrWhiteSpace([string]$repomixPack.path)) { '``' + $repomixPack.path + '`` status=' + $repomixPack.status + ', style=' + $repomixPack.style } else { 'not generated' })",
+"- Hospital report: ``$hospitalReportPath``",
     "- Hospital markdown: ``$hospitalMarkdownPath``",
     "- Sentrux DSM: $(if ($null -ne $sentruxDsmSummary) { '``' + $sentruxDsmSummary.path + '``' } else { 'not generated' })",
     "- Sentrux file details: $(if ($null -ne $sentruxFileDetailsSummary) { '``' + $sentruxFileDetailsSummary.path + '``' } else { 'not generated' })",
@@ -2500,16 +3633,22 @@ $understandingLines = @(
 "- Sentrux what-if: $(if ($null -ne $sentruxWhatIfSummary) { '``' + $sentruxWhatIfSummary.path + '``' } else { 'not generated' })",
 "- CodeNexus context: $(if ($null -ne $codeNexusContextSummary) { '``' + $codeNexusContextSummary.path + '``' } else { 'not generated' })",
 "- GitHub research: $githubResearchSummary",
-"- Tools: rg=$($toolState.rg), git=$($toolState.git), repowise=$($toolState.repowise), sentrux=$($toolState.sentrux)",
-"- Passed steps: $(Join-StatusNames $passedSteps)",
+    "- Tools: rg=$($toolState.rg), git=$($toolState.git), repowise=$($toolState.repowise), repomix=$($toolState.repomix), sentrux=$($toolState.sentrux)",
+    "- Passed steps: $(Join-StatusNames $passedSteps)",
     "- Hospital: status=$($hospitalReport.triage.status), disposition=$($hospitalReport.triage.disposition), state=$($hospitalReport.state_machine.current_state), score=$($hospitalReport.triage.overall_score), next=$($hospitalReport.triage.next_protocol)",
+    "",
+    "## Read Order",
+    "$(if ([string]$repomixPack.status -eq "ok" -and -not [string]::IsNullOrWhiteSpace([string]$repomixPack.path)) { '1. Start: ``' + $repomixPack.path + '`` complete repository pack.' + [Environment]::NewLine + '2. Then: ``summary.md`` run status, failures.' + [Environment]::NewLine + '3. Navigate: ``code-evidence/merged/agent/index.md`` ranked files, symbols.' + [Environment]::NewLine + '4. Govern: ``hospital.md`` plus ``surgery-plan.md``.' } else { '1. Start: ``summary.md`` run status, failures.' + [Environment]::NewLine + '2. Navigate: ``code-evidence/merged/agent/index.md`` ranked files, symbols.' + [Environment]::NewLine + '3. Govern: ``hospital.md`` plus ``surgery-plan.md``.' })",
     "",
     "## Unverified Or Inferred",
     "- Understand graph: $(if ($graphStep.Count -gt 0) { $graphStep[0].status } else { 'not checked' })",
-    "- Repowise state: $(Join-StatusNames $repowiseSteps)",
-    "- Sentrux state: $(Join-StatusNames $sentruxSteps)",
-    "- Sentrux gate insight: gate=$($sentruxInsight['gateStatus']), noDegradation=$($sentruxInsight['noDegradation']), rules=$($sentruxInsight['rulesExists'])",
-    "- Skipped steps: $(Join-StatusNames $skippedSteps)",
+"- Repowise state: $(Join-StatusNames $repowiseSteps)",
+"- Sentrux state: $(Join-StatusNames $sentruxSteps)",
+"- Sentrux gate insight: gate=$($sentruxInsight['gateStatus']), noDegradation=$($sentruxInsight['noDegradation']), rules=$($sentruxInsight['rulesExists'])",
+"- Sentrux failures: ``$sentruxFailuresPath`` status=$($sentruxFailures.status), records=$(@($sentruxFailures.records).Count), conflicts=$(@($sentruxFailures.conflicts).Count)",
+"- Sentrux debt register: ``$sentruxDebtRegisterPath`` known=$($sentruxDebtRegister.summary.knownDebt), new=$($sentruxDebtRegister.summary.newDebt), worsened=$($sentruxDebtRegister.summary.worsenedDebt), blocking=$($sentruxDebtRegister.summary.blocking), informational=$($sentruxDebtRegister.summary.informational)",
+"- Sentrux authoritative primary: $(if ($null -ne $sentruxFailures.primary) { [string]$sentruxFailures.primary.id + ' target=' + [string]$sentruxFailures.primary.target.status } else { 'none' })",
+"- Skipped steps: $(Join-StatusNames $skippedSteps)",
     "",
     "## Sentrux Structural Signal",
     "$(if ($sentruxMetrics.Count -gt 0) { ($sentruxMetrics | ForEach-Object { '- ' + $_.name + ': ' + $_.before + ' -> ' + $_.after + ' (delta ' + $_.delta + ', regressed=' + $_.regressed + ')' }) -join [Environment]::NewLine } else { '- no parsed metrics' })",
@@ -2521,9 +3660,11 @@ $understandingLines = @(
     "- local_tool_error: $($failureCounts.localToolError)",
     "- graph_missing: $($failureCounts.graphMissing)",
     "- sentrux_fail: $($failureCounts.sentruxFail)",
+    "- effective_sentrux_fail: $($effectiveFailureCounts.sentruxFail)",
+    "- effective_failed: $($effectiveFailed.Count)",
     "",
     "## Human Inspection Required",
-    "- Read `summary.md` first.",
+    "- If Repomix status is ``ok``, read ``repomix-output.*`` first for whole-repo orientation; otherwise read ``summary.md`` first.",
     "- If `graph_missing > 0`, run: ``$understandCommand``",
     "- If ``sentrux_fail > 0``, inspect Sentrux output in ``report.json`` before saving a new baseline.",
     "- If ``provider_quota > 0``, treat it as an upstream quota/rate issue, not a local indexing failure.",
@@ -2546,7 +3687,9 @@ Write-Host "Hospital: $hospitalMarkdownPath"
 if ($manual.Count -gt 0) {
     Write-Host "Manual step required: $understandCommand"
 }
-if ($failed.Count -gt 0) {
+if ($effectiveFailed.Count -gt 0) {
     Write-Host "Failed steps: $($failed.Count)"
+    Write-Host "Effective failed steps: $($effectiveFailed.Count)"
     exit 1
 }
+exit 0

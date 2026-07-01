@@ -33,14 +33,35 @@ New-Item -ItemType Directory -Force -Path $base | Out-Null
 
 $failedSteps = @(New-TestStep)
 $classifications = @(New-TestClassification)
+$sentruxFailures = [ordered]@{
+    schema = "code-intel-sentrux-failures.v1"
+    status = "failed"
+    primary = [ordered]@{
+        id = "check:max_cc:run-code-intel.ps1:Get-CodeEvidenceSymbols"
+        kind = "max_cc"
+        stdout_excerpt = "run-code-intel.ps1:Get-CodeEvidenceSymbols (cc=311)"
+        target = [ordered]@{
+            status = "resolved"
+            file = "run-code-intel.ps1"
+            symbol = "Get-CodeEvidenceSymbols"
+        }
+    }
+}
 
 $skipDir = Join-Path $base "skip"
-$skipResult = & $helper -RepoPath $RepoPath -ArtifactDir $skipDir -FailedSteps $failedSteps -FailureClassifications $classifications -SkipGitHubResearch
+$skipResult = & $helper -RepoPath $RepoPath -ArtifactDir $skipDir -FailedSteps $failedSteps -FailureClassifications $classifications -SentruxFailures $sentruxFailures -SkipGitHubResearch
 if (-not [bool]$skipResult.required -or [string]$skipResult.status -ne "manual_required") {
     throw "-SkipGitHubResearch should produce required manual research."
 }
 if (-not (Test-Path -LiteralPath $skipResult.path -PathType Leaf) -or -not (Test-Path -LiteralPath $skipResult.markdown -PathType Leaf)) {
     throw "-SkipGitHubResearch should write JSON and markdown artifacts."
+}
+$skipArtifact = Read-JsonFile $skipResult.path
+if ($null -eq $skipArtifact.sentruxFailures -or [string]$skipArtifact.sentruxFailures.schema -ne "code-intel-sentrux-failures.v1") {
+    throw "GitHub research should preserve normalized Sentrux context."
+}
+if (@($skipArtifact.queries | Where-Object { [string]$_.step -eq "sentrux normalized failure" }).Count -ne 1) {
+    throw "GitHub research should seed a normalized Sentrux query."
 }
 
 $oldPath = $env:PATH

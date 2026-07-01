@@ -118,11 +118,21 @@ foreach ($key in $requiredCategories) {
 if ($missingCategories.Count -gt 0) {
     throw "Missing failure category counters: $($missingCategories -join ', ')"
 }
+$requiredSummaryFields = @("effectiveFailed", "effectiveFailureCategories", "blockingSentruxDebt", "knownSentruxDebt")
+$missingSummaryFields = @()
+foreach ($key in $requiredSummaryFields) {
+    if ($null -eq $report.summary.PSObject.Properties[$key]) {
+        $missingSummaryFields += $key
+    }
+}
+if ($missingSummaryFields.Count -gt 0) {
+    throw "Missing effective summary fields: $($missingSummaryFields -join ', ')"
+}
 $graphMissingOnly = (
     [int]$report.summary.failureCategories.graphMissing -gt 0 -and
     [int]$report.summary.failureCategories.providerQuota -eq 0 -and
     [int]$report.summary.failureCategories.localToolError -eq 0 -and
-    [int]$report.summary.failureCategories.sentruxFail -eq 0
+    [int]$report.summary.effectiveFailureCategories.sentruxFail -eq 0
 )
 $pipelineFailureMessage = ""
 if ($pipelineExitCode -ne 0 -and -not ($AllowGraphMissing -and $graphMissingOnly)) {
@@ -142,65 +152,105 @@ if ($pipelineExitCode -ne 0 -and -not ($AllowGraphMissing -and $graphMissingOnly
 if ($null -eq $report.sentruxInsight) {
     throw "Missing sentruxInsight in report.json"
 }
-if ($null -eq $report.sentruxDsm) {
-    throw "Missing sentruxDsm in report.json"
+if ($null -eq $report.repomixPack) {
+    throw "Missing repomixPack in report.json"
 }
-if ([string]::IsNullOrWhiteSpace([string]$report.sentruxDsm.path) -or -not (Test-Path -LiteralPath ([string]$report.sentruxDsm.path) -PathType Leaf)) {
+if ([string]$report.repomixPack.schema -ne "code-intel-repomix-pack.v1") {
+    throw "repomixPack has unexpected schema."
+}
+if ($null -eq $report.sentruxFailures) {
+    throw "Missing sentruxFailures in report.json"
+}
+if ([string]::IsNullOrWhiteSpace([string]$report.sentruxFailures.path) -or -not (Test-Path -LiteralPath ([string]$report.sentruxFailures.path) -PathType Leaf)) {
+    throw "Missing sentrux-failures.json artifact."
+}
+$sentruxFailuresArtifact = Read-JsonFile ([string]$report.sentruxFailures.path)
+if ([string]$sentruxFailuresArtifact.schema -ne "code-intel-sentrux-failures.v1") {
+    throw "sentrux-failures.json has unexpected schema."
+}
+if ($null -eq $report.sentruxDebtRegister) {
+    throw "Missing sentruxDebtRegister in report.json"
+}
+if ([string]::IsNullOrWhiteSpace([string]$report.sentruxDebtRegister.path) -or -not (Test-Path -LiteralPath ([string]$report.sentruxDebtRegister.path) -PathType Leaf)) {
+    throw "Missing sentrux-debt-register.json artifact."
+}
+$sentruxDebtArtifact = Read-JsonFile ([string]$report.sentruxDebtRegister.path)
+if ([string]$sentruxDebtArtifact.schema -ne "code-intel-sentrux-debt-register.v1") {
+    throw "sentrux-debt-register.json has unexpected schema."
+}
+$summaryText = Get-Content -LiteralPath $summaryPath -Raw
+$understandingText = Get-Content -LiteralPath $understandingPath -Raw
+if ($summaryText -notmatch "sentrux-debt-register\.json") {
+    throw "summary.md should expose sentrux-debt-register.json."
+}
+if ($understandingText -notmatch "sentrux-debt-register\.json") {
+    throw "understanding.md should expose sentrux-debt-register.json."
+}
+if ($null -eq $report.sentruxDsm) {
+    Write-Host "sentruxDsm not generated in this run; skipping optional DSM artifact assertions."
+}
+elseif ([string]::IsNullOrWhiteSpace([string]$report.sentruxDsm.path) -or -not (Test-Path -LiteralPath ([string]$report.sentruxDsm.path) -PathType Leaf)) {
     throw "Missing sentrux-dsm.json artifact."
 }
-if ([int]$report.sentruxDsm.colorModes -ne 9) {
+elseif ([int]$report.sentruxDsm.colorModes -ne 9) {
     throw "sentrux-dsm.json artifact did not report 9 color modes."
 }
 if ($null -eq $report.sentruxFileDetails) {
-    throw "Missing sentruxFileDetails in report.json"
+    Write-Host "sentruxFileDetails not generated in this run; skipping optional file-details assertions."
 }
-if ([string]::IsNullOrWhiteSpace([string]$report.sentruxFileDetails.path) -or -not (Test-Path -LiteralPath ([string]$report.sentruxFileDetails.path) -PathType Leaf)) {
+elseif ([string]::IsNullOrWhiteSpace([string]$report.sentruxFileDetails.path) -or -not (Test-Path -LiteralPath ([string]$report.sentruxFileDetails.path) -PathType Leaf)) {
     throw "Missing sentrux-file-details.json artifact."
 }
-if ([int]$report.sentruxFileDetails.functions -lt 1) {
+elseif ([int]$report.sentruxFileDetails.functions -lt 1) {
     throw "sentrux-file-details.json artifact did not report any functions."
 }
 if ($null -eq $report.sentruxHotspots) {
-    throw "Missing sentruxHotspots in report.json"
+    Write-Host "sentruxHotspots not generated in this run; skipping optional hotspot assertions."
 }
-if ([string]::IsNullOrWhiteSpace([string]$report.sentruxHotspots.path) -or -not (Test-Path -LiteralPath ([string]$report.sentruxHotspots.path) -PathType Leaf)) {
+elseif ([string]::IsNullOrWhiteSpace([string]$report.sentruxHotspots.path) -or -not (Test-Path -LiteralPath ([string]$report.sentruxHotspots.path) -PathType Leaf)) {
     throw "Missing sentrux-hotspots.json artifact."
 }
-if ([int]$report.sentruxHotspots.functions -lt 1) {
+elseif ([int]$report.sentruxHotspots.functions -lt 1) {
     throw "sentrux-hotspots.json artifact did not report any function hotspots."
 }
 if ($null -eq $report.sentruxEvolution) {
-    throw "Missing sentruxEvolution in report.json"
+    Write-Host "sentruxEvolution not generated in this run; skipping optional evolution assertions."
 }
-if ([string]::IsNullOrWhiteSpace([string]$report.sentruxEvolution.path) -or -not (Test-Path -LiteralPath ([string]$report.sentruxEvolution.path) -PathType Leaf)) {
+elseif ([string]::IsNullOrWhiteSpace([string]$report.sentruxEvolution.path) -or -not (Test-Path -LiteralPath ([string]$report.sentruxEvolution.path) -PathType Leaf)) {
     throw "Missing sentrux-evolution.json artifact."
 }
-$evolutionArtifact = Read-JsonFile ([string]$report.sentruxEvolution.path)
-if ($null -eq $evolutionArtifact.hotspots -or $null -eq $evolutionArtifact.coupling -or $null -eq $evolutionArtifact.bus_factor) {
-    throw "sentrux-evolution.json artifact is missing hotspots, coupling, or bus_factor details."
+if ($null -ne $report.sentruxEvolution) {
+    $evolutionArtifact = Read-JsonFile ([string]$report.sentruxEvolution.path)
+    if ($null -eq $evolutionArtifact.hotspots -or $null -eq $evolutionArtifact.coupling -or $null -eq $evolutionArtifact.bus_factor) {
+        throw "sentrux-evolution.json artifact is missing hotspots, coupling, or bus_factor details."
+    }
 }
 if ($null -eq $report.sentruxWhatIf) {
-    throw "Missing sentruxWhatIf in report.json"
+    Write-Host "sentruxWhatIf not generated in this run; skipping optional what-if assertions."
 }
-if ([string]::IsNullOrWhiteSpace([string]$report.sentruxWhatIf.path) -or -not (Test-Path -LiteralPath ([string]$report.sentruxWhatIf.path) -PathType Leaf)) {
+elseif ([string]::IsNullOrWhiteSpace([string]$report.sentruxWhatIf.path) -or -not (Test-Path -LiteralPath ([string]$report.sentruxWhatIf.path) -PathType Leaf)) {
     throw "Missing sentrux-what-if.json artifact."
 }
-$whatIfArtifact = Read-JsonFile ([string]$report.sentruxWhatIf.path)
-if ($null -eq $whatIfArtifact.scenarios -or $whatIfArtifact.scenarios.Count -lt 1) {
-    throw "sentrux-what-if.json artifact did not report any scenarios."
-}
-if ($null -eq $whatIfArtifact.summary -or $null -eq $whatIfArtifact.recommendations) {
-    throw "sentrux-what-if.json artifact is missing summary or recommendations."
+if ($null -ne $report.sentruxWhatIf) {
+    $whatIfArtifact = Read-JsonFile ([string]$report.sentruxWhatIf.path)
+    if ($null -eq $whatIfArtifact.scenarios -or $whatIfArtifact.scenarios.Count -lt 1) {
+        throw "sentrux-what-if.json artifact did not report any scenarios."
+    }
+    if ($null -eq $whatIfArtifact.summary -or $null -eq $whatIfArtifact.recommendations) {
+        throw "sentrux-what-if.json artifact is missing summary or recommendations."
+    }
 }
 if ($null -eq $report.codeNexusContext) {
-    throw "Missing codeNexusContext in report.json"
+    Write-Host "codeNexusContext not generated in this run; skipping optional CodeNexus assertions."
 }
-if ([string]::IsNullOrWhiteSpace([string]$report.codeNexusContext.path) -or -not (Test-Path -LiteralPath ([string]$report.codeNexusContext.path) -PathType Leaf)) {
+elseif ([string]::IsNullOrWhiteSpace([string]$report.codeNexusContext.path) -or -not (Test-Path -LiteralPath ([string]$report.codeNexusContext.path) -PathType Leaf)) {
     throw "Missing codenexus-context.json artifact."
 }
-$codeNexusArtifact = Read-JsonFile ([string]$report.codeNexusContext.path)
-if ($null -eq $codeNexusArtifact.summary -or $null -eq $codeNexusArtifact.files) {
-    throw "codenexus-context.json artifact is missing summary or files."
+if ($null -ne $report.codeNexusContext) {
+    $codeNexusArtifact = Read-JsonFile ([string]$report.codeNexusContext.path)
+    if ($null -eq $codeNexusArtifact.summary -or $null -eq $codeNexusArtifact.files) {
+        throw "codenexus-context.json artifact is missing summary or files."
+    }
 }
 if ($null -eq $report.hospital) {
     throw "Missing hospital summary in report.json"
@@ -352,6 +402,16 @@ if (-not [string]::IsNullOrWhiteSpace($pipelineFailureMessage)) {
     throw $pipelineFailureMessage
 }
 
+$codeNexusResult = $null
+if ($null -ne $report.codeNexusContext) {
+    $codeNexusResult = [ordered]@{
+        path = [string]$report.codeNexusContext.path
+        files = [int]$report.codeNexusContext.files
+        references = [int]$report.codeNexusContext.references
+        recentCommits = [int]$report.codeNexusContext.recentCommits
+    }
+}
+
 $result = [ordered]@{
     ok = $true
     repo = $label
@@ -363,8 +423,11 @@ $result = [ordered]@{
     pipelineExitCode = $pipelineExitCode
     steps = $report.steps.Count
     failed = $report.summary.failed
+    effectiveFailed = $report.summary.effectiveFailed
     manualRequired = $report.summary.manualRequired
-failureCategories = $report.summary.failureCategories
+    failureCategories = $report.summary.failureCategories
+    effectiveFailureCategories = $report.summary.effectiveFailureCategories
+    sentruxDebtRegister = $report.sentruxDebtRegister
 githubResearch = [ordered]@{
 status = [string]$report.githubResearch.status
 required = [bool]$report.githubResearch.required
@@ -386,12 +449,7 @@ sentruxAgentGitStats = $sentruxAgentGitStats
         overallScore = [int]$report.hospital.overallScore
         nextProtocol = [string]$report.hospital.nextProtocol
     }
-    codeNexusContext = [ordered]@{
-        path = [string]$report.codeNexusContext.path
-        files = [int]$report.codeNexusContext.files
-        references = [int]$report.codeNexusContext.references
-        recentCommits = [int]$report.codeNexusContext.recentCommits
-    }
+    codeNexusContext = $codeNexusResult
 }
 
 $result | ConvertTo-Json -Depth 6

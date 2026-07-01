@@ -13,7 +13,91 @@ struct Args {
     repo: Option<PathBuf>,
     report: Option<PathBuf>,
     artifact_root: Option<PathBuf>,
+    steps: Option<PathBuf>,
+    failures: Option<PathBuf>,
+    out: Option<PathBuf>,
     json: bool,
+}
+
+#[cfg(test)]
+mod sentrux_contract_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn sentrux_normalize_and_debt_register_classify_known_and_worsened_debt() {
+        let report = json!({
+            "steps": [
+                {
+                    "name": "sentrux check",
+                    "status": "failed",
+                    "output": "run-code-intel.ps1:Get-CodeEvidenceSymbols (cc=412)",
+                    "error": ""
+                },
+                {
+                    "name": "sentrux gate",
+                    "status": "failed",
+                    "output": "Quality:      3508 -> 4316\nCycles:       0 → 0\nComplex functions increased: 7 → 12",
+                    "error": ""
+                }
+            ]
+        });
+
+        let failures = normalize_sentrux_failures(&report);
+        assert_eq!(failures["schema"], "code-intel-sentrux-failures.v1");
+        assert_eq!(failures["status"], "failed");
+        assert_eq!(
+            failures["primary"]["target"]["symbol"],
+            "Get-CodeEvidenceSymbols"
+        );
+
+        let debt = build_sentrux_debt_register(&failures, "D:/repo");
+        assert_eq!(debt["schema"], "code-intel-sentrux-debt-register.v1");
+        assert_eq!(debt["summary"]["knownDebt"], 1);
+        assert_eq!(debt["summary"]["newDebt"], 0);
+        assert_eq!(debt["summary"]["worsenedDebt"], 2);
+        assert_eq!(debt["summary"]["informational"], 1);
+        assert_eq!(debt["summary"]["blocking"], 2);
+    }
+
+    #[test]
+    fn sentrux_debt_register_keeps_aggregate_max_cc_informational() {
+        let report = json!({
+            "steps": [
+                {
+                    "name": "sentrux check",
+                    "status": "failed",
+                    "output": "max_cc exceeded: threshold 70, actual 311",
+                    "error": ""
+                }
+            ]
+        });
+
+        let failures = normalize_sentrux_failures(&report);
+        assert_eq!(failures["primary"]["target"]["status"], "unresolved");
+        let debt = build_sentrux_debt_register(&failures, "D:/repo");
+        assert_eq!(debt["summary"]["informational"], 1);
+        assert_eq!(debt["summary"]["blocking"], 0);
+    }
+
+    #[test]
+    fn sentrux_debt_register_blocks_unknown_named_max_cc() {
+        let report = json!({
+            "steps": [
+                {
+                    "name": "sentrux check",
+                    "status": "failed",
+                    "output": "other.ps1:New-BigFunction (cc=101)",
+                    "error": ""
+                }
+            ]
+        });
+
+        let failures = normalize_sentrux_failures(&report);
+        let debt = build_sentrux_debt_register(&failures, "D:/repo");
+        assert_eq!(debt["summary"]["newDebt"], 1);
+        assert_eq!(debt["summary"]["blocking"], 1);
+    }
 }
 
 #[derive(Debug)]
@@ -55,6 +139,8 @@ fn run() -> Result<()> {
         "resume" => cmd_resume(&args),
         "classify" => cmd_classify(&args),
         "doctor" => cmd_doctor(&args),
+        "sentrux-normalize" => cmd_sentrux_normalize(&args),
+        "sentrux-debt-register" => cmd_sentrux_debt_register(&args),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -85,6 +171,18 @@ fn parse_args(raw: Vec<String>) -> Result<Args> {
             "--report" => {
                 i += 1;
                 args.report = Some(PathBuf::from(required_value(&raw, i, "--report")?));
+            }
+            "--steps" => {
+                i += 1;
+                args.steps = Some(PathBuf::from(required_value(&raw, i, "--steps")?));
+            }
+            "--failures" => {
+                i += 1;
+                args.failures = Some(PathBuf::from(required_value(&raw, i, "--failures")?));
+            }
+            "--out" => {
+                i += 1;
+                args.out = Some(PathBuf::from(required_value(&raw, i, "--out")?));
             }
             "--artifact-root" => {
                 i += 1;
@@ -170,6 +268,441 @@ fn cmd_classify(args: &Args) -> Result<()> {
         println!("graphMissing={graph_missing}");
         println!("sentruxFail={sentrux_fail}");
         println!("githubResearchRequired={research_required}");
+    }
+    Ok(())
+}
+
+fn cmd_sentrux_normalize(args: &Args) -> Result<()> {
+    let steps_path = args
+        .steps
+        .as_ref()
+        .or(args.report.as_ref())
+        .ok_or("sentrux-normalize requires --steps <report-or-steps-json>")?;
+    let input = read_json(steps_path)?;
+    let artifact = normalize_sentrux_failures(&input);
+    write_or_print_json(args.out.as_ref(), &artifact)
+}
+
+fn cmd_sentrux_debt_register(args: &Args) -> Result<()> {
+    let failures_path = args
+        .failures
+        .as_ref()
+        .ok_or("sentrux-debt-register requires --failures <sentrux-failures.json>")?;
+    let failures = read_json(failures_path)?;
+    let repo = args
+        .repo
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_default();
+    let artifact = build_sentrux_debt_register(&failures, &repo);
+    write_or_print_json(args.out.as_ref(), &artifact)
+}
+
+fn normalize_sentrux_failures(input: &Value) -> Value {
+    let steps: Vec<Value> = match input.get("steps").and_then(Value::as_array) {
+        Some(steps) => steps.clone(),
+        None => input.as_array().cloned().unwrap_or_default(),
+    };
+    let mut records = Vec::new();
+    let mut parser_errors = Vec::new();
+
+    for step in steps
+        .iter()
+        .filter(|step| step_name(step).starts_with("sentrux"))
+    {
+        let name = step_name(step);
+        let status = string_at(step, &["status"]).unwrap_or_default();
+        let text = step_text(step);
+        if status != "failed" && status != "manual_required" {
+            continue;
+        }
+
+        if name == "sentrux check" {
+            if let Some((file, symbol, cc)) = parse_named_max_cc(&text) {
+                records.push(serde_json::json!({
+                    "id": format!("check:max_cc:{file}:{symbol}"),
+                    "kind": "max_cc",
+                    "source": "sentrux check",
+                    "source_step": "sentrux check",
+                    "provenance": "stdout",
+                    "raw_output_path": "report.json#/steps/sentrux check/output",
+                    "stdout_excerpt": bounded_excerpt(&text),
+                    "parsed_at": generated_at(),
+                    "target": {
+                        "status": "resolved",
+                        "file": file,
+                        "symbol": symbol
+                    },
+                    "metric": "max_cc",
+                    "value": cc,
+                    "threshold": 70
+                }));
+            } else if let Some(cc) = parse_aggregate_max_cc(&text) {
+                records.push(serde_json::json!({
+                    "id": "check:max_cc:unresolved",
+                    "kind": "max_cc",
+                    "source": "sentrux check",
+                    "source_step": "sentrux check",
+                    "provenance": "stdout",
+                    "raw_output_path": "report.json#/steps/sentrux check/output",
+                    "stdout_excerpt": bounded_excerpt(&text),
+                    "parsed_at": generated_at(),
+                    "target": { "status": "unresolved", "file": "", "symbol": "" },
+                    "metric": "max_cc",
+                    "value": cc,
+                    "threshold": 70
+                }));
+            } else {
+                parser_errors
+                    .push("sentrux check failed but stdout did not match known max_cc formats.");
+            }
+        } else if name.starts_with("sentrux gate") {
+            let gate_records = parse_gate_records(&text);
+            if gate_records.is_empty() && status == "manual_required" {
+                records.push(serde_json::json!({
+                    "id": "gate:manual_required",
+                    "kind": "manual_required",
+                    "source": "sentrux gate",
+                    "source_step": "sentrux gate",
+                    "provenance": "stdout",
+                    "raw_output_path": "report.json#/steps/sentrux gate/output",
+                    "stdout_excerpt": bounded_excerpt(&text),
+                    "parsed_at": generated_at(),
+                    "target": { "status": "not_applicable", "file": "", "symbol": "" }
+                }));
+            } else if gate_records.is_empty() {
+                parser_errors.push(
+                    "sentrux gate failed but stdout did not match known gate regression formats.",
+                );
+            } else {
+                records.extend(gate_records);
+            }
+        }
+    }
+
+    let skipped = steps.iter().any(|step| {
+        step_name(step).starts_with("sentrux")
+            && string_at(step, &["status"]).as_deref() == Some("skipped")
+    });
+    let manual = steps.iter().any(|step| {
+        step_name(step).starts_with("sentrux")
+            && string_at(step, &["status"]).as_deref() == Some("manual_required")
+    });
+    let status = if manual {
+        "manual_required"
+    } else if !records.is_empty() && parser_errors.is_empty() {
+        "failed"
+    } else if !records.is_empty() {
+        "partial"
+    } else if !parser_errors.is_empty() {
+        "unparsed"
+    } else if skipped {
+        "skipped"
+    } else {
+        "not_run"
+    };
+
+    let primary = records
+        .iter()
+        .find(|record| record.get("source").and_then(Value::as_str) == Some("sentrux check"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let gate = records
+        .iter()
+        .find(|record| record.get("source").and_then(Value::as_str) == Some("sentrux gate"))
+        .cloned()
+        .unwrap_or(Value::Null);
+
+    serde_json::json!({
+        "schema": "code-intel-sentrux-failures.v1",
+        "status": status,
+        "generatedAt": generated_at(),
+        "primary": primary,
+        "gate": gate,
+        "records": records,
+        "conflicts": [],
+        "parser": {
+            "status": if parser_errors.is_empty() { "ok" } else { "partial" },
+            "notes": [],
+            "errors": parser_errors,
+            "enrichment": { "hotspots": "", "fileDetails": "" }
+        }
+    })
+}
+
+fn build_sentrux_debt_register(failures: &Value, repo: &str) -> Value {
+    let mut entries = Vec::new();
+    if let Some(records) = failures.get("records").and_then(Value::as_array) {
+        for record in records {
+            let (classification, reason) = classify_sentrux_record(record);
+            let blocking = classification == "new_debt" || classification == "worsened_debt";
+            entries.push(serde_json::json!({
+                "id": string_at(record, &["id"]).unwrap_or_default(),
+                "classification": classification,
+                "blocking": blocking,
+                "reason": reason,
+                "firstSeen": generated_at(),
+                "source": string_at(record, &["source"]).unwrap_or_default(),
+                "kind": string_at(record, &["kind"]).unwrap_or_default(),
+                "value": record.get("value").cloned().unwrap_or(Value::Null),
+                "threshold": record.get("threshold").cloned().unwrap_or(Value::Null),
+                "before": record.get("before").cloned().unwrap_or(Value::Null),
+                "after": record.get("after").cloned().unwrap_or(Value::Null),
+                "target": record.get("target").cloned().unwrap_or_else(|| serde_json::json!({
+                    "status": "not_applicable",
+                    "file": "",
+                    "symbol": ""
+                }))
+            }));
+        }
+    }
+
+    if entries.is_empty() {
+        let status = string_at(failures, &["status"]).unwrap_or_else(|| "not_run".to_string());
+        if ["manual_required", "skipped", "unparsed", "not_run"].contains(&status.as_str()) {
+            entries.push(serde_json::json!({
+                "id": "",
+                "classification": "informational",
+                "blocking": false,
+                "reason": format!("Sentrux status '{status}' does not represent actionable structural debt."),
+                "firstSeen": generated_at(),
+                "source": "",
+                "kind": "",
+                "value": Value::Null,
+                "threshold": Value::Null,
+                "before": Value::Null,
+                "after": Value::Null,
+                "target": { "status": "not_applicable", "file": "", "symbol": "" }
+            }));
+        }
+    }
+
+    let count = |name: &str| {
+        entries
+            .iter()
+            .filter(|entry| entry.get("classification").and_then(Value::as_str) == Some(name))
+            .count()
+    };
+    let blocking = entries
+        .iter()
+        .filter(|entry| {
+            entry
+                .get("blocking")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .count();
+
+    serde_json::json!({
+        "schema": "code-intel-sentrux-debt-register.v1",
+        "generatedAt": generated_at(),
+        "repoPath": repo,
+        "source": "sentrux-failures.json",
+        "policy": {
+            "knownDebtBlocks": false,
+            "blockingClassifications": ["new_debt", "worsened_debt"],
+            "informationalClassifications": ["informational"]
+        },
+        "summary": {
+            "knownDebt": count("known_debt"),
+            "newDebt": count("new_debt"),
+            "worsenedDebt": count("worsened_debt"),
+            "informational": count("informational"),
+            "blocking": blocking
+        },
+        "entries": entries
+    })
+}
+
+fn classify_sentrux_record(record: &Value) -> (&'static str, &'static str) {
+    let source = string_at(record, &["source"]).unwrap_or_default();
+    let kind = string_at(record, &["kind"]).unwrap_or_default();
+    let target_status = string_at(record, &["target", "status"]).unwrap_or_default();
+    let target_file = string_at(record, &["target", "file"]).unwrap_or_default();
+    let target_symbol = string_at(record, &["target", "symbol"]).unwrap_or_default();
+
+    if ["manual_required", "skipped", "unparsed"].contains(&kind.as_str())
+        || target_status == "not_applicable"
+    {
+        return (
+            "informational",
+            "Sentrux record is not an actionable structural debt target.",
+        );
+    }
+
+    if source == "sentrux check"
+        && kind == "max_cc"
+        && target_status == "resolved"
+        && target_file == "run-code-intel.ps1"
+        && target_symbol == "Get-CodeEvidenceSymbols"
+    {
+        return (
+            "known_debt",
+            "Current pipeline historical max_cc debt; tracked but not blocking understanding artifacts.",
+        );
+    }
+
+    if source == "sentrux check" && kind == "max_cc" && target_status == "unresolved" {
+        return (
+            "informational",
+            "Aggregate max_cc output has no authoritative symbol target; do not invent a debt owner.",
+        );
+    }
+
+    let before = record.get("before").and_then(Value::as_i64);
+    let after = record.get("after").and_then(Value::as_i64);
+    if source == "sentrux gate" {
+        if let (Some(before), Some(after)) = (before, after) {
+            if after > before {
+                return (
+                    "worsened_debt",
+                    "Sentrux gate reports a structural metric increased in this run.",
+                );
+            }
+            return (
+                "informational",
+                "Sentrux gate metric did not increase in this run.",
+            );
+        }
+    }
+
+    if source == "sentrux gate" || source == "sentrux check" {
+        return (
+            "new_debt",
+            "Sentrux reported a structural failure not matched by known historical debt policy.",
+        );
+    }
+
+    (
+        "informational",
+        "Sentrux status is informational for blocking policy.",
+    )
+}
+
+fn step_name(step: &Value) -> String {
+    string_at(step, &["name"]).unwrap_or_default()
+}
+
+fn step_text(step: &Value) -> String {
+    let output = string_at(step, &["output"]).unwrap_or_default();
+    let error = string_at(step, &["error"]).unwrap_or_default();
+    format!("{output}\n{error}").trim().to_string()
+}
+
+fn parse_named_max_cc(text: &str) -> Option<(String, String, i64)> {
+    for token in text.split_whitespace() {
+        if let Some((left, right)) = token.split_once(":") {
+            if !left.contains('.') {
+                continue;
+            }
+            let symbol = right.trim_end_matches(',');
+            let tail = text.split(symbol).nth(1).unwrap_or_default();
+            if let Some(cc) = parse_cc_value(tail) {
+                return Some((left.to_string(), symbol.to_string(), cc));
+            }
+        }
+    }
+    None
+}
+
+fn parse_aggregate_max_cc(text: &str) -> Option<i64> {
+    let lower = text.to_ascii_lowercase();
+    if !lower.contains("max_cc") && !lower.contains("max cc") && !lower.contains("cyclomatic") {
+        return None;
+    }
+    parse_last_i64(text)
+}
+
+fn parse_cc_value(text: &str) -> Option<i64> {
+    let start = text.find("cc=")?;
+    let after = &text[start + 3..];
+    let digits: String = after.chars().take_while(|ch| ch.is_ascii_digit()).collect();
+    digits.parse().ok()
+}
+
+fn parse_last_i64(text: &str) -> Option<i64> {
+    let mut current = String::new();
+    let mut last = None;
+    for ch in text.chars() {
+        if ch.is_ascii_digit() {
+            current.push(ch);
+        } else if !current.is_empty() {
+            last = current.parse::<i64>().ok();
+            current.clear();
+        }
+    }
+    if !current.is_empty() {
+        last = current.parse::<i64>().ok();
+    }
+    last
+}
+
+fn parse_gate_records(text: &str) -> Vec<Value> {
+    let mut records = Vec::new();
+    for line in text.lines() {
+        let Some((label, before, after)) = parse_gate_line(line) else {
+            continue;
+        };
+        let kind = label.to_ascii_lowercase().replace(' ', "_");
+        records.push(serde_json::json!({
+            "id": format!("gate:{kind}"),
+            "kind": kind,
+            "source": "sentrux gate",
+            "source_step": "sentrux gate",
+            "provenance": "stdout",
+            "raw_output_path": "report.json#/steps/sentrux gate/output",
+            "stdout_excerpt": bounded_excerpt(text),
+            "parsed_at": generated_at(),
+            "target": { "status": "aggregate", "file": "", "symbol": "" },
+            "before": before,
+            "after": after
+        }));
+    }
+    records
+}
+
+fn parse_gate_line(line: &str) -> Option<(String, i64, i64)> {
+    let clean = line.trim().trim_start_matches('✗').trim();
+    let (label, rest) = clean.split_once(':')?;
+    let label = label.trim();
+    if !["God files", "Cycles", "Quality"].contains(&label)
+        && !label.starts_with("Complex functions")
+        && !label.starts_with("Coupling")
+    {
+        return None;
+    }
+    let label = if label.starts_with("Complex functions") {
+        "Complex functions"
+    } else {
+        label
+    };
+    let arrow = if rest.contains("->") { "->" } else { "→" };
+    let (before, after) = rest.split_once(arrow)?;
+    Some((
+        label.to_string(),
+        parse_last_i64(before)?,
+        parse_last_i64(after)?,
+    ))
+}
+
+fn bounded_excerpt(text: &str) -> String {
+    let trimmed = text.trim();
+    trimmed.chars().take(500).collect()
+}
+
+fn generated_at() -> String {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs().to_string())
+        .unwrap_or_else(|_| "0".to_string())
+}
+
+fn write_or_print_json(path: Option<&PathBuf>, value: &Value) -> Result<()> {
+    let text = serde_json::to_string_pretty(value)?;
+    if let Some(path) = path {
+        fs::write(path, text)?;
+    } else {
+        println!("{text}");
     }
     Ok(())
 }
@@ -488,6 +1021,8 @@ fn print_help() {
     println!("Commands:");
     println!("  resume --repo <path> [--artifact-root <path>] [--json]");
     println!("  classify --report <path> [--json]");
+    println!("  sentrux-normalize --steps <report.json> [--out <sentrux-failures.json>]");
+    println!("  sentrux-debt-register --failures <sentrux-failures.json> [--repo <path>] [--out <sentrux-debt-register.json>]");
     println!("  doctor [--artifact-root <path>] [--json]");
 }
 
