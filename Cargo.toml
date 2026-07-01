@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "crates/code-intel-cli",
-    "crates/code-nexus-lite",
 ]
 resolver = "2"
 
