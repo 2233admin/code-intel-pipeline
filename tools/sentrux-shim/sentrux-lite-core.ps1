@@ -7,6 +7,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $RemainingArgs = @($RemainingArgs)
+$script:SentruxLiteExitCode = 0
 
 function Show-Help {
     Write-Output "Live codebase visualization and structural quality gate"
@@ -18,6 +19,7 @@ function Show-Help {
     Write-Output "  health     Print a compact health signal"
     Write-Output "  check      Enforce architectural rules from .sentrux/rules.toml"
     Write-Output "  gate       Compare current structure with .sentrux/baseline.json"
+    Write-Output "  plugin     List and validate local language plugins"
     Write-Output "  pro        Manage local open-source Pro activation"
     Write-Output ""
     Write-Output "check: Enforce architectural rules"
@@ -139,8 +141,16 @@ function Measure-File {
         $maxComplexity = [Math]::Max(1, [int]$complexityTerms.Count + 1)
     }
 
-    $importMatches = [regex]::Matches($text, "(?m)^\s*(import\s+|from\s+|use\s+|mod\s+|require\(|#include\s+|using\s+)")
-    $callMatches = [regex]::Matches($text, "\b\w+\s*\(")
+    if ($File.Extension.ToLowerInvariant() -eq ".v") {
+        $importMatches = @([regex]::Matches($text, "(?m)^\s*import\s+([A-Za-z_][\w.]*)") |
+            Where-Object { $_.Groups[1].Value -notin @("os", "time", "json", "strings", "arrays", "maps", "math") })
+        $callMatches = @([regex]::Matches($text, "\b([A-Za-z_]\w*)\.([A-Za-z_]\w*)\s*\(") |
+            Where-Object { $_.Groups[1].Value -notin @("os", "time", "json", "strings", "arrays", "maps", "math") })
+    }
+    else {
+        $importMatches = @([regex]::Matches($text, "(?m)^\s*(import\s+|from\s+|use\s+|mod\s+|require\(|#include\s+|using\s+)"))
+        $callMatches = @([regex]::Matches($text, "\b\w+\s*\("))
+    }
 
     return [ordered]@{
         path = Get-RelativePathSafe $TargetPath $File.FullName
@@ -269,11 +279,14 @@ function Invoke-Check {
     if (-not (Test-Path -LiteralPath $rulesPath -PathType Leaf)) {
         Write-Output "No .sentrux/rules.toml found"
         Write-Output "Quality: not gated"
-        return 0
+        $script:SentruxLiteExitCode = 0
+        return
     }
 
     $rules = Get-Content -LiteralPath $rulesPath -Raw
     $metrics = Measure-Project $target
+    Write-Output ("[resolve] {0} resolved, {1} unresolved" -f $metrics.total_import_edges, $metrics.unresolved_imports)
+    Write-Output ("[build_graphs] {0} files | {1} import, {2} call, 0 inherit edges" -f $metrics.files, $metrics.total_import_edges, $metrics.call_edges)
     $violations = New-Object System.Collections.Generic.List[string]
     $maxCcMatch = [regex]::Match($rules, "(?m)^\s*max_cc\s*=\s*([0-9]+)")
     if ($maxCcMatch.Success -and $metrics.max_complexity -gt [int]$maxCcMatch.Groups[1].Value) {
@@ -300,11 +313,12 @@ function Invoke-Check {
         foreach ($violation in $violations) {
             Write-Output "- $violation"
         }
-        return 1
+        $script:SentruxLiteExitCode = 1
+        return
     }
 
     Write-Output "All rules passed - Quality: $($metrics.quality_signal)"
-    return 0
+    $script:SentruxLiteExitCode = 0
 }
 
 function Invoke-Gate {
@@ -353,6 +367,106 @@ function Invoke-Gate {
     exit 0
 }
 
+function Get-PluginRoot {
+    if (-not [string]::IsNullOrWhiteSpace($env:SENTRUX_PLUGIN_ROOT)) {
+        return $env:SENTRUX_PLUGIN_ROOT
+    }
+    return (Join-Path $env:USERPROFILE ".sentrux\plugins")
+}
+
+function Read-PluginTomlField {
+    param(
+        [string]$Toml,
+        [string]$Name
+    )
+
+    $match = [regex]::Match($Toml, "(?m)^\s*$([regex]::Escape($Name))\s*=\s*""([^""]+)""")
+    if ($match.Success) { return $match.Groups[1].Value }
+    return ""
+}
+
+function Read-PluginExtensions {
+    param([string]$Toml)
+
+    $match = [regex]::Match($Toml, "(?m)^\s*extensions\s*=\s*\[([^\]]*)\]")
+    if (-not $match.Success) { return @() }
+    return @([regex]::Matches($match.Groups[1].Value, """([^""]+)""") | ForEach-Object { $_.Groups[1].Value })
+}
+
+function Test-PluginPath {
+    param([string]$PluginPath)
+
+    $target = Resolve-TargetPath $PluginPath
+    $pluginToml = Join-Path $target "plugin.toml"
+    $queryPath = Join-Path $target "queries\tags.scm"
+    $grammarPath = Join-Path $target "grammars\windows-x86_64.dll"
+
+    foreach ($required in @($pluginToml, $queryPath, $grammarPath)) {
+        if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+            Write-Output "plugin invalid: missing $required"
+            $script:SentruxLiteExitCode = 1
+            return
+        }
+    }
+
+    $toml = Get-Content -LiteralPath $pluginToml -Raw
+    $name = Read-PluginTomlField $toml "name"
+    $version = Read-PluginTomlField $toml "version"
+    $extensions = @(Read-PluginExtensions $toml)
+    if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($version) -or $extensions.Count -eq 0) {
+        Write-Output "plugin invalid: plugin.toml is missing name, version, or extensions"
+        $script:SentruxLiteExitCode = 1
+        return
+    }
+
+    Write-Output ("plugin valid: {0} v{1} [{2}]" -f $name, $version, ($extensions -join ","))
+    $script:SentruxLiteExitCode = 0
+}
+
+function Invoke-Plugin {
+    param([string[]]$PluginArgs)
+
+    $subcommand = if ($PluginArgs.Count -gt 0) { $PluginArgs[0] } else { "list" }
+    switch ($subcommand) {
+        "list" {
+            $pluginRoot = Get-PluginRoot
+            if (-not (Test-Path -LiteralPath $pluginRoot -PathType Container)) {
+                $script:SentruxLiteExitCode = 0
+                return
+            }
+            $plugins = Get-ChildItem -LiteralPath $pluginRoot -Directory -ErrorAction SilentlyContinue
+            foreach ($plugin in @($plugins)) {
+                $tomlPath = Join-Path $plugin.FullName "plugin.toml"
+                if (-not (Test-Path -LiteralPath $tomlPath -PathType Leaf)) { continue }
+                $toml = Get-Content -LiteralPath $tomlPath -Raw
+                $name = Read-PluginTomlField $toml "name"
+                $version = Read-PluginTomlField $toml "version"
+                $extensions = @(Read-PluginExtensions $toml)
+                if ([string]::IsNullOrWhiteSpace($name)) { $name = $plugin.Name }
+                Write-Output ("{0} v{1} [{2}]" -f $name, $version, ($extensions -join ","))
+            }
+            $script:SentruxLiteExitCode = 0
+            return
+        }
+        "validate" {
+            $pluginPath = if ($PluginArgs.Count -gt 1) { $PluginArgs[1] } else { "" }
+            if ([string]::IsNullOrWhiteSpace($pluginPath)) {
+                Write-Output "plugin validate requires <plugin-path>"
+                $script:SentruxLiteExitCode = 1
+                return
+            }
+            Test-PluginPath $pluginPath
+            return
+        }
+        default {
+            Write-Output "sentrux-lite: unknown plugin command '$subcommand'"
+            Write-Output "Usage: sentrux plugin <list|validate> [plugin-path]"
+            $script:SentruxLiteExitCode = 1
+            return
+        }
+    }
+}
+
 if ($RemainingArgs.Count -eq 0 -or $RemainingArgs[0] -in @("-h", "--help", "help")) {
     Show-Help
     exit 0
@@ -374,11 +488,15 @@ switch ($command) {
             Show-Help
             exit 0
         }
-        $code = Invoke-Check ($(if ($tail.Count -gt 0) { $tail[0] } else { "" }))
-        exit $code
+        Invoke-Check ($(if ($tail.Count -gt 0) { $tail[0] } else { "" }))
+        exit $script:SentruxLiteExitCode
     }
     "gate" {
         Invoke-Gate $tail
+    }
+    "plugin" {
+        Invoke-Plugin $tail
+        exit $script:SentruxLiteExitCode
     }
     default {
         Write-Output "sentrux-lite: unknown command '$command'"

@@ -125,15 +125,7 @@ function Invoke-PipInstall {
 }
 
 function Invoke-SentruxInstall {
-    if (Get-Command cargo -ErrorAction SilentlyContinue) {
-        & cargo install sentrux --locked
-        if ($LASTEXITCODE -ne 0) {
-            throw "cargo install failed for sentrux with exit code $LASTEXITCODE"
-        }
-        return
-    }
-
-    throw "no automatic sentrux installer found; install sentrux.exe to PATH, for example under C:\Users\Administrator\bin"
+    throw "no published sentrux package installer is configured; use the repo-owned shim/lite core or place a real sentrux.exe on PATH"
 }
 
 function Install-MissingTool {
@@ -429,7 +421,7 @@ Add-InstallPlan $installPlan "rg" "winget or scoop" "winget install --id BurntSu
 Add-InstallPlan $installPlan "git" "winget" "winget install --id Git.Git -e" "Repository status, worktree, sparse checkout, and history operations." "LOW: foundational tool; ensure official Git for Windows package source." ""
 Add-InstallPlan $installPlan "python" "winget" "winget install --id Python.Python.3.11 -e" "Runs provider preflight and scoped repowise docs helper." "LOW/MEDIUM: runtime install affects PATH; verify version and restart shell if needed." "Use an already managed Python 3.11+ runtime."
 Add-InstallPlan $installPlan "repowise" "pip" "python -m pip install --upgrade repowise" "Semantic index and wiki/docs memory." "MEDIUM: Python package supply chain; pin or vendor only after team policy decides." "Skip repowise with -SkipRepowise for exact-search-only runs."
-Add-InstallPlan $installPlan "sentrux" "cargo" "cargo install sentrux --locked" "Structural quality and regression gate." "MEDIUM: cargo source must be trusted; no automatic install if cargo is absent." "The repo-owned sentrux-lite core keeps scan/check/gate usable until the real binary is installed."
+Add-InstallPlan $installPlan "sentrux" "repo-local shim or preinstalled binary" "install tools\\sentrux-shim first; optionally place a real sentrux.exe on PATH" "Structural quality and regression gate." "LOW for repo-owned shim; MEDIUM for any separately supplied sentrux.exe." "The repo-owned sentrux-lite core keeps scan/check/gate/plugin usable until the real binary is installed."
 Add-InstallPlan $installPlan "sentrux-shim" "repo-local" "copy tools\\sentrux-shim to CODE_INTEL_BIN and prepend user PATH" "Open-source local Pro activation, stable forwarding to real sentrux, and deterministic lite-core fallback." "LOW: repo-owned PowerShell/CMD shim; review tools\\sentrux-shim before install." "Set SENTRUX_AUTO_PRO=0 to disable auto Pro activation."
 Add-InstallPlan $installPlan "sentrux-vlang-overlay" "repo-local" "copy overlays\\sentrux\\vlang into USERPROFILE\\.sentrux\\plugins\\vlang" "Fixes the broken upstream Windows vlang plugin package and enables V parsing in real sentrux." "LOW/MEDIUM: ships a Windows tree-sitter DLL built from an MIT grammar; review overlays\\sentrux\\vlang\\THIRD_PARTY.md." "Use -SkipSentruxVlangOverlay to skip this local plugin patch."
 
@@ -437,8 +429,8 @@ Install-MissingTool $installActions "rg" { Invoke-RipgrepInstall } "Install ripg
 Install-MissingTool $installActions "git" { Invoke-WingetInstall "Git.Git" "Git for Windows" } "Install Git for Windows (`winget install --id Git.Git -e`) or ensure git is on PATH."
 Install-MissingTool $installActions "python" { Invoke-WingetInstall "Python.Python.3.11" "Python 3.11" } "Install Python 3.11+ (`winget install --id Python.Python.3.11 -e`) or ensure python is on PATH."
 Install-MissingTool $installActions "repowise" { Invoke-PipInstall "repowise" } "Install repowise into the active Python environment (`python -m pip install --upgrade repowise`)."
-Install-MissingTool $installActions "sentrux" { Invoke-SentruxInstall } "Install sentrux or ensure sentrux.exe is on PATH."
 Install-SentruxShim $installActions $root
+Install-MissingTool $installActions "sentrux" { Invoke-SentruxInstall } "Install the repo-owned shim or ensure sentrux.exe is on PATH."
 Install-SentruxVlangPluginOverlay $installActions $root
 
 $requiredFiles = @(

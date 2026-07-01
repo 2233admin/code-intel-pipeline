@@ -361,7 +361,7 @@ sentrux_test_gaps
 - 第一次运行自动写本地 Pro license。
 - `sentrux pro status / activate / deactivate` 可直接用。
 - 优先转发给真实 `sentrux.exe`。
-- 没有真实 core 时，使用仓库内置 `sentrux-lite-core.ps1` 保底。
+- 没有真实 core 时，使用仓库内置 `sentrux-lite-core.ps1` 保底，覆盖 `scan`、`health`、`check`、`gate` 和 `plugin list/validate`。
 
 检查：
 
@@ -390,7 +390,7 @@ sentrux pro deactivate
 sentrux pro activate OSS-LOCAL-PRO
 ```
 
-真实 core 存在时会用真实 core；lite core 只保证部署闭环不断，不替代完整产品。
+真实 core 存在时会用真实 core；lite core 只保证部署闭环不断，不替代完整产品。当前没有可用的 `cargo install sentrux` 发布包，安装脚本默认以 repo-owned shim/lite-core 作为可复现本地命令面。
 
 ## Sentrux V 插件覆盖包
 
