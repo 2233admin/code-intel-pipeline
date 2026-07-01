@@ -1,3 +1,5 @@
+#requires -Version 7.2
+
 param(
     [string]$Provider = "anthropic",
     [string]$Model = "MiniMax-M2.7",
@@ -6,6 +8,9 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$platformModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-intel-platform.psm1"
+Import-Module $platformModule -Force
 
 function Set-EnvFromUserRegistry {
     param([string]$Name)
@@ -22,7 +27,7 @@ function Set-EnvFromUserRegistry {
 Set-EnvFromUserRegistry "ANTHROPIC_API_KEY"
 Set-EnvFromUserRegistry "ANTHROPIC_BASE_URL"
 
-$python = @'
+$pythonScript = @'
 import json
 import os
 import sys
@@ -68,7 +73,20 @@ sys.exit(0 if result["ok"] else 1)
 
 $env:CODE_INTEL_PROVIDER = $Provider
 $env:CODE_INTEL_MODEL = $Model
-$raw = & python -c $python
+$python = Get-CodeIntelPythonCommand
+if (-not $python) {
+    $result = [pscustomobject][ordered]@{
+        ok = $false
+        provider = $Provider
+        model = $Model
+        category = "local_tool_error"
+        message = "python/python3 is not on PATH"
+    }
+    if ($Json) { $result | ConvertTo-Json -Depth 4 } else { Write-Host "Provider preflight: FAILED local_tool_error $Provider/$Model"; Write-Host $result.message }
+    exit 1
+}
+$pythonCommand = if (-not [string]::IsNullOrWhiteSpace($python.Source)) { $python.Source } else { $python.Name }
+$raw = & $pythonCommand -c $pythonScript
 $exitCode = $LASTEXITCODE
 $result = $raw | ConvertFrom-Json
 

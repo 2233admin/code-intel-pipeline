@@ -1,6 +1,10 @@
+#requires -Version 7.2
+
 [CmdletBinding()]
 param(
-    [string]$PluginRoot = (Join-Path $env:USERPROFILE ".sentrux\plugins"),
+    [string]$PluginRoot = "",
+    [ValidateSet("auto", "windows", "macos", "linux")]
+    [string]$Platform = "auto",
     [switch]$NoReadOnlyLock,
     [switch]$SkipValidate
 )
@@ -8,12 +12,25 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$overlayRoot = Join-Path $PSScriptRoot "overlays\sentrux\vlang"
+$platformModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-intel-platform.psm1"
+Import-Module $platformModule -Force
+$effectivePlatform = Get-CodeIntelPlatform -Platform $Platform
+
+if ([string]::IsNullOrWhiteSpace($PluginRoot)) {
+    $PluginRoot = Join-Path (Join-Path (Get-CodeIntelHomeDirectory) ".sentrux") "plugins"
+}
+
+$overlayRoot = Join-Path (Join-Path (Join-Path $PSScriptRoot "overlays") "sentrux") "vlang"
 $targetRoot = Join-Path $PluginRoot "vlang"
+$grammarName = switch ($effectivePlatform) {
+    "windows" { "windows-x86_64.dll" }
+    "macos" { "darwin-arm64.dylib" }
+    "linux" { "linux-x86_64.so" }
+}
 $requiredFiles = @(
     "plugin.toml",
-    "queries\tags.scm",
-    "grammars\windows-x86_64.dll"
+    (Join-Path "queries" "tags.scm"),
+    (Join-Path "grammars" $grammarName)
 )
 
 function Test-SameOverlayFile {
@@ -50,6 +67,16 @@ function Test-SameOverlayFile {
 foreach ($relativePath in $requiredFiles) {
     $sourcePath = Join-Path $overlayRoot $relativePath
     if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+        if ($relativePath -like (Join-Path "grammars" "*")) {
+            [pscustomobject][ordered]@{
+                status = "manual_required"
+                plugin = "vlang"
+                platform = $effectivePlatform
+                missing = $sourcePath
+                message = "No vlang grammar artifact is bundled for this platform; skipping overlay install."
+            } | ConvertTo-Json -Depth 4
+            return
+        }
         throw "Overlay file missing: $sourcePath"
     }
 }
@@ -70,7 +97,12 @@ New-Item -ItemType Directory -Force -Path (Join-Path $targetRoot "grammars") | O
 foreach ($relativePath in $requiredFiles) {
     $targetPath = Join-Path $targetRoot $relativePath
     if (Test-Path -LiteralPath $targetPath) {
-        & attrib -R $targetPath
+        if ($effectivePlatform -eq "windows" -and (Get-Command attrib -ErrorAction SilentlyContinue)) {
+            & attrib -R $targetPath
+        }
+        else {
+            (Get-Item -LiteralPath $targetPath).IsReadOnly = $false
+        }
     }
 }
 
@@ -86,7 +118,12 @@ foreach ($relativePath in $requiredFiles) {
 if (-not $NoReadOnlyLock) {
     foreach ($relativePath in $requiredFiles) {
         $targetPath = Join-Path $targetRoot $relativePath
-        & attrib +R $targetPath
+        if ($effectivePlatform -eq "windows" -and (Get-Command attrib -ErrorAction SilentlyContinue)) {
+            & attrib +R $targetPath
+        }
+        else {
+            (Get-Item -LiteralPath $targetPath).IsReadOnly = $true
+        }
     }
 }
 
@@ -103,6 +140,7 @@ if (-not $SkipValidate) {
 [pscustomobject][ordered]@{
     status = "installed"
     plugin = "vlang"
+    platform = $effectivePlatform
     target = $targetRoot
     backup = if (Test-Path -LiteralPath $backupPath) { $backupPath } else { $null }
     readOnlyLock = -not $NoReadOnlyLock

@@ -1,9 +1,14 @@
+#requires -Version 7.2
+
 param(
     [Parameter(Mandatory = $true)]
     [string]$RepoPath,
 
     [ValidateSet("lite", "normal", "full")]
     [string]$Mode = "normal",
+
+    [ValidateSet("auto", "windows", "macos", "linux")]
+    [string]$Platform = "auto",
 
     [switch]$CheckProvider,
     [switch]$SkipSmoke,
@@ -17,9 +22,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$platformModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-intel-platform.psm1"
+Import-Module $platformModule -Force
+$effectivePlatform = Get-CodeIntelPlatform -Platform $Platform
+
 function Get-BootstrapRoot {
-    $base = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $env:LOCALAPPDATA } else { (Join-Path $HOME ".code-intel") }
-    return (Join-Path $base "code-intel\bootstrap")
+    return (Join-Path (Get-CodeIntelDataRoot -Platform $effectivePlatform) "bootstrap")
 }
 
 function Invoke-JsonScript {
@@ -61,9 +69,13 @@ $mdPath = Join-Path $bootstrapRoot "bootstrap-$stamp.md"
 
 $installParams = @{
     RepoPath = $repo
+    Platform = $effectivePlatform
     Json = $true
 }
-if (-not $NoInstallMissing) { $installParams.InstallMissing = $true }
+if (-not $NoInstallMissing) {
+    $installParams.InstallMissing = $true
+    $installParams.AuditInstallPlan = $true
+}
 if (-not $NoRepairSkillLinks) { $installParams.RepairSkillLinks = $true }
 if ($CheckProvider) { $installParams.CheckProvider = $true }
 if ($RequireRepowise) { $installParams.RequireRepowise = $true }
@@ -71,6 +83,7 @@ if ($RequireUnderstand) { $installParams.RequireUnderstand = $true }
 
 $doctorParams = @{
     RepoPath = $repo
+    Platform = $effectivePlatform
     Json = $true
 }
 if ($RequireRepowise) { $doctorParams.RequireRepowise = $true }
@@ -83,6 +96,7 @@ if (-not $SkipSmoke) {
     $smokeParams = @{
         RepoPath = $repo
         Mode = $Mode
+        Platform = $effectivePlatform
         SkipRepowise = $true
     }
     $smokeResult = Invoke-JsonScript (Join-Path $root "test-code-intel-pipeline.ps1") $smokeParams

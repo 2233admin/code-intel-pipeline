@@ -1,3 +1,5 @@
+#requires -Version 7.2
+
 param(
     [string]$Repo = "",
     [string]$RepoPath = "",
@@ -5,6 +7,9 @@ param(
     [switch]$All,
 
     [string]$Config = "",
+
+    [ValidateSet("auto", "windows", "macos", "linux")]
+    [string]$Platform = "auto",
 
     [ValidateSet("lite", "normal", "full")]
     [string]$Mode = "normal",
@@ -50,10 +55,10 @@ function Invoke-OneRepo {
     Write-Host "Code intel invoke: doctor $label"
     $global:LASTEXITCODE = 0
     if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) {
-        & $doctor -Config $Config -RepoPath $DirectRepoPath
+        & $doctor -Config $Config -RepoPath $DirectRepoPath -Platform $Platform
     }
     else {
-        & $doctor -Config $Config -Repo $RepoName
+        & $doctor -Config $Config -Repo $RepoName -Platform $Platform
     }
     if ($LASTEXITCODE -ne 0) {
         return [pscustomobject][ordered]@{
@@ -69,6 +74,7 @@ function Invoke-OneRepo {
         $invokeParams = @{
             Config = $Config
             Mode = $Mode
+            Platform = $Platform
         }
         if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) { $invokeParams.RepoPath = $DirectRepoPath } else { $invokeParams.Repo = $RepoName }
         if ($RepowiseDocs) { $invokeParams.RepowiseDocs = $true }
@@ -80,10 +86,10 @@ function Invoke-OneRepo {
     }
     else {
         if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) {
-            & $runner -Config $Config -RepoPath $DirectRepoPath -Mode $Mode
+            & $runner -Config $Config -RepoPath $DirectRepoPath -Mode $Mode -Platform $Platform
         }
         else {
-            & $runner -Config $Config -Repo $RepoName -Mode $Mode
+            & $runner -Config $Config -Repo $RepoName -Mode $Mode -Platform $Platform
         }
     }
 
@@ -145,6 +151,7 @@ if (-not $NoIndexUpdate -and (Test-Path -LiteralPath $indexer -PathType Leaf)) {
             $indexParams.ArtifactRoot = [string]$configuredArtifactRoot
         }
     }
+    $indexParams.Platform = $Platform
     & $indexer @indexParams | Out-Host
 }
 

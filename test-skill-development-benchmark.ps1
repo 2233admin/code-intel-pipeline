@@ -58,12 +58,12 @@ Assert-FrontMatterField $skillText "name"
 Assert-FrontMatterField $skillText "description"
 
 $requiredSkillLinks = @(
-    "docs\artifact-data-contract.md",
-    "docs\agent-goal-intake.md",
-    "docs\harness-factory-reference.md",
-    "docs\skill-development-benchmark.md",
-    "docs\implementation-minimalism-benchmark.md",
-    "docs\ponytail-impact-scoreboard.md"
+    "docs/artifact-data-contract.md",
+    "docs/agent-goal-intake.md",
+    "docs/harness-factory-reference.md",
+    "docs/skill-development-benchmark.md",
+    "docs/implementation-minimalism-benchmark.md",
+    "docs/ponytail-impact-scoreboard.md"
 )
 
 foreach ($link in $requiredSkillLinks) {

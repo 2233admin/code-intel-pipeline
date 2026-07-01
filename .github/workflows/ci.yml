@@ -96,7 +96,17 @@ jobs:
 
       - name: Install ripgrep
         shell: pwsh
-        run: choco install ripgrep -y --no-progress
+        run: |
+          if ($IsWindows) {
+            choco install ripgrep -y --no-progress
+          }
+          elseif ($IsMacOS) {
+            brew install ripgrep
+          }
+          else {
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+          }
 
       - name: Install portable pipeline
         shell: pwsh
@@ -151,3 +161,129 @@ jobs:
         with:
           name: code-intel-pipeline-windows
           path: dist/code-intel-pipeline-windows.zip
+
+  cross-platform-smoke:
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+          - ubuntu-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Rust
+        shell: pwsh
+        run: rustup default stable
+
+      - name: Rust format
+        shell: pwsh
+        run: cargo fmt -p code-intel -- --check
+
+      - name: Rust check
+        shell: pwsh
+        run: cargo check
+
+      - name: Rust tests
+        shell: pwsh
+        run: cargo test -p code-intel
+
+      - name: Build Rust CLI
+        shell: pwsh
+        run: cargo build -p code-intel --release
+
+      - name: PowerShell parser checks
+        shell: pwsh
+        run: |
+          $files = @(
+            "run-code-intel.ps1",
+            "Find-CodeIntelProjects.ps1",
+            "Invoke-GitHubSolutionResearch.ps1",
+            "test-code-intel-pipeline.ps1",
+            "test-github-solution-research.ps1",
+            "test-project-discovery.ps1",
+            "test-project-management-support.ps1",
+            "test-skill-development-benchmark.ps1"
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $errs = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$errs)
+            if ($errs) {
+              Write-Host $file
+              $errs | Select-Object Message,Extent | Format-List
+              exit 1
+            }
+          }
+
+      - name: Secret pattern guard
+        shell: pwsh
+        run: |
+          $patterns = @(
+            "sk-[A-Za-z0-9_-]{20,}",
+            "ghp_[A-Za-z0-9_]{20,}",
+            "github_pat_[A-Za-z0-9_]{20,}",
+            "AKIA[0-9A-Z]{16}"
+          )
+          $files = git ls-files
+          $hits = @()
+          foreach ($file in $files) {
+            if ($file -match "^(target/|artifacts/|cache/)" -or $file -match "\.(png|jpg|jpeg|gif|zip|exe)$") {
+              continue
+            }
+            $text = Get-Content -LiteralPath $file -Raw -ErrorAction SilentlyContinue
+            foreach ($pattern in $patterns) {
+              if ($text -match $pattern) {
+                $hits += "$file matches $pattern"
+              }
+            }
+          }
+          if ($hits.Count -gt 0) {
+            $hits | ForEach-Object { Write-Host $_ }
+            throw "Secret-like patterns found."
+          }
+
+      - name: Install ripgrep
+        shell: pwsh
+        run: |
+          if ($IsWindows) {
+            choco install ripgrep -y --no-progress
+          }
+          elseif ($IsMacOS) {
+            brew install ripgrep
+          }
+          else {
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+          }
+
+      - name: Install portable pipeline
+        shell: pwsh
+        run: |
+          $result = ./install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -Json | ConvertFrom-Json
+          Add-Content -Path $env:GITHUB_PATH -Value $result.paths.bin
+
+      - name: Doctor
+        shell: pwsh
+        run: ./check-code-intel-tools.ps1 -RepoPath . -Json
+
+      - name: Pipeline smoke
+        shell: pwsh
+        run: ./test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxCheck -SkipSentruxGate -SkipGitHubResearch -Mode normal
+
+      - name: Hardcoded path scan
+        shell: pwsh
+        run: ./tools/check-hardcoded-paths.ps1

@@ -1,8 +1,12 @@
+#requires -Version 7.2
+
 param(
     [Parameter(Mandatory = $true)]
     [string]$RepoPath,
 
     [string]$ShadowRoot = "",
+    [ValidateSet("auto", "windows", "macos", "linux")]
+    [string]$Platform = "auto",
     [string[]]$ScopePaths = @(),
     [string[]]$RootFiles = @(),
     [int]$CommitLimit = 25,
@@ -12,6 +16,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$platformModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-intel-platform.psm1"
+Import-Module $platformModule -Force
+$effectivePlatform = Get-CodeIntelPlatform -Platform $Platform
 
 function Resolve-Dir {
     param([string]$Path)
@@ -23,11 +31,7 @@ function Resolve-Dir {
 }
 
 function Get-DefaultShadowRoot {
-    $fromEnv = [Environment]::GetEnvironmentVariable("CODE_INTEL_SHADOW_ROOT", "User")
-    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) { return $fromEnv }
-    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_SHADOW_ROOT)) { return $env:CODE_INTEL_SHADOW_ROOT }
-    $base = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $env:LOCALAPPDATA } else { (Join-Path $HOME ".code-intel") }
-    return (Join-Path $base "code-intel\repowise")
+    return (Get-CodeIntelShadowRoot -Platform $effectivePlatform)
 }
 
 function Resolve-RelativePath {
@@ -58,11 +62,55 @@ function Invoke-RobocopyMirror {
         return
     }
 
-    New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-    & robocopy $Source $Destination /MIR /XD .git .repowise node_modules .venv venv __pycache__ .pytest_cache .mypy_cache tmp dist build target .understand-anything .sentrux "*.egg-info" /XF uv.lock uv.lock.bak "*.bak" "=*" /NFL /NDL /NJH /NJS /NP | Out-Null
-    if ($LASTEXITCODE -gt 7) {
-        throw "robocopy failed for $Source -> $Destination (exit $LASTEXITCODE)"
+    if ($effectivePlatform -eq "windows" -and (Get-Command robocopy -ErrorAction SilentlyContinue)) {
+        New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+        & robocopy $Source $Destination /MIR /XD .git .repowise node_modules .venv venv __pycache__ .pytest_cache .mypy_cache tmp dist build target .understand-anything .sentrux "*.egg-info" /XF uv.lock uv.lock.bak "*.bak" "=*" /NFL /NDL /NJH /NJS /NP | Out-Null
+        if ($LASTEXITCODE -gt 7) {
+            throw "robocopy failed for $Source -> $Destination (exit $LASTEXITCODE)"
+        }
+        return
     }
+
+    if ($effectivePlatform -ne "windows" -and (Get-Command rsync -ErrorAction SilentlyContinue)) {
+        New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+        $sourceArg = $Source.TrimEnd("/", "\") + "/"
+        $destinationArg = $Destination.TrimEnd("/", "\") + "/"
+        $rsyncArgs = @(
+            "-a",
+            "--delete",
+            "--exclude=.git",
+            "--exclude=.repowise",
+            "--exclude=node_modules",
+            "--exclude=.venv",
+            "--exclude=venv",
+            "--exclude=__pycache__",
+            "--exclude=.pytest_cache",
+            "--exclude=.mypy_cache",
+            "--exclude=tmp",
+            "--exclude=dist",
+            "--exclude=build",
+            "--exclude=target",
+            "--exclude=.understand-anything",
+            "--exclude=.sentrux",
+            "--exclude=*.egg-info",
+            "--exclude=uv.lock",
+            "--exclude=uv.lock.bak",
+            "--exclude=*.bak",
+            "--exclude==*",
+            $sourceArg,
+            $destinationArg
+        )
+        & rsync @rsyncArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "rsync failed for $Source -> $Destination (exit $LASTEXITCODE)"
+        }
+        return
+    }
+
+    if (Test-Path -LiteralPath $Destination -PathType Container) {
+        Remove-Item -LiteralPath $Destination -Recurse -Force
+    }
+    Copy-Item -LiteralPath $Source -Destination $Destination -Recurse -Force
 }
 
 function Copy-ScopedFile {
@@ -197,14 +245,18 @@ function Invoke-ProcessWithTimeout {
     $stdout = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-{0}-out.txt" -f ([System.Guid]::NewGuid().ToString("N")))
     $stderr = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-{0}-err.txt" -f ([System.Guid]::NewGuid().ToString("N")))
     try {
-        $process = Start-Process `
-            -FilePath $FilePath `
-            -ArgumentList $ArgumentList `
-            -WorkingDirectory $WorkingDirectory `
-            -RedirectStandardOutput $stdout `
-            -RedirectStandardError $stderr `
-            -PassThru `
-            -WindowStyle Hidden
+        $startProcessParams = @{
+            FilePath = $FilePath
+            ArgumentList = $ArgumentList
+            WorkingDirectory = $WorkingDirectory
+            RedirectStandardOutput = $stdout
+            RedirectStandardError = $stderr
+            PassThru = $true
+        }
+        if ($effectivePlatform -eq "windows") {
+            $startProcessParams.WindowStyle = "Hidden"
+        }
+        $process = Start-Process @startProcessParams
 
         $finished = $process.WaitForExit([math]::Max(1, $TimeoutSeconds) * 1000)
         if (-not $finished) {
@@ -330,7 +382,7 @@ Set-EnvFromUserRegistry "ANTHROPIC_API_KEY"
 Set-EnvFromUserRegistry "ANTHROPIC_BASE_URL"
 Set-EnvFromUserRegistry "REPOWISE_PROVIDER"
 
-$statePath = Join-Path $shadowPath ".repowise\state.json"
+$statePath = Join-Path (Join-Path $shadowPath ".repowise") "state.json"
 $docsEnabled = $false
 if (Test-Path -LiteralPath $statePath -PathType Leaf) {
     try {
@@ -351,13 +403,18 @@ try {
                 -TimeoutSeconds $TimeoutSeconds `
                 -ArgumentList @("init", ".", "--index-only", "-y", "--no-claude-md", "--no-onboarding", "--skip-tests", "--skip-infra", "--commit-limit", [string]$CommitLimit, "--embedder", "mock", "--provider", "mock"))
         }
-        $dbPath = Join-Path $shadowPath ".repowise\wiki.db"
+        $dbPath = Join-Path (Join-Path $shadowPath ".repowise") "wiki.db"
         if (Test-Path -LiteralPath $dbPath -PathType Leaf) {
             Remove-Item -LiteralPath $dbPath -Force
         }
         $scriptPath = Join-Path $PSScriptRoot "Run-ScopedRepowiseDocs.py"
+        $python = Get-CodeIntelPythonCommand
+        if (-not $python) {
+            throw "python/python3 is not on PATH; install Python before running scoped repowise docs."
+        }
+        $pythonCommand = if (-not [string]::IsNullOrWhiteSpace($python.Source)) { $python.Source } else { $python.Name }
         [void](Invoke-ProcessWithTimeout `
-            -FilePath "python" `
+            -FilePath $pythonCommand `
             -Description "repowise scoped docs" `
             -TimeoutSeconds $TimeoutSeconds `
             -ArgumentList @($scriptPath, "--repo", $shadowPath, "--coverage-pct", "0.02", "--concurrency", "1"))
@@ -400,9 +457,9 @@ finally {
     Pop-Location
 }
 
-$dbPath = Join-Path $shadowPath ".repowise\wiki.db"
+$dbPath = Join-Path (Join-Path $shadowPath ".repowise") "wiki.db"
 if ((-not (Test-Path -LiteralPath $statePath -PathType Leaf)) -and (-not (Test-Path -LiteralPath $dbPath -PathType Leaf))) {
-    throw "Scoped repowise finished without .repowise\state.json or .repowise\wiki.db: $shadowPath"
+    throw "Scoped repowise finished without .repowise/state.json or .repowise/wiki.db: $shadowPath"
 }
 
 Write-Output "Scoped repowise complete"
