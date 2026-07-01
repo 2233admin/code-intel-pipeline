@@ -13,10 +13,6 @@ param(
     [switch]$Json
 )
 
-if (-not $PSBoundParameters.ContainsKey("RequireRepowise")) {
-    $RequireRepowise = $true
-}
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -493,11 +489,6 @@ $requiredFiles = @(
     "crates\code-intel-cli\src\providers.rs",
     "crates\code-intel-cli\src\routes.rs",
     "crates\code-intel-cli\src\sentrux.rs",
-    "crates\code-nexus-lite\Cargo.toml",
-    "crates\code-nexus-lite\src\main.rs",
-    "crates\code-nexus-lite\src\functions.rs",
-    "crates\code-nexus-lite\src\functions\repowise.rs",
-    "crates\code-nexus-lite\src\triggers.rs",
     "Install-SentruxVlangOverlay.ps1",
     "Test-SentruxVlangOverlay.ps1",
     "run-code-intel.ps1",
