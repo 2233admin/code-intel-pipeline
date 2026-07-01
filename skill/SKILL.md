@@ -68,9 +68,9 @@ Use `-Json` when another agent needs machine-readable output.
 Find candidate repositories before choosing a `RepoPath`:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\Find-CodeIntelProjects.ps1 -Root D:\projects -Json
-D:\projects\_tools\code-intel-pipeline\Find-CodeIntelProjects.ps1 -Root D:\projects -WizTreeExe WizTree64.exe -Json
-D:\projects\_tools\code-intel-pipeline\Find-CodeIntelProjects.ps1 -WizTreeCsv C:\tmp\wiztree.csv -Json
+& "$env:CODE_INTEL_HOME/Find-CodeIntelProjects.ps1" -Root <projects-root> -Json
+& "$env:CODE_INTEL_HOME/Find-CodeIntelProjects.ps1" -Root <projects-root> -WizTreeExe WizTree64.exe -Json
+& "$env:CODE_INTEL_HOME/Find-CodeIntelProjects.ps1" -WizTreeCsv <wiztree-csv-path> -Json
 ```
 
 WizTree CLI/CSV is optional acceleration for project discovery only. It is not a scanner dependency.
@@ -222,9 +222,9 @@ Use only these absorbed rules from the Karpathy skills repo:
 - Idea file first for nontrivial pipeline changes: use `templates/idea-file.md`.
 - Agentic loop: doctor -> lite -> normal -> read summary -> read understanding -> fix -> rerun -> commit.
 - Minimalism: keep this as an orchestration shell over `rg`, `repowise`, Understand Anything, and `sentrux`; do not copy tool internals into this repo.
-- Implementation minimalism: before coding choose the first sufficient rung from `docs\implementation-minimalism-benchmark.md`: do nothing, reuse this repository, standard library, platform native capability, already-installed dependency, one-liner, then smallest local implementation.
+- Implementation minimalism: before coding choose the first sufficient rung from `docs/implementation-minimalism-benchmark.md`: do nothing, reuse this repository, standard library, platform native capability, already-installed dependency, one-liner, then smallest local implementation.
 - Lazy about solution, never lazy about reading/evidence/safety: implementation minimalism cannot remove verification, error handling, security, accessibility, data-loss prevention, or artifact contract guarantees.
-- Project management intake: before turning findings into tracked work, read `docs\project-management-support.md` and `docs\agents\*.md`. Linear and Obsidian/LLM wiki support is optional intake/output, not scanner runtime or credential storage.
+- Project management intake: before turning findings into tracked work, read `docs/project-management-support.md` and `docs/agents/*.md`. Linear and Obsidian/LLM wiki support is optional intake/output, not scanner runtime or credential storage.
 - Supply-chain hygiene: inspect `installPlan` before approving new install surfaces.
 - Understanding-first: never report a run as handled without knowing the next action from `understanding.md`.
 

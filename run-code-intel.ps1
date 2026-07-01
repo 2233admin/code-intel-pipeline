@@ -1001,13 +1001,14 @@ $content = Get-Content -LiteralPath $fullPath -Raw -ErrorAction SilentlyContinue
         if ($null -eq $content) { $content = "" }
         $lines = if ([string]::IsNullOrEmpty($content)) { @() } else { @($content -split "`r?`n") }
         $lines = @($lines)
-        $hashBytes = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($content))
+        $contentBytes = [System.Text.Encoding]::UTF8.GetBytes($content)
+        $hashBytes = [System.Security.Cryptography.SHA256]::HashData($contentBytes)
 $hash = [System.BitConverter]::ToString($hashBytes).Replace("-", "").ToLowerInvariant()
 
 $fileRows.Add([ordered]@{
 path = $relativePath
 language = $language
-bytes = (Get-Item -LiteralPath $fullPath).Length
+bytes = $contentBytes.Length
 lines = $lines.Count
 textHash = $hash
 source = "native-minimal"

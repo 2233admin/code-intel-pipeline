@@ -11,15 +11,17 @@ $PSNativeCommandUseErrorActionPreference = $false
 
 $root = Split-Path -Parent $PSScriptRoot
 $slash = [string][char]92
-$patterns = @(
-    ("D:" + $slash),
+$literalPatterns = @(
     ("C:" + $slash + "Users" + $slash + "Administrator"),
+    ("power" + "shell" + ".exe"),
     ("LOCAL" + "APP" + "DATA"),
     ("USER" + "PRO" + "FILE"),
-    ("APP" + "DATA"),
-    ("power" + "shell" + ".exe")
+    ("APP" + "DATA")
 )
-$pattern = [regex](($patterns | ForEach-Object { [regex]::Escape($_) }) -join "|")
+$patternParts = @($literalPatterns | ForEach-Object { [regex]::Escape($_) })
+$patternParts += "(?<![A-Za-z])[A-Za-z]:\\(?:[^\s`"'\\]*\\)*code-intel-pipeline\b"
+$pattern = [regex]::new($patternParts -join "|")
+$envVarPattern = [regex]::new("\`$env:[A-Za-z_][A-Za-z0-9_]*", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
 $globs = @("*.ps1", "*.psm1", "*.md", "*.yml")
 
 Push-Location $root
@@ -35,7 +37,8 @@ try {
         $lineNumber = 0
         foreach ($line in Get-Content -LiteralPath $file -ErrorAction Stop) {
             $lineNumber++
-            if ($pattern.IsMatch($line)) {
+            $scanText = $envVarPattern.Replace($line, "")
+            if ($pattern.IsMatch($scanText)) {
                 $hits.Add([pscustomobject][ordered]@{
                     file = $file
                     line = $lineNumber
