@@ -1,8 +1,12 @@
+#requires -Version 7.2
+
 param(
     [string]$Config = "",
     [string]$Repo = "",
     [string]$RepoPath = "",
     [string]$ArtifactRoot = "",
+    [ValidateSet("auto", "windows", "macos", "linux")]
+    [string]$Platform = "auto",
     [switch]$RepairSkillLinks,
     [switch]$CheckProvider,
     [switch]$InstallMissing,
@@ -15,6 +19,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$platformModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-intel-platform.psm1"
+Import-Module $platformModule -Force
+$script:EffectivePlatform = Get-CodeIntelPlatform -Platform $Platform
 
 function Add-Check {
     param(
@@ -43,7 +51,9 @@ function Add-InstallAction {
         [string]$Name,
         [string]$Status,
         [string]$Detail = "",
-        [string]$Fix = ""
+        [string]$Fix = "",
+        [string]$PackageManager = "",
+        [bool]$RequiresElevation = $false
     )
 
     $Actions.Add([pscustomobject][ordered]@{
@@ -51,6 +61,8 @@ function Add-InstallAction {
         status = $Status
         detail = $Detail
         fix = $Fix
+        packageManager = $PackageManager
+        requiresElevation = $RequiresElevation
     })
 }
 
@@ -62,7 +74,9 @@ function Add-InstallPlan {
         [string]$Command,
         [string]$Purpose,
         [string]$Risk,
-        [string]$Alternative = ""
+        [string]$Alternative = "",
+        [string]$PackageManager = "",
+        [bool]$RequiresElevation = $false
     )
 
     $Plan.Add([pscustomobject][ordered]@{
@@ -72,6 +86,8 @@ function Add-InstallPlan {
         purpose = $Purpose
         risk = $Risk
         alternative = $Alternative
+        packageManager = if ([string]::IsNullOrWhiteSpace($PackageManager)) { $Installer } else { $PackageManager }
+        requiresElevation = $RequiresElevation
     })
 }
 
@@ -91,21 +107,139 @@ function Invoke-WingetInstall {
     }
 }
 
-function Invoke-RipgrepInstall {
-    if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Invoke-WingetInstall "BurntSushi.ripgrep.MSVC" "ripgrep"
-        return
-    }
+function Invoke-ChocoInstall {
+    param([string]$PackageName)
 
-    if (Get-Command scoop -ErrorAction SilentlyContinue) {
-        & scoop install ripgrep
-        if ($LASTEXITCODE -ne 0) {
-            throw "scoop install failed for ripgrep with exit code $LASTEXITCODE"
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+        throw "choco is not available for installing $PackageName"
+    }
+    & choco install $PackageName -y --no-progress
+    if ($LASTEXITCODE -ne 0) {
+        throw "choco install failed for $PackageName with exit code $LASTEXITCODE"
+    }
+}
+
+function Invoke-ScoopInstall {
+    param([string]$PackageName)
+
+    if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
+        throw "scoop is not available for installing $PackageName"
+    }
+    & scoop install $PackageName
+    if ($LASTEXITCODE -ne 0) {
+        throw "scoop install failed for $PackageName with exit code $LASTEXITCODE"
+    }
+}
+
+function Invoke-BrewInstall {
+    param([string]$PackageName)
+
+    if (-not (Get-Command brew -ErrorAction SilentlyContinue)) {
+        throw "brew is not available for installing $PackageName"
+    }
+    & brew install $PackageName
+    if ($LASTEXITCODE -ne 0) {
+        throw "brew install failed for $PackageName with exit code $LASTEXITCODE"
+    }
+}
+
+function Invoke-LinuxPackageInstall {
+    param([string]$PackageName)
+
+    if (Get-Command apt-get -ErrorAction SilentlyContinue) {
+        $runner = if (Get-Command sudo -ErrorAction SilentlyContinue) { "sudo" } else { "apt-get" }
+        if ($runner -eq "sudo") {
+            & sudo apt-get update
+            if ($LASTEXITCODE -ne 0) { throw "apt-get update failed with exit code $LASTEXITCODE" }
+            & sudo apt-get install -y $PackageName
         }
+        else {
+            & apt-get update
+            if ($LASTEXITCODE -ne 0) { throw "apt-get update failed with exit code $LASTEXITCODE" }
+            & apt-get install -y $PackageName
+        }
+        if ($LASTEXITCODE -ne 0) { throw "apt-get install failed for $PackageName with exit code $LASTEXITCODE" }
         return
     }
 
-    throw "no supported installer found for ripgrep; install winget or scoop first"
+    if (Get-Command dnf -ErrorAction SilentlyContinue) {
+        if (Get-Command sudo -ErrorAction SilentlyContinue) { & sudo dnf install -y $PackageName } else { & dnf install -y $PackageName }
+        if ($LASTEXITCODE -ne 0) { throw "dnf install failed for $PackageName with exit code $LASTEXITCODE" }
+        return
+    }
+
+    if (Get-Command pacman -ErrorAction SilentlyContinue) {
+        if (Get-Command sudo -ErrorAction SilentlyContinue) { & sudo pacman -Sy --noconfirm $PackageName } else { & pacman -Sy --noconfirm $PackageName }
+        if ($LASTEXITCODE -ne 0) { throw "pacman install failed for $PackageName with exit code $LASTEXITCODE" }
+        return
+    }
+
+    throw "no supported Linux package manager found for $PackageName; install apt, dnf, pacman, or install the tool manually"
+}
+
+function Get-ToolPackageName {
+    param([string]$ToolName)
+
+    switch ($ToolName) {
+        "rg" {
+            switch ($script:EffectivePlatform) {
+                "windows" { return @{ winget = "BurntSushi.ripgrep.MSVC"; choco = "ripgrep"; scoop = "ripgrep" } }
+                "macos" { return "ripgrep" }
+                "linux" { return "ripgrep" }
+            }
+        }
+        "git" {
+            switch ($script:EffectivePlatform) {
+                "windows" { return @{ winget = "Git.Git"; choco = "git"; scoop = "git" } }
+                "macos" { return "git" }
+                "linux" { return "git" }
+            }
+        }
+        "python" {
+            switch ($script:EffectivePlatform) {
+                "windows" { return @{ winget = "Python.Python.3.11"; choco = "python"; scoop = "python" } }
+                "macos" { return "python@3.11" }
+                "linux" { return "python3" }
+            }
+        }
+    }
+
+    throw "no package mapping for $ToolName on $script:EffectivePlatform"
+}
+
+function Invoke-ToolPackageInstall {
+    param([string]$ToolName)
+
+    $package = Get-ToolPackageName $ToolName
+    switch ($script:EffectivePlatform) {
+        "windows" {
+            if (Get-Command winget -ErrorAction SilentlyContinue) {
+                Invoke-WingetInstall $package.winget $ToolName
+                return
+            }
+            if (Get-Command choco -ErrorAction SilentlyContinue) {
+                Invoke-ChocoInstall $package.choco
+                return
+            }
+            if (Get-Command scoop -ErrorAction SilentlyContinue) {
+                Invoke-ScoopInstall $package.scoop
+                return
+            }
+            throw "no supported Windows installer found for $ToolName; install winget, choco, or scoop first"
+        }
+        "macos" {
+            Invoke-BrewInstall $package
+            return
+        }
+        "linux" {
+            Invoke-LinuxPackageInstall $package
+            return
+        }
+    }
+}
+
+function Invoke-RipgrepInstall {
+    Invoke-ToolPackageInstall "rg"
 }
 
 function Invoke-PipInstall {
@@ -113,27 +247,45 @@ function Invoke-PipInstall {
         [string]$PackageName
     )
 
-    $python = Get-Command python -ErrorAction SilentlyContinue
+    $python = Get-CodeIntelPythonCommand
     if (-not $python) {
-        throw "python is not on PATH; install Python and rerun this script in a new shell"
+        throw "python/python3 is not on PATH; install Python and rerun this script in a new shell"
     }
+    $pythonCommand = if (-not [string]::IsNullOrWhiteSpace($python.Source)) { $python.Source } else { $python.Name }
 
-    & python -m pip install --upgrade $PackageName
+    & $pythonCommand -m pip install --user --upgrade $PackageName
     if ($LASTEXITCODE -ne 0) {
         throw "pip install failed for $PackageName with exit code $LASTEXITCODE"
     }
 }
 
 function Invoke-SentruxInstall {
-    if (Get-Command cargo -ErrorAction SilentlyContinue) {
-        & cargo install sentrux --locked
-        if ($LASTEXITCODE -ne 0) {
-            throw "cargo install failed for sentrux with exit code $LASTEXITCODE"
-        }
-        return
+    throw "no published sentrux package installer is configured; use the repo-owned shim/lite core or place a real sentrux.exe on PATH"
+}
+
+function Get-InstallMetadata {
+    param([string]$CommandName)
+
+    switch ($CommandName) {
+        "repowise" { return [ordered]@{ packageManager = "pip"; requiresElevation = $false } }
+        "sentrux" { return [ordered]@{ packageManager = "manual"; requiresElevation = $false } }
     }
 
-    throw "no automatic sentrux installer found; install sentrux.exe to PATH, for example under C:\Users\Administrator\bin"
+    switch ($script:EffectivePlatform) {
+        "windows" {
+            if (Get-Command winget -ErrorAction SilentlyContinue) { return [ordered]@{ packageManager = "winget"; requiresElevation = $false } }
+            if (Get-Command choco -ErrorAction SilentlyContinue) { return [ordered]@{ packageManager = "choco"; requiresElevation = $true } }
+            if (Get-Command scoop -ErrorAction SilentlyContinue) { return [ordered]@{ packageManager = "scoop"; requiresElevation = $false } }
+            return [ordered]@{ packageManager = "manual"; requiresElevation = $false }
+        }
+        "macos" { return [ordered]@{ packageManager = "brew"; requiresElevation = $false } }
+        "linux" {
+            if (Get-Command apt-get -ErrorAction SilentlyContinue) { return [ordered]@{ packageManager = "apt"; requiresElevation = $true } }
+            if (Get-Command dnf -ErrorAction SilentlyContinue) { return [ordered]@{ packageManager = "dnf"; requiresElevation = $true } }
+            if (Get-Command pacman -ErrorAction SilentlyContinue) { return [ordered]@{ packageManager = "pacman"; requiresElevation = $true } }
+            return [ordered]@{ packageManager = "manual"; requiresElevation = $false }
+        }
+    }
 }
 
 function Install-MissingTool {
@@ -144,29 +296,30 @@ function Install-MissingTool {
         [string]$Fix
     )
 
-    $existing = Get-Command $CommandName -ErrorAction SilentlyContinue
+    $metadata = Get-InstallMetadata $CommandName
+    $existing = if ($CommandName -eq "python") { Get-CodeIntelPythonCommand } else { Get-Command $CommandName -ErrorAction SilentlyContinue }
     if ($existing) {
-        Add-InstallAction $Actions $CommandName "already_present" $existing.Source ""
+        Add-InstallAction $Actions $CommandName "already_present" $existing.Source "" $metadata.packageManager ([bool]$metadata.requiresElevation)
         return
     }
 
     if (-not $InstallMissing) {
-        Add-InstallAction $Actions $CommandName "not_requested" "missing" $Fix
+        Add-InstallAction $Actions $CommandName "not_requested" "missing" $Fix $metadata.packageManager ([bool]$metadata.requiresElevation)
         return
     }
 
     try {
         & $Installer
-        $after = Get-Command $CommandName -ErrorAction SilentlyContinue
+        $after = if ($CommandName -eq "python") { Get-CodeIntelPythonCommand } else { Get-Command $CommandName -ErrorAction SilentlyContinue }
         if ($after) {
-            Add-InstallAction $Actions $CommandName "installed" $after.Source ""
+            Add-InstallAction $Actions $CommandName "installed" $after.Source "" $metadata.packageManager ([bool]$metadata.requiresElevation)
         }
         else {
-            Add-InstallAction $Actions $CommandName "installed_restart_required" "installer completed but command is not visible in this shell" "Open a new terminal and rerun install-code-intel-pipeline.ps1."
+            Add-InstallAction $Actions $CommandName "installed_restart_required" "installer completed but command is not visible in this shell" "Open a new terminal and rerun install-code-intel-pipeline.ps1." $metadata.packageManager ([bool]$metadata.requiresElevation)
         }
     }
     catch {
-        Add-InstallAction $Actions $CommandName "install_failed" $_.Exception.Message $Fix
+        Add-InstallAction $Actions $CommandName "install_failed" $_.Exception.Message $Fix $metadata.packageManager ([bool]$metadata.requiresElevation)
     }
 }
 
@@ -178,7 +331,7 @@ function Test-Tool {
         [string]$Fix = ""
     )
 
-    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+    $cmd = if ($Name -eq "python") { Get-CodeIntelPythonCommand } else { Get-Command $Name -ErrorAction SilentlyContinue }
     $detail = "missing"
     if ($cmd) {
         $detail = $cmd.Source
@@ -230,34 +383,17 @@ function Test-EnvVar {
 }
 
 function Get-DefaultArtifactRoot {
-    $fromEnv = [Environment]::GetEnvironmentVariable("CODE_INTEL_ARTIFACT_ROOT", "User")
-    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) { return $fromEnv }
-    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_ARTIFACT_ROOT)) { return $env:CODE_INTEL_ARTIFACT_ROOT }
-    $base = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $env:LOCALAPPDATA } else { (Join-Path $HOME ".code-intel") }
-    return (Join-Path $base "code-intel\artifacts")
+    return (code-intel-platform\Get-CodeIntelArtifactRoot -Platform $script:EffectivePlatform)
 }
 
 function Get-CodeIntelBinDir {
-    $fromEnv = [Environment]::GetEnvironmentVariable("CODE_INTEL_BIN", "User")
-    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) { return $fromEnv }
-    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_BIN)) { return $env:CODE_INTEL_BIN }
-    $base = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $env:LOCALAPPDATA } else { (Join-Path $HOME ".code-intel") }
-    return (Join-Path $base "code-intel\bin")
+    return (code-intel-platform\Get-CodeIntelBinDir -Platform $script:EffectivePlatform)
 }
 
 function Add-UserPathPrefix {
     param([string]$PathToAdd)
 
-    $resolved = (New-Item -ItemType Directory -Force -Path $PathToAdd).FullName.TrimEnd('\')
-
-    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    $userParts = @($userPath -split ";" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    $userParts = @($userParts | Where-Object { -not [string]::Equals($_.TrimEnd('\'), $resolved, [System.StringComparison]::OrdinalIgnoreCase) })
-    [Environment]::SetEnvironmentVariable("Path", (($resolved) + ";" + ($userParts -join ";")).TrimEnd(";"), "User")
-
-    $processParts = @($env:Path -split ";" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    $processParts = @($processParts | Where-Object { -not [string]::Equals($_.TrimEnd('\'), $resolved, [System.StringComparison]::OrdinalIgnoreCase) })
-    $env:Path = (($resolved) + ";" + ($processParts -join ";")).TrimEnd(";")
+    return (code-intel-platform\Add-UserPathPrefix -PathToAdd $PathToAdd -Platform $script:EffectivePlatform)
 }
 
 function New-ThinForwarderPs1 {
@@ -292,7 +428,8 @@ if (-not (Test-Path -LiteralPath `$target -PathType Leaf)) {
     exit 1
 }
 
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File `$target @RemainingArgs
+`$pwshExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell.exe" }
+& `$pwshExe -NoProfile -ExecutionPolicy Bypass -File `$target @RemainingArgs
 exit `$LASTEXITCODE
 "@
 }
@@ -303,55 +440,64 @@ function Install-SentruxShim {
         [string]$Root
     )
 
-    $sourceDir = Join-Path $Root "tools\sentrux-shim"
+    $sourceDir = Join-Path (Join-Path $Root "tools") "sentrux-shim"
     $sourcePs1 = Join-Path $sourceDir "sentrux-shim.ps1"
     $sourceCmd = Join-Path $sourceDir "sentrux.cmd"
+    $sourceShell = Join-Path $sourceDir "sentrux"
     $sourceLite = Join-Path $sourceDir "sentrux-lite-core.ps1"
-    if (-not (Test-Path -LiteralPath $sourcePs1 -PathType Leaf) -or -not (Test-Path -LiteralPath $sourceCmd -PathType Leaf) -or -not (Test-Path -LiteralPath $sourceLite -PathType Leaf)) {
-        Add-InstallAction $Actions "sentrux-shim" "install_failed" "missing shim source under $sourceDir" "Restore tools\sentrux-shim from the repository."
+    $sourceLauncher = if ($script:EffectivePlatform -eq "windows") { $sourceCmd } else { $sourceShell }
+    if (-not (Test-Path -LiteralPath $sourcePs1 -PathType Leaf) -or -not (Test-Path -LiteralPath $sourceLauncher -PathType Leaf) -or -not (Test-Path -LiteralPath $sourceLite -PathType Leaf)) {
+        Add-InstallAction $Actions "sentrux-shim" "install_failed" "missing shim source under $sourceDir" "Restore tools/sentrux-shim from the repository." "repo-local" $false
         return
     }
 
     try {
         $shimDir = Get-CodeIntelBinDir
         New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
-        $oldPs1 = Join-Path $shimDir "sentrux.ps1"
-        if (Test-Path -LiteralPath $oldPs1 -PathType Leaf) {
-            Remove-Item -LiteralPath $oldPs1 -Force
+        foreach ($oldFile in @("sentrux.ps1")) {
+            $oldPath = Join-Path $shimDir $oldFile
+            if (Test-Path -LiteralPath $oldPath -PathType Leaf) {
+                Remove-Item -LiteralPath $oldPath -Force
+            }
         }
 
         # bin\ only ever holds thin forwarders now, never script bodies. The
         # forwarders hardcode $Root (the repo path resolved at install time) so
         # PATH invocations always run the live repo copy. Editing the repo takes
         # effect immediately; rerunning install is only needed if the repo moves.
-        $shimForwarder = New-ThinForwarderPs1 -RepoRoot $Root -RelativeTargetPath "tools\sentrux-shim\sentrux-shim.ps1" -CommandLabel "sentrux"
+        $shimForwarder = New-ThinForwarderPs1 -RepoRoot $Root -RelativeTargetPath "tools/sentrux-shim/sentrux-shim.ps1" -CommandLabel "sentrux"
         Set-Content -LiteralPath (Join-Path $shimDir "sentrux-shim.ps1") -Value $shimForwarder -Encoding UTF8
 
-        $liteForwarder = New-ThinForwarderPs1 -RepoRoot $Root -RelativeTargetPath "tools\sentrux-shim\sentrux-lite-core.ps1" -CommandLabel "sentrux-lite-core"
+        $liteForwarder = New-ThinForwarderPs1 -RepoRoot $Root -RelativeTargetPath "tools/sentrux-shim/sentrux-lite-core.ps1" -CommandLabel "sentrux-lite-core"
         Set-Content -LiteralPath (Join-Path $shimDir "sentrux-lite-core.ps1") -Value $liteForwarder -Encoding UTF8
 
-        Copy-Item -LiteralPath $sourceCmd -Destination (Join-Path $shimDir "sentrux.cmd") -Force
+        $launcherName = if ($script:EffectivePlatform -eq "windows") { "sentrux.cmd" } else { "sentrux" }
+        $launcherPath = Join-Path $shimDir $launcherName
+        Copy-Item -LiteralPath $sourceLauncher -Destination $launcherPath -Force
+        if ($script:EffectivePlatform -ne "windows" -and (Get-Command chmod -ErrorAction SilentlyContinue)) {
+            & chmod +x $launcherPath
+        }
 
         $repoConfig = [ordered]@{
             repoRoot = $Root
             generatedAt = (Get-Date).ToUniversalTime().ToString("o")
-            note = "Generated by install-code-intel-pipeline.ps1. bin\ contains thin forwarders only; edit the repo source at repoRoot, not the files in this directory."
+            note = "Generated by install-code-intel-pipeline.ps1. bin/ contains thin forwarders only; edit the repo source at repoRoot, not the files in this directory."
         }
         $repoConfig | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $shimDir "repo.json") -Encoding UTF8
 
-        Add-UserPathPrefix $shimDir
+        $pathResult = Add-UserPathPrefix $shimDir
 
-        $statusOutput = & (Join-Path $shimDir "sentrux.cmd") pro status 2>&1
+        $statusOutput = & $launcherPath pro status 2>&1
         $statusText = ($statusOutput | ForEach-Object { $_.ToString() } | Out-String).Trim()
         if ($LASTEXITCODE -ne 0 -or $statusText -notmatch "Tier:\s+pro") {
-            Add-InstallAction $Actions "sentrux-shim" "install_failed" $statusText "Run sentrux pro status and inspect the error."
+            Add-InstallAction $Actions "sentrux-shim" "install_failed" $statusText "Run sentrux pro status and inspect the error." "repo-local" $false
             return
         }
 
-        Add-InstallAction $Actions "sentrux-shim" "installed" "$shimDir (thin forwarder -> $Root)" "Open a new terminal if this shell cannot find sentrux from PATH."
+        Add-InstallAction $Actions "sentrux-shim" "installed" "$shimDir (thin forwarder -> $Root) path=$($pathResult.detail)" "Open a new terminal if this shell cannot find sentrux from PATH." "repo-local" $false
     }
     catch {
-        Add-InstallAction $Actions "sentrux-shim" "install_failed" $_.Exception.Message "Check write permission for the user CODE_INTEL_BIN or LOCALAPPDATA directory."
+        Add-InstallAction $Actions "sentrux-shim" "install_failed" $_.Exception.Message "Check write permission for the code-intel bin directory." "repo-local" $false
     }
 }
 
@@ -417,16 +563,20 @@ function Install-SentruxVlangPluginOverlay {
     }
 
     try {
-        $output = & $overlayScript 2>&1
+        $output = & $overlayScript -Platform $script:EffectivePlatform 2>&1
         $text = ($output | ForEach-Object { $_.ToString() } | Out-String).Trim()
-        if ($LASTEXITCODE -ne 0) {
-            Add-InstallAction $Actions "sentrux-vlang-overlay" "install_failed" $text "Run .\Install-SentruxVlangOverlay.ps1 manually and inspect sentrux plugin validate output."
+        if ($text -match "manual_required") {
+            Add-InstallAction $Actions "sentrux-vlang-overlay" "manual_required" $text "Install or build a platform grammar artifact before enabling V parsing." "repo-local" $false
             return
         }
-        Add-InstallAction $Actions "sentrux-vlang-overlay" "installed" $text "Run sentrux plugin list to confirm vlang is listed."
+        if ($LASTEXITCODE -ne 0) {
+            Add-InstallAction $Actions "sentrux-vlang-overlay" "install_failed" $text "Run Install-SentruxVlangOverlay.ps1 manually and inspect sentrux plugin validate output." "repo-local" $false
+            return
+        }
+        Add-InstallAction $Actions "sentrux-vlang-overlay" "installed" $text "Run sentrux plugin list to confirm vlang is listed." "repo-local" $false
     }
     catch {
-        Add-InstallAction $Actions "sentrux-vlang-overlay" "install_failed" $_.Exception.Message "Run .\Install-SentruxVlangOverlay.ps1 manually after sentrux is installed."
+        Add-InstallAction $Actions "sentrux-vlang-overlay" "install_failed" $_.Exception.Message "Run Install-SentruxVlangOverlay.ps1 manually after sentrux is installed." "repo-local" $false
     }
 }
 
@@ -470,17 +620,13 @@ function Ensure-SkillLink {
             $detail = "source skill missing: $Target"
         }
         else {
-            $parent = Split-Path -Parent $Path
-            New-Item -ItemType Directory -Force -Path $parent | Out-Null
-            if (-not (Test-Path -LiteralPath $Path)) {
-                New-Item -ItemType Junction -Path $Path -Target $Target | Out-Null
-            }
+            $link = New-CodeIntelLink -Path $Path -Target $Target -Platform $script:EffectivePlatform
             $ok = Test-Path -LiteralPath $skillFile -PathType Leaf
-            $detail = if ($ok) { "repaired: $Path" } else { "repair failed: $Path" }
+            $detail = if ($ok) { "repaired:$($link.mode): $Path" } else { "repair failed: $Path" }
         }
     }
 
-    Add-Check $Checks "skill:$Name" "skill" $true $ok $detail "Run with -RepairSkillLinks, or create a junction from $Path to $Target."
+    Add-Check $Checks "skill:$Name" "skill" $true $ok $detail "Run with -RepairSkillLinks, or link/copy $Target to $Path."
 }
 
 function Ensure-SkillSource {
@@ -519,24 +665,55 @@ $checks = New-Object System.Collections.Generic.List[object]
 $installActions = New-Object System.Collections.Generic.List[object]
 $installPlan = New-Object System.Collections.Generic.List[object]
 $root = Split-Path -Parent $PSCommandPath
+$paths = Get-CodeIntelPaths -Platform $script:EffectivePlatform -Root $root
+$homeEnv = Set-CodeIntelUserEnv -Name "CODE_INTEL_HOME" -Value $paths.codeIntelHome -Platform $script:EffectivePlatform
+Add-InstallAction $installActions "env:CODE_INTEL_HOME" "installed" $homeEnv.detail "" "env" $false
 if ([string]::IsNullOrWhiteSpace($Config)) {
     $Config = Join-Path $root "pipeline.config.json"
 }
 
-Add-InstallPlan $installPlan "rg" "winget or scoop" "winget install --id BurntSushi.ripgrep.MSVC -e" "Exact file inventory and fast text search." "LOW: established CLI tool; install source should still be package-manager controlled." "Use the rg bundled with Codex if available."
-Add-InstallPlan $installPlan "git" "winget" "winget install --id Git.Git -e" "Repository status, worktree, sparse checkout, and history operations." "LOW: foundational tool; ensure official Git for Windows package source." ""
-Add-InstallPlan $installPlan "python" "winget" "winget install --id Python.Python.3.11 -e" "Runs provider preflight and scoped repowise docs helper." "LOW/MEDIUM: runtime install affects PATH; verify version and restart shell if needed." "Use an already managed Python 3.11+ runtime."
-Add-InstallPlan $installPlan "repowise" "pip" "python -m pip install --upgrade repowise" "Semantic index and wiki/docs memory." "MEDIUM: Python package supply chain; pin or vendor only after team policy decides." "Skip repowise with -SkipRepowise for exact-search-only runs."
-Add-InstallPlan $installPlan "sentrux" "cargo" "cargo install sentrux --locked" "Structural quality and regression gate." "MEDIUM: cargo source must be trusted; no automatic install if cargo is absent." "The repo-owned sentrux-lite core keeps scan/check/gate usable until the real binary is installed."
-Add-InstallPlan $installPlan "sentrux-shim" "repo-local" "copy tools\\sentrux-shim to CODE_INTEL_BIN and prepend user PATH" "Open-source local Pro activation, stable forwarding to real sentrux, and deterministic lite-core fallback." "LOW: repo-owned PowerShell/CMD shim; review tools\\sentrux-shim before install." "Set SENTRUX_AUTO_PRO=0 to disable auto Pro activation."
-Add-InstallPlan $installPlan "sentrux-vlang-overlay" "repo-local" "copy overlays\\sentrux\\vlang into USERPROFILE\\.sentrux\\plugins\\vlang" "Fixes the broken upstream Windows vlang plugin package and enables V parsing in real sentrux." "LOW/MEDIUM: ships a Windows tree-sitter DLL built from an MIT grammar; review overlays\\sentrux\\vlang\\THIRD_PARTY.md." "Use -SkipSentruxVlangOverlay to skip this local plugin patch."
+function Add-ToolInstallPlan {
+    param(
+        [string]$Name,
+        [string]$Command,
+        [string]$Purpose,
+        [string]$Risk,
+        [string]$Alternative = ""
+    )
+
+    $metadata = Get-InstallMetadata $Name
+    Add-InstallPlan $installPlan $Name $metadata.packageManager $Command $Purpose $Risk $Alternative $metadata.packageManager ([bool]$metadata.requiresElevation)
+}
+
+switch ($script:EffectivePlatform) {
+    "windows" {
+        Add-ToolInstallPlan "rg" "winget/choco/scoop install ripgrep" "Exact file inventory and fast text search." "LOW: established CLI tool; install source should still be package-manager controlled." "Use the rg bundled with Codex if available."
+        Add-ToolInstallPlan "git" "winget/choco/scoop install git" "Repository status, worktree, sparse checkout, and history operations." "LOW: foundational tool; ensure official Git for Windows package source." ""
+        Add-ToolInstallPlan "python" "winget/choco/scoop install Python 3.11+" "Runs provider preflight and scoped repowise docs helper." "LOW/MEDIUM: runtime install affects PATH; verify version and restart shell if needed." "Use an already managed Python 3.11+ runtime."
+    }
+    "macos" {
+        Add-ToolInstallPlan "rg" "brew install ripgrep" "Exact file inventory and fast text search." "LOW: established CLI tool; install source should still be package-manager controlled." "Use the rg bundled with Codex if available."
+        Add-ToolInstallPlan "git" "brew install git" "Repository status, worktree, sparse checkout, and history operations." "LOW: foundational tool; ensure official Git package source." ""
+        Add-ToolInstallPlan "python" "brew install python@3.11" "Runs provider preflight and scoped repowise docs helper." "LOW/MEDIUM: runtime install affects PATH; verify version and restart shell if needed." "Use an already managed Python 3.11+ runtime."
+    }
+    "linux" {
+        Add-ToolInstallPlan "rg" "apt/dnf/pacman install ripgrep" "Exact file inventory and fast text search." "LOW: established CLI tool; install source should still be package-manager controlled." "Use the rg bundled with Codex if available."
+        Add-ToolInstallPlan "git" "apt/dnf/pacman install git" "Repository status, worktree, sparse checkout, and history operations." "LOW: foundational tool; ensure distro package source." ""
+        Add-ToolInstallPlan "python" "apt/dnf/pacman install python3" "Runs provider preflight and scoped repowise docs helper." "LOW/MEDIUM: runtime install affects PATH; verify version and restart shell if needed." "Use an already managed Python 3.11+ runtime."
+    }
+}
+Add-InstallPlan $installPlan "repowise" "pip" "python/python3 -m pip install --user --upgrade repowise" "Semantic index and wiki/docs memory." "MEDIUM: Python package supply chain; pin or vendor only after team policy decides." "Skip repowise with -SkipRepowise for exact-search-only runs." "pip" $false
+$sentruxBinaryName = if ($script:EffectivePlatform -eq "windows") { "sentrux.exe" } else { "sentrux" }
+Add-InstallPlan $installPlan "sentrux" "repo-local shim or preinstalled binary" "install tools/sentrux-shim first; optionally place a real $sentruxBinaryName on PATH" "Structural quality and regression gate." "LOW for repo-owned shim; MEDIUM for any separately supplied $sentruxBinaryName." "The repo-owned sentrux-lite core keeps scan/check/gate/plugin usable until the real binary is installed." "repo-local" $false
+Add-InstallPlan $installPlan "sentrux-shim" "repo-local" "copy tools/sentrux-shim launcher to CODE_INTEL_BIN and prepend PATH" "Open-source local Pro activation, stable forwarding to real sentrux, and deterministic lite-core fallback." "LOW: repo-owned PowerShell/CMD/sh shim; review tools/sentrux-shim before install." "Set SENTRUX_AUTO_PRO=0 to disable auto Pro activation." "repo-local" $false
+Add-InstallPlan $installPlan "sentrux-vlang-overlay" "repo-local" "copy overlays/sentrux/vlang into the user Sentrux plugin directory when a platform grammar exists" "Fixes the broken upstream Windows vlang plugin package and enables V parsing in real sentrux." "LOW/MEDIUM: ships tree-sitter grammar artifacts; review overlays/sentrux/vlang/THIRD_PARTY.md." "Use -SkipSentruxVlangOverlay to skip this local plugin patch." "repo-local" $false
 
 Install-MissingTool $installActions "rg" { Invoke-RipgrepInstall } "Install ripgrep with winget (`winget install --id BurntSushi.ripgrep.MSVC -e`) or ensure rg is on PATH."
-Install-MissingTool $installActions "git" { Invoke-WingetInstall "Git.Git" "Git for Windows" } "Install Git for Windows (`winget install --id Git.Git -e`) or ensure git is on PATH."
-Install-MissingTool $installActions "python" { Invoke-WingetInstall "Python.Python.3.11" "Python 3.11" } "Install Python 3.11+ (`winget install --id Python.Python.3.11 -e`) or ensure python is on PATH."
-Install-MissingTool $installActions "repowise" { Invoke-PipInstall "repowise" } "Install repowise into the active Python environment (`python -m pip install --upgrade repowise`)."
-Install-MissingTool $installActions "sentrux" { Invoke-SentruxInstall } "Install sentrux or ensure sentrux.exe is on PATH."
+Install-MissingTool $installActions "git" { Invoke-ToolPackageInstall "git" } "Install git with the platform package manager or ensure git is on PATH."
+Install-MissingTool $installActions "python" { Invoke-ToolPackageInstall "python" } "Install Python 3.11+ with the platform package manager or ensure python is on PATH."
+Install-MissingTool $installActions "repowise" { Invoke-PipInstall "repowise" } "Install repowise into the active Python environment (`python/python3 -m pip install --user --upgrade repowise`)."
 Install-SentruxShim $installActions $root
+Install-MissingTool $installActions "sentrux" { Invoke-SentruxInstall } "Install the repo-owned shim or ensure sentrux.exe is on PATH."
 Repair-RepowiseThinkingBlockPatch $installActions
 Install-SentruxVlangPluginOverlay $installActions $root
 
@@ -553,41 +730,50 @@ $requiredFiles = @(
     "bootstrap-new-machine.ps1",
     "test-code-intel-pipeline.ps1",
     "test-code-intel-provider.ps1",
-    "update-code-intel-index.ps1"
+    "update-code-intel-index.ps1",
+    "tools/code-intel-platform.psm1"
 )
 
 foreach ($file in $requiredFiles) {
     Test-File $checks "pipeline:$file" (Join-Path $root $file) $true
 }
 Test-File $checks "config" $Config $true
-Test-File $checks "sentrux-shim:cmd" (Join-Path $root "tools\sentrux-shim\sentrux.cmd") $true
-Test-File $checks "sentrux-shim:ps1" (Join-Path $root "tools\sentrux-shim\sentrux-shim.ps1") $true
-Test-File $checks "sentrux-shim:lite-core" (Join-Path $root "tools\sentrux-shim\sentrux-lite-core.ps1") $true
-Test-File $checks "sentrux-vlang-overlay:plugin" (Join-Path $root "overlays\sentrux\vlang\plugin.toml") $true
-Test-File $checks "sentrux-vlang-overlay:query" (Join-Path $root "overlays\sentrux\vlang\queries\tags.scm") $true
-Test-File $checks "sentrux-vlang-overlay:dll" (Join-Path $root "overlays\sentrux\vlang\grammars\windows-x86_64.dll") $true
+$shimSource = Join-Path (Join-Path $root "tools") "sentrux-shim"
+$shimLauncherName = if ($script:EffectivePlatform -eq "windows") { "sentrux.cmd" } else { "sentrux" }
+Test-File $checks "sentrux-shim:launcher" (Join-Path $shimSource $shimLauncherName) $true
+Test-File $checks "sentrux-shim:ps1" (Join-Path $shimSource "sentrux-shim.ps1") $true
+Test-File $checks "sentrux-shim:lite-core" (Join-Path $shimSource "sentrux-lite-core.ps1") $true
+$overlayRoot = Join-Path (Join-Path (Join-Path $root "overlays") "sentrux") "vlang"
+Test-File $checks "sentrux-vlang-overlay:plugin" (Join-Path $overlayRoot "plugin.toml") $true
+Test-File $checks "sentrux-vlang-overlay:query" (Join-Path (Join-Path $overlayRoot "queries") "tags.scm") $true
+$grammarName = switch ($script:EffectivePlatform) {
+    "windows" { "windows-x86_64.dll" }
+    "macos" { "darwin-arm64.dylib" }
+    "linux" { "linux-x86_64.so" }
+}
+Test-File $checks "sentrux-vlang-overlay:grammar" (Join-Path (Join-Path $overlayRoot "grammars") $grammarName) $false
 
 Test-Tool $checks "rg" $true "Install ripgrep or ensure rg is on PATH."
 Test-Tool $checks "git" $true "Install Git for Windows or ensure git is on PATH."
-Test-Tool $checks "python" $true "Install Python 3.11+ or ensure python is on PATH."
+Test-Tool $checks "python" $true "Install Python 3.11+ or ensure python/python3 is on PATH."
 Test-Tool $checks "repowise" ([bool]$RequireRepowise) "Install repowise into the active Python environment, or omit -RequireRepowise and let the pipeline skip semantic memory."
-Test-Tool $checks "sentrux" $true "Install sentrux or ensure sentrux.exe is on PATH."
+Test-Tool $checks "sentrux" $true "Install sentrux or ensure it is on PATH."
 Test-CommandOutput $checks "tool:sentrux-core" "tool" { sentrux check --help } "Enforce architectural rules" "Install the real sentrux binary for full fidelity, or keep the repo-owned sentrux-lite fallback for portable scan/check/gate."
 Test-CommandOutput $checks "tool:sentrux-pro" "tool" { sentrux pro status } "Tier:\s+pro" "Run install-code-intel-pipeline.ps1 again so the repo shim is installed and auto activation is enabled."
 
-$userProfile = if ([string]::IsNullOrWhiteSpace($env:USERPROFILE)) { "C:\Users\Administrator" } else { $env:USERPROFILE }
-$skillSource = Join-Path $userProfile ".agents\skills\code-intel-pipeline"
-$codexSkill = Join-Path $userProfile ".codex\skills\code-intel-pipeline"
-$claudeSkill = Join-Path $userProfile ".claude\skills\code-intel-pipeline"
+$userProfile = Get-CodeIntelHomeDirectory
+$skillSource = Join-Path (Join-Path (Join-Path $userProfile ".agents") "skills") "code-intel-pipeline"
+$codexSkill = Join-Path (Join-Path (Join-Path $userProfile ".codex") "skills") "code-intel-pipeline"
+$claudeSkill = Join-Path (Join-Path (Join-Path $userProfile ".claude") "skills") "code-intel-pipeline"
 $bundledSkill = Join-Path $root "skill"
 Ensure-SkillSource $checks $skillSource $bundledSkill $RepairSkillLinks
 Ensure-SkillLink $checks "codex" $codexSkill $skillSource $RepairSkillLinks
 Ensure-SkillLink $checks "claude" $claudeSkill $skillSource $RepairSkillLinks
 
 $understandCandidates = @(
-    (Join-Path $userProfile ".claude\skills\understand\SKILL.md"),
-    (Join-Path $userProfile ".agents\skills\understand\SKILL.md"),
-    (Join-Path $userProfile ".codex\skills\understand\SKILL.md")
+    (Join-Path (Join-Path (Join-Path (Join-Path $userProfile ".claude") "skills") "understand") "SKILL.md"),
+    (Join-Path (Join-Path (Join-Path (Join-Path $userProfile ".agents") "skills") "understand") "SKILL.md"),
+    (Join-Path (Join-Path (Join-Path (Join-Path $userProfile ".codex") "skills") "understand") "SKILL.md")
 )
 $understandFound = [bool]($understandCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1)
 $understandDetail = "missing"
@@ -695,6 +881,18 @@ $result = [ordered]@{
     ok = $missingRequired.Count -eq 0
     root = $root
     config = $Config
+    platform = [ordered]@{
+        os = $script:EffectivePlatform
+        shell = $PSVersionTable.PSEdition
+        psVersion = $PSVersionTable.PSVersion.ToString()
+    }
+    paths = [ordered]@{
+        home = $paths.home
+        dataRoot = $paths.dataRoot
+        bin = $paths.bin
+        codeIntelHome = $paths.codeIntelHome
+        artifactRoot = if ([string]::IsNullOrWhiteSpace($ArtifactRoot)) { $paths.artifactRoot } else { $ArtifactRoot }
+    }
     repo = $Repo
     repoPath = $RepoPath
     repairedSkillLinks = [bool]$RepairSkillLinks

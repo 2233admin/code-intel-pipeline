@@ -1,0 +1,38 @@
+version = 1
+
+exclude_patterns = [
+  ".git/**",
+  ".repowise/**",
+  ".sentrux/**",
+  "target/**",
+  "assets/**",
+  "**/__pycache__/**",
+  "**/.venv/**",
+  "**/node_modules/**",
+  "**/dist/**",
+  "**/build/**",
+  "**/vendor/**",
+]
+
+test_patterns = [
+  "tests/**",
+  "**/*_test.*",
+  "**/test-*.ps1",
+  "**/Test-*.ps1",
+]
+
+[[analyzers]]
+name = "rust"
+enabled = true
+
+  [analyzers.meta]
+  msrv = "stable"
+  cyclomatic_complexity_threshold = "high"
+
+[[analyzers]]
+name = "python"
+enabled = true
+
+  [analyzers.meta]
+  runtime_version = "3.x.x"
+  cyclomatic_complexity_threshold = "high"

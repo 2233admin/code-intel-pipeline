@@ -1,10 +1,18 @@
+#requires -Version 7.2
+
 param(
     [string]$ArtifactRoot = "",
-    [string]$OutputPath = ""
+    [string]$OutputPath = "",
+    [ValidateSet("auto", "windows", "macos", "linux")]
+    [string]$Platform = "auto"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$platformModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-intel-platform.psm1"
+Import-Module $platformModule -Force
+$effectivePlatform = Get-CodeIntelPlatform -Platform $Platform
 
 function Read-JsonFile {
     param([string]$Path)
@@ -12,17 +20,7 @@ function Read-JsonFile {
 }
 
 if ([string]::IsNullOrWhiteSpace($ArtifactRoot)) {
-    $fromEnv = [Environment]::GetEnvironmentVariable("CODE_INTEL_ARTIFACT_ROOT", "User")
-    if (-not [string]::IsNullOrWhiteSpace($fromEnv)) {
-        $ArtifactRoot = $fromEnv
-    }
-    elseif (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_ARTIFACT_ROOT)) {
-        $ArtifactRoot = $env:CODE_INTEL_ARTIFACT_ROOT
-    }
-    else {
-        $base = if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $env:LOCALAPPDATA } else { (Join-Path $HOME ".code-intel") }
-        $ArtifactRoot = Join-Path $base "code-intel\artifacts"
-    }
+    $ArtifactRoot = Get-CodeIntelArtifactRoot -Platform $effectivePlatform
 }
 
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
@@ -103,3 +101,10 @@ $lines | Set-Content -LiteralPath $OutputPath -Encoding UTF8
     json = $jsonPath
     repos = $rows.Count
 } | ConvertTo-Json -Depth 4
+
+# This script never invokes a native command itself, so $LASTEXITCODE at this
+# point is stale from whatever ran earlier in the same process/session (e.g.
+# a preceding tool probe). Reset explicitly so callers checking $LASTEXITCODE
+# after `& update-code-intel-index.ps1` see this script's own outcome, not
+# leftover state from an unrelated prior command.
+exit 0

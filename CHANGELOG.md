@@ -5,7 +5,14 @@ All notable changes to **code-intel-pipeline** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — 2026-06-05
+## [Unreleased]
+
+## [0.1.2] — 2026-06-10
+
+First public release of code-intel-pipeline. Headline addition is
+the Rust + iii worker binary `code-nexus-lite` that replaces the
+Windows-only PowerShell surface with a cross-platform Agent-callable
+HTTP API. Also adds a PR-time skill-check quality gate.
 
 ### Added
 

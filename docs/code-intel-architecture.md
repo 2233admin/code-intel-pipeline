@@ -6,6 +6,8 @@ It is built around one rule: keep the entrypoint small, keep tool roles explicit
 
 ## Layers
 
+Artifact ownership and reader/writer boundaries are defined in `docs/artifact-data-contract.md`.
+
 1. `invoke-code-intel.ps1`
    Thin operator entrypoint. Runs doctor first, then the pipeline. Supports one direct repo path, one configured repo alias, a repo list, or all configured repos.
 
@@ -36,7 +38,7 @@ It is built around one rule: keep the entrypoint small, keep tool roles explicit
 
 These exist because some repos are too dirty or too nested for raw `repowise init` at the root.
 `Invoke-SentruxAgentTool.ps1` exists for a different reason: agents need a narrow JSON contract for structure governance, not raw terminal prose.
-`tools/sentrux-shim` makes Sentrux Pro activation reproducible on new machines: the installer puts the shim in a PATH-prepended Code Intel bin directory, the shim auto-activates local open-source Pro features, and normal Sentrux commands still forward to the real binary when one exists. If the real binary is missing, `sentrux-lite-core.ps1` provides deterministic `scan`, `health`, `check`, and `gate` so a new machine still has a closed feedback loop.
+`tools/sentrux-shim` makes Sentrux Pro activation reproducible on new machines: the installer puts the shim in a PATH-prepended Code Intel bin directory, the shim auto-activates local open-source Pro features, and normal Sentrux commands still forward to the real binary when one exists. If the real binary is missing, `sentrux-lite-core.ps1` provides deterministic `scan`, `health`, `check`, `gate`, and `plugin list/validate` so a new machine still has a closed feedback loop.
 
 ## Why The Wrapper Exists
 
@@ -113,47 +115,47 @@ This keeps nested external repos from poisoning indexing and keeps current worki
 Install check:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\repo -CheckProvider
+& "$env:CODE_INTEL_HOME/install-code-intel-pipeline.ps1" -RepoPath <repo-path> -CheckProvider
 ```
 
 Install or repair a teammate machine:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\repo -CheckProvider -RepairSkillLinks -InstallMissing
+& "$env:CODE_INTEL_HOME/install-code-intel-pipeline.ps1" -RepoPath <repo-path> -CheckProvider -RepairSkillLinks -InstallMissing
 ```
 
 `-InstallMissing` is explicit by design. The default installer is a doctor; the install mode attempts supported CLI installs and records every attempt in `installActions`.
 
-`-RepairSkillLinks` installs the bundled `skill\` copy into the user profile when the shared `.agents` skill is absent, then links Codex and Claude to that shared copy.
+`-RepairSkillLinks` installs the bundled `skill/` copy into the user profile when the shared `.agents` skill is absent, then links Codex and Claude to that shared copy.
 
 Doctor and normal run:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\invoke-code-intel.ps1 -RepoPath C:\path\to\repo -Mode normal
+& "$env:CODE_INTEL_HOME/invoke-code-intel.ps1" -RepoPath <repo-path> -Mode normal
 ```
 
 Docs-enabled run:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\invoke-code-intel.ps1 -RepoPath C:\path\to\repo -Mode normal -RepowiseDocs
+& "$env:CODE_INTEL_HOME/invoke-code-intel.ps1" -RepoPath <repo-path> -Mode normal -RepowiseDocs
 ```
 
 Batch run:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\invoke-code-intel.ps1 -Config D:\projects\_tools\code-intel-pipeline\pipeline.config.json -All -Mode lite
+& "$env:CODE_INTEL_HOME/invoke-code-intel.ps1" -Config "$env:CODE_INTEL_HOME/pipeline.config.json" -All -Mode lite
 ```
 
 Smoke test:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\test-code-intel-pipeline.ps1 -RepoPath C:\path\to\repo
+& "$env:CODE_INTEL_HOME/test-code-intel-pipeline.ps1" -RepoPath <repo-path>
 ```
 
 Artifact index:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\update-code-intel-index.ps1
+& "$env:CODE_INTEL_HOME/update-code-intel-index.ps1"
 ```
 
 ## Design Rule

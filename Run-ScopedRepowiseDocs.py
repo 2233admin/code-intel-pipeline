@@ -27,6 +27,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo", required=True)
     parser.add_argument("--coverage-pct", type=float, default=0.02)
     parser.add_argument("--concurrency", type=int, default=1)
+    parser.add_argument("--provider", default=os.environ.get("REPOWISE_PROVIDER", "anthropic"))
+    parser.add_argument("--model", default=os.environ.get("REPOWISE_MODEL", ""))
+    parser.add_argument("--reasoning", default=os.environ.get("REPOWISE_REASONING", "auto"))
     return parser.parse_args()
 
 
@@ -42,7 +45,7 @@ def _env(name: str) -> str:
     return (os.environ.get(name) or "").strip()
 
 
-def resolve_provider_settings() -> tuple[str, dict[str, object]]:
+def resolve_provider_settings(default_provider: str = "", default_model: str = "") -> tuple[str, dict[str, object]]:
     """Resolve provider name + kwargs from CODE_INTEL_* env vars.
 
     Env contract:
@@ -54,9 +57,16 @@ def resolve_provider_settings() -> tuple[str, dict[str, object]]:
     Backward compat: for provider=anthropic, missing generic vars fall back to
     the process-scoped ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL that the calling
     PowerShell wrapper injects from user-scoped CODE_INTEL_ANTHROPIC_*.
+
+    default_provider/default_model come from --provider/--model CLI args
+    (REPOWISE_PROVIDER/REPOWISE_MODEL env), used only when the CODE_INTEL_*
+    vars are unset -- CODE_INTEL_* takes priority since it is what the
+    PowerShell wrapper actively manages for this pipeline.
     """
-    name = _env("CODE_INTEL_PROVIDER").lower() or "anthropic"
-    model = _env("CODE_INTEL_MODEL") or _DEFAULT_MODELS.get(name, "")
+    name = _env("CODE_INTEL_PROVIDER").lower() or (default_provider or "").lower() or "anthropic"
+    if name == "ccw":
+        name = "codex_cli"
+    model = _env("CODE_INTEL_MODEL") or default_model or _DEFAULT_MODELS.get(name, "")
     api_key = _env("CODE_INTEL_API_KEY")
     base_url = _env("CODE_INTEL_BASE_URL")
 
@@ -74,7 +84,7 @@ def resolve_provider_settings() -> tuple[str, dict[str, object]]:
     return name, kwargs
 
 
-async def generate_docs(repo_path: Path, coverage_pct: float, concurrency: int) -> dict[str, object]:
+async def generate_docs(repo_path: Path, coverage_pct: float, concurrency: int, provider_name: str, model: str, reasoning: str) -> dict[str, object]:
     traverser = FileTraverser(repo_path, extra_exclude_patterns=[".repowise/**"])
     file_infos = list(traverser.traverse())
     repo_structure = traverser.get_repo_structure()
@@ -102,11 +112,12 @@ async def generate_docs(repo_path: Path, coverage_pct: float, concurrency: int) 
     except Exception:
         pass
 
-    provider_name, provider_kwargs = resolve_provider_settings()
+    provider_name, provider_kwargs = resolve_provider_settings(provider_name, model)
+    provider_kwargs["reasoning"] = reasoning
     provider = get_provider(provider_name, **provider_kwargs)
     config = GenerationConfig(
         max_concurrency=concurrency,
-        reasoning="auto",
+        reasoning=reasoning,
         coverage_pct=coverage_pct,
         max_pages_pct=coverage_pct,
         enable_rag_context=False,
@@ -157,7 +168,7 @@ async def generate_docs(repo_path: Path, coverage_pct: float, concurrency: int) 
 
 def main() -> int:
     args = parse_args()
-    result = asyncio.run(generate_docs(Path(args.repo).resolve(), args.coverage_pct, args.concurrency))
+    result = asyncio.run(generate_docs(Path(args.repo).resolve(), args.coverage_pct, args.concurrency, args.provider, args.model, args.reasoning))
     print(json.dumps(result, ensure_ascii=False))
     return 0
 

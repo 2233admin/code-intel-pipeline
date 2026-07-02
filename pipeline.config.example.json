@@ -1,6 +1,23 @@
 {
   "artifactRoot": "",
   "repowiseWorkspaceRoot": "",
+  "codeEvidence": {
+    "enabled": true,
+    "nativeMinimal": true,
+    "adapters": {
+      "cocoindex-code": {
+        "enabled": false,
+        "mode": "evaluate",
+        "required": false,
+        "offlineOnly": true
+      }
+    }
+  },
+  "repomix": {
+    "enabled": true,
+    "style": "markdown",
+    "compress": false
+  },
   "inventoryExclude": [
     "!**/tools/**",
     "!**/vendor/**",

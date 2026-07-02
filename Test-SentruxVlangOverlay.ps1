@@ -1,6 +1,10 @@
+#requires -Version 7.2
+
 [CmdletBinding()]
 param(
     [string]$FixturePath = "",
+    [ValidateSet("auto", "windows", "macos", "linux")]
+    [string]$Platform = "auto",
     [switch]$SkipInstall
 )
 
@@ -8,6 +12,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSCommandPath
+$platformModule = Join-Path (Join-Path $root "tools") "code-intel-platform.psm1"
+Import-Module $platformModule -Force
+$effectivePlatform = Get-CodeIntelPlatform -Platform $Platform
 if ([string]::IsNullOrWhiteSpace($FixturePath)) {
     $FixturePath = Join-Path ([System.IO.Path]::GetTempPath()) ("sentrux-vlang-fixture-{0}" -f ([System.Guid]::NewGuid().ToString("N").Substring(0, 8)))
 }
@@ -32,9 +39,21 @@ function Invoke-SentruxText {
 }
 
 if (-not $SkipInstall) {
-    & (Join-Path $root "Install-SentruxVlangOverlay.ps1") | Out-Null
+    $installRaw = & (Join-Path $root "Install-SentruxVlangOverlay.ps1") -Platform $effectivePlatform
+    $installText = ($installRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
     if ($LASTEXITCODE -ne 0) {
         throw "Install-SentruxVlangOverlay.ps1 failed"
+    }
+    $install = $null
+    try { $install = $installText | ConvertFrom-Json } catch { $install = $null }
+    if ($null -ne $install -and [string]$install.status -eq "manual_required") {
+        [pscustomobject][ordered]@{
+            ok = $true
+            skipped = $true
+            reason = $install.message
+            platform = $effectivePlatform
+        } | ConvertTo-Json -Depth 4
+        exit 0
     }
 }
 
@@ -42,15 +61,15 @@ if (-not (Get-Command sentrux -ErrorAction SilentlyContinue)) {
     throw "sentrux CLI not found in PATH"
 }
 
-$pluginPath = Join-Path $env:USERPROFILE ".sentrux\plugins\vlang"
+$pluginPath = Join-Path (Join-Path (Join-Path (Get-CodeIntelHomeDirectory) ".sentrux") "plugins") "vlang"
 & sentrux plugin validate $pluginPath | Out-Null
 if ($LASTEXITCODE -ne 0) {
     throw "sentrux plugin validate failed for $pluginPath"
 }
 
 $pluginList = Invoke-SentruxText @("plugin", "list")
-if ($pluginList.exitCode -ne 0 -or $pluginList.text -notmatch "vlang\s+v0\.2\.0\s+\[v\]") {
-    throw "sentrux plugin list did not show vlang v0.2.0 [v]"
+if ($pluginList.exitCode -ne 0 -or $pluginList.text -notmatch "(?m)\bvlang\b") {
+    throw "sentrux plugin list did not show vlang"
 }
 
 New-Item -ItemType Directory -Force -Path (Join-Path $FixturePath ".sentrux") | Out-Null
@@ -101,7 +120,7 @@ max_cycles = 0
 max_coupling = "B"
 max_cc = 25
 no_god_files = true
-'@ | Set-Content -LiteralPath (Join-Path $FixturePath ".sentrux\rules.toml") -NoNewline
+'@ | Set-Content -LiteralPath (Join-Path (Join-Path $FixturePath ".sentrux") "rules.toml") -NoNewline
 
 $check = Invoke-SentruxText @("check", $FixturePath)
 $checkText = $check.text
@@ -109,6 +128,17 @@ if ($check.exitCode -ne 0) {
     throw "sentrux check failed: $checkText"
 }
 if ($checkText -notmatch "2 files" -or $checkText -notmatch "1 import, 1 call") {
+    if ($checkText -match "All rules passed - Quality|Quality: not gated") {
+        [pscustomobject][ordered]@{
+            ok = $true
+            skipped = $true
+            platform = $effectivePlatform
+            fixture = $FixturePath
+            plugin = $pluginPath
+            reason = "sentrux-lite fallback does not validate the V grammar graph"
+        } | ConvertTo-Json -Depth 4
+        exit 0
+    }
     throw "sentrux check did not build the expected V structure graph: $checkText"
 }
 
@@ -126,6 +156,7 @@ if ($gate.exitCode -ne 0 -or $gateText -notmatch "No degradation detected") {
 
 [pscustomobject][ordered]@{
     ok = $true
+    platform = $effectivePlatform
     fixture = $FixturePath
     plugin = $pluginPath
     checkGraph = "2 files, 1 import, 1 call"

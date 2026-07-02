@@ -1,119 +1,18 @@
-# code-nexus-lite
+# code-nexus-lite incubator
 
-**CodeNexus Lite** — Rust binary that runs as an **iii worker** (Worker / Function / Trigger).
-Wraps **Repowise** + **Sentrux** for cheap, Agent-friendly code-understanding context.
+`code-nexus-lite` is currently demoted from the shipped workspace.
 
-Cross-platform replacement for the Windows-only `Invoke-CodeNexusLite.ps1`.
+The released Code Intel Pipeline still produces `codenexus-context.json` through
+the PowerShell artifact layer. This directory is kept only as an incubator note
+for a future cross-platform iii worker.
 
-## Why
+Why it is demoted:
 
-The PS1 Lite entry point is Windows-only. The Rust binary re-implements the same
-shape as an iii Rust worker, so the same Agent can call it from Windows / Mac / Linux.
+- The worker was not part of the shipped CLI path.
+- The previous prototype pulled `iii-sdk`, whose current dependency chain kept
+  `opentelemetry_sdk <= 0.32.0` in the repository dependency graph.
+- Dependabot reported CVE-2026-48504 / GHSA-w9wp-h8wv-79jx against those lockfiles.
 
-## Functions (3)
-
-| Function ID | Input | Purpose |
-|-------------|-------|---------|
-| `codenexus::scan` | `{ repo, skip_init_if_cached? }` | Run Repowise on a repo, write `.repowise/wiki.db` |
-| `codenexus::lite` | `{ repo, max_files?, max_references_per_file? }` | Read `.repowise/wiki.db`, return compact Agent context |
-| `codenexus::doctor` | `{ }` | Check Repowise / Sentrux / rg availability, return JSON |
-
-## HTTP triggers (3)
-
-| Endpoint | Method | Bound function |
-|----------|--------|----------------|
-| `/scan` | POST | `codenexus::scan` |
-| `/lite` | POST | `codenexus::lite` |
-| `/doctor` | POST | `codenexus::doctor` |
-
-## Build
-
-```bash
-cargo build --release
-# binary: target/release/code-nexus-lite(.exe)
-```
-
-Output: ~5.2 MB stripped + LTO.
-
-## Run
-
-```bash
-# 1. One-time — scaffold an iii project (creates myapp/ with .iii config)
-iii project init myapp
-cd myapp
-iii                       # start the engine (default ws://127.0.0.1:49134)
-
-# 2. In another shell — start this worker
-cd D:\projects\_tools\code-intel-pipeline\crates\code-nexus-lite
-./target/release/code-nexus-lite.exe
-
-# 3. In a third shell — call functions
-curl -X POST http://127.0.0.1:49134/scan \
-  -H 'Content-Type: application/json' \
-  -d '{"repo": "D:\\projects\\code-intel-pipeline", "skip_init_if_cached": false}'
-
-curl -X POST http://127.0.0.1:49134/lite \
-  -H 'Content-Type: application/json' \
-  -d '{"repo": "D:\\projects\\code-intel-pipeline"}'
-
-curl -X POST http://127.0.0.1:49134/doctor \
-  -H 'Content-Type: application/json' \
-  -d '{}'
-```
-
-## Dependencies (external, on PATH)
-
-- `repowise` v0.10.0+ (Python, `pip install repowise`)
-- `sqlite3` CLI (Linux: `apt install sqlite3`; Windows: built-in)
-- `rg` (ripgrep) — used by Sentrux, not by Lite directly
-- `iii` engine running on `ws://127.0.0.1:49134`
-
-## Architecture
-
-```
-┌────────────────────────────────────────────────────────────┐
-│                    iii Engine :49134                        │
-└──────────────┬─────────────────────────────────────────────┘
-               │ WebSocket
-               ▼
-┌────────────────────────────────────────────────────────────┐
-│  code-nexus-lite (Rust, 5.2 MB)                             │
-│                                                             │
-│  ┌─────────────────────┐  ┌─────────────────────┐         │
-│  │ codenexus::scan     │  │ repowise init/augment│ ←──┐   │
-│  │ codenexus::lite     │  │ sqlite3 wiki.db read  │    │   │
-│  │ codenexus::doctor   │  │                       │    │   │
-│  └─────────────────────┘  └─────────────────────┘    │   │
-│            │                                            │   │
-│            ▼                                            │   │
-│  ┌─────────────────────────────────────────────────┐   │   │
-│  │  HTTP triggers: POST /scan /lite /doctor         │   │   │
-│  └─────────────────────────────────────────────────┘   │   │
-└────────────────────────────────────────────────────────────┘   │
-                                                                │
-        ┌───────────────────────────────────────────────────────┘
-        ▼
-┌──────────────────┐
-│   Repowise CLI   │  (Python, 0.10.0)
-│   .repowise/     │
-│   wiki.db        │
-└──────────────────┘
-```
-
-## Comparison with PS1
-
-| Aspect | `Invoke-CodeNexusLite.ps1` (PS1) | `code-nexus-lite` (Rust + iii) |
-|--------|-----------------------------------|-------------------------------|
-| OS | Windows-only | Win / Mac / Linux |
-| Binary size | PS1 script (no binary) | 5.2 MB stripped |
-| Engine | none (just PowerShell) | iii (Worker / Function / Trigger) |
-| HTTP API | none | built-in (POST /scan/lite/doctor) |
-| A2A protocol | n/a | via iii triggers |
-| Cross-language interop | none | iii (TS / Python / Rust) |
-| Discovery | none | iii workers.iii.dev catalog |
-| Tracing | none | OpenTelemetry built-in |
-| Status | v0.1.0 (Windows PS1) | v0.1.0 (Rust + iii) |
-
-## License
-
-Apache-2.0 (matches iii SDK).
+To revive this worker, recreate a fresh Cargo package only after upstream
+`iii-sdk` resolves the vulnerable OpenTelemetry dependency chain, then add it
+back to the root workspace with CI coverage.

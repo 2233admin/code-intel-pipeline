@@ -1,3 +1,5 @@
+#requires -Version 7.2
+
 param(
     [string]$Provider = "",
     [string]$Model = "",
@@ -19,10 +21,7 @@ function Get-CodeIntelEnvValue {
 
 function Set-EnvFromUserRegistry {
     param([string]$Name)
-
-    if (-not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name, "Process"))) {
-        return
-    }
+    if (-not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name, "Process"))) { return }
     $value = [Environment]::GetEnvironmentVariable($Name, "User")
     if (-not [string]::IsNullOrWhiteSpace($value)) {
         [Environment]::SetEnvironmentVariable($Name, $value, "Process")
@@ -66,6 +65,9 @@ Set-EnvFromUserRegistry "CODE_INTEL_PROVIDER"
 Set-EnvFromUserRegistry "CODE_INTEL_MODEL"
 Set-EnvFromUserRegistry "CODE_INTEL_API_KEY"
 Set-EnvFromUserRegistry "CODE_INTEL_BASE_URL"
+Set-EnvFromUserRegistry "REPOWISE_PROVIDER"
+Set-EnvFromUserRegistry "REPOWISE_MODEL"
+Set-EnvFromUserRegistry "REPOWISE_REASONING"
 
 # Explicit params win; otherwise fall back to CODE_INTEL_* env (process, then user).
 if ([string]::IsNullOrWhiteSpace($Provider)) {
@@ -74,12 +76,65 @@ if ([string]::IsNullOrWhiteSpace($Provider)) {
 if ([string]::IsNullOrWhiteSpace($Provider)) {
     $Provider = "anthropic"
 }
+if ($Provider -ieq "ccw") {
+    $Provider = "codex_cli"
+}
 if ([string]::IsNullOrWhiteSpace($Model)) {
     $Model = Get-CodeIntelEnvValue "CODE_INTEL_MODEL"
 }
 if ([string]::IsNullOrWhiteSpace($Model)) {
     $Model = ""
 }
+
+# Fast-path presence checks for providers that don't have a network-callable
+# preflight (mock, and CLI-delegated providers). These skip the Python live
+# API-key/connectivity check below, which only covers anthropic/openai/ollama.
+$fastPathResult = $null
+switch -Regex ($Provider) {
+    "^mock$" {
+        $fastPathResult = [ordered]@{
+            ok = $true; provider = $Provider; model = $Model
+            category = ""; message = "mock provider"
+        }
+        break
+    }
+    "^codex_cli$" {
+        if (-not (Get-Command codex -ErrorAction SilentlyContinue)) {
+            $fastPathResult = [ordered]@{
+                ok = $false; provider = $Provider; model = $Model
+                category = "local_tool_error"; message = "codex CLI not found on PATH for repowise codex_cli provider"
+            }
+        }
+        else {
+            $fastPathResult = [ordered]@{
+                ok = $true; provider = $Provider; model = $Model
+                category = ""; message = "codex CLI available"
+            }
+        }
+        break
+    }
+    "^opencode$" {
+        if (-not (Get-Command opencode -ErrorAction SilentlyContinue)) {
+            $fastPathResult = [ordered]@{
+                ok = $false; provider = $Provider; model = $Model
+                category = "local_tool_error"; message = "opencode CLI not found on PATH for repowise opencode provider"
+            }
+        }
+        else {
+            $fastPathResult = [ordered]@{
+                ok = $true; provider = $Provider; model = $Model
+                category = ""; message = "opencode CLI available"
+            }
+        }
+        break
+    }
+}
+
+if ($null -ne $fastPathResult) {
+    $result = [pscustomobject]$fastPathResult
+    $exitCode = if ($result.ok) { 0 } else { 1 }
+}
+else {
 
 $python = @'
 import json
@@ -164,17 +219,18 @@ print(json.dumps(result, ensure_ascii=False))
 sys.exit(0 if result["ok"] else 1)
 '@
 
-$env:CODE_INTEL_PROVIDER = $Provider
-if (-not [string]::IsNullOrWhiteSpace($Model)) {
-    $env:CODE_INTEL_MODEL = $Model
+    $env:CODE_INTEL_PROVIDER = $Provider
+    if (-not [string]::IsNullOrWhiteSpace($Model)) {
+        $env:CODE_INTEL_MODEL = $Model
+    }
+    $pythonExe = Get-RepowisePython
+    $raw = & $pythonExe -c $python
+    $exitCode = $LASTEXITCODE
+    $result = $raw | ConvertFrom-Json
 }
-$pythonExe = Get-RepowisePython
-$raw = & $pythonExe -c $python
-$exitCode = $LASTEXITCODE
-$result = $raw | ConvertFrom-Json
 
 if ($Json) {
-    $result | ConvertTo-Json -Depth 4
+    [pscustomobject]$result | ConvertTo-Json -Depth 4
 }
 else {
     if ($result.ok) {
@@ -186,4 +242,5 @@ else {
     }
 }
 
-exit $exitCode
+if ($result.ok) { exit 0 }
+exit 1

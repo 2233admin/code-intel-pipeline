@@ -16,6 +16,7 @@ __pycache__/
 .sentrux/cache/
 artifacts/
 cache/
+dist/
 
 # Rust build artifacts (CodeNexus Lite + future crates)
 target/
@@ -24,6 +25,8 @@ target/
 # IDE
 .idea/
 .vscode/
+.omx/
+.serena/
 *.swp
 *.swo
 
@@ -33,3 +36,6 @@ Thumbs.db
 
 # PowerShell artifacts
 *.ps1.xml
+
+# Local command scratch
+-o

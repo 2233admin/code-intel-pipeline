@@ -1,11 +1,26 @@
 {
   "artifactRoot": "",
   "repowiseWorkspaceRoot": "",
+  "codeEvidence": {
+    "enabled": true,
+    "nativeMinimal": true,
+    "adapters": {
+      "cocoindex-code": {
+        "enabled": false,
+        "mode": "evaluate",
+        "required": false,
+        "offlineOnly": true
+      }
+    }
+  },
   "inventoryExclude": [
     "!**/tools/**",
     "!**/vendor/**",
     "!**/third_party/**",
-    "!**/external/**"
+    "!**/external/**",
+    "!**/.tmp-*/**",
+    "!**/opencli_admin.db",
+    "!**/*.png"
   ],
   "repos": {
     "projects": {
@@ -25,6 +40,34 @@
       "sentruxPath": "tools",
       "repowiseScopePaths": ["crates", "packages", "tools", "bin", "scripts", "standard", "docs", "integrations", "editors", "examples", "templates", "tests"],
       "repowiseRootFiles": ["README.md", "SPEC.md", "package.json", "pyproject.toml", "llms.txt", ".gitignore"]
+    },
+    "opencli-admin": {
+      "path": "D:\\projects\\opencli-admin",
+      "sentruxPath": ""
+    },
+    "opencli-admin-backend": {
+      "path": "D:\\projects\\opencli-admin",
+      "sentruxPath": "backend"
+    },
+    "opencli-admin-frontend": {
+      "path": "D:\\projects\\opencli-admin",
+      "sentruxPath": "frontend"
+    },
+    "opencli-admin-agent": {
+      "path": "D:\\projects\\opencli-admin",
+      "sentruxPath": "agent"
+    },
+    "opencli-admin-chrome": {
+      "path": "D:\\projects\\opencli-admin",
+      "sentruxPath": "chrome"
+    },
+    "opencli-admin-odp": {
+      "path": "D:\\projects\\opencli-admin",
+      "sentruxPath": "odp-rs"
+    },
+    "opencli-admin-iii": {
+      "path": "D:\\projects\\opencli-admin",
+      "sentruxPath": "iii"
     }
   }
 }

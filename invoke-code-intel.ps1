@@ -1,3 +1,5 @@
+#requires -Version 7.2
+
 param(
     [string]$Repo = "",
     [string]$RepoPath = "",
@@ -6,14 +8,21 @@ param(
 
     [string]$Config = "",
 
+    [ValidateSet("auto", "windows", "macos", "linux")]
+    [string]$Platform = "auto",
+
     [ValidateSet("lite", "normal", "full")]
     [string]$Mode = "normal",
 
     [switch]$RepowiseDocs,
+    [string]$RepowiseProvider = "",
+    [string]$RepowiseModel = "",
+    [string]$RepowiseReasoning = "",
     [switch]$SaveSentruxBaseline,
-    [switch]$AutoSaveMissingSentruxBaseline,
-    [switch]$RequireUnderstandGraph,
-    [switch]$NoIndexUpdate
+[switch]$AutoSaveMissingSentruxBaseline,
+[switch]$RequireUnderstandGraph,
+[switch]$SkipGitHubResearch,
+[switch]$NoIndexUpdate
 )
 
 Set-StrictMode -Version Latest
@@ -49,10 +58,10 @@ function Invoke-OneRepo {
     Write-Host "Code intel invoke: doctor $label"
     $global:LASTEXITCODE = 0
     if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) {
-        & $doctor -Config $Config -RepoPath $DirectRepoPath
+        & $doctor -Config $Config -RepoPath $DirectRepoPath -Platform $Platform
     }
     else {
-        & $doctor -Config $Config -Repo $RepoName
+        & $doctor -Config $Config -Repo $RepoName -Platform $Platform
     }
     if ($LASTEXITCODE -ne 0) {
         return [pscustomobject][ordered]@{
@@ -64,24 +73,29 @@ function Invoke-OneRepo {
     }
 
     Write-Host "Code intel invoke: pipeline $label"
-    if ($RepowiseDocs -or $SaveSentruxBaseline -or $AutoSaveMissingSentruxBaseline -or $RequireUnderstandGraph) {
+    if ($RepowiseDocs -or $SaveSentruxBaseline -or $AutoSaveMissingSentruxBaseline -or $RequireUnderstandGraph -or $SkipGitHubResearch) {
         $invokeParams = @{
             Config = $Config
             Mode = $Mode
+            Platform = $Platform
         }
         if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) { $invokeParams.RepoPath = $DirectRepoPath } else { $invokeParams.Repo = $RepoName }
         if ($RepowiseDocs) { $invokeParams.RepowiseDocs = $true }
+        if (-not [string]::IsNullOrWhiteSpace($RepowiseProvider)) { $invokeParams.RepowiseProvider = $RepowiseProvider }
+        if (-not [string]::IsNullOrWhiteSpace($RepowiseModel)) { $invokeParams.RepowiseModel = $RepowiseModel }
+        if (-not [string]::IsNullOrWhiteSpace($RepowiseReasoning)) { $invokeParams.RepowiseReasoning = $RepowiseReasoning }
         if ($SaveSentruxBaseline) { $invokeParams.SaveSentruxBaseline = $true }
         if ($AutoSaveMissingSentruxBaseline) { $invokeParams.AutoSaveMissingSentruxBaseline = $true }
         if ($RequireUnderstandGraph) { $invokeParams.RequireUnderstandGraph = $true }
+        if ($SkipGitHubResearch) { $invokeParams.SkipGitHubResearch = $true }
         & $runner @invokeParams
     }
     else {
         if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) {
-            & $runner -Config $Config -RepoPath $DirectRepoPath -Mode $Mode
+            & $runner -Config $Config -RepoPath $DirectRepoPath -Mode $Mode -Platform $Platform -RepowiseProvider $RepowiseProvider -RepowiseModel $RepowiseModel -RepowiseReasoning $RepowiseReasoning
         }
         else {
-            & $runner -Config $Config -Repo $RepoName -Mode $Mode
+            & $runner -Config $Config -Repo $RepoName -Mode $Mode -Platform $Platform -RepowiseProvider $RepowiseProvider -RepowiseModel $RepowiseModel -RepowiseReasoning $RepowiseReasoning
         }
     }
 
@@ -143,6 +157,7 @@ if (-not $NoIndexUpdate -and (Test-Path -LiteralPath $indexer -PathType Leaf)) {
             $indexParams.ArtifactRoot = [string]$configuredArtifactRoot
         }
     }
+    $indexParams.Platform = $Platform
     & $indexer @indexParams | Out-Host
 }
 
