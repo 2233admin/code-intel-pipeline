@@ -8,28 +8,35 @@ It is built around one rule: keep the entrypoint small, keep tool roles explicit
 
 Artifact ownership and reader/writer boundaries are defined in `docs/artifact-data-contract.md`.
 
-1. `invoke-code-intel.ps1`
+1. `orchestration/integrations.json` and `code-intel.exe orchestrate`
+   Integration registry and fusion layer. New scanners, memory systems, graph providers, governance strategies, and compatibility shims must be registered here before they are wired into runner scripts.
+
+2. Rust targets
+   - `crates/code-intel-cli`: compiled `code-intel` CLI for integration orchestration, artifact resume, classify, and artifact doctor contracts.
+   - `crates/code-nexus-lite`: compiled `code-nexus-lite` iii worker for CodeNexus scan/lite/doctor behavior.
+
+3. `invoke-code-intel.ps1`
    Thin operator entrypoint. Runs doctor first, then the pipeline. Supports one direct repo path, one configured repo alias, a repo list, or all configured repos.
 
-2. `check-code-intel-tools.ps1`
+4. `check-code-intel-tools.ps1`
    Environment doctor. Verifies local tools, Understand Anything presence, repo path, and Sentrux scope state.
 
-3. `run-code-intel.ps1`
+5. `run-code-intel.ps1`
    Main orchestrator. Produces artifacts, summary, report, hospital diagnosis, and failure classification.
 
-4. Tool adapters
+6. Tool adapters
    - `rg`: exact inventory
    - `repowise`: semantic index and optional docs
    - `Understand Anything`: graph artifact
    - `sentrux`: structure gate
    - `sentruxInsight`: parsed structural deltas and follow-up hints for agents
 
-5. Scoped helpers
+7. Scoped helpers
    - `Invoke-ScopedRepowise.ps1`
    - `Run-ScopedRepowiseDocs.py`
    - `Invoke-SentruxAgentTool.ps1`
 
-6. Stable-ops helpers
+8. Stable-ops helpers
    - `install-code-intel-pipeline.ps1`
    - `test-code-intel-provider.ps1`
    - `test-code-intel-pipeline.ps1`
@@ -54,6 +61,16 @@ Team usage is different. A stable wrapper is needed for:
 - explicit failure categories
 
 Without that wrapper, the same tool failure gets interpreted three different ways by three different people. That is how teams end up debugging weather.
+
+## Why The Integration Layer Exists
+
+As the pipeline absorbs Repowise, Sentrux, graph providers, and future project-intelligence tools, the codebase needs one place to decide how those pieces attach.
+
+That place is `orchestration/integrations.json`.
+
+The rule is simple: no new project-intelligence dependency goes straight into an agent-facing script. Register the integration first, declare its stage, capabilities, artifact contract, and adapter entrypoint, then wire the adapter into the runner. When a Rust target exists, the Rust crate is the real integration entrypoint and `.ps1` files are compatibility surfaces. `code-intel.exe orchestrate` validates the registry and can print the current plan for humans or agents.
+
+Detailed extension rules are in `docs/integration-orchestration.md`.
 
 ## Failure Model
 
@@ -118,6 +135,13 @@ Install check:
 & "$env:CODE_INTEL_HOME/install-code-intel-pipeline.ps1" -RepoPath <repo-path> -CheckProvider
 ```
 
+Integration registry:
+
+```powershell
+.\target\debug\code-intel.exe orchestrate --action Validate --json
+.\target\debug\code-intel.exe orchestrate --action Plan --repo <repo-path> --mode normal --json
+```
+
 Install or repair a teammate machine:
 
 ```powershell
@@ -163,3 +187,5 @@ Artifact index:
 Copy the operational shell, not the internal machinery.
 
 That is the useful lesson from `gitnexus-stable-ops`.
+
+The updated version of this rule is: register integrations first, then adapt or internalize them behind the orchestration layer.

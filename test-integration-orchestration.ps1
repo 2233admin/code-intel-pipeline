@@ -1,0 +1,50 @@
+param(
+    [string]$RepoPath = ""
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$root = Split-Path -Parent $PSCommandPath
+$rustCli = Join-Path $root "target\debug\code-intel.exe"
+
+if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
+    Push-Location $root
+    try {
+        & cargo build -p code-intel | Out-Host
+    }
+    finally {
+        Pop-Location
+    }
+}
+if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
+    throw "Missing Rust orchestrator: $rustCli"
+}
+
+$validateRaw = & $rustCli orchestrate --action Validate --json
+if ($LASTEXITCODE -ne 0) {
+    throw "Orchestration validate failed"
+}
+$validate = $validateRaw | ConvertFrom-Json
+if (-not [bool]$validate.ok) {
+    throw "Orchestration manifest is not ok"
+}
+
+$planArgs = @("orchestrate", "--action", "Plan", "--capability", "semantic_memory", "--json")
+if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
+    $planArgs += @("--repo", $RepoPath)
+}
+$planRaw = & $rustCli @planArgs
+if ($LASTEXITCODE -ne 0) {
+    throw "Orchestration plan failed"
+}
+$plan = $planRaw | ConvertFrom-Json
+$repowise = @($plan.plan | Where-Object { $_.id -eq "memory.repowise" })
+if ($repowise.Count -ne 1) {
+    throw "Expected one memory.repowise integration"
+}
+if (-not [bool]$repowise[0].required) {
+    throw "memory.repowise must be required"
+}
+
+Write-Host "Integration orchestration smoke passed"

@@ -35,6 +35,7 @@ if ([string]::IsNullOrWhiteSpace($Config)) {
 $doctor = Join-Path $root "check-code-intel-tools.ps1"
 $runner = Join-Path $root "run-code-intel.ps1"
 $indexer = Join-Path $root "update-code-intel-index.ps1"
+$rustCli = Join-Path $root "target\debug\code-intel.exe"
 
 function Get-JsonProperty {
     param(
@@ -113,6 +114,24 @@ if (-not (Test-Path -LiteralPath $doctor -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
     throw "Pipeline script missing: $runner"
+}
+if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
+    Push-Location $root
+    try {
+        & cargo build -p code-intel | Out-Host
+    }
+    finally {
+        Pop-Location
+    }
+}
+if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
+    throw "Rust integration orchestrator missing: $rustCli"
+}
+
+Write-Host "Code intel invoke: validate integration orchestration"
+& $rustCli orchestrate --action Validate | Out-Host
+if ($LASTEXITCODE -ne 0) {
+    throw "Integration orchestration validation failed"
 }
 
 $targetRepos = @()

@@ -826,6 +826,8 @@ if (-not [string]::IsNullOrWhiteSpace($Repo) -or -not [string]::IsNullOrWhiteSpa
         $doctorParams = @{
             Config = $Config
             Json = $true
+            RequireRepowise = [bool]$RequireRepowise
+            RequireUnderstand = [bool]$RequireUnderstand
         }
         if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
             $doctorParams.RepoPath = $RepoPath
