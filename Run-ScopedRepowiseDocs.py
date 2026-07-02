@@ -113,7 +113,8 @@ async def generate_docs(repo_path: Path, coverage_pct: float, concurrency: int, 
         pass
 
     provider_name, provider_kwargs = resolve_provider_settings(provider_name, model)
-    provider_kwargs["reasoning"] = reasoning
+    # reasoning is a generation-time setting (GenerationConfig below); provider
+    # __init__ signatures don't uniformly accept it (MockProvider rejects it).
     provider = get_provider(provider_name, **provider_kwargs)
     config = GenerationConfig(
         max_concurrency=concurrency,

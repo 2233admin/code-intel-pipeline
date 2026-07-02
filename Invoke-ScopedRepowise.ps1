@@ -439,6 +439,14 @@ $Provider = if ($Provider -ieq "ccw") { "codex_cli" } else { $Provider }
 $providerArgs = @("--provider", $Provider)
 if (-not [string]::IsNullOrWhiteSpace($Model)) { $providerArgs += @("--model", $Model) }
 if (-not [string]::IsNullOrWhiteSpace($Reasoning)) { $providerArgs += @("--reasoning", $Reasoning) }
+# Docs must never silently run the "mock" default (index-only legs use mock on
+# purpose; mock docs would emit junk pages). When -Provider was not explicitly
+# set past the default, omit --provider so Run-ScopedRepowiseDocs.py resolves
+# the real provider from CODE_INTEL_PROVIDER (default anthropic).
+$docsProviderArgs = @()
+if (-not [string]::IsNullOrWhiteSpace($Provider) -and $Provider -ine "mock") { $docsProviderArgs += @("--provider", $Provider) }
+if (-not [string]::IsNullOrWhiteSpace($Model)) { $docsProviderArgs += @("--model", $Model) }
+if (-not [string]::IsNullOrWhiteSpace($Reasoning)) { $docsProviderArgs += @("--reasoning", $Reasoning) }
 Write-ScopedConfig $shadowPath $CommitLimit $Provider $Model $Reasoning
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
@@ -484,7 +492,7 @@ try {
             -FilePath (Get-RepowisePython) `
             -Description "repowise scoped docs" `
             -TimeoutSeconds $TimeoutSeconds `
-            -ArgumentList @($scriptPath, "--repo", $shadowPath, "--coverage-pct", "0.02", "--concurrency", "1", "--provider", $Provider, "--model", $Model, "--reasoning", $Reasoning))
+            -ArgumentList (@($scriptPath, "--repo", $shadowPath, "--coverage-pct", "0.02", "--concurrency", "1") + $docsProviderArgs))
     }
     else {
         if (Test-Path -LiteralPath $statePath -PathType Leaf) {
