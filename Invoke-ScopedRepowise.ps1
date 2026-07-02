@@ -152,6 +152,18 @@ function Set-CodeIntelAnthropicEnv {
     }
 }
 
+function Set-CodeIntelProviderEnv {
+    # Generic provider selection (CODE_INTEL_PROVIDER/MODEL/API_KEY/BASE_URL);
+    # consumed by Run-ScopedRepowiseDocs.py. anthropic keeps the dedicated
+    # CODE_INTEL_ANTHROPIC_* fallback via Set-CodeIntelAnthropicEnv below for
+    # backward compatibility.
+    Set-EnvFromUserRegistry "CODE_INTEL_PROVIDER"
+    Set-EnvFromUserRegistry "CODE_INTEL_MODEL"
+    Set-EnvFromUserRegistry "CODE_INTEL_API_KEY"
+    Set-EnvFromUserRegistry "CODE_INTEL_BASE_URL"
+    Set-CodeIntelAnthropicEnv
+}
+
 function Get-RepowisePython {
     # Run-ScopedRepowiseDocs.py imports the repowise package, which lives in
     # the uv tool venv (not the system python). Fall back to plain python for
@@ -378,14 +390,7 @@ $env:REPOWISE_SKIP_HOOK_INSTALL = "1"
 Set-EnvFromUserRegistry "ANTHROPIC_API_KEY"
 Set-EnvFromUserRegistry "ANTHROPIC_BASE_URL"
 Set-EnvFromUserRegistry "REPOWISE_PROVIDER"
-# Generic provider selection (CODE_INTEL_PROVIDER/MODEL/API_KEY/BASE_URL);
-# consumed by Run-ScopedRepowiseDocs.py. anthropic keeps the dedicated
-# CODE_INTEL_ANTHROPIC_* fallback below for backward compatibility.
-Set-EnvFromUserRegistry "CODE_INTEL_PROVIDER"
-Set-EnvFromUserRegistry "CODE_INTEL_MODEL"
-Set-EnvFromUserRegistry "CODE_INTEL_API_KEY"
-Set-EnvFromUserRegistry "CODE_INTEL_BASE_URL"
-Set-CodeIntelAnthropicEnv
+Set-CodeIntelProviderEnv
 
 $statePath = Join-Path $shadowPath ".repowise\state.json"
 $docsEnabled = $false
