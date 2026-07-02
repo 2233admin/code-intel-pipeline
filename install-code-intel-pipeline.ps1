@@ -551,10 +551,12 @@ if ($understandFound) {
 }
 Add-Check $checks "skill:Understand Anything" "skill" ([bool]$RequireUnderstand) $understandFound $understandDetail "Install or link the Understand Anything skill/plugin, or omit -RequireUnderstand and let the pipeline emit the /understand command as a manual step."
 
-Test-EnvVar $checks "ANTHROPIC_BASE_URL" $false "https://api.minimaxi.com/anthropic"
+# Provider credentials live in dedicated CODE_INTEL_ANTHROPIC_* vars. Global
+# ANTHROPIC_* is deliberately NOT checked: on dev machines it belongs to the
+# Claude Code proxy chain and must not be repointed at the docs provider.
+Test-EnvVar $checks "CODE_INTEL_ANTHROPIC_BASE_URL" $false "https://api.minimaxi.com/anthropic"
 Test-EnvVar $checks "REPOWISE_PROVIDER" $false "anthropic"
-Test-EnvVar $checks "ANTHROPIC_API_KEY" $false
-Test-EnvVar $checks "ANTHROPIC_AUTH_TOKEN" $false
+Test-EnvVar $checks "CODE_INTEL_ANTHROPIC_API_KEY" $false
 
 $configOk = $false
 $configData = $null

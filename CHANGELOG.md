@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Provider credentials moved to dedicated `CODE_INTEL_ANTHROPIC_*` env vars** — `test-code-intel-provider.ps1` and `Invoke-ScopedRepowise.ps1` now prefer user/process-scoped `CODE_INTEL_ANTHROPIC_API_KEY` / `CODE_INTEL_ANTHROPIC_BASE_URL` and inject them into the child process's `ANTHROPIC_*`. Global `ANTHROPIC_*` is no longer required (or checked by the installer): on dev machines it belongs to the Claude Code proxy chain and must not be repointed at the docs provider. `CODE_INTEL_MODEL` overrides the docs model (default `MiniMax-M2.7`).
+- `Invoke-ScopedRepowise.ps1` — `Run-ScopedRepowiseDocs.py` is now executed with the repowise uv-tool venv python (`%APPDATA%\uv\tools\repowise\Scripts\python.exe`) instead of system python, which lacks the `repowise` package and made every docs run fail with `ModuleNotFoundError`.
+- **`overlays/repowise/README.md`** — documents the local patch to repowise's `anthropic.py` (join text blocks, skip `ThinkingBlock`) required for reasoning models behind Anthropic-compatible endpoints (MiniMax-M2.x). Patch lives in the installed venv and must be re-applied after `uv tool upgrade repowise`.
+
 - `Invoke-SentruxAgentTool.ps1` — minor edits
 - `templates/sentrux-rules.example.toml` — minor edits
 - `install-code-intel-pipeline.ps1` — `Install-SentruxShim` no longer copies `sentrux-shim.ps1`/`sentrux-lite-core.ps1` bodies into `%LOCALAPPDATA%\code-intel\bin\`. It now generates thin forwarder scripts that hardcode the repo path and forward `$args`/exit code to the real files under `tools\sentrux-shim\` in the repo, plus a `repo.json` recording the resolved repo root. Editing the repo's shim scripts now takes effect immediately on the next PATH invocation — no reinstall needed. If the repo path is later moved or deleted, the forwarder fails loudly with `repo not found at <path>. Re-run install-code-intel-pipeline.ps1` instead of silently running stale code.

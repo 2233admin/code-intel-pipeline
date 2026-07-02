@@ -117,6 +117,38 @@ function Set-EnvFromUserRegistry {
     }
 }
 
+function Set-CodeIntelAnthropicEnv {
+    # Dedicated CODE_INTEL_ANTHROPIC_* vars take priority over any inherited
+    # ANTHROPIC_* values, which on a dev machine may point at the Claude Code
+    # proxy (e.g. headroom on 127.0.0.1) and must not be repurposed globally.
+    $map = @{
+        "CODE_INTEL_ANTHROPIC_API_KEY"  = "ANTHROPIC_API_KEY"
+        "CODE_INTEL_ANTHROPIC_BASE_URL" = "ANTHROPIC_BASE_URL"
+    }
+    foreach ($name in $map.Keys) {
+        $value = [Environment]::GetEnvironmentVariable($name, "Process")
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            $value = [Environment]::GetEnvironmentVariable($name, "User")
+        }
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            [Environment]::SetEnvironmentVariable($map[$name], $value, "Process")
+        }
+    }
+}
+
+function Get-RepowisePython {
+    # Run-ScopedRepowiseDocs.py imports the repowise package, which lives in
+    # the uv tool venv (not the system python). Fall back to plain python for
+    # environments where repowise was pip-installed globally.
+    if (-not [string]::IsNullOrWhiteSpace($env:APPDATA)) {
+        $venvPython = Join-Path $env:APPDATA "uv\tools\repowise\Scripts\python.exe"
+        if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
+            return $venvPython
+        }
+    }
+    return "python"
+}
+
 function Remove-ScopedNoise {
     param([string]$Root)
 
@@ -330,6 +362,7 @@ $env:REPOWISE_SKIP_HOOK_INSTALL = "1"
 Set-EnvFromUserRegistry "ANTHROPIC_API_KEY"
 Set-EnvFromUserRegistry "ANTHROPIC_BASE_URL"
 Set-EnvFromUserRegistry "REPOWISE_PROVIDER"
+Set-CodeIntelAnthropicEnv
 
 $statePath = Join-Path $shadowPath ".repowise\state.json"
 $docsEnabled = $false
@@ -358,7 +391,7 @@ try {
         }
         $scriptPath = Join-Path $PSScriptRoot "Run-ScopedRepowiseDocs.py"
         [void](Invoke-ProcessWithTimeout `
-            -FilePath "python" `
+            -FilePath (Get-RepowisePython) `
             -Description "repowise scoped docs" `
             -TimeoutSeconds $TimeoutSeconds `
             -ArgumentList @($scriptPath, "--repo", $shadowPath, "--coverage-pct", "0.02", "--concurrency", "1"))

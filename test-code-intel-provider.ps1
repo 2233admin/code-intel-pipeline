@@ -19,8 +19,28 @@ function Set-EnvFromUserRegistry {
     }
 }
 
+function Set-CodeIntelAnthropicEnv {
+    # Dedicated CODE_INTEL_ANTHROPIC_* vars take priority over any inherited
+    # ANTHROPIC_* values, which on a dev machine may point at the Claude Code
+    # proxy (e.g. headroom on 127.0.0.1) and must not be repurposed globally.
+    $map = @{
+        "CODE_INTEL_ANTHROPIC_API_KEY"  = "ANTHROPIC_API_KEY"
+        "CODE_INTEL_ANTHROPIC_BASE_URL" = "ANTHROPIC_BASE_URL"
+    }
+    foreach ($name in $map.Keys) {
+        $value = [Environment]::GetEnvironmentVariable($name, "Process")
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            $value = [Environment]::GetEnvironmentVariable($name, "User")
+        }
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            [Environment]::SetEnvironmentVariable($map[$name], $value, "Process")
+        }
+    }
+}
+
 Set-EnvFromUserRegistry "ANTHROPIC_API_KEY"
 Set-EnvFromUserRegistry "ANTHROPIC_BASE_URL"
+Set-CodeIntelAnthropicEnv
 
 $python = @'
 import json
