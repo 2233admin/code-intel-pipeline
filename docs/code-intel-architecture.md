@@ -138,8 +138,8 @@ Install check:
 Integration registry:
 
 ```powershell
-D:\projects\_tools\code-intel-pipeline\target\debug\code-intel.exe orchestrate --action Validate --json
-D:\projects\_tools\code-intel-pipeline\target\debug\code-intel.exe orchestrate --action Plan --repo C:\path\to\repo --mode normal --json
+.\target\debug\code-intel.exe orchestrate --action Validate --json
+.\target\debug\code-intel.exe orchestrate --action Plan --repo <repo-path> --mode normal --json
 ```
 
 Install or repair a teammate machine:
