@@ -30,6 +30,50 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+# Providers whose __init__ does not accept an api_key kwarg.
+_KEYLESS_PROVIDERS = {"ollama", "codex_cli", "opencode", "mock"}
+
+_DEFAULT_MODELS = {
+    "anthropic": "MiniMax-M2.7",
+}
+
+
+def _env(name: str) -> str:
+    return (os.environ.get(name) or "").strip()
+
+
+def resolve_provider_settings() -> tuple[str, dict[str, object]]:
+    """Resolve provider name + kwargs from CODE_INTEL_* env vars.
+
+    Env contract:
+        CODE_INTEL_PROVIDER  provider name from repowise registry (default: anthropic)
+        CODE_INTEL_MODEL     model name (anthropic default: MiniMax-M2.7)
+        CODE_INTEL_API_KEY   generic credential (skipped for keyless providers e.g. ollama)
+        CODE_INTEL_BASE_URL  generic endpoint override
+
+    Backward compat: for provider=anthropic, missing generic vars fall back to
+    the process-scoped ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL that the calling
+    PowerShell wrapper injects from user-scoped CODE_INTEL_ANTHROPIC_*.
+    """
+    name = _env("CODE_INTEL_PROVIDER").lower() or "anthropic"
+    model = _env("CODE_INTEL_MODEL") or _DEFAULT_MODELS.get(name, "")
+    api_key = _env("CODE_INTEL_API_KEY")
+    base_url = _env("CODE_INTEL_BASE_URL")
+
+    if name == "anthropic":
+        api_key = api_key or _env("CODE_INTEL_ANTHROPIC_API_KEY") or _env("ANTHROPIC_API_KEY")
+        base_url = base_url or _env("CODE_INTEL_ANTHROPIC_BASE_URL") or _env("ANTHROPIC_BASE_URL")
+
+    kwargs: dict[str, object] = {"with_rate_limiter": False}
+    if model:
+        kwargs["model"] = model
+    if base_url:
+        kwargs["base_url"] = base_url
+    if api_key and name not in _KEYLESS_PROVIDERS:
+        kwargs["api_key"] = api_key
+    return name, kwargs
+
+
 async def generate_docs(repo_path: Path, coverage_pct: float, concurrency: int) -> dict[str, object]:
     traverser = FileTraverser(repo_path, extra_exclude_patterns=[".repowise/**"])
     file_infos = list(traverser.traverse())
@@ -58,13 +102,8 @@ async def generate_docs(repo_path: Path, coverage_pct: float, concurrency: int) 
     except Exception:
         pass
 
-    provider = get_provider(
-        "anthropic",
-        model=os.environ.get("CODE_INTEL_MODEL", "MiniMax-M2.7"),
-        api_key=os.environ["ANTHROPIC_API_KEY"],
-        base_url=os.environ.get("ANTHROPIC_BASE_URL"),
-        with_rate_limiter=False,
-    )
+    provider_name, provider_kwargs = resolve_provider_settings()
+    provider = get_provider(provider_name, **provider_kwargs)
     config = GenerationConfig(
         max_concurrency=concurrency,
         reasoning="auto",

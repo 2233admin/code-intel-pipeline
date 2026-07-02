@@ -84,24 +84,40 @@ function Copy-ScopedFile {
     }
 }
 
+function Get-CodeIntelEnvValue {
+    param([string]$Name)
+
+    $value = [Environment]::GetEnvironmentVariable($Name, "Process")
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        $value = [Environment]::GetEnvironmentVariable($Name, "User")
+    }
+    return $value
+}
+
 function Write-ScopedConfig {
     param(
         [string]$ShadowPath,
         [int]$CommitLimit
     )
 
+    $provider = Get-CodeIntelEnvValue "CODE_INTEL_PROVIDER"
+    if ([string]::IsNullOrWhiteSpace($provider)) { $provider = "anthropic" }
+    $model = Get-CodeIntelEnvValue "CODE_INTEL_MODEL"
+    if ([string]::IsNullOrWhiteSpace($model) -and $provider -eq "anthropic") { $model = "MiniMax-M2.7" }
+
     $configDir = Join-Path $ShadowPath ".repowise"
     New-Item -ItemType Directory -Force -Path $configDir | Out-Null
     $configPath = Join-Path $configDir "config.yaml"
-    $lines = @(
-        "provider: anthropic",
-        "model: MiniMax-M2.7",
-        "embedder: mock",
-        "reasoning: auto",
-        "commit_limit: $CommitLimit",
-        "editor_files:",
-        "  claude_md: false"
-    )
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add("provider: $provider")
+    if (-not [string]::IsNullOrWhiteSpace($model)) {
+        $lines.Add("model: $model")
+    }
+    $lines.Add("embedder: mock")
+    $lines.Add("reasoning: auto")
+    $lines.Add("commit_limit: $CommitLimit")
+    $lines.Add("editor_files:")
+    $lines.Add("  claude_md: false")
     $lines | Set-Content -LiteralPath $configPath -Encoding UTF8
 }
 
@@ -362,6 +378,13 @@ $env:REPOWISE_SKIP_HOOK_INSTALL = "1"
 Set-EnvFromUserRegistry "ANTHROPIC_API_KEY"
 Set-EnvFromUserRegistry "ANTHROPIC_BASE_URL"
 Set-EnvFromUserRegistry "REPOWISE_PROVIDER"
+# Generic provider selection (CODE_INTEL_PROVIDER/MODEL/API_KEY/BASE_URL);
+# consumed by Run-ScopedRepowiseDocs.py. anthropic keeps the dedicated
+# CODE_INTEL_ANTHROPIC_* fallback below for backward compatibility.
+Set-EnvFromUserRegistry "CODE_INTEL_PROVIDER"
+Set-EnvFromUserRegistry "CODE_INTEL_MODEL"
+Set-EnvFromUserRegistry "CODE_INTEL_API_KEY"
+Set-EnvFromUserRegistry "CODE_INTEL_BASE_URL"
 Set-CodeIntelAnthropicEnv
 
 $statePath = Join-Path $shadowPath ".repowise\state.json"

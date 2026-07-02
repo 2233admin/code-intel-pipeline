@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Docs LLM provider generalized: local models + custom APIs** — provider is
+  now selected via `CODE_INTEL_PROVIDER` (default `anthropic`) with generic
+  `CODE_INTEL_MODEL` / `CODE_INTEL_API_KEY` / `CODE_INTEL_BASE_URL`, reusing
+  repowise's own provider registry (anthropic / openai-compatible / ollama /
+  anything else it ships). Keyless providers (ollama) work without
+  credentials. `test-code-intel-provider.ps1` preflights all three families
+  through the repowise uv venv python (system-python dependency dropped) and
+  keeps `-Provider`/`-Model` overrides. `CODE_INTEL_ANTHROPIC_*` remains as
+  backward-compatible fallback for provider=anthropic. See README "Docs LLM
+  provider 配置".
 - **Provider credentials moved to dedicated `CODE_INTEL_ANTHROPIC_*` env vars** — `test-code-intel-provider.ps1` and `Invoke-ScopedRepowise.ps1` now prefer user/process-scoped `CODE_INTEL_ANTHROPIC_API_KEY` / `CODE_INTEL_ANTHROPIC_BASE_URL` and inject them into the child process's `ANTHROPIC_*`. Global `ANTHROPIC_*` is no longer required (or checked by the installer): on dev machines it belongs to the Claude Code proxy chain and must not be repointed at the docs provider. `CODE_INTEL_MODEL` overrides the docs model (default `MiniMax-M2.7`).
 - `Invoke-ScopedRepowise.ps1` — `Run-ScopedRepowiseDocs.py` is now executed with the repowise uv-tool venv python (`%APPDATA%\uv\tools\repowise\Scripts\python.exe`) instead of system python, which lacks the `repowise` package and made every docs run fail with `ModuleNotFoundError`.
 - **`overlays/repowise/README.md`** — documents the local patch to repowise's `anthropic.py` (join text blocks, skip `ThinkingBlock`) required for reasoning models behind Anthropic-compatible endpoints (MiniMax-M2.x). Patch lives in the installed venv and must be re-applied after `uv tool upgrade repowise`.

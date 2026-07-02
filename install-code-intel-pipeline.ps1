@@ -599,6 +599,8 @@ Add-Check $checks "skill:Understand Anything" "skill" ([bool]$RequireUnderstand)
 # Provider credentials live in dedicated CODE_INTEL_ANTHROPIC_* vars. Global
 # ANTHROPIC_* is deliberately NOT checked: on dev machines it belongs to the
 # Claude Code proxy chain and must not be repointed at the docs provider.
+# CODE_INTEL_PROVIDER is optional: absent means the anthropic default.
+Test-EnvVar $checks "CODE_INTEL_PROVIDER" $false
 Test-EnvVar $checks "CODE_INTEL_ANTHROPIC_BASE_URL" $false "https://api.minimaxi.com/anthropic"
 Test-EnvVar $checks "REPOWISE_PROVIDER" $false "anthropic"
 Test-EnvVar $checks "CODE_INTEL_ANTHROPIC_API_KEY" $false
@@ -659,18 +661,31 @@ if (-not [string]::IsNullOrWhiteSpace($Repo) -or -not [string]::IsNullOrWhiteSpa
 
 if ($CheckProvider) {
     $providerScript = Join-Path $root "test-code-intel-provider.ps1"
+    $providerName = [Environment]::GetEnvironmentVariable("CODE_INTEL_PROVIDER", "Process")
+    if ([string]::IsNullOrWhiteSpace($providerName)) {
+        $providerName = [Environment]::GetEnvironmentVariable("CODE_INTEL_PROVIDER", "User")
+    }
+    if ([string]::IsNullOrWhiteSpace($providerName)) { $providerName = "anthropic" }
+    $providerModel = [Environment]::GetEnvironmentVariable("CODE_INTEL_MODEL", "Process")
+    if ([string]::IsNullOrWhiteSpace($providerModel)) {
+        $providerModel = [Environment]::GetEnvironmentVariable("CODE_INTEL_MODEL", "User")
+    }
+    if ([string]::IsNullOrWhiteSpace($providerModel) -and $providerName -eq "anthropic") { $providerModel = "MiniMax-M2.7" }
+    $providerLabel = if ([string]::IsNullOrWhiteSpace($providerModel)) { "provider:$providerName" } else { "provider:$providerName/$providerModel" }
     try {
-        $providerRaw = & $providerScript -Json
+        $providerParams = @{ Json = $true; Provider = $providerName }
+        if (-not [string]::IsNullOrWhiteSpace($providerModel)) { $providerParams.Model = $providerModel }
+        $providerRaw = & $providerScript @providerParams
         $providerResult = $providerRaw | ConvertFrom-Json
         if ($null -eq $providerResult) {
-            Add-Check $checks "provider:MiniMax-M2.7" "provider" $true $false "provider script returned no output" "Run test-code-intel-provider.ps1 -Json manually."
+            Add-Check $checks $providerLabel "provider" $true $false "provider script returned no output" "Run test-code-intel-provider.ps1 -Json manually."
         } else {
             $detail = if ($providerResult.ok) { $providerResult.message } else { "$($providerResult.category): $($providerResult.message)" }
-            Add-Check $checks "provider:MiniMax-M2.7" "provider" $true ([bool]$providerResult.ok) $detail "Check provider quota or user-scoped Anthropic-compatible env vars."
+            Add-Check $checks $providerLabel "provider" $true ([bool]$providerResult.ok) $detail "Check provider quota or CODE_INTEL_* provider env vars."
         }
     }
     catch {
-        Add-Check $checks "provider:MiniMax-M2.7" "provider" $true $false $_.Exception.Message "Run test-code-intel-provider.ps1 -Json manually."
+        Add-Check $checks $providerLabel "provider" $true $false $_.Exception.Message "Run test-code-intel-provider.ps1 -Json manually."
     }
 }
 
