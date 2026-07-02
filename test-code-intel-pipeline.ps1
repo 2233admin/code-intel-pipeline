@@ -47,12 +47,18 @@ if ([string]::IsNullOrWhiteSpace($label)) {
     throw "Specify -Repo <alias-or-path> or -RepoPath <path>."
 }
 
-$doctorJson = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
-    & $doctor -Config $Config -RepoPath $RepoPath -Platform $effectivePlatform -Json | ConvertFrom-Json
+$doctorParams = @{
+    Config = $Config
+    Platform = $effectivePlatform
+    RequireRepowise = -not [bool]$SkipRepowise
+    Json = $true
 }
-else {
-    & $doctor -Config $Config -Repo $Repo -Platform $effectivePlatform -Json | ConvertFrom-Json
+if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
+    $doctorParams.RepoPath = $RepoPath
+} else {
+    $doctorParams.Repo = $Repo
 }
+$doctorJson = & $doctor @doctorParams | ConvertFrom-Json
 if (-not $doctorJson.ok) {
     throw "Doctor failed: $($doctorJson.missing -join ', ')"
 }

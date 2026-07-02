@@ -278,7 +278,7 @@ jobs:
 
       - name: Doctor
         shell: pwsh
-        run: ./check-code-intel-tools.ps1 -RepoPath . -Json
+        run: ./check-code-intel-tools.ps1 -RepoPath . -RequireRepowise:$false -Json
 
       - name: Pipeline smoke
         shell: pwsh
