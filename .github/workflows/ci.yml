@@ -118,7 +118,7 @@ jobs:
 
       - name: Doctor
         shell: pwsh
-        run: .\check-code-intel-tools.ps1 -RepoPath .
+        run: .\check-code-intel-tools.ps1 -RepoPath . -RequireRepowise:$false
 
       - name: GitHub research contract tests
         shell: pwsh

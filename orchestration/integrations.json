@@ -1,0 +1,334 @@
+{
+  "schemaVersion": 1,
+  "policy": {
+    "name": "code-intel-integration-orchestration",
+    "normalOperation": "self-contained",
+    "rule": "Normal code-intel runs must use integrations registered here. Separately installed project-intelligence CLIs are allowed only as compatibility shims or optional accelerators.",
+    "extensionRule": "Add new projects, scanners, memory systems, graph providers, or governance strategies here before wiring them into pipeline scripts."
+  },
+  "stages": [
+    {
+      "id": "preflight",
+      "order": 10,
+      "required": true,
+      "description": "Resolve repo path and verify runtime plus registered integration contracts."
+    },
+    {
+      "id": "rust_runtime",
+      "order": 15,
+      "required": true,
+      "description": "Compiled Rust command and worker targets used by the pipeline."
+    },
+    {
+      "id": "inventory",
+      "order": 20,
+      "required": true,
+      "description": "Exact repo file and text surface."
+    },
+    {
+      "id": "semantic_memory",
+      "order": 30,
+      "required": true,
+      "description": "Long-term project memory, index, status, and optional docs."
+    },
+    {
+      "id": "architecture_graph",
+      "order": 40,
+      "required": false,
+      "description": "Architecture graph snapshot and graph freshness."
+    },
+    {
+      "id": "structure_governance",
+      "order": 50,
+      "required": true,
+      "description": "Structural scan, rules, gate, DSM, evolution, and what-if signals."
+    },
+    {
+      "id": "localization",
+      "order": 60,
+      "required": true,
+      "description": "Hotspot and reference localization for agents."
+    },
+    {
+      "id": "diagnosis",
+      "order": 70,
+      "required": true,
+      "description": "Hospital diagnosis, next protocol, and surgery-plan routing."
+    },
+    {
+      "id": "artifact_index",
+      "order": 80,
+      "required": true,
+      "description": "Durable artifact index for later sessions."
+    }
+  ],
+  "integrations": [
+    {
+      "id": "doctor",
+      "stage": "preflight",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-script",
+      "required": true,
+      "entrypoint": "check-code-intel-tools.ps1",
+      "capabilities": [
+        "preflight",
+        "tool_contract",
+        "repo_state"
+      ],
+      "commands": {
+        "validate": "check-code-intel-tools.ps1 -RepoPath <repo-path> -RequireRepowise -Json"
+      },
+      "artifactContract": [
+        "doctor_json"
+      ],
+      "extensionPoint": "Add new preflight checks here before changing installer or runner checks."
+    },
+    {
+      "id": "runtime.code-intel",
+      "stage": "rust_runtime",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-rust-binary",
+      "required": true,
+      "entrypoint": "crates/code-intel-cli/Cargo.toml",
+      "capabilities": [
+        "orchestration",
+        "integration_plan",
+        "global_route_registry",
+        "provider_api",
+        "understand_compatible_graph",
+        "artifact_resume",
+        "failure_classification",
+        "artifact_doctor"
+      ],
+      "commands": {
+        "build": "cargo build -p code-intel",
+        "orchestrateValidate": "target/debug/code-intel.exe orchestrate --action Validate --json",
+        "orchestrateList": "target/debug/code-intel.exe orchestrate --action List --json",
+        "orchestratePlan": "target/debug/code-intel.exe orchestrate --action Plan --repo <repo-path> --mode <mode> --json",
+        "graph": "target/debug/code-intel.exe graph --repo <repo-path> --language zh --write --json",
+        "graphFull": "target/debug/code-intel.exe graph --repo <repo-path> --language zh --full --write --json",
+        "routeValidate": "target/debug/code-intel.exe route --action Validate --json",
+        "routeList": "target/debug/code-intel.exe route --action List --json",
+        "routePlan": "target/debug/code-intel.exe route --action Plan --provider <provider> --operation <operation> --repo <repo-path> --json",
+        "providerValidate": "target/debug/code-intel.exe provider --action Validate --json",
+        "providerList": "target/debug/code-intel.exe provider --action List --json",
+        "providerPlan": "target/debug/code-intel.exe provider --action Plan --provider <provider> --operation <operation> --repo <repo-path> --json",
+        "providerInvoke": "target/debug/code-intel.exe provider --action Invoke --provider <provider> --operation <operation> --repo <repo-path> --json",
+        "doctor": "target/debug/code-intel.exe doctor --json",
+        "resume": "target/debug/code-intel.exe resume --repo <repo-path> --json",
+        "classify": "target/debug/code-intel.exe classify --report <report-path> --json"
+      },
+      "artifactContract": [
+        "orchestration/integrations.json",
+        "report.json",
+        "hospital-report.json",
+        "understanding.md"
+      ],
+      "extensionPoint": "Integration orchestration plus artifact resume/classify behavior belongs in this Rust binary; PowerShell should call or validate it only as compatibility glue."
+    },
+    {
+      "id": "runtime.code-nexus-lite",
+      "stage": "rust_runtime",
+      "owner": "code-intel-pipeline",
+      "kind": "compatibility-script",
+      "required": false,
+      "entrypoint": "Invoke-CodeNexusLite.ps1",
+      "capabilities": [
+        "codenexus_scan",
+        "codenexus_lite",
+        "codenexus_doctor"
+      ],
+      "commands": {
+        "compat": "Invoke-CodeNexusLite.ps1 -RepoPath <repo-path> -ArtifactDir <artifact-dir>"
+      },
+      "artifactContract": [
+        "codenexus-context.json",
+        ".repowise/wiki.db"
+      ],
+      "extensionPoint": "CodeNexus-lite is currently a demoted compatibility adapter. Restore a hardened worker here only after the Rust entrypoint exists again."
+    },
+    {
+      "id": "inventory.rg",
+      "stage": "inventory",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-adapter",
+      "required": true,
+      "entrypoint": "run-code-intel.ps1",
+      "capabilities": [
+        "file_inventory",
+        "text_inventory"
+      ],
+      "commands": {
+        "run": "run-code-intel.ps1 -RepoPath <repo-path> -Mode <mode>"
+      },
+      "artifactContract": [
+        "files.txt",
+        "report.json.steps[rg file inventory]"
+      ],
+      "extensionPoint": "Add inventory engines behind this adapter; do not call new inventory CLIs directly from agents."
+    },
+    {
+      "id": "memory.repowise",
+      "stage": "semantic_memory",
+      "owner": "code-intel-pipeline",
+      "kind": "internalizing-adapter",
+      "required": true,
+      "entrypoint": "Invoke-ScopedRepowise.ps1",
+      "capabilities": [
+        "status",
+        "index",
+        "scoped_shadow_workspace",
+        "docs"
+      ],
+      "commands": {
+        "status": "Invoke-ScopedRepowise.ps1 -RepoPath <repo-path> -ScopePaths <paths> -RootFiles <files>",
+        "docs": "run-code-intel.ps1 -RepoPath <repo-path> -Mode normal -RepowiseDocs"
+      },
+      "artifactContract": [
+        ".repowise/state.json",
+        ".repowise/wiki.db",
+        "report.json.steps[repowise*]",
+        "hospital-report.json.report_quality.dimensions[chart]"
+      ],
+      "extensionPoint": "Repowise CLI and Python imports must be hidden behind this adapter until the implementation is fully internalized."
+    },
+    {
+      "id": "graph.code-intel-understand",
+      "stage": "architecture_graph",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-rust-provider",
+      "required": true,
+      "entrypoint": "crates/code-intel-cli/Cargo.toml",
+      "capabilities": [
+        "graph_state",
+        "freshness",
+        "understand_compatible_artifact"
+      ],
+      "commands": {
+        "refresh": "target/debug/code-intel.exe graph --repo <repo-path> --language zh --write --json",
+        "refreshFull": "target/debug/code-intel.exe graph --repo <repo-path> --language zh --full --write --json"
+      },
+      "artifactContract": [
+        ".understand-anything/knowledge-graph.json",
+        "report.json.steps[understand graph]"
+      ],
+      "extensionPoint": "Graph providers must emit the Understand-compatible artifact contract through this internal Rust command before runner scripts depend on them."
+    },
+    {
+      "id": "graph.understand-external",
+      "stage": "architecture_graph",
+      "owner": "understand-anything",
+      "kind": "compatibility-fallback",
+      "required": false,
+      "entrypoint": "/understand",
+      "capabilities": [
+        "manual_refresh_command",
+        "rich_agent_graph"
+      ],
+      "commands": {
+        "refresh": "/understand <repo-path> --language zh",
+        "refreshFull": "/understand <repo-path> --language zh --full"
+      },
+      "artifactContract": [
+        ".understand-anything/knowledge-graph.json"
+      ],
+      "extensionPoint": "Use only when the Rust graph provider fails or a richer external Understand Anything pass is explicitly requested."
+    },
+    {
+      "id": "structure.sentrux",
+      "stage": "structure_governance",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-first-adapter",
+      "required": true,
+      "entrypoint": "Invoke-SentruxAgentTool.ps1",
+      "capabilities": [
+        "scan",
+        "health",
+        "session_start",
+        "session_end",
+        "rules",
+        "dsm",
+        "test_gaps",
+        "what_if",
+        "evolution"
+      ],
+      "commands": {
+        "rustTarget": "target/debug/code-intel.exe sentrux <scan|health|session_start|session_end|check_rules|test_gaps|what_if> <repo-path>",
+        "scan": "Invoke-SentruxAgentTool.ps1 scan <repo-path>",
+        "sessionStart": "Invoke-SentruxAgentTool.ps1 session_start <repo-path>",
+        "sessionEnd": "Invoke-SentruxAgentTool.ps1 session_end <repo-path>"
+      },
+      "artifactContract": [
+        "sentrux-dsm.json",
+        "sentrux-file-details.json",
+        "sentrux-hotspots.json",
+        "sentrux-evolution.json",
+        "sentrux-what-if.json"
+      ],
+      "extensionPoint": "External sentrux.exe is an accelerator; repo-owned lite core remains the normal-operation fallback."
+    },
+    {
+      "id": "localization.codenexus-lite",
+      "stage": "localization",
+      "owner": "code-intel-pipeline",
+      "kind": "compatibility-adapter",
+      "required": true,
+      "entrypoint": "Invoke-CodeNexusLite.ps1",
+      "capabilities": [
+        "hotspot_context",
+        "recent_commits",
+        "reference_hits"
+      ],
+      "commands": {
+        "compat": "Invoke-CodeNexusLite.ps1 -RepoPath <repo-path> -ArtifactDir <artifact-dir>"
+      },
+      "artifactContract": [
+        "codenexus-context.json"
+      ],
+      "extensionPoint": "Full CodeNexus backends must adapt to codenexus-context.json before replacing the compatibility adapter."
+    },
+    {
+      "id": "diagnosis.hospital",
+      "stage": "diagnosis",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-module",
+      "required": true,
+      "entrypoint": "run-code-intel.ps1",
+      "capabilities": [
+        "triage",
+        "protocol",
+        "treatment_plan",
+        "surgery_plan"
+      ],
+      "commands": {
+        "run": "run-code-intel.ps1 -RepoPath <repo-path> -Mode <mode>"
+      },
+      "artifactContract": [
+        "hospital.md",
+        "hospital-report.json",
+        "surgery-plan.md",
+        "surgery-plan.json"
+      ],
+      "extensionPoint": "New diagnosis modes attach here and preserve hospital-report.json stable fields."
+    },
+    {
+      "id": "artifact.index",
+      "stage": "artifact_index",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-script",
+      "required": true,
+      "entrypoint": "update-code-intel-index.ps1",
+      "capabilities": [
+        "artifact_discovery",
+        "latest_run_index"
+      ],
+      "commands": {
+        "refresh": "update-code-intel-index.ps1"
+      },
+      "artifactContract": [
+        "artifact-index.json"
+      ],
+      "extensionPoint": "New artifact stores register here; readers keep using the index contract."
+    }
+  ]
+}
