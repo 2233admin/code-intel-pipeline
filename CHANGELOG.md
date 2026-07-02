@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-07-02
+
+The "understand any repo, cheaply" release. Docs generation now runs on any
+LLM (MiniMax, local Ollama, custom OpenAI-compatible endpoints), the installed
+toolchain self-heals, and the pipeline finishes with a three-stack workflow
+recommendation telling you how to start working on the repo it just mapped.
+
+### Added
+
+- **Three-stack workflow recommender** — replaces the OpenSpec-only detector.
+  Each pipeline run emits a `workflows` array in `report.json` (legacy
+  `openSpec` block kept for compatibility) with layered, complementary
+  verdicts: *matt-flow* (idea→ship: `/grill-with-docs`, `/to-prd`,
+  `/to-issues`, `/triage`), *gstack* (delivery/quality: `/qa`,
+  `/design-review`, `/ship`, `/canary`, `/review`), and *spec-driven*
+  (picks OpenSpec OPSX for brownfield repos vs github/spec-kit for
+  greenfield; detects `openspec/` / `.specify/` as already adopted).
+- **Regression suite + fail-open lint** (`test-regression-fixes.ps1`) — 24
+  cases locking down the fail-open/false-green fixes, plus an AST-based lint
+  that flags `catch { return $true }` patterns across all `.ps1` files
+  (`# lint-allow: fail-open` marker supported).
+- **Self-healing repowise patch** — `install-code-intel-pipeline.ps1` now
+  idempotently re-applies the ThinkingBlock fix to the installed repowise
+  venv on every run (reasoning models behind Anthropic-compatible endpoints
+  return thinking blocks first; upstream reads `content[0].text`). Survives
+  `uv tool upgrade repowise`; documented in `overlays/repowise/README.md`.
+
+### Changed
+
+- **Docs LLM provider generalized: local models + custom APIs** — provider
+  selected via `CODE_INTEL_PROVIDER` (default `anthropic`) with generic
+  `CODE_INTEL_MODEL` / `CODE_INTEL_API_KEY` / `CODE_INTEL_BASE_URL`, reusing
+  repowise's own provider registry. Keyless providers (ollama) work without
+  credentials; `CODE_INTEL_ANTHROPIC_*` remains as backward-compatible
+  fallback. Preflight covers anthropic / openai / ollama and runs on the
+  repowise uv venv python (system-python dependency dropped).
+- **Thin-forwarder install** — `Install-SentruxShim` generates forwarders
+  into `%LOCALAPPDATA%\code-intel\bin\` instead of copying script bodies;
+  repo edits take effect immediately via PATH, and a moved repo fails loudly.
+- **Fail-closed hardening** — session_end no longer backfills baselines on
+  zero parseable metrics; the surgery_plan→post_op guard evaluates real
+  data; doctor survives malformed config JSON; overlay compare and global
+  index refresh fail closed instead of open; baselines are backed up to
+  `baseline.prev.json` before overwrite.
+- **Detector accuracy** — code-size scan is now repo-root recursive (was a
+  5-dir/7-extension whitelist that measured some repos as 1 file);
+  repo age uses first-commit date (was last-commit, which judged every
+  active old repo "greenfield"); multiple StrictMode crashes fixed.
+- Local toolchain verified against **repowise 0.25** (upgraded from 0.21).
+
+### Verified
+
+- End-to-end on AIGX: 7/7 steps green, `workflows[3]` + legacy block emitted.
+- Cold-start on an unfamiliar clone (fastapi/typer, 747 files): 15.7 s index,
+  full understanding pack, and a sane three-stack verdict (108 contributors →
+  PRD breakdown; deploy indicators → ship/canary; 2385-day brownfield →
+  OpenSpec OPSX, score 65).
+- Regression suite 24/24; provider preflight ok for MiniMax-M2.7, MiniMax-M3,
+  and local Ollama; scoped docs generated 9-18 pages via MiniMax.
+
 ## [0.1.2] — 2026-06-10
 
 First public release of code-intel-pipeline. Headline addition is
@@ -30,23 +90,8 @@ HTTP API. Also adds a PR-time skill-check quality gate.
 
 ### Changed
 
-- **Docs LLM provider generalized: local models + custom APIs** — provider is
-  now selected via `CODE_INTEL_PROVIDER` (default `anthropic`) with generic
-  `CODE_INTEL_MODEL` / `CODE_INTEL_API_KEY` / `CODE_INTEL_BASE_URL`, reusing
-  repowise's own provider registry (anthropic / openai-compatible / ollama /
-  anything else it ships). Keyless providers (ollama) work without
-  credentials. `test-code-intel-provider.ps1` preflights all three families
-  through the repowise uv venv python (system-python dependency dropped) and
-  keeps `-Provider`/`-Model` overrides. `CODE_INTEL_ANTHROPIC_*` remains as
-  backward-compatible fallback for provider=anthropic. See README "Docs LLM
-  provider 配置".
-- **Provider credentials moved to dedicated `CODE_INTEL_ANTHROPIC_*` env vars** — `test-code-intel-provider.ps1` and `Invoke-ScopedRepowise.ps1` now prefer user/process-scoped `CODE_INTEL_ANTHROPIC_API_KEY` / `CODE_INTEL_ANTHROPIC_BASE_URL` and inject them into the child process's `ANTHROPIC_*`. Global `ANTHROPIC_*` is no longer required (or checked by the installer): on dev machines it belongs to the Claude Code proxy chain and must not be repointed at the docs provider. `CODE_INTEL_MODEL` overrides the docs model (default `MiniMax-M2.7`).
-- `Invoke-ScopedRepowise.ps1` — `Run-ScopedRepowiseDocs.py` is now executed with the repowise uv-tool venv python (`%APPDATA%\uv\tools\repowise\Scripts\python.exe`) instead of system python, which lacks the `repowise` package and made every docs run fail with `ModuleNotFoundError`.
-- **`overlays/repowise/README.md`** — documents the local patch to repowise's `anthropic.py` (join text blocks, skip `ThinkingBlock`) required for reasoning models behind Anthropic-compatible endpoints (MiniMax-M2.x). Patch lives in the installed venv and must be re-applied after `uv tool upgrade repowise`.
-
 - `Invoke-SentruxAgentTool.ps1` — minor edits
 - `templates/sentrux-rules.example.toml` — minor edits
-- `install-code-intel-pipeline.ps1` — `Install-SentruxShim` no longer copies `sentrux-shim.ps1`/`sentrux-lite-core.ps1` bodies into `%LOCALAPPDATA%\code-intel\bin\`. It now generates thin forwarder scripts that hardcode the repo path and forward `$args`/exit code to the real files under `tools\sentrux-shim\` in the repo, plus a `repo.json` recording the resolved repo root. Editing the repo's shim scripts now takes effect immediately on the next PATH invocation — no reinstall needed. If the repo path is later moved or deleted, the forwarder fails loudly with `repo not found at <path>. Re-run install-code-intel-pipeline.ps1` instead of silently running stale code.
 
 ### Verified
 
