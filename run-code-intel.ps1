@@ -83,45 +83,38 @@ $output = & git -C $Path rev-parse --is-inside-work-tree 2>$null
 return ($LASTEXITCODE -eq 0 -and [string]$output -eq "true")
 }
 
-# ============ OpenSpec Enterprise 检测器 ============
+# ============ 三栈工作流推荐器 (Workflow Stack Recommender) ============
+# NOTE: this block is duplicated in OpenSpec-Detector.ps1 (standalone script).
+# Keep both copies in sync when editing.
 
 function Get-CodeMetrics {
     param([string]$Path)
 
-    $quickDirs = @("src", "lib", "app", "packages", "crates")
+    $excludeDirNames = @("node_modules", ".git", "target", "dist", "build", "vendor", "venv", ".venv", "__pycache__")
+    $includeExt = @(
+        "*.ts", "*.tsx", "*.js", "*.jsx", "*.rs", "*.py", "*.go",
+        "*.ps1", "*.psm1", "*.cs", "*.java", "*.kt", "*.swift", "*.vue", "*.svelte", "*.v"
+    )
+
+    $allFiles = @(Get-ChildItem -Path $Path -Recurse -File -Include $includeExt -ErrorAction SilentlyContinue |
+        Where-Object {
+            $full = $_.FullName
+            -not ($excludeDirNames | Where-Object { $full -match [regex]::Escape("\$_\") -or $full -match [regex]::Escape("/$_/") })
+        })
+
+    $totalFiles = $allFiles.Count
     $totalLines = 0
-    $totalFiles = 0
-
-    foreach ($dir in $quickDirs) {
-        $dirPath = Join-Path $Path $dir
-        if (Test-Path $dirPath) {
-            $files = @(Get-ChildItem -Path $dirPath -Recurse -File -Include *.ts,*.tsx,*.js,*.jsx,*.rs,*.py,*.go -ErrorAction SilentlyContinue)
-            $totalFiles += $files.Count
-            foreach ($file in $files) {
-                try {
-                    $totalLines += (Get-Content $file.FullName -ErrorAction SilentlyContinue | Measure-Object -Line).Lines
-                }
-                catch { }
-            }
+    foreach ($file in $allFiles) {
+        try {
+            $totalLines += (Get-Content $file.FullName -ErrorAction SilentlyContinue | Measure-Object -Line).Lines
         }
-    }
-
-    if ($totalFiles -eq 0) {
-        $files = @(Get-ChildItem -Path $Path -File -Include *.ts,*.tsx,*.js,*.jsx,*.rs,*.py,*.go -ErrorAction SilentlyContinue | Select-Object -First 100)
-        $totalFiles = $files.Count
-        foreach ($file in $files) {
-            try {
-                $totalLines += (Get-Content $file.FullName -ErrorAction SilentlyContinue | Measure-Object -Line).Lines
-            }
-            catch { }
-        }
-        $totalLines = $totalLines * 10
+        catch { }
     }
 
     return @{
         lines = $totalLines
         files = $totalFiles
-        estimated = ($totalFiles -eq 0)
+        estimated = $false
     }
 }
 
@@ -134,8 +127,10 @@ function Get-GovernanceIndicators {
         hasSecurityReview = (Test-Path "$Path/security-review.md") -or (Test-Path "$Path/docs/security-review.md")
         hasArchitecture = Test-Path "$Path/architecture.md"
         hasOpenSpec = Test-Path "$Path/openspec"
+        hasSpecKit = Test-Path "$Path/.specify"
         hasADRs = (Test-Path "$Path/docs/adr") -or (Test-Path "$Path/adr")
         hasConstitution = Test-Path "$Path/constitution.md"
+        hasIssueTemplates = Test-Path "$Path/.github/ISSUE_TEMPLATE"
     }
 }
 
@@ -145,19 +140,28 @@ function Get-CollaborationMetrics {
     try {
         $contributors = @(& git -C $Path log --format=%ae 2>$null | Sort-Object -Unique)
         $lastCommit = & git -C $Path log -1 --format=%ci 2>$null
-        $repoAge = if ($lastCommit) {
+        $firstCommit = & git -C $Path log --reverse --format=%ci 2>$null | Select-Object -First 1
+        # repoAgeDays = age since FIRST commit (brownfield detection);
+        # lastCommitAgeDays = staleness since LAST commit (activity detection).
+        # Using last-commit age for both would judge every active old repo "greenfield".
+        $lastCommitAgeDays = if ($lastCommit) {
             ((Get-Date) - [DateTime]::Parse($lastCommit)).Days
+        } else { 9999 }
+        $repoAge = if ($firstCommit) {
+            ((Get-Date) - [DateTime]::Parse($firstCommit)).Days
         } else { 0 }
 
         return @{
             contributors = $contributors.Count
             repoAgeDays = $repoAge
+            lastCommitAgeDays = $lastCommitAgeDays
         }
     }
     catch {
         return @{
             contributors = 0
             repoAgeDays = 0
+            lastCommitAgeDays = 9999
         }
     }
 }
@@ -174,6 +178,52 @@ function Get-CICDScore {
     if (Test-Path "$Path/.circleci") { $score += 10 }
 
     return $score
+}
+
+function Test-CodeIntelHasDeployIndicators {
+    param([string]$Path)
+
+    if (Test-Path "$Path/Dockerfile") { return $true }
+    if (Test-Path "$Path/docker-compose.yml") { return $true }
+    if (Test-Path "$Path/docker-compose.yaml") { return $true }
+
+    $workflowsDir = "$Path/.github/workflows"
+    if (Test-Path $workflowsDir) {
+        $matches = @(Get-ChildItem -Path $workflowsDir -Filter "*.yml" -ErrorAction SilentlyContinue) +
+                   @(Get-ChildItem -Path $workflowsDir -Filter "*.yaml" -ErrorAction SilentlyContinue)
+        foreach ($wf in $matches) {
+            try {
+                $content = Get-Content -LiteralPath $wf.FullName -Raw -ErrorAction SilentlyContinue
+                if ($content -match "(?i)deploy") { return $true }
+            }
+            catch { }
+        }
+    }
+    return $false
+}
+
+function Test-CodeIntelHasWebFrontend {
+    param([string]$Path)
+
+    $packageJsonPath = "$Path/package.json"
+    if (Test-Path $packageJsonPath) {
+        try {
+            $pkg = Get-Content -LiteralPath $packageJsonPath -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
+            $deps = @()
+            if ($pkg.PSObject.Properties["dependencies"]) { $deps += $pkg.dependencies.PSObject.Properties.Name }
+            if ($pkg.PSObject.Properties["devDependencies"]) { $deps += $pkg.devDependencies.PSObject.Properties.Name }
+            $frontendMarkers = @("react", "vue", "next", "svelte", "vite")
+            foreach ($marker in $frontendMarkers) {
+                if ($deps | Where-Object { $_ -match "(?i)$marker" }) { return $true }
+            }
+        }
+        catch { }
+    }
+
+    foreach ($dir in @("frontend", "web", "ui")) {
+        if (Test-Path "$Path/$dir") { return $true }
+    }
+    return $false
 }
 
 function Get-TestCoverage {
@@ -193,7 +243,7 @@ function Get-TestCoverage {
     return $hasTests
 }
 
-function Get-OpenSpecRecommendation {
+function Get-SpecDrivenRecommendation {
     param(
         [hashtable]$Metrics,
         [hashtable]$Governance,
@@ -202,19 +252,30 @@ function Get-OpenSpecRecommendation {
         [bool]$HasTests
     )
 
-    $score = 0
-    $reasons = @()
-
-    # Already using OpenSpec
+    # Already adopted one of the two real tools
     if ($Governance.hasOpenSpec) {
         return @{
-            recommendation = "already_using"
+            stack = "spec-driven"
+            tool = "openspec-opsx"
+            verdict = "already_adopted"
             score = 100
-            schema = "spec-driven-enterprise"
-            message = "Project already uses OpenSpec"
-            reasons = @("Detected openspec/ directory")
+            reasons = @("Detected openspec/ directory (OpenSpec OPSX already in use)")
+            entrySkills = @()
         }
     }
+    if ($Governance.hasSpecKit) {
+        return @{
+            stack = "spec-driven"
+            tool = "spec-kit"
+            verdict = "already_adopted"
+            score = 100
+            reasons = @("Detected .specify/ directory (spec-kit already in use)")
+            entrySkills = @()
+        }
+    }
+
+    $score = 0
+    $reasons = @()
 
     # Code size scoring
     if ($Metrics.lines -gt 50000) {
@@ -262,28 +323,121 @@ function Get-OpenSpecRecommendation {
     # Test scoring
     if ($HasTests) { $score += 5 } else { $score -= 5 }
 
-    # Infer result
-    $schema = if ($score -ge 80) { "spec-driven-enterprise" }
-              elseif ($score -ge 50) { "spec-driven" }
-              else { $null }
+    $verdict = if ($score -ge 50) { "recommended" }
+               elseif ($score -ge 30) { "optional" }
+               else { "not_needed" }
 
-    $recommendation = if ($score -ge 80) { "strongly_recommended" }
-                      elseif ($score -ge 50) { "recommended" }
-                      elseif ($score -ge 30) { "optional" }
-                      else { "not_needed" }
+    # Which real tool to point at: brownfield (lots of existing source, established repo)
+    # vs greenfield (near-empty repo / young repo) -> spec-kit for 0->1 bootstrapping.
+    $isBrownfield = ($Metrics.files -gt 5) -and ($Collaboration.repoAgeDays -gt 90)
+    $tool = if ($isBrownfield) { "openspec-opsx" } else { "spec-kit" }
+    if ($isBrownfield) {
+        $reasons += "Brownfield project (files=$($Metrics.files), repoAgeDays=$($Collaboration.repoAgeDays)) -> OpenSpec OPSX fits ongoing change management"
+    } else {
+        $reasons += "Greenfield/young project (files=$($Metrics.files), repoAgeDays=$($Collaboration.repoAgeDays)) -> spec-kit fits 0->1 bootstrapping"
+    }
+
+    $entrySkills = @(if ($verdict -eq "not_needed") { }
+                   elseif ($tool -eq "openspec-opsx") { "openspec init" }
+                   else { "specify init" })
 
     return @{
+        stack = "spec-driven"
+        tool = $tool
+        verdict = $verdict
         score = $score
-        recommendation = $recommendation
-        schema = $schema
         reasons = $reasons
+        entrySkills = $entrySkills
         metrics = $Metrics
         governance = $Governance
         collaboration = $Collaboration
     }
 }
 
-function Invoke-OpenSpecDetector {
+function Get-MattFlowRecommendation {
+    param(
+        [hashtable]$Metrics,
+        [hashtable]$Governance,
+        [hashtable]$Collaboration
+    )
+
+    $reasons = @()
+    $isActive = $Collaboration.lastCommitAgeDays -le 90
+    $hasSource = $Metrics.files -gt 5
+
+    $verdict = if ($isActive -and $hasSource) { "recommended" } else { "not_needed" }
+
+    if ($isActive) { $reasons += "Active development (last commit $($Collaboration.lastCommitAgeDays)d ago)" }
+    else { $reasons += "No commits in the last 90 days (last commit $($Collaboration.lastCommitAgeDays)d ago)" }
+
+    if ($hasSource) { $reasons += "In-development project (files=$($Metrics.files))" }
+    else { $reasons += "Too few source files (files=$($Metrics.files))" }
+
+    $entrySkills = @()
+    if ($verdict -eq "recommended") {
+        if ($Governance.hasIssueTemplates) {
+            $entrySkills += "/triage"
+            $reasons += ".github/ISSUE_TEMPLATE detected -> incoming issue triage"
+        }
+        $entrySkills += "/grill-with-docs"
+        if ($Metrics.lines -gt 20000 -or $Collaboration.contributors -gt 2) {
+            $entrySkills += "/to-prd"
+            $entrySkills += "/to-issues"
+            $reasons += "Large project (lines=$($Metrics.lines), contributors=$($Collaboration.contributors)) -> add PRD/issue breakdown"
+        }
+    }
+
+    return @{
+        stack = "matt-flow"
+        verdict = $verdict
+        reasons = $reasons
+        entrySkills = $entrySkills
+    }
+}
+
+function Get-GstackRecommendation {
+    param(
+        [string]$Path,
+        [hashtable]$Collaboration
+    )
+
+    $reasons = @()
+    $isActive = $Collaboration.lastCommitAgeDays -le 90
+    $verdict = if ($isActive) { "recommended" } else { "not_needed" }
+
+    if ($isActive) { $reasons += "Active development (last commit $($Collaboration.lastCommitAgeDays)d ago)" }
+    else { $reasons += "No commits in the last 90 days (last commit $($Collaboration.lastCommitAgeDays)d ago)" }
+
+    $entrySkills = @()
+    if ($verdict -eq "recommended") {
+        $hasWebFrontend = Test-CodeIntelHasWebFrontend -Path $Path
+        $hasDeploy = Test-CodeIntelHasDeployIndicators -Path $Path
+
+        if ($hasWebFrontend) {
+            $entrySkills += "/qa"
+            $entrySkills += "/design-review"
+            $reasons += "Web frontend detected -> QA + design review"
+        }
+        if ($hasDeploy) {
+            $entrySkills += "/ship"
+            $entrySkills += "/canary"
+            $reasons += "Deploy indicators detected (Dockerfile/compose/CI deploy step) -> ship + canary"
+        }
+        if ($entrySkills.Count -eq 0) {
+            $entrySkills += "/review"
+            $reasons += "Default delivery gate"
+        }
+    }
+
+    return @{
+        stack = "gstack"
+        verdict = $verdict
+        reasons = $reasons
+        entrySkills = $entrySkills
+    }
+}
+
+function Invoke-WorkflowStackDetector {
     param(
         [string]$RepoPath,
         [bool]$AutoMode = $false
@@ -295,72 +449,43 @@ function Invoke-OpenSpecDetector {
     $cicdScore = Get-CICDScore -Path $RepoPath
     $hasTests = Get-TestCoverage -Path $RepoPath
 
-    $result = Get-OpenSpecRecommendation -Metrics $metrics -Governance $governance -Collaboration $collaboration -CICDScore $cicdScore -HasTests $hasTests
+    $specDriven = Get-SpecDrivenRecommendation -Metrics $metrics -Governance $governance -Collaboration $collaboration -CICDScore $cicdScore -HasTests $hasTests
+    $mattFlow = Get-MattFlowRecommendation -Metrics $metrics -Governance $governance -Collaboration $collaboration
+    $gstack = Get-GstackRecommendation -Path $RepoPath -Collaboration $collaboration
 
-    # Format output
-    $emoji = switch ($result.recommendation) {
-        "already_using" { "[OK]" }
-        "strongly_recommended" { "[HOT]" }
-        "recommended" { "[IDE]" }
-        "optional" { "[?]" }
-        default { "[---]" }
+    $workflows = @($mattFlow, $gstack, $specDriven)
+
+    $lines = @()
+    foreach ($wf in $workflows) {
+        $skillsText = if ($wf.entrySkills.Count -gt 0) { $wf.entrySkills -join " " } else { "(none)" }
+        $toolText = if ($wf.PSObject -and $wf.ContainsKey("tool")) { " tool=$($wf.tool)" } else { "" }
+        $lines += "- $($wf.stack)${toolText}: $($wf.verdict) -> $skillsText"
     }
-
-    $schemaNote = if ($result.schema -eq "spec-driven-enterprise") {
-        " - DAG dependency management`n - Enterprise governance`n - Agent protocol"
-    } elseif ($result.schema -eq "spec-driven") {
-        " - Lightweight DAG`n - Spec-driven workflow"
-    } else { "" }
 
     $message = @"
 
-$emoji OpenSpec Workflow Suggestion
+Workflow Stack Recommendations
 
-Recommendation: $($result.recommendation -replace '_', ' ')
-Score: $($result.score)/100
-
-Detected Features:
-$($result.reasons -join "`n- ")
-
-$schemaNote
+$($lines -join "`n")
 
 "@
 
-    $result.message = $message.Trim()
-    return $result
+    return @{
+        workflows = $workflows
+        specDriven = $specDriven
+        mattFlow = $mattFlow
+        gstack = $gstack
+        message = $message.Trim()
+    }
 }
 
-function Show-OpenSpecSuggestion {
+function Show-WorkflowStackSuggestion {
     param(
         [hashtable]$Result,
         [bool]$AutoMode = $false
     )
 
     Write-Host $Result.message
-
-    if (-not $AutoMode -and $Result.recommendation -eq "strongly_recommended") {
-        $response = Read-Host "`nInitialize OpenSpec Enterprise workflow? (Y/n)"
-        if ($response -ne "n" -and $response -ne "N") {
-            return $true
-        }
-    }
-    return $false
-}
-
-function Initialize-OpenSpecWorkflow {
-    param(
-        [string]$Path,
-        [string]$Schema = "spec-driven"
-    )
-
-    $openSpecDir = Join-Path $Path "openspec"
-
-    # Create directory structure
-    $null = New-Item -Path "$openSpecDir/changes" -ItemType Directory -Force
-    $null = New-Item -Path "$openSpecDir/schemas" -ItemType Directory -Force
-
-    Write-Host "OpenSpec workflow initialized: $openSpecDir"
-    Write-Host "Next: Clone schema from Gitea or use local openspec-enterprise repo"
 }
 
 function Get-JsonProperty {
@@ -3059,11 +3184,25 @@ $toolState = [ordered]@{
     git = Test-CommandAvailable "git"
 }
 
-# OpenSpec Enterprise detection (Plan B: auto-detect + user confirmation)
+# Three-stack workflow recommender (matt-flow / gstack / spec-driven).
+# -SkipOpenSpec / -AutoOpenSpec keep their historical names/semantics: Skip disables
+# the whole detector, Auto suppresses interactive prompts (this detector never prompts).
+$workflowStackResult = $null
 $openSpecResult = $null
 if (-not $SkipOpenSpec) {
-    $openSpecResult = Invoke-OpenSpecDetector -RepoPath $repoPath -AutoMode $AutoOpenSpec
-    $notes.Add("OpenSpec score: $($openSpecResult.score)/100 ($($openSpecResult.recommendation))")
+    $workflowStackResult = Invoke-WorkflowStackDetector -RepoPath $repoPath -AutoMode $AutoOpenSpec
+    $openSpecResult = $workflowStackResult.specDriven
+    $notes.Add("Spec-driven score: $($openSpecResult.score)/100 ($($openSpecResult.verdict), tool=$($openSpecResult.tool))")
+}
+else {
+    $openSpecResult = @{
+        stack = "spec-driven"
+        tool = $null
+        verdict = "skipped"
+        score = 0
+        reasons = @("Skipped via -SkipOpenSpec")
+        entrySkills = @()
+    }
 }
 
 if (-not $toolState.rg) {
@@ -3845,11 +3984,24 @@ $report = [ordered]@{
         repomixPack = $repomixPack
         githubResearch = $githubResearch
     openSpec = [ordered]@{
-        recommendation = $openSpecResult.recommendation
+        recommendation = $openSpecResult.verdict
         score = $openSpecResult.score
-        schema = $openSpecResult.schema
+        tool = $openSpecResult.tool
         reasons = $openSpecResult.reasons
     }
+    workflows = if ($workflowStackResult) {
+        @($workflowStackResult.workflows | ForEach-Object {
+            $wf = $_
+            [ordered]@{
+                stack = $wf.stack
+                tool = if ($wf.ContainsKey("tool")) { $wf.tool } else { $null }
+                verdict = $wf.verdict
+                score = if ($wf.ContainsKey("score")) { $wf.score } else { $null }
+                reasons = $wf.reasons
+                entrySkills = $wf.entrySkills
+            }
+        })
+    } else { @() }
 hospital = [ordered]@{
         path = $hospitalReportPath
         markdown = $hospitalMarkdownPath
@@ -3902,12 +4054,18 @@ $summaryLines = @(
     "- Hospital: $hospitalMarkdownPath",
     "- Understand command: ``$understandCommand``",
     "",
-    "## OpenSpec Enterprise",
+    "## Workflow Stack Recommendations",
     "",
-    "- Recommendation: $($openSpecResult.recommendation -replace '_', ' ')",
-    "- Score: $($openSpecResult.score)/100",
-    "- Schema: $($openSpecResult.schema)",
-    "- Reasons: $($openSpecResult.reasons -join ', ')",
+    $(if ($workflowStackResult) {
+        @($workflowStackResult.workflows | ForEach-Object {
+            $wf = $_
+            $toolText = if ($wf.ContainsKey("tool") -and $wf.tool) { " (tool=$($wf.tool))" } else { "" }
+            $skillsText = if ($wf.entrySkills.Count -gt 0) { $wf.entrySkills -join " " } else { "(none)" }
+            "- $($wf.stack)${toolText}: $($wf.verdict -replace '_', ' ') -> $skillsText"
+        }) -join "`n"
+    } else {
+        "- spec-driven: skipped -> (none)"
+    }),
     "",
     "## Summary",
     "",
