@@ -110,7 +110,7 @@ jobs:
 
       - name: Install portable pipeline
         shell: pwsh
-        run: .\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -Json
+        run: .\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -RequireRepowise:$false -Json
 
       - name: Add pipeline tools PATH
         shell: pwsh
@@ -273,7 +273,7 @@ jobs:
       - name: Install portable pipeline
         shell: pwsh
         run: |
-          $result = ./install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -Json | ConvertFrom-Json
+          $result = ./install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -RequireRepowise:$false -Json | ConvertFrom-Json
           Add-Content -Path $env:GITHUB_PATH -Value $result.paths.bin
 
       - name: Doctor
