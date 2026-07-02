@@ -86,6 +86,12 @@ cd code-intel-pipeline
 .\test-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo
 ```
 
+单元级回归测试（覆盖 fail-open / 假绿类修复 + fail-open lint，不依赖真实 repo，跑在临时目录里）：
+
+```powershell
+.\test-regression-fixes.ps1 -VerboseOutput
+```
+
 大仓库建议指定核心范围：
 
 ```powershell
@@ -295,6 +301,8 @@ sentrux_test_gaps
 - `sentrux pro status / activate / deactivate` 可直接用。
 - 优先转发给真实 `sentrux.exe`。
 - 没有真实 core 时，使用仓库内置 `sentrux-lite-core.ps1` 保底。
+
+`bin\` 里的 `sentrux-shim.ps1` / `sentrux-lite-core.ps1` 只是薄转发器（thin forwarder），不是脚本正文的拷贝：它们在安装时把仓库路径写死进去，运行时转发到 `tools\sentrux-shim\` 下的真身并透传参数和退出码。改仓库里的 `tools\sentrux-shim\*.ps1` 立即生效，PATH 调用不需要重跑 install。只有仓库整体挪了目录才需要重跑 `install-code-intel-pipeline.ps1`——挪了目录之后转发器会报清晰错误（`repo not found at <path>`），不会静默失败或跑到旧代码。
 
 检查：
 

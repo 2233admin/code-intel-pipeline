@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `Invoke-SentruxAgentTool.ps1` — minor edits
 - `templates/sentrux-rules.example.toml` — minor edits
+- `install-code-intel-pipeline.ps1` — `Install-SentruxShim` no longer copies `sentrux-shim.ps1`/`sentrux-lite-core.ps1` bodies into `%LOCALAPPDATA%\code-intel\bin\`. It now generates thin forwarder scripts that hardcode the repo path and forward `$args`/exit code to the real files under `tools\sentrux-shim\` in the repo, plus a `repo.json` recording the resolved repo root. Editing the repo's shim scripts now takes effect immediately on the next PATH invocation — no reinstall needed. If the repo path is later moved or deleted, the forwarder fails loudly with `repo not found at <path>. Re-run install-code-intel-pipeline.ps1` instead of silently running stale code.
 
 ### Verified
 
