@@ -24,10 +24,14 @@ content="".join(
 ),
 ```
 
-**⚠️ Re-apply after any `uv tool upgrade repowise`** — the patch lives in the
-installed venv, not the repo. Symptom of it being lost: docs runs exit 0 with
-`total_pages=0` and `page_generation_failed error='ThinkingBlock' object has
-no attribute 'text'` in the log. Verify with:
+**Self-healing:** `install-code-intel-pipeline.ps1` applies this patch
+idempotently on every run (`Repair-RepowiseThinkingBlockPatch`, reported as
+`repowise-thinking-patch` in the INSTALL output: `already_present` /
+`installed` / `install_failed` when the upstream layout changed). After any
+`uv tool upgrade repowise`, just re-run the installer. Symptom of the patch
+being lost: docs runs exit 0 with `total_pages=0` and
+`page_generation_failed error='ThinkingBlock' object has no attribute 'text'`
+in the log. Verify with:
 
 ```powershell
 rg "ThinkingBlock|getattr\(block" "$env:APPDATA\uv\tools\repowise\Lib\site-packages\repowise\core\providers\llm\anthropic.py"

@@ -355,6 +355,50 @@ function Install-SentruxShim {
     }
 }
 
+function Repair-RepowiseThinkingBlockPatch {
+    param(
+        [System.Collections.Generic.List[object]]$Actions
+    )
+
+    # repowise's anthropic provider reads response.content[0].text; reasoning
+    # models behind Anthropic-compatible endpoints (e.g. MiniMax-M2.x) return
+    # a ThinkingBlock first, so docs generation fails on every page. Patch the
+    # installed uv tool venv idempotently: uv tool upgrade wipes the patch and
+    # rerunning this installer restores it. See overlays\repowise\README.md.
+    if ([string]::IsNullOrWhiteSpace($env:APPDATA)) { return }
+    $providerPath = Join-Path $env:APPDATA "uv\tools\repowise\Lib\site-packages\repowise\core\providers\llm\anthropic.py"
+    if (-not (Test-Path -LiteralPath $providerPath -PathType Leaf)) {
+        return
+    }
+
+    try {
+        $content = Get-Content -LiteralPath $providerPath -Raw
+        $patchedMarker = 'getattr(block, "type", "") == "text"'
+        $vulnerable = "content=response.content[0].text,"
+        if ($content.Contains($patchedMarker)) {
+            Add-InstallAction $Actions "repowise-thinking-patch" "already_present" $providerPath ""
+            return
+        }
+        if (-not $content.Contains($vulnerable)) {
+            Add-InstallAction $Actions "repowise-thinking-patch" "install_failed" "expected pattern not found in $providerPath; upstream layout changed" "Review overlays\repowise\README.md; patch manually or drop the overlay if upstream fixed it."
+            return
+        }
+        $replacement = @'
+content="".join(
+                block.text
+                for block in response.content
+                if getattr(block, "type", "") == "text"
+            ),
+'@
+        $content = $content.Replace($vulnerable, $replacement)
+        Set-Content -LiteralPath $providerPath -Value $content -Encoding UTF8
+        Add-InstallAction $Actions "repowise-thinking-patch" "installed" $providerPath "Re-run this installer after any 'uv tool upgrade repowise'."
+    }
+    catch {
+        Add-InstallAction $Actions "repowise-thinking-patch" "install_failed" $_.Exception.Message "Patch manually per overlays\repowise\README.md."
+    }
+}
+
 function Install-SentruxVlangPluginOverlay {
     param(
         [System.Collections.Generic.List[object]]$Actions,
@@ -493,6 +537,7 @@ Install-MissingTool $installActions "python" { Invoke-WingetInstall "Python.Pyth
 Install-MissingTool $installActions "repowise" { Invoke-PipInstall "repowise" } "Install repowise into the active Python environment (`python -m pip install --upgrade repowise`)."
 Install-MissingTool $installActions "sentrux" { Invoke-SentruxInstall } "Install sentrux or ensure sentrux.exe is on PATH."
 Install-SentruxShim $installActions $root
+Repair-RepowiseThinkingBlockPatch $installActions
 Install-SentruxVlangPluginOverlay $installActions $root
 
 $requiredFiles = @(
