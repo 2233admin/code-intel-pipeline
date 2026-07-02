@@ -27,10 +27,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo", required=True)
     parser.add_argument("--coverage-pct", type=float, default=0.02)
     parser.add_argument("--concurrency", type=int, default=1)
+    parser.add_argument("--provider", default=os.environ.get("REPOWISE_PROVIDER", "anthropic"))
+    parser.add_argument("--model", default=os.environ.get("REPOWISE_MODEL", ""))
+    parser.add_argument("--reasoning", default=os.environ.get("REPOWISE_REASONING", "auto"))
     return parser.parse_args()
 
 
-async def generate_docs(repo_path: Path, coverage_pct: float, concurrency: int) -> dict[str, object]:
+async def generate_docs(repo_path: Path, coverage_pct: float, concurrency: int, provider_name: str, model: str, reasoning: str) -> dict[str, object]:
     traverser = FileTraverser(repo_path, extra_exclude_patterns=[".repowise/**"])
     file_infos = list(traverser.traverse())
     repo_structure = traverser.get_repo_structure()
@@ -57,17 +60,18 @@ async def generate_docs(repo_path: Path, coverage_pct: float, concurrency: int) 
         graph_builder.add_framework_edges([item.name for item in tech_items])
     except Exception:
         pass
-
-    provider = get_provider(
-        "anthropic",
-        model="MiniMax-M2.7",
-        api_key=os.environ["ANTHROPIC_API_KEY"],
-        base_url=os.environ.get("ANTHROPIC_BASE_URL"),
-        with_rate_limiter=False,
-    )
+    if provider_name == "ccw":
+        provider_name = "codex_cli"
+    provider_kwargs = {"reasoning": reasoning, "with_rate_limiter": False}
+    if model:
+        provider_kwargs["model"] = model
+    if provider_name == "anthropic":
+        provider_kwargs["api_key"] = os.environ["ANTHROPIC_API_KEY"]
+        provider_kwargs["base_url"] = os.environ.get("ANTHROPIC_BASE_URL")
+    provider = get_provider(provider_name, **provider_kwargs)
     config = GenerationConfig(
         max_concurrency=concurrency,
-        reasoning="auto",
+        reasoning=reasoning,
         coverage_pct=coverage_pct,
         max_pages_pct=coverage_pct,
         enable_rag_context=False,
@@ -118,7 +122,7 @@ async def generate_docs(repo_path: Path, coverage_pct: float, concurrency: int) 
 
 def main() -> int:
     args = parse_args()
-    result = asyncio.run(generate_docs(Path(args.repo).resolve(), args.coverage_pct, args.concurrency))
+    result = asyncio.run(generate_docs(Path(args.repo).resolve(), args.coverage_pct, args.concurrency, args.provider, args.model, args.reasoning))
     print(json.dumps(result, ensure_ascii=False))
     return 0
 

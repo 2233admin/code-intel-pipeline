@@ -11,6 +11,9 @@ param(
     [string[]]$RootFiles = @(),
     [int]$CommitLimit = 25,
     [int]$TimeoutSeconds = 180,
+    [string]$Provider = "mock",
+    [string]$Model = "",
+    [string]$Reasoning = "auto",
     [switch]$Docs
 )
 
@@ -134,17 +137,20 @@ function Copy-ScopedFile {
 function Write-ScopedConfig {
     param(
         [string]$ShadowPath,
-        [int]$CommitLimit
+        [int]$CommitLimit,
+        [string]$Provider,
+        [string]$Model,
+        [string]$Reasoning
     )
 
     $configDir = Join-Path $ShadowPath ".repowise"
     New-Item -ItemType Directory -Force -Path $configDir | Out-Null
     $configPath = Join-Path $configDir "config.yaml"
     $lines = @(
-        "provider: anthropic",
-        "model: MiniMax-M2.7",
+        "provider: $Provider",
+        $(if (-not [string]::IsNullOrWhiteSpace($Model)) { "model: $Model" } else { $null }),
         "embedder: mock",
-        "reasoning: auto",
+        "reasoning: $Reasoning",
         "commit_limit: $CommitLimit",
         "editor_files:",
         "  claude_md: false"
@@ -368,7 +374,11 @@ foreach ($file in $scopeFiles) {
 }
 
 Remove-ScopedNoise $shadowPath
-Write-ScopedConfig $shadowPath $CommitLimit
+$Provider = if ($Provider -ieq "ccw") { "codex_cli" } else { $Provider }
+$providerArgs = @("--provider", $Provider)
+if (-not [string]::IsNullOrWhiteSpace($Model)) { $providerArgs += @("--model", $Model) }
+if (-not [string]::IsNullOrWhiteSpace($Reasoning)) { $providerArgs += @("--reasoning", $Reasoning) }
+Write-ScopedConfig $shadowPath $CommitLimit $Provider $Model $Reasoning
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
@@ -401,7 +411,7 @@ try {
                 -FilePath "repowise" `
                 -Description "repowise init" `
                 -TimeoutSeconds $TimeoutSeconds `
-                -ArgumentList @("init", ".", "--index-only", "-y", "--no-claude-md", "--no-onboarding", "--skip-tests", "--skip-infra", "--commit-limit", [string]$CommitLimit, "--embedder", "mock", "--provider", "mock"))
+                -ArgumentList (@("init", ".", "--index-only", "-y", "--no-claude-md", "--no-onboarding", "--skip-tests", "--skip-infra", "--commit-limit", [string]$CommitLimit, "--embedder", "mock") + $providerArgs))
         }
         $dbPath = Join-Path (Join-Path $shadowPath ".repowise") "wiki.db"
         if (Test-Path -LiteralPath $dbPath -PathType Leaf) {
@@ -417,7 +427,7 @@ try {
             -FilePath $pythonCommand `
             -Description "repowise scoped docs" `
             -TimeoutSeconds $TimeoutSeconds `
-            -ArgumentList @($scriptPath, "--repo", $shadowPath, "--coverage-pct", "0.02", "--concurrency", "1"))
+            -ArgumentList @($scriptPath, "--repo", $shadowPath, "--coverage-pct", "0.02", "--concurrency", "1", "--provider", $Provider, "--model", $Model, "--reasoning", $Reasoning))
     }
     else {
         if (Test-Path -LiteralPath $statePath -PathType Leaf) {
@@ -425,14 +435,14 @@ try {
                 -FilePath "repowise" `
                 -Description "repowise update" `
                 -TimeoutSeconds $TimeoutSeconds `
-                -ArgumentList @("update", "--no-workspace", "--index-only"))
+                -ArgumentList (@("update", "--no-workspace", "--index-only") + $providerArgs))
         }
         else {
             [void](Invoke-ProcessWithTimeout `
                 -FilePath "repowise" `
                 -Description "repowise init" `
                 -TimeoutSeconds $TimeoutSeconds `
-                -ArgumentList @("init", ".", "--index-only", "-y", "--no-claude-md", "--no-onboarding", "--skip-tests", "--skip-infra", "--commit-limit", [string]$CommitLimit, "--embedder", "mock", "--provider", "mock"))
+                -ArgumentList (@("init", ".", "--index-only", "-y", "--no-claude-md", "--no-onboarding", "--skip-tests", "--skip-infra", "--commit-limit", [string]$CommitLimit, "--embedder", "mock") + $providerArgs))
         }
     }
 }

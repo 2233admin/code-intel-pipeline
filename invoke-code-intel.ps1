@@ -15,6 +15,9 @@ param(
     [string]$Mode = "normal",
 
     [switch]$RepowiseDocs,
+    [string]$RepowiseProvider = "",
+    [string]$RepowiseModel = "",
+    [string]$RepowiseReasoning = "",
     [switch]$SaveSentruxBaseline,
 [switch]$AutoSaveMissingSentruxBaseline,
 [switch]$RequireUnderstandGraph,
@@ -78,6 +81,9 @@ function Invoke-OneRepo {
         }
         if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) { $invokeParams.RepoPath = $DirectRepoPath } else { $invokeParams.Repo = $RepoName }
         if ($RepowiseDocs) { $invokeParams.RepowiseDocs = $true }
+        if (-not [string]::IsNullOrWhiteSpace($RepowiseProvider)) { $invokeParams.RepowiseProvider = $RepowiseProvider }
+        if (-not [string]::IsNullOrWhiteSpace($RepowiseModel)) { $invokeParams.RepowiseModel = $RepowiseModel }
+        if (-not [string]::IsNullOrWhiteSpace($RepowiseReasoning)) { $invokeParams.RepowiseReasoning = $RepowiseReasoning }
         if ($SaveSentruxBaseline) { $invokeParams.SaveSentruxBaseline = $true }
         if ($AutoSaveMissingSentruxBaseline) { $invokeParams.AutoSaveMissingSentruxBaseline = $true }
         if ($RequireUnderstandGraph) { $invokeParams.RequireUnderstandGraph = $true }
@@ -86,10 +92,10 @@ function Invoke-OneRepo {
     }
     else {
         if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) {
-            & $runner -Config $Config -RepoPath $DirectRepoPath -Mode $Mode -Platform $Platform
+            & $runner -Config $Config -RepoPath $DirectRepoPath -Mode $Mode -Platform $Platform -RepowiseProvider $RepowiseProvider -RepowiseModel $RepowiseModel -RepowiseReasoning $RepowiseReasoning
         }
         else {
-            & $runner -Config $Config -Repo $RepoName -Mode $Mode -Platform $Platform
+            & $runner -Config $Config -Repo $RepoName -Mode $Mode -Platform $Platform -RepowiseProvider $RepowiseProvider -RepowiseModel $RepowiseModel -RepowiseReasoning $RepowiseReasoning
         }
     }
 

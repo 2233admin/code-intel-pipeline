@@ -21,6 +21,9 @@ param(
     [string[]]$RepowiseScopePaths = @(),
     [string[]]$RepowiseRootFiles = @(),
     [int]$RepowiseTimeoutSeconds = 180,
+    [string]$RepowiseProvider = "",
+    [string]$RepowiseModel = "",
+    [string]$RepowiseReasoning = "",
     [string[]]$InventoryExclude = @(),
 
     [switch]$SaveSentruxBaseline,
@@ -370,6 +373,56 @@ function Get-JsonProperty {
     $prop = $Object.PSObject.Properties[$Name]
     if ($null -eq $prop) { return $null }
     return $prop.Value
+}
+
+function Resolve-ConfigString {
+    param(
+        [string]$Value,
+        [object]$RepoConfig,
+        [object]$ConfigData,
+        [string]$Name,
+        [string[]]$EnvNames = @(),
+        [string]$Default = ""
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($Value)) { return $Value }
+
+    $repoValue = Get-JsonProperty $RepoConfig $Name
+    if (-not [string]::IsNullOrWhiteSpace([string]$repoValue)) { return [string]$repoValue }
+
+    $globalValue = Get-JsonProperty $ConfigData $Name
+    if (-not [string]::IsNullOrWhiteSpace([string]$globalValue)) { return [string]$globalValue }
+
+    foreach ($envName in $EnvNames) {
+        $envValue = [Environment]::GetEnvironmentVariable($envName, "Process")
+        if ([string]::IsNullOrWhiteSpace($envValue)) {
+            $envValue = [Environment]::GetEnvironmentVariable($envName, "User")
+        }
+        if (-not [string]::IsNullOrWhiteSpace($envValue)) { return $envValue }
+    }
+
+    return $Default
+}
+
+function Normalize-RepowiseProvider {
+    param([string]$Provider)
+    if ([string]::IsNullOrWhiteSpace($Provider)) { return "mock" }
+    $normalized = $Provider.Trim()
+    if ($normalized -ieq "ccw") { return "codex_cli" }
+    return $normalized
+}
+
+function Get-RepowiseProviderArgs {
+    param(
+        [string]$Provider,
+        [string]$Model,
+        [string]$Reasoning
+    )
+
+    $args = @("--provider", $Provider)
+    if (-not [string]::IsNullOrWhiteSpace($Model)) { $args += @("--model", $Model) }
+    if (-not [string]::IsNullOrWhiteSpace($Reasoning)) { $args += @("--reasoning", $Reasoning) }
+    return $args
 }
 
 function Get-DefaultArtifactRoot {
@@ -2873,6 +2926,31 @@ if ([string]::IsNullOrWhiteSpace($RepowiseShadowRoot)) {
     }
 }
 
+$defaultRepowiseProvider = if ($RepowiseDocs) { "anthropic" } else { "mock" }
+$RepowiseProvider = Normalize-RepowiseProvider (Resolve-ConfigString `
+    -Value $RepowiseProvider `
+    -RepoConfig $repoConfig `
+    -ConfigData $configData `
+    -Name "repowiseProvider" `
+    -EnvNames @("CODE_INTEL_REPOWISE_PROVIDER", "REPOWISE_PROVIDER") `
+    -Default $defaultRepowiseProvider)
+$defaultRepowiseModel = if ($RepowiseProvider -ieq "anthropic") { "MiniMax-M2.7" } else { "" }
+$RepowiseModel = Resolve-ConfigString `
+    -Value $RepowiseModel `
+    -RepoConfig $repoConfig `
+    -ConfigData $configData `
+    -Name "repowiseModel" `
+    -EnvNames @("CODE_INTEL_REPOWISE_MODEL", "REPOWISE_MODEL") `
+    -Default $defaultRepowiseModel
+$RepowiseReasoning = Resolve-ConfigString `
+    -Value $RepowiseReasoning `
+    -RepoConfig $repoConfig `
+    -ConfigData $configData `
+    -Name "repowiseReasoning" `
+    -EnvNames @("CODE_INTEL_REPOWISE_REASONING", "REPOWISE_REASONING") `
+    -Default "auto"
+$repowiseProviderArgs = Get-RepowiseProviderArgs -Provider $RepowiseProvider -Model $RepowiseModel -Reasoning $RepowiseReasoning
+
 if ([string]::IsNullOrWhiteSpace($SentruxPath)) {
     $configuredSentruxPath = Get-JsonProperty $repoConfig "sentruxPath"
     $SentruxPath = if ($null -eq $configuredSentruxPath) { "" } else { [string]$configuredSentruxPath }
@@ -2947,7 +3025,7 @@ if ($RepowiseDocs -and -not $SkipRepowise) {
         if (-not (Test-Path -LiteralPath $providerPreflightScript -PathType Leaf)) {
             throw "provider preflight script not found: $providerPreflightScript"
         }
-        & $providerPreflightScript -Json
+        & $providerPreflightScript -Json -Provider $RepowiseProvider -Model $RepowiseModel
     }
     $steps.Add($preflightStep)
     if ($preflightStep.status -ne "passed") {
@@ -3147,33 +3225,24 @@ if ($Mode -ne "lite") {
 
     if ($hasRepowiseState -and $hasRepowiseWorkspace) {
         $steps.Add((Invoke-LoggedStep "repowise update" {
-            repowise update --workspace --index-only
+            repowise update --workspace --index-only @repowiseProviderArgs
         }))
     }
 elseif ($hasRepowiseState) {
-    $message = "Repowise state exists without .repowise-workspace.yaml; skipped index-only update to avoid interactive init."
-    $notes.Add($message)
-    $steps.Add([pscustomobject][ordered]@{
-        name = "repowise update"
-        startedAt = (Get-Date).ToString("o")
-        status = "skipped"
-        exitCode = $null
-        output = $message
-        error = ""
-        finishedAt = (Get-Date).ToString("o")
-        durationMs = 0
-    })
+        $steps.Add((Invoke-LoggedStep "repowise update" {
+            repowise update --no-workspace --index-only @repowiseProviderArgs
+        }))
 }
 else {
     $steps.Add((Invoke-LoggedStep "repowise init" {
-        repowise init . --index-only -y --no-claude-md --no-onboarding --embedder mock --provider mock
+        repowise init . --index-only -y --no-claude-md --no-onboarding --embedder mock @repowiseProviderArgs
     }))
 }
 
 
                     if ($RepowiseDocs) {
                         $steps.Add((Invoke-LoggedStep "repowise docs" {
-                            repowise update --docs --no-workspace
+                            repowise update --docs --no-workspace @repowiseProviderArgs
                         }))
                     }
                 }

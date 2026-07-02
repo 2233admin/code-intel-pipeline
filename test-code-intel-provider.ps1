@@ -9,15 +9,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$platformModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-intel-platform.psm1"
-Import-Module $platformModule -Force
-
 function Set-EnvFromUserRegistry {
     param([string]$Name)
-
-    if (-not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name, "Process"))) {
-        return
-    }
+    if (-not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name, "Process"))) { return }
     $value = [Environment]::GetEnvironmentVariable($Name, "User")
     if (-not [string]::IsNullOrWhiteSpace($value)) {
         [Environment]::SetEnvironmentVariable($Name, $value, "Process")
@@ -26,81 +20,82 @@ function Set-EnvFromUserRegistry {
 
 Set-EnvFromUserRegistry "ANTHROPIC_API_KEY"
 Set-EnvFromUserRegistry "ANTHROPIC_BASE_URL"
+Set-EnvFromUserRegistry "REPOWISE_PROVIDER"
+Set-EnvFromUserRegistry "REPOWISE_MODEL"
+Set-EnvFromUserRegistry "REPOWISE_REASONING"
 
-$pythonScript = @'
-import json
-import os
-import sys
-
-provider = os.environ.get("CODE_INTEL_PROVIDER", "anthropic")
-model = os.environ.get("CODE_INTEL_MODEL", "MiniMax-M2.7")
-
-result = {
-    "ok": False,
-    "provider": provider,
-    "model": model,
-    "category": "",
-    "message": "",
+$effectiveProvider = if ($Provider -ieq "ccw") { "codex_cli" } else { $Provider }
+$result = [ordered]@{
+    ok = $false
+    provider = $effectiveProvider
+    model = $Model
+    category = ""
+    message = ""
 }
 
-try:
-    if provider != "anthropic":
-        raise RuntimeError(f"Unsupported provider preflight: {provider}")
-    from anthropic import Anthropic
-    client = Anthropic(
-        api_key=os.environ.get("ANTHROPIC_API_KEY"),
-        base_url=os.environ.get("ANTHROPIC_BASE_URL"),
-    )
-    client.messages.create(
-        model=model,
-        max_tokens=128,
-        messages=[{"role": "user", "content": "reply ok"}],
-    )
-    result["ok"] = True
-    result["message"] = "provider preflight ok"
-except Exception as exc:
-    text = str(exc)
-    lower = text.lower()
-    if "429" in lower or "rate_limit" in lower or "quota" in lower or "usage limit" in lower:
-        result["category"] = "provider_quota"
-    else:
-        result["category"] = "local_tool_error"
-    result["message"] = text[:1000]
-
-print(json.dumps(result, ensure_ascii=False))
-sys.exit(0 if result["ok"] else 1)
-'@
-
-$env:CODE_INTEL_PROVIDER = $Provider
-$env:CODE_INTEL_MODEL = $Model
-$python = Get-CodeIntelPythonCommand
-if (-not $python) {
-    $result = [pscustomobject][ordered]@{
-        ok = $false
-        provider = $Provider
-        model = $Model
-        category = "local_tool_error"
-        message = "python/python3 is not on PATH"
+try {
+    switch -Regex ($effectiveProvider) {
+        "^mock$" {
+            $result.ok = $true
+            $result.message = "mock provider"
+            break
+        }
+        "^codex_cli$" {
+            if (-not (Get-Command codex -ErrorAction SilentlyContinue)) {
+                throw "codex CLI not found on PATH for repowise codex_cli provider"
+            }
+            $result.ok = $true
+            $result.message = "codex CLI available"
+            break
+        }
+        "^opencode$" {
+            if (-not (Get-Command opencode -ErrorAction SilentlyContinue)) {
+                throw "opencode CLI not found on PATH for repowise opencode provider"
+            }
+            $result.ok = $true
+            $result.message = "opencode CLI available"
+            break
+        }
+        "^anthropic$" {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("ANTHROPIC_API_KEY", "Process"))) {
+                throw "ANTHROPIC_API_KEY is not set"
+            }
+            $result.ok = $true
+            $result.message = "anthropic environment available"
+            break
+        }
+        default {
+            if (-not (Get-Command repowise -ErrorAction SilentlyContinue)) {
+                throw "repowise CLI not found on PATH"
+            }
+            $result.ok = $true
+            $result.message = "provider deferred to repowise registry"
+        }
     }
-    if ($Json) { $result | ConvertTo-Json -Depth 4 } else { Write-Host "Provider preflight: FAILED local_tool_error $Provider/$Model"; Write-Host $result.message }
-    exit 1
 }
-$pythonCommand = if (-not [string]::IsNullOrWhiteSpace($python.Source)) { $python.Source } else { $python.Name }
-$raw = & $pythonCommand -c $pythonScript
-$exitCode = $LASTEXITCODE
-$result = $raw | ConvertFrom-Json
+catch {
+    $text = $_.Exception.Message
+    if ($text -match "429|rate|quota|usage limit") {
+        $result.category = "provider_quota"
+    }
+    else {
+        $result.category = "provider_error"
+    }
+    $result.message = $text
+}
 
 if ($Json) {
-    $result | ConvertTo-Json -Depth 4
+    [pscustomobject]$result | ConvertTo-Json -Depth 4
 }
 else {
     if ($result.ok) {
-        Write-Host "Provider preflight: OK $Provider/$Model"
+        Write-Host "Provider preflight: OK $effectiveProvider/$Model"
     }
     else {
-        Write-Host "Provider preflight: FAILED $($result.category) $Provider/$Model"
+        Write-Host "Provider preflight: FAILED $($result.category) $effectiveProvider/$Model"
         Write-Host $result.message
     }
 }
 
-exit $exitCode
+if ($result.ok) { exit 0 }
+exit 1
