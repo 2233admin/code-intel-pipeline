@@ -561,8 +561,12 @@ if ($CheckProvider) {
     try {
         $providerRaw = & $providerScript -Json
         $providerResult = $providerRaw | ConvertFrom-Json
-        $detail = if ($providerResult.ok) { $providerResult.message } else { "$($providerResult.category): $($providerResult.message)" }
-        Add-Check $checks "provider:MiniMax-M2.7" "provider" $true ([bool]$providerResult.ok) $detail "Check provider quota or user-scoped Anthropic-compatible env vars."
+        if ($null -eq $providerResult) {
+            Add-Check $checks "provider:MiniMax-M2.7" "provider" $true $false "provider script returned no output" "Run test-code-intel-provider.ps1 -Json manually."
+        } else {
+            $detail = if ($providerResult.ok) { $providerResult.message } else { "$($providerResult.category): $($providerResult.message)" }
+            Add-Check $checks "provider:MiniMax-M2.7" "provider" $true ([bool]$providerResult.ok) $detail "Check provider quota or user-scoped Anthropic-compatible env vars."
+        }
     }
     catch {
         Add-Check $checks "provider:MiniMax-M2.7" "provider" $true $false $_.Exception.Message "Run test-code-intel-provider.ps1 -Json manually."

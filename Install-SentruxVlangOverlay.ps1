@@ -43,7 +43,10 @@ function Test-SameOverlayFile {
         return $true
     }
     catch {
-        return $true
+        # Fail toward re-copying: an unreadable target should not be treated
+        # as "identical, skip copy" — that would leave a possibly-corrupt or
+        # locked file in place.
+        return $false
     }
 }
 

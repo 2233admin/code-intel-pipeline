@@ -389,17 +389,28 @@ function Invoke-Gate {
     $metrics = Parse-SentruxOutput $native.output
     $baseline = Get-BaselineMetrics $TargetPath
 
+    # Track which core metrics were actually observed from sentrux output
+    # (as opposed to backfilled from baseline) so callers can fail closed
+    # when the underlying tool output was unparseable.
+    $coreMetricKeys = @("quality_signal", "coupling", "cycles", "god_files")
+    $observedCount = @($coreMetricKeys | Where-Object { $null -ne $metrics[$_] }).Count
+    $backfilledMetrics = @()
+
     if ($null -eq $metrics["quality_signal"] -and $null -ne $baseline) {
         $metrics["quality_signal"] = $baseline["quality_signal"]
+        $backfilledMetrics += "quality_signal"
     }
     if ($null -eq $metrics["coupling"] -and $null -ne $baseline) {
         $metrics["coupling"] = $baseline["coupling"]
+        $backfilledMetrics += "coupling"
     }
     if ($null -eq $metrics["cycles"] -and $null -ne $baseline) {
         $metrics["cycles"] = $baseline["cycles"]
+        $backfilledMetrics += "cycles"
     }
     if ($null -eq $metrics["god_files"] -and $null -ne $baseline) {
         $metrics["god_files"] = $baseline["god_files"]
+        $backfilledMetrics += "god_files"
     }
 
     return [ordered]@{
@@ -411,6 +422,8 @@ function Invoke-Gate {
         baseline = $baseline
         bottleneck = Get-Bottleneck $metrics
         raw_output = $native.output
+        metrics_observed_count = $observedCount
+        backfilled_metrics = $backfilledMetrics
     }
 }
 
@@ -519,13 +532,30 @@ function Invoke-SessionEndTool {
     $after = Convert-QualitySignal $metrics["quality_signal"]
     $delta = if ($null -ne $before -and $null -ne $after) { $after - $before } else { $null }
     $rulesPass = ($null -eq $rules -or [bool]$rules["pass"])
-    $pass = ($gate["pass"] -and ($null -eq $delta -or $delta -ge 0) -and $rulesPass)
-    $summary = "No structural degradation during this session"
-    if (-not $gate["pass"] -or ($null -ne $delta -and $delta -lt 0)) {
-        $summary = "Quality degraded during this session"
+
+    # Fail-closed: if sentrux produced zero parseable metrics this run, we
+    # cannot legitimately evaluate the gate. Backfilling everything from
+    # baseline would silently report delta=0 / "no degradation" even when
+    # sentrux itself is broken. Treat that as an explicit failure instead.
+    $metricsObserved = [int]$gate["metrics_observed_count"]
+    $backfilledMetrics = @($gate["backfilled_metrics"])
+
+    if ($metricsObserved -eq 0) {
+        $pass = $false
+        $summary = "sentrux output unparseable - gate cannot evaluate"
     }
-    elseif (-not $rulesPass) {
-        $summary = "Architecture rules failed during this session"
+    else {
+        $pass = ($gate["pass"] -and ($null -eq $delta -or $delta -ge 0) -and $rulesPass)
+        $summary = "No structural degradation during this session"
+        if (-not $gate["pass"] -or ($null -ne $delta -and $delta -lt 0)) {
+            $summary = "Quality degraded during this session"
+        }
+        elseif (-not $rulesPass) {
+            $summary = "Architecture rules failed during this session"
+        }
+        if ($backfilledMetrics.Count -gt 0) {
+            $summary = "$summary (warning: backfilled from baseline: $($backfilledMetrics -join ', '))"
+        }
     }
 
     $record = [ordered]@{
@@ -537,6 +567,8 @@ function Invoke-SessionEndTool {
         signal_after = $after
         delta = $delta
         summary = $summary
+        metrics_observed_count = $metricsObserved
+        backfilled_metrics = $backfilledMetrics
         ended_at = (Get-Date).ToString("o")
         gate = $gate
         rules = $rules

@@ -72,9 +72,11 @@ function Get-CodeFiles {
     param([string]$TargetPath)
 
     $extensions = @(".ps1", ".psm1", ".py", ".rs", ".go", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".java", ".cs", ".cpp", ".c", ".h", ".hpp", ".v")
+    # Skip rules must apply to the path *relative to the target*, otherwise a
+    # target rooted inside a skip-listed dir name (e.g. <repo>\tools) matches nothing.
     $files = Get-ChildItem -LiteralPath $TargetPath -Recurse -File -ErrorAction SilentlyContinue |
         Where-Object {
-            -not (Test-SkippedPath $_.FullName) -and
+            -not (Test-SkippedPath (Get-RelativePathSafe $TargetPath $_.FullName)) -and
             $_.Length -le 2097152 -and
             $extensions -contains $_.Extension.ToLowerInvariant()
         }
@@ -124,6 +126,8 @@ function Measure-File {
     catch {
         $text = ""
     }
+    # Get-Content -Raw returns $null (without throwing) for empty files
+    if ($null -eq $text) { $text = "" }
 
     $lines = if ([string]::IsNullOrWhiteSpace($text)) { @() } else { @($text -split "\r?\n") }
     $loc = @($lines | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
@@ -149,9 +153,33 @@ function Measure-File {
         max_complexity = $maxComplexity
         imports = $importMatches.Count
         calls = $callMatches.Count
-        is_god_file = ($loc -gt 800 -or $functionCount -gt 25)
+        is_god_file = ($loc -gt 800 -or ($functionCount -gt 25 -and $loc -gt 400))
         is_complex = ($maxComplexity -gt 25)
     }
+}
+
+function Get-SafeSum {
+    param(
+        [object[]]$Items,
+        [string]$Property
+    )
+    $result = $Items | Measure-Object -Property $Property -Sum -ErrorAction SilentlyContinue
+    if ($null -ne $result -and $null -ne $result.PSObject.Properties['Sum'] -and $null -ne $result.Sum) {
+        return [int]$result.Sum
+    }
+    return 0
+}
+
+function Get-SafeMaximum {
+    param(
+        [object[]]$Items,
+        [string]$Property
+    )
+    $result = $Items | Measure-Object -Property $Property -Maximum -ErrorAction SilentlyContinue
+    if ($null -ne $result -and $null -ne $result.PSObject.Properties['Maximum'] -and $null -ne $result.Maximum) {
+        return [int]$result.Maximum
+    }
+    return 0
 }
 
 function Measure-Project {
@@ -160,13 +188,12 @@ function Measure-Project {
     $files = Get-CodeFiles $TargetPath
     $fileMetrics = @($files | ForEach-Object { [pscustomobject](Measure-File $TargetPath $_) })
     $fileCount = $fileMetrics.Count
-    $importEdges = [int](($fileMetrics | Measure-Object -Property imports -Sum).Sum)
-    $callEdges = [int](($fileMetrics | Measure-Object -Property calls -Sum).Sum)
+    $importEdges = Get-SafeSum $fileMetrics 'imports'
+    $callEdges = Get-SafeSum $fileMetrics 'calls'
     $godFiles = @($fileMetrics | Where-Object { $_.is_god_file }).Count
     $complexFiles = @($fileMetrics | Where-Object { $_.is_complex }).Count
-    $functions = [int](($fileMetrics | Measure-Object -Property functions -Sum).Sum)
-    $maxComplexity = [int](($fileMetrics | Measure-Object -Property max_complexity -Maximum).Maximum)
-    if ($null -eq $maxComplexity) { $maxComplexity = 0 }
+    $functions = Get-SafeSum $fileMetrics 'functions'
+    $maxComplexity = Get-SafeMaximum $fileMetrics 'max_complexity'
     $couplingScore = if ($fileCount -gt 0) { [Math]::Round(($importEdges / [Math]::Max(1, $fileCount)) * 10, 2) } else { 0 }
     $quality = [int][Math]::Max(0, 10000 - ($couplingScore * 8) - ($complexFiles * 60) - ($godFiles * 120) - [Math]::Max(0, $maxComplexity - 15) * 10)
 
@@ -269,7 +296,7 @@ function Invoke-Check {
     if (-not (Test-Path -LiteralPath $rulesPath -PathType Leaf)) {
         Write-Output "No .sentrux/rules.toml found"
         Write-Output "Quality: not gated"
-        return 0
+        exit 0
     }
 
     $rules = Get-Content -LiteralPath $rulesPath -Raw
@@ -300,11 +327,11 @@ function Invoke-Check {
         foreach ($violation in $violations) {
             Write-Output "- $violation"
         }
-        return 1
+        exit 1
     }
 
     Write-Output "All rules passed - Quality: $($metrics.quality_signal)"
-    return 0
+    exit 0
 }
 
 function Invoke-Gate {
@@ -374,8 +401,7 @@ switch ($command) {
             Show-Help
             exit 0
         }
-        $code = Invoke-Check ($(if ($tail.Count -gt 0) { $tail[0] } else { "" }))
-        exit $code
+        Invoke-Check ($(if ($tail.Count -gt 0) { $tail[0] } else { "" }))
     }
     "gate" {
         Invoke-Gate $tail

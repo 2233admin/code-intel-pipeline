@@ -8,12 +8,23 @@
     "!**/external/**"
   ],
   "repos": {
+    "projects": {
+      "path": "D:\\projects",
+      "language": "zh"
+    },
     "k-atana": {
       "path": "D:\\projects\\k-atana",
       "language": "zh",
       "sentruxPath": "backend",
       "repowiseScopePaths": ["backend"],
       "repowiseRootFiles": ["README.md", "CLAUDE.md", "pyproject.toml", "requirements.txt", ".env.example", ".gitignore"]
+    },
+    "aigx": {
+      "path": "D:\\projects\\AIGX",
+      "language": "zh",
+      "sentruxPath": "tools",
+      "repowiseScopePaths": ["crates", "packages", "tools", "bin", "scripts", "standard", "docs", "integrations", "editors", "examples", "templates", "tests"],
+      "repowiseRootFiles": ["README.md", "SPEC.md", "package.json", "pyproject.toml", "llms.txt", ".gitignore"]
     }
   }
 }

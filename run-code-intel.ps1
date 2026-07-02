@@ -550,7 +550,9 @@ function New-HospitalStateMachine {
         [string]$CheckStatus,
         [int]$FailingWhatIfCount,
         [string]$Disposition,
-        [string]$NextProtocol
+        [string]$NextProtocol,
+        [string]$SurgeryTarget = "",
+        [string]$CurrentTopHotspot = ""
     )
 
     $toolsOk = ([int]$FailureCounts.localToolError -eq 0)
@@ -558,6 +560,14 @@ function New-HospitalStateMachine {
     $sentruxOk = ([int]$FailureCounts.sentruxFail -eq 0 -and $RulesExists -and $GateStatus -eq "passed" -and $CheckStatus -eq "passed")
     $surgeryDebtCleared = ($FailingWhatIfCount -eq 0)
     $postOpOk = ($toolsOk -and $graphOk -and $sentruxOk -and $surgeryDebtCleared)
+
+    # surgery_plan -> post_op: the surgery target has actually been treated
+    # (it no longer shows up as the current top hotspot) and sentrux confirms
+    # the governed scope is clean, so it is safe to move on to post-op review.
+    $surgeryTargetResolved = ([string]::IsNullOrWhiteSpace($SurgeryTarget) -or
+        [string]::IsNullOrWhiteSpace($CurrentTopHotspot) -or
+        ($SurgeryTarget -ne $CurrentTopHotspot))
+    $surgeryToPostOpOk = ($sentruxOk -and $surgeryTargetResolved)
 
     $currentState = switch ($NextProtocol) {
         "triage" { "triage" }
@@ -579,7 +589,7 @@ function New-HospitalStateMachine {
             (New-StateTransition "diagnose" "govern" "architecture graph exists or graph absence is accepted" $graphOk)
             (New-StateTransition "govern" "surgery_plan" "rules and gate pass, but what-if still has planned debt" ($sentruxOk -and -not $surgeryDebtCleared))
             (New-StateTransition "govern" "post_op" "rules and gate pass, no planned surgery debt remains" ($sentruxOk -and $surgeryDebtCleared))
-            (New-StateTransition "surgery_plan" "post_op" "selected target is changed and verification is ready" $false)
+            (New-StateTransition "surgery_plan" "post_op" "sentrux gate/check pass and the surgery target no longer appears as the current top hotspot" $surgeryToPostOpOk)
             (New-StateTransition "post_op" "discharge_ready" "post-op verification passes with no regressions" $postOpOk)
         )
         guards = [ordered]@{
@@ -591,6 +601,10 @@ function New-HospitalStateMachine {
             sentrux_ok = $sentruxOk
             failing_what_if = $FailingWhatIfCount
             surgery_debt_cleared = $surgeryDebtCleared
+            surgery_target = $SurgeryTarget
+            current_top_hotspot = $CurrentTopHotspot
+            surgery_target_resolved = $surgeryTargetResolved
+            surgery_to_post_op_ok = $surgeryToPostOpOk
             post_op_ok = $postOpOk
         }
     }
@@ -825,7 +839,9 @@ function New-HospitalDecisionBlock {
         [string]$CheckStatus,
         [int]$FailingWhatIfCount,
         [string]$UnderstandCommand,
-        [string]$TopContextFile
+        [string]$TopContextFile,
+        [string]$SurgeryTarget = "",
+        [string]$CurrentTopHotspot = ""
     )
 
     $diagnosis = Get-HospitalDiagnosis $FailureCounts $RulesExists $FailingWhatIfCount
@@ -847,7 +863,9 @@ function New-HospitalDecisionBlock {
         -CheckStatus $CheckStatus `
         -FailingWhatIfCount $FailingWhatIfCount `
         -Disposition $disposition `
-        -NextProtocol $nextProtocol
+        -NextProtocol $nextProtocol `
+        -SurgeryTarget $SurgeryTarget `
+        -CurrentTopHotspot $CurrentTopHotspot
 
     return [ordered]@{
         severity = $diagnosis.severity
@@ -1153,6 +1171,30 @@ function New-HospitalProtocolBlock {
     )
 }
 
+function Get-PreviousSurgeryTarget {
+    param([string]$RunDir)
+
+    if ([string]::IsNullOrWhiteSpace($RunDir)) { return "" }
+    $repoArtifactRoot = Split-Path -Parent $RunDir
+    if ([string]::IsNullOrWhiteSpace($repoArtifactRoot) -or -not (Test-Path -LiteralPath $repoArtifactRoot -PathType Container)) { return "" }
+
+    $currentName = Split-Path -Leaf $RunDir
+    $previousRun = Get-ChildItem -LiteralPath $repoArtifactRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne $currentName } |
+        Sort-Object Name -Descending |
+        Select-Object -First 1
+    if ($null -eq $previousRun) { return "" }
+
+    $previousPlanPath = Join-Path $previousRun.FullName "surgery-plan.json"
+    if (-not (Test-Path -LiteralPath $previousPlanPath -PathType Leaf)) { return "" }
+
+    $previousPlan = Read-JsonFileSafe $previousPlanPath
+    if ($null -eq $previousPlan -or $null -eq $previousPlan.primary_target) { return "" }
+    if ([string]::IsNullOrWhiteSpace([string]$previousPlan.primary_target.name)) { return "" }
+
+    return "$($previousPlan.primary_target.name) in $($previousPlan.primary_target.file)"
+}
+
 function New-CodeIntelHospitalReport {
     param(
         [string]$RepoPath,
@@ -1197,6 +1239,13 @@ function New-CodeIntelHospitalReport {
         -CodeNexusContextSummary $CodeNexusContextSummary
     $evidence = New-HospitalEvidenceBlock $artifacts.hotspots $artifacts.what_if $CodeNexusContextSummary
 
+    $currentTopHotspot = ""
+    if ($null -ne $artifacts.hotspots -and $null -ne $artifacts.hotspots.functions -and @($artifacts.hotspots.functions).Count -gt 0) {
+        $topFn = $artifacts.hotspots.functions[0]
+        $currentTopHotspot = "$($topFn.name) in $($topFn.file)"
+    }
+    $surgeryTarget = Get-PreviousSurgeryTarget $RunDir
+
     $decision = New-HospitalDecisionBlock `
         -FailureCounts $FailureCounts `
         -RulesExists $scores.rules_exists `
@@ -1204,7 +1253,9 @@ function New-CodeIntelHospitalReport {
         -CheckStatus $scores.check_status `
         -FailingWhatIfCount @($evidence.failing_what_if).Count `
         -UnderstandCommand $UnderstandCommand `
-        -TopContextFile $evidence.top_context_file
+        -TopContextFile $evidence.top_context_file `
+        -SurgeryTarget $surgeryTarget `
+        -CurrentTopHotspot $currentTopHotspot
 
     $findings = New-HospitalFindings `
         -InventoryFiles $measurements.inventory_files `
@@ -1745,9 +1796,21 @@ elseif (-not $SkipSentrux) {
             })
         }
         elseif ($SaveSentruxBaseline -or ($AutoSaveMissingSentruxBaseline -and -not (Test-Path -LiteralPath $baselinePath))) {
+            $previousBaseline = $null
+            $baselinePrevPath = Join-Path $sentruxDir "baseline.prev.json"
+            if (Test-Path -LiteralPath $baselinePath -PathType Leaf) {
+                $previousBaseline = Read-JsonFileSafe $baselinePath
+                Copy-Item -LiteralPath $baselinePath -Destination $baselinePrevPath -Force
+            }
+
             $steps.Add((Invoke-LoggedStep "sentrux gate save" {
                 sentrux gate --save $sentruxTargetPath
             }))
+
+            $newBaseline = Read-JsonFileSafe $baselinePath
+            $oldQuality = if ($null -ne $previousBaseline -and $null -ne $previousBaseline.PSObject.Properties["quality_signal"]) { $previousBaseline.quality_signal } else { "n/a" }
+            $newQuality = if ($null -ne $newBaseline -and $null -ne $newBaseline.PSObject.Properties["quality_signal"]) { $newBaseline.quality_signal } else { "n/a" }
+            Write-Host "Sentrux baseline saved: quality_signal $oldQuality -> $newQuality"
         }
         elseif (-not (Test-Path -LiteralPath $baselinePath)) {
             $message = "Sentrux baseline missing at $baselinePath. Re-run with -SaveSentruxBaseline or -AutoSaveMissingSentruxBaseline."

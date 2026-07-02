@@ -125,11 +125,18 @@ function Test-CommandOutput {
 }
 
 $configData = $null
+$configParseError = $null
 if ([string]::IsNullOrWhiteSpace($Config)) {
     $Config = Join-Path $PSScriptRoot "pipeline.config.json"
 }
 if (Test-Path -LiteralPath $Config -PathType Leaf) {
-    $configData = Get-Content -LiteralPath $Config -Raw | ConvertFrom-Json
+    try {
+        $configData = Get-Content -LiteralPath $Config -Raw | ConvertFrom-Json
+    }
+    catch {
+        $configData = $null
+        $configParseError = $_.Exception.Message
+    }
 }
 
 $pipelineRoot = Split-Path -Parent $PSCommandPath
@@ -200,6 +207,8 @@ $checks = [ordered]@{
     config = [ordered]@{
         path = $Config
         found = Test-Path -LiteralPath $Config -PathType Leaf
+        parsed = ($null -ne $configData -or [string]::IsNullOrWhiteSpace($configParseError))
+        parseError = if ($null -ne $configParseError) { $configParseError } else { "" }
     }
     tools = $tools
     sentrux = [ordered]@{
@@ -218,6 +227,7 @@ $checks = [ordered]@{
 $missing = New-Object System.Collections.Generic.List[string]
 if (-not $checks.pipelineScript.found) { $missing.Add("pipeline script") }
 if (-not $checks.config.found) { $missing.Add("pipeline config") }
+if ($checks.config.found -and -not $checks.config.parsed) { $missing.Add("pipeline config: invalid JSON ($configParseError)") }
 foreach ($tool in $tools) {
     if ($tool.required -and -not $tool.found) { $missing.Add($tool.name) }
 }

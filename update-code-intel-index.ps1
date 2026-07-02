@@ -43,7 +43,13 @@ foreach ($repoDir in $repoDirs) {
     $summaryPath = Join-Path $latestRun.FullName "summary.md"
     if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) { continue }
 
-    $report = Read-JsonFile $reportPath
+    try {
+        $report = Read-JsonFile $reportPath
+    }
+    catch {
+        Write-Warning "Skipping unparseable report.json at $reportPath : $($_.Exception.Message)"
+        continue
+    }
     $cats = $report.summary.failureCategories
     $category = "clean"
     if ($cats.providerQuota -gt 0) { $category = "provider_quota" }
