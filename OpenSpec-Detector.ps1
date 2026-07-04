@@ -171,6 +171,99 @@ function Get-TestCoverage {
 
 # ============ 推断引擎 ============
 
+function New-SpecDrivenRecommendationBrief {
+param(
+[string]$Tool,
+[string]$Verdict,
+[int]$Score,
+[object[]]$Reasons,
+[object[]]$EntrySkills,
+[hashtable]$Metrics,
+[hashtable]$Governance,
+[hashtable]$Collaboration
+)
+
+$recommended = if ($Verdict -eq "not_needed") { "none" } else { $Tool }
+$why = @($Reasons | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -First 6)
+if ($why.Count -eq 0) {
+$why = @("No strong spec-governance signal was detected.")
+}
+
+$confidence = if ($Verdict -eq "already_adopted") { "high" }
+elseif ($Score -ge 70) { "high" }
+elseif ($Score -ge 50) { "medium" }
+elseif ($Score -ge 30) { "medium-low" }
+else { "low" }
+
+$doNotDoYet = @(
+"Do not auto-run init from Code Intel Pipeline.",
+"Do not create or update external issue trackers without explicit authorization."
+)
+
+$acceptance = @(
+"PRD or feature requirements are decomposed into explicit phases.",
+"Each phase names deliverables and requirement coverage.",
+"Tasks map to acceptance tests before implementation starts.",
+"Completion conditions are explicit and verifiable."
+)
+
+if ($recommended -eq "openspec-opsx") {
+$doFirst = if ($Verdict -eq "already_adopted") {
+@(
+"Create the next OpenSpec proposal/spec/design/tasks chain.",
+"Split the work into phases with named deliverables.",
+"Map each phase to requirement coverage and acceptance tests."
+)
+} else {
+@(
+"Run openspec init only after the operator accepts the recommendation.",
+"Write the first proposal/spec/design/tasks chain.",
+"Split the first change into phases with deliverables, acceptance tests, and done criteria."
+)
+}
+$whyNot = @("spec-kit is usually simpler for a greenfield 0->1 project before continuous change management exists.")
+$fallback = "Use spec-kit if this is actually a new greenfield product with little brownfield governance need."
+}
+elseif ($recommended -eq "spec-kit") {
+$doFirst = if ($Verdict -eq "already_adopted") {
+@(
+"Refresh constitution.md if project rules changed.",
+"Create the next feature spec.",
+"Derive plan/tasks with requirement coverage, acceptance tests, and done criteria."
+)
+} else {
+@(
+"Run specify init only after the operator accepts the recommendation.",
+"Write constitution.md.",
+"Create the first feature spec, then derive plan/tasks with acceptance tests and done criteria."
+)
+}
+$whyNot = @("OpenSpec OPSX is stronger for brownfield continuous change management across existing systems.")
+$fallback = "Use OpenSpec OPSX if this is actually a brownfield migration or governance-heavy change-control project."
+}
+else {
+$doFirst = @(
+"Do not initialize a spec framework yet.",
+"Keep lightweight README, issue, or design notes until the project has enough scope."
+)
+$whyNot = @("The current score is below the threshold for a spec-driven layer.")
+$fallback = "Re-run the detector when code size, collaboration, CI, tests, or governance files grow."
+}
+
+return [ordered]@{
+recommended = $recommended
+verdict = $Verdict
+confidence = $confidence
+why = $why
+whyNot = $whyNot
+doFirst = $doFirst
+doNotDoYet = $doNotDoYet
+fallback = $fallback
+acceptance = $acceptance
+sourceMethod = "EternallLight/improving-ai-agent-openspec methodology: PRD decomposition, phase plan, requirement coverage, acceptance tests, done criteria."
+}
+}
+
 function Get-SpecDrivenRecommendation {
     param(
         [hashtable]$Metrics,
@@ -388,6 +481,15 @@ Write-Host "[5/5] 检查测试覆盖..."
 $hasTests = Get-TestCoverage -Path $RepoPath
 
 $specDriven = Get-SpecDrivenRecommendation -Metrics $metrics -Governance $governance -Collaboration $collaboration -CICDScore $cicdScore -HasTests $hasTests
+$specDriven["recommendationBrief"] = New-SpecDrivenRecommendationBrief `
+-Tool $specDriven.tool `
+-Verdict $specDriven.verdict `
+-Score $specDriven.score `
+-Reasons $specDriven.reasons `
+-EntrySkills $specDriven.entrySkills `
+-Metrics $metrics `
+-Governance $governance `
+-Collaboration $collaboration
 $mattFlow = Get-MattFlowRecommendation -Metrics $metrics -Governance $governance -Collaboration $collaboration
 $gstack = Get-GstackRecommendation -Path $RepoPath -Collaboration $collaboration
 
@@ -417,7 +519,8 @@ $result = [ordered]@{
     verdict = $specDriven.verdict
     score = $specDriven.score
     reasons = $specDriven.reasons
-    entrySkills = $specDriven.entrySkills
+entrySkills = $specDriven.entrySkills
+recommendationBrief = $specDriven.recommendationBrief
 }
 
 return $result

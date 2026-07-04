@@ -83,7 +83,10 @@
 
 ### 输出位置
 
-- `summary.md` — "Workflow Stack Recommendations" 段落，三行式（每栈一行：栈名/verdict/入口技能）
+- `summary.md` — "Workflow Stack Recommendations" 段落，三行式（每栈一行：栈名/verdict/入口技能），并额外输出 `spec-driven brief`，包含 recommended/confidence/do first/guardrails/acceptance。
+- `report.json` — `workflows[].recommendationBrief` 承载推荐简报；旧兼容 `openSpec.recommendationBrief` 同步 spec-driven 层结果。
+- `recommendationBrief` 字段：`recommended`、`verdict`、`confidence`、`why[]`、`whyNot[]`、`doFirst[]`、`doNotDoYet[]`、`fallback`、`acceptance[]`、`sourceMethod`。
+- 简报吸收 `EternallLight/improving-ai-agent-openspec` 的方法论：PRD 分解、阶段计划、需求覆盖、验收测试、done criteria。它是推荐/治理说明，不是运行时依赖。
 - `report.json`
   - `openSpec` 块 — 向后兼容，内容等同 `workflows` 数组中 `stack=spec-driven` 的一项
   - `workflows` 数组 — 三层完整判定：`{stack, tool?, verdict, score?, reasons[], entrySkills[]}`
