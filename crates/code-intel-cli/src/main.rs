@@ -173,92 +173,140 @@ fn run() -> Result<()> {
 
 fn parse_args(raw: Vec<String>) -> Result<Args> {
     if raw.is_empty() {
-        return Ok(Args {
-            command: "help".to_string(),
-            ..Args::default()
-        });
+        return Ok(help_args());
     }
 
-    let mut args = Args {
-        command: raw[0].clone(),
-        action: "Validate".to_string(),
-        mode: "normal".to_string(),
-        language: "zh".to_string(),
-        ..Args::default()
-    };
+    let mut args = command_args(raw[0].clone());
     let mut i = 1usize;
     while i < raw.len() {
-        match raw[i].as_str() {
-            "--repo" => {
-                i += 1;
-                args.repo = Some(PathBuf::from(required_value(&raw, i, "--repo")?));
-            }
-            "--report" => {
-                i += 1;
-                args.report = Some(PathBuf::from(required_value(&raw, i, "--report")?));
-            }
-            "--steps" => {
-                i += 1;
-                args.steps = Some(PathBuf::from(required_value(&raw, i, "--steps")?));
-            }
-            "--failures" => {
-                i += 1;
-                args.failures = Some(PathBuf::from(required_value(&raw, i, "--failures")?));
-            }
-            "--out" => {
-                i += 1;
-                args.out = Some(PathBuf::from(required_value(&raw, i, "--out")?));
-            }
-            "--artifact-root" => {
-                i += 1;
-                args.artifact_root =
-                    Some(PathBuf::from(required_value(&raw, i, "--artifact-root")?));
-            }
-            "--manifest" => {
-                i += 1;
-                args.manifest = Some(PathBuf::from(required_value(&raw, i, "--manifest")?));
-            }
-            "--capability" => {
-                i += 1;
-                args.capability = Some(required_value(&raw, i, "--capability")?);
-            }
-            "--provider" => {
-                i += 1;
-                args.provider = Some(required_value(&raw, i, "--provider")?);
-            }
-            "--operation" => {
-                i += 1;
-                args.operation = Some(required_value(&raw, i, "--operation")?);
-            }
-            "--action" => {
-                i += 1;
-                args.action = required_value(&raw, i, "--action")?;
-            }
-            "--mode" => {
-                i += 1;
-                args.mode = required_value(&raw, i, "--mode")?;
-            }
-            "--language" => {
-                i += 1;
-                args.language = required_value(&raw, i, "--language")?;
-            }
-            "--write" => args.write = true,
-            "--full" => args.full = true,
-            "--json" => args.json = true,
-            "--help" | "-h" => args.command = "help".to_string(),
-            value if args.command == "sentrux" && args.operation.is_none() => {
-                args.operation = Some(value.to_string());
-            }
-            value if args.command == "sentrux" && args.repo.is_none() => {
-                args.repo = Some(PathBuf::from(value));
-            }
-            flag => return Err(format!("unknown argument for {}: {flag}", args.command).into()),
-        }
-        i += 1;
+        i += parse_next_arg(&raw, i, &mut args)?;
     }
     Ok(args)
 }
 
+fn help_args() -> Args {
+    Args {
+        command: "help".to_string(),
+        ..Args::default()
+    }
+}
+
+fn command_args(command: String) -> Args {
+    Args {
+        command,
+        action: "Validate".to_string(),
+        mode: "normal".to_string(),
+        language: "zh".to_string(),
+        ..Args::default()
+    }
+}
+
+fn parse_next_arg(raw: &[String], index: usize, args: &mut Args) -> Result<usize> {
+    let token = raw[index].as_str();
+    if set_path_arg(raw, index, args, token)? {
+        return Ok(2);
+    }
+    if set_string_arg(raw, index, args, token)? {
+        return Ok(2);
+    }
+    if set_switch_arg(args, token) {
+        return Ok(1);
+    }
+    if set_sentrux_positional(args, token) {
+        return Ok(1);
+    }
+    Err(format!("unknown argument for {}: {token}", args.command).into())
+}
+
+fn set_path_arg(raw: &[String], index: usize, args: &mut Args, flag: &str) -> Result<bool> {
+    if flag == "--repo" {
+        args.repo = Some(path_value(raw, index, flag)?);
+        return Ok(true);
+    }
+    if flag == "--report" {
+        args.report = Some(path_value(raw, index, flag)?);
+        return Ok(true);
+    }
+    if flag == "--steps" {
+        args.steps = Some(path_value(raw, index, flag)?);
+        return Ok(true);
+    }
+    if flag == "--failures" {
+        args.failures = Some(path_value(raw, index, flag)?);
+        return Ok(true);
+    }
+    if flag == "--out" {
+        args.out = Some(path_value(raw, index, flag)?);
+        return Ok(true);
+    }
+    if flag == "--artifact-root" {
+        args.artifact_root = Some(path_value(raw, index, flag)?);
+        return Ok(true);
+    }
+    if flag == "--manifest" {
+        args.manifest = Some(path_value(raw, index, flag)?);
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+fn set_string_arg(raw: &[String], index: usize, args: &mut Args, flag: &str) -> Result<bool> {
+    if flag == "--capability" {
+        args.capability = Some(required_value(raw, index + 1, flag)?);
+        return Ok(true);
+    }
+    if flag == "--provider" {
+        args.provider = Some(required_value(raw, index + 1, flag)?);
+        return Ok(true);
+    }
+    if flag == "--operation" {
+        args.operation = Some(required_value(raw, index + 1, flag)?);
+        return Ok(true);
+    }
+    if flag == "--action" {
+        args.action = required_value(raw, index + 1, flag)?;
+        return Ok(true);
+    }
+    if flag == "--mode" {
+        args.mode = required_value(raw, index + 1, flag)?;
+        return Ok(true);
+    }
+    if flag == "--language" {
+        args.language = required_value(raw, index + 1, flag)?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+fn set_switch_arg(args: &mut Args, flag: &str) -> bool {
+    match flag {
+        "--write" => args.write = true,
+        "--full" => args.full = true,
+        "--json" => args.json = true,
+        "--help" | "-h" => args.command = "help".to_string(),
+        _ => return false,
+    }
+    true
+}
+
+fn set_sentrux_positional(args: &mut Args, value: &str) -> bool {
+    if args.command != "sentrux" {
+        return false;
+    }
+    if args.operation.is_none() {
+        args.operation = Some(value.to_string());
+        return true;
+    }
+    if args.repo.is_none() {
+        args.repo = Some(PathBuf::from(value));
+        return true;
+    }
+    false
+}
+
+fn path_value(raw: &[String], index: usize, flag: &str) -> Result<PathBuf> {
+    Ok(PathBuf::from(required_value(raw, index + 1, flag)?))
+}
 fn required_value(raw: &[String], index: usize, flag: &str) -> Result<String> {
     raw.get(index)
         .cloned()
@@ -1065,6 +1113,96 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn cli_args(args: &[&str]) -> Vec<String> {
+        args.iter().map(|arg| arg.to_string()).collect()
+    }
+
+    #[test]
+    fn parse_args_defaults_empty_input_to_help() {
+        let args = parse_args(Vec::new()).expect("empty CLI should parse");
+
+        assert_eq!(args.command, "help");
+    }
+
+    #[test]
+    fn parse_args_preserves_graph_options() {
+        let args = parse_args(cli_args(&[
+            "graph",
+            "--repo",
+            "D:/repo",
+            "--language",
+            "en",
+            "--write",
+            "--full",
+            "--json",
+        ]))
+        .expect("graph CLI should parse");
+
+        assert_eq!(args.command, "graph");
+        assert_eq!(args.repo, Some(PathBuf::from("D:/repo")));
+        assert_eq!(args.language, "en");
+        assert!(args.write);
+        assert!(args.full);
+        assert!(args.json);
+    }
+
+    #[test]
+    fn parse_args_preserves_provider_options() {
+        let args = parse_args(cli_args(&[
+            "provider",
+            "--action",
+            "Invoke",
+            "--provider",
+            "understand",
+            "--operation",
+            "graph",
+            "--repo",
+            "D:/repo",
+            "--language",
+            "zh",
+            "--write",
+            "--json",
+        ]))
+        .expect("provider CLI should parse");
+
+        assert_eq!(args.command, "provider");
+        assert_eq!(args.action, "Invoke");
+        assert_eq!(args.provider.as_deref(), Some("understand"));
+        assert_eq!(args.operation.as_deref(), Some("graph"));
+        assert_eq!(args.repo, Some(PathBuf::from("D:/repo")));
+        assert_eq!(args.language, "zh");
+        assert!(args.write);
+        assert!(args.json);
+    }
+
+    #[test]
+    fn parse_args_preserves_sentrux_positional_operation_and_repo() {
+        let args = parse_args(cli_args(&["sentrux", "check_rules", "D:/repo"]))
+            .expect("sentrux positional CLI should parse");
+
+        assert_eq!(args.command, "sentrux");
+        assert_eq!(args.operation.as_deref(), Some("check_rules"));
+        assert_eq!(args.repo, Some(PathBuf::from("D:/repo")));
+    }
+
+    #[test]
+    fn parse_args_rejects_unknown_argument() {
+        let err = parse_args(cli_args(&["graph", "--bogus"]))
+            .expect_err("unknown flag should fail")
+            .to_string();
+
+        assert!(err.contains("unknown argument for graph: --bogus"));
+    }
+
+    #[test]
+    fn parse_args_rejects_missing_flag_value() {
+        let err = parse_args(cli_args(&["graph", "--repo"]))
+            .expect_err("missing flag value should fail")
+            .to_string();
+
+        assert!(err.contains("--repo requires a value"));
+    }
 
     fn unique_temp_dir(name: &str) -> PathBuf {
         let stamp = SystemTime::now()

@@ -179,15 +179,24 @@ function Read-DirectoryCandidates {
         foreach ($spec in $signalSpecs) {
             $signalPath = Join-Path $dir ([string]$spec.name)
             $pathType = if ([string]$spec.type -eq "directory") { "Container" } else { "Leaf" }
-            $exists = if ([string]$spec.name -eq ".git") {
-                Test-Path -LiteralPath $signalPath
+            $exists = try {
+                if ([string]$spec.name -eq ".git") {
+                    Test-Path -LiteralPath $signalPath -ErrorAction Stop
+                }
+                else {
+                    Test-Path -LiteralPath $signalPath -PathType $pathType -ErrorAction Stop
+                }
             }
-            else {
-                Test-Path -LiteralPath $signalPath -PathType $pathType
+            catch {
+                $false
             }
             if ($exists) {
                 $signalItem = Get-Item -LiteralPath $signalPath -Force -ErrorAction SilentlyContinue
-                $lastWrite = if ($null -ne $signalItem) { $signalItem.LastWriteTime } else { (Get-Item -LiteralPath $dir -Force).LastWriteTime }
+                $dirItem = Get-Item -LiteralPath $dir -Force -ErrorAction SilentlyContinue
+                if ($null -eq $signalItem -and $null -eq $dirItem) {
+                    continue
+                }
+                $lastWrite = if ($null -ne $signalItem) { $signalItem.LastWriteTime } else { $dirItem.LastWriteTime }
                 Add-Candidate $Candidates $dir ([string]$spec.name) 0 "filesystem" $lastWrite
             }
         }

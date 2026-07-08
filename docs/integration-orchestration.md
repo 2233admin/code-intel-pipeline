@@ -12,6 +12,12 @@ target/debug/code-intel.exe provider
 target/debug/code-intel.exe route
 ```
 
+## Greenfield Direction
+
+`spec.greenfield` is an optional `behavior_specification` provider-contract integration. The pipeline-owned adapter writes `greenfield-manifest.json` and `greenfield-plan.md`, then points Greenfield at a dedicated workspace whose useful handoff lives under `greenfield-workspace/output/` and `greenfield-workspace/provenance/`.
+
+Greenfield is currently a Claude Code plugin, so default Code Intel runs must not block on an interactive Claude session. Use `Invoke-GreenfieldSpecExtraction.ps1 -Analyze` only when the local machine has `claude` plus the Greenfield plugin installed and the operator intentionally wants the spec extraction pass.
+
 ## Rule
 
 Normal code-intel operation must not depend on separately installed project-intelligence CLIs.

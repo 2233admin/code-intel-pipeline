@@ -1006,6 +1006,107 @@ function Get-CodeEvidenceLanguage {
     }
 }
 
+function New-CodeEvidenceNativeSymbol {
+    param(
+        [string]$RelativePath,
+        [string]$Language,
+        [int]$LineNumber,
+        [string]$Kind,
+        [string]$Name
+    )
+
+    return [ordered]@{
+        id = "$RelativePath#$Kind`:$Name"
+        kind = $Kind
+        name = $Name
+        file = $RelativePath
+        startLine = $LineNumber
+        endLine = $LineNumber
+        language = $Language
+        confidence = 0.55
+        source = "native-minimal"
+    }
+}
+
+function Get-CodeEvidencePowerShellSymbol {
+    param([string]$Line)
+
+    if ($Line -match '^\s*function\s+([A-Za-z0-9_\-:]+)') {
+        return [ordered]@{ kind = "function"; name = $Matches[1] }
+    }
+    return $null
+}
+
+function Get-CodeEvidencePythonSymbol {
+    param([string]$Line)
+
+    if ($Line -match '^\s*(def|class)\s+([A-Za-z_][A-Za-z0-9_]*)') {
+        $kind = if ($Matches[1] -eq "class") { "class" } else { "function" }
+        return [ordered]@{ kind = $kind; name = $Matches[2] }
+    }
+    return $null
+}
+
+function Get-CodeEvidenceJavaScriptSymbol {
+    param([string]$Line)
+
+    if ($Line -match '^\s*(export\s+)?(async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)') {
+        return [ordered]@{ kind = "function"; name = $Matches[3] }
+    }
+    if ($Line -match '^\s*(export\s+)?(const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(async\s*)?(\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>') {
+        return [ordered]@{ kind = "function"; name = $Matches[3] }
+    }
+    if ($Line -match '^\s*(export\s+)?(class|interface)\s+([A-Za-z_$][A-Za-z0-9_$]*)') {
+        return [ordered]@{ kind = $Matches[2]; name = $Matches[3] }
+    }
+    return $null
+}
+
+function Get-CodeEvidenceRustSymbol {
+    param([string]$Line)
+
+    if ($Line -match '^\s*(pub\s+)?(async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)') {
+        return [ordered]@{ kind = "function"; name = $Matches[3] }
+    }
+    return $null
+}
+
+function Get-CodeEvidenceGoSymbol {
+    param([string]$Line)
+
+    if ($Line -match '^\s*func\s+(\([^)]+\)\s*)?([A-Za-z_][A-Za-z0-9_]*)') {
+        return [ordered]@{ kind = "function"; name = $Matches[2] }
+    }
+    return $null
+}
+
+function Get-CodeEvidenceJavaSymbol {
+    param([string]$Line)
+
+    if ($Line -match '^\s*(public|private|protected)?\s*(class|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)') {
+        return [ordered]@{ kind = $Matches[2]; name = $Matches[3] }
+    }
+    return $null
+}
+
+function Get-CodeEvidenceSymbolCandidate {
+    param(
+        [string]$Language,
+        [string]$Line
+    )
+
+    switch ($Language) {
+        "powershell" { return Get-CodeEvidencePowerShellSymbol $Line }
+        "python" { return Get-CodeEvidencePythonSymbol $Line }
+        "javascript" { return Get-CodeEvidenceJavaScriptSymbol $Line }
+        "typescript" { return Get-CodeEvidenceJavaScriptSymbol $Line }
+        "rust" { return Get-CodeEvidenceRustSymbol $Line }
+        "go" { return Get-CodeEvidenceGoSymbol $Line }
+        "java" { return Get-CodeEvidenceJavaSymbol $Line }
+        default { return $null }
+    }
+}
+
 function Get-CodeEvidenceSymbols {
     param(
         [string]$RelativePath,
@@ -1015,48 +1116,17 @@ function Get-CodeEvidenceSymbols {
 
     $symbols = New-Object System.Collections.Generic.List[object]
     for ($i = 0; $i -lt $Lines.Count; $i++) {
-        $line = [string]$Lines[$i]
-        $kind = ""
-        $name = ""
-        if ($Language -eq "powershell" -and $line -match '^\s*function\s+([A-Za-z0-9_\-:]+)') {
-            $kind = "function"
-            $name = $Matches[1]
-        } elseif ($Language -eq "python" -and $line -match '^\s*(def|class)\s+([A-Za-z_][A-Za-z0-9_]*)') {
-            $kind = if ($Matches[1] -eq "class") { "class" } else { "function" }
-            $name = $Matches[2]
-        } elseif ($Language -in @("javascript", "typescript") -and $line -match '^\s*(export\s+)?(async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)') {
-            $kind = "function"
-            $name = $Matches[3]
-        } elseif ($Language -in @("javascript", "typescript") -and $line -match '^\s*(export\s+)?(const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(async\s*)?(\([^)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>') {
-            $kind = "function"
-            $name = $Matches[3]
-        } elseif ($Language -in @("javascript", "typescript") -and $line -match '^\s*(export\s+)?(class|interface)\s+([A-Za-z_$][A-Za-z0-9_$]*)') {
-            $kind = $Matches[2]
-            $name = $Matches[3]
-        } elseif ($Language -eq "rust" -and $line -match '^\s*(pub\s+)?(async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)') {
-            $kind = "function"
-            $name = $Matches[3]
-        } elseif ($Language -eq "go" -and $line -match '^\s*func\s+(\([^)]+\)\s*)?([A-Za-z_][A-Za-z0-9_]*)') {
-            $kind = "function"
-            $name = $Matches[2]
-        } elseif ($Language -eq "java" -and $line -match '^\s*(public|private|protected)?\s*(class|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)') {
-            $kind = $Matches[2]
-            $name = $Matches[3]
+        $candidate = Get-CodeEvidenceSymbolCandidate -Language $Language -Line ([string]$Lines[$i])
+        if ($null -eq $candidate -or [string]::IsNullOrWhiteSpace([string]$candidate["name"])) {
+            continue
         }
 
-        if (-not [string]::IsNullOrWhiteSpace($name)) {
-            $symbols.Add([ordered]@{
-                id = "$RelativePath#$kind`:$name"
-                kind = $kind
-                name = $name
-                file = $RelativePath
-                startLine = $i + 1
-                endLine = $i + 1
-                language = $Language
-                confidence = 0.55
-                source = "native-minimal"
-            })
-        }
+        $symbols.Add((New-CodeEvidenceNativeSymbol `
+            -RelativePath $RelativePath `
+            -Language $Language `
+            -LineNumber ($i + 1) `
+            -Kind ([string]$candidate["kind"]) `
+            -Name ([string]$candidate["name"])))
     }
     return $symbols.ToArray()
 }
@@ -1514,6 +1584,34 @@ function New-SentruxMetricDelta {
     }
 }
 
+function Test-SentruxGateNoDegradation {
+    param([string]$GateOutput)
+
+    return (-not [string]::IsNullOrWhiteSpace($GateOutput) -and $GateOutput -match "No degradation detected")
+}
+
+function Resolve-SentruxMetricRegressions {
+    param(
+        [object[]]$Metrics,
+        [bool]$NoDegradation
+    )
+
+    foreach ($metric in @($Metrics)) {
+        if ($null -eq $metric) {
+            continue
+        }
+
+        $rawRegressed = [bool]$metric.regressed
+        $gateAccepted = $NoDegradation -and $rawRegressed
+        $metric | Add-Member -NotePropertyName rawRegressed -NotePropertyValue $rawRegressed -Force
+        $metric | Add-Member -NotePropertyName gateAccepted -NotePropertyValue $gateAccepted -Force
+        if ($gateAccepted) {
+            $metric.regressed = $false
+        }
+        $metric
+    }
+}
+
 function New-SentruxInsight {
     param(
         [string]$RepoName,
@@ -1527,6 +1625,7 @@ function New-SentruxInsight {
     $rulesPath = if ([string]::IsNullOrWhiteSpace($TargetPath)) { "" } else { Join-Path (Join-Path $TargetPath ".sentrux") "rules.toml" }
     $baseline = Read-JsonFileSafe $BaselinePath
     $gateOutput = if ($gateStep.Count -gt 0) { [string]$gateStep[0].output } else { "" }
+    $noDegradation = Test-SentruxGateNoDegradation $gateOutput
 
     $qualityPair = Get-SentruxMetricPair $gateOutput "Quality"
     $couplingPair = Get-SentruxMetricPair $gateOutput "Coupling"
@@ -1565,6 +1664,7 @@ function New-SentruxInsight {
     if ($null -ne $godFilesPair) {
         $metrics += [pscustomobject](New-SentruxMetricDelta "god_files" $godFilesPair["before"] $godFilesPair["after"] "lower_is_better")
     }
+    $metrics = @(Resolve-SentruxMetricRegressions -Metrics $metrics -NoDegradation $noDegradation)
 
     $regressions = @($metrics | Where-Object { $_.regressed })
     $nextActions = @()
@@ -1610,7 +1710,7 @@ function New-SentruxInsight {
         rulesExists = (-not [string]::IsNullOrWhiteSpace($rulesPath) -and (Test-Path -LiteralPath $rulesPath -PathType Leaf))
         checkStatus = if ($checkStep.Count -gt 0) { $checkStep[0].status } else { "not_run" }
         gateStatus = if ($gateStep.Count -gt 0) { $gateStep[0].status } else { "not_run" }
-        noDegradation = ($gateOutput -match "No degradation detected")
+        noDegradation = $noDegradation
         metrics = $metrics
         baseline = [ordered]@{
             qualitySignal = ConvertTo-NullableDouble (Get-JsonProperty $baseline "quality_signal")

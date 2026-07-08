@@ -734,16 +734,31 @@ function Get-SourceFiles {
     return @($inventory["files"])
 }
 
+function Get-FirstRegexBucket {
+    param(
+        [Parameter(Mandatory = $true)][string]$Value,
+        [object[]]$Rules = @()
+    )
+
+    foreach ($rule in $Rules) {
+        if ($Value -notmatch [string]$rule.Pattern) {
+            continue
+        }
+        if ($rule.ContainsKey("Group")) {
+            return [string]$Matches[[int]$rule.Group]
+        }
+        return [string]$rule.Bucket
+    }
+    return ""
+}
+
 function Get-ModuleBucket {
     param(
         [Parameter(Mandatory = $true)][string]$Leaf,
         [Parameter(Mandatory = $true)][string]$Domain
     )
 
-    if ([string]::IsNullOrWhiteSpace($Leaf)) {
-        return "__root__"
-    }
-    if ($Leaf -eq "__init__") {
+    if ([string]::IsNullOrWhiteSpace($Leaf) -or $Leaf -eq "__init__") {
         return "__root__"
     }
 
@@ -753,73 +768,84 @@ function Get-ModuleBucket {
         $normalized = $normalized.Substring($testAwarePrefix.Length)
     }
 
-    switch ($Domain) {
+    $rules = switch ($Domain) {
         "strategy" {
-            if ($normalized -match "^(backtest)") { return "backtest" }
-            if ($normalized -match "^dialectical") { return "dialectical_filter" }
-            if ($normalized -match "^event") { return "event_tree" }
-            if ($normalized -match "^review") { return "review" }
-            if ($normalized -match "^factor") { return "factors" }
-            if ($normalized -match "^fusion") { return "fusion" }
-            if ($normalized -match "^sentiment") { return "sentiment" }
-            if ($normalized -match "^narrative") { return "narrative" }
-            if ($normalized -match "^engine") { return "engine" }
-            if ($normalized -match "^policy") { return "policy" }
-            if ($normalized -match "^signal") { return "signal" }
-            if ($normalized -match "^stock") { return "scanner" }
-            if ($normalized -match "^swing") { return "swing" }
-            if ($normalized -match "^quant") { return "adapter" }
-            if ($normalized -match "^(market_monitor|materialist_engine)") { return "market" }
-            return "misc"
+            @(
+                @{ Pattern = "^(backtest)"; Bucket = "backtest" },
+                @{ Pattern = "^dialectical"; Bucket = "dialectical_filter" },
+                @{ Pattern = "^event"; Bucket = "event_tree" },
+                @{ Pattern = "^review"; Bucket = "review" },
+                @{ Pattern = "^factor"; Bucket = "factors" },
+                @{ Pattern = "^fusion"; Bucket = "fusion" },
+                @{ Pattern = "^sentiment"; Bucket = "sentiment" },
+                @{ Pattern = "^narrative"; Bucket = "narrative" },
+                @{ Pattern = "^engine"; Bucket = "engine" },
+                @{ Pattern = "^policy"; Bucket = "policy" },
+                @{ Pattern = "^signal"; Bucket = "signal" },
+                @{ Pattern = "^stock"; Bucket = "scanner" },
+                @{ Pattern = "^swing"; Bucket = "swing" },
+                @{ Pattern = "^quant"; Bucket = "adapter" },
+                @{ Pattern = "^(market_monitor|materialist_engine)"; Bucket = "market" }
+            )
         }
         "data" {
-            if ($normalized -match "^tdx") { return "tdx" }
-            if ($normalized -match "^(crypto|okx|futures|akshare|qmt|feed|kline|indicators|store|paths|device|cuda|gpu|hrhg|adata|ashare)") { return $matches[1] }
-            if ($normalized -match "^ashare") { return "ashare" }
-            return "misc"
+            @(
+                @{ Pattern = "^tdx"; Bucket = "tdx" },
+                @{ Pattern = "^(crypto|okx|futures|akshare|qmt|feed|kline|indicators|store|paths|device|cuda|gpu|hrhg|adata|ashare)"; Group = 1 },
+                @{ Pattern = "^ashare"; Bucket = "ashare" }
+            )
         }
         "api" {
-            if ($normalized -match "^(crypto|okx_api)") { return "market" }
-            return "misc"
+            @(
+                @{ Pattern = "^(crypto|okx_api)"; Bucket = "market" }
+            )
         }
         "cli" {
-            if ($normalized -match "^backtest") { return "backtest" }
-            if ($normalized -match "^strategy") { return "strategy" }
-            if ($normalized -match "^market") { return "market" }
-            if ($normalized -match "^macro") { return "macro" }
-            if ($normalized -match "^intelligence") { return "intelligence" }
-            if ($normalized -match "^ashare") { return "ashare" }
-            if ($normalized -match "^(okx|config_cmd|qmt|trade)") { return "market_control" }
-            if ($normalized -match "^(scan|review)") { return $matches[1] }
-            if ($normalized -match "^(config|output|exception)") { return $matches[1] }
-            if ($normalized -match "^ai") { return "ai_cmd" }
-            if ($normalized -match "^main") { return "main" }
-            return "misc"
+            @(
+                @{ Pattern = "^backtest"; Bucket = "backtest" },
+                @{ Pattern = "^strategy"; Bucket = "strategy" },
+                @{ Pattern = "^market"; Bucket = "market" },
+                @{ Pattern = "^macro"; Bucket = "macro" },
+                @{ Pattern = "^intelligence"; Bucket = "intelligence" },
+                @{ Pattern = "^ashare"; Bucket = "ashare" },
+                @{ Pattern = "^(okx|config_cmd|qmt|trade)"; Bucket = "market_control" },
+                @{ Pattern = "^(scan|review)"; Group = 1 },
+                @{ Pattern = "^(config|output|exception)"; Group = 1 },
+                @{ Pattern = "^ai"; Bucket = "ai_cmd" },
+                @{ Pattern = "^main"; Bucket = "main" }
+            )
         }
         "trading" {
-            if ($normalized -match "^(adapter|execution|okx|exchange|bridge|runner)") { return "market_execution" }
-            return "misc"
+            @(
+                @{ Pattern = "^(adapter|execution|okx|exchange|bridge|runner)"; Bucket = "market_execution" }
+            )
         }
         "brokers" {
-            if ($normalized -match "^(okx|bridge|execution|exchange)") { return "market_execution" }
-            return "misc"
+            @(
+                @{ Pattern = "^(okx|bridge|execution|exchange)"; Bucket = "market_execution" }
+            )
         }
         "markets" {
-            if ($normalized -match "^ashare") { return "ashare" }
-            if ($normalized -match "^crypto") { return "crypto" }
-            if ($normalized -match "^okx_pit_writer") { return "market_integration_writer" }
-            if ($normalized -match "^okx_feed") { return "market_integration_feed" }
-            if ($normalized -match "^okx_ccxt_adapter") { return "market_integration_adapter" }
-            if ($normalized -match "^okx_t_runner") { return "market_integration_runner" }
-            if ($normalized -match "^okx_client") { return "market_integration_client" }
-            if ($normalized -match "^okx") { return "market_integration_misc" }
-            if ($normalized -match "^data") { return "market_data" }
-            return "misc"
+            @(
+                @{ Pattern = "^ashare"; Bucket = "ashare" },
+                @{ Pattern = "^crypto"; Bucket = "crypto" },
+                @{ Pattern = "^okx_pit_writer"; Bucket = "market_integration_writer" },
+                @{ Pattern = "^okx_feed"; Bucket = "market_integration_feed" },
+                @{ Pattern = "^okx_ccxt_adapter"; Bucket = "market_integration_adapter" },
+                @{ Pattern = "^okx_t_runner"; Bucket = "market_integration_runner" },
+                @{ Pattern = "^okx_client"; Bucket = "market_integration_client" },
+                @{ Pattern = "^okx"; Bucket = "market_integration_misc" },
+                @{ Pattern = "^data"; Bucket = "market_data" }
+            )
         }
-        default {
-            return "misc"
-        }
+        default { @() }
     }
+
+    $bucket = Get-FirstRegexBucket -Value $normalized -Rules @($rules)
+    if (-not [string]::IsNullOrWhiteSpace($bucket)) {
+        return $bucket
+    }
+    return "misc"
 }
 
 function Get-ModuleName {
@@ -1699,135 +1725,216 @@ function Get-FileDetail {
     }
 }
 
-function Invoke-DsmTool {
+function New-DsmModuleMetrics {
+    return [ordered]@{
+        files = 0
+        source_files = 0
+        test_files = 0
+        test_gap = 0
+        avg_age_days = $null
+        max_age_days = $null
+        churn = 0
+        dirty_files = 0
+        untracked_files = 0
+        git_files = 0
+        inbound_edges = 0
+        outbound_edges = 0
+        coupling = 0
+        exec_depth = 0
+        blast_radius = 0
+        risk = 0
+    }
+}
+
+function Update-DsmModuleGitSignals {
     param(
-        [string]$TargetPath,
-        [bool]$IgnoreTestDependencies = $false
+        [object]$ModuleMetrics,
+        [object]$Signal
     )
 
-    $inventory = Get-SourceFileInventory $TargetPath
-    $files = @($inventory["files"])
-    $gitSignals = Get-GitFileSignals $TargetPath $files
-    $fileDetails = @($files | ForEach-Object { Get-FileDetail $TargetPath $_ $gitSignals })
+    $ModuleMetrics["churn"] = [int]$ModuleMetrics["churn"] + [int]$Signal["churn"]
+    if ([bool]$Signal["dirty"]) { $ModuleMetrics["dirty_files"]++ }
+    if ([bool]$Signal["untracked"]) { $ModuleMetrics["untracked_files"]++ }
+    if ([bool]$Signal["dirty"] -or [bool]$Signal["untracked"]) { $ModuleMetrics["git_files"]++ }
+}
+
+function Add-DsmModuleFile {
+    param(
+        [object]$Modules,
+        [object]$ModuleFiles,
+        [object]$GitSignals,
+        [string]$Module,
+        [string]$File
+    )
+
+    if (-not $Modules.Contains($Module)) {
+        $Modules[$Module] = New-DsmModuleMetrics
+        $ModuleFiles[$Module] = New-Object System.Collections.Generic.List[string]
+    }
+
+    $normalized = Normalize-RelativeFilePath $File
+    $Modules[$Module]["files"]++
+    $ModuleFiles[$Module].Add($normalized)
+
+    if (Test-IsTestFile $File) {
+        $Modules[$Module]["test_files"]++
+    }
+    else {
+        $Modules[$Module]["source_files"]++
+    }
+
+    if ($GitSignals.ContainsKey($normalized)) {
+        Update-DsmModuleGitSignals -ModuleMetrics $Modules[$Module] -Signal $GitSignals[$normalized]
+    }
+}
+
+function New-DsmModuleState {
+    param(
+        [string[]]$Files,
+        [object]$GitSignals
+    )
+
     $modules = [ordered]@{}
     $moduleFiles = @{}
-    foreach ($file in $files) {
-        $module = Get-ModuleName $file
-        if (-not $modules.Contains($module)) {
-            $modules[$module] = [ordered]@{
-                files = 0
-                source_files = 0
-                test_files = 0
-                test_gap = 0
-                avg_age_days = $null
-                max_age_days = $null
-                churn = 0
-                dirty_files = 0
-                untracked_files = 0
-                git_files = 0
-                inbound_edges = 0
-                outbound_edges = 0
-                coupling = 0
-                exec_depth = 0
-                blast_radius = 0
-                risk = 0
-            }
-            $moduleFiles[$module] = New-Object System.Collections.Generic.List[string]
-        }
-        $modules[$module]["files"]++
-        $moduleFiles[$module].Add((Normalize-RelativeFilePath $file))
-        if (Test-IsTestFile $file) {
-            $modules[$module]["test_files"]++
-        }
-        else {
-            $modules[$module]["source_files"]++
-        }
+    foreach ($file in $Files) {
+        Add-DsmModuleFile `
+            -Modules $modules `
+            -ModuleFiles $moduleFiles `
+            -GitSignals $GitSignals `
+            -Module (Get-ModuleName $file) `
+            -File $file
+    }
 
-        $signalKey = Normalize-RelativeFilePath $file
-        if ($gitSignals.ContainsKey($signalKey)) {
-            $signal = $gitSignals[$signalKey]
-            $modules[$module]["churn"] = [int]$modules[$module]["churn"] + [int]$signal["churn"]
-            if ([bool]$signal["dirty"]) { $modules[$module]["dirty_files"]++ }
-            if ([bool]$signal["untracked"]) { $modules[$module]["untracked_files"]++ }
-            if ([bool]$signal["dirty"] -or [bool]$signal["untracked"]) { $modules[$module]["git_files"]++ }
+    return [ordered]@{
+        modules = $modules
+        moduleFiles = $moduleFiles
+    }
+}
+
+function Get-DsmImportTargetsForFile {
+    param(
+        [string]$Extension,
+        [string]$Content
+    )
+
+    $targets = New-Object System.Collections.Generic.List[string]
+    switch ($Extension) {
+        ".py" {
+            foreach ($match in [regex]::Matches($Content, "(?m)^\s*(?:from|import)\s+([A-Za-z_][A-Za-z0-9_\.]*)")) {
+                $targets.Add((Get-ModuleName ($match.Groups[1].Value -replace "\.", "/")))
+            }
+        }
+        ".rs" {
+            foreach ($match in [regex]::Matches($Content, "(?m)^\s*mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;")) {
+                $targets.Add("src/$($match.Groups[1].Value).rs")
+            }
+            foreach ($match in [regex]::Matches($Content, "use\s+crate::([A-Za-z_][A-Za-z0-9_]*)")) {
+                $targets.Add("src/$($match.Groups[1].Value).rs")
+            }
+        }
+        ".v" {
+            foreach ($match in [regex]::Matches($Content, "(?m)^\s*import\s+([A-Za-z_][A-Za-z0-9_\.]*)")) {
+                $root = ($match.Groups[1].Value -split "\.")[0]
+                foreach ($target in @($root, "$root.v", ($match.Groups[1].Value -replace "\.", "/"))) {
+                    $targets.Add($target)
+                }
+            }
         }
     }
+
+    return $targets.ToArray()
+}
+
+function Add-DsmEdgeIfAllowed {
+    param(
+        [object]$Edges,
+        [object]$Modules,
+        [string]$From,
+        [string]$Target,
+        [bool]$IgnoreTestDependencies
+    )
+
+    if (-not $Modules.Contains($Target)) { return }
+    if ($IgnoreTestDependencies -and ((Test-IsTestModule $From) -ne (Test-IsTestModule $Target))) { return }
+    Add-DsmEdge $Edges $From $Target
+}
+
+function Get-DsmEdgesForFiles {
+    param(
+        [string]$TargetPath,
+        [string[]]$Files,
+        [object]$Modules,
+        [bool]$IgnoreTestDependencies
+    )
 
     $edges = @{}
-    foreach ($file in $files) {
+    foreach ($file in $Files) {
         $ext = [System.IO.Path]::GetExtension($file).ToLowerInvariant()
         if (@(".py", ".rs", ".v") -notcontains $ext) { continue }
-        $from = Get-ModuleName $file
+
         $content = Get-Content -LiteralPath (Join-Path $TargetPath $file) -Raw -ErrorAction SilentlyContinue
         if ([string]::IsNullOrWhiteSpace($content)) { continue }
-        if ($ext -eq ".py") {
-            foreach ($match in [regex]::Matches($content, "(?m)^\s*(?:from|import)\s+([A-Za-z_][A-Za-z0-9_\.]*)")) {
-                $importPath = $match.Groups[1].Value
-                $normalizedImport = $importPath -replace "\.", "/"
-                $target = Get-ModuleName $normalizedImport
-                if ($modules.Contains($target)) {
-                    if ($IgnoreTestDependencies -and ((Test-IsTestModule $from) -ne (Test-IsTestModule $target))) {
-                        continue
-                    }
-                    Add-DsmEdge $edges $from $target
-                }
-            }
-        }
-        elseif ($ext -eq ".rs") {
-            foreach ($match in [regex]::Matches($content, "(?m)^\s*mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;")) {
-                $target = "src/$($match.Groups[1].Value).rs"
-                if ($modules.Contains($target)) {
-                    if ($IgnoreTestDependencies -and ((Test-IsTestModule $from) -ne (Test-IsTestModule $target))) {
-                        continue
-                    }
-                    Add-DsmEdge $edges $from $target
-                }
-            }
-            foreach ($match in [regex]::Matches($content, "use\s+crate::([A-Za-z_][A-Za-z0-9_]*)")) {
-                $target = "src/$($match.Groups[1].Value).rs"
-                if ($modules.Contains($target)) {
-                    if ($IgnoreTestDependencies -and ((Test-IsTestModule $from) -ne (Test-IsTestModule $target))) {
-                        continue
-                    }
-                    Add-DsmEdge $edges $from $target
-                }
-            }
-        }
-        elseif ($ext -eq ".v") {
-            foreach ($match in [regex]::Matches($content, "(?m)^\s*import\s+([A-Za-z_][A-Za-z0-9_\.]*)")) {
-                $root = ($match.Groups[1].Value -split "\.")[0]
-                $targets = @($root, "$root.v", ($match.Groups[1].Value -replace "\.", "/"))
-                foreach ($target in $targets) {
-                    if ($modules.Contains($target)) {
-                        if ($IgnoreTestDependencies -and ((Test-IsTestModule $from) -ne (Test-IsTestModule $target))) {
-                            continue
-                        }
-                        Add-DsmEdge $edges $from $target
-                        break
-                    }
-                }
-            }
+
+        $from = Get-ModuleName $file
+        foreach ($target in @(Get-DsmImportTargetsForFile -Extension $ext -Content $content)) {
+            Add-DsmEdgeIfAllowed `
+                -Edges $edges `
+                -Modules $Modules `
+                -From $from `
+                -Target $target `
+                -IgnoreTestDependencies $IgnoreTestDependencies
         }
     }
+    return $edges
+}
+
+function Add-DsmAdjacencyLink {
+    param(
+        [object]$Adjacency,
+        [object]$ReverseAdjacency,
+        [string]$From,
+        [string]$To
+    )
+
+    if (-not $Adjacency.ContainsKey($From)) { $Adjacency[$From] = New-Object System.Collections.Generic.List[string] }
+    if (-not $ReverseAdjacency.ContainsKey($To)) { $ReverseAdjacency[$To] = New-Object System.Collections.Generic.List[string] }
+    if (-not $Adjacency[$From].Contains($To)) { $Adjacency[$From].Add($To) }
+    if (-not $ReverseAdjacency[$To].Contains($From)) { $ReverseAdjacency[$To].Add($From) }
+}
+
+function New-DsmGraphState {
+    param(
+        [object]$Modules,
+        [object]$Edges
+    )
 
     $adjacency = @{}
     $reverseAdjacency = @{}
-    foreach ($edge in $edges.Values) {
+    foreach ($edge in $Edges.Values) {
         $from = [string]$edge["from"]
         $to = [string]$edge["to"]
-        if (-not $adjacency.ContainsKey($from)) { $adjacency[$from] = New-Object System.Collections.Generic.List[string] }
-        if (-not $reverseAdjacency.ContainsKey($to)) { $reverseAdjacency[$to] = New-Object System.Collections.Generic.List[string] }
-        if (-not $adjacency[$from].Contains($to)) { $adjacency[$from].Add($to) }
-        if (-not $reverseAdjacency[$to].Contains($from)) { $reverseAdjacency[$to].Add($from) }
-        if ($modules.Contains($from)) { $modules[$from]["outbound_edges"] = [int]$modules[$from]["outbound_edges"] + [int]$edge["count"] }
-        if ($modules.Contains($to)) { $modules[$to]["inbound_edges"] = [int]$modules[$to]["inbound_edges"] + [int]$edge["count"] }
+        Add-DsmAdjacencyLink -Adjacency $adjacency -ReverseAdjacency $reverseAdjacency -From $from -To $to
+        if ($Modules.Contains($from)) { $Modules[$from]["outbound_edges"] = [int]$Modules[$from]["outbound_edges"] + [int]$edge["count"] }
+        if ($Modules.Contains($to)) { $Modules[$to]["inbound_edges"] = [int]$Modules[$to]["inbound_edges"] + [int]$edge["count"] }
     }
 
+    return [ordered]@{
+        adjacency = $adjacency
+        reverseAdjacency = $reverseAdjacency
+    }
+}
+
+function Get-DsmExecutionDepths {
+    param(
+        [object]$Modules,
+        [object]$Edges
+    )
+
     $depths = @{}
-    foreach ($name in $modules.Keys) { $depths[$name] = 0 }
-    for ($i = 0; $i -lt [math]::Max(1, $modules.Keys.Count); $i++) {
+    foreach ($name in $Modules.Keys) { $depths[$name] = 0 }
+    for ($i = 0; $i -lt [math]::Max(1, $Modules.Keys.Count); $i++) {
         $changed = $false
-        foreach ($edge in $edges.Values) {
+        foreach ($edge in $Edges.Values) {
             $from = [string]$edge["from"]
             $to = [string]$edge["to"]
             if (-not $depths.ContainsKey($from) -or -not $depths.ContainsKey($to)) { continue }
@@ -1839,55 +1946,85 @@ function Invoke-DsmTool {
         }
         if (-not $changed) { break }
     }
+    return $depths
+}
 
-    foreach ($name in $modules.Keys) {
-        $ageSum = 0
-        $ageCount = 0
-        $maxAge = $null
-        foreach ($file in $moduleFiles[$name]) {
-            if (-not $gitSignals.ContainsKey($file)) { continue }
-            $age = $gitSignals[$file]["age_days"]
-            if ($null -eq $age) { continue }
-            $ageSum += [int]$age
-            $ageCount++
-            if ($null -eq $maxAge -or [int]$age -gt [int]$maxAge) {
-                $maxAge = [int]$age
-            }
-        }
-        if ($ageCount -gt 0) {
-            $modules[$name]["avg_age_days"] = [int][math]::Round($ageSum / $ageCount)
-            $modules[$name]["max_age_days"] = $maxAge
-        }
-        $modules[$name]["test_gap"] = [math]::Max(0, [int]$modules[$name]["source_files"] - [int]$modules[$name]["test_files"])
-        $modules[$name]["coupling"] = [int]$modules[$name]["inbound_edges"] + [int]$modules[$name]["outbound_edges"]
-        $modules[$name]["exec_depth"] = [int]$depths[$name]
-        $reachable = Get-ReachableDependentsCount $name $reverseAdjacency
-        $modules[$name]["blast_radius"] = $reachable + [int]$modules[$name]["inbound_edges"] + [int]$modules[$name]["outbound_edges"]
+function Get-DsmModuleAgeMetrics {
+    param(
+        [string[]]$Files,
+        [object]$GitSignals
+    )
+
+    $ageSum = 0
+    $ageCount = 0
+    $maxAge = $null
+    foreach ($file in $Files) {
+        if (-not $GitSignals.ContainsKey($file)) { continue }
+        $age = $GitSignals[$file]["age_days"]
+        if ($null -eq $age) { continue }
+        $ageSum += [int]$age
+        $ageCount++
+        if ($null -eq $maxAge -or [int]$age -gt [int]$maxAge) { $maxAge = [int]$age }
     }
 
-    $maxFiles = Get-MaxMetric $modules "files"
-    $maxCoupling = Get-MaxMetric $modules "coupling"
-    $maxTestGap = Get-MaxMetric $modules "test_gap"
-    $maxAge = Get-MaxMetric $modules "avg_age_days"
-    $maxChurn = Get-MaxMetric $modules "churn"
-    $maxGit = Get-MaxMetric $modules "git_files"
-    $maxExecDepth = Get-MaxMetric $modules "exec_depth"
-    $maxBlastRadius = Get-MaxMetric $modules "blast_radius"
+    return [ordered]@{
+        count = $ageCount
+        average = if ($ageCount -gt 0) { [int][math]::Round($ageSum / $ageCount) } else { $null }
+        maximum = $maxAge
+    }
+}
 
-    foreach ($name in $modules.Keys) {
+function Update-DsmModuleDerivedMetrics {
+    param(
+        [object]$Modules,
+        [object]$ModuleFiles,
+        [object]$GitSignals,
+        [object]$Depths,
+        [object]$ReverseAdjacency
+    )
+
+    foreach ($name in $Modules.Keys) {
+        $age = Get-DsmModuleAgeMetrics -Files @($ModuleFiles[$name]) -GitSignals $GitSignals
+        if ([int]$age["count"] -gt 0) {
+            $Modules[$name]["avg_age_days"] = $age["average"]
+            $Modules[$name]["max_age_days"] = $age["maximum"]
+        }
+        $Modules[$name]["test_gap"] = [math]::Max(0, [int]$Modules[$name]["source_files"] - [int]$Modules[$name]["test_files"])
+        $Modules[$name]["coupling"] = [int]$Modules[$name]["inbound_edges"] + [int]$Modules[$name]["outbound_edges"]
+        $Modules[$name]["exec_depth"] = [int]$Depths[$name]
+        $reachable = Get-ReachableDependentsCount $name $ReverseAdjacency
+        $Modules[$name]["blast_radius"] = $reachable + [int]$Modules[$name]["inbound_edges"] + [int]$Modules[$name]["outbound_edges"]
+    }
+}
+
+function Set-DsmRiskScores {
+    param([object]$Modules)
+
+    $maxFiles = Get-MaxMetric $Modules "files"
+    $maxCoupling = Get-MaxMetric $Modules "coupling"
+    $maxTestGap = Get-MaxMetric $Modules "test_gap"
+    $maxAge = Get-MaxMetric $Modules "avg_age_days"
+    $maxChurn = Get-MaxMetric $Modules "churn"
+    $maxGit = Get-MaxMetric $Modules "git_files"
+    $maxExecDepth = Get-MaxMetric $Modules "exec_depth"
+    $maxBlastRadius = Get-MaxMetric $Modules "blast_radius"
+
+    foreach ($name in $Modules.Keys) {
         $riskScore =
-            (ConvertTo-HeatScore $modules[$name]["coupling"] $maxCoupling) * 0.18 +
-            (ConvertTo-HeatScore $modules[$name]["blast_radius"] $maxBlastRadius) * 0.18 +
-            (ConvertTo-HeatScore $modules[$name]["exec_depth"] $maxExecDepth) * 0.14 +
-            (ConvertTo-HeatScore $modules[$name]["churn"] $maxChurn) * 0.14 +
-            (ConvertTo-HeatScore $modules[$name]["git_files"] $maxGit) * 0.12 +
-            (ConvertTo-HeatScore $modules[$name]["test_gap"] $maxTestGap) * 0.12 +
-            (ConvertTo-HeatScore $modules[$name]["avg_age_days"] $maxAge) * 0.07 +
-            (ConvertTo-HeatScore $modules[$name]["files"] $maxFiles) * 0.05
-        $modules[$name]["risk"] = [int][math]::Round($riskScore)
+            (ConvertTo-HeatScore $Modules[$name]["coupling"] $maxCoupling) * 0.18 +
+            (ConvertTo-HeatScore $Modules[$name]["blast_radius"] $maxBlastRadius) * 0.18 +
+            (ConvertTo-HeatScore $Modules[$name]["exec_depth"] $maxExecDepth) * 0.14 +
+            (ConvertTo-HeatScore $Modules[$name]["churn"] $maxChurn) * 0.14 +
+            (ConvertTo-HeatScore $Modules[$name]["git_files"] $maxGit) * 0.12 +
+            (ConvertTo-HeatScore $Modules[$name]["test_gap"] $maxTestGap) * 0.12 +
+            (ConvertTo-HeatScore $Modules[$name]["avg_age_days"] $maxAge) * 0.07 +
+            (ConvertTo-HeatScore $Modules[$name]["files"] $maxFiles) * 0.05
+        $Modules[$name]["risk"] = [int][math]::Round($riskScore)
     }
+}
 
-    $colorModes = @(
+function Get-DsmColorModes {
+    return @(
         [ordered]@{ name = "Size"; key = "size"; metric = "files"; meaning = "module file count" },
         [ordered]@{ name = "Coupling"; key = "coupling"; metric = "coupling"; meaning = "incoming plus outgoing dependency edges" },
         [ordered]@{ name = "TestGap"; key = "test_gap"; metric = "test_gap"; meaning = "source files without matching test density" },
@@ -1898,30 +2035,62 @@ function Invoke-DsmTool {
         [ordered]@{ name = "ExecDepth"; key = "exec_depth"; metric = "exec_depth"; meaning = "approximate dependency-chain depth from this module" },
         [ordered]@{ name = "BlastRadius"; key = "blast_radius"; metric = "blast_radius"; meaning = "reachable dependents plus incident dependency edges" }
     )
+}
 
-    $moduleOutput = @($modules.Keys | ForEach-Object {
-        $m = $modules[$_]
-        $colors = [ordered]@{
-            Size = New-ColorEntry $m["files"] (ConvertTo-HeatScore $m["files"] $maxFiles)
-            Coupling = New-ColorEntry $m["coupling"] (ConvertTo-HeatScore $m["coupling"] $maxCoupling)
-            TestGap = New-ColorEntry $m["test_gap"] (ConvertTo-HeatScore $m["test_gap"] $maxTestGap)
-            Age = New-ColorEntry $m["avg_age_days"] (ConvertTo-HeatScore $m["avg_age_days"] $maxAge)
-            Churn = New-ColorEntry $m["churn"] (ConvertTo-HeatScore $m["churn"] $maxChurn)
-            Risk = New-ColorEntry $m["risk"] $m["risk"]
-            Git = New-ColorEntry $m["git_files"] (ConvertTo-HeatScore $m["git_files"] $maxGit)
-            ExecDepth = New-ColorEntry $m["exec_depth"] (ConvertTo-HeatScore $m["exec_depth"] $maxExecDepth)
-            BlastRadius = New-ColorEntry $m["blast_radius"] (ConvertTo-HeatScore $m["blast_radius"] $maxBlastRadius)
-        }
+function New-DsmModuleColors {
+    param(
+        [object]$Module,
+        [object]$Maximums
+    )
+
+    return [ordered]@{
+        Size = New-ColorEntry $Module["files"] (ConvertTo-HeatScore $Module["files"] $Maximums["files"])
+        Coupling = New-ColorEntry $Module["coupling"] (ConvertTo-HeatScore $Module["coupling"] $Maximums["coupling"])
+        TestGap = New-ColorEntry $Module["test_gap"] (ConvertTo-HeatScore $Module["test_gap"] $Maximums["test_gap"])
+        Age = New-ColorEntry $Module["avg_age_days"] (ConvertTo-HeatScore $Module["avg_age_days"] $Maximums["avg_age_days"])
+        Churn = New-ColorEntry $Module["churn"] (ConvertTo-HeatScore $Module["churn"] $Maximums["churn"])
+        Risk = New-ColorEntry $Module["risk"] $Module["risk"]
+        Git = New-ColorEntry $Module["git_files"] (ConvertTo-HeatScore $Module["git_files"] $Maximums["git_files"])
+        ExecDepth = New-ColorEntry $Module["exec_depth"] (ConvertTo-HeatScore $Module["exec_depth"] $Maximums["exec_depth"])
+        BlastRadius = New-ColorEntry $Module["blast_radius"] (ConvertTo-HeatScore $Module["blast_radius"] $Maximums["blast_radius"])
+    }
+}
+
+function Get-DsmMetricMaximums {
+    param([object]$Modules)
+
+    return [ordered]@{
+        files = Get-MaxMetric $Modules "files"
+        coupling = Get-MaxMetric $Modules "coupling"
+        test_gap = Get-MaxMetric $Modules "test_gap"
+        avg_age_days = Get-MaxMetric $Modules "avg_age_days"
+        churn = Get-MaxMetric $Modules "churn"
+        git_files = Get-MaxMetric $Modules "git_files"
+        exec_depth = Get-MaxMetric $Modules "exec_depth"
+        blast_radius = Get-MaxMetric $Modules "blast_radius"
+    }
+}
+
+function New-DsmModuleOutput {
+    param([object]$Modules)
+
+    $maximums = Get-DsmMetricMaximums $Modules
+    return @($Modules.Keys | ForEach-Object {
+        $m = $Modules[$_]
         [ordered]@{
             id = Get-StableId "module:$_"
             name = $_
             files = $m["files"]
             metrics = $m
-            colors = $colors
+            colors = New-DsmModuleColors -Module $m -Maximums $maximums
         }
     } | Sort-Object { $_["colors"]["Risk"]["score"] } -Descending)
+}
 
-    $edgeOutput = @($edges.Values | ForEach-Object {
+function New-DsmEdgeOutput {
+    param([object]$Edges)
+
+    return @($Edges.Values | ForEach-Object {
         [ordered]@{
             id = Get-StableId ("edge:{0}->{1}" -f $_["from"], $_["to"])
             from = $_["from"]
@@ -1929,16 +2098,47 @@ function Invoke-DsmTool {
             count = $_["count"]
         }
     } | Sort-Object { $_["count"] } -Descending)
+}
+
+function Invoke-DsmTool {
+    param(
+        [string]$TargetPath,
+        [bool]$IgnoreTestDependencies = $false
+    )
+
+    $inventory = Get-SourceFileInventory $TargetPath
+    $files = @($inventory["files"])
+    $gitSignals = Get-GitFileSignals $TargetPath $files
+    $fileDetails = @($files | ForEach-Object { Get-FileDetail $TargetPath $_ $gitSignals })
+
+    $moduleState = New-DsmModuleState -Files $files -GitSignals $gitSignals
+    $modules = $moduleState["modules"]
+    $moduleFiles = $moduleState["moduleFiles"]
+    $edges = Get-DsmEdgesForFiles `
+        -TargetPath $TargetPath `
+        -Files $files `
+        -Modules $modules `
+        -IgnoreTestDependencies $IgnoreTestDependencies
+
+    $graph = New-DsmGraphState -Modules $modules -Edges $edges
+    $depths = Get-DsmExecutionDepths -Modules $modules -Edges $edges
+    Update-DsmModuleDerivedMetrics `
+        -Modules $modules `
+        -ModuleFiles $moduleFiles `
+        -GitSignals $gitSignals `
+        -Depths $depths `
+        -ReverseAdjacency $graph["reverseAdjacency"]
+    Set-DsmRiskScores $modules
 
     return [ordered]@{
         tool = "dsm"
         path = $TargetPath
         scope = $inventory["scope"]
         default_color_mode = "Risk"
-        color_modes = $colorModes
-        modules = $moduleOutput
+        color_modes = Get-DsmColorModes
+        modules = New-DsmModuleOutput $modules
         file_details = @($fileDetails | Sort-Object { $_["max_complexity"] } -Descending)
-        edges = $edgeOutput
+        edges = New-DsmEdgeOutput $edges
         note = "Lightweight DSM with 9 color modes. Git-derived modes depend on local git history; use Sentrux/CodeNexus for authoritative graph detail."
     }
 }

@@ -27,6 +27,7 @@
 - `check-code-intel-tools.ps1`: 环境 doctor。
 - `install-code-intel-pipeline.ps1`: 安装和修复入口。
 - `Find-CodeIntelProjects.ps1`: 项目发现入口。
+- `Invoke-GreenfieldSpecExtraction.ps1`: Greenfield 行为规格抽取适配器。
 - `crates/code-intel-cli`: Rust policy/artifact CLI core。
 
 内部脚本、benchmark、实验入口后续分批迁到 `scripts/` 或 incubator 目录；每次迁移必须保留兼容 shim 或同步更新 CI/release。
@@ -136,6 +137,12 @@ Project management support contract 测试：
 .\test-project-management-support.ps1 -RepoPath C:\path\to\your\repo
 ```
 
+Greenfield 行为规格适配器测试：
+
+```powershell
+.\test-greenfield-integration.ps1
+```
+
 大仓库建议指定核心范围：
 
 ```powershell
@@ -183,6 +190,7 @@ install -> doctor -> smoke test
 | `Understand Anything` | 架构图谱快照 | `.understand-anything/knowledge-graph.json` |
 | `Sentrux` | 结构质量、规则门禁、Agent 会话回归 | DSM、hotspots、what-if、evolution |
 | `CodeNexus-lite` | 热点定位、引用搜索、下一步上下文 | `codenexus-context.json` |
+| `Greenfield` | 从源码、文档、SDK、运行时和二进制证据抽取干净行为规格 | `greenfield-manifest.json`、`greenfield-plan.md`、`greenfield-workspace/output/` |
 | Governance layer | 状态判断、治理计划、放行标准 | `hospital.md`、`hospital-report.json`、`surgery-plan.md` |
 
 这几个工具分工不同。不要把它们混成一个 RAG 糊糊。
@@ -251,6 +259,8 @@ sentrux-what-if.json
 codenexus-context.json
 repomix-output.md
 repomix-summary.json
+greenfield-manifest.json
+greenfield-plan.md
 ```
 
 读报告顺序：

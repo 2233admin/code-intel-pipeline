@@ -56,6 +56,12 @@
       "description": "Hospital diagnosis, next protocol, and surgery-plan routing."
     },
     {
+      "id": "behavior_specification",
+      "order": 75,
+      "required": false,
+      "description": "Implementation-independent behavioral specs, test vectors, acceptance criteria, and provenance."
+    },
+    {
       "id": "artifact_index",
       "order": 80,
       "required": true,
@@ -310,6 +316,34 @@
         "surgery-plan.json"
       ],
       "extensionPoint": "New diagnosis modes attach here and preserve hospital-report.json stable fields."
+    },
+    {
+      "id": "spec.greenfield",
+      "stage": "behavior_specification",
+      "owner": "code-intel-pipeline",
+      "kind": "provider-contract",
+      "required": false,
+      "entrypoint": "Invoke-GreenfieldSpecExtraction.ps1",
+      "capabilities": [
+        "behavioral_specification",
+        "test_vectors",
+        "acceptance_criteria",
+        "provenance",
+        "clean_room_handoff"
+      ],
+      "commands": {
+        "plan": "Invoke-GreenfieldSpecExtraction.ps1 -RepoPath <repo-path> -Json",
+        "analyze": "Invoke-GreenfieldSpecExtraction.ps1 -RepoPath <repo-path> -Analyze -Json"
+      },
+      "artifactContract": [
+        "greenfield-manifest.json",
+        "greenfield-plan.md",
+        "greenfield-workspace/output/specs",
+        "greenfield-workspace/output/test-vectors",
+        "greenfield-workspace/output/validation",
+        "greenfield-workspace/provenance"
+      ],
+      "extensionPoint": "Greenfield is a Claude Code plugin boundary. Code Intel owns the adapter and artifact manifest; the external plugin remains optional until its behavior is internalized or a non-interactive provider contract is available."
     },
     {
       "id": "artifact.index",

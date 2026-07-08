@@ -107,6 +107,128 @@ function Get-ScriptFunctionsSource {
 Write-Host "== code-intel-pipeline regression suite (fixes in da46886) ==" -ForegroundColor Cyan
 
 # ---------------------------------------------------------------------------
+# Code Evidence symbol extraction: lock behavior before decomposing the
+# high-complexity native fallback matcher.
+# ---------------------------------------------------------------------------
+. (Get-ScriptFunctionsSource -Path (Join-Path $root "run-code-intel.ps1") -Only @(
+        "New-CodeEvidenceNativeSymbol",
+        "Get-CodeEvidencePowerShellSymbol",
+        "Get-CodeEvidencePythonSymbol",
+        "Get-CodeEvidenceJavaScriptSymbol",
+        "Get-CodeEvidenceRustSymbol",
+        "Get-CodeEvidenceGoSymbol",
+        "Get-CodeEvidenceJavaSymbol",
+        "Get-CodeEvidenceSymbolCandidate",
+        "Get-CodeEvidenceSymbols"
+    ))
+
+Test-Case "code evidence symbols: supported language matchers preserve native output" {
+    $cases = @(
+        @{ language = "powershell"; lines = @("function Invoke-Thing {"); expected = @("function:Invoke-Thing:1") },
+        @{ language = "python"; lines = @("class Widget:", "def run():"); expected = @("class:Widget:1", "function:run:2") },
+        @{ language = "javascript"; lines = @("export async function load() {}", "const save = async (x) => x", "export class Box {}"); expected = @("function:load:1", "function:save:2", "class:Box:3") },
+        @{ language = "rust"; lines = @("pub async fn fetch_data() {}"); expected = @("function:fetch_data:1") },
+        @{ language = "go"; lines = @("func (s *Server) Serve() {}"); expected = @("function:Serve:1") },
+        @{ language = "java"; lines = @("public class Demo {}"); expected = @("class:Demo:1") }
+    )
+
+    foreach ($case in $cases) {
+        $symbols = @(Get-CodeEvidenceSymbols -RelativePath "sample" -Language $case.language -Lines $case.lines)
+        $actual = @($symbols | ForEach-Object { "$($_.kind):$($_.name):$($_.startLine)" })
+        Assert-Equal ($case.expected -join "|") ($actual -join "|") "symbol output mismatch for $($case.language)"
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Sentrux module bucketing: lock representative taxonomy behavior before
+# replacing a long conditional chain with table-driven matching.
+# ---------------------------------------------------------------------------
+. (Get-ScriptFunctionsSource -Path (Join-Path $root "Invoke-SentruxAgentTool.ps1") -Only @(
+        "Get-FirstRegexBucket",
+        "Get-ModuleBucket"
+    ))
+
+Test-Case "Get-ModuleBucket preserves representative taxonomy buckets" {
+    $cases = @(
+        @{ domain = "strategy"; leaf = " "; expected = "__root__" },
+        @{ domain = "strategy"; leaf = "__init__"; expected = "__root__" },
+        @{ domain = "strategy"; leaf = "app__strategy__dialectical_rule"; expected = "dialectical_filter" },
+        @{ domain = "strategy"; leaf = "market_monitor"; expected = "market" },
+        @{ domain = "data"; leaf = "okx_feed"; expected = "okx" },
+        @{ domain = "api"; leaf = "crypto_price"; expected = "market" },
+        @{ domain = "cli"; leaf = "config_cmd"; expected = "market_control" },
+        @{ domain = "trading"; leaf = "runner_live"; expected = "market_execution" },
+        @{ domain = "brokers"; leaf = "exchange_bridge"; expected = "market_execution" },
+        @{ domain = "markets"; leaf = "okx_ccxt_adapter"; expected = "market_integration_adapter" },
+        @{ domain = "unknown"; leaf = "whatever"; expected = "misc" }
+    )
+
+    foreach ($case in $cases) {
+        $actual = Get-ModuleBucket -Domain $case.domain -Leaf $case.leaf
+        Assert-Equal $case.expected $actual "bucket mismatch for $($case.domain)/$($case.leaf)"
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Sentrux DSM workflow: lock the output contract consumed by the pipeline
+# artifact writer and browser/sidebar handoff.
+# ---------------------------------------------------------------------------
+Test-Case "Invoke-SentruxAgentTool dsm emits expected output contract" {
+    $dir = New-ScratchDir "dsm-contract"
+    try {
+        Set-Content -LiteralPath (Join-Path $dir "alpha.py") -Value @(
+            "import beta",
+            "",
+            "def alpha():",
+            "    return beta.beta()"
+        ) -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $dir "beta.py") -Value @(
+            "def beta():",
+            "    return 42"
+        ) -Encoding UTF8
+        New-Item -ItemType Directory -Path (Join-Path $dir "tests") -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir "tests\test_alpha.py") -Value @(
+            "from alpha import alpha",
+            "",
+            "def test_alpha():",
+            "    assert alpha() == 42"
+        ) -Encoding UTF8
+
+        $raw = & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "Invoke-SentruxAgentTool.ps1") dsm $dir
+        if ($LASTEXITCODE -ne 0) {
+            throw "dsm command exited ${LASTEXITCODE}: $raw"
+        }
+
+        $dsm = $raw | ConvertFrom-Json
+        Assert-Equal "dsm" $dsm.tool "DSM tool marker"
+        Assert-Equal "Risk" $dsm.default_color_mode "DSM default color mode"
+        Assert-Equal 9 @($dsm.color_modes).Count "DSM must expose 9 color modes"
+
+        $colorNames = @($dsm.color_modes | ForEach-Object { $_.name })
+        foreach ($expectedColor in @("Size", "Coupling", "TestGap", "Age", "Churn", "Risk", "Git", "ExecDepth", "BlastRadius")) {
+            Assert-True ($colorNames -contains $expectedColor) "missing DSM color mode $expectedColor"
+        }
+
+        Assert-True (@($dsm.modules).Count -ge 2) "DSM module output populated"
+        $module = @($dsm.modules)[0]
+        Assert-True ($null -ne $module.metrics) "DSM module metrics populated"
+        foreach ($expectedColor in $colorNames) {
+            Assert-True ($null -ne $module.colors.$expectedColor) "module missing $expectedColor color entry"
+            Assert-True ($null -ne $module.colors.$expectedColor.score) "module $expectedColor color score missing"
+        }
+
+        Assert-True (@($dsm.file_details).Count -ge 3) "DSM file details populated"
+        $alphaDetail = @($dsm.file_details | Where-Object { $_.path -eq "alpha.py" })[0]
+        Assert-True ($null -ne $alphaDetail) "alpha.py file detail exists"
+        Assert-True (@($alphaDetail.functions).Count -ge 1) "alpha.py function details populated"
+        Assert-True ($null -ne $dsm.scope) "DSM scope metadata populated"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Fix 1: god-file heuristic — functionCount > 25 alone must NOT flag god-file;
 # it must also have loc > 400. A well-decomposed file with many small functions
 # should not be punished for decomposing.
@@ -278,6 +400,35 @@ Test-Case "session_end partial backfill: summary/backfilled_metrics names the ga
         $summary = "$summary (warning: backfilled from baseline: $($backfilledMetrics -join ', '))"
     }
     Assert-True ($summary -like "*warning: backfilled from baseline: cycles, god_files*") "partial backfill must surface metric names in the summary warning (regression: da46886 fix 2 partial-backfill warning)"
+}
+
+# ---------------------------------------------------------------------------
+# Sentrux insight: when the authoritative gate says no degradation, raw metric
+# noise must not drive a false "regressed structural metrics" next action.
+# ---------------------------------------------------------------------------
+. (Get-ScriptFunctionsSource -Path (Join-Path $root "run-code-intel.ps1") -Only @(
+    "New-SentruxMetricDelta",
+    "Test-SentruxGateNoDegradation",
+    "Resolve-SentruxMetricRegressions"
+))
+
+Test-Case "Sentrux insight: gate no-degradation suppresses false metric regression" {
+    $metric = [pscustomobject](New-SentruxMetricDelta "quality" 4726 4713 "higher_is_better")
+    Assert-True $metric.regressed "raw quality delta should start as regressed"
+
+    $resolved = @(Resolve-SentruxMetricRegressions -Metrics @($metric) -NoDegradation (Test-SentruxGateNoDegradation "No degradation detected"))
+    Assert-False $resolved[0].regressed "authoritative no-degradation gate should suppress false regression"
+    Assert-True $resolved[0].rawRegressed "rawRegressed preserves the observed metric direction"
+    Assert-True $resolved[0].gateAccepted "gateAccepted records why regression was suppressed"
+}
+
+Test-Case "Sentrux insight: metric regression remains when gate does not accept it" {
+    $metric = [pscustomobject](New-SentruxMetricDelta "quality" 4726 4713 "higher_is_better")
+
+    $resolved = @(Resolve-SentruxMetricRegressions -Metrics @($metric) -NoDegradation $false)
+    Assert-True $resolved[0].regressed "regression must remain without authoritative no-degradation gate"
+    Assert-True $resolved[0].rawRegressed "raw regression marker remains visible"
+    Assert-False $resolved[0].gateAccepted "gateAccepted must be false without no-degradation gate"
 }
 
 # ---------------------------------------------------------------------------

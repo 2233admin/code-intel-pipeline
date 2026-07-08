@@ -27,6 +27,7 @@ Machine-authoritative files:
 - `hospital-report.json`: diagnosis, disposition, state machine, next protocol, discharge criteria, and report-quality dimensions.
 - `surgery-plan.json`: first bounded repair target, operating plan, verification commands, and discharge criteria.
 - `github-solution-research.json`: GitHub evidence candidates when external solution research is required.
+- `greenfield-manifest.json`: optional Greenfield behavioral spec extraction state, generated prompt, workspace paths, and expected output locations.
 
 Human/agent entry points:
 
@@ -35,13 +36,15 @@ Human/agent entry points:
 - `hospital.md`
 - `surgery-plan.md`
 - `github-solution-research.md`
+- `greenfield-plan.md`
 
 Tool evidence:
 
 - `repomix-output.md`, `repomix-output.xml`, `repomix-output.json`, `repomix-output.txt`
 - `sentrux-dsm.json`, `sentrux-file-details.json`, `sentrux-hotspots.json`, `sentrux-evolution.json`, `sentrux-what-if.json`
 - `codenexus-context.json`
-- Repowise and Understand Anything outputs referenced by `report.json`
+- Repowise Understand Anything outputs referenced `report.json`
+- Greenfield workspace outputs, when generated: `greenfield-workspace/output/specs`, `greenfield-workspace/output/test-vectors`, `greenfield-workspace/output/validation`, `greenfield-workspace/provenance`
 
 ## Sentrux Failure Contract
 
