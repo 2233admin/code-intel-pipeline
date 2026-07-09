@@ -374,34 +374,29 @@ if ($scopeSlug.Length -gt 80) {
 $shadowPath = Join-Path $ShadowRoot "$repoName-$scopeSlug"
 
 $head = (git -C $repoPath rev-parse HEAD).Trim()
+$patterns = New-Object System.Collections.Generic.List[string]
+foreach ($dir in $scopeDirs) {
+    $patterns.Add("/$($dir.Trim('/'))/")
+}
+foreach ($file in $scopeFiles) {
+    $patterns.Add("/$($file.Trim('/'))")
+}
 
 if (-not (Test-Path -LiteralPath $shadowPath -PathType Container)) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $shadowPath) | Out-Null
-    [void](Invoke-NativeCommand -Description "git worktree add" -Script { git -C $repoPath worktree add --detach $shadowPath $head })
+    [void](Invoke-NativeCommand -Description "git worktree add" -Script { git -C $repoPath worktree add --no-checkout --detach $shadowPath $head })
 }
 else {
     $shadowGit = Join-Path $shadowPath ".git"
     if (-not (Test-Path -LiteralPath $shadowGit)) {
         throw "Shadow path exists but is not a git worktree: $shadowPath"
     }
-    $shadowHead = (git -C $shadowPath rev-parse HEAD).Trim()
-    if ($shadowHead -ne $head) {
-        [void](Invoke-NativeCommand -Description "git checkout shadow" -Script { git -C $shadowPath checkout --detach --force $head })
-    }
 }
 
 Push-Location $shadowPath
 try {
-    [void](Invoke-NativeCommand -Description "git reset shadow" -Script { git -C $shadowPath reset --hard HEAD })
-    [void](Invoke-NativeCommand -Description "git clean shadow" -Script { git -C $shadowPath clean -fdx -e .repowise })
-    git sparse-checkout init --no-cone 2>&1 | Out-Null
-    $patterns = New-Object System.Collections.Generic.List[string]
-    foreach ($dir in $scopeDirs) {
-        $patterns.Add("/$($dir.Trim('/'))/")
-    }
-    foreach ($file in $scopeFiles) {
-        $patterns.Add("/$($file.Trim('/'))")
-    }
+    [void](Invoke-NativeCommand -Description "git clean shadow" -Script { git -c core.longpaths=true -C $shadowPath clean -fdx -e .repowise })
+    [void](Invoke-NativeCommand -Description "git sparse-checkout init" -Script { git -C $shadowPath sparse-checkout init --no-cone })
     $previousErrorActionPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = "Continue"
@@ -409,14 +404,12 @@ try {
         if ($LASTEXITCODE -ne 0) {
             throw "git sparse-checkout set failed with exit $LASTEXITCODE"
         }
-        git read-tree -mu HEAD 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw "git read-tree failed with exit $LASTEXITCODE"
-        }
     }
     finally {
         $ErrorActionPreference = $previousErrorActionPreference
     }
+    [void](Invoke-NativeCommand -Description "git checkout shadow" -Script { git -C $shadowPath checkout --detach --force $head })
+    [void](Invoke-NativeCommand -Description "git reset shadow" -Script { git -C $shadowPath reset --hard $head })
 }
 finally {
     Pop-Location

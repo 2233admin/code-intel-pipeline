@@ -70,6 +70,28 @@ function Resolve-Repo {
     return $item.FullName
 }
 
+function Find-RepoConfigByPath {
+    param([object]$ReposConfig, [string]$ResolvedRepoPath)
+
+    if ($null -eq $ReposConfig -or [string]::IsNullOrWhiteSpace($ResolvedRepoPath)) { return $null }
+    $normalizedRepoPath = [System.IO.Path]::TrimEndingDirectorySeparator($ResolvedRepoPath)
+    foreach ($entry in $ReposConfig.PSObject.Properties) {
+        $configuredPath = Get-JsonProperty $entry.Value "path"
+        if ([string]::IsNullOrWhiteSpace([string]$configuredPath)) { continue }
+        try {
+            $resolvedConfiguredPath = Resolve-Repo ([string]$configuredPath)
+        }
+        catch {
+            continue
+        }
+        $normalizedConfiguredPath = [System.IO.Path]::TrimEndingDirectorySeparator($resolvedConfiguredPath)
+        if ([string]::Equals($normalizedConfiguredPath, $normalizedRepoPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $entry.Value
+        }
+    }
+    return $null
+}
+
 function Test-CommandAvailable {
     param([string]$Name)
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
@@ -3250,7 +3272,7 @@ if (-not [string]::IsNullOrWhiteSpace($Config)) {
 
 $repoConfig = $null
 $reposConfig = Get-JsonProperty $configData "repos"
-if ($null -ne $reposConfig -and -not [string]::IsNullOrWhiteSpace($Repo)) {
+if ($null -ne $reposConfig -and [string]::IsNullOrWhiteSpace($RepoPath) -and -not [string]::IsNullOrWhiteSpace($Repo)) {
     $repoConfig = Get-JsonProperty $reposConfig $Repo
 }
 
@@ -3266,6 +3288,9 @@ if ([string]::IsNullOrWhiteSpace($RepoPath) -and $null -ne $repoConfig) {
 }
 
 $repoPath = Resolve-Repo $repoInput
+if ($null -ne $reposConfig -and -not [string]::IsNullOrWhiteSpace($RepoPath)) {
+    $repoConfig = Find-RepoConfigByPath -ReposConfig $reposConfig -ResolvedRepoPath $repoPath
+}
 $repoName = Split-Path -Leaf $repoPath
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 
