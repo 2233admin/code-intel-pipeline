@@ -44,7 +44,7 @@ function Test-SkippedPath {
     param([string]$Path)
 
     $normalized = ($Path -replace "\\", "/").ToLowerInvariant()
-    if ($normalized -match "/(static|public|wwwroot)/assets/") {
+    if ($normalized -match "(^|/)(static|public|wwwroot)/") {
         return $true
     }
     $leaf = [System.IO.Path]::GetFileName(($Path -replace "\\", "/"))
@@ -55,12 +55,18 @@ function Test-SkippedPath {
     if ($leaf -match ".+-[A-Za-z0-9_]{6,}\.(js|jsx|mjs|cjs)$" -and $leaf -match "[0-9]" -and $leaf -cmatch "[A-Z]") {
         return $true
     }
+    if ($leafLower -match "\.[0-9a-f]{12,}(\.rtl)?\.(js|jsx|mjs|cjs|css)$") {
+        return $true
+    }
 
     $parts = @($normalized -split "/" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     foreach ($part in $parts) {
+        if ($part.StartsWith(".") -and $part.Length -gt 1 -and $part -notin @(".", "..")) {
+            return $true
+        }
         if ($part -in @(
             ".git", ".repowise", ".understand-anything", ".sentrux",
-            "tools", "vendor", "third_party", "external",
+            "tools", "vendor", "vendors", "third_party", "third-party", "external",
             "node_modules", ".pnpm", ".yarn",
             "target", "dist", "build", "out", "coverage",
             ".venv", "venv", "env", ".tox", "__pycache__",
