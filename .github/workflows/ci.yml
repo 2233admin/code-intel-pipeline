@@ -48,12 +48,16 @@ jobs:
         run: |
           $files = @(
             "run-code-intel.ps1",
+            "Invoke-ScopedRepowise.ps1",
             "Find-CodeIntelProjects.ps1",
             "Invoke-GitHubSolutionResearch.ps1",
             "test-code-intel-pipeline.ps1",
             "test-github-solution-research.ps1",
+            "test-hospital-trust-contract.ps1",
             "test-project-discovery.ps1",
             "test-project-management-support.ps1",
+            "test-scoped-repowise-security.ps1",
+            "test-scoped-repowise-worktree.ps1",
             "test-skill-development-benchmark.ps1"
           )
           foreach ($file in $files) {
@@ -136,6 +140,23 @@ jobs:
         shell: pwsh
         run: .\test-skill-development-benchmark.ps1 -RepoPath .
 
+      - name: Hospital fail-closed contract tests
+        shell: pwsh
+        run: .\test-hospital-trust-contract.ps1
+
+      - name: Scoped Repowise trust-boundary tests
+        shell: pwsh
+        run: |
+          .\test-scoped-repowise-security.ps1
+          .\test-scoped-repowise-worktree.ps1
+
+      - name: Scoped Repowise manifest validator tests
+        run: python .\test-scoped-repowise-validator.py
+
+      - name: Core PowerShell regression tests
+        shell: pwsh
+        run: .\test-regression-fixes.ps1
+
       - name: Pipeline smoke
         shell: pwsh
         run: .\test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -SkipGitHubResearch -Mode normal
@@ -210,12 +231,16 @@ jobs:
         run: |
           $files = @(
             "run-code-intel.ps1",
+            "Invoke-ScopedRepowise.ps1",
             "Find-CodeIntelProjects.ps1",
             "Invoke-GitHubSolutionResearch.ps1",
             "test-code-intel-pipeline.ps1",
             "test-github-solution-research.ps1",
+            "test-hospital-trust-contract.ps1",
             "test-project-discovery.ps1",
             "test-project-management-support.ps1",
+            "test-scoped-repowise-security.ps1",
+            "test-scoped-repowise-worktree.ps1",
             "test-skill-development-benchmark.ps1"
           )
           foreach ($file in $files) {
@@ -279,6 +304,13 @@ jobs:
       - name: Doctor
         shell: pwsh
         run: ./check-code-intel-tools.ps1 -RepoPath . -RequireRepowise:$false -Json
+
+      - name: Hospital fail-closed contract tests
+        shell: pwsh
+        run: ./test-hospital-trust-contract.ps1
+
+      - name: Scoped Repowise manifest validator tests
+        run: python ./test-scoped-repowise-validator.py
 
       - name: Pipeline smoke
         shell: pwsh

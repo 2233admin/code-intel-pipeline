@@ -6,16 +6,26 @@ It is not scanner runtime. Do not install `mattpocock/skills`, Linear clients, O
 
 ## Surfaces
 
-- Issue tracker: where actionable work lives. For this repo, Linear is the preferred project-management issue tracker; GitHub remains source-code hosting and can provide upstream issue or PR evidence.
+- Work control plane: where actionable work lives. Selection is local-first and project-specific: reuse an existing Git-backed Work-OS or repo-native task graph before creating a new external SaaS project. Linear and GitHub Projects are optional projections, not prerequisites.
 - Triage labels: stable states agents can apply or report against when moving work through evaluation, reporter follow-up, agent-ready, human-ready, and wontfix states.
 - Domain docs: the authoritative repo-local knowledge surface agents read before planning or coding.
-- Obsidian/LLM wiki: optional mirrored or indexed knowledge view for navigation, backlinks, and long-running project memory.
+- Obsidian/LLM wiki: a knowledge view by default; when a project already has a reviewed Git-backed Work-OS issue contract, it may also own task state. It still never replaces scanner artifacts as technical evidence.
 
-## Linear Boundary
+## Control-Plane Selection
 
-Linear support means Code Intel artifacts can be referenced from Linear issues and Linear issues can carry triage state. It does not mean the scanner writes to Linear by default.
+Choose exactly one writable task-state authority for an initiative:
 
-Do not store Linear API keys, OAuth tokens, workspace IDs, or user secrets in this repository. If a future helper writes Linear issues, it must require explicit user authorization, read credentials from user-scoped environment or an approved secret store, and record local evidence before external writes.
+1. follow an explicit user selection;
+2. otherwise reuse the project's existing Git-backed Work-OS or repo-native task graph;
+3. use Linear, GitHub Projects, or another hosted tracker only when explicitly requested or already bound as the project authority.
+
+Do not mirror mutable status bidirectionally between trackers. Other systems may index links and reviewed summaries, but they are read-only projections unless a deliberate migration changes the authority.
+
+## Hosted Tracker Boundary
+
+Hosted tracker support means Code Intel artifacts can be referenced from external issues and those issues can carry triage state when selected. It does not mean the scanner writes to any tracker by default.
+
+Do not store API keys, OAuth tokens, workspace IDs, or user secrets in this repository. A helper that writes external issues must require explicit user authorization, read credentials from user-scoped environment or an approved secret store, and record local evidence before external writes.
 
 ## Obsidian/LLM Wiki Boundary
 
@@ -35,6 +45,6 @@ Use the wiki to find context; use artifact runs for current scanner evidence. If
 
 1. Read `docs/agents/domain.md`, then the relevant `CONTEXT.md` and ADRs.
 2. Run Code Intel Pipeline when fresh repository evidence is needed.
-3. Convert verified artifact evidence into a Linear issue or wiki note only when requested or when the active workflow explicitly requires it.
+3. Convert verified artifact evidence into the selected control plane only when requested or when the active workflow explicitly requires it.
 4. Preserve artifact links and verification commands in the issue or note.
-5. Never let Linear or wiki state replace scanner evidence, artifact data contract fields, or safety checks.
+5. Never let task or wiki state replace scanner evidence, artifact data contract fields, or safety checks.

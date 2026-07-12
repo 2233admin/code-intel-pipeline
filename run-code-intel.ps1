@@ -1769,10 +1769,24 @@ function Get-StepScore {
     if ($null -eq $Step) { return 0 }
     switch ([string]$Step.status) {
         "passed" { return 100 }
-        "manual_required" { return 55 }
-        "skipped" { return 35 }
         default { return 0 }
     }
+}
+
+function Get-FailureCount {
+    param(
+        [object]$FailureCounts,
+        [string]$Name
+    )
+
+    if ($FailureCounts -is [System.Collections.IDictionary] -and $FailureCounts.Contains($Name)) {
+        return [int]$FailureCounts[$Name]
+    }
+    if ($null -ne $FailureCounts -and $null -ne $FailureCounts.PSObject.Properties[$Name]) {
+        return [int]$FailureCounts.$Name
+    }
+
+    return 0
 }
 
 function Get-FirstLine {
@@ -1809,7 +1823,10 @@ function New-Modality {
         [string]$Limit
     )
 
-    $status = if ($null -ne $Step) {
+    $status = if ($Finding -eq "not generated" -and [string]::IsNullOrWhiteSpace($Artifact)) {
+        "missing"
+    }
+    elseif ($null -ne $Step) {
         [string]$Step.status
     }
     elseif (-not [string]::IsNullOrWhiteSpace($Artifact)) {
@@ -1871,23 +1888,35 @@ function New-HospitalStateMachine {
         [int]$FailingWhatIfCount,
         [string]$Disposition,
         [string]$NextProtocol,
+        [bool]$StructuralEvidenceComplete = $true,
         [string]$SurgeryTarget = "",
         [string]$CurrentTopHotspot = ""
     )
 
+    # Keep this guard self-contained because the state-machine seam is also
+    # extracted independently by the regression harness.
+    $providerQuotaCount = 0
+    if ($FailureCounts -is [System.Collections.IDictionary] -and $FailureCounts.Contains("providerQuota")) {
+        $providerQuotaCount = [int]$FailureCounts["providerQuota"]
+    }
+    elseif ($null -ne $FailureCounts -and $null -ne $FailureCounts.PSObject.Properties["providerQuota"]) {
+        $providerQuotaCount = [int]$FailureCounts.providerQuota
+    }
+
     $toolsOk = ([int]$FailureCounts.localToolError -eq 0)
+    $providerAvailable = ($providerQuotaCount -eq 0)
     $graphOk = ([int]$FailureCounts.graphMissing -eq 0)
     $sentruxOk = ([int]$FailureCounts.sentruxFail -eq 0 -and $RulesExists -and $GateStatus -eq "passed" -and $CheckStatus -eq "passed")
-    $surgeryDebtCleared = ($FailingWhatIfCount -eq 0)
-    $postOpOk = ($toolsOk -and $graphOk -and $sentruxOk -and $surgeryDebtCleared)
+    $surgeryDebtCleared = ($StructuralEvidenceComplete -and $FailingWhatIfCount -eq 0)
 
     # surgery_plan -> post_op: the surgery target has actually been treated
     # (it no longer shows up as the current top hotspot) and sentrux confirms
     # the governed scope is clean, so it is safe to move on to post-op review.
-    $surgeryTargetResolved = ([string]::IsNullOrWhiteSpace($SurgeryTarget) -or
-        [string]::IsNullOrWhiteSpace($CurrentTopHotspot) -or
+    $surgeryTargetResolved = (-not [string]::IsNullOrWhiteSpace($SurgeryTarget) -and
+        -not [string]::IsNullOrWhiteSpace($CurrentTopHotspot) -and
         ($SurgeryTarget -ne $CurrentTopHotspot))
-    $surgeryToPostOpOk = ($sentruxOk -and $surgeryTargetResolved)
+    $surgeryToPostOpOk = ($sentruxOk -and $StructuralEvidenceComplete -and $surgeryTargetResolved)
+    $postOpOk = ($toolsOk -and $providerAvailable -and $graphOk -and $sentruxOk -and $surgeryDebtCleared -and $surgeryTargetResolved)
 
     $currentState = switch ($NextProtocol) {
         "triage" { "triage" }
@@ -1914,12 +1943,14 @@ function New-HospitalStateMachine {
         )
         guards = [ordered]@{
             tools_ok = $toolsOk
+            provider_available = $providerAvailable
             graph_ok = $graphOk
             rules_exists = $RulesExists
             sentrux_check = $CheckStatus
             sentrux_gate = $GateStatus
             sentrux_ok = $sentruxOk
             failing_what_if = $FailingWhatIfCount
+            structural_evidence_complete = $StructuralEvidenceComplete
             surgery_debt_cleared = $surgeryDebtCleared
             surgery_target = $SurgeryTarget
             current_top_hotspot = $CurrentTopHotspot
@@ -2083,8 +2114,13 @@ function Get-HospitalDiagnosis {
         [int]$FailingWhatIfCount
     )
 
+    $providerQuotaCount = Get-FailureCount $FailureCounts "providerQuota"
+
     if ($FailureCounts.localToolError -gt 0) {
         return [ordered]@{ severity = "red"; primaryDiagnosis = "local tool failure" }
+    }
+    if ($providerQuotaCount -gt 0) {
+        return [ordered]@{ severity = "amber"; primaryDiagnosis = "provider quota exhausted" }
     }
     if ($FailureCounts.sentruxFail -gt 0) {
         return [ordered]@{ severity = "red"; primaryDiagnosis = "architecture gate failure" }
@@ -2110,8 +2146,11 @@ function Get-HospitalNextProtocol {
         [object]$GitHubResearch
     )
 
-    if ($null -ne $GitHubResearch -and [bool]$GitHubResearch.required) { return "github_solution_research" }
+    $providerQuotaCount = Get-FailureCount $FailureCounts "providerQuota"
+
     if ($FailureCounts.localToolError -gt 0) { return "triage" }
+    if ($providerQuotaCount -gt 0) { return "triage" }
+    if ($null -ne $GitHubResearch -and [bool]$GitHubResearch.required) { return "github_solution_research" }
     if ($FailureCounts.graphMissing -gt 0) { return "diagnose" }
     if (-not $RulesExists) { return "govern" }
     if ($FailingWhatIfCount -gt 0) { return "surgery_plan" }
@@ -2128,6 +2167,8 @@ function Get-HospitalAdmissionReason {
         "ungoverned structural scope" { return "Admit for governance: rules are missing for the selected scope." }
         "known modernization debt" { return "Admit for planned surgery: what-if scenarios show debt that should be scheduled, not ignored." }
         "architecture gate failure" { return "Admit for structural treatment: Sentrux gate or rules failed." }
+        "provider quota exhausted" { return "Admit for triage: provider quota prevented complete evidence collection." }
+        "structural evidence incomplete" { return "Admit for diagnosis: required structural summaries are incomplete." }
         "local tool failure" { return "Admit for triage: local toolchain failed before diagnosis can be trusted." }
         default { return "Admit until the next protocol clears the diagnosis." }
     }
@@ -2142,8 +2183,11 @@ function Get-HospitalTreatmentPlan {
         [string]$TopContextFile
     )
 
+    $providerQuotaCount = Get-FailureCount $FailureCounts "providerQuota"
+
     $treatment = @()
     if ($FailureCounts.localToolError -gt 0) { $treatment += "Fix local tool errors before interpreting architecture signals." }
+    if ($providerQuotaCount -gt 0) { $treatment += "Restore provider quota or use a complete local evidence path before interpreting the result." }
     if ($FailureCounts.graphMissing -gt 0) { $treatment += "Refresh Understand graph with: $UnderstandCommand" }
     if (-not $RulesExists) { $treatment += "Add .sentrux/rules.toml for the chosen scope." }
     if ($FailingWhatIfCount -gt 0) { $treatment += "Use what-if failures as the tightening roadmap; start with the first failing scenario." }
@@ -2162,6 +2206,7 @@ function New-HospitalDecisionBlock {
         [int]$FailingWhatIfCount,
         [string]$UnderstandCommand,
         [string]$TopContextFile,
+        [bool]$StructuralEvidenceComplete = $false,
         [string]$SurgeryTarget = "",
         [string]$CurrentTopHotspot = "",
         [object]$GitHubResearch
@@ -2169,7 +2214,31 @@ function New-HospitalDecisionBlock {
 
     $diagnosis = Get-HospitalDiagnosis $FailureCounts $RulesExists $FailingWhatIfCount
     $nextProtocol = Get-HospitalNextProtocol $FailureCounts $RulesExists $FailingWhatIfCount $GitHubResearch
-    $disposition = if ($diagnosis.severity -eq "green") { "discharge_ready" } else { "admit" }
+    $sentruxVerified = ($RulesExists -and $GateStatus -eq "passed" -and $CheckStatus -eq "passed")
+    if ($diagnosis.severity -eq "green" -and -not $sentruxVerified) {
+        $hasExplicitFailure = ($GateStatus -eq "failed" -or $CheckStatus -eq "failed")
+        $diagnosis = [ordered]@{
+            severity = if ($hasExplicitFailure) { "red" } else { "amber" }
+            primaryDiagnosis = if ($hasExplicitFailure) { "architecture gate failure" } else { "architecture verification incomplete" }
+        }
+        $nextProtocol = "govern"
+    }
+    elseif ($diagnosis.severity -eq "green" -and -not $StructuralEvidenceComplete) {
+        $diagnosis = [ordered]@{ severity = "amber"; primaryDiagnosis = "structural evidence incomplete" }
+        $nextProtocol = "diagnose"
+    }
+    $postOpResolved = (-not [string]::IsNullOrWhiteSpace($SurgeryTarget) -and
+        -not [string]::IsNullOrWhiteSpace($CurrentTopHotspot) -and
+        $SurgeryTarget -ne $CurrentTopHotspot)
+    $disposition = if ($diagnosis.severity -ne "green") {
+        "admit"
+    }
+    elseif ($sentruxVerified -and $StructuralEvidenceComplete -and $postOpResolved) {
+        "discharge_ready"
+    }
+    else {
+        "observe"
+    }
     $admissionReason = Get-HospitalAdmissionReason $diagnosis.primaryDiagnosis
     $dischargeCriteria = @(
         "failure category counters are zero",
@@ -2181,6 +2250,9 @@ function New-HospitalDecisionBlock {
         $dischargeCriteria += "GitHub evidence linked or GitHub evidence insufficiency recorded in github-solution-research artifacts"
     }
     $treatment = Get-HospitalTreatmentPlan $FailureCounts $RulesExists $FailingWhatIfCount $UnderstandCommand $TopContextFile
+    if (-not $sentruxVerified) {
+        $treatment = @($treatment) + "Obtain passing Sentrux check and gate evidence before discharge."
+    }
 
     $stateMachine = New-HospitalStateMachine `
         -FailureCounts $FailureCounts `
@@ -2190,6 +2262,7 @@ function New-HospitalDecisionBlock {
         -FailingWhatIfCount $FailingWhatIfCount `
         -Disposition $disposition `
         -NextProtocol $nextProtocol `
+        -StructuralEvidenceComplete $StructuralEvidenceComplete `
         -SurgeryTarget $SurgeryTarget `
         -CurrentTopHotspot $CurrentTopHotspot
 
@@ -2237,8 +2310,11 @@ function New-HospitalModalities {
         [int]$GraphScore,
         [int]$MemoryScore,
         [int]$MriScore,
+        [string]$MriStatus,
         [int]$CtScore,
+        [string]$CtStatus,
         [int]$PetScore,
+        [string]$PetStatus,
         [int]$GovernanceScore,
         [string]$RunDir,
         [string]$RepoPath,
@@ -2252,12 +2328,12 @@ function New-HospitalModalities {
     )
 
     $xrayFinding = if ($InventoryFiles -gt 0) { "$InventoryFiles files inventoried" } else { "no inventory" }
-    $ctArtifact = if ($null -ne $SentruxDsmSummary) { [string]$SentruxDsmSummary.path } else { "" }
-    $ctFinding = if ($null -ne $SentruxDsmSummary) { "$($SentruxDsmSummary.modules) modules, $($SentruxFileDetailsSummary.functions) functions" } else { "not generated" }
-    $mriArtifact = if ($null -ne $CodeNexusContextSummary) { [string]$CodeNexusContextSummary.path } else { "" }
-    $mriFinding = if ($null -ne $CodeNexusContextSummary) { "$($CodeNexusContextSummary.files) files, $($CodeNexusContextSummary.references) references" } else { "not generated" }
-    $petArtifact = if ($null -ne $SentruxWhatIfSummary) { [string]$SentruxWhatIfSummary.path } else { "" }
-    $petFinding = if ($null -ne $SentruxWhatIfSummary) { "$($SentruxWhatIfSummary.failing) failing what-if scenarios" } else { "not generated" }
+    $ctArtifact = if ($CtStatus -eq "available") { [string]$SentruxDsmSummary.path } else { "" }
+    $ctFinding = if ($CtStatus -eq "available") { "$($SentruxDsmSummary.modules) modules, $($SentruxFileDetailsSummary.functions) functions" } else { "not generated" }
+    $mriArtifact = if ($MriStatus -eq "available") { [string]$CodeNexusContextSummary.path } else { "" }
+    $mriFinding = if ($MriStatus -eq "available") { "$($CodeNexusContextSummary.files) files, $($CodeNexusContextSummary.references) references" } else { "not generated" }
+    $petArtifact = if ($PetStatus -eq "available") { [string]$SentruxWhatIfSummary.path } else { "" }
+    $petFinding = if ($PetStatus -eq "available") { "$($SentruxWhatIfSummary.failing) failing what-if scenarios" } else { "not generated" }
     $chartFinding = if ($null -ne $RepowiseStep) { [string]$RepowiseStep.status } else { "not run" }
 
     return @(
@@ -2323,14 +2399,18 @@ function Read-HospitalArtifactFile {
 function Read-HospitalArtifacts {
     param(
         [object]$SentruxDsmSummary,
+        [object]$SentruxFileDetailsSummary,
         [object]$SentruxHotspotsSummary,
+        [object]$SentruxEvolutionSummary,
         [object]$SentruxWhatIfSummary,
         [object]$CodeNexusContextSummary
     )
 
     return [ordered]@{
         dsm = Read-HospitalArtifactFile $SentruxDsmSummary
+        file_details = Read-HospitalArtifactFile $SentruxFileDetailsSummary
         hotspots = Read-HospitalArtifactFile $SentruxHotspotsSummary
+        evolution = Read-HospitalArtifactFile $SentruxEvolutionSummary
         what_if = Read-HospitalArtifactFile $SentruxWhatIfSummary
         codenexus = Read-HospitalArtifactFile $CodeNexusContextSummary
     }
@@ -2353,8 +2433,28 @@ function New-HospitalMeasurements {
     $resolvedImports = if ($scan.Contains("resolvedImports")) { [int]$scan["resolvedImports"] } else { 0 }
     $totalImports = $resolvedImports + $unresolvedImports
     $resolvedRatio = if ($totalImports -gt 0) { [math]::Round(($resolvedImports * 100.0) / $totalImports, 1) } else { $null }
-    $excludedFiles = if ($null -ne $DsmObject -and $null -ne $DsmObject.scope -and $null -ne $DsmObject.scope.excluded_files) { [int]$DsmObject.scope.excluded_files } else { 0 }
-    $sourceScopeStatus = if ($inventoryFiles -gt 0 -and $scanFiles -gt 0) { "measured" } elseif ($inventoryFiles -gt 0) { "inventory_only" } else { "missing" }
+    $dsmScope = $null
+    if ($DsmObject -is [System.Collections.IDictionary] -and $DsmObject.Contains("scope")) {
+        $dsmScope = $DsmObject["scope"]
+    }
+    elseif ($null -ne $DsmObject -and $null -ne $DsmObject.PSObject.Properties["scope"]) {
+        $dsmScope = $DsmObject.scope
+    }
+
+    $excludedFilesValue = $null
+    $hasPollutionEvidence = $false
+    if ($dsmScope -is [System.Collections.IDictionary] -and $dsmScope.Contains("excluded_files")) {
+        $excludedFilesValue = $dsmScope["excluded_files"]
+        $hasPollutionEvidence = ($null -ne $excludedFilesValue)
+    }
+    elseif ($null -ne $dsmScope -and $null -ne $dsmScope.PSObject.Properties["excluded_files"]) {
+        $excludedFilesValue = $dsmScope.excluded_files
+        $hasPollutionEvidence = ($null -ne $excludedFilesValue)
+    }
+
+    $excludedFiles = if ($hasPollutionEvidence) { [int]$excludedFilesValue } else { 0 }
+    $sourceScopeStatus = if ($inventoryFiles -gt 0 -and $scanFiles -gt 0) { "measured" } else { "unknown" }
+    $pollutionStatus = if (-not $hasPollutionEvidence) { "unknown" } elseif ($excludedFiles -gt 0) { "quarantined" } else { "clean" }
 
     return [ordered]@{
         inventory_files = $inventoryFiles
@@ -2364,13 +2464,14 @@ function New-HospitalMeasurements {
         resolved_ratio = $resolvedRatio
         excluded_files = $excludedFiles
         source_scope_status = $sourceScopeStatus
+        pollution_status = $pollutionStatus
     }
 }
 
 function Get-ImportResolutionScore {
     param([object]$ResolvedRatio)
 
-    if ($null -eq $ResolvedRatio) { return 50 }
+    if ($null -eq $ResolvedRatio) { return 0 }
     if ($ResolvedRatio -ge 75) { return 100 }
     if ($ResolvedRatio -ge 50) { return 75 }
     if ($ResolvedRatio -ge 25) { return 50 }
@@ -2384,10 +2485,9 @@ function Get-SourceCoverageScore {
         [int]$InventoryFiles
     )
 
-    if ($ScanFiles -gt 0) { return 100 }
-    if ($InventoryFiles -gt 0) { return 70 }
+    if ($ScanFiles -le 0 -or $InventoryFiles -le 0) { return 0 }
 
-    return 0
+    return [int][math]::Round([math]::Min(100.0, ($ScanFiles * 100.0) / $InventoryFiles))
 }
 
 function New-HospitalScoreBlock {
@@ -2398,11 +2498,11 @@ function New-HospitalScoreBlock {
         [object]$RepowiseStep,
         [object]$SentruxCheckStep,
         [object]$SentruxGateStep,
-        [object]$SentruxDsmSummary,
-        [object]$SentruxFileDetailsSummary,
-        [object]$SentruxEvolutionSummary,
-        [object]$SentruxWhatIfSummary,
-        [object]$CodeNexusContextSummary
+        [object]$SentruxDsmObject,
+        [object]$SentruxFileDetailsObject,
+        [object]$SentruxEvolutionObject,
+        [object]$SentruxWhatIfObject,
+        [object]$CodeNexusContextObject
     )
 
     $rulesExists = [bool]$SentruxInsight["rulesExists"]
@@ -2411,11 +2511,15 @@ function New-HospitalScoreBlock {
     $checkScore = Get-StepScore $SentruxCheckStep
     $graphScore = Get-StepScore $UnderstandStep
     $memoryScore = Get-StepScore $RepowiseStep
-    $mriScore = if ($null -ne $CodeNexusContextSummary) { 100 } else { 35 }
-    $ctScore = if ($null -ne $SentruxDsmSummary -and $null -ne $SentruxFileDetailsSummary) { 100 } else { 35 }
-    $petScore = if ($null -ne $SentruxWhatIfSummary -and $null -ne $SentruxEvolutionSummary) { 70 } else { 25 }
+    $mriStatus = if ($null -ne $CodeNexusContextObject) { "available" } else { "missing" }
+    $ctStatus = if ($null -ne $SentruxDsmObject -and $null -ne $SentruxFileDetailsObject) { "available" } else { "missing" }
+    $petStatus = if ($null -ne $SentruxWhatIfObject -and $null -ne $SentruxEvolutionObject) { "available" } else { "missing" }
+    $mriScore = if ($mriStatus -eq "available") { 100 } else { 0 }
+    $ctScore = if ($ctStatus -eq "available") { 100 } else { 0 }
+    $petScore = if ($petStatus -eq "available") { 70 } else { 0 }
     $resolutionScore = Get-ImportResolutionScore $Measurements.resolved_ratio
-    $pollutionScore = if ($Measurements.excluded_files -gt 0) { 100 } else { 80 }
+    $pollutionStatus = [string]$Measurements.pollution_status
+    $pollutionScore = if ($pollutionStatus -eq "unknown") { 0 } elseif ($Measurements.excluded_files -gt 0) { 100 } else { 80 }
     $governanceScore = [int][math]::Round(($rulesScore + $gateScore + $checkScore) / 3.0)
     $diagnosticScore = [int][math]::Round(($ctScore + $mriScore + $graphScore + $memoryScore) / 4.0)
     $overallScore = [int][math]::Round(($diagnosticScore + $governanceScore + $resolutionScore + $pollutionScore) / 4.0)
@@ -2429,8 +2533,11 @@ function New-HospitalScoreBlock {
         graph_score = $graphScore
         memory_score = $memoryScore
         mri_score = $mriScore
+        mri_status = $mriStatus
         ct_score = $ctScore
+        ct_status = $ctStatus
         pet_score = $petScore
+        pet_status = $petStatus
         resolution_score = $resolutionScore
         pollution_score = $pollutionScore
         governance_score = $governanceScore
@@ -2438,12 +2545,12 @@ function New-HospitalScoreBlock {
         overall_score = $overallScore
         source_coverage_score = Get-SourceCoverageScore $Measurements.scan_files $Measurements.inventory_files
         import_resolution_status = if ($null -eq $resolvedRatio) { "unknown" } else { "$resolvedRatio%" }
-        pollution_status = if ($Measurements.excluded_files -gt 0) { "quarantined" } else { "clean_or_unknown" }
+        pollution_status = $pollutionStatus
         governance_status = if ($rulesExists) { "rules_present" } else { "rules_missing" }
         governance_artifact = $governanceArtifact
         governance_finding = "rules=$($SentruxInsight['rulesExists']); gate=$($SentruxInsight['gateStatus']); check=$($SentruxInsight['checkStatus'])"
         governance_evidence = "gate=$($SentruxInsight['gateStatus']); check=$($SentruxInsight['checkStatus'])"
-        localization_status = if ($null -ne $CodeNexusContextSummary) { "available" } else { "missing" }
+        localization_status = $mriStatus
         memory_status = if ($null -ne $RepowiseStep) { [string]$RepowiseStep.status } else { "not_run" }
         memory_evidence = if ($null -ne $RepowiseStep) { Get-FirstLine ([string]$RepowiseStep.output) } else { "" }
     }
@@ -2550,7 +2657,12 @@ function New-CodeIntelHospitalReport {
     $sentruxCheckStep = Get-StepMatch $Steps "sentrux check"
     $sentruxGateStep = Get-StepMatch $Steps "sentrux gate*" -Last
 
-    $artifacts = Read-HospitalArtifacts $SentruxDsmSummary $SentruxHotspotsSummary $SentruxWhatIfSummary $CodeNexusContextSummary
+    $artifacts = Read-HospitalArtifacts $SentruxDsmSummary $SentruxFileDetailsSummary $SentruxHotspotsSummary $SentruxEvolutionSummary $SentruxWhatIfSummary $CodeNexusContextSummary
+    $structuralEvidenceComplete = ($null -ne $artifacts.dsm -and
+        $null -ne $artifacts.file_details -and
+        $null -ne $artifacts.hotspots -and
+        $null -ne $artifacts.evolution -and
+        $null -ne $artifacts.what_if)
     $measurements = New-HospitalMeasurements $inventoryStep $SentruxInsight $artifacts.dsm
     $scores = New-HospitalScoreBlock `
         -SentruxInsight $SentruxInsight `
@@ -2559,11 +2671,11 @@ function New-CodeIntelHospitalReport {
         -RepowiseStep $repowiseStep `
         -SentruxCheckStep $sentruxCheckStep `
         -SentruxGateStep $sentruxGateStep `
-        -SentruxDsmSummary $SentruxDsmSummary `
-        -SentruxFileDetailsSummary $SentruxFileDetailsSummary `
-        -SentruxEvolutionSummary $SentruxEvolutionSummary `
-        -SentruxWhatIfSummary $SentruxWhatIfSummary `
-        -CodeNexusContextSummary $CodeNexusContextSummary
+        -SentruxDsmObject $artifacts.dsm `
+        -SentruxFileDetailsObject $artifacts.file_details `
+        -SentruxEvolutionObject $artifacts.evolution `
+        -SentruxWhatIfObject $artifacts.what_if `
+        -CodeNexusContextObject $artifacts.codenexus
     $evidence = New-HospitalEvidenceBlock $artifacts.hotspots $artifacts.what_if $CodeNexusContextSummary
 
     $currentTopHotspot = ""
@@ -2581,6 +2693,7 @@ function New-CodeIntelHospitalReport {
         -FailingWhatIfCount @($evidence.failing_what_if).Count `
         -UnderstandCommand $UnderstandCommand `
         -TopContextFile $evidence.top_context_file `
+        -StructuralEvidenceComplete $structuralEvidenceComplete `
         -SurgeryTarget $surgeryTarget `
         -CurrentTopHotspot $currentTopHotspot `
         -GitHubResearch $GitHubResearch
@@ -2604,8 +2717,11 @@ function New-CodeIntelHospitalReport {
         -GraphScore $scores.graph_score `
         -MemoryScore $scores.memory_score `
         -MriScore $scores.mri_score `
+        -MriStatus $scores.mri_status `
         -CtScore $scores.ct_score `
+        -CtStatus $scores.ct_status `
         -PetScore $scores.pet_score `
+        -PetStatus $scores.pet_status `
         -GovernanceScore $scores.governance_score `
         -RunDir $RunDir `
         -RepoPath $RepoPath `

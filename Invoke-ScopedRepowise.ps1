@@ -14,6 +14,7 @@ param(
     [string]$Provider = "mock",
     [string]$Model = "",
     [string]$Reasoning = "auto",
+    [switch]$IncludeWorkingTree,
     [switch]$Docs
 )
 
@@ -49,7 +50,70 @@ function Resolve-RelativePath {
     if ([System.IO.Path]::IsPathRooted($Path)) {
         throw "Scope paths must be relative: $Path"
     }
-    return Join-Path $Base $Path
+    $segments = @($Path -split '[\\/]' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($segments -contains "..") {
+        throw "Scope path traversal is not allowed: $Path"
+    }
+
+    $baseFull = [System.IO.Path]::GetFullPath($Base).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+    $candidate = [System.IO.Path]::GetFullPath((Join-Path $baseFull $Path))
+    $prefix = $baseFull + [System.IO.Path]::DirectorySeparatorChar
+    $comparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+    if (-not $candidate.StartsWith($prefix, $comparison)) {
+        throw "Scope path escapes repository boundary: $Path"
+    }
+
+    $current = $baseFull
+    foreach ($segment in $segments) {
+        if ($segment -eq ".") { continue }
+        $current = Join-Path $current $segment
+        if (-not (Test-Path -LiteralPath $current)) { continue }
+
+        $item = Get-Item -LiteralPath $current -Force -ErrorAction Stop
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) { continue }
+
+        $target = $item.ResolveLinkTarget($true)
+        if ($null -eq $target) {
+            throw "Cannot resolve scoped symlink or reparse point: $Path"
+        }
+        $resolvedTarget = [System.IO.Path]::GetFullPath($target.FullName)
+        if (-not $resolvedTarget.StartsWith($prefix, $comparison)) {
+            throw "Scoped symlink or reparse point escapes repository boundary: $Path"
+        }
+        $current = $resolvedTarget
+    }
+
+    return $candidate
+}
+
+function ConvertTo-NormalizedScopePath {
+    param([string]$Path)
+
+    $segments = @($Path -split '[\\/]' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and $_ -ne "." })
+    $normalized = $segments -join "/"
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        throw "Scope path cannot resolve to repository root: $Path"
+    }
+    return $normalized
+}
+
+function Assert-NoEscapingReparsePoints {
+    param(
+        [string]$Base,
+        [string]$ScopedPath
+    )
+
+    $resolved = Resolve-RelativePath $Base $ScopedPath
+    if (-not (Test-Path -LiteralPath $resolved)) { return }
+    $items = @((Get-Item -LiteralPath $resolved -Force))
+    if (Test-Path -LiteralPath $resolved -PathType Container) {
+        $items += @(Get-ChildItem -LiteralPath $resolved -Force -Recurse -ErrorAction Stop)
+    }
+    foreach ($item in $items) {
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) { continue }
+        $relative = [System.IO.Path]::GetRelativePath($Base, $item.FullName)
+        [void](Resolve-RelativePath $Base $relative)
+    }
 }
 
 function Invoke-RobocopyMirror {
@@ -67,7 +131,7 @@ function Invoke-RobocopyMirror {
 
     if ($effectivePlatform -eq "windows" -and (Get-Command robocopy -ErrorAction SilentlyContinue)) {
         New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-        & robocopy $Source $Destination /MIR /XD .git .repowise node_modules .venv venv __pycache__ .pytest_cache .mypy_cache tmp dist build target .understand-anything .sentrux "*.egg-info" /XF uv.lock uv.lock.bak "*.bak" "=*" /NFL /NDL /NJH /NJS /NP | Out-Null
+        & robocopy $Source $Destination /MIR /XJ /XD .git .repowise node_modules .venv venv __pycache__ .pytest_cache .mypy_cache tmp dist build target .understand-anything .sentrux "*.egg-info" /XF uv.lock uv.lock.bak "*.bak" "=*" /NFL /NDL /NJH /NJS /NP | Out-Null
         if ($LASTEXITCODE -gt 7) {
             throw "robocopy failed for $Source -> $Destination (exit $LASTEXITCODE)"
         }
@@ -143,6 +207,106 @@ function Get-CodeIntelEnvValue {
         $value = [Environment]::GetEnvironmentVariable($Name, "User")
     }
     return $value
+}
+
+function Get-EffectiveEgressProvider {
+    param(
+        [string]$RequestedProvider,
+        [switch]$DocsEnabled
+    )
+
+    $effective = $RequestedProvider
+    if ($DocsEnabled) {
+        $configured = Get-CodeIntelEnvValue "CODE_INTEL_PROVIDER"
+        if (-not [string]::IsNullOrWhiteSpace($configured)) {
+            $effective = $configured
+        }
+        elseif ($effective -ieq "mock" -or [string]::IsNullOrWhiteSpace($effective)) {
+            $effective = Get-CodeIntelEnvValue "REPOWISE_PROVIDER"
+            if ([string]::IsNullOrWhiteSpace($effective)) {
+                $effective = "anthropic"
+            }
+        }
+    }
+    if ($effective -ieq "ccw") { return "codex_cli" }
+    return $effective.ToLowerInvariant()
+}
+
+function Write-EgressManifest {
+    param(
+        [string]$ShadowPath,
+        [string]$Head,
+        [string[]]$ScopeDirs,
+        [string[]]$ScopeFiles,
+        [string]$Provider,
+        [string]$WorkingTreePolicy
+    )
+
+    $inventoryByPath = [System.Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
+    $candidates = New-Object System.Collections.Generic.List[System.IO.FileInfo]
+    foreach ($dir in $ScopeDirs) {
+        Assert-NoEscapingReparsePoints -Base $ShadowPath -ScopedPath $dir
+        $absolute = Resolve-RelativePath $ShadowPath $dir
+        if (Test-Path -LiteralPath $absolute -PathType Container) {
+            foreach ($item in @(Get-ChildItem -LiteralPath $absolute -File -Force -Recurse -ErrorAction Stop)) {
+                $candidates.Add($item)
+            }
+        }
+    }
+    foreach ($file in $ScopeFiles) {
+        Assert-NoEscapingReparsePoints -Base $ShadowPath -ScopedPath $file
+        $absolute = Resolve-RelativePath $ShadowPath $file
+        if (Test-Path -LiteralPath $absolute -PathType Leaf) {
+            $candidates.Add((Get-Item -LiteralPath $absolute -Force))
+        }
+    }
+
+    foreach ($item in $candidates) {
+        $relative = [System.IO.Path]::GetRelativePath($ShadowPath, $item.FullName).Replace("\", "/")
+        if ($relative -eq ".git" -or $relative.StartsWith(".git/") -or $relative -eq ".repowise" -or $relative.StartsWith(".repowise/")) {
+            continue
+        }
+        $inventoryByPath[$relative] = [ordered]@{
+            path = $relative
+            sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+    }
+
+    $orderedPaths = [string[]]@($inventoryByPath.Keys)
+    [Array]::Sort($orderedPaths, [StringComparer]::Ordinal)
+    $orderedInventory = @($orderedPaths | ForEach-Object { $inventoryByPath[$_] })
+
+    $manifest = [ordered]@{
+        schema_version = 2
+        generated_at_utc = [DateTimeOffset]::UtcNow.ToString("o")
+        head = $Head
+        scope = [ordered]@{
+            paths = @($ScopeDirs)
+            root_files = @($ScopeFiles)
+        }
+        scope_inventory = $orderedInventory
+        provider_payload_state = "pending"
+        provider_payload = @()
+        provider = $Provider
+        working_tree_policy = $WorkingTreePolicy
+    }
+
+    $manifestDir = Join-Path $ShadowPath ".repowise"
+    New-Item -ItemType Directory -Force -Path $manifestDir | Out-Null
+    $manifestPath = Join-Path $manifestDir "egress-manifest.json"
+    $tempPath = Join-Path $manifestDir ("egress-manifest.{0}.tmp" -f ([guid]::NewGuid().ToString("N")))
+    try {
+        $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $tempPath -Encoding UTF8
+        [void](Get-Content -LiteralPath $tempPath -Raw | ConvertFrom-Json -ErrorAction Stop)
+        Move-Item -LiteralPath $tempPath -Destination $manifestPath -Force
+    }
+    finally {
+        Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+    }
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        throw "Failed to create Repowise egress manifest: $manifestPath"
+    }
+    return $manifestPath
 }
 
 function Write-ScopedConfig {
@@ -354,8 +518,24 @@ if (-not (Test-Path -LiteralPath (Join-Path $repoPath ".git"))) {
 }
 
 $repoName = Split-Path -Leaf $repoPath
-$scopeDirs = @($ScopePaths | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
-$scopeFiles = @($RootFiles | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
+$scopeDirs = @(
+    $ScopePaths |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+        Select-Object -Unique |
+        ForEach-Object {
+            [void](Resolve-RelativePath $repoPath ([string]$_))
+            ConvertTo-NormalizedScopePath ([string]$_)
+        }
+)
+$scopeFiles = @(
+    $RootFiles |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+        Select-Object -Unique |
+        ForEach-Object {
+            [void](Resolve-RelativePath $repoPath ([string]$_))
+            ConvertTo-NormalizedScopePath ([string]$_)
+        }
+)
 
 if ($scopeDirs.Count -eq 0 -and $scopeFiles.Count -eq 0) {
     throw "At least one scope path or root file is required."
@@ -415,16 +595,20 @@ finally {
     Pop-Location
 }
 
-foreach ($dir in $scopeDirs) {
-    $sourceDir = Resolve-RelativePath $repoPath $dir
-    $destDir = Resolve-RelativePath $shadowPath $dir
-    Invoke-RobocopyMirror $sourceDir $destDir
-}
+if ($IncludeWorkingTree) {
+    foreach ($dir in $scopeDirs) {
+        Assert-NoEscapingReparsePoints -Base $repoPath -ScopedPath $dir
+        $sourceDir = Resolve-RelativePath $repoPath $dir
+        $destDir = Resolve-RelativePath $shadowPath $dir
+        Invoke-RobocopyMirror $sourceDir $destDir
+    }
 
-foreach ($file in $scopeFiles) {
-    $sourceFile = Resolve-RelativePath $repoPath $file
-    $destFile = Resolve-RelativePath $shadowPath $file
-    Copy-ScopedFile $sourceFile $destFile
+    foreach ($file in $scopeFiles) {
+        Assert-NoEscapingReparsePoints -Base $repoPath -ScopedPath $file
+        $sourceFile = Resolve-RelativePath $repoPath $file
+        $destFile = Resolve-RelativePath $shadowPath $file
+        Copy-ScopedFile $sourceFile $destFile
+    }
 }
 
 Remove-ScopedNoise $shadowPath
@@ -440,7 +624,6 @@ $docsProviderArgs = @()
 if (-not [string]::IsNullOrWhiteSpace($Provider) -and $Provider -ine "mock") { $docsProviderArgs += @("--provider", $Provider) }
 if (-not [string]::IsNullOrWhiteSpace($Model)) { $docsProviderArgs += @("--model", $Model) }
 if (-not [string]::IsNullOrWhiteSpace($Reasoning)) { $docsProviderArgs += @("--reasoning", $Reasoning) }
-Write-ScopedConfig $shadowPath $CommitLimit $Provider $Model $Reasoning
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
@@ -454,6 +637,17 @@ Set-EnvFromUserRegistry "ANTHROPIC_API_KEY"
 Set-EnvFromUserRegistry "ANTHROPIC_BASE_URL"
 Set-EnvFromUserRegistry "REPOWISE_PROVIDER"
 Set-CodeIntelProviderEnv
+
+$workingTreePolicy = if ($IncludeWorkingTree) { "include-working-tree" } else { "head-tracked-only" }
+$egressProvider = Get-EffectiveEgressProvider -RequestedProvider $Provider -DocsEnabled:$Docs
+$egressManifestPath = Write-EgressManifest `
+    -ShadowPath $shadowPath `
+    -Head $head `
+    -ScopeDirs $scopeDirs `
+    -ScopeFiles $scopeFiles `
+    -Provider $egressProvider `
+    -WorkingTreePolicy $workingTreePolicy
+Write-ScopedConfig $shadowPath $CommitLimit $Provider $Model $Reasoning
 
 $statePath = Join-Path (Join-Path $shadowPath ".repowise") "state.json"
 $docsEnabled = $false
@@ -485,7 +679,7 @@ try {
             -FilePath (Get-RepowisePython) `
             -Description "repowise scoped docs" `
             -TimeoutSeconds $TimeoutSeconds `
-            -ArgumentList (@($scriptPath, "--repo", $shadowPath, "--coverage-pct", "0.02", "--concurrency", "1") + $docsProviderArgs))
+            -ArgumentList (@($scriptPath, "--repo", $shadowPath, "--coverage-pct", "0.02", "--concurrency", "1", "--egress-manifest", $egressManifestPath) + $docsProviderArgs))
     }
     else {
         if (Test-Path -LiteralPath $statePath -PathType Leaf) {
@@ -536,6 +730,8 @@ Write-Output "Shadow: $shadowPath"
 Write-Output "HEAD: $head"
 Write-Output "ScopeDirs: $($scopeDirs -join ', ')"
 Write-Output "RootFiles: $($scopeFiles -join ', ')"
+Write-Output "WorkingTreePolicy: $workingTreePolicy"
+Write-Output "EgressManifest: $egressManifestPath"
 Write-Output "Status:"
 Write-Output ($status | Out-String).Trim()
 if (-not [string]::IsNullOrWhiteSpace($state)) {
