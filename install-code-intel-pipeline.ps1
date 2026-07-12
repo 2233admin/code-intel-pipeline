@@ -428,7 +428,7 @@ if (-not (Test-Path -LiteralPath `$target -PathType Leaf)) {
     exit 1
 }
 
-`$pwshExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell.exe" }
+`$pwshExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
 & `$pwshExe -NoProfile -ExecutionPolicy Bypass -File `$target @RemainingArgs
 exit `$LASTEXITCODE
 "@

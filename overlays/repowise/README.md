@@ -9,8 +9,8 @@ return a `ThinkingBlock` as `response.content[0]`. repowise
 page generation fails with `'ThinkingBlock' object has no attribute 'text'`
 and docs silently end at 0 pages.
 
-**Patch (applied to the installed uv tool venv,
-`%APPDATA%\uv\tools\repowise\Lib\site-packages\repowise\core\providers\llm\anthropic.py`):**
+**Patch (applied to the installed uv tool venv under
+`<uv-tool-root>\Lib\site-packages\repowise\core\providers\llm\anthropic.py`):**
 
 ```python
 # before

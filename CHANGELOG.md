@@ -44,7 +44,7 @@ recommendation telling you how to start working on the repo it just mapped.
   fallback. Preflight covers anthropic / openai / ollama and runs on the
   repowise uv venv python (system-python dependency dropped).
 - **Thin-forwarder install** — `Install-SentruxShim` generates forwarders
-  into `%LOCALAPPDATA%\code-intel\bin\` instead of copying script bodies;
+  into the user-local Code Intel bin directory instead of copying script bodies;
   repo edits take effect immediately via PATH, and a moved repo fails loudly.
 - **Fail-closed hardening** — session_end no longer backfills baselines on
   zero parseable metrics; the surgery_plan→post_op guard evaluates real
