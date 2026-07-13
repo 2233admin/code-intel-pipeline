@@ -43,6 +43,27 @@ _Avoid_: Rust scanner, new pipeline, replacement scanner
 **Artifact Run**: The durable record produced by one scanner execution for one target repository. It is the unit that later tools resume from, classify, or hand to an Agent.
 _Avoid_: Scan folder, output dump, report batch
 
+**Capability Atom**: One independently executable responsibility with a versioned request, a versioned result, declared effects, and independently verifiable artifacts.
+_Avoid_: Function, microservice, tiny script
+
+**Snapshot Identity**: Portable identity of the repository inputs consumed by a Capability Atom: repository identity, HEAD, working-tree policy, scope, and input digest.
+_Avoid_: Timestamp, checkout path, branch name
+
+**Artifact Ref**: A typed reference carrying its own envelope version, the referenced payload schema, location, SHA-256 content identity, and consumed Snapshot Identity between Capability Atoms.
+_Avoid_: File path, inline evidence dump, latest output
+
+**Effect Boundary**: Pre-execution permission boundary plus post-execution audit for a Capability Atom. Determinism is separate from the allowed and observed effects: repository read, local write, network, or repository mutation.
+_Avoid_: Tool type, permission prompt, implementation language
+
+**Domain Verdict**: Evidence judgment returned by a completed capability: pass, fail, unknown, or not applicable. It is independent of process execution status.
+_Avoid_: Exit code, exception, health score
+
+**Run Commit**: Transactional publication boundary that promotes validated staged artifacts and writes `run-complete.json` last.
+_Avoid_: Git commit, timestamp directory, successful subprocess
+
+**Materialized View**: Rebuildable human or index projection derived from machine artifacts, such as summary Markdown or the cross-repository index.
+_Avoid_: Source of truth, artifact producer, mutable task state
+
 **Artifact Data Contract**: The stable meaning and ownership of generated artifact files and fields.
 _Avoid_: JSON shape, output format, file schema
 

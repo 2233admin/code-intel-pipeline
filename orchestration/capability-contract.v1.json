@@ -1,0 +1,77 @@
+{
+  "schema": "code-intel-capability-contract.v1",
+  "contractVersion": 1,
+  "envelopeSchema": "orchestration/schemas/code-intel-capability-envelope.v1.schema.json",
+  "purpose": "Define the stable control-plane envelope for independently executable Code Intel capabilities.",
+  "vocabulary": [
+    "Capability Atom",
+    "Snapshot Identity",
+    "Artifact Ref",
+    "Effect Boundary",
+    "Domain Verdict",
+    "Run Commit",
+    "Materialized View"
+  ],
+  "envelopes": {
+    "declaration": "code-intel-capability-declaration.v1",
+    "request": "code-intel-capability-request.v1",
+    "result": "code-intel-capability-result.v1",
+    "artifactRef": "code-intel-artifact-ref.v1"
+  },
+  "artifactRef": {
+    "identity": "sha256 identifies bytes; path is only a location.",
+    "artifactSchema": "Names the schema of the referenced artifact payload, not the Artifact Ref envelope.",
+    "consumedSnapshotIdentity": "Required SHA-256 for repository-derived evidence; null only for snapshot-independent control artifacts."
+  },
+  "effectBoundary": {
+    "determinism": ["deterministic", "external_nondeterministic"],
+    "effects": ["repo_read", "local_write", "network", "repo_mutation"],
+    "rule": "A capability declaration and request establish the allowlist before execution; the result reports both declaredEffects and observedEffects, and observed effects must be a subset of the declared allowlist."
+  },
+  "declaration": {
+    "dependencies": "A stable ordered set of capability ids used by the DAG planner; execution remains a later atom."
+  },
+  "coherenceRules": [
+    "request.capability equals declaration.id",
+    "request.implementation equals declaration.implementation",
+    "request.effectPolicy.allowedEffects is a subset of declaration.allowedEffects",
+    "result.capability equals request.capability",
+    "result.implementation equals request.implementation",
+    "result.determinism equals declaration.determinism",
+    "result.declaredEffects equals request.effectPolicy.allowedEffects",
+    "result.observedEffects is a subset of result.declaredEffects",
+    "result.snapshotIdentity equals request.snapshot.identity",
+    "each repository-derived result Artifact Ref consumedSnapshotIdentity equals result.snapshotIdentity"
+  ],
+  "result": {
+    "statuses": ["completed", "blocked", "failed"],
+    "verdicts": ["pass", "fail", "unknown", "not_applicable"]
+  },
+  "exitCodes": [
+    { "code": 0, "status": "completed", "verdicts": ["pass", "not_applicable"], "meaning": "capability completed without a domain rejection" },
+    { "code": 10, "status": "completed", "verdicts": ["fail"], "meaning": "capability completed with a domain fail verdict" },
+    { "code": 20, "status": "blocked", "verdicts": ["unknown"], "meaning": "capability requires manual evidence or is otherwise blocked" },
+    { "code": 64, "status": "failed", "verdicts": ["unknown"], "meaning": "invalid request or command usage" },
+    { "code": 65, "status": "failed", "verdicts": ["unknown"], "meaning": "input artifact, schema, digest, or trust validation failed" },
+    { "code": 69, "status": "failed", "verdicts": ["unknown"], "meaning": "declared dependency or provider unavailable" },
+    { "code": 70, "status": "failed", "verdicts": ["unknown"], "meaning": "internal capability failure" },
+    { "code": 74, "status": "failed", "verdicts": ["unknown"], "meaning": "artifact input or output failure" }
+  ],
+  "cacheKey": {
+    "algorithm": "sha256",
+    "orderedComponents": ["capability", "contractVersion", "implementationVersion", "snapshotIdentity", "canonicalOptions", "orderedInputArtifactDigests", "toolchainDigests"],
+    "forbiddenComponents": ["generatedAt", "attemptStartedAt", "attemptFinishedAt", "artifactOutputPath", "machineAbsolutePath"]
+  },
+  "publication": {
+    "stagingSuffix": ".staging-<nonce>",
+    "completionMarker": "run-complete.json",
+    "rule": "Write and validate artifacts in staging, promote atomically, then write the completion marker last.",
+    "indexRequiresCompletionMarker": true
+  },
+  "streamContract": {
+    "stdin": "one code-intel-capability-request.v1 JSON document or an explicit request file",
+    "stdout": "exactly one code-intel-capability-result.v1 JSON document",
+    "stderr": "human-readable diagnostics only",
+    "largePayloadRule": "Large evidence remains in artifact files and crosses capability boundaries by artifact reference."
+  }
+}
