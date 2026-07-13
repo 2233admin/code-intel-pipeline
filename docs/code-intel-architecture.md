@@ -11,6 +11,8 @@ Artifact ownership and reader/writer boundaries are defined in `docs/artifact-da
 1. `orchestration/integrations.json` and `code-intel.exe orchestrate`
    Integration registry and fusion layer. New scanners, memory systems, graph providers, governance strategies, and compatibility shims must be registered here before they are wired into runner scripts.
 
+   `orchestration/capability-contract.v1.json` defines the Capability Atom declaration/request/result, Snapshot Identity, Artifact Ref, Effect Boundary, Domain Verdict, Run Commit, Materialized View, cache-key, and transactional publication vocabulary. `orchestration/schemas/code-intel-capability-envelope.v1.schema.json` rejects malformed envelopes and impossible outcome combinations. Existing integrations migrate behind that contract one atom at a time; the registry remains the graph authority. Runtime effect enforcement is not yet implemented.
+
 2. Rust targets
    - `crates/code-intel-cli`: compiled `code-intel` CLI for integration orchestration, artifact resume, classify, and artifact doctor contracts.
    - `crates/code-nexus-lite`: compiled `code-nexus-lite` iii worker for CodeNexus scan/lite/doctor behavior.
@@ -189,3 +191,5 @@ Copy the operational shell, not the internal machinery.
 That is the useful lesson from `gitnexus-stable-ops`.
 
 The updated version of this rule is: register integrations first, then adapt or internalize them behind the orchestration layer.
+
+Atomicity means identifiable inputs, verifiable outputs, declared effects, and safe publication. It does not mean one process per function. See `docs/atomic-development-model.md` and ADR 0009.

@@ -54,6 +54,7 @@ jobs:
             "test-code-intel-pipeline.ps1",
             "test-github-solution-research.ps1",
             "test-hospital-trust-contract.ps1",
+            "test-atomic-capability-contract.ps1",
             "test-project-discovery.ps1",
             "test-project-management-support.ps1",
             "test-scoped-repowise-security.ps1",
@@ -135,6 +136,10 @@ jobs:
       - name: Project management support contract tests
         shell: pwsh
         run: .\test-project-management-support.ps1 -RepoPath .
+
+      - name: Atomic capability contract tests
+        shell: pwsh
+        run: .\test-atomic-capability-contract.ps1 -RepoPath .
 
       - name: Skill development benchmark contract tests
         shell: pwsh
@@ -237,6 +242,7 @@ jobs:
             "test-code-intel-pipeline.ps1",
             "test-github-solution-research.ps1",
             "test-hospital-trust-contract.ps1",
+            "test-atomic-capability-contract.ps1",
             "test-project-discovery.ps1",
             "test-project-management-support.ps1",
             "test-scoped-repowise-security.ps1",
@@ -308,6 +314,10 @@ jobs:
       - name: Hospital fail-closed contract tests
         shell: pwsh
         run: ./test-hospital-trust-contract.ps1
+
+      - name: Atomic capability contract tests
+        shell: pwsh
+        run: ./test-atomic-capability-contract.ps1 -RepoPath .
 
       - name: Scoped Repowise manifest validator tests
         run: python ./test-scoped-repowise-validator.py

@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "policy": {
     "name": "code-intel-integration-orchestration",
+    "capabilityContract": "orchestration/capability-contract.v1.json",
     "normalOperation": "self-contained",
     "rule": "Normal code-intel runs must use integrations registered here. Separately installed project-intelligence CLIs are allowed only as compatibility shims or optional accelerators.",
     "extensionRule": "Add new projects, scanners, memory systems, graph providers, or governance strategies here before wiring them into pipeline scripts."

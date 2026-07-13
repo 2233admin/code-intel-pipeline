@@ -1,0 +1,208 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://code-intel.local/schemas/code-intel-capability-envelope.v1.schema.json",
+  "title": "Code Intel Capability Envelope v1",
+  "oneOf": [
+    { "$ref": "#/definitions/capabilityDeclaration" },
+    { "$ref": "#/definitions/capabilityRequest" },
+    { "$ref": "#/definitions/capabilityResult" },
+    { "$ref": "#/definitions/artifactRef" }
+  ],
+  "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "effect": {
+      "type": "string",
+      "enum": ["repo_read", "local_write", "network", "repo_mutation"]
+    },
+    "effectSet": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/effect" },
+      "uniqueItems": true
+    },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "toolchainDigests"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "toolchainDigests": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/sha256" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "repoIdentity", "head", "workingTreePolicy", "scope", "inputDigest"],
+      "properties": {
+        "identity": { "$ref": "#/definitions/sha256" },
+        "repoIdentity": { "type": "string", "minLength": 1 },
+        "head": { "type": "string", "minLength": 1 },
+        "workingTreePolicy": { "enum": ["head_only", "explicit_overlay"] },
+        "scope": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "inputDigest": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "artifactSchema", "type", "path", "sha256", "consumedSnapshotIdentity"],
+      "properties": {
+        "schema": { "const": "code-intel-artifact-ref.v1" },
+        "artifactSchema": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/definitions/sha256" },
+        "consumedSnapshotIdentity": {
+          "oneOf": [
+            { "$ref": "#/definitions/sha256" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "capabilityDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "id", "contractVersion", "implementation", "determinism", "allowedEffects", "dependencies"],
+      "properties": {
+        "schema": { "const": "code-intel-capability-declaration.v1" },
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        "contractVersion": { "const": 1 },
+        "implementation": { "$ref": "#/definitions/implementation" },
+        "determinism": { "enum": ["deterministic", "external_nondeterministic"] },
+        "allowedEffects": { "$ref": "#/definitions/effectSet" },
+        "dependencies": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "capabilityRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "capability", "contractVersion", "implementation", "snapshot", "options", "inputs", "effectPolicy"],
+      "properties": {
+        "schema": { "const": "code-intel-capability-request.v1" },
+        "capability": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        "contractVersion": { "const": 1 },
+        "implementation": { "$ref": "#/definitions/implementation" },
+        "snapshot": { "$ref": "#/definitions/snapshot" },
+        "options": { "type": "object" },
+        "inputs": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/artifactRef" }
+        },
+        "effectPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["allowedEffects"],
+          "properties": {
+            "allowedEffects": { "$ref": "#/definitions/effectSet" }
+          }
+        }
+      }
+    },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "hit"],
+      "properties": {
+        "key": {
+          "oneOf": [
+            { "$ref": "#/definitions/sha256" },
+            { "type": "null" }
+          ]
+        },
+        "hit": { "type": "boolean" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attemptId", "generatedAt"],
+      "properties": {
+        "attemptId": { "type": "string", "minLength": 1 },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "provider": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "configurationDigest": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "capabilityResultBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "capability", "implementation", "snapshotIdentity", "status", "verdict", "exitCode", "determinism", "declaredEffects", "observedEffects", "cache", "artifacts", "diagnostics", "provenance"],
+      "properties": {
+        "schema": { "const": "code-intel-capability-result.v1" },
+        "capability": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        "implementation": { "$ref": "#/definitions/implementation" },
+        "snapshotIdentity": { "$ref": "#/definitions/sha256" },
+        "status": { "enum": ["completed", "blocked", "failed"] },
+        "verdict": { "enum": ["pass", "fail", "unknown", "not_applicable"] },
+        "exitCode": { "enum": [0, 10, 20, 64, 65, 69, 70, 74] },
+        "determinism": { "enum": ["deterministic", "external_nondeterministic"] },
+        "declaredEffects": { "$ref": "#/definitions/effectSet" },
+        "observedEffects": { "$ref": "#/definitions/effectSet" },
+        "cache": { "$ref": "#/definitions/cache" },
+        "artifacts": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/artifactRef" }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "provenance": { "$ref": "#/definitions/provenance" }
+      }
+    },
+    "capabilityResult": {
+      "allOf": [
+        { "$ref": "#/definitions/capabilityResultBase" },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "status": { "const": "completed" },
+                "verdict": { "enum": ["pass", "not_applicable"] },
+                "exitCode": { "const": 0 }
+              }
+            },
+            {
+              "properties": {
+                "status": { "const": "completed" },
+                "verdict": { "const": "fail" },
+                "exitCode": { "const": 10 }
+              }
+            },
+            {
+              "properties": {
+                "status": { "const": "blocked" },
+                "verdict": { "const": "unknown" },
+                "exitCode": { "const": 20 }
+              }
+            },
+            {
+              "properties": {
+                "status": { "const": "failed" },
+                "verdict": { "const": "unknown" },
+                "exitCode": { "enum": [64, 65, 69, 70, 74] }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
