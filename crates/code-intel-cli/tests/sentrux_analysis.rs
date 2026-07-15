@@ -202,6 +202,27 @@ fn dsm_analysis_reports_unreadable_source_content() {
     assert!(error.contains("bad.rs"));
 }
 
+#[cfg(unix)]
+#[test]
+fn dsm_inventory_does_not_traverse_directory_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let external = Fixture::new();
+    external.write("outside.py", "raise RuntimeError\n");
+    let fixture = Fixture::new();
+    fixture.write("inside.py", "VALUE = 1\n");
+    symlink(&external.root, fixture.root.join("linked")).expect("create fixture symlink");
+
+    let snapshot = sentrux_analysis::analyze(&fixture.root).expect("native DSM analysis");
+    assert_eq!(snapshot["scope"]["included_files"], 1);
+    assert_eq!(file(&snapshot, "inside.py")["path"], "inside.py");
+    assert!(snapshot["file_details"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|detail| detail["path"] != "linked/outside.py"));
+}
+
 #[test]
 fn production_pipeline_prefers_rust_dsm_with_explicit_powershell_rollback() {
     let pipeline = include_str!("../../../run-code-intel.ps1");

@@ -112,22 +112,7 @@ pub fn analyze(target: &Path) -> Result<Value, String> {
 }
 
 fn source_inventory(target: &Path) -> Result<Inventory, String> {
-    let output = Command::new("rg")
-        .arg("--files")
-        .current_dir(target)
-        .output()
-        .map_err(|error| format!("run rg --files in {}: {error}", target.display()))?;
-    if !output.status.success() {
-        return Err(format!(
-            "rg --files failed in {}: {}",
-            target.display(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    let listed = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(normalize_path)
-        .collect::<Vec<_>>();
+    let listed = inventory_files(target)?;
 
     let mut included = Vec::new();
     let mut excluded: BTreeMap<String, (usize, Vec<String>)> = BTreeMap::new();
@@ -179,6 +164,42 @@ fn source_inventory(target: &Path) -> Result<Inventory, String> {
             "note": "Root paths are allowed. Dependency, build-output, cache, and bundled static-asset code is excluded from governed source metrics."
         }),
     })
+}
+
+fn inventory_files(root: &Path) -> Result<Vec<String>, String> {
+    fn visit(root: &Path, current: &Path, out: &mut Vec<String>) -> Result<(), String> {
+        let entries = fs::read_dir(current)
+            .map_err(|error| format!("read inventory directory {}: {error}", current.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|error| {
+                format!("read inventory entry in {}: {error}", current.display())
+            })?;
+            let file_type = entry
+                .file_type()
+                .map_err(|error| format!("read file type {}: {error}", entry.path().display()))?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            let path = entry.path();
+            if file_type.is_dir() {
+                if entry.file_name() != ".git" {
+                    visit(root, &path, out)?;
+                }
+            } else if file_type.is_file() {
+                let relative = path
+                    .strip_prefix(root)
+                    .map_err(|error| format!("relativize {}: {error}", path.display()))?;
+                out.push(normalize_path(&relative.to_string_lossy()));
+            }
+        }
+        Ok(())
+    }
+
+    let mut files = Vec::new();
+    visit(root, root, &mut files)?;
+    files.sort();
+    files.dedup();
+    Ok(files)
 }
 
 fn excluded_reason(relative: &str) -> Option<String> {
