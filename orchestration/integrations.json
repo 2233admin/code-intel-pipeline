@@ -261,6 +261,7 @@
       ],
       "commands": {
         "rustTarget": "target/debug/code-intel.exe sentrux <scan|health|session_start|session_end|check_rules|test_gaps|what_if> <repo-path>",
+        "rustDsm": "target/debug/code-intel.exe sentrux dsm <repo-path>",
         "scan": "Invoke-SentruxAgentTool.ps1 scan <repo-path>",
         "sessionStart": "Invoke-SentruxAgentTool.ps1 session_start <repo-path>",
         "sessionEnd": "Invoke-SentruxAgentTool.ps1 session_end <repo-path>"

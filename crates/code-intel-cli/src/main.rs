@@ -12,6 +12,7 @@ mod orchestration;
 mod providers;
 mod routes;
 mod sentrux;
+mod sentrux_analysis;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -1104,7 +1105,7 @@ fn print_help() {
     println!("  graph --repo <path> [--language zh] [--full] [--write] [--json]");
     println!("  provider [--action List|Plan|Validate|Invoke] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--language zh] [--write] [--json]");
     println!("  route [--action List|Plan|Validate] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--json]");
-    println!("  sentrux <scan|health|check|gate|check_rules|gate_save> <path>");
+    println!("  sentrux <dsm|scan|health|check|gate|check_rules|gate_save> <path>");
     println!("  orchestrate [--action Validate|List|Plan] [--repo <path>] [--mode lite|normal|full] [--capability <name>] [--manifest <path>] [--json]");
 }
 

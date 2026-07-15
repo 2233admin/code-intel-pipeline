@@ -4011,16 +4011,63 @@ $codeNexusContextSummary = $null
 $sentruxAgentTool = Join-Path $PSScriptRoot "Invoke-SentruxAgentTool.ps1"
 if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -LiteralPath $sentruxAgentTool -PathType Leaf)) {
     try {
-        $previousErrorActionPreference = $ErrorActionPreference
-        try {
-            $ErrorActionPreference = "Continue"
-            $dsmRaw = & $sentruxAgentTool dsm $sentruxTargetPath 2>&1
+        $sentruxDsmPreference = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_SENTRUX_DSM_PROVIDER)) {
+            "rust"
+        } else {
+            $env:CODE_INTEL_SENTRUX_DSM_PROVIDER.Trim().ToLowerInvariant()
         }
-        finally {
-            $ErrorActionPreference = $previousErrorActionPreference
+        if ($sentruxDsmPreference -notin @("rust", "powershell")) {
+            throw "CODE_INTEL_SENTRUX_DSM_PROVIDER must be 'rust' or 'powershell'"
         }
-        $dsmText = ($dsmRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
-        $dsmObject = $dsmText | ConvertFrom-Json
+        $sentruxDsmRustCli = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_RUST_CLI)) {
+            Join-Path $PSScriptRoot "target\debug\code-intel.exe"
+        } else {
+            [IO.Path]::GetFullPath($env:CODE_INTEL_RUST_CLI)
+        }
+        $dsmObject = $null
+        $sentruxDsmProvider = ""
+        if ($sentruxDsmPreference -eq "rust" -and (Test-Path -LiteralPath $sentruxDsmRustCli -PathType Leaf)) {
+            $previousErrorActionPreference = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = "Continue"
+                $global:LASTEXITCODE = 0
+                $dsmRaw = & $sentruxDsmRustCli sentrux dsm $sentruxTargetPath 2>&1
+                $dsmExitCode = $global:LASTEXITCODE
+            }
+            finally {
+                $ErrorActionPreference = $previousErrorActionPreference
+            }
+            if ($dsmExitCode -eq 0) {
+                $dsmText = ($dsmRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
+                try {
+                    $dsmObject = $dsmText | ConvertFrom-Json
+                    $sentruxDsmProvider = "rust"
+                }
+                catch {
+                    $notes.Add("Rust Sentrux DSM returned invalid JSON; using the explicit PowerShell compatibility fallback.")
+                }
+            }
+            else {
+                $notes.Add("Rust Sentrux DSM exited with code $dsmExitCode; using the explicit PowerShell compatibility fallback.")
+            }
+        }
+        elseif ($sentruxDsmPreference -eq "rust") {
+            $notes.Add("Rust Sentrux DSM binary was unavailable at $sentruxDsmRustCli; using the explicit PowerShell compatibility fallback.")
+        }
+        if ($null -eq $dsmObject) {
+            $previousErrorActionPreference = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = "Continue"
+                $dsmRaw = & $sentruxAgentTool dsm $sentruxTargetPath 2>&1
+            }
+            finally {
+                $ErrorActionPreference = $previousErrorActionPreference
+            }
+            $dsmText = ($dsmRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
+            $dsmObject = $dsmText | ConvertFrom-Json
+            $sentruxDsmProvider = "powershell_compatibility"
+        }
+        $notes.Add("Sentrux DSM provider: $sentruxDsmProvider")
         $fileDetails = @($dsmObject.file_details)
         $dsmObject.PSObject.Properties.Remove("file_details")
         $dsmObject | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $sentruxDsmPath -Encoding UTF8

@@ -1,3 +1,4 @@
+use crate::sentrux_analysis;
 use crate::Result;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -11,6 +12,11 @@ pub fn run(options: &Options<'_>) -> Result<()> {
     let operation = options.operation.ok_or("sentrux requires an operation")?;
     let repo = options.repo.ok_or("sentrux requires a repo/path")?;
     let repo = repo.canonicalize()?;
+    if operation == "dsm" {
+        let snapshot = sentrux_analysis::analyze(&repo)?;
+        println!("{}", serde_json::to_string(&snapshot)?);
+        return Ok(());
+    }
     let repo_cli = cli_path(&repo);
 
     let mut args = Vec::new();
