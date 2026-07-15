@@ -27,6 +27,21 @@
       "path": "D:\\projects",
       "language": "zh"
     },
+    "tdxcli-rs": {
+      "path": "D:\\projects\\tdxcli-rs",
+      "repowiseScopePaths": [
+        "crates",
+        "docs"
+      ],
+      "repowiseRootFiles": [
+        "README.md",
+        "AGENTS.md",
+        "CONTEXT-MAP.md",
+        "Cargo.toml",
+        ".gitignore"
+      ],
+      "sentruxPath": "crates"
+    },
     "workbench-kernel": {
       "path": "D:\\projects\\workbench-kernel",
       "repowiseScopePaths": [
