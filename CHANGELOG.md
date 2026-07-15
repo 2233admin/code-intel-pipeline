@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0-beta.1] — 2026-07-16
+
+Pre-release for the Rust-first Code Intel control plane. This build is intended
+for integration testing before the `0.3.0` stable release.
+
+### Added
+
+- **Rust Sentrux DSM analysis kernel** — repository inventory, dependency
+  structure, complexity, health, rules, gaps, and evolution analysis now run in
+  the Rust CLI, with the PowerShell path retained as a compatibility fallback.
+- **Atomic capability contract v1** — defines the execution envelope used to
+  coordinate capability ownership, effects, dependencies, and artifacts.
+- **Trust-boundary hardening** — Hospital and scoped Repowise paths fail closed
+  at repository and artifact boundaries.
+
+### Changed
+
+- Rust DSM executable discovery is cross-platform and accepts an explicit
+  `CODE_INTEL_RUST_CLI` override.
+- File inventory is self-contained when Git metadata is absent, and symlinked
+  directories are not followed during recursive traversal.
+- Concurrent DSM integration fixtures are isolated to prevent cross-test
+  interference on Windows.
+
+### Verified
+
+- Rust unit and integration suites pass locally.
+- Windows package/build and Windows, Ubuntu, and macOS smoke jobs pass in CI.
+- Rust and PowerShell DSM providers produce matching core repository and module
+  metrics on the release candidate repository.
+
+### Beta limitations
+
+- GitHub Release packaging currently publishes a Windows ZIP only.
+- The PowerShell DSM provider remains the automatic fallback when the Rust CLI
+  cannot be located or executed.
+- Complexity scoring is intentionally heuristic and may count keywords inside
+  trailing comments; naive comment stripping was rejected because it corrupts
+  strings and URLs.
+
 ## [0.2.0] — 2026-07-02
 
 The "understand any repo, cheaply" release. Docs generation now runs on any

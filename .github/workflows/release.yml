@@ -16,6 +16,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate release tag and package version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
+            throw "Unsupported release tag: $tag"
+          }
+          $tagVersion = $Matches.version
+          $manifest = Get-Content -Raw -LiteralPath crates\code-intel-cli\Cargo.toml
+          $manifestMatch = [regex]::Match($manifest, '(?m)^version\s*=\s*"([^"]+)"')
+          if (-not $manifestMatch.Success) {
+            throw "Could not read the code-intel package version."
+          }
+          $packageVersion = $manifestMatch.Groups[1].Value
+          if ($packageVersion -ne $tagVersion) {
+            throw "Release tag $tag does not match Cargo package version $packageVersion."
+          }
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -108,5 +126,12 @@ jobs:
             gh release upload $tag $asset --clobber
           }
           else {
-            gh release create $tag $asset --title $tag --notes "Code Intel Pipeline $tag"
+            $releaseArgs = @(
+              "--title", $tag,
+              "--notes", "Code Intel Pipeline $tag. Pre-release builds are intended for integration testing before stable promotion."
+            )
+            if ($tag.Contains("-")) {
+              $releaseArgs += "--prerelease"
+            }
+            gh release create $tag $asset @releaseArgs
           }
