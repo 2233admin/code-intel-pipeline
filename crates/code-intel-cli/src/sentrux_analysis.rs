@@ -64,7 +64,9 @@ pub fn analyze(target: &Path) -> Result<Value, String> {
     let mut module_files: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
     for relative in &inventory.files {
-        let content = fs::read_to_string(target.join(relative)).unwrap_or_default();
+        let source_path = target.join(relative);
+        let content = fs::read_to_string(&source_path)
+            .map_err(|error| format!("read source {}: {error}", source_path.display()))?;
         let module = module_name(relative);
         let signal = git.get(relative).cloned().unwrap_or_else(untracked_signal);
         let metrics = modules.entry(module.clone()).or_default();
@@ -110,19 +112,22 @@ pub fn analyze(target: &Path) -> Result<Value, String> {
 }
 
 fn source_inventory(target: &Path) -> Result<Inventory, String> {
-    let listed = Command::new("rg")
+    let output = Command::new("rg")
         .arg("--files")
         .current_dir(target)
         .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| {
-            String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .map(normalize_path)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_else(|| recursive_files(target));
+        .map_err(|error| format!("run rg --files in {}: {error}", target.display()))?;
+    if !output.status.success() {
+        return Err(format!(
+            "rg --files failed in {}: {}",
+            target.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let listed = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(normalize_path)
+        .collect::<Vec<_>>();
 
     let mut included = Vec::new();
     let mut excluded: BTreeMap<String, (usize, Vec<String>)> = BTreeMap::new();
@@ -174,27 +179,6 @@ fn source_inventory(target: &Path) -> Result<Inventory, String> {
             "note": "Root paths are allowed. Dependency, build-output, cache, and bundled static-asset code is excluded from governed source metrics."
         }),
     })
-}
-
-fn recursive_files(root: &Path) -> Vec<String> {
-    fn visit(root: &Path, current: &Path, out: &mut Vec<String>) {
-        let Ok(entries) = fs::read_dir(current) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if entry.file_name() != ".git" {
-                    visit(root, &path, out);
-                }
-            } else if let Ok(relative) = path.strip_prefix(root) {
-                out.push(normalize_path(&relative.to_string_lossy()));
-            }
-        }
-    }
-    let mut out = Vec::new();
-    visit(root, root, &mut out);
-    out
 }
 
 fn excluded_reason(relative: &str) -> Option<String> {
@@ -390,7 +374,12 @@ fn resolve_git_key<'a>(
     let key = signals
         .keys()
         .find(|key| {
-            candidate.ends_with(&format!("/{key}")) || key.ends_with(&format!("/{candidate}"))
+            candidate
+                .strip_suffix(key.as_str())
+                .is_some_and(|prefix| prefix.ends_with('/'))
+                || key
+                    .strip_suffix(candidate.as_str())
+                    .is_some_and(|prefix| prefix.ends_with('/'))
         })?
         .clone();
     signals.get_mut(&key)
@@ -484,7 +473,7 @@ fn functions(language: &str, lines: &[String]) -> Vec<Value> {
             let (count, loc, _, _) = line_stats(body);
             out.push(json!({
                 "name": name, "kind": "function", "start_line": index + 1, "end_line": end + 1,
-                "lines": count, "loc": loc, "complexity": complexity(body), "params": param_count(&params),
+                "lines": count, "loc": loc, "complexity": complexity(language, body), "params": param_count(&params),
                 "async": is_async, "public": is_public
             }));
         }
@@ -606,7 +595,8 @@ fn parse_powershell_signature(line: &str) -> Option<(String, String, bool, bool)
     let lower = trimmed.to_ascii_lowercase();
     let rest = trimmed
         .get(9..)
-        .filter(|_| lower.starts_with("function "))?;
+        .filter(|_| lower.starts_with("function "))?
+        .trim_start();
     let name = rest
         .split(|ch: char| ch.is_whitespace() || ch == '{' || ch == '(')
         .next()?;
@@ -617,7 +607,13 @@ fn python_end(lines: &[String], start: usize) -> usize {
     let indent = leading_whitespace(&lines[start]);
     for (index, line) in lines.iter().enumerate().skip(start + 1) {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('@') {
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if trimmed.starts_with('@') {
+            if leading_whitespace(line) <= indent {
+                return index.saturating_sub(1).max(start);
+            }
             continue;
         }
         if leading_whitespace(line) <= indent {
@@ -629,25 +625,102 @@ fn python_end(lines: &[String], start: usize) -> usize {
 
 fn c_like_end(lines: &[String], start: usize) -> usize {
     let mut depth = 0i64;
-    let mut seen = false;
+    let mut seen_brace = false;
+    let mut block_comment = false;
     for (index, line) in lines.iter().enumerate().skip(start) {
-        for ch in line.chars() {
-            if ch == '{' {
-                depth += 1;
-                seen = true
-            }
-            if ch == '}' {
-                depth -= 1;
-                if seen && depth <= 0 {
-                    return index;
-                }
-            }
+        let structure = structural_line(line, &mut block_comment);
+        depth += structure.opens - structure.closes;
+        seen_brace |= structure.opens > 0;
+        if seen_brace && depth <= 0 {
+            return index;
+        }
+        if !seen_brace && (structure.semicolon || structure.arrow_expression) {
+            return index;
+        }
+        if index > start && looks_like_function_declaration(line) {
+            return index.saturating_sub(1).max(start);
         }
     }
     start
 }
 
-fn complexity(lines: &[String]) -> i64 {
+#[derive(Default)]
+struct StructuralLine {
+    opens: i64,
+    closes: i64,
+    semicolon: bool,
+    arrow_expression: bool,
+}
+
+fn structural_line(line: &str, block_comment: &mut bool) -> StructuralLine {
+    let chars = line.chars().collect::<Vec<_>>();
+    let mut result = StructuralLine::default();
+    let mut quote = None;
+    let mut escaped = false;
+    let mut index = 0;
+    while index < chars.len() {
+        let ch = chars[index];
+        let next = chars.get(index + 1).copied();
+        if *block_comment {
+            if ch == '*' && next == Some('/') {
+                *block_comment = false;
+                index += 2;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+        if let Some(delimiter) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == delimiter {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+        if ch == '/' && next == Some('/') {
+            break;
+        }
+        if ch == '/' && next == Some('*') {
+            *block_comment = true;
+            index += 2;
+            continue;
+        }
+        if ch == '#' && chars[..index].iter().all(|value| value.is_whitespace()) {
+            break;
+        }
+        let is_rust_lifetime = ch == '\''
+            && next.is_some_and(|value| value.is_ascii_alphabetic() || value == '_')
+            && !chars[index + 1..].contains(&'\'');
+        if matches!(ch, '\'' | '"' | '`') && !is_rust_lifetime {
+            quote = Some(ch);
+            index += 1;
+            continue;
+        }
+        match ch {
+            '{' => result.opens += 1,
+            '}' => result.closes += 1,
+            ';' => result.semicolon = true,
+            '=' if next == Some('>') => result.arrow_expression = true,
+            _ => {}
+        }
+        index += 1;
+    }
+    result
+}
+
+fn looks_like_function_declaration(line: &str) -> bool {
+    parse_python_signature(line).is_some()
+        || parse_c_signature(line, "fn ", true).is_some()
+        || parse_c_signature(line, "fn ", false).is_some()
+        || parse_javascript_signature(line).is_some()
+        || parse_powershell_signature(line).is_some()
+}
+
+fn complexity(language: &str, lines: &[String]) -> i64 {
     let keywords = [
         "if", "elif", "for", "while", "except", "case", "catch", "match", "guard", "when", "with",
     ];
@@ -662,7 +735,9 @@ fn complexity(lines: &[String]) -> i64 {
             .map(|word| count_word(trimmed, word))
             .sum::<i64>();
         score += trimmed.matches("&&").count() as i64 + trimmed.matches("||").count() as i64;
-        score += i64::from(trimmed.contains(" => "));
+        if !matches!(language, "javascript" | "typescript") {
+            score += i64::from(trimmed.contains(" => "));
+        }
     }
     score
 }
@@ -682,16 +757,22 @@ fn dsm_edges(
         let Some(content) = contents.get(file) else {
             continue;
         };
-        for target in import_targets(&ext, content) {
+        for target in import_targets(&ext, file, content, files, modules) {
             if target != from && modules.contains_key(&target) {
-                edges.insert((from.clone(), target), 1);
+                *edges.entry((from.clone(), target)).or_default() += 1;
             }
         }
     }
     edges
 }
 
-fn import_targets(extension: &str, content: &str) -> Vec<String> {
+fn import_targets(
+    extension: &str,
+    source: &str,
+    content: &str,
+    files: &[String],
+    modules: &BTreeMap<String, ModuleMetrics>,
+) -> Vec<String> {
     let mut targets = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim_start();
@@ -702,18 +783,32 @@ fn import_targets(extension: &str, content: &str) -> Vec<String> {
                     .or_else(|| trimmed.strip_prefix("import "))
                     .and_then(|rest| rest.split_whitespace().next());
                 if let Some(token) = token {
-                    targets.push(module_name(&token.replace('.', "/")));
+                    if let Some(target) = resolve_python_import(source, token, files) {
+                        targets.push(target);
+                    }
                 }
             }
             ".rs" => {
                 if let Some(rest) = trimmed.strip_prefix("mod ") {
                     if let Some(name) = identifier(rest) {
-                        targets.push(module_name(&format!("src/{name}.rs")));
+                        if let Some(target) = resolve_relative_source(source, name, ".rs", files) {
+                            targets.push(module_name(target));
+                        }
                     }
                 }
                 if let Some(rest) = trimmed.strip_prefix("use crate::") {
-                    if let Some(name) = identifier(rest) {
-                        targets.push(module_name(&format!("src/{name}.rs")));
+                    if let Some(name) = identifier(rest).and_then(|path| path.split("::").next()) {
+                        if let Some(target) = resolve_crate_source(source, name, files) {
+                            targets.push(module_name(target));
+                        }
+                    }
+                } else if let Some(rest) = trimmed.strip_prefix("use ") {
+                    if let Some(name) = identifier(rest).and_then(|path| path.split("::").next()) {
+                        if !matches!(name, "crate" | "self" | "super" | "std" | "core" | "alloc") {
+                            if let Some(target) = resolve_module_token(name, modules) {
+                                targets.push(target);
+                            }
+                        }
                     }
                 }
             }
@@ -721,11 +816,15 @@ fn import_targets(extension: &str, content: &str) -> Vec<String> {
                 if let Some(rest) = trimmed.strip_prefix("import ") {
                     if let Some(token) = rest.split_whitespace().next() {
                         let root = token.split('.').next().unwrap_or(token);
-                        targets.extend([
-                            module_name(root),
-                            module_name(&format!("{root}.v")),
-                            module_name(&token.replace('.', "/")),
-                        ]);
+                        for candidate in [
+                            root.to_string(),
+                            format!("{root}.v"),
+                            token.replace('.', "/"),
+                        ] {
+                            if let Some(target) = resolve_module_token(&candidate, modules) {
+                                targets.push(target);
+                            }
+                        }
                     }
                 }
             }
@@ -733,6 +832,101 @@ fn import_targets(extension: &str, content: &str) -> Vec<String> {
         }
     }
     targets
+}
+
+fn resolve_python_import(source: &str, token: &str, files: &[String]) -> Option<String> {
+    let leading_dots = token.chars().take_while(|ch| *ch == '.').count();
+    let mut parts = source
+        .rsplit_once('/')
+        .map(|(directory, _)| directory.split('/').collect::<Vec<_>>())
+        .unwrap_or_default();
+    if leading_dots == 0 {
+        parts.clear();
+    } else {
+        for _ in 1..leading_dots {
+            parts.pop();
+        }
+    }
+    parts.extend(
+        token[leading_dots..]
+            .split('.')
+            .filter(|part| !part.is_empty()),
+    );
+    if parts.is_empty() {
+        return None;
+    }
+    let base = parts.join("/");
+    let file_candidate = format!("{base}.py");
+    let init_candidate = format!("{base}/__init__.py");
+    files
+        .iter()
+        .find(|file| *file == &file_candidate || *file == &init_candidate)
+        .or_else(|| {
+            let prefix = format!("{base}/");
+            files.iter().find(|file| file.starts_with(&prefix))
+        })
+        .map(|file| module_name(file))
+}
+
+fn resolve_relative_source<'a>(
+    source: &str,
+    name: &str,
+    extension: &str,
+    files: &'a [String],
+) -> Option<&'a str> {
+    let directory = source.rsplit_once('/').map(|(path, _)| path).unwrap_or("");
+    let prefix = if directory.is_empty() {
+        name.to_string()
+    } else {
+        format!("{directory}/{name}")
+    };
+    let direct = format!("{prefix}{extension}");
+    let nested = format!("{prefix}/mod{extension}");
+    files
+        .iter()
+        .find(|file| *file == &direct || *file == &nested)
+        .map(String::as_str)
+}
+
+fn resolve_crate_source<'a>(source: &str, name: &str, files: &'a [String]) -> Option<&'a str> {
+    let crate_root = source.find("/src/").map(|index| &source[..index + 4]);
+    let prefix = crate_root.unwrap_or_else(|| {
+        source
+            .rsplit_once('/')
+            .map(|(directory, _)| directory)
+            .unwrap_or("")
+    });
+    let candidate_source = if prefix.is_empty() {
+        format!("{name}.rs")
+    } else {
+        format!("{prefix}/{name}.rs")
+    };
+    let candidate_module = if prefix.is_empty() {
+        format!("{name}/mod.rs")
+    } else {
+        format!("{prefix}/{name}/mod.rs")
+    };
+    files
+        .iter()
+        .find(|file| *file == &candidate_source || *file == &candidate_module)
+        .map(String::as_str)
+}
+
+fn resolve_module_token(token: &str, modules: &BTreeMap<String, ModuleMetrics>) -> Option<String> {
+    let normalized = token.trim_matches(';').replace('.', "/");
+    if modules.contains_key(&normalized) {
+        return Some(normalized);
+    }
+    let comparable = normalized.replace('_', "-");
+    modules
+        .keys()
+        .find(|module| {
+            module
+                .rsplit('/')
+                .next()
+                .is_some_and(|leaf| leaf.replace('_', "-") == comparable)
+        })
+        .cloned()
 }
 
 fn derive_module_metrics(
@@ -756,23 +950,7 @@ fn derive_module_metrics(
             module.inbound_edges += count
         }
     }
-    let mut depths = modules
-        .keys()
-        .map(|name| (name.clone(), 0i64))
-        .collect::<BTreeMap<_, _>>();
-    for _ in 0..modules.len().max(1) {
-        let mut changed = false;
-        for ((from, to), _) in edges {
-            let candidate = depths.get(to).copied().unwrap_or(0) + 1;
-            if candidate > depths.get(from).copied().unwrap_or(0) {
-                depths.insert(from.clone(), candidate.min(99));
-                changed = true;
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
+    let depths = execution_depths(modules.keys(), &adjacency, &reverse);
     for (name, module) in modules.iter_mut() {
         let ages = module_files
             .get(name)
@@ -790,6 +968,107 @@ fn derive_module_metrics(
         module.exec_depth = depths.get(name).copied().unwrap_or(0);
         module.blast_radius = reachable(name, &reverse) as i64 + module.coupling;
     }
+}
+
+fn execution_depths<'a>(
+    modules: impl Iterator<Item = &'a String>,
+    adjacency: &BTreeMap<String, BTreeSet<String>>,
+    reverse: &BTreeMap<String, BTreeSet<String>>,
+) -> BTreeMap<String, i64> {
+    let names = modules.cloned().collect::<Vec<_>>();
+    let mut visited = BTreeSet::new();
+    let mut finish_order = Vec::with_capacity(names.len());
+    for start in &names {
+        if visited.contains(start) {
+            continue;
+        }
+        let mut stack = vec![(start.clone(), false)];
+        while let Some((node, expanded)) = stack.pop() {
+            if expanded {
+                finish_order.push(node);
+                continue;
+            }
+            if !visited.insert(node.clone()) {
+                continue;
+            }
+            stack.push((node.clone(), true));
+            if let Some(next) = adjacency.get(&node) {
+                for dependency in next.iter().rev() {
+                    if !visited.contains(dependency) {
+                        stack.push((dependency.clone(), false));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut components = BTreeMap::new();
+    let mut component_count = 0usize;
+    for start in finish_order.into_iter().rev() {
+        if components.contains_key(&start) {
+            continue;
+        }
+        let mut stack = vec![start];
+        while let Some(node) = stack.pop() {
+            if components.insert(node.clone(), component_count).is_some() {
+                continue;
+            }
+            if let Some(next) = reverse.get(&node) {
+                for dependent in next {
+                    if !components.contains_key(dependent) {
+                        stack.push(dependent.clone());
+                    }
+                }
+            }
+        }
+        component_count += 1;
+    }
+
+    let mut dependencies = vec![BTreeSet::new(); component_count];
+    let mut dependents = vec![BTreeSet::new(); component_count];
+    for (from, targets) in adjacency {
+        let Some(&from_component) = components.get(from) else {
+            continue;
+        };
+        for target in targets {
+            let Some(&to_component) = components.get(target) else {
+                continue;
+            };
+            if from_component != to_component && dependencies[from_component].insert(to_component) {
+                dependents[to_component].insert(from_component);
+            }
+        }
+    }
+
+    let mut remaining = dependencies.iter().map(BTreeSet::len).collect::<Vec<_>>();
+    let mut component_depths = vec![0i64; component_count];
+    let mut queue = VecDeque::new();
+    for (component, count) in remaining.iter().enumerate() {
+        if *count == 0 {
+            queue.push_back(component);
+        }
+    }
+    while let Some(dependency) = queue.pop_front() {
+        for &dependent in &dependents[dependency] {
+            component_depths[dependent] = component_depths[dependent]
+                .max(component_depths[dependency].saturating_add(1).min(99));
+            remaining[dependent] -= 1;
+            if remaining[dependent] == 0 {
+                queue.push_back(dependent);
+            }
+        }
+    }
+
+    names
+        .into_iter()
+        .map(|name| {
+            let depth = components
+                .get(&name)
+                .map(|component| component_depths[*component])
+                .unwrap_or(0);
+            (name, depth)
+        })
+        .collect()
 }
 
 fn reachable(start: &str, reverse: &BTreeMap<String, BTreeSet<String>>) -> usize {
@@ -964,6 +1243,9 @@ fn module_name(relative: &str) -> String {
             format!("backend/{second}/{third}")
         }
         ["backend", second, ..] => format!("backend/{second}"),
+        [first, second, ..] if ["crates", "packages"].contains(first) => {
+            format!("{first}/{second}")
+        }
         [first, second, third, ..] if ["app", "src", "tests"].contains(first) => {
             format!("{first}/{second}/{third}")
         }

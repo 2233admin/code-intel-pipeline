@@ -25,6 +25,12 @@ impl Fixture {
         fs::create_dir_all(path.parent().expect("fixture parent")).expect("create fixture dir");
         fs::write(path, content).expect("write fixture");
     }
+
+    fn write_bytes(&self, relative: &str, content: &[u8]) {
+        let path = self.root.join(relative);
+        fs::create_dir_all(path.parent().expect("fixture parent")).expect("create fixture dir");
+        fs::write(path, content).expect("write fixture bytes");
+    }
 }
 
 impl Drop for Fixture {
@@ -40,6 +46,15 @@ fn file<'a>(snapshot: &'a serde_json::Value, path: &str) -> &'a serde_json::Valu
         .iter()
         .find(|file| file["path"] == path)
         .unwrap_or_else(|| panic!("missing {path}"))
+}
+
+fn module<'a>(snapshot: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
+    snapshot["modules"]
+        .as_array()
+        .expect("modules array")
+        .iter()
+        .find(|module| module["name"] == name)
+        .unwrap_or_else(|| panic!("missing module {name}"))
 }
 
 #[test]
@@ -115,11 +130,86 @@ fn dsm_snapshot_builds_cross_module_edges_and_risk_colors() {
 }
 
 #[test]
+fn dsm_dependency_graph_accumulates_imports_and_resolves_workspace_crates() {
+    let fixture = Fixture::new();
+    fixture.write("a.py", "import b\nimport b\n");
+    fixture.write("b.py", "VALUE = 1\n");
+    fixture.write("crates/foo/src/lib.rs", "use bar::Thing;\n");
+    fixture.write("crates/bar/src/lib.rs", "pub struct Thing;\n");
+
+    let snapshot = sentrux_analysis::analyze(&fixture.root).expect("native DSM analysis");
+    let edges = snapshot["edges"].as_array().expect("edge array");
+    let python = edges
+        .iter()
+        .find(|edge| edge["from"] == "a.py" && edge["to"] == "b.py")
+        .expect("flat Python import edge");
+    assert_eq!(python["count"], 2);
+    assert!(edges
+        .iter()
+        .any(|edge| edge["from"] == "crates/foo" && edge["to"] == "crates/bar"));
+}
+
+#[test]
+fn dsm_execution_depth_collapses_dependency_cycles() {
+    let fixture = Fixture::new();
+    fixture.write("a.py", "import b\n");
+    fixture.write("b.py", "import a\n");
+    fixture.write("c.py", "import a\n");
+
+    let snapshot = sentrux_analysis::analyze(&fixture.root).expect("native DSM analysis");
+    assert_eq!(module(&snapshot, "a.py")["metrics"]["exec_depth"], 0);
+    assert_eq!(module(&snapshot, "b.py")["metrics"]["exec_depth"], 0);
+    assert_eq!(module(&snapshot, "c.py")["metrics"]["exec_depth"], 1);
+}
+
+#[test]
+fn dsm_function_boundaries_ignore_sibling_decorators_and_structural_braces() {
+    let fixture = Fixture::new();
+    fixture.write(
+        "decorated.py",
+        "def first():\n    return 1\n@decorate\ndef second():\n    return 2\n",
+    );
+    fixture.write(
+        "src/lib.rs",
+        "trait Contract {\n    fn declaration(&self);\n}\npub fn real() -> &'static str {\n    let marker = \"}\"; // }\n    \"ok\"\n}\n",
+    );
+    fixture.write("script.ps1", "function   Invoke-Contract { 1 }\n");
+    fixture.write(
+        "frontend/main.js",
+        "export const project = (items) => items.map((item) => item + 1);\n",
+    );
+
+    let snapshot = sentrux_analysis::analyze(&fixture.root).expect("native DSM analysis");
+    let python = file(&snapshot, "decorated.py");
+    assert_eq!(python["functions"][0]["end_line"], 2);
+    let rust = file(&snapshot, "src/lib.rs");
+    assert_eq!(rust["functions"][0]["end_line"], 2);
+    assert_eq!(rust["functions"][1]["end_line"], 7);
+    assert_eq!(file(&snapshot, "script.ps1")["function_count"], 1);
+    assert_eq!(
+        file(&snapshot, "frontend/main.js")["functions"][0]["complexity"],
+        1
+    );
+}
+
+#[test]
+fn dsm_analysis_reports_unreadable_source_content() {
+    let fixture = Fixture::new();
+    fixture.write_bytes("src/bad.rs", &[0xff, 0xfe]);
+
+    let error = sentrux_analysis::analyze(&fixture.root).expect_err("invalid UTF-8 must fail");
+    assert!(error.contains("read source"));
+    assert!(error.contains("bad.rs"));
+}
+
+#[test]
 fn production_pipeline_prefers_rust_dsm_with_explicit_powershell_rollback() {
     let pipeline = include_str!("../../../run-code-intel.ps1");
     assert!(pipeline.contains("CODE_INTEL_SENTRUX_DSM_PROVIDER"));
     assert!(pipeline.contains("CODE_INTEL_RUST_CLI"));
     assert!(pipeline.contains("& $sentruxDsmRustCli sentrux dsm $sentruxTargetPath"));
     assert!(pipeline.contains("& $sentruxAgentTool dsm $sentruxTargetPath"));
+    assert!(pipeline.contains("RuntimeInformation]::IsOSPlatform"));
+    assert!(pipeline.contains("$dsmLaunchError = $_.Exception.Message"));
     assert!(pipeline.contains("Sentrux DSM provider: $sentruxDsmProvider"));
 }

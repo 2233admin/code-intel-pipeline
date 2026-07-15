@@ -4020,7 +4020,13 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -Liter
             throw "CODE_INTEL_SENTRUX_DSM_PROVIDER must be 'rust' or 'powershell'"
         }
         $sentruxDsmRustCli = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_RUST_CLI)) {
-            Join-Path $PSScriptRoot "target\debug\code-intel.exe"
+            $rustExecutableName = if ([Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.InteropServices.OSPlatform]::Windows)) {
+                "code-intel.exe"
+            }
+            else {
+                "code-intel"
+            }
+            Join-Path $PSScriptRoot (Join-Path "target/debug" $rustExecutableName)
         } else {
             [IO.Path]::GetFullPath($env:CODE_INTEL_RUST_CLI)
         }
@@ -4028,16 +4034,27 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -Liter
         $sentruxDsmProvider = ""
         if ($sentruxDsmPreference -eq "rust" -and (Test-Path -LiteralPath $sentruxDsmRustCli -PathType Leaf)) {
             $previousErrorActionPreference = $ErrorActionPreference
+            $dsmRaw = @()
+            $dsmExitCode = $null
+            $dsmLaunchError = $null
             try {
                 $ErrorActionPreference = "Continue"
                 $global:LASTEXITCODE = 0
-                $dsmRaw = & $sentruxDsmRustCli sentrux dsm $sentruxTargetPath 2>&1
-                $dsmExitCode = $global:LASTEXITCODE
+                try {
+                    $dsmRaw = & $sentruxDsmRustCli sentrux dsm $sentruxTargetPath 2>&1
+                    $dsmExitCode = $global:LASTEXITCODE
+                }
+                catch {
+                    $dsmLaunchError = $_.Exception.Message
+                }
             }
             finally {
                 $ErrorActionPreference = $previousErrorActionPreference
             }
-            if ($dsmExitCode -eq 0) {
+            if (-not [string]::IsNullOrWhiteSpace($dsmLaunchError)) {
+                $notes.Add("Rust Sentrux DSM could not be launched ($dsmLaunchError); using the explicit PowerShell compatibility fallback.")
+            }
+            elseif ($dsmExitCode -eq 0) {
                 $dsmText = ($dsmRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
                 try {
                     $dsmObject = $dsmText | ConvertFrom-Json
