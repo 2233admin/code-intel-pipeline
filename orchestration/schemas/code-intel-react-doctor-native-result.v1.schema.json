@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://code-intel.local/schemas/code-intel-react-doctor-native-result.v1.schema.json",
+  "title": "React Doctor Native Result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "snapshotIdentity",
+    "status",
+    "observedAt",
+    "tool",
+    "report",
+    "error"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-react-doctor-native-result.v1" },
+    "snapshotIdentity": { "$ref": "#/definitions/sha256" },
+    "status": {
+      "enum": ["completed", "provider_unavailable", "local_tool_error"]
+    },
+    "observedAt": { "type": "integer", "minimum": 0 },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "integrity", "command"],
+      "properties": {
+        "version": { "const": "0.7.8" },
+        "integrity": {
+          "const": "sha512-G3spmtZJE/gWWPRJ3rpgUWTPRDJpEmdRja7iNZ7RAXlfpEO+NWVzPTca/cPI9hLwPo2Aq5/BZggo5JDBrwGrlA=="
+        },
+        "command": {
+          "type": "array",
+          "items": [
+            { "const": "npx" },
+            { "const": "--yes" },
+            { "const": "react-doctor@0.7.8" },
+            { "const": "--json" },
+            { "const": "--no-telemetry" }
+          ],
+          "additionalItems": false,
+          "minItems": 5,
+          "maxItems": 5
+        }
+      }
+    },
+    "report": {
+      "oneOf": [
+        { "$ref": "#/definitions/artifactRef" },
+        { "type": "null" }
+      ]
+    },
+    "error": { "type": ["string", "null"] }
+  },
+  "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "artifactSchema",
+        "type",
+        "path",
+        "sha256",
+        "consumedSnapshotIdentity"
+      ],
+      "properties": {
+        "schema": { "const": "code-intel-artifact-ref.v1" },
+        "artifactSchema": { "const": "react-doctor-json-report.v3" },
+        "type": { "const": "react-doctor-report" },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/definitions/sha256" },
+        "consumedSnapshotIdentity": { "$ref": "#/definitions/sha256" }
+      }
+    }
+  }
+}

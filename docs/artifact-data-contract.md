@@ -46,6 +46,20 @@ Tool evidence:
 - Repowise Understand Anything outputs referenced `report.json`
 - Greenfield workspace outputs, when generated: `greenfield-workspace/output/specs`, `greenfield-workspace/output/test-vectors`, `greenfield-workspace/output/validation`, `greenfield-workspace/provenance`
 
+Optional advisory-provider evidence is outside the default artifact run and
+uses:
+
+- `code-intel-compete-native-result.v1` for Compete datasets, InsightKit
+  `report.json`/`report.html`, and provenance Artifact Refs.
+- `code-intel-react-doctor-native-result.v1` for the pinned React Doctor 0.7.8
+  JSON v3 report.
+- `code-intel-evidence-route-result.v1` for A04 admission. It preserves
+  Snapshot Identity, Artifact Refs, failure category, coverage, diagnostic IDs,
+  and `advisoryOnly=true`.
+
+These optional results are not Engineering Facts and must not affect Hospital,
+discharge, Sentrux, or structural gate fields.
+
 ## Sentrux Failure Contract
 
 `sentrux-failures.json` uses schema `code-intel-sentrux-failures.v1`.

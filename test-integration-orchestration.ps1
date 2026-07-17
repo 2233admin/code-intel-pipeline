@@ -47,4 +47,19 @@ if (-not [bool]$repowise[0].required) {
     throw "memory.repowise must be required"
 }
 
+$evidenceRaw = & $rustCli orchestrate --action Plan --capability advisory_evidence --json
+if ($LASTEXITCODE -ne 0) {
+    throw "Advisory evidence orchestration plan failed"
+}
+$evidence = $evidenceRaw | ConvertFrom-Json
+$evidenceIds = @($evidence.plan | ForEach-Object { $_.id })
+if ($evidenceIds.Count -ne 2 -or
+    $evidenceIds -notcontains "evidence.compete" -or
+    $evidenceIds -notcontains "evidence.react-doctor") {
+    throw "Expected Compete and React Doctor advisory integrations"
+}
+if (@($evidence.plan | Where-Object { [bool]$_.required }).Count -ne 0) {
+    throw "Advisory evidence integrations must remain optional"
+}
+
 Write-Host "Integration orchestration smoke passed"

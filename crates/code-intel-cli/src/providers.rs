@@ -4,6 +4,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+mod evidence;
+
 pub struct Options<'a> {
     pub action: &'a str,
     pub provider: Option<&'a str>,
@@ -13,6 +15,10 @@ pub struct Options<'a> {
     pub full: bool,
     pub write: bool,
     pub json: bool,
+    pub request: Option<&'a Path>,
+    pub artifact_root: Option<&'a Path>,
+    pub evaluated_at: Option<i64>,
+    pub max_age_seconds: Option<i64>,
 }
 
 #[derive(Clone, Copy)]
@@ -28,6 +34,7 @@ pub struct ProviderOperation {
     pub required: bool,
     pub status: &'static str,
     pub source_spec: &'static str,
+    pub source_identity: Option<&'static str>,
     pub notes: &'static str,
 }
 
@@ -44,6 +51,7 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         required: true,
         status: "active",
         source_spec: "Repowise CLI: status [PATH], MCP/HTTP serve surfaces for agent callers",
+        source_identity: None,
         notes: "No model required; reports wiki sync and page statistics.",
     },
     ProviderOperation {
@@ -59,6 +67,7 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         required: true,
         status: "active",
         source_spec: "Repowise CLI: init/update --index-only, MCP tools include semantic code retrieval",
+        source_identity: None,
         notes: "No model required; refreshes index, dependency graph, git/dead-code artifacts.",
     },
     ProviderOperation {
@@ -73,6 +82,7 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         required: false,
         status: "compatibility",
         source_spec: "Repowise CLI: update --docs, provider/model options",
+        source_identity: None,
         notes: "Model-backed; provider quota can disable this without disabling status/index.",
     },
     ProviderOperation {
@@ -87,6 +97,7 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         required: true,
         status: "active",
         source_spec: "CodeNexus-lite worker reads Repowise wiki.db into compact agent context",
+        source_identity: None,
         notes: "Agent localization view over the Repowise artifact contract.",
     },
     ProviderOperation {
@@ -102,6 +113,7 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         required: true,
         status: "active",
         source_spec: "Understand Anything command contract: /understand <repo> --language <lang>, graph artifact",
+        source_identity: None,
         notes: "Internal Rust provider emits the Understand-compatible artifact first.",
     },
     ProviderOperation {
@@ -117,6 +129,7 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         required: false,
         status: "active",
         source_spec: "Understand Anything full graph refresh semantics",
+        source_identity: None,
         notes: "Use when a fresh complete graph is requested.",
     },
     ProviderOperation {
@@ -131,7 +144,83 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         required: false,
         status: "compatibility",
         source_spec: "Understand Anything upstream/plugin command surface",
+        source_identity: None,
         notes: "Use only if internal graph provider fails or richer external pass is explicitly requested.",
+    },
+    ProviderOperation {
+        provider: "compete",
+        operation: "prepare",
+        stage: "advisory_evidence",
+        protocol: "artifact+agent",
+        method: "POST",
+        route: "/api/providers/compete/prepare",
+        command_template: "Invoke-EvidenceProvider.ps1 -Provider compete -Operation prepare -RepoPath <repo-path> -ArtifactDir <artifact-dir>",
+        artifact: "compete-request.json",
+        required: false,
+        status: "on_demand",
+        source_spec: "Compete Agent/web workflow produces schema-marked InsightKit datasets and reports",
+        source_identity: Some("MIT revision ec13028fc8da620c73a114ffe403a772b29a78cb"),
+        notes: "Prepares an external Claude Code web task; never runs in normal/full pipeline modes.",
+    },
+    ProviderOperation {
+        provider: "compete",
+        operation: "status",
+        stage: "advisory_evidence",
+        protocol: "artifact",
+        method: "GET",
+        route: "/api/providers/compete/status",
+        command_template: "Invoke-EvidenceProvider.ps1 -Provider compete -Operation status -RepoPath <repo-path> -ArtifactDir <artifact-dir>",
+        artifact: "compete-native-result.json",
+        required: false,
+        status: "on_demand",
+        source_spec: "Compete artifact status without invoking an Agent",
+        source_identity: Some("MIT revision ec13028fc8da620c73a114ffe403a772b29a78cb"),
+        notes: "Reports prepared, ready_for_adapt, adapted, or not_run.",
+    },
+    ProviderOperation {
+        provider: "compete",
+        operation: "adapt",
+        stage: "advisory_evidence",
+        protocol: "artifact+command",
+        method: "POST",
+        route: "/api/providers/compete/adapt",
+        command_template: "target/debug/code-intel.exe provider compete-adapt --request <native.json|-> --artifact-root <artifact-dir> --evaluated-at <unix> --max-age-seconds <n>",
+        artifact: "code-intel-evidence-route-result.v1",
+        required: false,
+        status: "active",
+        source_spec: "Code Intel A04 advisory evidence admission over Compete native results",
+        source_identity: Some("MIT revision ec13028fc8da620c73a114ffe403a772b29a78cb"),
+        notes: "Only complete, fresh, snapshot-bound output becomes observed advisory evidence.",
+    },
+    ProviderOperation {
+        provider: "react-doctor",
+        operation: "scan",
+        stage: "advisory_evidence",
+        protocol: "cli+artifact",
+        method: "POST",
+        route: "/api/providers/react-doctor/scan",
+        command_template: "Invoke-EvidenceProvider.ps1 -Provider react-doctor -Operation scan -RepoPath <repo-path> -ArtifactDir <artifact-dir>",
+        artifact: "react-doctor-native-result.json",
+        required: false,
+        status: "on_demand",
+        source_spec: "npx --yes react-doctor@0.7.8 --json --no-telemetry",
+        source_identity: Some("react-doctor 0.7.8 sha512-G3spmtZJE/gWWPRJ3rpgUWTPRDJpEmdRja7iNZ7RAXlfpEO+NWVzPTca/cPI9hLwPo2Aq5/BZggo5JDBrwGrlA=="),
+        notes: "Pinned deterministic scanner; does not install skills or CI/configuration.",
+    },
+    ProviderOperation {
+        provider: "react-doctor",
+        operation: "adapt",
+        stage: "advisory_evidence",
+        protocol: "artifact+command",
+        method: "POST",
+        route: "/api/providers/react-doctor/adapt",
+        command_template: "target/debug/code-intel.exe provider react-doctor-adapt --request <native.json|-> --artifact-root <artifact-dir> --evaluated-at <unix> --max-age-seconds <n>",
+        artifact: "code-intel-evidence-route-result.v1",
+        required: false,
+        status: "active",
+        source_spec: "Code Intel A04 advisory evidence admission over React Doctor JSON v3",
+        source_identity: Some("react-doctor 0.7.8 sha512-G3spmtZJE/gWWPRJ3rpgUWTPRDJpEmdRja7iNZ7RAXlfpEO+NWVzPTca/cPI9hLwPo2Aq5/BZggo5JDBrwGrlA=="),
+        notes: "Preserves deterministic diagnostic IDs, spans, tags, and per-project coverage.",
     },
 ];
 
@@ -142,6 +231,8 @@ pub fn run(options: &Options<'_>) -> Result<()> {
         "plan" => plan(options)?,
         "validate" => validate(),
         "invoke" => invoke(options)?,
+        "compete-adapt" => adapt("compete", options)?,
+        "react-doctor-adapt" => adapt("react-doctor", options)?,
         other => return Err(format!("unknown provider action: {other}").into()),
     };
 
@@ -156,6 +247,28 @@ pub fn run(options: &Options<'_>) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn adapt(provider: &str, options: &Options<'_>) -> Result<Value> {
+    let request = options
+        .request
+        .ok_or("provider adapt requires --request <native.json|->")?;
+    let artifact_root = options
+        .artifact_root
+        .ok_or("provider adapt requires --artifact-root <dir>")?;
+    let evaluated_at = options
+        .evaluated_at
+        .ok_or("provider adapt requires --evaluated-at <unix>")?;
+    let max_age_seconds = options
+        .max_age_seconds
+        .ok_or("provider adapt requires --max-age-seconds <n>")?;
+    evidence::adapt(
+        provider,
+        request,
+        artifact_root,
+        evaluated_at,
+        max_age_seconds,
+    )
 }
 
 pub fn list(provider: Option<&str>) -> Value {
@@ -359,6 +472,7 @@ pub fn operation_json(operation: &ProviderOperation) -> Value {
         "required": operation.required,
         "status": operation.status,
         "sourceSpec": operation.source_spec,
+        "sourceIdentity": operation.source_identity,
         "notes": operation.notes
     })
 }
@@ -423,5 +537,28 @@ mod tests {
             assert!(repowise.get(key).is_some(), "repowise missing {key}");
             assert!(understand.get(key).is_some(), "understand missing {key}");
         }
+    }
+
+    #[test]
+    fn on_demand_evidence_providers_are_public_and_optional() {
+        for (provider, operations) in [
+            ("compete", ["prepare", "status", "adapt"].as_slice()),
+            ("react-doctor", ["scan", "adapt"].as_slice()),
+        ] {
+            for operation in operations {
+                let item = find(provider, operation).expect("provider operation should exist");
+                assert!(!item.required);
+                assert_eq!(item.stage, "advisory_evidence");
+                assert!(item.source_identity.is_some());
+            }
+        }
+        assert!(find("react-doctor", "scan")
+            .unwrap()
+            .command_template
+            .contains("Invoke-EvidenceProvider.ps1"));
+        assert!(find("react-doctor", "adapt")
+            .unwrap()
+            .command_template
+            .contains("react-doctor-adapt"));
     }
 }

@@ -55,6 +55,8 @@ jobs:
             "test-github-solution-research.ps1",
             "test-hospital-trust-contract.ps1",
             "test-atomic-capability-contract.ps1",
+            "Invoke-EvidenceProvider.ps1",
+            "test-evidence-providers.ps1",
             "test-project-discovery.ps1",
             "test-project-management-support.ps1",
             "test-scoped-repowise-security.ps1",
@@ -140,6 +142,10 @@ jobs:
       - name: Atomic capability contract tests
         shell: pwsh
         run: .\test-atomic-capability-contract.ps1 -RepoPath .
+
+      - name: On-demand evidence provider contract tests
+        shell: pwsh
+        run: .\test-evidence-providers.ps1
 
       - name: Skill development benchmark contract tests
         shell: pwsh
@@ -243,6 +249,8 @@ jobs:
             "test-github-solution-research.ps1",
             "test-hospital-trust-contract.ps1",
             "test-atomic-capability-contract.ps1",
+            "Invoke-EvidenceProvider.ps1",
+            "test-evidence-providers.ps1",
             "test-project-discovery.ps1",
             "test-project-management-support.ps1",
             "test-scoped-repowise-security.ps1",
@@ -318,6 +326,10 @@ jobs:
       - name: Atomic capability contract tests
         shell: pwsh
         run: ./test-atomic-capability-contract.ps1 -RepoPath .
+
+      - name: On-demand evidence provider contract tests
+        shell: pwsh
+        run: ./test-evidence-providers.ps1
 
       - name: Scoped Repowise manifest validator tests
         run: python ./test-scoped-repowise-validator.py

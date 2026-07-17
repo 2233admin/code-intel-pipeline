@@ -75,6 +75,10 @@ jobs:
         shell: pwsh
         run: .\test-skill-development-benchmark.ps1 -RepoPath .
 
+      - name: On-demand evidence provider contract tests
+        shell: pwsh
+        run: .\test-evidence-providers.ps1
+
       - name: Pipeline smoke
         shell: pwsh
         run: .\test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -SkipGitHubResearch -Mode normal

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-07-17
+
+### Added
+
+- Explicit on-demand Compete and React Doctor evidence providers with native
+  result schemas, snapshot-bound A04 admission, and advisory-only route results.
+- Pinned React Doctor 0.7.8 execution with JSON v3 diagnostics and coverage
+  preservation; Compete Agent/web task preparation with InsightKit artifacts.
+
+### Changed
+
+- Provider and orchestration registries now expose both optional providers
+  without adding them to the default `normal` or `full` pipeline.
+- Evidence admission fails closed for stale, mismatched, malformed, or unsafe
+  artifacts and keeps unavailable or partial providers explicitly unknown.
+
+### Verified
+
+- Rust tests, PowerShell provider smoke tests, registry validation, atomic
+  capability contracts, and the default normal pipeline regression pass.
+
 ## [0.2.0] — 2026-07-02
 
 The "understand any repo, cheaply" release. Docs generation now runs on any
