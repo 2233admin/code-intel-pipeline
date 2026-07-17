@@ -27,6 +27,46 @@
       "path": "D:\\projects",
       "language": "zh"
     },
+    "tdxcli-rs": {
+      "path": "D:\\projects\\tdxcli-rs",
+      "repowiseScopePaths": [
+        "crates",
+        "docs"
+      ],
+      "repowiseRootFiles": [
+        "README.md",
+        "AGENTS.md",
+        "CONTEXT-MAP.md",
+        "Cargo.toml",
+        ".gitignore"
+      ],
+      "sentruxPath": "crates"
+    },
+    "workbench-kernel": {
+      "path": "D:\\projects\\workbench-kernel",
+      "repowiseScopePaths": [
+        "apps/lab/src",
+        "apps/geoflow/src",
+        "apps/red-queen/src",
+        "packages/components/src",
+        "packages/data-grid-contract/src",
+        "packages/evidence/src",
+        "packages/primitives/src",
+        "packages/stream-contract/src",
+        "packages/terminal/src",
+        "packages/tokens/src",
+        "packages/tv-chart/src",
+        "packages/workspace/src",
+        "docs"
+      ],
+      "repowiseRootFiles": [
+        "README.md",
+        "CLAUDE.md",
+        "package.json",
+        "pnpm-workspace.yaml",
+        ".gitignore"
+      ]
+    },
     "k-atana": {
       "path": "D:\\projects\\_quant\\k-atana",
       "language": "zh",
