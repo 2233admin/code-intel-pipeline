@@ -111,7 +111,9 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $asset --clobber
           }
+          elseif ($tag -match "-(alpha|beta|rc)(\.|$)") {
+            gh release create $tag $asset --title $tag --notes "Code Intel Pipeline $tag" --prerelease
+          }
           else {
-            $prerelease = if ($tag -match "-(alpha|beta|rc)(\.|$)") { @("--prerelease") } else { @() }
-            gh release create $tag $asset --title $tag --notes "Code Intel Pipeline $tag" @prerelease
+            gh release create $tag $asset --title $tag --notes "Code Intel Pipeline $tag"
           }
