@@ -11,7 +11,7 @@ const INTEGRITY: &str =
     "sha512-G3spmtZJE/gWWPRJ3rpgUWTPRDJpEmdRja7iNZ7RAXlfpEO+NWVzPTca/cPI9hLwPo2Aq5/BZggo5JDBrwGrlA==";
 
 pub(super) fn adapt(request: &Value, context: &Context) -> Value {
-    let (snapshot, status) = match validate_native(request, SCHEMA, context) {
+    let (snapshot, status) = match validate_request(request, context) {
         Ok(value) => value,
         Err(error) => {
             return rejected(
@@ -23,66 +23,11 @@ pub(super) fn adapt(request: &Value, context: &Context) -> Value {
             );
         }
     };
-    if let Err(error) = validate_identity(request) {
-        return rejected(
-            "react-doctor",
-            Some(snapshot),
-            error.category,
-            &error.reason,
-            context.evaluated_at,
-        );
+    if let Some(route) = non_completed_route(snapshot, status, context) {
+        return route;
     }
-    match status {
-        "provider_unavailable" => {
-            return status_route(
-                "react-doctor",
-                Some(snapshot),
-                "unknown",
-                "unknown",
-                Some("provider_unavailable"),
-                "React Doctor or npm was unavailable",
-                context,
-                Vec::new(),
-                Value::Null,
-            );
-        }
-        "local_tool_error" => {
-            return rejected(
-                "react-doctor",
-                Some(snapshot),
-                "local_tool_error",
-                "React Doctor exited unsuccessfully",
-                context.evaluated_at,
-            );
-        }
-        "completed" => {}
-        _ => {
-            return rejected(
-                "react-doctor",
-                Some(snapshot),
-                "local_tool_error",
-                "invalid React Doctor native status",
-                context.evaluated_at,
-            );
-        }
-    }
-
-    let reference = match request.get("report") {
-        Some(value) => value,
-        None => {
-            return rejected(
-                "react-doctor",
-                Some(snapshot),
-                "local_tool_error",
-                "completed React Doctor result has no report",
-                context.evaluated_at,
-            );
-        }
-    };
-    let report = match validate_artifact_ref(reference, snapshot, context)
-        .and_then(|path| load_json(&path))
-    {
-        Ok(value) => value,
+    let (reference, report) = match load_report(request, snapshot, context) {
+        Ok(result) => result,
         Err(error) => {
             return rejected(
                 "react-doctor",
@@ -93,7 +38,76 @@ pub(super) fn adapt(request: &Value, context: &Context) -> Value {
             );
         }
     };
-    match analyze_report(&report) {
+    analysis_route(
+        analyze_report(&report),
+        snapshot,
+        reference,
+        &report,
+        context,
+    )
+}
+
+fn validate_request<'a>(
+    request: &'a Value,
+    context: &Context,
+) -> Result<(&'a str, &'a str), EvidenceError> {
+    let native = validate_native(request, SCHEMA, context)?;
+    validate_identity(request)?;
+    Ok(native)
+}
+
+fn non_completed_route(snapshot: &str, status: &str, context: &Context) -> Option<Value> {
+    match status {
+        "completed" => None,
+        "provider_unavailable" => Some(status_route(
+            "react-doctor",
+            Some(snapshot),
+            "unknown",
+            "unknown",
+            Some("provider_unavailable"),
+            "React Doctor or npm was unavailable",
+            context,
+            Vec::new(),
+            Value::Null,
+        )),
+        "local_tool_error" => Some(rejected(
+            "react-doctor",
+            Some(snapshot),
+            "local_tool_error",
+            "React Doctor exited unsuccessfully",
+            context.evaluated_at,
+        )),
+        _ => Some(rejected(
+            "react-doctor",
+            Some(snapshot),
+            "local_tool_error",
+            "invalid React Doctor native status",
+            context.evaluated_at,
+        )),
+    }
+}
+
+fn load_report<'a>(
+    request: &'a Value,
+    snapshot: &str,
+    context: &Context,
+) -> Result<(&'a Value, Value), EvidenceError> {
+    let reference = request
+        .get("report")
+        .ok_or_else(|| EvidenceError::local("completed React Doctor result has no report"))?;
+    let report =
+        validate_artifact_ref(reference, snapshot, context).and_then(|path| load_json(&path))?;
+    Ok((reference, report))
+}
+
+fn analysis_route(
+    analysis: Result<Analysis, EvidenceError>,
+    snapshot: &str,
+    reference: &Value,
+    report: &Value,
+    context: &Context,
+) -> Value {
+    match analysis {
         Ok(Analysis::NotApplicable) => status_route(
             "react-doctor",
             Some(snapshot),
@@ -189,13 +203,35 @@ enum Analysis {
 }
 
 fn analyze_report(report: &Value) -> Result<Analysis, EvidenceError> {
+    validate_report_header(report)?;
+    if is_not_applicable(report) {
+        return Ok(Analysis::NotApplicable);
+    }
+    let projects = report
+        .get("projects")
+        .and_then(Value::as_array)
+        .ok_or_else(|| EvidenceError::local("React Doctor report lacks projects"))?;
+    let diagnostics = report
+        .get("diagnostics")
+        .and_then(Value::as_array)
+        .ok_or_else(|| EvidenceError::local("React Doctor report lacks diagnostics"))?;
+    let (complete, coverage, project_ids) = collect_projects(projects)?;
+    validate_flattened_diagnostics(diagnostics, &project_ids)?;
+    Ok(Analysis::Observed {
+        complete,
+        diagnostics: diagnostics.clone(),
+        coverage,
+    })
+}
+
+fn validate_report_header(report: &Value) -> Result<(), EvidenceError> {
     if report.get("schemaVersion").and_then(Value::as_i64) != Some(3) {
         return Err(EvidenceError::local(
             "unsupported React Doctor JSON schema; expected v3",
         ));
     }
     if is_not_applicable(report) {
-        return Ok(Analysis::NotApplicable);
+        return Ok(());
     }
     if report.get("ok").and_then(Value::as_bool) != Some(true)
         || !report.get("error").is_some_and(Value::is_null)
@@ -211,69 +247,74 @@ fn analyze_report(report: &Value) -> Result<Analysis, EvidenceError> {
     if !["full", "diff", "staged", "baseline"].contains(&mode) {
         return Err(EvidenceError::local("invalid React Doctor report mode"));
     }
-    let projects = report
-        .get("projects")
-        .and_then(Value::as_array)
-        .ok_or_else(|| EvidenceError::local("React Doctor report lacks projects"))?;
-    let diagnostics = report
-        .get("diagnostics")
-        .and_then(Value::as_array)
-        .ok_or_else(|| EvidenceError::local("React Doctor report lacks diagnostics"))?;
+    Ok(())
+}
 
+fn collect_projects(projects: &[Value]) -> Result<(bool, Vec<Value>, Vec<String>), EvidenceError> {
     let mut complete = true;
     let mut coverage = Vec::new();
     let mut project_ids = Vec::new();
     for project in projects {
-        let analyzed_files = string_array(project, "analyzedFiles")?;
-        let skipped_checks = string_array(project, "skippedChecks")?;
-        let analyzed_count = project
-            .get("analyzedFileCount")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| EvidenceError::local("project lacks analyzedFileCount"))?;
-        let project_complete = project
-            .get("complete")
-            .and_then(Value::as_bool)
-            .ok_or_else(|| EvidenceError::local("project lacks complete"))?;
-        if analyzed_count != analyzed_files.len() as u64 {
-            return Err(EvidenceError::local(
-                "React Doctor analyzedFileCount does not match analyzedFiles",
-            ));
-        }
-        validate_paths(&analyzed_files)?;
-        let project_diagnostics = project
-            .get("diagnostics")
-            .and_then(Value::as_array)
-            .ok_or_else(|| EvidenceError::local("project lacks diagnostics"))?;
-        for diagnostic in project_diagnostics {
-            project_ids.push(validate_diagnostic(diagnostic)?);
-        }
-        complete &= project_complete && skipped_checks.is_empty();
-        coverage.push(json!({
-            "directory": required_string(project, "directory")?,
-            "packageRoot": required_string(project, "packageRoot")?,
-            "framework": required_string(project, "framework")?,
-            "analyzedFiles": analyzed_files,
-            "analyzedFileCount": analyzed_count,
-            "complete": project_complete,
-            "skippedChecks": skipped_checks,
-            "skippedCheckReasons": project.get("skippedCheckReasons").cloned().unwrap_or(Value::Null)
-        }));
+        let (project_complete, item, ids) = analyze_project(project)?;
+        complete &= project_complete;
+        coverage.push(item);
+        project_ids.extend(ids);
     }
+    Ok((complete, coverage, project_ids))
+}
 
-    let mut top_ids = Vec::new();
-    for diagnostic in diagnostics {
-        top_ids.push(validate_diagnostic(diagnostic)?);
+fn analyze_project(project: &Value) -> Result<(bool, Value, Vec<String>), EvidenceError> {
+    let analyzed_files = string_array(project, "analyzedFiles")?;
+    let skipped_checks = string_array(project, "skippedChecks")?;
+    let analyzed_count = project
+        .get("analyzedFileCount")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| EvidenceError::local("project lacks analyzedFileCount"))?;
+    let project_complete = project
+        .get("complete")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| EvidenceError::local("project lacks complete"))?;
+    if analyzed_count != analyzed_files.len() as u64 {
+        return Err(EvidenceError::local(
+            "React Doctor analyzedFileCount does not match analyzedFiles",
+        ));
     }
+    validate_paths(&analyzed_files)?;
+    let diagnostics = project
+        .get("diagnostics")
+        .and_then(Value::as_array)
+        .ok_or_else(|| EvidenceError::local("project lacks diagnostics"))?;
+    let ids = diagnostics
+        .iter()
+        .map(validate_diagnostic)
+        .collect::<Result<Vec<_>, _>>()?;
+    let coverage = json!({
+        "directory": required_string(project, "directory")?,
+        "packageRoot": required_string(project, "packageRoot")?,
+        "framework": required_string(project, "framework")?,
+        "analyzedFiles": analyzed_files,
+        "analyzedFileCount": analyzed_count,
+        "complete": project_complete,
+        "skippedChecks": skipped_checks,
+        "skippedCheckReasons": project.get("skippedCheckReasons").cloned().unwrap_or(Value::Null)
+    });
+    Ok((project_complete && skipped_checks.is_empty(), coverage, ids))
+}
+
+fn validate_flattened_diagnostics(
+    diagnostics: &[Value],
+    project_ids: &[String],
+) -> Result<(), EvidenceError> {
+    let top_ids = diagnostics
+        .iter()
+        .map(validate_diagnostic)
+        .collect::<Result<Vec<_>, _>>()?;
     if top_ids != project_ids || top_ids.iter().collect::<HashSet<_>>().len() != top_ids.len() {
         return Err(EvidenceError::local(
             "React Doctor flattened diagnostics do not match project diagnostics",
         ));
     }
-    Ok(Analysis::Observed {
-        complete,
-        diagnostics: diagnostics.clone(),
-        coverage,
-    })
+    Ok(())
 }
 
 fn is_not_applicable(report: &Value) -> bool {

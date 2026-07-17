@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2-beta.1] — 2026-07-17
+
+### Added
+
+- Internal experimental Beta feature surfaces for `competitive-intelligence`
+  and `react-diagnostics`, producing first-party problem and improvement
+  recommendation reports without scores.
+
+### Changed
+
+- Compete and React Doctor remain provider-backed at the execution boundary,
+  while the public feature layer now owns normalized JSON/Markdown reports.
+
 ## [0.2.1] — 2026-07-17
 
 ### Added

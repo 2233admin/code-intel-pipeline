@@ -112,5 +112,6 @@ jobs:
             gh release upload $tag $asset --clobber
           }
           else {
-            gh release create $tag $asset --title $tag --notes "Code Intel Pipeline $tag"
+            $prerelease = if ($tag -match "-(alpha|beta|rc)(\.|$)") { @("--prerelease") } else { @() }
+            gh release create $tag $asset --title $tag --notes "Code Intel Pipeline $tag" @prerelease
           }

@@ -19,7 +19,7 @@ const DATASETS: &[(&str, &str)] = &[
 ];
 
 pub(super) fn adapt(request: &Value, context: &Context) -> Value {
-    let (snapshot, status) = match validate_native(request, SCHEMA, context) {
+    let (snapshot, status) = match validate_request(request, context) {
         Ok(value) => value,
         Err(error) => {
             return rejected(
@@ -31,65 +31,69 @@ pub(super) fn adapt(request: &Value, context: &Context) -> Value {
             );
         }
     };
-    if let Err(error) = validate_identity(request) {
-        return rejected(
-            "compete",
-            Some(snapshot),
-            error.category,
-            &error.reason,
-            context.evaluated_at,
-        );
-    }
-    match status {
-        "provider_unavailable" => {
-            return status_route(
-                "compete",
-                Some(snapshot),
-                "unknown",
-                "unknown",
-                Some("provider_unavailable"),
-                "Compete Agent/web provider was unavailable",
-                context,
-                Vec::new(),
-                Value::Null,
-            );
-        }
-        "not_run" => {
-            return status_route(
-                "compete",
-                Some(snapshot),
-                "unknown",
-                "unknown",
-                None,
-                "Compete was not run",
-                context,
-                Vec::new(),
-                Value::Null,
-            );
-        }
-        "local_tool_error" => {
-            return rejected(
-                "compete",
-                Some(snapshot),
-                "local_tool_error",
-                "Compete upstream execution failed",
-                context.evaluated_at,
-            );
-        }
-        "completed" => {}
-        _ => {
-            return rejected(
-                "compete",
-                Some(snapshot),
-                "local_tool_error",
-                "invalid Compete native status",
-                context.evaluated_at,
-            );
-        }
+    if let Some(route) = non_completed_route(snapshot, status, context) {
+        return route;
     }
 
-    match collect(request, snapshot, context) {
-        Ok((artifacts, missing)) if missing.is_empty() => status_route(
+    collected_route(collect(request, snapshot, context), snapshot, context)
+}
+
+fn validate_request<'a>(
+    request: &'a Value,
+    context: &Context,
+) -> Result<(&'a str, &'a str), EvidenceError> {
+    let native = validate_native(request, SCHEMA, context)?;
+    validate_identity(request)?;
+    Ok(native)
+}
+
+fn non_completed_route(snapshot: &str, status: &str, context: &Context) -> Option<Value> {
+    match status {
+        "completed" => None,
+        "provider_unavailable" => Some(status_route(
+            "compete",
+            Some(snapshot),
+            "unknown",
+            "unknown",
+            Some("provider_unavailable"),
+            "Compete Agent/web provider was unavailable",
+            context,
+            Vec::new(),
+            Value::Null,
+        )),
+        "not_run" => Some(status_route(
+            "compete",
+            Some(snapshot),
+            "unknown",
+            "unknown",
+            None,
+            "Compete was not run",
+            context,
+            Vec::new(),
+            Value::Null,
+        )),
+        "local_tool_error" => Some(rejected(
+            "compete",
+            Some(snapshot),
+            "local_tool_error",
+            "Compete upstream execution failed",
+            context.evaluated_at,
+        )),
+        _ => Some(rejected(
+            "compete",
+            Some(snapshot),
+            "local_tool_error",
+            "invalid Compete native status",
+            context.evaluated_at,
+        )),
+    }
+}
+
+type Collected = Result<(Vec<Value>, Vec<String>, Value), EvidenceError>;
+
+fn collected_route(result: Collected, snapshot: &str, context: &Context) -> Value {
+    match result {
+        Ok((artifacts, missing, report)) if missing.is_empty() => status_route(
             "compete",
             Some(snapshot),
             "observed",
@@ -98,9 +102,9 @@ pub(super) fn adapt(request: &Value, context: &Context) -> Value {
             "complete schema-marked InsightKit evidence admitted as advisory",
             context,
             artifacts,
-            json!({"complete": true, "missing": []}),
+            json!({"complete": true, "missing": [], "report": report}),
         ),
-        Ok((artifacts, missing)) => status_route(
+        Ok((artifacts, missing, report)) => status_route(
             "compete",
             Some(snapshot),
             "unknown",
@@ -109,7 +113,7 @@ pub(super) fn adapt(request: &Value, context: &Context) -> Value {
             "partial Compete output cannot become observed evidence",
             context,
             artifacts,
-            json!({"complete": false, "missing": missing}),
+            json!({"complete": false, "missing": missing, "report": report}),
         ),
         Err(error) => rejected(
             "compete",
@@ -140,13 +144,14 @@ fn collect(
     request: &Value,
     snapshot: &str,
     context: &Context,
-) -> Result<(Vec<Value>, Vec<String>), EvidenceError> {
+) -> Result<(Vec<Value>, Vec<String>, Value), EvidenceError> {
     let native_artifacts = request.get("artifacts").and_then(Value::as_object);
     let datasets = native_artifacts
         .and_then(|value| value.get("datasets"))
         .and_then(Value::as_object);
     let mut admitted = Vec::new();
     let mut missing = Vec::new();
+    let mut report = Value::Null;
 
     for (name, top_level_key) in DATASETS {
         let Some(reference) = datasets.and_then(|value| value.get(*name)) else {
@@ -166,6 +171,7 @@ fn collect(
         context,
         &mut admitted,
         &mut missing,
+        &mut report,
         true,
     )?;
     collect_report(
@@ -176,6 +182,7 @@ fn collect(
         context,
         &mut admitted,
         &mut missing,
+        &mut report,
         false,
     )?;
 
@@ -190,7 +197,7 @@ fn collect(
             admitted.push(reference.clone());
         }
     }
-    Ok((admitted, missing))
+    Ok((admitted, missing, report))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -202,6 +209,7 @@ fn collect_report(
     context: &Context,
     admitted: &mut Vec<Value>,
     missing: &mut Vec<String>,
+    report: &mut Value,
     json_report: bool,
 ) -> Result<(), EvidenceError> {
     let Some(reference) = artifacts.and_then(|value| value.get(key)) else {
@@ -217,6 +225,7 @@ fn collect_report(
                 "Compete report.json lacks executive_summary",
             ));
         }
+        *report = value;
     } else {
         let html = std::fs::read_to_string(&path)
             .map_err(|error| EvidenceError::local(format!("cannot read report.html: {error}")))?;

@@ -40,6 +40,7 @@ try {
     $competeSchema = Join-Path $root "orchestration/schemas/code-intel-compete-native-result.v1.schema.json"
     $reactSchema = Join-Path $root "orchestration/schemas/code-intel-react-doctor-native-result.v1.schema.json"
     $routeSchema = Join-Path $root "orchestration/schemas/code-intel-evidence-route-result.v1.schema.json"
+    $featureSchema = Join-Path $root "orchestration/schemas/code-intel-beta-feature-report.v1.schema.json"
     $competeNative = Get-Content -LiteralPath $prepared.nativeResult -Raw
     Assert-True (Test-Json -Json $competeNative -SchemaFile $competeSchema) "Prepared Compete native result is schema-invalid"
 
@@ -68,6 +69,29 @@ try {
     $route = $routeText | ConvertFrom-Json
     Assert-True (Test-Json -Json $routeText -SchemaFile $routeSchema) "React Doctor route result is schema-invalid"
     Assert-True ($route.status -eq "unknown" -and $route.failureCategory -eq "provider_unavailable") "Provider unavailable semantics drifted"
+    $routePath = Join-Path $artifacts "react-doctor-route-fixture.json"
+    [IO.File]::WriteAllText($routePath, $routeText, [Text.UTF8Encoding]::new($false))
+
+    $featureBuild = & (Join-Path $root "Invoke-CodeIntelBetaFeature.ps1") `
+        -Feature react-diagnostics `
+        -Operation build `
+        -ArtifactDir $artifacts `
+        -RouteResult $routePath | ConvertFrom-Json
+    $featureReportPath = $featureBuild.artifacts.json
+    $featureReportText = Get-Content -LiteralPath $featureReportPath -Raw
+    $featureReport = $featureReportText | ConvertFrom-Json
+    Assert-True (Test-Json -Json $featureReportText -SchemaFile $featureSchema) "Beta feature report is schema-invalid"
+    Assert-True ($featureReport.feature -eq "react-diagnostics" -and $featureReport.beta) "Beta feature identity drifted"
+    Assert-True ($featureReport.status -eq "unknown" -and @($featureReport.issues).Count -eq 0) "Unknown provider result claimed healthy diagnostics"
+    Assert-True ($null -eq $featureReport.PSObject.Properties["score"]) "Beta feature reports must not expose a score"
+
+    $features = (& $cli feature --action List --json | ConvertFrom-Json).features
+    Assert-True (@($features).Count -eq 2) "Expected two first-party Beta features"
+    foreach ($featureName in @("competitive-intelligence", "react-diagnostics")) {
+        $feature = @($features | Where-Object { $_.id -eq $featureName })
+        Assert-True ($feature.Count -eq 1) "Missing Beta feature $featureName"
+        Assert-True (-not [bool]$feature[0].required) "$featureName must remain explicit and optional"
+    }
 
     $stdinRouteRaw = $reactJson | & $cli provider react-doctor-adapt --request - --artifact-root $artifacts --evaluated-at $now --max-age-seconds 60
     Assert-True ($LASTEXITCODE -eq 0) "React Doctor stdin adapt command failed"
@@ -88,8 +112,10 @@ try {
     }
 
     $manifest = & $cli orchestrate --action Plan --capability advisory_evidence --mode normal --json | ConvertFrom-Json
-    Assert-True (@($manifest.plan).Count -eq 2) "Expected two advisory evidence integrations"
+    Assert-True (@($manifest.plan).Count -eq 4) "Expected two providers and two first-party Beta feature integrations"
     Assert-True (-not (@($manifest.plan) | Where-Object { [bool]$_.required })) "Advisory evidence integrations must remain optional"
+    $featurePlan = & $cli orchestrate --action Plan --capability beta_features --mode normal --json | ConvertFrom-Json
+    Assert-True (@($featurePlan.plan).Count -eq 2) "Expected two first-party Beta feature plans"
 
     $runner = Get-Content -LiteralPath (Join-Path $root "run-code-intel.ps1") -Raw
     Assert-True ($runner -notmatch "Invoke-EvidenceProvider|react-doctor|compete-adapt") "Default pipeline must not auto-run advisory providers"
@@ -102,7 +128,8 @@ try {
         ok = $true
         providers = 2
         operations = 5
-        schemas = 3
+        betaFeatures = 2
+        schemas = 4
         targetRepoWrites = 0
         defaultPipelineInvocations = 0
     } | ConvertTo-Json
