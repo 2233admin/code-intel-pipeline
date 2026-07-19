@@ -1,0 +1,123 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://code-intel.local/schemas/code-intel-evidence-route-result.v1.schema.json",
+  "title": "Code Intel Advisory Evidence Route Result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "provider",
+    "operation",
+    "snapshotIdentity",
+    "admissibility",
+    "status",
+    "verdict",
+    "advisoryOnly",
+    "failureCategory",
+    "evaluatedAt",
+    "maxAgeSeconds",
+    "artifacts",
+    "evidence"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-evidence-route-result.v1" },
+    "provider": { "enum": ["compete", "react-doctor"] },
+    "operation": { "const": "adapt" },
+    "snapshotIdentity": {
+      "oneOf": [
+        { "$ref": "#/definitions/sha256" },
+        { "type": "null" }
+      ]
+    },
+    "admissibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["admitted", "reason"],
+      "properties": {
+        "admitted": { "type": "boolean" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "status": {
+      "enum": ["observed", "unknown", "not_applicable", "rejected"]
+    },
+    "verdict": {
+      "enum": ["pass", "fail", "unknown", "not_applicable"]
+    },
+    "advisoryOnly": { "const": true },
+    "failureCategory": {
+      "type": ["string", "null"],
+      "enum": [
+        null,
+        "provider_unavailable",
+        "local_tool_error",
+        "stale_evidence",
+        "snapshot_mismatch"
+      ]
+    },
+    "evaluatedAt": { "type": "integer", "minimum": 0 },
+    "maxAgeSeconds": { "type": ["integer", "null"], "minimum": 0 },
+    "artifacts": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/artifactRef" }
+    },
+    "evidence": {}
+  },
+  "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "artifactSchema",
+        "type",
+        "path",
+        "sha256",
+        "consumedSnapshotIdentity"
+      ],
+      "properties": {
+        "schema": { "const": "code-intel-artifact-ref.v1" },
+        "artifactSchema": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/definitions/sha256" },
+        "consumedSnapshotIdentity": { "$ref": "#/definitions/sha256" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "rejected" }
+        }
+      },
+      "then": {
+        "properties": {
+          "admissibility": {
+            "properties": { "admitted": { "const": false } }
+          },
+          "verdict": { "const": "unknown" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "enum": ["observed", "unknown", "not_applicable"] }
+        }
+      },
+      "then": {
+        "properties": {
+          "admissibility": {
+            "properties": { "admitted": { "const": true } }
+          }
+        }
+      }
+    }
+  ]
+}

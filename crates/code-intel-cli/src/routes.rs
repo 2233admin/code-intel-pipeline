@@ -55,6 +55,10 @@ fn plan_route(options: &Options<'_>) -> Result<Value> {
         full: false,
         write: true,
         json: true,
+        request: None,
+        artifact_root: None,
+        evaluated_at: None,
+        max_age_seconds: None,
     })?;
 
     Ok(json!({
@@ -136,5 +140,17 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("--repo C:/repo"));
+    }
+
+    #[test]
+    fn lists_on_demand_evidence_routes() {
+        let routes = list_routes(None);
+        let routes = routes["routes"].as_array().unwrap();
+        assert!(routes
+            .iter()
+            .any(|route| { route["provider"] == "compete" && route["operation"] == "adapt" }));
+        assert!(routes
+            .iter()
+            .any(|route| { route["provider"] == "react-doctor" && route["operation"] == "scan" }));
     }
 }

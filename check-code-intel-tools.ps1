@@ -71,6 +71,34 @@ function Resolve-RepoConfig {
     return Get-JsonProperty $reposConfig $RepoInput
 }
 
+function Find-RepoConfigByPath {
+    param(
+        [object]$ConfigData,
+        [string]$ResolvedRepoPath
+    )
+
+    if ($null -eq $ConfigData -or [string]::IsNullOrWhiteSpace($ResolvedRepoPath)) { return $null }
+    $reposConfig = Get-JsonProperty $ConfigData "repos"
+    if ($null -eq $reposConfig) { return $null }
+
+    $normalizedRepoPath = [System.IO.Path]::TrimEndingDirectorySeparator($ResolvedRepoPath)
+    foreach ($entry in $reposConfig.PSObject.Properties) {
+        $configuredPath = Get-JsonProperty $entry.Value "path"
+        if ([string]::IsNullOrWhiteSpace([string]$configuredPath)) { continue }
+        try {
+            $resolvedConfiguredPath = Resolve-RepoPath ([string]$configuredPath) $null
+        }
+        catch {
+            continue
+        }
+        $normalizedConfiguredPath = [System.IO.Path]::TrimEndingDirectorySeparator($resolvedConfiguredPath)
+        if ([string]::Equals($normalizedConfiguredPath, $normalizedRepoPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $entry.Value
+        }
+    }
+    return $null
+}
+
 function Resolve-SentruxScope {
     param(
         [string]$RepoPath,
@@ -163,6 +191,9 @@ $repoPath = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
 }
 else {
     Resolve-RepoPath $Repo $configData
+}
+if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
+    $repoConfig = Find-RepoConfigByPath $configData $repoPath
 }
 $sentruxScope = Resolve-SentruxScope $repoPath $repoConfig
 

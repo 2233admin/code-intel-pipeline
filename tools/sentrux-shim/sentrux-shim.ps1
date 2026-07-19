@@ -173,12 +173,37 @@ function Show-ProHelp {
     Write-Output "  deactivate      Remove local license and return to free tier"
 }
 
+function Test-CodeIntelThinForwarderCandidate {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+
+    $candidateDir = Split-Path -Parent $Path
+    if ([string]::IsNullOrWhiteSpace($candidateDir)) { return $false }
+
+    $repoConfigPath = Join-Path $candidateDir "repo.json"
+    $shimForwarderPath = Join-Path $candidateDir "sentrux-shim.ps1"
+    # install-code-intel-pipeline.ps1 owns this marker pair and guarantees that
+    # the directory contains thin forwarders only. Do not depend on repo.json's
+    # descriptive fields: schema drift or partial metadata must not reopen the
+    # recursive PATH candidate. A real core can still be forced explicitly with
+    # SENTRUX_CORE_EXE.
+    return (Test-Path -LiteralPath $repoConfigPath -PathType Leaf) -and
+        (Test-Path -LiteralPath $shimForwarderPath -PathType Leaf)
+}
+
 function Resolve-Core {
+    param([string]$ShimPath = $PSCommandPath)
+
     if (-not [string]::IsNullOrWhiteSpace($env:SENTRUX_CORE_EXE) -and (Test-Path -LiteralPath $env:SENTRUX_CORE_EXE -PathType Leaf)) {
         return (Get-Item -LiteralPath $env:SENTRUX_CORE_EXE).FullName
     }
 
-    $shimDir = Split-Path -Parent $PSCommandPath
+    if ([string]::IsNullOrWhiteSpace($ShimPath)) {
+        throw "Cannot resolve the Sentrux core without the shim script path."
+    }
+
+    $shimDir = Split-Path -Parent $ShimPath
     $parent = Split-Path -Parent $shimDir
     $candidates = New-Object System.Collections.Generic.List[string]
     foreach ($path in @(
@@ -211,7 +236,8 @@ function Resolve-Core {
         $full = (Get-Item -LiteralPath $candidate).FullName
         if ([string]::Equals($full, $selfCmd, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
         if ([string]::Equals($full, $selfShell, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
-        if ([string]::Equals($full, $PSCommandPath, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        if ([string]::Equals($full, $ShimPath, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        if (Test-CodeIntelThinForwarderCandidate -Path $full) { continue }
         return $full
     }
 

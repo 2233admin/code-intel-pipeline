@@ -7,6 +7,7 @@ use std::process;
 use serde_json::Value;
 
 mod artifacts;
+mod features;
 mod graph;
 mod orchestration;
 mod providers;
@@ -20,12 +21,14 @@ struct Args {
     command: String,
     repo: Option<PathBuf>,
     report: Option<PathBuf>,
+    request: Option<PathBuf>,
     artifact_root: Option<PathBuf>,
     steps: Option<PathBuf>,
     failures: Option<PathBuf>,
     out: Option<PathBuf>,
     manifest: Option<PathBuf>,
     capability: Option<String>,
+    feature: Option<String>,
     provider: Option<String>,
     operation: Option<String>,
     action: String,
@@ -34,6 +37,8 @@ struct Args {
     write: bool,
     full: bool,
     json: bool,
+    evaluated_at: Option<i64>,
+    max_age_seconds: Option<i64>,
 }
 
 #[cfg(test)]
@@ -152,6 +157,9 @@ fn main() {
 
 fn run() -> Result<()> {
     let args = parse_args(env::args().skip(1).collect())?;
+    if is_extension_command(&args.command) {
+        return cmd_extension(&args);
+    }
     match args.command.as_str() {
         "resume" => cmd_resume(&args),
         "classify" => cmd_classify(&args),
@@ -160,7 +168,6 @@ fn run() -> Result<()> {
         "sentrux-debt-register" => cmd_sentrux_debt_register(&args),
         "graph" | "understand" => cmd_graph(&args),
         "orchestrate" | "orchestration" => cmd_orchestrate(&args),
-        "provider" | "providers" => cmd_provider(&args),
         "route" | "routes" => cmd_route(&args),
         "sentrux" => cmd_sentrux(&args),
         "help" | "--help" | "-h" => {
@@ -169,6 +176,10 @@ fn run() -> Result<()> {
         }
         other => Err(format!("unknown command: {other}").into()),
     }
+}
+
+fn is_extension_command(command: &str) -> bool {
+    ["provider", "providers", "feature", "features"].contains(&command)
 }
 
 fn parse_args(raw: Vec<String>) -> Result<Args> {
@@ -212,6 +223,9 @@ fn parse_next_arg(raw: &[String], index: usize, args: &mut Args) -> Result<usize
     if set_switch_arg(args, token) {
         return Ok(1);
     }
+    if set_provider_positional(args, token) {
+        return Ok(1);
+    }
     if set_sentrux_positional(args, token) {
         return Ok(1);
     }
@@ -225,6 +239,10 @@ fn set_path_arg(raw: &[String], index: usize, args: &mut Args, flag: &str) -> Re
     }
     if flag == "--report" {
         args.report = Some(path_value(raw, index, flag)?);
+        return Ok(true);
+    }
+    if flag == "--request" {
+        args.request = Some(path_value(raw, index, flag)?);
         return Ok(true);
     }
     if flag == "--steps" {
@@ -275,6 +293,18 @@ fn set_string_arg(raw: &[String], index: usize, args: &mut Args, flag: &str) -> 
         args.language = required_value(raw, index + 1, flag)?;
         return Ok(true);
     }
+    if flag == "--feature" {
+        args.feature = Some(required_value(raw, index + 1, flag)?);
+        return Ok(true);
+    }
+    if flag == "--evaluated-at" {
+        args.evaluated_at = Some(integer_value(raw, index, flag)?);
+        return Ok(true);
+    }
+    if flag == "--max-age-seconds" {
+        args.max_age_seconds = Some(integer_value(raw, index, flag)?);
+        return Ok(true);
+    }
     Ok(false)
 }
 
@@ -304,6 +334,17 @@ fn set_sentrux_positional(args: &mut Args, value: &str) -> bool {
     false
 }
 
+fn set_provider_positional(args: &mut Args, value: &str) -> bool {
+    if args.command != "provider"
+        || args.action != "Validate"
+        || !["compete-adapt", "react-doctor-adapt"].contains(&value)
+    {
+        return false;
+    }
+    args.action = value.to_string();
+    true
+}
+
 fn path_value(raw: &[String], index: usize, flag: &str) -> Result<PathBuf> {
     Ok(PathBuf::from(required_value(raw, index + 1, flag)?))
 }
@@ -311,6 +352,12 @@ fn required_value(raw: &[String], index: usize, flag: &str) -> Result<String> {
     raw.get(index)
         .cloned()
         .ok_or_else(|| format!("{flag} requires a value").into())
+}
+
+fn integer_value(raw: &[String], index: usize, flag: &str) -> Result<i64> {
+    required_value(raw, index + 1, flag)?
+        .parse::<i64>()
+        .map_err(|_| format!("{flag} requires an integer").into())
 }
 
 fn cmd_resume(args: &Args) -> Result<()> {
@@ -1072,6 +1119,27 @@ fn cmd_provider(args: &Args) -> Result<()> {
         full: args.full,
         write: args.write || args.operation.as_deref().unwrap_or("") == "graph",
         json: args.json,
+        request: args.request.as_deref(),
+        artifact_root: args.artifact_root.as_deref(),
+        evaluated_at: args.evaluated_at,
+        max_age_seconds: args.max_age_seconds,
+    })
+}
+
+fn cmd_extension(args: &Args) -> Result<()> {
+    match args.command.as_str() {
+        "feature" | "features" => cmd_feature(args),
+        _ => cmd_provider(args),
+    }
+}
+
+fn cmd_feature(args: &Args) -> Result<()> {
+    features::run(&features::Options {
+        action: &args.action,
+        feature: args.feature.as_deref(),
+        request: args.request.as_deref(),
+        artifact_root: args.artifact_root.as_deref(),
+        json: args.json,
     })
 }
 
@@ -1102,8 +1170,12 @@ fn print_help() {
     println!("  sentrux-debt-register --failures <sentrux-failures.json> [--repo <path>] [--out <sentrux-debt-register.json>]");
     println!("  doctor [--artifact-root <path>] [--json]");
     println!("  graph --repo <path> [--language zh] [--full] [--write] [--json]");
-    println!("  provider [--action List|Plan|Validate|Invoke] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--language zh] [--write] [--json]");
-    println!("  route [--action List|Plan|Validate] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--json]");
+    println!("  provider [--action List|Plan|Validate|Invoke] [--provider repowise|understand|compete|react-doctor] [--operation <name>] [--repo <path>] [--language zh] [--write] [--json]");
+    println!("  provider compete-adapt --request <native.json|-> --artifact-root <dir> --evaluated-at <unix> --max-age-seconds <n>");
+    println!("  provider react-doctor-adapt --request <native.json|-> --artifact-root <dir> --evaluated-at <unix> --max-age-seconds <n>");
+    println!("  feature --action List --json");
+    println!("  feature --action Build --feature competitive-intelligence|react-diagnostics --request <route-result.json> --artifact-root <dir> --json");
+    println!("  route [--action List|Plan|Validate] [--provider repowise|understand|compete|react-doctor] [--operation <name>] [--repo <path>] [--json]");
     println!("  sentrux <scan|health|check|gate|check_rules|gate_save> <path>");
     println!("  orchestrate [--action Validate|List|Plan] [--repo <path>] [--mode lite|normal|full] [--capability <name>] [--manifest <path>] [--json]");
 }

@@ -53,6 +53,22 @@ Use `target\debug\code-intel.exe provider` as the source of truth for provider o
 
 Repowise and Understand-compatible graph operations share the `code-intel-provider-api.v1` schema: provider, operation, protocol, route, command template, artifact contract, requirement, status, source spec, and notes. Repowise routes live under `/api/providers/repowise/*`. Understand-compatible graph routes live under `/api/providers/understand/*`. Compatibility aliases such as `/scan`, `/lite`, `/doctor`, and `/understand` are allowed only as fallback surfaces. Future route-needing projects must add provider operations to this global provider layer first, then wire their implementation behind the route.
 
+Compete and React Doctor are explicit on-demand advisory providers. They are
+registered with `required=false` and are not called by `run-code-intel.ps1`:
+
+```powershell
+.\Invoke-EvidenceProvider.ps1 -Provider compete -Operation prepare -RepoPath <repo-path> -ArtifactDir <artifact-dir>
+.\Invoke-EvidenceProvider.ps1 -Provider react-doctor -Operation scan -RepoPath <repo-path> -ArtifactDir <artifact-dir>
+.\target\debug\code-intel.exe provider compete-adapt --request <native.json|-> --artifact-root <artifact-dir> --evaluated-at <unix> --max-age-seconds <n>
+.\target\debug\code-intel.exe provider react-doctor-adapt --request <native.json|-> --artifact-root <artifact-dir> --evaluated-at <unix> --max-age-seconds <n>
+```
+
+Both follow Snapshot Identity → native result → A04 admission → route result.
+The route is always `advisoryOnly=true`; it cannot change Hospital, discharge,
+Sentrux, or structural gates. Stale, snapshot-mismatched, digest-invalid, or
+path-escaping evidence is rejected. Partial React Doctor coverage is admitted
+as `unknown`, and non-React repositories are `not_applicable`.
+
 ## Add A New Integration
 
 1. Add an entry to `orchestration/integrations.json`.
@@ -83,6 +99,7 @@ cargo build -p code-intel
 | `architecture_graph` | Graph snapshot and freshness. |
 | `structure_governance` | Structural scan, rules, gate, DSM, evolution, and what-if signals. |
 | `localization` | Hotspot and reference localization. |
+| `advisory_evidence` | Explicit on-demand evidence that never participates in default gates. |
 | `diagnosis` | Hospital report, protocol, and surgery plan. |
 | `artifact_index` | Durable index of runs for future sessions. |
 

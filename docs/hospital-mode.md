@@ -30,6 +30,10 @@ triage -> diagnose -> govern -> surgery_plan -> post_op -> discharge_ready
 
 `hospital-report.json.state_machine` records the current state, guard values, and transition pass/fail results. This keeps the workflow computable instead of relying on prose.
 
+Hospital guards are fail-closed. `passed` is the only passing value for Sentrux gate/check. `missing`, `skipped`, `not_run`, `unknown`, an empty value, or any failure value keeps the project admitted. A surgery target is resolved only when both the selected target and current hotspot are present and they differ; missing either value is unknown, not resolved.
+
+Structural evidence is complete only when DSM, file-details, hotspots, evolution, and what-if artifacts are present, readable, and valid JSON. Summary metadata alone is not proof that a modality is available.
+
 ## Disposition
 
 Every hospital report carries `triage.disposition`.
@@ -37,6 +41,8 @@ Every hospital report carries `triage.disposition`.
 - `admit`: keep the project in the hospital. Use this for missing graph, missing rules, Sentrux failures, local tool failures, or scheduled modernization debt.
 - `observe`: the project can continue with explicit follow-up checks.
 - `discharge_ready`: the project can leave the hospital after post-op verification. Do not mark discharge-ready merely because a scan completed.
+
+Unknown measurement evidence does not receive a health bonus. Import resolution, source coverage, and pollution isolation report an explicit `unknown` status and score `0` when the run cannot prove the dimension.
 
 ## Artifacts
 

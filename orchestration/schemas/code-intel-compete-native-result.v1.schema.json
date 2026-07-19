@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://code-intel.local/schemas/code-intel-compete-native-result.v1.schema.json",
+  "title": "Compete Native Result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "snapshotIdentity",
+    "status",
+    "observedAt",
+    "tool",
+    "artifacts",
+    "error"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-compete-native-result.v1" },
+    "snapshotIdentity": { "$ref": "#/definitions/sha256" },
+    "status": {
+      "enum": ["completed", "not_run", "provider_unavailable", "local_tool_error"]
+    },
+    "observedAt": { "type": "integer", "minimum": 0 },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "license"],
+      "properties": {
+        "revision": {
+          "const": "ec13028fc8da620c73a114ffe403a772b29a78cb"
+        },
+        "license": { "const": "MIT" }
+      }
+    },
+    "artifacts": {
+      "oneOf": [
+        { "$ref": "#/definitions/artifacts" },
+        { "type": "null" }
+      ]
+    },
+    "error": { "type": ["string", "null"] }
+  },
+  "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "artifactSchema",
+        "type",
+        "path",
+        "sha256",
+        "consumedSnapshotIdentity"
+      ],
+      "properties": {
+        "schema": { "const": "code-intel-artifact-ref.v1" },
+        "artifactSchema": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/definitions/sha256" },
+        "consumedSnapshotIdentity": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "datasets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "product": { "$ref": "#/definitions/artifactRef" },
+        "competitors": { "$ref": "#/definitions/artifactRef" },
+        "companies": { "$ref": "#/definitions/artifactRef" },
+        "pricing": { "$ref": "#/definitions/artifactRef" },
+        "techstack": { "$ref": "#/definitions/artifactRef" },
+        "social": { "$ref": "#/definitions/artifactRef" },
+        "marketing": { "$ref": "#/definitions/artifactRef" },
+        "seo": { "$ref": "#/definitions/artifactRef" },
+        "features": { "$ref": "#/definitions/artifactRef" }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["datasets", "provenance"],
+      "properties": {
+        "datasets": { "$ref": "#/definitions/datasets" },
+        "reportJson": { "$ref": "#/definitions/artifactRef" },
+        "reportHtml": { "$ref": "#/definitions/artifactRef" },
+        "provenance": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/artifactRef" }
+        }
+      }
+    }
+  }
+}

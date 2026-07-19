@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "policy": {
     "name": "code-intel-integration-orchestration",
+    "capabilityContract": "orchestration/capability-contract.v1.json",
     "normalOperation": "self-contained",
     "rule": "Normal code-intel runs must use integrations registered here. Separately installed project-intelligence CLIs are allowed only as compatibility shims or optional accelerators.",
     "extensionRule": "Add new projects, scanners, memory systems, graph providers, or governance strategies here before wiring them into pipeline scripts."
@@ -56,6 +57,12 @@
       "description": "Hospital diagnosis, next protocol, and surgery-plan routing."
     },
     {
+      "id": "advisory_evidence",
+      "order": 65,
+      "required": false,
+      "description": "Explicit on-demand advisory evidence providers admitted through snapshot-bound A04 routing."
+    },
+    {
       "id": "behavior_specification",
       "order": 75,
       "required": false,
@@ -101,6 +108,8 @@
         "integration_plan",
         "global_route_registry",
         "provider_api",
+        "advisory_evidence_admission",
+        "beta_feature_reports",
         "understand_compatible_graph",
         "artifact_resume",
         "failure_classification",
@@ -120,12 +129,20 @@
         "providerList": "target/debug/code-intel.exe provider --action List --json",
         "providerPlan": "target/debug/code-intel.exe provider --action Plan --provider <provider> --operation <operation> --repo <repo-path> --json",
         "providerInvoke": "target/debug/code-intel.exe provider --action Invoke --provider <provider> --operation <operation> --repo <repo-path> --json",
+        "competeAdapt": "target/debug/code-intel.exe provider compete-adapt --request <native.json|-> --artifact-root <artifact-dir> --evaluated-at <unix> --max-age-seconds <n>",
+        "reactDoctorAdapt": "target/debug/code-intel.exe provider react-doctor-adapt --request <native.json|-> --artifact-root <artifact-dir> --evaluated-at <unix> --max-age-seconds <n>",
+        "featureList": "target/debug/code-intel.exe feature --action List --json",
+        "featureBuild": "target/debug/code-intel.exe feature --action Build --feature competitive-intelligence|react-diagnostics --request <route-result.json> --artifact-root <artifact-dir> --json",
         "doctor": "target/debug/code-intel.exe doctor --json",
         "resume": "target/debug/code-intel.exe resume --repo <repo-path> --json",
         "classify": "target/debug/code-intel.exe classify --report <report-path> --json"
       },
       "artifactContract": [
         "orchestration/integrations.json",
+        "orchestration/schemas/code-intel-compete-native-result.v1.schema.json",
+        "orchestration/schemas/code-intel-react-doctor-native-result.v1.schema.json",
+        "orchestration/schemas/code-intel-evidence-route-result.v1.schema.json",
+        "orchestration/schemas/code-intel-beta-feature-report.v1.schema.json",
         "report.json",
         "hospital-report.json",
         "understanding.md"
@@ -292,6 +309,121 @@
         "codenexus-context.json"
       ],
       "extensionPoint": "Full CodeNexus backends must adapt to codenexus-context.json before replacing the compatibility adapter."
+    },
+    {
+      "id": "evidence.compete",
+      "stage": "advisory_evidence",
+      "owner": "code-intel-pipeline",
+      "kind": "provider-contract",
+      "required": false,
+      "entrypoint": "Invoke-EvidenceProvider.ps1",
+      "capabilities": [
+        "prepare",
+        "status",
+        "adapt",
+        "advisory_evidence"
+      ],
+      "commands": {
+        "prepare": "Invoke-EvidenceProvider.ps1 -Provider compete -Operation prepare -RepoPath <repo-path> -ArtifactDir <artifact-dir>",
+        "status": "Invoke-EvidenceProvider.ps1 -Provider compete -Operation status -RepoPath <repo-path> -ArtifactDir <artifact-dir>",
+        "adapt": "target/debug/code-intel.exe provider compete-adapt --request <native.json|-> --artifact-root <artifact-dir> --evaluated-at <unix> --max-age-seconds <n>"
+      },
+      "artifactContract": [
+        "compete-request.json",
+        "compete-native-result.json",
+        "code-intel-compete-native-result.v1",
+        "code-intel-evidence-route-result.v1",
+        "InsightKit schema-valid datasets",
+        "report.json",
+        "report.html",
+        "provenance Artifact Refs"
+      ],
+      "supplyChain": {
+        "license": "MIT",
+        "revision": "ec13028fc8da620c73a114ffe403a772b29a78cb"
+      },
+      "extensionPoint": "External Claude Code web research stops at the native-result contract; Code Intel validates and routes the artifacts without importing Compete internals."
+    },
+    {
+      "id": "evidence.react-doctor",
+      "stage": "advisory_evidence",
+      "owner": "code-intel-pipeline",
+      "kind": "provider-contract",
+      "required": false,
+      "entrypoint": "Invoke-EvidenceProvider.ps1",
+      "capabilities": [
+        "scan",
+        "adapt",
+        "coverage",
+        "advisory_evidence"
+      ],
+      "commands": {
+        "scan": "Invoke-EvidenceProvider.ps1 -Provider react-doctor -Operation scan -RepoPath <repo-path> -ArtifactDir <artifact-dir>",
+        "adapt": "target/debug/code-intel.exe provider react-doctor-adapt --request <native.json|-> --artifact-root <artifact-dir> --evaluated-at <unix> --max-age-seconds <n>"
+      },
+      "artifactContract": [
+        "react-doctor-report.json schemaVersion 3",
+        "code-intel-react-doctor-native-result.v1",
+        "code-intel-evidence-route-result.v1",
+        "deterministic diagnostic IDs",
+        "per-project coverage"
+      ],
+      "supplyChain": {
+        "version": "0.7.8",
+        "npmIntegrity": "sha512-G3spmtZJE/gWWPRJ3rpgUWTPRDJpEmdRja7iNZ7RAXlfpEO+NWVzPTca/cPI9hLwPo2Aq5/BZggo5JDBrwGrlA=="
+      },
+      "extensionPoint": "The pinned CLI writes JSON outside the target repository; only JSON v3 enters A04 admission and no skill/config/CI installer is invoked."
+    },
+    {
+      "id": "feature.competitive-intelligence",
+      "stage": "advisory_evidence",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-beta-feature",
+      "required": false,
+      "entrypoint": "Invoke-CodeIntelBetaFeature.ps1",
+      "capabilities": [
+        "beta_features",
+        "competitive_intelligence",
+        "problem_summary",
+        "improvement_recommendations"
+      ],
+      "commands": {
+        "prepare": "Invoke-CodeIntelBetaFeature.ps1 -Feature competitive-intelligence -Operation prepare -RepoPath <repo-path> -ArtifactDir <artifact-dir>",
+        "status": "Invoke-CodeIntelBetaFeature.ps1 -Feature competitive-intelligence -Operation status -RepoPath <repo-path> -ArtifactDir <artifact-dir>",
+        "build": "Invoke-CodeIntelBetaFeature.ps1 -Feature competitive-intelligence -Operation build -ArtifactDir <artifact-dir>"
+      },
+      "artifactContract": [
+        "competitive-intelligence.json",
+        "competitive-intelligence.md",
+        "code-intel-beta-feature-report.v1"
+      ],
+      "extensionPoint": "Compete remains the external research engine; this first-party Beta feature owns the Code Intel problem-and-recommendation report."
+    },
+    {
+      "id": "feature.react-diagnostics",
+      "stage": "advisory_evidence",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-beta-feature",
+      "required": false,
+      "entrypoint": "Invoke-CodeIntelBetaFeature.ps1",
+      "capabilities": [
+        "beta_features",
+        "react_diagnostics",
+        "problem_summary",
+        "improvement_recommendations"
+      ],
+      "commands": {
+        "run": "Invoke-CodeIntelBetaFeature.ps1 -Feature react-diagnostics -Operation run -RepoPath <repo-path> -ArtifactDir <artifact-dir>",
+        "build": "Invoke-CodeIntelBetaFeature.ps1 -Feature react-diagnostics -Operation build -ArtifactDir <artifact-dir>"
+      },
+      "artifactContract": [
+        "react-diagnostics.json",
+        "react-diagnostics.md",
+        "code-intel-beta-feature-report.v1",
+        "deterministic diagnostic IDs",
+        "per-project coverage"
+      ],
+      "extensionPoint": "The pinned scanner remains behind A04; this first-party Beta feature owns the Code Intel problem-and-recommendation report."
     },
     {
       "id": "diagnosis.hospital",

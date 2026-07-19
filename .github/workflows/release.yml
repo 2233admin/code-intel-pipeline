@@ -75,6 +75,10 @@ jobs:
         shell: pwsh
         run: .\test-skill-development-benchmark.ps1 -RepoPath .
 
+      - name: On-demand evidence provider contract tests
+        shell: pwsh
+        run: .\test-evidence-providers.ps1
+
       - name: Pipeline smoke
         shell: pwsh
         run: .\test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -SkipGitHubResearch -Mode normal
@@ -106,6 +110,9 @@ jobs:
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $asset --clobber
+          }
+          elseif ($tag -match "-(alpha|beta|rc)(\.|$)") {
+            gh release create $tag $asset --title $tag --notes "Code Intel Pipeline $tag" --prerelease
           }
           else {
             gh release create $tag $asset --title $tag --notes "Code Intel Pipeline $tag"
