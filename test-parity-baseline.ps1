@@ -89,13 +89,18 @@ function ConvertTo-NormalizedCanonicalValue {
     return $Value
 }
 
+function ConvertTo-PortableJson {
+    param($Value, [int]$Depth = 100)
+    return ((($Value | ConvertTo-Json -Depth $Depth) -replace '\r?\n', "`n") + "`n")
+}
+
 function Invoke-FixtureNormalization {
     param([string]$InputPath, [string]$TempRoot, [string]$Timestamp)
 
     $source = Get-Content -LiteralPath $InputPath -Raw | ConvertFrom-Json -Depth 100
     $expanded = Expand-FixtureValue $source $TempRoot $Timestamp
     $normalized = ConvertTo-NormalizedCanonicalValue $expanded "" $TempRoot
-    return (($normalized | ConvertTo-Json -Depth 100) + "`n")
+    return (ConvertTo-PortableJson $normalized)
 }
 
 function Assert-GoldenMatch {
@@ -154,7 +159,7 @@ try {
             }
             [System.IO.File]::WriteAllText(
                 $reviewPath,
-                (($review | ConvertTo-Json) + "`n"),
+                (ConvertTo-PortableJson $review),
                 [System.Text.UTF8Encoding]::new($false)
             )
         }
@@ -175,7 +180,7 @@ try {
         $semanticRoot = Join-Path $tempBase "semantic-guard"
         $cleanExpanded = Expand-FixtureValue $cleanSource $semanticRoot "2028-01-01T00:00:00Z"
         $cleanCanonical = ConvertTo-NormalizedCanonicalValue $cleanExpanded "" $semanticRoot
-        $cleanGolden = (($cleanCanonical | ConvertTo-Json -Depth 100) + "`n")
+        $cleanGolden = ConvertTo-PortableJson $cleanCanonical
 
         Assert-Contract ([int]$cleanCanonical.artifacts.report.summary.failed -eq 0) "Verdict disappeared during normalization."
         Assert-Contract ([string]$cleanCanonical.provenance.producer -eq "run-code-intel.ps1") "Producer provenance disappeared during normalization."
@@ -189,19 +194,19 @@ try {
         $verdictMutation.artifacts.report.summary.failed = 1
         $verdictExpanded = Expand-FixtureValue $verdictMutation $semanticRoot "2029-02-02T00:00:00Z"
         $verdictNormalized = ConvertTo-NormalizedCanonicalValue $verdictExpanded "" $semanticRoot
-        Assert-MismatchRejected $cleanGolden (($verdictNormalized | ConvertTo-Json -Depth 100) + "`n") "verdict"
+        Assert-MismatchRejected $cleanGolden (ConvertTo-PortableJson $verdictNormalized) "verdict"
 
         $provenanceMutation = $cleanSource | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100
         $provenanceMutation.provenance.producer = "invented-tool"
         $provenanceExpanded = Expand-FixtureValue $provenanceMutation $semanticRoot "2029-03-03T00:00:00Z"
         $provenanceNormalized = ConvertTo-NormalizedCanonicalValue $provenanceExpanded "" $semanticRoot
-        Assert-MismatchRejected $cleanGolden (($provenanceNormalized | ConvertTo-Json -Depth 100) + "`n") "provenance"
+        Assert-MismatchRejected $cleanGolden (ConvertTo-PortableJson $provenanceNormalized) "provenance"
 
         $missingMutation = $cleanSource | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100
         $missingMutation.missingEvidence = @("understand.graph")
         $missingExpanded = Expand-FixtureValue $missingMutation $semanticRoot "2029-04-04T00:00:00Z"
         $missingNormalized = ConvertTo-NormalizedCanonicalValue $missingExpanded "" $semanticRoot
-        Assert-MismatchRejected $cleanGolden (($missingNormalized | ConvertTo-Json -Depth 100) + "`n") "missing-evidence"
+        Assert-MismatchRejected $cleanGolden (ConvertTo-PortableJson $missingNormalized) "missing-evidence"
     }
 }
 finally {
