@@ -80,6 +80,8 @@ fn dsm_snapshot_preserves_contract_and_excludes_non_governed_source() {
         "function Invoke-Ignored { if ($true) { 1 } }\n",
     );
     fixture.write("target/ignored.rs", "fn ignored() {}\n");
+    fixture.write(".gitignore", "work/\n");
+    fixture.write("work/generated.rs", "fn generated() {}\n");
     fixture.write("README.md", "not source\n");
 
     let snapshot = sentrux_analysis::analyze(&fixture.root).expect("native DSM analysis");
@@ -88,7 +90,12 @@ fn dsm_snapshot_preserves_contract_and_excludes_non_governed_source() {
     assert_eq!(snapshot["default_color_mode"], "Risk");
     assert_eq!(snapshot["color_modes"].as_array().unwrap().len(), 9);
     assert_eq!(snapshot["scope"]["included_files"], 2);
-    assert_eq!(snapshot["scope"]["excluded_files"], 2);
+    assert_eq!(snapshot["scope"]["excluded_files"], 3);
+    assert!(snapshot["scope"]["excluded_by_reason"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["reason"] == "repository_ignored" && entry["files"] == 1));
     assert_eq!(snapshot["file_details"].as_array().unwrap().len(), 2);
     assert!(snapshot.get("modules").is_some());
     assert!(snapshot.get("edges").is_some());

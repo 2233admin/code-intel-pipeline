@@ -1,0 +1,187 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.llm-wiki-record",
+  "projectId": "code-intel-pipeline",
+  "authorityRequirements": {
+    "repositoryGovernedAttestation": true
+  },
+  "subject": {
+    "name": "LLM Wiki optional generated knowledge projection",
+    "kind": "design_reference",
+    "source": {
+      "uri": "unbound-provider:llm-wiki; local-policy=docs/project-management-support.md",
+      "revision": "model-and-provider-unbound; local-policy-sha256:d03a5535198f3e45f9572b7f9bb4a23e77ba636c751636d8c697166ea5a5c9c3; local-boundary-test-sha256:559f58c2ae5079593c2389b0cbeb00336a6ca9f94f257679ea1735aae85a58ba"
+    },
+    "license": {
+      "id": "UNKNOWN-PROVIDER-AND-MODEL-TERMS",
+      "obligations": [
+        "no model/provider call, data upload, generated fact promotion, wiki write, or UI dependency is authorized",
+        "bind provider, model, terms, data policy, and output provenance before any separately approved use"
+      ]
+    }
+  },
+  "adoption": {
+    "rung": "invoke",
+    "ownedBoundary": [
+      "non-authoritative view-only concept outside scanner runtime",
+      "generated wiki text is never Observed Evidence or Engineering Fact without independent admitted source evidence"
+    ],
+    "necessityEvidence": {
+      "evidenceIds": [
+        "local:r25:no-current-use",
+        "gap:llm-wiki:scope-authority"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    },
+    "compatibilityEvidence": {
+      "evidenceIds": [
+        "local:r25:no-runtime-provider",
+        "local:r25:artifact-authority-isolation"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    },
+    "conformanceEvidence": {
+      "evidenceIds": [
+        "local:r25:boundary-test-sha256:559f58c2ae5079593c2389b0cbeb00336a6ca9f94f257679ea1735aae85a58ba",
+        "gap:llm-wiki:approved-view-conformance"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "economics": {
+    "benefit": {
+      "metric": "current required generated wiki views",
+      "value": 0,
+      "unit": "views"
+    },
+    "cost": {
+      "metric": "model/provider runtime dependencies introduced",
+      "value": 0,
+      "unit": "dependencies"
+    },
+    "benefitEvidence": {
+      "evidenceIds": [
+        "local:r25:no-current-use"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    },
+    "costEvidence": {
+      "evidenceIds": [
+        "local:r25:no-model-runtime",
+        "gap:llm-wiki:model-cost-measurement"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "assurance": {
+    "maintenanceEvidence": {
+      "evidenceIds": [
+        "local:r25:no-runtime-provider",
+        "gap:llm-wiki:model-update-policy"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    },
+    "securityEvidence": {
+      "evidenceIds": [
+        "local:r25:no-data-upload",
+        "gap:llm-wiki:data-classification-review",
+        "gap:llm-wiki:provider-security-review"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "update": {
+    "policy": "Remain provider/model agnostic and outside runtime; any proposal must bind model/version, data effects, provenance, cost, security, authority, and deletion",
+    "nextCheckAt": 1791676800,
+    "evidence": {
+      "evidenceIds": [
+        "gap:llm-wiki:scope-authority"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "ownedModifications": [
+    {
+      "path": "docs/project-management-support.md",
+      "description": "Pipeline-owned non-authoritative knowledge-view boundary",
+      "evidenceIds": [
+        "local:r25:policy-sha256:d03a5535198f3e45f9572b7f9bb4a23e77ba636c751636d8c697166ea5a5c9c3",
+        "local:r25:boundary-test-sha256:559f58c2ae5079593c2389b0cbeb00336a6ca9f94f257679ea1735aae85a58ba"
+      ]
+    }
+  ],
+  "rollback": {
+    "strategy": "delete generated projections and retain source docs/artifacts; no model state is required by Pipeline",
+    "evidence": {
+      "evidenceIds": [
+        "local:r25:no-current-use"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "exit": {
+    "strategy": "remain out of scope or replace with a provider-independent read-only projection",
+    "replacementCriteria": [
+      "generated text cannot promote itself to fact",
+      "provider/model/data/security/effects are explicit",
+      "source artifacts survive deletion of the entire view"
+    ],
+    "evidence": {
+      "evidenceIds": [
+        "local:r25:artifact-authority-isolation"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "retirement": {
+    "status": "candidate",
+    "triggers": [
+      "no approved measured use exists",
+      "provider/model provenance is unavailable",
+      "data or hallucination risk exceeds benefit"
+    ],
+    "evidence": {
+      "evidenceIds": [
+        "local:r25:no-current-use"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "lifecycle": {
+    "previousStatus": null,
+    "status": "out_of_scope",
+    "effectiveAt": 1783900800,
+    "replacementRecordId": null,
+    "evidenceIds": [
+      "local:r25:no-current-use",
+      "gap:llm-wiki:scope-authority",
+      "gap:llm-wiki:model-provider",
+      "gap:llm-wiki:terms"
+    ],
+    "authorityEvent": {
+      "schema": "code-intel-authority-event.v1",
+      "id": "authority.internalization.llm-wiki.out-of-scope",
+      "decision": "approved",
+      "approver": { "id": "code-intel-maintainers", "role": "repository_governance" },
+      "evidenceIds": ["local:r25:no-current-use", "gap:llm-wiki:scope-authority", "gap:llm-wiki:model-provider", "gap:llm-wiki:terms"],
+      "issuedAt": 1783900800,
+      "expiresAt": 1791676800,
+      "attestation": { "scheme": "repository-governed-sha256-v1", "digest": "5477b6ee31d771e93376487f5cfe2e678c5bc8b241eb5006679d8548a9c0c261" }
+    }
+  },
+  "provenance": {
+    "recordedAt": 1783900800,
+    "recordedBy": "dependency-expert"
+  }
+}

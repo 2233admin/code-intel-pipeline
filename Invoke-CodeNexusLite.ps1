@@ -12,6 +12,13 @@ param(
 [int]$MaxFiles = 8,
 [int]$MaxReferencesPerFile = 12,
 [int]$MaxCommitsPerFile = 0,
+[string]$AdapterRequestPath = "",
+[string]$ExpectedSnapshotIdentity = "",
+[string]$SourceSnapshotIdentity = "",
+[string]$SourceRevision = "",
+[long]$ObservedAt = 0,
+[ValidateSet("explicit_fallback", "legacy_rollback")]
+[string]$AdapterActivation = "explicit_fallback",
 [switch]$Quiet
 )
 
@@ -89,6 +96,17 @@ function Invoke-TextCommand {
     }
 }
 
+function Test-CodeNexusGeneratedPath {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+    $normalized = $Path.Replace('\', '/')
+    while ($normalized.StartsWith('./', [System.StringComparison]::Ordinal)) {
+        $normalized = $normalized.Substring(2)
+    }
+    return $normalized -match '(?i)(^|/)(work|artifact|artifacts|staging|\.code-intel|\.git|node_modules|target|dist|build|\.venv|__pycache__)(/|$)'
+}
+
 function Select-HotspotFiles {
     param(
         [string]$RepoPath,
@@ -102,9 +120,10 @@ function Select-HotspotFiles {
     $items = New-Object System.Collections.Generic.List[object]
 
     if ($null -ne $Hotspots -and $null -ne $Hotspots.files) {
-        foreach ($file in @($Hotspots.files | Select-Object -First $MaxFiles)) {
+        foreach ($file in @($Hotspots.files)) {
+            if ($items.Count -ge $MaxFiles) { break }
             $path = [string]$file.path
-            if ([string]::IsNullOrWhiteSpace($path) -or $seen.ContainsKey($path)) { continue }
+            if ([string]::IsNullOrWhiteSpace($path) -or (Test-CodeNexusGeneratedPath $path) -or $seen.ContainsKey($path)) { continue }
             $seen[$path] = $true
             $items.Add([pscustomobject][ordered]@{
                 path = $path
@@ -121,7 +140,7 @@ function Select-HotspotFiles {
             foreach ($path in @($module.files)) {
                 if ($items.Count -ge $MaxFiles) { break }
                 $pathText = [string]$path
-                if ([string]::IsNullOrWhiteSpace($pathText) -or $seen.ContainsKey($pathText)) { continue }
+                if ([string]::IsNullOrWhiteSpace($pathText) -or (Test-CodeNexusGeneratedPath $pathText) -or $seen.ContainsKey($pathText)) { continue }
                 $seen[$pathText] = $true
                 $items.Add([pscustomobject][ordered]@{
                     path = $pathText
@@ -139,8 +158,9 @@ function Select-HotspotFiles {
         $root = if ([string]::IsNullOrWhiteSpace($TargetPath)) { $RepoPath } else { $TargetPath }
         $fallbackFiles = Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue |
             Where-Object {
+                $relativePath = Get-RelativePathSafe $RepoPath $_.FullName
                 $_.Length -le 1048576 -and
-                $_.FullName -notmatch "[\\/](\.git|node_modules|target|dist|build|\.venv|__pycache__)[\\/]" -and
+                -not (Test-CodeNexusGeneratedPath $relativePath) -and
                 $_.Extension.ToLowerInvariant() -in @(".ps1", ".py", ".rs", ".go", ".ts", ".tsx", ".js", ".jsx", ".java", ".cs")
             } |
             Sort-Object Length -Descending |
@@ -192,7 +212,22 @@ function Get-References {
         return ,@()
     }
 
-    $lines = Invoke-TextCommand { rg -n -m $Limit --hidden -g "!**/.git/**" -g "!**/node_modules/**" -g "!**/target/**" -g "!**/dist/**" -g "!**/build/**" --fixed-strings $stem $RepoPath }
+    $lines = Invoke-TextCommand {
+        rg -n -m $Limit --hidden `
+            -g "!**/work/**" `
+            -g "!**/artifact/**" `
+            -g "!**/artifacts/**" `
+            -g "!**/staging/**" `
+            -g "!**/.code-intel/**" `
+            -g "!**/.git/**" `
+            -g "!**/node_modules/**" `
+            -g "!**/target/**" `
+            -g "!**/dist/**" `
+            -g "!**/build/**" `
+            -g "!**/.venv/**" `
+            -g "!**/__pycache__/**" `
+            --fixed-strings $stem $RepoPath
+    }
     return ,@($lines | Select-Object -First $Limit)
 }
 
@@ -289,6 +324,87 @@ $payload = [ordered]@{
 }
 
 $payload | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $OutputPath -Encoding UTF8
+
+if (-not [string]::IsNullOrWhiteSpace($AdapterRequestPath)) {
+    foreach ($identity in @($ExpectedSnapshotIdentity, $SourceSnapshotIdentity)) {
+        if ($identity -notmatch '^[0-9a-f]{64}$') {
+            throw "CodeNexus adapter snapshot identities must be lowercase SHA-256 values"
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($SourceRevision)) {
+        throw "CodeNexus adapter source revision is required"
+    }
+    if ($ObservedAt -le 0) {
+        $ObservedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    }
+    $evidencePayloadPath = Join-Path $RunDir "codenexus-evidence-payload.json"
+    $evidencePayload = [ordered]@{
+        schema = "code-intel-evidence-payload.v1"
+        data = [ordered]@{
+            codenexus = [ordered]@{
+                schema = "code-intel-codenexus-evidence.v1"
+                snapshotIdentity = $SourceSnapshotIdentity
+                provider = [ordered]@{
+                    mode = "lite"
+                    providerId = "codenexus.lite-compat"
+                    implementationId = "invoke-codenexus-lite.ps1"
+                    activation = $AdapterActivation
+                }
+                provenance = [ordered]@{
+                    sourceRevision = $SourceRevision
+                    observedAt = $ObservedAt
+                }
+                completeness = "complete"
+                availability = "available"
+                providerData = $payload
+            }
+        }
+    }
+    [System.IO.File]::WriteAllText(
+        $evidencePayloadPath,
+        ($evidencePayload | ConvertTo-Json -Depth 20 -Compress),
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    $payloadDigest = (Get-FileHash -LiteralPath $evidencePayloadPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $implementationDigest = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $artifactRelativePath = [System.IO.Path]::GetRelativePath($RunDir, $evidencePayloadPath).Replace('\', '/')
+    $adapterRequest = [ordered]@{
+        schema = "code-intel-codenexus-native-result.v1"
+        providerMode = "lite"
+        status = "current"
+        providerId = "codenexus.lite-compat"
+        implementation = [ordered]@{
+            id = "invoke-codenexus-lite.ps1"
+            version = "compat-v1"
+            digest = $implementationDigest
+        }
+        sourceRevision = $SourceRevision
+        expectedSnapshotIdentity = $ExpectedSnapshotIdentity
+        sourceSnapshotIdentity = $SourceSnapshotIdentity
+        collectedAt = $ObservedAt
+        observedAt = $ObservedAt
+        payload = [ordered]@{
+            schema = "code-intel-artifact-ref.v1"
+            artifactSchema = "code-intel-evidence-payload.v1"
+            type = "observed.evidence.payload"
+            path = $artifactRelativePath
+            sha256 = $payloadDigest
+            consumedSnapshotIdentity = $SourceSnapshotIdentity
+        }
+        activation = $AdapterActivation
+        effects = @(
+            "read_repository",
+            "read_git_history",
+            "read_sentrux_artifacts",
+            "write_compatibility_artifact"
+        )
+    }
+    [System.IO.File]::WriteAllText(
+        $AdapterRequestPath,
+        ($adapterRequest | ConvertTo-Json -Depth 20 -Compress),
+        [System.Text.UTF8Encoding]::new($false)
+    )
+}
 if (-not $Quiet) {
     $payload | ConvertTo-Json -Depth 8
 }

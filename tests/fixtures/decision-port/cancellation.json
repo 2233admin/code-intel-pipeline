@@ -1,0 +1,8 @@
+{
+  "schema": "code-intel-decision-cancellation.v1",
+  "correlationId": "decision-42",
+  "gapId": "risk-gap-7",
+  "actorProvenance": {"actorId": "release-owner", "authorityKind": "risk_acceptance", "source": "native-structured"},
+  "timestamp": 1700000020,
+  "reason": "Operator cancelled this request without granting authority."
+}

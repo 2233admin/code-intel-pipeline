@@ -1,0 +1,106 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.pon-project-conformance-record",
+  "projectId": "code-intel-pipeline",
+  "subject": {
+    "name": "pon conformance method mapped to Code Intel project acceptance",
+    "kind": "design_reference",
+    "source": {
+      "uri": "https://github.com/can1357/pon",
+      "revision": "ab9067dbd2899c64c4d67a4bc27b8ad49472b126; local-plan-sha256:dcacf4b5143309986bc5d9e5981a057e5563253d3bd92f8b77fccdc3812e543d; local-doc-sha256:88560c989a8831e318d03df434f2b8c63cccb30895a268432115a18ba26c5c6c; local-policy-sha256:3bdfbb7ed41c0bdcc584c2f54f47145851f37863f048de9ceb81deea3cfcddfc; local-gate-sha256:1a8dcac8e09a14ef4df8ae482da02b41e67a248278d425b1a513723d97aacf8a; local-test-sha256:304f39aae16488b30da68fb4145818d25e8a967249867f5900720d4dfc56212f; local-ledger-sha256:8a9e6849b50806659462a5446e355e160f3238b2fc2ffe897c3411ed6efcf80a"
+    },
+    "license": {
+      "id": "UNKNOWN-RESEARCH-ONLY",
+      "obligations": [
+        "do not copy, vendor, distribute, or execute pon implementation code or fixtures until a license is declared and verified",
+        "retain pinned attribution for independently reimplemented conformance-method semantics"
+      ]
+    }
+  },
+  "adoption": {
+    "rung": "reimplement",
+    "ownedBoundary": [
+      "Pipeline owns an executable fast/full project-conformance policy composed from existing local suites",
+      "the component language-adapter gate is evidence under project conformance rather than the project policy itself",
+      "full acceptance fails closed until divergence handling, deterministic stress, and performance ratchets are implemented"
+    ],
+    "necessityEvidence": {
+      "evidenceIds": ["local:pon-project-conformance:project-policy-gap", "local:pon-project-conformance:eight-mechanism-map"],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    },
+    "compatibilityEvidence": {
+      "evidenceIds": ["local:pon-project-conformance:composes-existing-suites", "local:pon-project-conformance:no-runtime-dependency", "local:pon-project-conformance:clean-normal-scan"],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    },
+    "conformanceEvidence": {
+      "evidenceIds": ["local:pon-project-conformance:fast-five-suites-pass", "local:pon-project-conformance:full-fails-closed", "local:pon-project-conformance:policy-weakening-rejected", "gap:pon-project-conformance:independent-verifier"],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    }
+  },
+  "economics": {
+    "benefit": { "metric": "mapped mechanisms exercised by fast project acceptance", "value": 6, "unit": "mechanisms" },
+    "cost": { "metric": "new runtime dependencies", "value": 0, "unit": "dependencies" },
+    "benefitEvidence": { "evidenceIds": ["local:pon-project-conformance:fast-five-suites-pass", "local:pon-project-conformance:eight-mechanism-map"], "checkedAt": 1784073600, "expiresAt": 1791849600 },
+    "costEvidence": { "evidenceIds": ["local:pon-project-conformance:no-runtime-dependency"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "assurance": {
+    "maintenanceEvidence": { "evidenceIds": ["local:pon-project-conformance:source-revision-pinned", "local:pon-project-conformance:policy-weakening-rejected", "gap:pon-project-conformance:update-review"], "checkedAt": 1784073600, "expiresAt": 1791849600 },
+    "securityEvidence": { "evidenceIds": ["local:pon-project-conformance:no-runtime-dependency", "gap:pon-project-conformance:upstream-license", "gap:pon-project-conformance:independent-security-review"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "update": {
+    "policy": "Before 2026-10-13, recheck the upstream revision/license and review whether the three full-profile gaps have executable evidence",
+    "nextCheckAt": 1791849600,
+    "evidence": { "evidenceIds": ["gap:pon-project-conformance:update-review", "gap:pon-project-conformance:active-divergence-ledger", "gap:pon-project-conformance:performance-ratchet"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "ownedModifications": [
+    { "path": "docs/plans/pon-project-conformance-mapping-idea.md", "description": "Problem statement, mapping decision, and constraints", "evidenceIds": ["local:pon-project-conformance:project-policy-gap"] },
+    { "path": "docs/code-intel-project-conformance.md", "description": "Human-readable project acceptance contract and authority boundary", "evidenceIds": ["local:pon-project-conformance:eight-mechanism-map"] },
+    { "path": "orchestration/code-intel-project-conformance-policy.v1.json", "description": "Machine-owned mechanism mapping, immutable profile requirements, and executable suite declarations", "evidenceIds": ["local:pon-project-conformance:policy-weakening-rejected"] },
+    { "path": "Test-CodeIntelProjectConformance.ps1", "description": "Executable fast/full project gate", "evidenceIds": ["local:pon-project-conformance:fast-five-suites-pass", "local:pon-project-conformance:full-fails-closed"] },
+    { "path": "test-code-intel-project-conformance.ps1", "description": "Positive and fail-closed mutation coverage for the project gate", "evidenceIds": ["local:pon-project-conformance:policy-weakening-rejected"] },
+    { "path": "orchestration/acceptance/known-divergences.v1.json", "description": "Empty design placeholder; not yet an active comparison exception surface", "evidenceIds": ["gap:pon-project-conformance:active-divergence-ledger"] }
+  ],
+  "rollback": {
+    "strategy": "remove the project policy, runner, runner test, mapping documents, inactive ledger, and this record; existing component tests and parity floor remain unchanged",
+    "evidence": { "evidenceIds": ["local:pon-project-conformance:composes-existing-suites", "local:pon-project-conformance:rollback-independent"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "exit": {
+    "strategy": "retire the pon attribution after the conformance method becomes an independently maintained Pipeline specification, or remove the wrapper if it adds no signal beyond its component suites",
+    "replacementCriteria": [
+      "project acceptance keeps a pinned oracle, corpus, monotonic floor, mutation checks, and fast/full separation",
+      "release acceptance cannot omit unfinished mapped mechanisms",
+      "every required suite remains executable and machine-readable"
+    ],
+    "evidence": { "evidenceIds": ["local:pon-project-conformance:rollback-independent", "gap:pon-project-conformance:independent-local-specification"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "retirement": {
+    "status": "candidate",
+    "triggers": [
+      "the wrapper duplicates a future native project-conformance coordinator",
+      "the fast/full profiles produce no additional regression signal",
+      "upstream provenance cannot be maintained"
+    ],
+    "evidence": { "evidenceIds": ["local:record:pon-project-conformance", "gap:pon-project-conformance:independent-local-specification"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "lifecycle": {
+    "previousStatus": null,
+    "status": "research",
+    "effectiveAt": 1784073600,
+    "replacementRecordId": null,
+    "evidenceIds": [
+      "local:record:pon-project-conformance",
+      "local:pon-project-conformance:source-revision-pinned",
+      "local:pon-project-conformance:fast-five-suites-pass",
+      "local:pon-project-conformance:full-fails-closed",
+      "gap:pon-project-conformance:upstream-license",
+      "gap:pon-project-conformance:active-divergence-ledger",
+      "gap:pon-project-conformance:performance-ratchet",
+      "gap:pon-project-conformance:independent-verifier"
+    ],
+    "authorityEvent": null
+  },
+  "provenance": { "recordedAt": 1784073600, "recordedBy": "codex-pon-project-conformance-review" }
+}

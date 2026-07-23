@@ -1,0 +1,6 @@
+{
+  "providerStatus": "provider_unavailable",
+  "completeness": "reduced",
+  "structuralVerdict": "unknown",
+  "forbiddenClaims": ["graph", "impact", "current anatomy"]
+}

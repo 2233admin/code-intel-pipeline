@@ -30,8 +30,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo", required=True)
     parser.add_argument("--coverage-pct", type=float, default=0.02)
     parser.add_argument("--concurrency", type=int, default=1)
-    parser.add_argument("--provider", default=os.environ.get("REPOWISE_PROVIDER", "anthropic"))
-    parser.add_argument("--model", default=os.environ.get("REPOWISE_MODEL", ""))
+    parser.add_argument("--provider", default="")
+    parser.add_argument("--model", default="")
     parser.add_argument("--reasoning", default=os.environ.get("REPOWISE_REASONING", "auto"))
     parser.add_argument("--egress-manifest", required=True)
     return parser.parse_args()
@@ -39,11 +39,6 @@ def parse_args() -> argparse.Namespace:
 
 # Providers whose __init__ does not accept an api_key kwarg.
 _KEYLESS_PROVIDERS = {"ollama", "codex_cli", "opencode", "mock"}
-
-_DEFAULT_MODELS = {
-    "anthropic": "MiniMax-M2.7",
-}
-
 
 def _env(name: str) -> str:
     return (os.environ.get(name) or "").strip()
@@ -53,8 +48,7 @@ def resolve_provider_settings(default_provider: str = "", default_model: str = "
     """Resolve provider name + kwargs from CODE_INTEL_* env vars.
 
     Env contract:
-        CODE_INTEL_PROVIDER  provider name from repowise registry (default: anthropic)
-        CODE_INTEL_MODEL     model name (anthropic default: MiniMax-M2.7)
+        CODE_INTEL_PROVIDER  provider name from repowise registry
         CODE_INTEL_API_KEY   generic credential (skipped for keyless providers e.g. ollama)
         CODE_INTEL_BASE_URL  generic endpoint override
 
@@ -62,15 +56,14 @@ def resolve_provider_settings(default_provider: str = "", default_model: str = "
     the process-scoped ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL that the calling
     PowerShell wrapper injects from user-scoped CODE_INTEL_ANTHROPIC_*.
 
-    default_provider/default_model come from --provider/--model CLI args
-    (REPOWISE_PROVIDER/REPOWISE_MODEL env), used only when the CODE_INTEL_*
-    vars are unset -- CODE_INTEL_* takes priority since it is what the
-    PowerShell wrapper actively manages for this pipeline.
+    default_provider/default_model come from the explicitly routed
+    --provider/--model CLI args and are pinned. Model selection never falls
+    back to the environment or a provider default.
     """
-    name = _env("CODE_INTEL_PROVIDER").lower() or (default_provider or "").lower() or "anthropic"
+    name = (default_provider or "").lower() or _env("CODE_INTEL_PROVIDER").lower() or "mock"
     if name == "ccw":
         name = "codex_cli"
-    model = _env("CODE_INTEL_MODEL") or default_model or _DEFAULT_MODELS.get(name, "")
+    model = default_model
     api_key = _env("CODE_INTEL_API_KEY")
     base_url = _env("CODE_INTEL_BASE_URL")
 

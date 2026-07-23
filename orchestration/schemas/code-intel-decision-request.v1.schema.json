@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-decision-request.v1.schema.json",
+  "title": "Code Intel Decision Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "correlationId",
+    "gapId",
+    "question",
+    "recommendation",
+    "evidenceRefs",
+    "options",
+    "authorityNeeded",
+    "issuedAt",
+    "expiresAt",
+    "affectedBranches"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-decision-request.v1" },
+    "correlationId": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._-]+$" },
+    "gapId": { "type": "string", "minLength": 1 },
+    "question": { "type": "string", "minLength": 1 },
+    "recommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["optionId", "rationale"],
+      "properties": {
+        "optionId": { "type": "string", "minLength": 1 },
+        "rationale": { "type": "string", "minLength": 1 }
+      }
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["refId", "sha256", "observedAt", "expiresAt"],
+        "properties": {
+          "refId": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "observedAt": { "type": "integer", "minimum": 0 },
+          "expiresAt": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "options": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "consequence"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 },
+          "consequence": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "authorityNeeded": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "actorIds"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "actorIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "issuedAt": { "type": "integer", "minimum": 0 },
+    "expiresAt": { "type": "integer", "minimum": 0 },
+    "affectedBranches": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-auto-pr-proposal.v1.schema.json",
+  "title": "Code Intel automatic pull request proposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "repository", "snapshotIdentity", "expectedHead", "baseBranch", "headBranch", "title", "body", "draft"],
+  "properties": {
+    "schema": { "const": "code-intel-auto-pr-proposal.v1" },
+    "repository": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+    "snapshotIdentity": { "$ref": "#/$defs/sha256" },
+    "expectedHead": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "baseBranch": { "$ref": "#/$defs/nonEmpty" },
+    "headBranch": { "$ref": "#/$defs/nonEmpty" },
+    "title": { "$ref": "#/$defs/nonEmpty" },
+    "body": { "$ref": "#/$defs/nonEmpty" },
+    "draft": { "const": true }
+  },
+  "$defs": {
+    "nonEmpty": { "type": "string", "minLength": 1 },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

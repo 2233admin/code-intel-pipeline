@@ -1,0 +1,988 @@
+{
+  "schema": "code-intel-final-commitment-reconciliation.v1",
+  "sourcePlan": "docs/plans/adr-0010-execution-plan.md",
+  "sourcePlanSha256": "8ba922970a66f55087ec9711f16e71e4ca1af492ec79da0554d0718b0e580d33",
+  "ticketCount": 69,
+  "allowedClaimStatuses": [
+    "implemented_verified",
+    "implemented_pending_verification",
+    "implemented_blocked",
+    "retirement_blocked",
+    "not_implemented"
+  ],
+  "statusPolicy": "A planned, drafted, packet-only, or in-progress item cannot be mapped to an implemented status without implementation evidence and an independent verdict.",
+  "items": [
+    {
+      "ticketId": "A00",
+      "title": "compatibility.parity-baseline",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test capability_exec"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/capability_exec.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "A01",
+      "title": "capability.runtime-exec",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test capability_exec"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/capability_exec.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "A02",
+      "title": "repository.snapshot-identity",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test snapshot_identity"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/snapshot_identity.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "A03",
+      "title": "artifact.ref-verify",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test artifact_ref"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/artifact_ref.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "A04",
+      "title": "evidence.admissibility-validate",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test evidence_admissibility"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/evidence_admissibility.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "A05",
+      "title": "authority.transition-gate",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test authority_transition"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/authority_transition.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "A09",
+      "title": "run.dag-coordinate",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test dag_run"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/dag_run.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "A06",
+      "title": "artifact.stage-write",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test staged_artifact"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/staged_artifact.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "A07",
+      "title": "run.commit",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test run_commit"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/run_commit.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "A08",
+      "title": "artifact.index-committed-only",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test artifact_index"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/artifact_index.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "B01",
+      "title": "provider.repowise-adapt",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test repowise_adapter"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/repowise_adapter.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "B02",
+      "title": "provider.graph-adapt",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test graph_adapter"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/graph_adapter.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "B03",
+      "title": "provider.sentrux-adapt",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test sentrux_adapter"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/sentrux_adapter.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "B04",
+      "title": "provider.codenexus-adapt",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test codenexus_adapter"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/codenexus_adapter.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "B05",
+      "title": "repository.survival-scan",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test survival_scan"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/survival_scan.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "B06",
+      "title": "advisory.workflow-recommend",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test method_select"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/method_select.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "B07",
+      "title": "integration.registry-reconcile",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test capability_exec"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/capability_exec.rs",
+        "orchestration/integrations.json"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "B08",
+      "title": "evidence.native-code",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test native_code_evidence"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/native_code_evidence.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "B09",
+      "title": "diagnosis.hospital",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test hospital_diagnosis"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/hospital_diagnosis.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "B10",
+      "title": "doctor.envelope-adapt",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test doctor_envelope"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/doctor_envelope.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "C00",
+      "title": "governance.ponytail-gate",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test ponytail_gate"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/ponytail_gate.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "C01",
+      "title": "method.catalog",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test method_catalog"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/method_catalog.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "C02",
+      "title": "method.select",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test method_select"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/method_select.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "C03",
+      "title": "internalization.record-engine",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "C04",
+      "title": "assistance.discover",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test assistance_discovery"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/assistance_discovery.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "C05",
+      "title": "decision.gap-detect",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test decision_gap"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/decision_gap.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "C06",
+      "title": "decision.request-response-port",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test decision_port"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/decision_port.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "C07",
+      "title": "decision.record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test decision_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/decision_record.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R01",
+      "title": "internalization.repowise-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-advisory-candidates.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R02",
+      "title": "internalization.graph-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-advisory-candidates.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R03",
+      "title": "internalization.sentrux-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-advisory-candidates.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R04",
+      "title": "internalization.codenexus-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-advisory-candidates.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R05",
+      "title": "internalization.repomix-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-advisory-candidates.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R06",
+      "title": "internalization.native-code-evidence-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-advisory-candidates.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R07",
+      "title": "internalization.cocoindex-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-advisory-candidates.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R08",
+      "title": "internalization.github-research-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-advisory-candidates.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R09",
+      "title": "internalization.rg-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R10",
+      "title": "internalization.git-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R11",
+      "title": "internalization.tree-sitter-v-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R12",
+      "title": "internalization.greenfield-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R13",
+      "title": "internalization.openspec-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R14",
+      "title": "internalization.spec-kit-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R15",
+      "title": "internalization.matt-flow-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R16",
+      "title": "internalization.gstack-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R17",
+      "title": "internalization.qiaomu-goal-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R18",
+      "title": "internalization.agent-loops-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R19",
+      "title": "internalization.metaharness-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R20",
+      "title": "internalization.yao-meta-skill-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R21",
+      "title": "internalization.ponytail-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R22",
+      "title": "internalization.mattpocock-skills-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R23",
+      "title": "internalization.linear-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R24",
+      "title": "internalization.obsidian-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R25",
+      "title": "internalization.llm-wiki-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "R26",
+      "title": "internalization.my-code-machine-record",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test internalization_record"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/internalization_record.rs",
+        "docs/internalization-r09-r26-records.md"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "D01",
+      "title": "project.orientation",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test project_orientation"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/project_orientation.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "D02",
+      "title": "project.orientation-benchmark",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test project_orientation_benchmark"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/project_orientation_benchmark.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "D03",
+      "title": "understanding.quadrant",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test understanding_quadrant"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/understanding_quadrant.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "D04",
+      "title": "delivery.light-speed-measure",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test delivery_light_speed"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/delivery_light_speed.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "E00",
+      "title": "compatibility.retirement-gate",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test compatibility_retirement_gate"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/compatibility_retirement_gate.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "E01",
+      "title": "compatibility.retirement-ticket-template",
+      "claimStatus": "implemented_verified",
+      "evidenceCommands": [
+        "cargo test -p code-intel --test compatibility_retirement_ticket_template"
+      ],
+      "artifacts": [
+        "crates/code-intel-cli/tests/compatibility_retirement_ticket_template.rs"
+      ],
+      "independentVerdict": "verified",
+      "blockers": []
+    },
+    {
+      "ticketId": "E02",
+      "title": "compatibility.retire-recommender-branch",
+      "claimStatus": "retirement_blocked",
+      "evidenceCommands": [
+        "pwsh -NoProfile -File tools/compatibility/Test-RecommenderRetirementPacket.ps1 -PacketRoot orchestration/retirements/e02-recommender"
+      ],
+      "artifacts": [
+        "orchestration/retirements/e02-recommender/status.json",
+        "docs/compatibility-retire-recommender-branch.md"
+      ],
+      "independentVerdict": "blocked",
+      "blockers": [
+        "E00 decision remains blocked",
+        "deletionExecuted=false",
+        "retired=false"
+      ]
+    },
+    {
+      "ticketId": "E03",
+      "title": "compatibility.retire-provider-preflight-branch",
+      "claimStatus": "retirement_blocked",
+      "evidenceCommands": [
+        "pwsh -NoProfile -File tools/compatibility/Test-ProviderPreflightRetirementPacket.ps1 -PacketRoot orchestration/retirements/e03-provider-preflight"
+      ],
+      "artifacts": [
+        "orchestration/retirements/e03-provider-preflight/status.json",
+        "docs/compatibility-retire-provider-preflight-branch.md"
+      ],
+      "independentVerdict": "blocked",
+      "blockers": [
+        "E00 decision remains blocked",
+        "deletionExecuted=false",
+        "retired=false"
+      ]
+    },
+    {
+      "ticketId": "E04",
+      "title": "compatibility.retire-codenexus-direct-branch",
+      "claimStatus": "retirement_blocked",
+      "evidenceCommands": [
+        "pwsh -NoProfile -File tools/compatibility/Test-CodeNexusDirectRetirementPacket.ps1 -PacketRoot orchestration/retirements/e04-codenexus-direct"
+      ],
+      "artifacts": [
+        "orchestration/retirements/e04-codenexus-direct/status.json",
+        "docs/compatibility-retire-codenexus-direct-branch.md"
+      ],
+      "independentVerdict": "blocked",
+      "blockers": [
+        "E00 decision remains blocked",
+        "deletionExecuted=false",
+        "retired=false"
+      ]
+    },
+    {
+      "ticketId": "E05",
+      "title": "compatibility.retire-publication-branch",
+      "claimStatus": "retirement_blocked",
+      "evidenceCommands": [
+        "pwsh -NoProfile -File tools/compatibility/Test-PublicationRetirementPacket.ps1 -PacketRoot orchestration/retirements/e05-publication"
+      ],
+      "artifacts": [
+        "orchestration/retirements/e05-publication/status.json",
+        "docs/compatibility-retire-publication-branch.md"
+      ],
+      "independentVerdict": "blocked",
+      "blockers": [
+        "E00 decision remains blocked",
+        "deletionExecuted=false",
+        "retired=false"
+      ]
+    },
+    {
+      "ticketId": "E07",
+      "title": "compatibility.retire-native-code-branch",
+      "claimStatus": "retirement_blocked",
+      "evidenceCommands": [
+        "pwsh -NoProfile -File tools/compatibility/Test-NativeCodeRetirementPacket.ps1 -PacketRoot orchestration/retirements/e07-native-code"
+      ],
+      "artifacts": [
+        "orchestration/retirements/e07-native-code/status.json",
+        "docs/compatibility-retire-native-code-branch.md"
+      ],
+      "independentVerdict": "blocked",
+      "blockers": [
+        "E00 decision remains blocked",
+        "deletionExecuted=false",
+        "retired=false"
+      ]
+    },
+    {
+      "ticketId": "E08",
+      "title": "compatibility.retire-hospital-branch",
+      "claimStatus": "retirement_blocked",
+      "evidenceCommands": [
+        "pwsh -NoProfile -File tools/compatibility/Test-HospitalRetirementPacket.ps1 -PacketRoot orchestration/retirements/e08-hospital"
+      ],
+      "artifacts": [
+        "orchestration/retirements/e08-hospital/status.json",
+        "docs/compatibility-retire-hospital-branch.md"
+      ],
+      "independentVerdict": "blocked",
+      "blockers": [
+        "E00 decision remains blocked",
+        "deletionExecuted=false",
+        "retired=false"
+      ]
+    },
+    {
+      "ticketId": "E09",
+      "title": "compatibility.retire-doctor-wrapper-branch",
+      "claimStatus": "retirement_blocked",
+      "evidenceCommands": [
+        "pwsh -NoProfile -File tools/compatibility/Test-DoctorWrapperRetirementPacket.ps1 -PacketRoot orchestration/retirements/e09-doctor-wrapper"
+      ],
+      "artifacts": [
+        "orchestration/retirements/e09-doctor-wrapper/status.json",
+        "docs/compatibility-retire-doctor-wrapper-branch.md"
+      ],
+      "independentVerdict": "blocked",
+      "blockers": [
+        "E00 decision remains blocked",
+        "deletionExecuted=false",
+        "retired=false"
+      ]
+    },
+    {
+      "ticketId": "E10",
+      "title": "compatibility.retire-index-branch",
+      "claimStatus": "retirement_blocked",
+      "evidenceCommands": [
+        "pwsh -NoProfile -File tools/compatibility/Test-IndexRetirementPacket.ps1 -PacketRoot orchestration/retirements/e10-index"
+      ],
+      "artifacts": [
+        "orchestration/retirements/e10-index/status.json",
+        "docs/compatibility-retire-index-branch.md"
+      ],
+      "independentVerdict": "blocked",
+      "blockers": [
+        "E00 decision remains blocked",
+        "deletionExecuted=false",
+        "retired=false"
+      ]
+    },
+    {
+      "ticketId": "E06",
+      "title": "compatibility.facade-finalize",
+      "claimStatus": "implemented_blocked",
+      "evidenceCommands": [
+        "pwsh -NoProfile -File test-compatibility-facade-finalize.ps1"
+      ],
+      "artifacts": [
+        "Invoke-CompatibilityFacadeFinalize.ps1",
+        "test-compatibility-facade-finalize.ps1",
+        "orchestration/facade-finalize-policy.v1.json",
+        "orchestration/schemas/code-intel-compatibility-facade-finalize.v1.schema.json",
+        "docs/compatibility-facade-finalize.md"
+      ],
+      "independentVerdict": "blocked",
+      "blockers": [
+        "independent audit implementation approved, but final facade approval remains blocked",
+        "E02-E05 and E07-E10 retirement dependencies are not completed",
+        "current audit exits 2 with approvalEligible=false and independentApproval=null"
+      ]
+    }
+  ]
+}

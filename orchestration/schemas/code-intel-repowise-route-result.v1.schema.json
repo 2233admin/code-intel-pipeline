@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-repowise-route-result.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "adapter", "admissions", "engineeringFacts", "diagnostics"],
+  "properties": {
+    "schema": { "const": "code-intel-repowise-route-result.v1" },
+    "status": { "enum": ["completed", "rejected"] },
+    "adapter": { "type": ["object", "null"] },
+    "admissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["channel", "result"],
+        "properties": {
+          "channel": { "enum": ["index", "docs"] },
+          "result": { "$ref": "code-intel-evidence-admissibility-result.v1.schema.json" }
+        }
+      }
+    },
+    "engineeringFacts": { "type": "array", "maxItems": 0 },
+    "diagnostics": { "type": "array", "items": { "type": "string" } }
+  }
+}

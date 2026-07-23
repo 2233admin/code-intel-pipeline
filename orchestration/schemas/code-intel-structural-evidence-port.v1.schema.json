@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-structural-evidence-port.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema","status","completeness","freshness","expectedSnapshotIdentity","sourceSnapshotIdentity","provider","provenance","effects","rules","payload","diagnosisEligible"],
+  "properties": {
+    "schema": {"const":"code-intel-structural-evidence-port.v1"},
+    "status": {"enum":["complete","partial","crashed"]},
+    "completeness": {"enum":["complete","partial"]},
+    "freshness": {"enum":["current","stale","snapshot_mismatch"]},
+    "expectedSnapshotIdentity": {"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "sourceSnapshotIdentity": {"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "provider": {"type":"object","additionalProperties":false,"required":["implementationId","rollbackIdentity"],"properties":{"implementationId":{"type":"string","minLength":1},"rollbackIdentity":{"type":"string","minLength":1}}},
+    "provenance": {"type":"object","additionalProperties":false,"required":["sourceRevision","observedAt"],"properties":{"sourceRevision":{"type":"string","minLength":1},"observedAt":{"type":"integer","minimum":0}}},
+    "effects": {"type":"object","additionalProperties":false,"required":["declared","observed","match"],"properties":{"declared":{"$ref":"#/$defs/effects"},"observed":{"$ref":"#/$defs/effects"},"match":{"const":true}}},
+    "rules": {"type":"array","uniqueItems":true,"items":{"$ref":"#/$defs/rule"}},
+    "payload": {"type":"object"},
+    "diagnosisEligible": {"type":"boolean"}
+  },
+  "$defs": {
+    "effects":{"type":"array","minItems":1,"uniqueItems":true,"items":{"enum":["repo_read","local_write","process_spawn"]}},
+    "rule":{"type":"object","additionalProperties":false,"required":["kind","status","verdict","failure"],"properties":{"kind":{"type":"string","minLength":1},"status":{"enum":["evaluated","not_evaluated","unsupported"]},"verdict":{"enum":["pass","fail","unknown"]},"failure":{"type":"object"}}}
+  }
+}

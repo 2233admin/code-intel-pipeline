@@ -113,6 +113,7 @@ pub fn analyze(target: &Path) -> Result<Value, String> {
 
 fn source_inventory(target: &Path) -> Result<Inventory, String> {
     let listed = inventory_files(target)?;
+    let governed_visible = governed_visible_files(target);
 
     let mut included = Vec::new();
     let mut excluded: BTreeMap<String, (usize, Vec<String>)> = BTreeMap::new();
@@ -129,6 +130,13 @@ fn source_inventory(target: &Path) -> Result<Inventory, String> {
                 .unwrap_or(false)
         {
             reason = Some("oversized_generated_or_bundle".to_string());
+        }
+        if reason.is_none()
+            && governed_visible
+                .as_ref()
+                .is_some_and(|visible| !visible.contains(&relative))
+        {
+            reason = Some("repository_ignored".to_string());
         }
         if let Some(reason) = reason {
             let entry = excluded.entry(reason).or_default();
@@ -164,6 +172,41 @@ fn source_inventory(target: &Path) -> Result<Inventory, String> {
             "note": "Root paths are allowed. Dependency, build-output, cache, and bundled static-asset code is excluded from governed source metrics."
         }),
     })
+}
+
+fn governed_visible_files(target: &Path) -> Option<BTreeSet<String>> {
+    let output = Command::new("rg")
+        .arg("--files")
+        .args([
+            "--hidden",
+            "--no-ignore-parent",
+            "--no-ignore-global",
+            "--no-ignore-exclude",
+        ])
+        .current_dir(target)
+        .output()
+        .ok()?;
+    if !output.status.success() && output.status.code() != Some(1) {
+        return None;
+    }
+    let mut visible = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(normalize_path)
+        .collect::<BTreeSet<_>>();
+
+    if let Ok(output) = Command::new("git")
+        .args(["-C", &target.to_string_lossy(), "ls-files", "-z"])
+        .output()
+    {
+        if output.status.success() {
+            for relative in String::from_utf8_lossy(&output.stdout).split('\0') {
+                if !relative.is_empty() {
+                    visible.insert(normalize_path(relative));
+                }
+            }
+        }
+    }
+    Some(visible)
 }
 
 fn inventory_files(root: &Path) -> Result<Vec<String>, String> {

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-model-assistance-dossier.v1.schema.json",
+  "title": "Code Intel model assistance dossier v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "category", "reason", "artifactRefs", "minimalContext", "copyablePrompt", "resume"],
+  "properties": {
+    "schema": { "const": "code-intel-model-assistance-dossier.v1" },
+    "status": { "const": "manual_required" },
+    "category": { "$ref": "#/$defs/failureCategory" },
+    "reason": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/nonempty" }
+    },
+    "artifactRefs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run", "fileInventory", "report", "understanding"],
+      "properties": {
+        "run": { "$ref": "#/$defs/nonempty" },
+        "fileInventory": { "$ref": "#/$defs/nonempty" },
+        "report": { "$ref": "#/$defs/nonempty" },
+        "understanding": { "$ref": "#/$defs/nonempty" }
+      }
+    },
+    "minimalContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "mode", "requestedTask"],
+      "properties": {
+        "repo": { "$ref": "#/$defs/nonempty" },
+        "mode": { "$ref": "#/$defs/nonempty" },
+        "requestedTask": { "$ref": "#/$defs/nonempty" }
+      }
+    },
+    "copyablePrompt": { "$ref": "#/$defs/nonempty" },
+    "resume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "requiredState", "currentStatus"],
+      "properties": {
+        "command": { "$ref": "#/$defs/nonempty" },
+        "requiredState": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["route_ready", "consumption_authorized", "external_data_authorized_if_required", "paid_spend_authorized_if_metered"]
+          }
+        },
+        "currentStatus": { "enum": ["consent_required", "deterministic_degraded"] }
+      }
+    }
+  },
+  "$defs": {
+    "nonempty": { "type": "string", "minLength": 1 },
+    "failureCategory": {
+      "enum": ["consent_required", "model_unavailable", "provider_unavailable", "provider_quota", "config_error", "local_tool_error", "adapter_protocol_error", "external_data_forbidden", "paid_usage_forbidden"]
+    }
+  }
+}

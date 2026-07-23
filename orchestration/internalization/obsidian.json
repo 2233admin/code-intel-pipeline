@@ -1,0 +1,186 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.obsidian-record",
+  "projectId": "code-intel-pipeline",
+  "authorityRequirements": {
+    "repositoryGovernedAttestation": true
+  },
+  "subject": {
+    "name": "Obsidian optional knowledge projection",
+    "kind": "design_reference",
+    "source": {
+      "uri": "https://obsidian.md; local-policy=docs/project-management-support.md",
+      "revision": "product-version-unbound; local-policy-sha256:d03a5535198f3e45f9572b7f9bb4a23e77ba636c751636d8c697166ea5a5c9c3; local-boundary-test-sha256:559f58c2ae5079593c2389b0cbeb00336a6ca9f94f257679ea1735aae85a58ba"
+    },
+    "license": {
+      "id": "PROPRIETARY-APPLICATION-TERMS-UNVERIFIED",
+      "obligations": [
+        "no Obsidian install, plugin, vault write, UI automation, or task-authority migration is authorized",
+        "repo artifacts remain technical evidence authority"
+      ]
+    }
+  },
+  "adoption": {
+    "rung": "invoke",
+    "ownedBoundary": [
+      "view-only optional projection outside scanner runtime by default",
+      "Obsidian cannot replace scanner artifacts; task authority requires a separate explicit singular-authority decision"
+    ],
+    "necessityEvidence": {
+      "evidenceIds": [
+        "local:r24:no-current-use",
+        "gap:obsidian:scope-authority"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    },
+    "compatibilityEvidence": {
+      "evidenceIds": [
+        "local:r24:view-only-boundary",
+        "local:r24:artifact-authority-isolation"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    },
+    "conformanceEvidence": {
+      "evidenceIds": [
+        "local:r24:boundary-test-sha256:559f58c2ae5079593c2389b0cbeb00336a6ca9f94f257679ea1735aae85a58ba",
+        "gap:obsidian:approved-projection-conformance"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "economics": {
+    "benefit": {
+      "metric": "current required Obsidian projections",
+      "value": 0,
+      "unit": "projections"
+    },
+    "cost": {
+      "metric": "external UI/runtime dependencies introduced",
+      "value": 0,
+      "unit": "dependencies"
+    },
+    "benefitEvidence": {
+      "evidenceIds": [
+        "local:r24:no-current-use"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    },
+    "costEvidence": {
+      "evidenceIds": [
+        "local:r24:no-ui-runtime",
+        "gap:obsidian:projection-cost-measurement"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "assurance": {
+    "maintenanceEvidence": {
+      "evidenceIds": [
+        "local:r24:no-runtime-dependency",
+        "gap:obsidian:product-update-review"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    },
+    "securityEvidence": {
+      "evidenceIds": [
+        "local:r24:no-vault-write",
+        "gap:obsidian:plugin-and-vault-security-review"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "update": {
+    "policy": "Remain view-only and out of runtime; review product/plugin/version, data effects, measurement, and singular authority only after explicit approval",
+    "nextCheckAt": 1791676800,
+    "evidence": {
+      "evidenceIds": [
+        "gap:obsidian:scope-authority"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "ownedModifications": [
+    {
+      "path": "docs/project-management-support.md",
+      "description": "Pipeline-owned knowledge-view and artifact-authority boundary",
+      "evidenceIds": [
+        "local:r24:policy-sha256:d03a5535198f3e45f9572b7f9bb4a23e77ba636c751636d8c697166ea5a5c9c3",
+        "local:r24:boundary-test-sha256:559f58c2ae5079593c2389b0cbeb00336a6ca9f94f257679ea1735aae85a58ba"
+      ]
+    }
+  ],
+  "rollback": {
+    "strategy": "delete or stop the optional view without changing repo docs, artifacts, or task authority",
+    "evidence": {
+      "evidenceIds": [
+        "local:r24:view-only-boundary"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "exit": {
+    "strategy": "remove the projection or replace it with another read-only knowledge view",
+    "replacementCriteria": [
+      "scanner artifacts remain authority",
+      "no UI/plugin/runtime dependency enters the scanner",
+      "task authority remains explicit and singular"
+    ],
+    "evidence": {
+      "evidenceIds": [
+        "local:r24:artifact-authority-isolation"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "retirement": {
+    "status": "candidate",
+    "triggers": [
+      "no approved measured use exists",
+      "view risks replacing source artifacts",
+      "plugin or vault security is unacceptable"
+    ],
+    "evidence": {
+      "evidenceIds": [
+        "local:r24:no-current-use"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "lifecycle": {
+    "previousStatus": null,
+    "status": "out_of_scope",
+    "effectiveAt": 1783900800,
+    "replacementRecordId": null,
+    "evidenceIds": [
+      "local:r24:no-current-use",
+      "gap:obsidian:scope-authority",
+      "gap:obsidian:product-version",
+      "gap:obsidian:terms"
+    ],
+    "authorityEvent": {
+      "schema": "code-intel-authority-event.v1",
+      "id": "authority.internalization.obsidian.out-of-scope",
+      "decision": "approved",
+      "approver": { "id": "code-intel-maintainers", "role": "repository_governance" },
+      "evidenceIds": ["local:r24:no-current-use", "gap:obsidian:scope-authority", "gap:obsidian:product-version", "gap:obsidian:terms"],
+      "issuedAt": 1783900800,
+      "expiresAt": 1791676800,
+      "attestation": { "scheme": "repository-governed-sha256-v1", "digest": "1fd51ebc8c48bd1dd2645b701a13d1d9a1e37b03b4200435516ed37e412d460f" }
+    }
+  },
+  "provenance": {
+    "recordedAt": 1783900800,
+    "recordedBy": "dependency-expert"
+  }
+}

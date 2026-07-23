@@ -1,0 +1,5 @@
+{
+  "schema": "code-intel-parity-fixture-review.v1",
+  "fixture": "dirty",
+  "reviewReason": "Initial A00 baseline reviewed against ADR-0010 verdict, provenance, and missing-evidence invariants."
+}

@@ -1,0 +1,22 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.agent-loops-record",
+  "projectId": "code-intel-pipeline",
+  "subject": { "name": "awesome-agent-loops loop-pattern design reference", "kind": "design_reference", "source": { "uri": "unverified-upstream:awesome-agent-loops; local-reference=docs/agent-goal-intake.md", "revision": "unverified-upstream; local-doc-sha256:fe72627e85e99bf6bb4d4fbfd06d112a02b4229af1ceaf996631b2dbbb9bdc31" }, "license": { "id": "UNKNOWN-RESEARCH-ONLY", "obligations": ["do not distribute, vendor, invoke, or production-enable until canonical upstream URI, exact revision, and license text are verified", "retain attribution and distinguish the local three-pattern vocabulary from upstream execution proof"] } },
+  "adoption": {
+    "rung": "reimplement",
+    "ownedBoundary": ["pipeline-owned intake vocabulary for goal-until-condition, interval loop, and recurring schedule patterns", "no awesome-agent-loops runtime dependency, loop execution, scheduling authority, scanner state mutation, or external-write authority"],
+    "necessityEvidence": { "evidenceIds": ["local:reference-map:agent-loops", "local:agent-goal-intake:three-loop-patterns", "gap:agent-loops:upstream-revision", "gap:agent-loops:license"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "compatibilityEvidence": { "evidenceIds": ["local:agent-goal-intake:outside-scanner", "local:adr-0002:reference-removable"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "conformanceEvidence": { "evidenceIds": ["local:trace:agent-loops:goal", "local:trace:agent-loops:loop", "local:trace:agent-loops:schedule", "gap:agent-loops:upstream-conformance"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+  },
+  "economics": { "benefit": { "metric": "locally documented loop-pattern choices", "value": 3, "unit": "patterns" }, "cost": { "metric": "pipeline-owned loop semantic trace entries", "value": 3, "unit": "entries" }, "benefitEvidence": { "evidenceIds": ["local:agent-goal-intake:three-loop-patterns"], "checkedAt": 1783900800, "expiresAt": 1791676800 }, "costEvidence": { "evidenceIds": ["local:record:agent-loops"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "assurance": { "maintenanceEvidence": { "evidenceIds": ["gap:agent-loops:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 }, "securityEvidence": { "evidenceIds": ["gap:agent-loops:security-review"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "update": { "policy": "Before 2026-10-11, verify canonical catalog source, exact revision, license, and upstream semantics for goal, loop, and schedule; do not infer execution compatibility from local vocabulary", "nextCheckAt": 1791676800, "evidence": { "evidenceIds": ["gap:agent-loops:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "ownedModifications": [ { "path": "docs/agent-goal-intake.md", "description": "Pipeline-owned three-pattern intake vocabulary with no loop runtime", "evidenceIds": ["local:agent-goal-intake:three-loop-patterns", "local:agent-goal-intake:outside-scanner"] } ],
+  "rollback": { "strategy": "remove the awesome-agent-loops attribution and record while retaining the internal loop vocabulary and scanner contracts", "evidence": { "evidenceIds": ["local:adr-0002:reference-removable"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "exit": { "strategy": "retire the catalog reference independently or replace it with a pinned licensed pattern source", "replacementCriteria": ["replacement has verified provenance and license", "three local pattern meanings remain independently tested", "removal changes no scanner contract, state, or execution authority"], "evidence": { "evidenceIds": ["local:adr-0002:reference-removable"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "retirement": { "status": "candidate", "triggers": ["catalog revision or license remains unverifiable", "pattern selection shows no measured utility", "reference introduces loop execution or scanner coupling"], "evidence": { "evidenceIds": ["local:record:agent-loops"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "lifecycle": { "previousStatus": null, "status": "research", "effectiveAt": 1783900800, "replacementRecordId": null, "evidenceIds": ["local:record:agent-loops", "gap:agent-loops:upstream-revision", "gap:agent-loops:license", "gap:agent-loops:upstream-conformance"], "authorityEvent": null },
+  "provenance": { "recordedAt": 1783900800, "recordedBy": "dependency-expert" }
+}

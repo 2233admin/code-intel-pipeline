@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-change-impact.v1.schema.json",
+  "title": "Code Intel snapshot-bound change impact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "repo", "run", "runIdentity", "runOutcome", "snapshotIdentity", "freshness", "changed", "evidenceRefs", "impact", "testSelection", "limitations"],
+  "properties": {
+    "schema": { "const": "code-intel-change-impact.v1" },
+    "repo": { "type": "string", "minLength": 1 },
+    "run": { "type": "string", "minLength": 1 },
+    "runIdentity": { "type": "string", "pattern": "^dag-v1:([a-f0-9]{2})+$" },
+    "runOutcome": { "const": "completed" },
+    "snapshotIdentity": { "$ref": "#/$defs/digest" },
+    "freshness": { "$ref": "code-intel-evidence-query.v1.schema.json#/properties/freshness" },
+    "changed": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "inInventory"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "inInventory": { "type": "boolean" }
+        }
+      }
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "$ref": "code-intel-run-manifest.v1.schema.json#/definitions/artifactRef" }
+    },
+    "impact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "resolvedImportEdges", "unresolvedImportEdges"],
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "distance", "reason", "via", "confidence"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "distance": { "type": "integer", "minimum": 0 },
+              "reason": { "enum": ["changed", "reverse_import"] },
+              "via": { "type": ["string", "null"] },
+              "confidence": { "enum": ["high", "medium"] }
+            }
+          }
+        },
+        "resolvedImportEdges": { "type": "integer", "minimum": 0 },
+        "unresolvedImportEdges": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "testSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "files", "commands", "advisoryOnly", "rationale"],
+      "properties": {
+        "status": { "enum": ["candidates", "none"] },
+        "files": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "commands": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "advisoryOnly": { "const": true },
+        "rationale": { "type": "string", "minLength": 1 }
+      }
+    },
+    "limitations": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+  },
+  "$defs": { "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+}

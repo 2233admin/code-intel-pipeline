@@ -1,0 +1,29 @@
+{
+  "schema": "code-intel-multi-agent-workspace-policy.v1",
+  "defaultIntent": "mutation",
+  "inspectionAuthority": "observation_only",
+  "requirements": {
+    "repositoryRootRequired": true,
+    "dirtyRootBlocksMutation": true,
+    "observationMustBeExplicit": true,
+    "observationMayModifyRepository": false,
+    "inventoryFormat": "git-status-porcelain-v1-z",
+    "inventoryIncludesUntrackedFiles": "all",
+    "inventoryHash": "sha256-canonical-json-v1"
+  },
+  "exitCodes": {
+    "allowed": 0,
+    "invalidPolicy": 2,
+    "dirtyRootMutationDenied": 20,
+    "repositoryRootRequired": 21,
+    "inspectionFailed": 22
+  },
+  "invariants": [
+    "never-clean",
+    "never-stash",
+    "never-reset",
+    "never-commit",
+    "never-write-inspected-repository",
+    "observation-is-not-mutation-authority"
+  ]
+}

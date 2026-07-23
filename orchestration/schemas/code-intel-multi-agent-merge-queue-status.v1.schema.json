@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-multi-agent-merge-queue-status.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "provider", "sourceRevision", "repo", "ready", "command", "config", "gates", "failedGateIds"],
+  "properties": {
+    "schema": { "const": "code-intel-multi-agent-merge-queue-status.v1" },
+    "provider": { "const": "claude-code-merge-queue" },
+    "sourceRevision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "repo": { "type": "string", "minLength": 1 },
+    "ready": { "type": "boolean" },
+    "command": { "type": ["string", "null"] },
+    "config": { "type": ["string", "null"] },
+    "version": { "type": ["string", "null"] },
+    "gates": {
+      "type": "array",
+      "minItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "passed", "detail"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "passed": { "type": "boolean" },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "failedGateIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

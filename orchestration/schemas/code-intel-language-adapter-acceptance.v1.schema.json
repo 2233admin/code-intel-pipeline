@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://code-intel.local/schemas/code-intel-language-adapter-acceptance.v1.schema.json",
+  "title": "Language adapter acceptance evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "adapter", "contract", "claims", "corpus", "oracles", "determinism", "compatibility", "effects", "provenance", "rollback", "verification", "evidence", "gaps"],
+  "properties": {
+    "schema": { "const": "code-intel-language-adapter-acceptance.v1" },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "claimLevel", "requestedStage", "languages"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonempty" },
+        "version": { "$ref": "#/$defs/nonempty" },
+        "claimLevel": { "enum": ["inventory", "structural", "semantic", "behavioral"] },
+        "requestedStage": { "enum": ["research", "candidate", "production"] },
+        "languages": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactSchemas", "schemaValidated", "backwardCompatible"],
+      "properties": {
+        "artifactSchemas": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } },
+        "schemaValidated": { "type": "boolean" },
+        "backwardCompatible": { "type": "boolean" }
+      }
+    },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inventory", "structural", "semantic", "behavioral"],
+      "properties": {
+        "inventory": { "type": "boolean" },
+        "structural": { "type": "boolean" },
+        "semantic": { "type": "boolean" },
+        "behavioral": { "type": "boolean" }
+      }
+    },
+    "corpus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["labeledSamples", "precision", "recall", "declaredCoverage", "unsupportedExplicit", "fabricatedFactsForUnsupported"],
+      "properties": {
+        "labeledSamples": { "type": "integer", "minimum": 0 },
+        "precision": { "$ref": "#/$defs/ratio" },
+        "recall": { "$ref": "#/$defs/ratio" },
+        "declaredCoverage": { "$ref": "#/$defs/ratio" },
+        "unsupportedExplicit": { "type": "boolean" },
+        "fabricatedFactsForUnsupported": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "oracles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["semanticCases", "behavioralCases"],
+      "properties": {
+        "semanticCases": { "type": "integer", "minimum": 0 },
+        "behavioralCases": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "determinism": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replays", "stable"],
+      "properties": {
+        "replays": { "type": "integer", "minimum": 0 },
+        "stable": { "type": "boolean" }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parityArtifacts", "passed"],
+      "properties": {
+        "parityArtifacts": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "boolean" }
+      }
+    },
+    "effects": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["declared", "observed", "networkUsed", "repoMutationUsed"],
+      "properties": {
+        "declared": { "$ref": "#/$defs/effects" },
+        "observed": { "$ref": "#/$defs/effects" },
+        "networkUsed": { "type": "boolean" },
+        "repoMutationUsed": { "type": "boolean" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceRevisionPinned", "implementationLicense", "sourcePath", "sourceDigest", "conformancePath", "conformanceDigest"],
+      "properties": {
+        "sourceRevisionPinned": { "type": "boolean" },
+        "implementationLicense": { "$ref": "#/$defs/nonempty" },
+        "sourcePath": { "$ref": "#/$defs/repoPath" },
+        "sourceDigest": { "$ref": "#/$defs/digest" },
+        "conformancePath": { "$ref": "#/$defs/repoPath" },
+        "conformanceDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["documented", "tested"],
+      "properties": {
+        "documented": { "type": "boolean" },
+        "tested": { "type": "boolean" }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["independent", "reviewer"],
+      "properties": {
+        "independent": { "type": "boolean" },
+        "reviewer": { "type": "string" }
+      }
+    },
+    "evidence": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } },
+    "gaps": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/nonempty" } }
+  },
+  "$defs": {
+    "nonempty": { "type": "string", "minLength": 1 },
+    "ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "repoPath": {
+      "allOf": [
+        { "$ref": "#/$defs/nonempty" },
+        { "not": { "pattern": "^[A-Za-z]:" } },
+        { "not": { "pattern": "^[/\\\\]" } },
+        { "not": { "pattern": "(^|[/\\\\])\\.\\.([/\\\\]|$)" } }
+      ]
+    },
+    "effects": { "type": "array", "uniqueItems": true, "items": { "enum": ["repo_read", "local_write", "network", "repo_mutation"] } }
+  }
+}

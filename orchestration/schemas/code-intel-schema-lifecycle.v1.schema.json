@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-schema-lifecycle.v1.schema.json",
+  "title": "Code Intel core schema lifecycle catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "policy", "contracts"],
+  "properties": {
+    "schema": { "const": "code-intel-schema-lifecycle.v1" },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["breakingChange", "compatibleChange", "retirement", "coreRuntimeRule"],
+      "properties": {
+        "breakingChange": { "const": "publish-new-version" },
+        "compatibleChange": { "const": "additive-only" },
+        "retirement": { "const": "evidence-backed-compatibility-window" },
+        "coreRuntimeRule": { "const": "implementation-and-tests-required" }
+      }
+    },
+    "contracts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaPath", "schemaId", "logicalSchemas", "shape", "status", "compatibilityPolicy", "implementation"],
+        "properties": {
+          "schemaPath": { "type": "string", "pattern": "^orchestration/schemas/[a-z0-9-]+\\.v[1-9][0-9]*\\.schema\\.json$" },
+          "schemaId": { "type": "string", "minLength": 1 },
+          "logicalSchemas": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z0-9_.-]+\\.v[1-9][0-9]*$" } },
+          "shape": { "enum": ["closed-object", "closed-composite"] },
+          "status": { "enum": ["active", "compatibility", "retired"] },
+          "compatibilityPolicy": { "enum": ["additive-only", "frozen", "retired"] },
+          "implementation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "symbols", "tests"],
+            "properties": {
+              "source": { "type": "string", "minLength": 1 },
+              "symbols": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+              "tests": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+            }
+          }
+        }
+      }
+    }
+  }
+}

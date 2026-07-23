@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-runtime-ci-observation.v1",
+  "title": "Code Intel Provider-neutral Runtime/CI Observation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "provider", "provenance", "snapshotIdentity", "observedAt", "completeness", "signals"],
+  "properties": {
+    "schema": { "const": "code-intel-runtime-ci-observation.v1" },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "runId", "sourceRevision"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "runId": { "type": "string", "minLength": 1 },
+        "sourceRevision": { "type": "string", "minLength": 1 }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["collectorId", "collectorVersion", "collectionId", "collectedAt"],
+      "properties": {
+        "collectorId": { "type": "string", "minLength": 1 },
+        "collectorVersion": { "type": "string", "minLength": 1 },
+        "collectionId": { "type": "string", "minLength": 1 },
+        "collectedAt": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "snapshotIdentity": { "$ref": "#/$defs/digest" },
+    "observedAt": { "type": "integer", "minimum": 0 },
+    "completeness": { "enum": ["complete", "partial"] },
+    "signals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tests", "build", "runtime"],
+      "properties": {
+        "tests": { "$ref": "#/$defs/testSignal" },
+        "build": { "$ref": "#/$defs/buildSignal" },
+        "runtime": { "$ref": "#/$defs/runtimeSignal" }
+      }
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "baseSignal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "observed", "summary"],
+      "properties": {
+        "status": { "enum": ["passed", "failed", "cancelled", "healthy", "degraded", "unknown"] },
+        "observed": { "type": "boolean" },
+        "summary": { "type": "string", "minLength": 1 }
+      }
+    },
+    "testSignal": {
+      "allOf": [
+        { "$ref": "#/$defs/baseSignal" },
+        { "properties": { "status": { "enum": ["passed", "failed", "cancelled", "unknown"] } } }
+      ]
+    },
+    "buildSignal": {
+      "allOf": [
+        { "$ref": "#/$defs/baseSignal" },
+        { "properties": { "status": { "enum": ["passed", "failed", "cancelled", "unknown"] } } }
+      ]
+    },
+    "runtimeSignal": {
+      "allOf": [
+        { "$ref": "#/$defs/baseSignal" },
+        { "properties": { "status": { "enum": ["healthy", "degraded", "failed", "unknown"] } } }
+      ]
+    }
+  }
+}

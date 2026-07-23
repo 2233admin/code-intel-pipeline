@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"code-intel-sentrux-route-result.v1.schema.json",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schema","status","adapter","admission","engineeringFacts","diagnostics"],
+  "properties":{
+    "schema":{"const":"code-intel-sentrux-route-result.v1"},
+    "status":{"enum":["completed","rejected"]},
+    "adapter":{"type":["object","null"]},
+    "admission":{"type":["object","null"]},
+    "engineeringFacts":{"type":"array","maxItems":0},
+    "diagnostics":{"type":"array","items":{"type":"string"}}
+  }
+}

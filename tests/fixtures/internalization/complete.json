@@ -1,0 +1,67 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "reuse-example-adapter",
+  "projectId": "code-intel-pipeline",
+  "subject": {
+    "name": "Example Adapter",
+    "kind": "evidence_provider",
+    "source": { "uri": "https://example.invalid/example-adapter", "revision": "0123456789abcdef" },
+    "license": { "id": "Apache-2.0", "obligations": ["retain copyright notice", "retain license text"] }
+  },
+  "adoption": {
+    "rung": "adapt",
+    "ownedBoundary": ["provider port translation", "admissibility handoff"],
+    "necessityEvidence": { "evidenceIds": ["ev-necessity"], "checkedAt": 1700000000, "expiresAt": 1700000300 },
+    "compatibilityEvidence": { "evidenceIds": ["ev-compatibility"], "checkedAt": 1700000000, "expiresAt": 1700000300 },
+    "conformanceEvidence": { "evidenceIds": ["ev-conformance"], "checkedAt": 1700000000, "expiresAt": 1700000300 }
+  },
+  "economics": {
+    "benefit": { "metric": "duplicate trust paths removed", "value": 2, "unit": "paths" },
+    "cost": { "metric": "owned adapter modules", "value": 1, "unit": "modules" },
+    "benefitEvidence": { "evidenceIds": ["ev-benefit"], "checkedAt": 1700000000, "expiresAt": 1700000300 },
+    "costEvidence": { "evidenceIds": ["ev-cost"], "checkedAt": 1700000000, "expiresAt": 1700000300 }
+  },
+  "assurance": {
+    "maintenanceEvidence": { "evidenceIds": ["ev-maintenance"], "checkedAt": 1700000000, "expiresAt": 1700000300 },
+    "securityEvidence": { "evidenceIds": ["ev-security"], "checkedAt": 1700000000, "expiresAt": 1700000300 }
+  },
+  "update": {
+    "policy": "review source and conformance every 90 days",
+    "nextCheckAt": 1700000200,
+    "evidence": { "evidenceIds": ["ev-update"], "checkedAt": 1700000000, "expiresAt": 1700000300 }
+  },
+  "ownedModifications": [
+    { "path": "adapter/translation", "description": "Pipeline-owned provider-port mapping", "evidenceIds": ["ev-owned-modification"] }
+  ],
+  "rollback": {
+    "strategy": "disable the production route and retain the audit record",
+    "evidence": { "evidenceIds": ["ev-rollback"], "checkedAt": 1700000000, "expiresAt": 1700000300 }
+  },
+  "exit": {
+    "strategy": "replace through the same provider port or retire the capability",
+    "replacementCriteria": ["replacement passes current conformance corpus", "rollback drill passes"],
+    "evidence": { "evidenceIds": ["ev-exit"], "checkedAt": 1700000000, "expiresAt": 1700000300 }
+  },
+  "retirement": {
+    "status": "active",
+    "triggers": ["source unmaintained", "security evidence expires", "replacement is approved"],
+    "evidence": { "evidenceIds": ["ev-retirement"], "checkedAt": 1700000000, "expiresAt": 1700000300 }
+  },
+  "lifecycle": {
+    "previousStatus": "research",
+    "status": "production_enabled",
+    "effectiveAt": 1700000100,
+    "replacementRecordId": null,
+    "evidenceIds": ["ev-lifecycle"],
+    "authorityEvent": {
+      "schema": "code-intel-authority-event.v1",
+      "id": "authority-enable-example",
+      "decision": "approved",
+      "approver": { "id": "engineering-manager", "role": "engineering_manager" },
+      "evidenceIds": ["ev-necessity", "ev-compatibility", "ev-conformance", "ev-benefit", "ev-cost", "ev-maintenance", "ev-security", "ev-update", "ev-owned-modification", "ev-rollback", "ev-exit", "ev-retirement", "ev-lifecycle"],
+      "issuedAt": 1700000000,
+      "expiresAt": 1700000300
+    }
+  },
+  "provenance": { "recordedAt": 1700000000, "recordedBy": "dependency-expert" }
+}

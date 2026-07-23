@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-decision-gap-detection-result.v1.schema.json",
+  "title": "Code Intel Decision Gap Detection Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "gaps",
+    "factDiscovery",
+    "branches",
+    "answersRecorded",
+    "authorityEvents",
+    "adoptionDecisions",
+    "committedEngineeringPlans",
+    "engineeringFacts"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-decision-gap-detection-result.v1" },
+    "status": { "const": "completed" },
+    "gaps": {
+      "type": "array",
+      "items": { "$ref": "code-intel-decision-gap.v1.schema.json" }
+    },
+    "factDiscovery": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["blockerId", "kind", "missingFactIds", "affectedBranches"],
+        "properties": {
+          "blockerId": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "minLength": 1 },
+          "missingFactIds": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "affectedBranches": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "branches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["branchId", "status", "blockedByGapIds", "factDiscoveryBlockerIds"],
+        "properties": {
+          "branchId": { "type": "string", "minLength": 1 },
+          "status": {
+            "enum": ["completed", "pending", "blocked_decision_gap", "fact_discovery_required"]
+          },
+          "blockedByGapIds": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "factDiscoveryBlockerIds": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "answersRecorded": { "const": false },
+    "authorityEvents": { "const": [] },
+    "adoptionDecisions": { "const": [] },
+    "committedEngineeringPlans": { "const": [] },
+    "engineeringFacts": { "const": [] }
+  }
+}

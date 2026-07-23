@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-clean-machine-verifier-attestation.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "verifiedAt", "capability", "source", "environment", "commands", "benchmark", "compatibilityAttempt", "productionReport", "cleanup", "authority"],
+  "properties": {
+    "schema": { "const": "code-intel-clean-machine-verifier-attestation.v1" },
+    "version": { "const": 1 },
+    "verifiedAt": { "type": "string", "format": "date-time" },
+    "capability": { "const": "project.orientation-benchmark" },
+    "source": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": {
+        "path": { "const": "crates/code-intel-cli/src/project_orientation_benchmark.rs" },
+        "sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "environment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["cleanMachine", "basis", "image", "imageDigest", "os", "architecture", "toolchain", "mountCount", "bindsPresent", "taskVolumesPresent", "privileged", "deviceCount", "hostTargetCacheCopied", "injectedEnvironmentVariableKeys", "imageEnvironmentVariableKeys", "sourceCopyExclusions"],
+      "properties": {
+        "cleanMachine": { "const": true },
+        "basis": { "type": "string", "minLength": 1 },
+        "image": { "type": "string", "minLength": 1 },
+        "imageDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "os": { "type": "string", "minLength": 1 },
+        "architecture": { "type": "string", "minLength": 1 },
+        "toolchain": {
+          "type": "object", "additionalProperties": false, "required": ["rustc", "cargo", "powershell"],
+          "properties": { "rustc": { "type": "string", "minLength": 1 }, "cargo": { "type": "string", "minLength": 1 }, "powershell": { "type": "string", "minLength": 1 } }
+        },
+        "mountCount": { "const": 0 },
+        "bindsPresent": { "const": false },
+        "taskVolumesPresent": { "const": false },
+        "privileged": { "const": false },
+        "deviceCount": { "const": 0 },
+        "hostTargetCacheCopied": { "const": false },
+        "injectedEnvironmentVariableKeys": { "type": "array", "maxItems": 0 },
+        "imageEnvironmentVariableKeys": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "sourceCopyExclusions": { "type": "array", "minItems": 6, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "commands": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/command" } },
+    "benchmark": {
+      "type": "object", "additionalProperties": false,
+      "required": ["fixtureCount", "sampleCount", "repetitionsPerTemperature", "sizes", "conditions", "temperatures", "typicalP50WallTimeMs", "typicalP95WallTimeMs", "coldP50WallTimeMs", "coldP95WallTimeMs", "warmP50WallTimeMs", "warmP95WallTimeMs", "fieldCorrectness", "unknownPrecision", "provenanceCompleteness", "verdict"],
+      "properties": {
+        "fixtureCount": { "const": 9 }, "sampleCount": { "const": 54 }, "repetitionsPerTemperature": { "const": 3 },
+        "sizes": { "const": ["small", "medium", "large"] }, "conditions": { "const": ["clean", "dirty", "provider_missing"] }, "temperatures": { "const": ["cold", "warm"] },
+        "typicalP50WallTimeMs": { "$ref": "#/$defs/nonnegative" }, "typicalP95WallTimeMs": { "type": "integer", "minimum": 0, "maximum": 60000 },
+        "coldP50WallTimeMs": { "$ref": "#/$defs/nonnegative" }, "coldP95WallTimeMs": { "$ref": "#/$defs/nonnegative" }, "warmP50WallTimeMs": { "$ref": "#/$defs/nonnegative" }, "warmP95WallTimeMs": { "$ref": "#/$defs/nonnegative" },
+        "fieldCorrectness": { "const": 1.0 }, "unknownPrecision": { "const": 1.0 }, "provenanceCompleteness": { "const": 1.0 }, "verdict": { "const": "pass" }
+      }
+    },
+    "compatibilityAttempt": {
+      "type": "object", "additionalProperties": false, "required": ["image", "imageDigest", "exitCode", "result", "includedInBenchmark"],
+      "properties": { "image": { "type": "string", "minLength": 1 }, "imageDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }, "exitCode": { "type": "integer", "minimum": 1 }, "result": { "type": "string", "minLength": 1 }, "includedInBenchmark": { "const": false } }
+    },
+    "productionReport": {
+      "type": "object", "additionalProperties": false, "required": ["cleanMachine", "externalVerificationComplete", "statement"],
+      "properties": { "cleanMachine": { "const": false }, "externalVerificationComplete": { "const": true }, "statement": { "type": "string", "minLength": 1 } }
+    },
+    "cleanup": {
+      "type": "object", "additionalProperties": false, "required": ["containerDestroyed", "containerRemaining", "taskVolumesRemaining"],
+      "properties": { "containerDestroyed": { "const": true }, "containerRemaining": { "const": false }, "taskVolumesRemaining": { "const": false } }
+    },
+    "authority": { "const": "verifier_attestation_only_no_runtime_or_release_authority" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "nonnegative": { "type": "integer", "minimum": 0 },
+    "command": {
+      "type": "object", "additionalProperties": false, "required": ["command", "exitCode", "elapsedMs", "result"],
+      "properties": { "command": { "type": "string", "minLength": 1 }, "exitCode": { "const": 0 }, "elapsedMs": { "type": "integer", "minimum": 1 }, "result": { "type": "string", "minLength": 1 } }
+    }
+  }
+}

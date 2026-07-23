@@ -1,5 +1,11 @@
 # Code Intel Pipeline
 
+> **语言方向：** 停止新增 PowerShell。现有 `.ps1` 只作为兼容入口维护，不再承载新产品逻辑；生产能力默认使用 Rust。MoonBit 可用于隔离实验，只有通过 artifact 契约一致性、跨平台构建和测试后才进入正式路径。迁移不做一次性重写，按入口逐个替换和退休。Agent 规则见 [AGENTS.md](AGENTS.md)。
+
+Workflow-stack guidance is emitted by the read-only `advisory.workflow-recommend` atom. See [docs/advisory-workflow-recommendation.md](docs/advisory-workflow-recommendation.md); recommendations are proposals with zero effects and never authorize tool initialization or adoption.
+
+Follow-up automation can proactively propose `/investigate` for actionable scan failures and can ask whether to enter the exact draft-PR flow. The one-command orchestrator composes proposal → user decision → C07 record/replay → fail-closed executor. It defaults to suggestion-on and PR-consent-required; neither path silently executes a skill or creates a PR. See [docs/follow-up-automation.md](docs/follow-up-automation.md).
+
 <p align="center">
   <img src="assets/gpt-musume.png" alt="GPT娘正在给代码仓库画结构地图" width="760">
 </p>
@@ -18,12 +24,12 @@
 
 ## 仓库入口
 
-这个仓库的根目录暂时保留 PowerShell 入口，是为了兼容已发布包和团队脚本。真正的治理边界见 [Repository Layout](docs/repository-layout.md)。
+这个仓库的根目录暂时保留 PowerShell 入口，只为兼容已发布包和团队脚本；它们处于退休路径，不接受新产品逻辑。新实现优先进入 Rust core，MoonBit 仅用于隔离验证。真正的治理边界见 [Repository Layout](docs/repository-layout.md)。
 
 公共入口：
 
 - `invoke-code-intel.ps1`: 推荐人工入口，先 doctor 再运行 pipeline。
-- `run-code-intel.ps1`: 当前 PowerShell orchestrator，负责生成 artifacts。
+- `run-code-intel.ps1`: 兼容 facade；默认 normal 路径调用 Rust DAG、原子提交和 committed-only 索引，旧扫描器分支必须显式启用。
 - `check-code-intel-tools.ps1`: 环境 doctor。
 - `install-code-intel-pipeline.ps1`: 安装和修复入口。
 - `Find-CodeIntelProjects.ps1`: 项目发现入口。
@@ -31,6 +37,26 @@
 - `crates/code-intel-cli`: Rust policy/artifact CLI core。
 
 内部脚本、benchmark、实验入口后续分批迁到 `scripts/` 或 incubator 目录；每次迁移必须保留兼容 shim 或同步更新 CI/release。
+
+## Public beta 范围
+
+当前已发布兼容面仍是 **Windows PowerShell public beta**，但后续功能开发已经转向 Rust/MoonBit 路线，不再扩大 PowerShell surface。测试版承诺的是：稳定入口可运行、核心报告可事务化落盘、结构退化不会被伪装成成功、发布 ZIP 可在没有源码树和 Rust toolchain 的干净目录中启动。
+
+0.3.0 核心路径：
+
+- `invoke-code-intel.ps1` / `run-code-intel.ps1`
+- `code-intel.exe` 的 A01-A09 capability/DAG/policy/artifact core
+- `rg` inventory、native code evidence、内部 graph provider、真实 Sentrux `gate`/`check` 命令证据和 Hospital diagnosis
+- snapshot-bound staging、A07 原子提交、A08 completed-only 索引、query/impact/freshness
+
+默认包含但不阻塞测试版的增强能力：
+
+- Repowise 语义索引与文档生成
+- Understand Anything 图谱
+- CodeNexus context、Repomix、模型辅助通道
+- runtime/CI 证据和 file-boundary provider
+
+缺少这些增强工具时，流水线必须明确记录 skipped、manual-required 或 provider failure，不能把它们冒充成功，也不能因此阻断只依赖核心路径的 public beta。详细支持矩阵和已知边界见 [Public beta guide](docs/public-beta.md)。
 
 ## 这是什么
 
@@ -137,6 +163,18 @@ Project management support contract 测试：
 .\test-project-management-support.ps1 -RepoPath C:\path\to\your\repo
 ```
 
+从 GitHub Release ZIP 运行时，解压后直接使用稳定入口；不需要 Cargo，也不依赖仓库里的 `target/`：
+
+```powershell
+.\invoke-code-intel.ps1 -RepoPath C:\path\to\your\repo -Mode normal
+```
+
+如果不需要语义索引，或本机没有 Repowise：
+
+```powershell
+.\invoke-code-intel.ps1 -RepoPath C:\path\to\your\repo -Mode normal -SkipRepowise
+```
+
 Greenfield 行为规格适配器测试：
 
 ```powershell
@@ -183,7 +221,7 @@ install -> doctor -> smoke test
 | --- | --- | --- |
 | Integration orchestration | 融合注册、能力编排、扩展边界 | `target/debug/code-intel.exe orchestrate` |
 | `code-intel` Rust CLI | orchestration、artifact resume、failure classify、artifact doctor | `target/debug/code-intel.exe` |
-| `code-nexus-lite` Rust worker | CodeNexus scan/lite/doctor worker | `target/debug/code-nexus-lite.exe` |
+| CodeNexus compatibility adapter | 可选热点定位、引用搜索、下一步上下文；失败不阻塞 beta core | `codenexus-context.json` |
 | `rg` | 快速文件清单、文本搜索 | `files.txt` |
 | `Repowise` | 语义索引、长期记忆、项目上下文 | `.repowise/` 或 scoped shadow |
 | `Repomix` | 把本地或远程仓库打包成 AI 友好的单文件上下文 | `repomix-output.md`、`repomix-summary.json` |
@@ -216,6 +254,7 @@ cargo build -p code-intel
 核心报告：
 
 ```text
+run-complete.json
 summary.md
 report.json
 understanding.md
@@ -224,6 +263,9 @@ hospital-report.json
 surgery-plan.md
 surgery-plan.json
 ```
+
+`run-complete.json` 是最后写入的事务提交标记；索引只接受标记存在且
+`reportSha256` 与已发布 `report.json` 一致的运行目录。
 
 Artifact ownership and stable routing fields are defined in
 [`docs/artifact-data-contract.md`](docs/artifact-data-contract.md).
@@ -271,6 +313,16 @@ greenfield-plan.md
 4. 交接给人或 Agent 前看 `understanding.md`。
 5. 做治理判断看 `hospital.md`。
 6. 要开工修结构看 `surgery-plan.md`。
+
+## Portable Snapshot Identity
+
+仓库输入身份可以独立计算，不依赖时间戳目录或机器绝对路径：
+
+```powershell
+target/debug/code-intel.exe snapshot identity --repo <repo-root> --working-tree-policy explicit_overlay --scope .
+```
+
+它绑定 Git lineage、HEAD、工作树策略、规范化 scope 与实际输入字节，并逐类报告 dirty overlay。shallow、unborn、无 Git、ignored、symlink、submodule、LFS 与并发变化规则见 `docs/repository-snapshot-identity.md`。
 
 ## Governance Mode
 
@@ -753,6 +805,8 @@ cargo build -p code-intel
 .\target\debug\code-intel.exe classify --report C:\path\to\artifact\report.json
 ```
 
-The Rust CLI owns integration orchestration and cross-session artifact reads.
-PowerShell scripts remain Windows compatibility wrappers for scanner steps that
-have not yet been absorbed into Rust.
+The Rust CLI owns the default normal production spine, integration orchestration,
+snapshot-bound evidence, atomic run publication, committed-only indexing, and
+cross-session query/impact reads. PowerShell scripts remain thin Windows
+compatibility and installation facades; legacy report generation is not an
+alternative authority path.

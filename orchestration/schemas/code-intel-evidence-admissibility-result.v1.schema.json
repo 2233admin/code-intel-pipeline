@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-evidence-admissibility-result.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "domainVerdict", "admissionIdentity", "evidence", "verifiedPayload", "engineeringFacts"],
+  "properties": {
+    "schema": { "const": "code-intel-evidence-admissibility-result.v1" },
+    "status": { "enum": ["admitted", "rejected"] },
+    "domainVerdict": { "enum": ["observed", "unknown"] },
+    "admissionIdentity": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+    "evidence": { "type": ["object", "null"] },
+    "verifiedPayload": { "type": ["object", "null"] },
+    "engineeringFacts": { "type": "array", "maxItems": 0 },
+    "diagnostics": { "type": "array", "items": { "type": "string" } }
+  }
+}

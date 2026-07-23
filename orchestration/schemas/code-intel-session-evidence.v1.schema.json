@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-session-evidence.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "reviewAuthority", "snapshot", "source", "implementation", "privacy", "observability", "summary", "events", "signals"],
+  "properties": {
+    "schema": {"const": "code-intel-session-evidence.v1"},
+    "status": {"enum": ["complete", "partial"]},
+    "reviewAuthority": {"const": "advisory_only"},
+    "snapshot": {
+      "type": "object",
+      "required": ["identity", "repoIdentity", "head", "workingTreePolicy", "scope", "inputDigest"],
+      "properties": {
+        "identity": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "repoIdentity": {"type": "string", "minLength": 1},
+        "head": {"type": "string", "minLength": 1},
+        "workingTreePolicy": {"enum": ["head_only", "explicit_overlay"]},
+        "scope": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "inputDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "traceSchema", "compatibilityRevision", "license", "copiedSource", "traceSha256", "sessionDigest", "harness"],
+      "properties": {
+        "provider": {"const": "mindwalk"},
+        "traceSchema": {"const": "mindwalk-trace.v1"},
+        "compatibilityRevision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "license": {"const": "MIT"},
+        "copiedSource": {"const": false},
+        "traceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "sessionDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "harness": {"type": "string", "minLength": 1}
+      }
+    },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": {"const": "code-intel.session-evidence.rust"},
+        "version": {"const": "1"}
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rawTracePersisted", "userMessageMarksConsumed", "eventSummariesConsumed", "absolutePathsEmitted"],
+      "properties": {
+        "rawTracePersisted": {"const": false},
+        "userMessageMarksConsumed": {"const": false},
+        "eventSummariesConsumed": {"const": false},
+        "absolutePathsEmitted": {"const": false}
+      }
+    },
+    "observability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["events", "targets", "errors", "edits", "verification"],
+      "properties": {
+        "events": {"$ref": "#/$defs/grade"},
+        "targets": {"$ref": "#/$defs/grade"},
+        "errors": {"$ref": "#/$defs/grade"},
+        "edits": {"$ref": "#/$defs/grade"},
+        "verification": {"$ref": "#/$defs/grade"}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["events", "targetEvents", "targets", "matchedTargets", "unmatchedTargets", "unsafeOrOutsideTargets", "structuralAttentionTouches", "editEvents", "verifyEvents", "errorEvents", "signals"],
+      "properties": {
+        "events": {"type": "integer", "minimum": 1},
+        "targetEvents": {"type": "integer", "minimum": 0},
+        "targets": {"type": "integer", "minimum": 0},
+        "matchedTargets": {"type": "integer", "minimum": 0},
+        "unmatchedTargets": {"type": "integer", "minimum": 0},
+        "unsafeOrOutsideTargets": {"type": "integer", "minimum": 0},
+        "structuralAttentionTouches": {"type": "integer", "minimum": 0},
+        "editEvents": {"type": "integer", "minimum": 0},
+        "verifyEvents": {"type": "integer", "minimum": 0},
+        "errorEvents": {"type": "integer", "minimum": 0},
+        "signals": {"type": "integer", "minimum": 0}
+      }
+    },
+    "events": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/event"}},
+    "signals": {"type": "array", "items": {"$ref": "#/$defs/signal"}}
+  },
+  "$defs": {
+    "grade": {"enum": ["exact", "estimated", "unavailable"]},
+    "structural": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["status"], "properties": {"status": {"const": "unknown"}}},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "attention", "maxComplexity", "avgComplexity", "loc", "gitChurn", "dirty"],
+          "properties": {
+            "status": {"const": "matched"},
+            "attention": {"type": "boolean"},
+            "maxComplexity": {"type": "integer", "minimum": 0},
+            "avgComplexity": {"type": "number", "minimum": 0},
+            "loc": {"type": "integer", "minimum": 0},
+            "gitChurn": {"type": "integer", "minimum": 0},
+            "dirty": {"type": "boolean"}
+          }
+        }
+      ]
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "touch", "observability", "structural"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "touch": {"enum": ["hit", "read", "edit"]},
+        "observability": {"$ref": "#/$defs/grade"},
+        "structural": {"$ref": "#/$defs/structural"}
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "action", "toolFamily", "isError", "targets"],
+      "properties": {
+        "seq": {"type": "integer", "minimum": 0},
+        "action": {"enum": ["search", "read", "edit", "exec", "verify", "other"]},
+        "toolFamily": {"enum": ["edit", "shell", "read", "search", "orchestration", "other"]},
+        "isError": {"type": "boolean"},
+        "targets": {"type": "array", "items": {"$ref": "#/$defs/target"}}
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "status", "severity", "eventSeq", "path", "authority"],
+      "properties": {
+        "kind": {"enum": ["structural_attention_edit", "error_on_structural_attention", "unverified_structural_attention_edit"]},
+        "status": {"const": "observed"},
+        "severity": {"const": "review"},
+        "eventSeq": {"type": "integer", "minimum": 0},
+        "path": {"type": "string", "minLength": 1},
+        "authority": {"const": "advisory_only"}
+      }
+    }
+  }
+}

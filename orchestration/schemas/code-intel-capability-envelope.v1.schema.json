@@ -15,7 +15,7 @@
     },
     "effect": {
       "type": "string",
-      "enum": ["repo_read", "local_write", "network", "repo_mutation"]
+      "enum": ["repo_read", "local_write", "process_spawn", "network", "repo_mutation"]
     },
     "effectSet": {
       "type": "array",
@@ -143,7 +143,7 @@
     "capabilityResultBase": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema", "capability", "implementation", "snapshotIdentity", "status", "verdict", "exitCode", "determinism", "declaredEffects", "observedEffects", "cache", "artifacts", "diagnostics", "provenance"],
+      "required": ["schema", "capability", "implementation", "snapshotIdentity", "status", "verdict", "domainVerdict", "exitCode", "determinism", "declaredEffects", "observedEffects", "cache", "artifacts", "diagnostics", "provenance"],
       "properties": {
         "schema": { "const": "code-intel-capability-result.v1" },
         "capability": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
@@ -151,6 +151,7 @@
         "snapshotIdentity": { "$ref": "#/definitions/sha256" },
         "status": { "enum": ["completed", "blocked", "failed"] },
         "verdict": { "enum": ["pass", "fail", "unknown", "not_applicable"] },
+        "domainVerdict": { "enum": ["pass", "fail", "unknown", "not_applicable"] },
         "exitCode": { "enum": [0, 10, 20, 64, 65, 69, 70, 74] },
         "determinism": { "enum": ["deterministic", "external_nondeterministic"] },
         "declaredEffects": { "$ref": "#/definitions/effectSet" },
@@ -176,6 +177,7 @@
               "properties": {
                 "status": { "const": "completed" },
                 "verdict": { "enum": ["pass", "not_applicable"] },
+                "domainVerdict": { "enum": ["pass", "unknown", "not_applicable"] },
                 "exitCode": { "const": 0 }
               }
             },
@@ -183,6 +185,7 @@
               "properties": {
                 "status": { "const": "completed" },
                 "verdict": { "const": "fail" },
+                "domainVerdict": { "const": "fail" },
                 "exitCode": { "const": 10 }
               }
             },
@@ -190,6 +193,7 @@
               "properties": {
                 "status": { "const": "blocked" },
                 "verdict": { "const": "unknown" },
+                "domainVerdict": { "const": "unknown" },
                 "exitCode": { "const": 20 }
               }
             },
@@ -197,6 +201,7 @@
               "properties": {
                 "status": { "const": "failed" },
                 "verdict": { "const": "unknown" },
+                "domainVerdict": { "const": "unknown" },
                 "exitCode": { "enum": [64, 65, 69, 70, 74] }
               }
             }

@@ -1,0 +1,8 @@
+{
+  "schema": "code-intel-decision-response.v1",
+  "correlationId": "decision-42",
+  "gapId": "risk-gap-7",
+  "answer": {"kind": "choice", "optionId": "accept-risk"},
+  "actorProvenance": {"actorId": "release-owner", "authorityKind": "risk_acceptance", "source": "native-structured"},
+  "timestamp": 1700000090
+}

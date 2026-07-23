@@ -1,0 +1,43 @@
+{
+  "schema": "code-intel-acceptance-policy.v1",
+  "statuses": ["pass", "fail", "blocked", "skipped-with-reason"],
+  "stages": {
+    "agent": {
+      "projectProfile": "fast",
+      "targetedChecks": "required"
+    },
+    "land": {
+      "projectProfile": "fast",
+      "targetedChecks": "forbidden"
+    },
+    "promote": {
+      "projectProfile": "full",
+      "targetedChecks": "forbidden"
+    }
+  },
+  "targetedChecks": {
+    "maximumCount": 16,
+    "allowedKinds": ["pwsh", "process"],
+    "allowedProcessExecutables": [
+      "cargo",
+      "dotnet",
+      "go",
+      "node",
+      "npm",
+      "pnpm",
+      "python",
+      "python3",
+      "pytest",
+      "yarn"
+    ],
+    "forbiddenShellTokenPattern": "[;&|<>`]|\\$\\(|[\\r\\n]",
+    "forbiddenLeadingArguments": {
+      "node": ["-e", "--eval", "-p", "--print"],
+      "npm": ["exec", "x"],
+      "pnpm": ["dlx", "exec"],
+      "python": ["-c"],
+      "python3": ["-c"],
+      "yarn": ["dlx", "exec"]
+    }
+  }
+}

@@ -1,0 +1,204 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.my-code-machine-record",
+  "projectId": "code-intel-pipeline",
+  "authorityRequirements": {
+    "repositoryGovernedAttestation": true
+  },
+  "subject": {
+    "name": "my-code-machine proposed host-control reference",
+    "kind": "design_reference",
+    "source": {
+      "uri": "unverified-local-external-project:my-code-machine; local-proposal=docs/adr/0001-merge-mcm-rust-unified.md",
+      "revision": "external-project-revision-and-license-unverified; local-merge-proposal-sha256:5c547087668014faf95dd0f4501ef7d384994d8250456ba25d6720be0f7dd1d8; local-no-big-bang-adr-sha256:1c8800fe6bbc5032d325a5e6ce2a93774e9c7fdc17143251c4a5c44ff5bb774d"
+    },
+    "license": {
+      "id": "UNKNOWN-RESEARCH-ONLY",
+      "obligations": [
+        "no source import, merge, rewrite, host mutation, sync, credential access, or migration is authorized",
+        "verify external source revision/license and split every effectful capability into separately approved parity tickets"
+      ]
+    }
+  },
+  "adoption": {
+    "rung": "reimplement",
+    "ownedBoundary": [
+      "decision record for a possible separate machine/sync boundary only",
+      "current external Python project retains implementation; Pipeline scanner remains repository-read oriented and owns no host cleanup or sync effects"
+    ],
+    "necessityEvidence": {
+      "evidenceIds": [
+        "local:r26:proposal-reconciliation",
+        "gap:my-code-machine:adoption-authority"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    },
+    "compatibilityEvidence": {
+      "evidenceIds": [
+        "local:r26:no-big-bang-boundary",
+        "gap:my-code-machine:atom-parity",
+        "gap:my-code-machine:rollback-drill"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    },
+    "conformanceEvidence": {
+      "evidenceIds": [
+        "local:r26:no-machine-crate",
+        "gap:my-code-machine:effect-contracts",
+        "gap:my-code-machine:capability-measurement"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "economics": {
+    "benefit": {
+      "metric": "currently proven host capabilities internalized",
+      "value": 0,
+      "unit": "capabilities"
+    },
+    "cost": {
+      "metric": "unclosed migration gates",
+      "value": 6,
+      "unit": "gaps"
+    },
+    "benefitEvidence": {
+      "evidenceIds": [
+        "local:r26:no-machine-crate",
+        "gap:my-code-machine:capability-measurement"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    },
+    "costEvidence": {
+      "evidenceIds": [
+        "gap:my-code-machine:source-revision",
+        "gap:my-code-machine:license",
+        "gap:my-code-machine:atom-parity",
+        "gap:my-code-machine:effect-contracts",
+        "gap:my-code-machine:security-review",
+        "gap:my-code-machine:rollback-drill"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "assurance": {
+    "maintenanceEvidence": {
+      "evidenceIds": [
+        "local:r26:external-tool-remains-separate",
+        "gap:my-code-machine:update-review"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    },
+    "securityEvidence": {
+      "evidenceIds": [
+        "local:r26:no-host-mutation-authority",
+        "gap:my-code-machine:credential-and-sync-security",
+        "gap:my-code-machine:effect-contracts"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "update": {
+    "policy": "Defer adoption; before any atom ticket verify source/license, measure one capability, define effects/authority, prove parity and rollback, then request an explicit A05 decision",
+    "nextCheckAt": 1791676800,
+    "evidence": {
+      "evidenceIds": [
+        "gap:my-code-machine:adoption-authority"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "ownedModifications": [
+    {
+      "path": "docs/adr/0001-merge-mcm-rust-unified.md",
+      "description": "Historical merge proposal retained as input, not current implementation authority",
+      "evidenceIds": [
+        "local:r26:merge-proposal-sha256:5c547087668014faf95dd0f4501ef7d384994d8250456ba25d6720be0f7dd1d8"
+      ]
+    },
+    {
+      "path": "docs/adr/0010-tool-neutral-engineering-intelligence-core.md",
+      "description": "Current no-big-bang, atom-by-atom boundary governing any future migration",
+      "evidenceIds": [
+        "local:r26:no-big-bang-adr-sha256:1c8800fe6bbc5032d325a5e6ce2a93774e9c7fdc17143251c4a5c44ff5bb774d"
+      ]
+    }
+  ],
+  "rollback": {
+    "strategy": "keep the current external tool separate; abandon any proposed atom without altering scanner contracts or external state",
+    "evidence": {
+      "evidenceIds": [
+        "local:r26:external-tool-remains-separate",
+        "gap:my-code-machine:rollback-drill"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "exit": {
+    "strategy": "close the merge proposal as deferred/out of scope, or adopt only separately verified atoms behind machine/sync ports",
+    "replacementCriteria": [
+      "each atom has parity, effect authority, security review, measurement, rollback, and retirement",
+      "no big-bang rewrite or shared scanner/host-mutation boundary",
+      "external tool remains recoverable until the adopted atom passes exit drill"
+    ],
+    "evidence": {
+      "evidenceIds": [
+        "local:r26:no-big-bang-boundary",
+        "gap:my-code-machine:adoption-authority"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "retirement": {
+    "status": "candidate",
+    "triggers": [
+      "authority formally defers or rejects adoption",
+      "measured value does not exceed migration/security cost",
+      "external project provenance or effect safety cannot be verified"
+    ],
+    "evidence": {
+      "evidenceIds": [
+        "local:r26:no-machine-crate",
+        "gap:my-code-machine:adoption-authority"
+      ],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "lifecycle": {
+    "previousStatus": null,
+    "status": "out_of_scope",
+    "effectiveAt": 1783900800,
+    "replacementRecordId": null,
+    "evidenceIds": [
+      "local:r26:no-machine-crate",
+      "local:r26:no-big-bang-boundary",
+      "gap:my-code-machine:source-revision",
+      "gap:my-code-machine:license",
+      "gap:my-code-machine:adoption-authority"
+    ],
+    "authorityEvent": {
+      "schema": "code-intel-authority-event.v1",
+      "id": "authority.internalization.my-code-machine.out-of-scope",
+      "decision": "approved",
+      "approver": { "id": "code-intel-maintainers", "role": "repository_governance" },
+      "evidenceIds": ["local:r26:no-machine-crate", "local:r26:no-big-bang-boundary", "gap:my-code-machine:source-revision", "gap:my-code-machine:license", "gap:my-code-machine:adoption-authority"],
+      "issuedAt": 1783900800,
+      "expiresAt": 1791676800,
+      "attestation": { "scheme": "repository-governed-sha256-v1", "digest": "bb5054d2b81e03dc7c13878a49fbd81919bb0e58d913258249b02b8688980d40" }
+    }
+  },
+  "provenance": {
+    "recordedAt": 1783900800,
+    "recordedBy": "dependency-expert/architect"
+  }
+}

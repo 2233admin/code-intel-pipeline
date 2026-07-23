@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://code-intel.local/schemas/code-intel-repository-snapshot.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "snapshot", "dirtyOverlay", "repository"],
+  "properties": {
+    "schema": { "const": "code-intel-repository-snapshot.v1" },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "repoIdentity", "head", "workingTreePolicy", "scope", "inputDigest"],
+      "properties": {
+        "identity": { "$ref": "#/definitions/sha256" },
+        "repoIdentity": { "type": "string", "pattern": "^(git-lineage-v1|content-v1):[a-f0-9]{64}$" },
+        "head": { "type": "string", "minLength": 1 },
+        "workingTreePolicy": { "enum": ["head_only", "explicit_overlay"] },
+        "scope": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "inputDigest": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "dirtyOverlay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["present", "digest", "paths", "members", "ignoredPolicy"],
+      "properties": {
+        "present": { "type": "boolean" },
+        "digest": { "oneOf": [{ "$ref": "#/definitions/sha256" }, { "type": "null" }] },
+        "paths": { "$ref": "#/definitions/paths" },
+        "ignoredPolicy": { "const": "excluded_by_git_ignore" },
+        "members": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["trackedModified", "trackedDeleted", "untracked", "renamed", "typeChanged", "staged"],
+          "properties": {
+            "trackedModified": { "$ref": "#/definitions/paths" },
+            "trackedDeleted": { "$ref": "#/definitions/paths" },
+            "untracked": { "$ref": "#/definitions/paths" },
+            "renamed": { "$ref": "#/definitions/paths" },
+            "typeChanged": { "$ref": "#/definitions/paths" },
+            "staged": { "$ref": "#/definitions/paths" }
+          }
+        }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": { "kind": { "enum": ["git", "git_unborn", "unversioned"] } }
+    }
+  },
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "paths": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+  }
+}

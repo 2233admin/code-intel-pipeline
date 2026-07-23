@@ -1,0 +1,215 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.pon-multilanguage-code-evidence-record",
+  "projectId": "code-intel-pipeline",
+  "subject": {
+    "name": "pon-inspired multilingual frontend normalization",
+    "kind": "design_reference",
+    "source": {
+      "uri": "https://github.com/can1357/pon",
+      "revision": "ab9067dbd2899c64c4d67a4bc27b8ad49472b126; local-plan-sha256:13aba02afe50ba96b51f8af8f25a5f4adbf485737d4ccc4897d3f769aee7cea9; local-doc-sha256:ab190f0b1d5df7b552567bd89b48eef177b2d1318d19a6eb3bc828bbfcdc23ab; local-test-sha256:0479a8d9e2addd550048ca97e1379cbaa17de3cad17a48f11cf0b9e1468062ec; local-fixture-sha256:26429a991641d142404eca462fdfb23b5256fdf3501724b63b6d441faa58cd6d"
+    },
+    "license": {
+      "id": "UNKNOWN-RESEARCH-ONLY",
+      "obligations": [
+        "do not copy, vendor, distribute, or execute pon implementation code or fixtures until a license is declared and verified",
+        "retain source and revision attribution for the independently specified frontend-normalization method"
+      ]
+    }
+  },
+  "adoption": {
+    "rung": "reimplement",
+    "ownedBoundary": [
+      "Pipeline reuses its existing Code Evidence v1 files, symbols, symbol-chunks, imports, and coverage artifacts as one language-neutral structural fact contract",
+      "the multilingual conformance floor covers Python, JavaScript, TypeScript, Rust, Go, Java, and PowerShell while C# remains an explicit unsupported control",
+      "no pon runtime dependency, Python runtime semantics, new intermediate representation, parser claim, type claim, call graph, or automatic fixture mutation"
+    ],
+    "necessityEvidence": {
+      "evidenceIds": [
+        "local:pon-multilanguage:existing-code-evidence-contract",
+        "local:pon-multilanguage:seven-supported-languages",
+        "gap:pon-multilanguage:parser-backed-adapter"
+      ],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    },
+    "compatibilityEvidence": {
+      "evidenceIds": [
+        "local:pon-multilanguage:runtime-unchanged",
+        "local:pon-multilanguage:artifact-schemas-v1",
+        "local:pon-multilanguage:unsupported-csharp-explicit"
+      ],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    },
+    "conformanceEvidence": {
+      "evidenceIds": [
+        "local:pon-multilanguage:targeted-rust-test-pass",
+        "local:pon-multilanguage:seven-supported-languages",
+        "local:pon-multilanguage:unsupported-csharp-no-fabrication",
+        "gap:pon-multilanguage:independent-verifier"
+      ],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    }
+  },
+  "economics": {
+    "benefit": {
+      "metric": "supported source languages pinned to one Code Evidence field contract",
+      "value": 7,
+      "unit": "languages"
+    },
+    "cost": {
+      "metric": "new runtime dependencies",
+      "value": 0,
+      "unit": "dependencies"
+    },
+    "benefitEvidence": {
+      "evidenceIds": [
+        "local:pon-multilanguage:seven-supported-languages",
+        "local:pon-multilanguage:artifact-schemas-v1"
+      ],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    },
+    "costEvidence": {
+      "evidenceIds": [
+        "local:pon-multilanguage:no-runtime-dependency",
+        "local:pon-multilanguage:runtime-unchanged"
+      ],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    }
+  },
+  "assurance": {
+    "maintenanceEvidence": {
+      "evidenceIds": [
+        "local:pon-multilanguage:source-revision-pinned",
+        "local:pon-multilanguage:fixture-digest-pinned",
+        "gap:pon-multilanguage:update-review"
+      ],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    },
+    "securityEvidence": {
+      "evidenceIds": [
+        "local:pon-multilanguage:no-runtime-dependency",
+        "gap:pon-multilanguage:upstream-license",
+        "gap:pon-multilanguage:independent-security-review"
+      ],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    }
+  },
+  "update": {
+    "policy": "Before 2026-10-13, recheck upstream license and revision, measure a parser-backed language adapter against the shared contract, and obtain independent review before widening semantic claims",
+    "nextCheckAt": 1791849600,
+    "evidence": {
+      "evidenceIds": [
+        "gap:pon-multilanguage:update-review",
+        "gap:pon-multilanguage:upstream-license",
+        "gap:pon-multilanguage:parser-backed-adapter"
+      ],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    }
+  },
+  "ownedModifications": [
+    {
+      "path": "docs/plans/pon-multilanguage-code-evidence-idea.md",
+      "description": "Idea file and acceptance boundary for the multilingual mapping proof",
+      "evidenceIds": [
+        "local:pon-multilanguage:existing-code-evidence-contract",
+        "local:pon-multilanguage:no-runtime-dependency"
+      ]
+    },
+    {
+      "path": "docs/pon-multilanguage-code-evidence.md",
+      "description": "Pipeline-owned mapping, precision boundary, provenance, exclusions, and widening path",
+      "evidenceIds": [
+        "local:pon-multilanguage:source-revision-pinned",
+        "local:pon-multilanguage:artifact-schemas-v1"
+      ]
+    },
+    {
+      "path": "crates/code-intel-cli/tests/pon_multilanguage_mapping.rs",
+      "description": "Rust conformance test proving one field contract across supported languages and explicit unknown behavior for unsupported code",
+      "evidenceIds": [
+        "local:pon-multilanguage:targeted-rust-test-pass",
+        "local:pon-multilanguage:unsupported-csharp-no-fabrication"
+      ]
+    },
+    {
+      "path": "orchestration/internalization/fixtures/pon-multilanguage-code-evidence.json",
+      "description": "Eight-sample cross-language mapping floor with seven supported languages and one unsupported control",
+      "evidenceIds": [
+        "local:pon-multilanguage:seven-supported-languages",
+        "local:pon-multilanguage:fixture-digest-pinned"
+      ]
+    }
+  ],
+  "rollback": {
+    "strategy": "delete the new idea file, mapping note, integration test, fixture, and this record; the existing Code Evidence runtime and artifacts remain unchanged",
+    "evidence": {
+      "evidenceIds": [
+        "local:pon-multilanguage:runtime-unchanged",
+        "local:pon-multilanguage:rollback-independent"
+      ],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    }
+  },
+  "exit": {
+    "strategy": "retire the pon design reference after the multilingual contract becomes a fully Pipeline-owned specification or remove the floor if it stops detecting adapter drift",
+    "replacementCriteria": [
+      "supported languages continue to emit the same files, symbols, and imports field shapes",
+      "unsupported languages remain explicit and cannot fabricate structural facts",
+      "parser-backed adapters preserve the v1 compatibility boundary while reporting stronger precision separately"
+    ],
+    "evidence": {
+      "evidenceIds": [
+        "local:pon-multilanguage:rollback-independent",
+        "gap:pon-multilanguage:parser-backed-adapter"
+      ],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    }
+  },
+  "retirement": {
+    "status": "candidate",
+    "triggers": [
+      "the fixture duplicates a future native multilingual contract",
+      "the mapping floor produces no adapter-drift signal during the review window",
+      "upstream provenance or license cannot be maintained"
+    ],
+    "evidence": {
+      "evidenceIds": [
+        "local:record:pon-multilanguage-code-evidence",
+        "gap:pon-multilanguage:parser-backed-adapter"
+      ],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    }
+  },
+  "lifecycle": {
+    "previousStatus": null,
+    "status": "research",
+    "effectiveAt": 1784073600,
+    "replacementRecordId": null,
+    "evidenceIds": [
+      "local:record:pon-multilanguage-code-evidence",
+      "local:pon-multilanguage:source-revision-pinned",
+      "local:pon-multilanguage:targeted-rust-test-pass",
+      "gap:pon-multilanguage:upstream-license",
+      "gap:pon-multilanguage:parser-backed-adapter",
+      "gap:pon-multilanguage:independent-verifier",
+      "gap:pon-multilanguage:update-review",
+      "gap:pon-multilanguage:independent-security-review"
+    ],
+    "authorityEvent": null
+  },
+  "provenance": {
+    "recordedAt": 1784073600,
+    "recordedBy": "codex-pon-multilanguage-review"
+  }
+}

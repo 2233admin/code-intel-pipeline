@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-evidence-provider-port.v1",
+  "title": "Code Intel Evidence Provider Port v1",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/observation" }
+  ],
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "expectedSnapshotIdentity", "policy", "observation"],
+      "properties": {
+        "schema": { "const": "code-intel-evidence-admissibility-request.v1" },
+        "expectedSnapshotIdentity": { "$ref": "#/$defs/digest" },
+        "policy": {
+          "type": "object", "additionalProperties": false,
+          "required": ["evaluatedAt", "maxAgeSeconds"],
+          "properties": { "evaluatedAt": { "type": "integer", "minimum": 0 }, "maxAgeSeconds": { "type": "integer", "minimum": 1 } }
+        },
+        "observation": { "$ref": "#/$defs/observation" }
+      }
+    },
+    "observation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "provider", "source", "consumedSnapshotIdentity", "observedAt", "completeness", "claimedComplete", "payload", "provenance", "failure"],
+      "properties": {
+        "schema": { "const": "code-intel-observed-evidence.v1" },
+        "provider": {
+          "type": "object", "additionalProperties": false, "required": ["id", "implementation"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "implementation": {
+              "type": "object", "additionalProperties": false, "required": ["id", "version", "digest"],
+              "properties": { "id": { "type": "string", "minLength": 1 }, "version": { "type": "string", "minLength": 1 }, "digest": { "$ref": "#/$defs/digest" } }
+            }
+          }
+        },
+        "source": {
+          "type": "object", "additionalProperties": false, "minProperties": 1,
+          "properties": { "revision": { "type": "string", "minLength": 1 }, "endpointIdentity": { "type": "string", "minLength": 1 } },
+          "oneOf": [{ "required": ["revision"] }, { "required": ["endpointIdentity"] }]
+        },
+        "consumedSnapshotIdentity": { "$ref": "#/$defs/digest" },
+        "observedAt": { "type": "integer", "minimum": 0 },
+        "completeness": { "enum": ["complete", "partial"] },
+        "claimedComplete": { "type": "boolean" },
+        "payload": { "$ref": "#/$defs/artifactRef" },
+        "provenance": {
+          "type": "object", "additionalProperties": false, "required": ["collectionId", "command", "startedAt", "completedAt"],
+          "properties": { "collectionId": { "type": "string", "minLength": 1 }, "command": { "type": "string", "minLength": 1 }, "startedAt": { "type": "integer", "minimum": 0 }, "completedAt": { "type": "integer", "minimum": 0 } }
+        },
+        "failure": {
+          "type": "object", "additionalProperties": false, "required": ["kind"],
+          "properties": { "kind": { "enum": ["none", "provider_unavailable", "domain_unknown", "process_failure"] }, "message": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "artifactRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "artifactSchema", "type", "path", "sha256", "consumedSnapshotIdentity"],
+      "properties": {
+        "schema": { "const": "code-intel-artifact-ref.v1" },
+        "artifactSchema": { "const": "code-intel-evidence-payload.v1" },
+        "type": { "const": "observed.evidence.payload" },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "consumedSnapshotIdentity": { "$ref": "#/$defs/digest" }
+      }
+    }
+  }
+}

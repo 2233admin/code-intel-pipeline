@@ -1,0 +1,9 @@
+{
+  "providerMode": "lite",
+  "status": "current",
+  "providerId": "codenexus.lite-compat",
+  "implementationId": "invoke-codenexus-lite.ps1",
+  "sourceRevision": "lite-revision-4",
+  "activation": "explicit_fallback",
+  "effects": ["read_repository", "read_git_history", "read_sentrux_artifacts", "write_compatibility_artifact"]
+}

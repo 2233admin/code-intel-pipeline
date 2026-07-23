@@ -1,0 +1,39 @@
+{
+  "schema": "code-intel-method-card.v1",
+  "id": "value-stream-queue-delay",
+  "version": "1.0.0",
+  "name": "Value-stream and queue-delay analysis",
+  "problemSignals": [
+    { "id": "long-lead-time", "description": "Elapsed delivery time greatly exceeds active processing time." },
+    { "id": "handoff-wait", "description": "Work repeatedly waits between states, teams, or approval queues." }
+  ],
+  "requiredEvidence": [
+    { "id": "item-state-timestamps", "description": "Per-item entry and exit timestamps for defined workflow states." },
+    { "id": "work-demand-and-capacity", "description": "Arrival rate, work-in-process, service capacity, batching, and rework observations." }
+  ],
+  "assumptions": ["Workflow states and timestamp semantics are consistent", "Items are comparable or explicitly segmented"],
+  "deterministicSteps": [
+    { "id": "normalize-flow", "action": "Normalize item histories into active, waiting, blocked, rework, and completed intervals.", "requires": ["evidence:item-state-timestamps"], "produces": ["value-stream-map"] },
+    { "id": "quantify-queues", "action": "Calculate lead time, touch time, queue delay, WIP, arrival/service rates, and segmentation with declared formulas.", "requires": ["evidence:work-demand-and-capacity", "step:normalize-flow"], "produces": ["queue-delay-profile"] },
+    { "id": "locate-constraint", "action": "Identify observed delay concentration and distinguish capacity, batching, blocking, and rework hypotheses.", "requires": ["step:quantify-queues"], "produces": ["constraint-assessment"] }
+  ],
+  "outputs": [
+    { "id": "value-stream-map", "description": "State-by-state active and waiting intervals." },
+    { "id": "queue-delay-profile", "description": "Segmented flow and queue metrics with formulas." },
+    { "id": "constraint-assessment", "description": "Evidence-backed delay concentration and unresolved causes." }
+  ],
+  "confidenceRules": [
+    { "level": "high", "whenAll": ["State timestamps cover the full flow", "Demand and capacity windows align", "Segmentation explains item mix"] },
+    { "level": "medium", "whenAll": ["Lead and queue times are reliable", "Capacity or rework evidence is incomplete"] },
+    { "level": "unknown", "whenAll": ["Timestamp semantics conflict", "Missing states make wait and touch time indistinguishable"] }
+  ],
+  "cost": { "relative": "medium", "drivers": ["Workflow-state count", "Timestamp cleanup", "Item segmentation"] },
+  "contraindications": ["Only aggregate completion counts exist with no item flow", "A dependency schedule is being mistaken for an operational queue model"],
+  "implementationPorts": [
+    { "id": "flow-metrics-engine", "kind": "deterministic_tool", "contract": ["Preserve per-item timestamps and segment definitions", "Emit formulas and missing-data diagnostics"] }
+  ],
+  "source": { "title": "Value-stream mapping and queueing-flow practice", "version": "catalog interpretation 1.0", "reference": "Lean flow and queue-delay baseline" },
+  "applicabilityBoundary": { "inScope": ["Operational workflow delay", "Lead-time and WIP analysis"], "outOfScope": ["Dependency-only project scheduling", "Priority or staffing authorization"] },
+  "relatedMethodIds": ["critical-path-pert"],
+  "executionPolicy": "catalog_only_no_selection_or_execution"
+}

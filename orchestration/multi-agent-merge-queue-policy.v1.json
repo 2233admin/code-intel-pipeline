@@ -1,0 +1,35 @@
+{
+  "schema": "code-intel-multi-agent-merge-queue-policy.v1",
+  "source": {
+    "project": "2233admin/claude-code-merge-queue",
+    "uri": "https://github.com/2233admin/claude-code-merge-queue",
+    "revision": "e7a76958dbd3953b84f12abbc2e6bd755aafce53",
+    "version": "0.5.1",
+    "license": "MIT"
+  },
+  "provider": {
+    "id": "claude-code-merge-queue",
+    "minimumVersion": "0.5.1",
+    "resolution": "repository_local_only"
+  },
+  "requiredLandingGates": [
+    "git-repository",
+    "provider-local-install",
+    "provider-version",
+    "provider-config",
+    "acceptance-check-configured",
+    "checks-required",
+    "direct-push-protection",
+    "human-promotion-boundary"
+  ],
+  "allowedActions": ["status", "validate", "land", "reconcile", "history"],
+  "forbiddenActions": ["init", "uninstall", "promote", "prune", "preview", "emergency-push"],
+  "authority": {
+    "agentsMayLandAcceptedLanes": true,
+    "agentsMayPromoteProduction": false,
+    "landRequiresExplicitRepositoryMutation": true,
+    "landRequiresExplicitNetworkPush": true,
+    "adapterMayInstallOrInitialize": false,
+    "adapterMayDeleteWorktrees": false
+  }
+}

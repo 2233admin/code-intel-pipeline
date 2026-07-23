@@ -1,0 +1,155 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.claude-code-merge-queue-record",
+  "projectId": "code-intel-pipeline",
+  "subject": {
+    "name": "claude-code-merge-queue landing provider adapter",
+    "kind": "adapted_capability",
+    "source": {
+      "uri": "https://github.com/2233admin/claude-code-merge-queue",
+      "revision": "e7a76958dbd3953b84f12abbc2e6bd755aafce53; version:0.5.1; local-adapter-sha256:7a5bf1613548a48c9ef0b8a1727b5db108e9c3ba2745aefaac9d8163394f0a85; local-conformance-sha256:b84d6d341bbc1224c082784e2c28af5ddbb802b36d8a88ed83143a135f968c65; local-policy-sha256:158ee8bafe3bd19c76d495860b8737c614854ebd0319014e7c7b03d9d4579d18; local-doc-sha256:804aed2aeb82d5c28d48b91f2a3242aefce8e22d734db0b70cfaabaf44f8ab17"
+    },
+    "license": {
+      "id": "MIT",
+      "obligations": [
+        "retain the upstream copyright and MIT permission notice when distributing copied or substantial upstream portions",
+        "keep the exact source URI, revision, version, and license attribution for the external provider adapter"
+      ]
+    }
+  },
+  "adoption": {
+    "rung": "adapt",
+    "ownedBoundary": [
+      "Pipeline owns readiness observation, explicit mutation and network authority checks, orchestration registration, and project-acceptance binding",
+      "the external provider owns worktree lane allocation, FIFO locking, rebase, push, synchronization, and provider-specific hooks",
+      "ordinary code-intel analysis has no queue dependency and production promotion remains outside agent and adapter authority"
+    ],
+    "necessityEvidence": {
+      "evidenceIds": ["local:merge-queue:multi-agent-race-gap", "local:merge-queue:eight-readiness-gates", "gap:merge-queue:representative-cluster-throughput"],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    },
+    "compatibilityEvidence": {
+      "evidenceIds": ["local:merge-queue:optional-stage", "local:merge-queue:repository-local-provider", "local:merge-queue:no-normal-run-callsite"],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    },
+    "conformanceEvidence": {
+      "evidenceIds": ["local:merge-queue:ready-fixture-land", "local:merge-queue:authority-rejection", "local:merge-queue:acceptance-and-promotion-rejection", "gap:merge-queue:independent-provider-security-review"],
+      "checkedAt": 1783900800,
+      "expiresAt": 1791676800
+    }
+  },
+  "authorityRequirements": {
+    "repositoryGovernedAttestation": true
+  },
+  "operationTrace": [
+    {
+      "integrationId": "delivery.multi-agent-merge-queue",
+      "operation": "status",
+      "command": "pwsh -NoProfile -File Invoke-MultiAgentMergeQueue.ps1 -Action status -RepoPath '<repo-path>' -Json",
+      "implementationIdentity": { "providerId": "claude-code-merge-queue", "implementationId": "pipeline.adapter.v1", "activation": "optional" },
+      "source": { "path": "Invoke-MultiAgentMergeQueue.ps1", "sha256": "7a5bf1613548a48c9ef0b8a1727b5db108e9c3ba2745aefaac9d8163394f0a85" },
+      "conformance": { "path": "test-multi-agent-merge-queue.ps1", "sha256": "b84d6d341bbc1224c082784e2c28af5ddbb802b36d8a88ed83143a135f968c65", "testName": "PASS multi-agent merge queue" }
+    },
+    {
+      "integrationId": "delivery.multi-agent-merge-queue",
+      "operation": "validate",
+      "command": "pwsh -NoProfile -File Invoke-MultiAgentMergeQueue.ps1 -Action validate -RepoPath '<repo-path>' -Json",
+      "implementationIdentity": { "providerId": "claude-code-merge-queue", "implementationId": "pipeline.adapter.v1", "activation": "optional" },
+      "source": { "path": "Invoke-MultiAgentMergeQueue.ps1", "sha256": "7a5bf1613548a48c9ef0b8a1727b5db108e9c3ba2745aefaac9d8163394f0a85" },
+      "conformance": { "path": "test-multi-agent-merge-queue.ps1", "sha256": "b84d6d341bbc1224c082784e2c28af5ddbb802b36d8a88ed83143a135f968c65", "testName": "PASS multi-agent merge queue" }
+    },
+    {
+      "integrationId": "delivery.multi-agent-merge-queue",
+      "operation": "land",
+      "command": "pwsh -NoProfile -File Invoke-MultiAgentMergeQueue.ps1 -Action land -RepoPath '<repo-path>' -AllowRepositoryMutation -AllowNetworkPush",
+      "implementationIdentity": { "providerId": "claude-code-merge-queue", "implementationId": "pipeline.adapter.v1", "activation": "explicit-authority" },
+      "source": { "path": "Invoke-MultiAgentMergeQueue.ps1", "sha256": "7a5bf1613548a48c9ef0b8a1727b5db108e9c3ba2745aefaac9d8163394f0a85" },
+      "conformance": { "path": "test-multi-agent-merge-queue.ps1", "sha256": "b84d6d341bbc1224c082784e2c28af5ddbb802b36d8a88ed83143a135f968c65", "testName": "PASS multi-agent merge queue" }
+    },
+    {
+      "integrationId": "delivery.multi-agent-merge-queue",
+      "operation": "reconcile",
+      "command": "pwsh -NoProfile -File Invoke-MultiAgentMergeQueue.ps1 -Action reconcile -RepoPath '<repo-path>'",
+      "implementationIdentity": { "providerId": "claude-code-merge-queue", "implementationId": "pipeline.adapter.v1", "activation": "optional" },
+      "source": { "path": "Invoke-MultiAgentMergeQueue.ps1", "sha256": "7a5bf1613548a48c9ef0b8a1727b5db108e9c3ba2745aefaac9d8163394f0a85" },
+      "conformance": { "path": "test-multi-agent-merge-queue.ps1", "sha256": "b84d6d341bbc1224c082784e2c28af5ddbb802b36d8a88ed83143a135f968c65", "testName": "PASS multi-agent merge queue" }
+    },
+    {
+      "integrationId": "delivery.multi-agent-merge-queue",
+      "operation": "history",
+      "command": "pwsh -NoProfile -File Invoke-MultiAgentMergeQueue.ps1 -Action history -RepoPath '<repo-path>'",
+      "implementationIdentity": { "providerId": "claude-code-merge-queue", "implementationId": "pipeline.adapter.v1", "activation": "optional" },
+      "source": { "path": "Invoke-MultiAgentMergeQueue.ps1", "sha256": "7a5bf1613548a48c9ef0b8a1727b5db108e9c3ba2745aefaac9d8163394f0a85" },
+      "conformance": { "path": "test-multi-agent-merge-queue.ps1", "sha256": "b84d6d341bbc1224c082784e2c28af5ddbb802b36d8a88ed83143a135f968c65", "testName": "PASS multi-agent merge queue" }
+    }
+  ],
+  "economics": {
+    "benefit": { "metric": "fail-closed landing readiness gates", "value": 8, "unit": "gates" },
+    "cost": { "metric": "optional project runtime dependencies", "value": 1, "unit": "dependencies" },
+    "benefitEvidence": { "evidenceIds": ["local:merge-queue:eight-readiness-gates", "gap:merge-queue:representative-cluster-throughput"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "costEvidence": { "evidenceIds": ["local:merge-queue:repository-local-provider"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+  },
+  "assurance": {
+    "maintenanceEvidence": { "evidenceIds": ["local:merge-queue:source-revision-version-pinned", "gap:merge-queue:update-review"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "securityEvidence": { "evidenceIds": ["local:merge-queue:explicit-mutation-network-authority", "local:merge-queue:no-install-init-promote-prune", "gap:merge-queue:independent-provider-security-review"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+  },
+  "update": {
+    "policy": "Before 2026-10-13, compare upstream revision and provider behavior, re-run adapter conformance, measure representative multi-agent landing throughput, and review provider security before production enablement",
+    "nextCheckAt": 1791676800,
+    "evidence": { "evidenceIds": ["gap:merge-queue:update-review", "gap:merge-queue:representative-cluster-throughput", "gap:merge-queue:independent-provider-security-review"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+  },
+  "ownedModifications": [
+    { "path": "Invoke-MultiAgentMergeQueue.ps1", "description": "Pipeline-owned readiness and explicit-authority compatibility adapter", "evidenceIds": ["local:merge-queue:eight-readiness-gates", "local:merge-queue:explicit-mutation-network-authority"] },
+    { "path": "orchestration/multi-agent-merge-queue-policy.v1.json", "description": "Pinned provider, required gates, allowed actions, and authority boundary", "evidenceIds": ["local:merge-queue:source-revision-version-pinned", "local:merge-queue:no-install-init-promote-prune"] },
+    { "path": "orchestration/integrations.json", "description": "Optional landing-coordination stage and provider operation registry", "evidenceIds": ["local:merge-queue:optional-stage", "local:merge-queue:no-normal-run-callsite"] },
+    { "path": "orchestration/schemas/code-intel-multi-agent-merge-queue-status.v1.schema.json", "description": "Checked machine-readable readiness result contract", "evidenceIds": ["local:merge-queue:eight-readiness-gates"] },
+    { "path": "test-multi-agent-merge-queue.ps1", "description": "Positive delegation and fail-closed authority, acceptance, and promotion fixtures", "evidenceIds": ["local:merge-queue:ready-fixture-land", "local:merge-queue:authority-rejection", "local:merge-queue:acceptance-and-promotion-rejection"] },
+    { "path": "test-integration-orchestration.ps1", "description": "Registry and path-quoting acceptance for the optional delivery adapter", "evidenceIds": ["local:merge-queue:optional-stage", "local:merge-queue:explicit-mutation-network-authority"] },
+    { "path": "orchestration/code-intel-project-conformance-policy.v1.json", "description": "Adds the merge-queue contract to unified fast and full project acceptance", "evidenceIds": ["local:merge-queue:acceptance-and-promotion-rejection"] },
+    { "path": ".github/workflows/ci.yml", "description": "Runs parser, orchestration, unified conformance, and cross-platform merge-queue contract checks", "evidenceIds": ["local:merge-queue:ready-fixture-land", "local:merge-queue:authority-rejection"] },
+    { "path": "docs/multi-agent-merge-queue.md", "description": "Human integration, acceptance binding, authority, and limits contract", "evidenceIds": ["local:merge-queue:optional-stage", "local:merge-queue:no-normal-run-callsite"] },
+    { "path": "docs/plans/multi-agent-merge-queue-idea.md", "description": "Accepted scope, success criteria, constraints, and replacement questions", "evidenceIds": ["local:merge-queue:multi-agent-race-gap", "local:merge-queue:no-normal-run-callsite"] }
+  ],
+  "rollback": {
+    "strategy": "remove the optional stage, integration, adapter, policy, schema, tests, documentation, and this record; code-intel analysis and project conformance remain independent",
+    "evidence": { "evidenceIds": ["local:merge-queue:optional-stage", "local:merge-queue:no-normal-run-callsite"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+  },
+  "exit": {
+    "strategy": "replace the provider adapter when a language-neutral or distributed queue satisfies the same fail-closed landing and authority contract, or retire it if measured cluster value is absent",
+    "replacementCriteria": [
+      "accepted lanes are serialized without bypassing project conformance",
+      "direct pushes remain protected and conflicts fail closed",
+      "repository mutation and network push require explicit authority",
+      "production promotion remains human-only"
+    ],
+    "evidence": { "evidenceIds": ["local:merge-queue:eight-readiness-gates", "gap:merge-queue:representative-cluster-throughput"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+  },
+  "retirement": {
+    "status": "candidate",
+    "triggers": [
+      "representative multi-agent runs show no meaningful reduction in landing races or queue delay",
+      "the provider no longer preserves fail-closed checks, crash-safe FIFO behavior, or manual promotion",
+      "a distributed queue replaces the one-machine provider while satisfying the owned contract"
+    ],
+    "evidence": { "evidenceIds": ["local:record:claude-code-merge-queue", "gap:merge-queue:representative-cluster-throughput", "gap:merge-queue:update-review"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+  },
+  "lifecycle": {
+    "previousStatus": null,
+    "status": "research",
+    "effectiveAt": 1783900800,
+    "replacementRecordId": null,
+    "evidenceIds": [
+      "local:record:claude-code-merge-queue",
+      "local:merge-queue:source-revision-version-pinned",
+      "local:merge-queue:ready-fixture-land",
+      "local:merge-queue:authority-rejection",
+      "gap:merge-queue:representative-cluster-throughput",
+      "gap:merge-queue:update-review",
+      "gap:merge-queue:independent-provider-security-review"
+    ],
+    "authorityEvent": null
+  },
+  "provenance": { "recordedAt": 1783900800, "recordedBy": "codex-merge-queue-internalization" }
+}

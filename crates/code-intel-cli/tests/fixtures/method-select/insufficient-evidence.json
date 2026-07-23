@@ -1,0 +1,10 @@
+{
+  "facts": [
+    {
+      "id": "dependency-fact",
+      "signalIds": ["dependency-congestion"],
+      "evidenceKinds": ["activity-network"]
+    }
+  ],
+  "evidenceGaps": ["activity-duration-estimates"]
+}

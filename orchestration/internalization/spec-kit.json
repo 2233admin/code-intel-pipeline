@@ -1,0 +1,27 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.spec-kit-record",
+  "projectId": "code-intel-pipeline",
+  "subject": { "name": "spec-kit advisory candidate", "kind": "design_reference", "source": { "uri": "https://github.com/github/spec-kit", "revision": "unverified-upstream; local-atom-sha256:03d9cbed70d83c59f7d9540fccc606ce0b2723135efd2c5e32943d367008a199" }, "license": { "id": "UNKNOWN-RESEARCH-ONLY", "obligations": ["do not distribute, vendor, invoke, or production-enable until the exact upstream revision and license text are verified", "retain this provenance and gap notice while the candidate remains in research"] } },
+  "adoption": {
+    "rung": "reimplement",
+    "ownedBoundary": ["pipeline-owned greenfield-fit advisory candidate data only", "no spec-kit runtime dependency", "no specify init, filesystem initialization, commitment, or adoption authority"],
+    "necessityEvidence": { "evidenceIds": ["local:reference-capability-map:spec-kit-row", "gap:spec-kit:upstream-revision", "gap:spec-kit:license"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "compatibilityEvidence": { "evidenceIds": ["local:b06:proposal-effects-empty", "local:b06:no-auto-init-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "conformanceEvidence": { "evidenceIds": ["local:atom:spec-kit-eight-occurrences", "local:b06:a01-envelope-parity"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+  },
+  "economics": {
+    "benefit": { "metric": "spec-kit token occurrences traced in the current advisory atom", "value": 8, "unit": "occurrences" },
+    "cost": { "metric": "pipeline-owned spec-kit lifecycle records", "value": 1, "unit": "records" },
+    "benefitEvidence": { "evidenceIds": ["local:atom:spec-kit-eight-occurrences"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "costEvidence": { "evidenceIds": ["local:record:spec-kit"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+  },
+  "assurance": { "maintenanceEvidence": { "evidenceIds": ["gap:spec-kit:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 }, "securityEvidence": { "evidenceIds": ["gap:spec-kit:security-review"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "update": { "policy": "Before 2026-10-11, verify the upstream commit, LICENSE, releases, and greenfield-fit semantics; keep research-only until admitted", "nextCheckAt": 1791676800, "evidence": { "evidenceIds": ["gap:spec-kit:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "ownedModifications": [ { "path": "OpenSpec-Detector.ps1", "description": "Pipeline-owned spec-kit fit heuristic and advisory rendering; no upstream execution", "evidenceIds": ["local:atom:spec-kit-eight-occurrences", "local:b06:no-auto-init-boundary"] } ],
+  "rollback": { "strategy": "delete this candidate record and remove the spec-kit alternative without changing facts, commitments, or advisory authority", "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "exit": { "strategy": "replace with a pinned, licensed greenfield candidate or retire while retaining audit provenance", "replacementCriteria": ["fit evidence uses repository facts rather than tool name alone", "replacement has exact revision, license, measurements, and no-auto-init conformance"], "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "retirement": { "status": "candidate", "triggers": ["greenfield-fit claim is not evidence-bound", "upstream provenance or license remains unverifiable", "candidate loses unique measured advisory value"], "evidence": { "evidenceIds": ["local:record:spec-kit"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "lifecycle": { "previousStatus": null, "status": "research", "effectiveAt": 1783900800, "replacementRecordId": null, "evidenceIds": ["local:record:spec-kit", "gap:spec-kit:upstream-revision", "gap:spec-kit:license"], "authorityEvent": null },
+  "provenance": { "recordedAt": 1783900800, "recordedBy": "dependency-expert" }
+}

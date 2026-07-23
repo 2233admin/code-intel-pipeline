@@ -1,0 +1,101 @@
+{
+  "schema": "github-solution-research.v1",
+  "generatedAt": "2026-07-14T03:39:12.3361140+08:00",
+  "repo": "D:\\projects\\_tools\\code-intel-pipeline",
+  "mode": "normal",
+  "status": "manual_required",
+  "reason": "Invalid search query \"( rust compile blocker error[E0432]:\\\" unresolved import crate::authority in compatibility_retirement_gate.rs\\\" ) type:pr\".\r\nThe search query contains invalid syntax.",
+  "queries": [
+    {
+      "step": "rust compile blocker",
+      "query": "rust compile blocker error[E0432]: unresolved import crate::authority in compatibility_retirement_gate.rs",
+      "firstErrorLine": "error[E0432]: unresolved import crate::authority in compatibility_retirement_gate.rs",
+      "tokens": []
+    }
+  ],
+  "candidates": [],
+  "evidenceLinks": [],
+  "invocations": [
+    {
+      "query": "rust compile blocker error[E0432]: unresolved import crate::authority in compatibility_retirement_gate.rs",
+      "surface": "issues",
+      "argv": [
+        "search",
+        "issues",
+        "rust compile blocker error[E0432]: unresolved import crate::authority in compatibility_retirement_gate.rs",
+        "--limit",
+        "5",
+        "--json",
+        "title,url,state,updatedAt,repository"
+      ],
+      "exitCode": 1
+    },
+    {
+      "query": "rust compile blocker error[E0432]: unresolved import crate::authority in compatibility_retirement_gate.rs",
+      "surface": "prs",
+      "argv": [
+        "search",
+        "prs",
+        "rust compile blocker error[E0432]: unresolved import crate::authority in compatibility_retirement_gate.rs",
+        "--limit",
+        "5",
+        "--json",
+        "title,url,state,updatedAt,repository"
+      ],
+      "exitCode": 1
+    },
+    {
+      "query": "rust compile blocker error[E0432]: unresolved import crate::authority in compatibility_retirement_gate.rs",
+      "surface": "repos",
+      "argv": [
+        "search",
+        "repos",
+        "rust compile blocker error[E0432]: unresolved import crate::authority in compatibility_retirement_gate.rs",
+        "--archived=false",
+        "--sort",
+        "stars",
+        "--order",
+        "desc",
+        "--limit",
+        "5",
+        "--json",
+        "fullName,url,description,stargazersCount,forksCount,language,license,pushedAt,isArchived"
+      ],
+      "exitCode": 0
+    },
+    {
+      "query": "rust compile blocker error[E0432]: unresolved import crate::authority in compatibility_retirement_gate.rs",
+      "surface": "code",
+      "argv": [
+        "search",
+        "code",
+        "rust compile blocker error[E0432]: unresolved import crate::authority in compatibility_retirement_gate.rs",
+        "--limit",
+        "5",
+        "--json",
+        "path,url,repository,sha"
+      ],
+      "exitCode": 0
+    }
+  ],
+  "failedSteps": [
+    {
+      "name": "rust compile blocker",
+      "status": "failed",
+      "error": "error[E0432]: unresolved import crate::authority in compatibility_retirement_gate.rs",
+      "output": ""
+    }
+  ],
+  "failureClassifications": [
+    {
+      "category": "compiler_error",
+      "name": "rust compile blocker"
+    }
+  ],
+  "sentruxFailures": null,
+  "nextStep": "Run github-solution-research with the failed step names, first error lines, tool/package names, and any version constraints.",
+  "exitCriteria": [
+    "GitHub issue, PR, code, release, or repository evidence explains an applicable solution",
+    "or GitHub evidence is explicitly recorded as insufficient and local-only diagnosis continues"
+  ]
+}

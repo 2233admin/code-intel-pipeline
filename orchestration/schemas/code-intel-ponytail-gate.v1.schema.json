@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-ponytail-gate.v1",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/result" }
+  ],
+  "$defs": {
+    "id": { "type": "string", "minLength": 1 },
+    "evidenceIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/id" }
+    },
+    "authorityEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "id", "decision", "approver", "evidenceIds", "issuedAt", "expiresAt"],
+      "properties": {
+        "schema": { "const": "code-intel-authority-event.v1" },
+        "id": { "$ref": "#/$defs/id" },
+        "decision": { "const": "approved" },
+        "approver": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "role"],
+          "properties": {
+            "id": { "$ref": "#/$defs/id" },
+            "role": { "$ref": "#/$defs/id" }
+          }
+        },
+        "evidenceIds": { "$ref": "#/$defs/evidenceIds" },
+        "issuedAt": { "type": "integer", "minimum": 0 },
+        "expiresAt": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "valueSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "evidenceIds"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "operator_requested_outcome",
+            "committed_engineering_plan_deliverable",
+            "verified_defect_or_risk",
+            "required_contract_or_gate",
+            "evidence_closing_spike",
+            "approved_debt_reduction",
+            "future_maybe"
+          ]
+        },
+        "id": { "$ref": "#/$defs/id" },
+        "evidenceIds": { "$ref": "#/$defs/evidenceIds" }
+      }
+    },
+    "rung": {
+      "enum": [
+        "do_nothing",
+        "repository_reuse",
+        "standard_library",
+        "platform_native",
+        "installed_dependency",
+        "one_liner",
+        "smallest_local_implementation"
+      ]
+    },
+    "lowerRung": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rung", "reason", "evidenceIds"],
+      "properties": {
+        "rung": { "$ref": "#/$defs/rung" },
+        "reason": { "type": "string", "minLength": 1 },
+        "evidenceIds": { "$ref": "#/$defs/evidenceIds" }
+      }
+    },
+    "bypass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changeId", "authorityEvent"],
+      "properties": {
+        "changeId": { "$ref": "#/$defs/id" },
+        "authorityEvent": { "$ref": "#/$defs/authorityEvent" }
+      }
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "operation", "valueSource", "requiredEvidenceIds", "firstSufficientRung", "lowerRungs", "removedProtections"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["artifact", "dependency", "abstraction", "file", "test", "documentation", "process"] },
+        "operation": { "enum": ["add", "delete", "reuse"] },
+        "valueSource": { "$ref": "#/$defs/valueSource" },
+        "requiredEvidenceIds": { "$ref": "#/$defs/evidenceIds" },
+        "firstSufficientRung": { "$ref": "#/$defs/rung" },
+        "lowerRungs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/lowerRung" } },
+        "removedProtections": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["verification", "evidence", "safety", "error_handling", "accessibility", "data_loss_prevention", "artifact_contract"] }
+        },
+        "bypass": { "$ref": "#/$defs/bypass" }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "mode", "evaluatedAt", "knownEvidenceIds", "consumedAuthorityEventIds", "changes"],
+      "properties": {
+        "schema": { "const": "code-intel-ponytail-gate-request.v1" },
+        "mode": { "enum": ["report_only", "enforce"] },
+        "evaluatedAt": { "type": "integer", "minimum": 0 },
+        "knownEvidenceIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "consumedAuthorityEventIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "changes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/change" } }
+      }
+    },
+    "changeResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["change", "status", "authorityEventId", "diagnostics"],
+      "properties": {
+        "change": { "$ref": "#/$defs/change" },
+        "status": { "enum": ["accepted", "rejected", "bypassed"] },
+        "authorityEventId": { "type": ["string", "null"] },
+        "diagnostics": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "status", "mode", "wouldReject", "enforcedBlock", "traceRetained", "consumedAuthorityEventIds", "changes"],
+      "properties": {
+        "schema": { "const": "code-intel-ponytail-gate-result.v1" },
+        "status": { "const": "completed" },
+        "mode": { "enum": ["report_only", "enforce"] },
+        "wouldReject": { "type": "integer", "minimum": 0 },
+        "enforcedBlock": { "type": "boolean" },
+        "traceRetained": { "const": true },
+        "consumedAuthorityEventIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "changes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/changeResult" } }
+      }
+    }
+  }
+}

@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-07-23
+
+### Added
+
+- One manifest-bound normal-run spine for snapshot, doctor, inventory, native code evidence,
+  architecture graph, real Sentrux `gate`/`check` observations, Hospital diagnosis, atomic
+  publication, committed-only indexing, evidence query, freshness, and conservative change impact.
+- Optional, research-stage Mindwalk trace normalization for privacy-reduced session review; it is
+  advisory-only and absent from default scans.
+- Representative benchmark gates for deterministic replay, artifact size, unresolved coverage, and
+  unsupported-file coverage.
+
+- One-command automatic draft-PR orchestration from exact proposal through structured user decision,
+  C07 record/replay, and the existing fail-closed executor.
+- Zero-effect proactive `/investigate` suggestions for actionable Pipeline failures,
+  plus a branch-local user decision request before any automatic draft-PR path.
+- Public-beta package verification, including clean extracted-ZIP smoke coverage
+  and release checksums.
+- Runtime/CI and file-boundary evidence providers, transactional artifact
+  contracts, model request synthesis, executable handles, and compatibility
+  retirement approval evidence.
+
+### Changed
+
+- Non-completed runs are retained as audit diagnostics and can never replace the latest completed
+  authority. Domain-failed nodes retain their verified evidence without becoming authoritative.
+- The native seven-language adapter is explicitly graded `candidate + structural`; semantic,
+  behavioral, and production claims remain unsupported.
+- Project license metadata, README, and root license text are now consistently MIT.
+
+- Repowise semantic memory remains in the default orchestration plan but is now
+  explicitly optional and non-blocking for the beta core.
+- CodeNexus context remains an optional compatibility adapter; generated
+  `work/` paths are excluded from repository evidence.
+- Sentrux debt normalization treats an improving quality signal as
+  informational while structural metric increases remain blocking.
+- The stable wrapper resolves the packaged `bin/code-intel.exe` before any
+  development-tree or Cargo fallback.
+
+### Security
+
+- Production model delegation uses synthesized requests and validated
+  executable handles; legacy raw CLI execution is rejected by default.
+
+### Known limits
+
+- The public beta package is Windows-only.
+- The incubated `crates/code-nexus-lite` Rust worker is not a shipped workspace
+  binary; CodeNexus indexing is not a beta-core dependency.
+
 ## [0.3.0-beta.1] — 2026-07-16
 
 Pre-release for the Rust-first Code Intel control plane. This build is intended

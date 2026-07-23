@@ -80,8 +80,8 @@ $checks = @(
     },
     @{
         Path = $contextPath
-        Pattern = "Implementation Minimalism Benchmark"
-        Message = "CONTEXT.md must define Implementation Minimalism Benchmark."
+        Pattern = "Ponytail Value Filter"
+        Message = "CONTEXT.md must define Ponytail Value Filter."
     },
     @{
         Path = $skillBenchmarkPath

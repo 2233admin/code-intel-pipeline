@@ -42,6 +42,39 @@ try {
         throw "Prompt missing normalized exclude list: $($manifest.prompt)"
     }
 
+    $fakeBin = Join-Path $scratch "fake-claude"
+    New-Item -ItemType Directory -Force -Path $fakeBin | Out-Null
+    $fakeClaude = Join-Path $fakeBin "claude.cmd"
+    @'
+@echo off
+echo fixture specification output
+exit /b 0
+'@ | Set-Content -LiteralPath $fakeClaude -Encoding ASCII
+    $oldPath = $env:PATH
+    try {
+        $env:PATH = $fakeBin + [IO.Path]::PathSeparator + $oldPath
+        $analyzeArtifacts = Join-Path $scratch "analyze-artifacts"
+        $analyzeRaw = & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "Invoke-GreenfieldSpecExtraction.ps1") `
+            -RepoPath $repo `
+            -ArtifactDir $analyzeArtifacts `
+            -Analyze `
+            -Json
+        if ($LASTEXITCODE -ne 0) { throw "Greenfield analyze fixture failed" }
+        $analyze = $analyzeRaw | ConvertFrom-Json
+        if ($analyze.status -ne "completed" -or -not [bool]$analyze.analyzeRequested) {
+            throw "Analyze fixture must complete only after explicit -Analyze."
+        }
+        if (-not (Test-Path -LiteralPath $analyze.outputs.stdout -PathType Leaf)) {
+            throw "Analyze fixture must capture provider stdout locally."
+        }
+        if ((Get-Content -LiteralPath $analyze.outputs.stdout -Raw) -notmatch "fixture specification output") {
+            throw "Analyze fixture stdout was not preserved."
+        }
+    }
+    finally {
+        $env:PATH = $oldPath
+    }
+
     $badOutput = & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "Invoke-GreenfieldSpecExtraction.ps1") `
         -RepoPath $repo `
         -ArtifactDir (Join-Path $scratch "bad-artifacts") `
@@ -68,11 +101,12 @@ try {
     }
     $plan = $planRaw | ConvertFrom-Json
     $greenfield = @($plan.plan | Where-Object { $_.id -eq "spec.greenfield" })
-    if ($greenfield.Count -ne 1) {
-        throw "Expected one spec.greenfield integration"
+    if ($greenfield.Count -ne 0) {
+        throw "Retired external spec.greenfield integration must not appear in production plans"
     }
-    if ([bool]$greenfield[0].required) {
-        throw "spec.greenfield must stay optional"
+    $registry = Get-Content -LiteralPath (Join-Path $root "orchestration/integrations.json") -Raw | ConvertFrom-Json
+    if (@($registry.integrations | Where-Object { [string]$_.id -eq "spec.greenfield" }).Count -ne 0) {
+        throw "Retired external spec.greenfield integration remains registered"
     }
 
     Write-Host "Greenfield integration smoke passed"

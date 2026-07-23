@@ -501,6 +501,67 @@ function Install-SentruxShim {
     }
 }
 
+function Install-CodeIntelBinary {
+    param(
+        [System.Collections.Generic.List[object]]$Actions,
+        [string]$Root
+    )
+
+    $binaryName = if ($script:EffectivePlatform -eq "windows") { "code-intel.exe" } else { "code-intel" }
+    $packaged = Join-Path $Root "bin/$binaryName"
+    $source = if (Test-Path -LiteralPath $packaged -PathType Leaf) { $packaged } else { $null }
+    $cargoManifest = Join-Path $Root "Cargo.toml"
+    if ([string]::IsNullOrWhiteSpace([string]$source) -and
+        (Test-Path -LiteralPath $cargoManifest -PathType Leaf) -and
+        (Get-Command cargo -ErrorAction SilentlyContinue)) {
+        try {
+            Push-Location $Root
+            & cargo build -p code-intel --release
+            if ($LASTEXITCODE -ne 0) { throw "cargo build exited with $LASTEXITCODE" }
+        }
+        catch {
+            Add-InstallAction $Actions "code-intel" "install_failed" $_.Exception.Message "Build with 'cargo build -p code-intel --release' or use a packaged release containing bin/$binaryName." "cargo" $false
+            return
+        }
+        finally {
+            Pop-Location
+        }
+        $source = Join-Path $Root "target/release/$binaryName"
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$source)) {
+        $source = @(
+            (Join-Path $Root "target/release/$binaryName"),
+            (Join-Path $Root "target/debug/$binaryName")
+        ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$source) -or -not (Test-Path -LiteralPath $source -PathType Leaf)) {
+        Add-InstallAction $Actions "code-intel" "install_failed" "No packaged or built $binaryName was found." "Install Rust and build the release binary, or use the release package." "repo-local" $false
+        return
+    }
+
+    try {
+        $binDir = Get-CodeIntelBinDir
+        New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+        $destination = Join-Path $binDir $binaryName
+        if ([System.IO.Path]::GetFullPath($source) -ne [System.IO.Path]::GetFullPath($destination)) {
+            Copy-Item -LiteralPath $source -Destination $destination -Force
+        }
+        if ($script:EffectivePlatform -ne "windows" -and (Get-Command chmod -ErrorAction SilentlyContinue)) {
+            & chmod +x $destination
+        }
+        $pathResult = Add-UserPathPrefix $binDir
+        $help = @(& $destination --help 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            throw "installed binary failed --help: $($help -join [Environment]::NewLine)"
+        }
+        $digest = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+        Add-InstallAction $Actions "code-intel" "installed" "$destination sha256=$digest path=$($pathResult.detail)" "Open a new terminal if this shell cannot resolve code-intel from PATH." "repo-local" $false
+    }
+    catch {
+        Add-InstallAction $Actions "code-intel" "install_failed" $_.Exception.Message "Check write permission for the code-intel bin directory and close any process locking the old binary." "repo-local" $false
+    }
+}
+
 function Repair-RepowiseThinkingBlockPatch {
     param(
         [System.Collections.Generic.List[object]]$Actions
@@ -703,6 +764,7 @@ switch ($script:EffectivePlatform) {
     }
 }
 Add-InstallPlan $installPlan "repowise" "pip" "python/python3 -m pip install --user --upgrade repowise" "Semantic index and wiki/docs memory." "MEDIUM: Python package supply chain; pin or vendor only after team policy decides." "Skip repowise with -SkipRepowise for exact-search-only runs." "pip" $false
+Add-InstallPlan $installPlan "code-intel" "repo-local release binary" "copy bin/code-intel or target/release/code-intel into CODE_INTEL_BIN; build with cargo when no binary is present" "Manifest-bound DAG, evidence query, impact analysis, and atomic publication." "LOW: Pipeline-owned binary; installed digest is reported and --help is executed before success." "Use invoke-code-intel.ps1 from the source tree; it can build a debug binary on demand." "repo-local" $false
 $sentruxBinaryName = if ($script:EffectivePlatform -eq "windows") { "sentrux.exe" } else { "sentrux" }
 Add-InstallPlan $installPlan "sentrux" "repo-local shim or preinstalled binary" "install tools/sentrux-shim first; optionally place a real $sentruxBinaryName on PATH" "Structural quality and regression gate." "LOW for repo-owned shim; MEDIUM for any separately supplied $sentruxBinaryName." "The repo-owned sentrux-lite core keeps scan/check/gate/plugin usable until the real binary is installed." "repo-local" $false
 Add-InstallPlan $installPlan "sentrux-shim" "repo-local" "copy tools/sentrux-shim launcher to CODE_INTEL_BIN and prepend PATH" "Open-source local Pro activation, stable forwarding to real sentrux, and deterministic lite-core fallback." "LOW: repo-owned PowerShell/CMD/sh shim; review tools/sentrux-shim before install." "Set SENTRUX_AUTO_PRO=0 to disable auto Pro activation." "repo-local" $false
@@ -712,6 +774,7 @@ Install-MissingTool $installActions "rg" { Invoke-RipgrepInstall } "Install ripg
 Install-MissingTool $installActions "git" { Invoke-ToolPackageInstall "git" } "Install git with the platform package manager or ensure git is on PATH."
 Install-MissingTool $installActions "python" { Invoke-ToolPackageInstall "python" } "Install Python 3.11+ with the platform package manager or ensure python is on PATH."
 Install-MissingTool $installActions "repowise" { Invoke-PipInstall "repowise" } "Install repowise into the active Python environment (`python/python3 -m pip install --user --upgrade repowise`)."
+Install-CodeIntelBinary $installActions $root
 Install-SentruxShim $installActions $root
 Install-MissingTool $installActions "sentrux" { Invoke-SentruxInstall } "Install the repo-owned shim or ensure sentrux.exe is on PATH."
 Repair-RepowiseThinkingBlockPatch $installActions
@@ -757,6 +820,7 @@ Test-Tool $checks "rg" $true "Install ripgrep or ensure rg is on PATH."
 Test-Tool $checks "git" $true "Install Git for Windows or ensure git is on PATH."
 Test-Tool $checks "python" $true "Install Python 3.11+ or ensure python/python3 is on PATH."
 Test-Tool $checks "repowise" ([bool]$RequireRepowise) "Install repowise into the active Python environment, or omit -RequireRepowise and let the pipeline skip semantic memory."
+Test-Tool $checks "code-intel" $true "Run install-code-intel-pipeline.ps1 so the Pipeline-owned binary is copied into CODE_INTEL_BIN."
 Test-Tool $checks "sentrux" $true "Install sentrux or ensure it is on PATH."
 Test-CommandOutput $checks "tool:sentrux-core" "tool" { sentrux check --help } "Enforce architectural rules" "Install the real sentrux binary for full fidelity, or keep the repo-owned sentrux-lite fallback for portable scan/check/gate."
 Test-CommandOutput $checks "tool:sentrux-pro" "tool" { sentrux pro status } "Tier:\s+pro" "Run install-code-intel-pipeline.ps1 again so the repo shim is installed and auto activation is enabled."

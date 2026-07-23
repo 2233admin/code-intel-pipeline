@@ -1,0 +1,69 @@
+{
+  "schema": "code-intel-language-adapter-acceptance-policy.v1",
+  "claimLevels": ["inventory", "structural", "semantic", "behavioral"],
+  "allowedEffects": ["repo_read", "local_write"],
+  "requiredArtifactSchemas": [
+    "code-evidence-files.v1",
+    "code-evidence-symbols.v1",
+    "code-evidence-chunks.v1",
+    "code-evidence-symbol-chunks.v1",
+    "code-evidence-imports.v1",
+    "code-evidence-coverage.v1"
+  ],
+  "stages": {
+    "research": {
+      "minimums": {
+        "languages": 1,
+        "labeledSamples": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "declaredCoverage": 0.0,
+        "deterministicReplays": 1,
+        "parityArtifacts": 0,
+        "semanticOracleCases": 1,
+        "behavioralOracleCases": 1
+      },
+      "requirements": {
+        "knownLicense": false,
+        "rollbackTested": false,
+        "independentVerification": false
+      }
+    },
+    "candidate": {
+      "minimums": {
+        "languages": 1,
+        "labeledSamples": 12,
+        "precision": 0.75,
+        "recall": 0.75,
+        "declaredCoverage": 0.8,
+        "deterministicReplays": 3,
+        "parityArtifacts": 6,
+        "semanticOracleCases": 25,
+        "behavioralOracleCases": 25
+      },
+      "requirements": {
+        "knownLicense": true,
+        "rollbackTested": true,
+        "independentVerification": false
+      }
+    },
+    "production": {
+      "minimums": {
+        "languages": 1,
+        "labeledSamples": 50,
+        "precision": 0.9,
+        "recall": 0.9,
+        "declaredCoverage": 0.95,
+        "deterministicReplays": 10,
+        "parityArtifacts": 6,
+        "semanticOracleCases": 100,
+        "behavioralOracleCases": 100
+      },
+      "requirements": {
+        "knownLicense": true,
+        "rollbackTested": true,
+        "independentVerification": true
+      }
+    }
+  }
+}

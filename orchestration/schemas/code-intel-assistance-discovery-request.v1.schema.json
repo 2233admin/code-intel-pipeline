@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-assistance-discovery-request.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "gap", "candidates"],
+  "properties": {
+    "schema": { "const": "code-intel-assistance-discovery-request.v1" },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "id", "capability", "description", "constraints", "evidenceRefs"],
+      "properties": {
+        "schema": { "const": "code-intel-engineering-capability-gap.v1" },
+        "id": { "type": "string", "minLength": 1 },
+        "capability": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "constraints": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "evidenceRefs": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "x-code-intel-uniqueBy": "id",
+      "items": { "$ref": "code-intel-assistance-dossier.v1.schema.json#/$defs/candidate" }
+    }
+  }
+}

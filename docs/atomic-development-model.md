@@ -24,7 +24,7 @@ These are contract and composition problems, not a reason for a big-bang rewrite
 1. **Capability Atom** — one responsibility with one request and one result contract.
 2. **Snapshot Identity** — repository identity, HEAD, working-tree policy, scope, and input digest.
 3. **Artifact Ref** — `{schema, artifactSchema, type, path, sha256, consumedSnapshotIdentity}`; `schema` versions the reference envelope, `artifactSchema` identifies payload validation, content digest is identity, and path is location.
-4. **Effect Boundary** — determinism is declared separately; `allowedEffects` is fixed before execution and `observedEffects` is audited afterward. Permission effects are `repo_read`, `local_write`, `network`, or `repo_mutation`.
+4. **Effect Boundary** — determinism is declared separately; `allowedEffects` is fixed before execution and `observedEffects` is audited afterward. Permission effects are `repo_read`, `local_write`, `process_spawn`, `network`, or `repo_mutation`.
 5. **Domain Verdict** — `pass`, `fail`, `unknown`, or `not_applicable`, separate from process execution status.
 6. **Run Commit** — validate in staging, promote atomically, then write `run-complete.json` last.
 7. **Materialized View** — Markdown and indexes are rebuildable views over machine JSON, never fact authority.
@@ -69,6 +69,10 @@ code-intel capability exec <capability-id> --request - --out <staging-dir>
 - exit code distinguishes a domain failure from invalid input, unavailable dependency, internal error, or I/O error.
 
 Existing PowerShell, Python, and Rust implementations remain valid adapters while they converge on this contract.
+
+Capability requests with Artifact Ref inputs pass an independent `--artifact-root`; see
+`docs/artifact-ref-verifier.md`. Verification returns owned bytes so consumers never treat the
+path as identity or reopen an already-verified location.
 
 The v1 JSON Schema now validates declaration, request, result, and Artifact Ref envelopes, including declaration dependency ids and legal `status × verdict × exitCode` combinations. The contract also defines cross-envelope coherence for identity, implementation, determinism, snapshot, and effect allowlists. This is a control-plane contract only: current runtime adapters do not yet emit these envelopes or enforce those invariants.
 

@@ -1,0 +1,46 @@
+{
+  "case": "provider-unavailable",
+  "provenance": {
+    "producer": "run-code-intel.ps1",
+    "snapshotIdentity": "git:provider-fixture-head",
+    "tools": ["git", "rg", "repowise"],
+    "provider": "anthropic-compatible"
+  },
+  "missingEvidence": ["semantic_memory.repowise.docs"],
+  "artifacts": {
+    "report": {
+      "repo": "parity-provider-unavailable",
+      "mode": "normal",
+      "artifactDir": "{{TEMP_ROOT}}/artifacts/parity-provider-unavailable/20260713-010203",
+      "paths": { "repo": "{{TEMP_ROOT}}/repos/parity-provider-unavailable" },
+      "tools": { "git": true, "rg": true, "repowise": true, "sentrux": true },
+      "steps": [
+        { "name": "repowise provider preflight", "startedAt": "{{TIME}}", "finishedAt": "{{TIME}}", "status": "failed", "exitCode": 1, "output": "provider unavailable", "error": "provider_quota" },
+        { "name": "repowise index", "startedAt": "{{TIME}}", "finishedAt": "{{TIME}}", "status": "passed", "exitCode": 0, "output": "index-only", "error": "" }
+      ],
+      "summary": {
+        "failed": 1,
+        "effectiveFailed": 1,
+        "manualRequired": 0,
+        "passed": 6,
+        "skipped": 1,
+        "failureCategories": { "providerQuota": 1, "localToolError": 0, "graphMissing": 0, "sentruxFail": 0 },
+        "effectiveFailureCategories": { "providerQuota": 1, "localToolError": 0, "graphMissing": 0, "sentruxFail": 0 },
+        "blockingSentruxDebt": 0,
+        "knownSentruxDebt": 0
+      },
+      "understanding": "{{TEMP_ROOT}}/artifacts/parity-provider-unavailable/20260713-010203/understanding.md"
+    },
+    "hospital": {
+      "schema": "code-intel-hospital.v1",
+      "generatedAt": "{{TIME}}",
+      "repo": "parity-provider-unavailable",
+      "artifacts": { "report": "{{TEMP_ROOT}}/artifacts/parity-provider-unavailable/20260713-010203/report.json" },
+      "triage": { "status": "red", "disposition": "admit", "primary_diagnosis": "provider quota unavailable", "next_protocol": "github_solution_research", "research_status": "manual_required", "research_required": true },
+      "state_machine": { "current_state": "github_solution_research" },
+      "modalities": [
+        { "name": "chart", "status": "partial", "artifact": "{{TEMP_ROOT}}/artifacts/parity-provider-unavailable/20260713-010203/repowise-summary.json", "limit": "semantic_memory.repowise.docs missing" }
+      ]
+    }
+  }
+}

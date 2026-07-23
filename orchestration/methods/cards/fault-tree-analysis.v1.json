@@ -1,0 +1,39 @@
+{
+  "schema": "code-intel-method-card.v1",
+  "id": "fault-tree-analysis",
+  "version": "1.0.0",
+  "name": "Fault tree analysis",
+  "problemSignals": [
+    { "id": "hazardous-top-event", "description": "A specific undesirable system event requires deductive decomposition." },
+    { "id": "multi-cause-failure", "description": "Failure may require combinations of lower-level events." }
+  ],
+  "requiredEvidence": [
+    { "id": "top-event-definition", "description": "A precise observable top event with system boundary and operating condition." },
+    { "id": "system-causal-structure", "description": "Component functions, interfaces, failure evidence, and independence assumptions." }
+  ],
+  "assumptions": ["Boolean gate semantics are adequate for the modeled event", "Common-cause dependencies are declared explicitly"],
+  "deterministicSteps": [
+    { "id": "bound-top-event", "action": "Fix the top event, system boundary, operating state, and success/failure semantics.", "requires": ["evidence:top-event-definition"], "produces": ["bounded-top-event"] },
+    { "id": "decompose-tree", "action": "Deductively expand causes with explicit AND/OR gates until justified basic events or stopping rules.", "requires": ["evidence:system-causal-structure", "step:bound-top-event"], "produces": ["fault-tree"] },
+    { "id": "derive-cut-sets", "action": "Derive minimal cut sets and identify unsupported independence or probability assumptions.", "requires": ["step:decompose-tree"], "produces": ["cut-set-report"] }
+  ],
+  "outputs": [
+    { "id": "bounded-top-event", "description": "Unambiguous failure event and analysis boundary." },
+    { "id": "fault-tree", "description": "Traceable Boolean causal tree with stopping rules." },
+    { "id": "cut-set-report", "description": "Minimal cut sets and assumption gaps." }
+  ],
+  "confidenceRules": [
+    { "level": "high", "whenAll": ["Top event and boundaries are observable", "Basic events and dependencies are evidenced", "Cut sets are independently checked"] },
+    { "level": "medium", "whenAll": ["Tree logic is complete", "Some basic-event rates or independence assumptions are unverified"] },
+    { "level": "unknown", "whenAll": ["Top event is ambiguous", "Causal structure cannot support gate selection"] }
+  ],
+  "cost": { "relative": "high", "drivers": ["System decomposition depth", "Common-cause analysis", "Probability-data quality"] },
+  "contraindications": ["The analysis question is exploratory rather than a defined top event", "Temporal or continuous dynamics invalidate Boolean-event modeling"],
+  "implementationPorts": [
+    { "id": "fault-tree-modeler", "kind": "modeling_tool", "contract": ["Preserve gate semantics and evidence links", "Derive reproducible minimal cut sets"] }
+  ],
+  "source": { "title": "IEC 61025 Fault tree analysis", "version": "IEC 61025:2006 boundary summary", "reference": "IEC 61025" },
+  "applicabilityBoundary": { "inScope": ["Deductive analysis of a defined undesirable event", "Minimal cut-set reasoning"], "outOfScope": ["Open-ended root-cause discovery", "Continuous-time simulation without event abstraction"] },
+  "relatedMethodIds": ["fmea", "root-cause-analysis"],
+  "executionPolicy": "catalog_only_no_selection_or_execution"
+}

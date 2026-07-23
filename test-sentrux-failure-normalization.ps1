@@ -9,7 +9,8 @@ $prefixLength = $runnerText.IndexOf($marker)
 if ($prefixLength -lt 0) {
     throw "Could not find runner execution marker."
 }
-Invoke-Expression $runnerText.Substring(0, $prefixLength)
+$runnerPrefix = $runnerText.Substring(0, $prefixLength).Replace('$PSScriptRoot', '$root')
+Invoke-Expression $runnerPrefix
 
 function New-TestStep {
     param(
@@ -80,6 +81,16 @@ try {
     if ([string]$worsened.gate.target.status -ne "aggregate") { throw "Gate regression should be aggregate." }
     if ([int]$worsenedDebt.summary.worsenedDebt -lt 1) { throw "Gate increase should be worsened debt." }
     if ([int]$worsenedDebt.summary.blocking -lt 1) { throw "Worsened debt should block." }
+
+    $mixedDirection = New-CodeIntelSentruxFailures -Steps @(
+        (New-TestStep "sentrux gate" "failed" "Quality: 4726 -> 5389`nComplex functions increased: 20 -> 22")
+    )
+    $mixedDirectionDebt = New-CodeIntelSentruxDebtRegister -Failures $mixedDirection -RepoPath $root
+    $qualityDebt = @($mixedDirectionDebt.entries | Where-Object { [string]$_.kind -eq "quality" })
+    if ($qualityDebt.Count -ne 1) { throw "Mixed-direction gate output should preserve one quality record." }
+    if ([string]$qualityDebt[0].classification -ne "informational") { throw "Increasing quality must not be classified as worsened debt." }
+    if ([int]$mixedDirectionDebt.summary.worsenedDebt -ne 1) { throw "Only complex_functions should be worsened debt." }
+    if ([int]$mixedDirectionDebt.summary.blocking -ne 1) { throw "Only the complex_functions regression should block." }
 
     $otherNamed = New-CodeIntelSentruxFailures -Steps @(
         (New-TestStep "sentrux check" "failed" "other.ps1:New-BigFunction (cc=101)")

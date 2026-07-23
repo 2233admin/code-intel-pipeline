@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-compatibility-facade-finalize.v1.schema.json",
+  "title": "Code Intel E06 compatibility facade final audit",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "evaluatedAt", "status", "approvalEligible", "independentApproval", "dependencies", "retainedPowerShell", "modeMatrix", "parity", "rollbackWindows", "unsupportedBranches"],
+  "properties": {
+    "schema": { "const": "code-intel-compatibility-facade-finalize.v1" },
+    "evaluatedAt": { "type": "integer", "minimum": 1 },
+    "status": { "enum": ["blocked", "approved"] },
+    "approvalEligible": { "type": "boolean" },
+    "independentApproval": { "const": null },
+    "dependencies": { "type": "array", "minItems": 8, "maxItems": 8, "items": { "$ref": "#/$defs/dependency" } },
+    "retainedPowerShell": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/retained" } },
+    "modeMatrix": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "$ref": "#/$defs/mode" } },
+    "parity": { "type": "object", "additionalProperties": false, "required": ["a00Evidence", "present"], "properties": { "a00Evidence": { "type": "string", "minLength": 1 }, "present": { "type": "boolean" } } },
+    "rollbackWindows": { "type": "array", "minItems": 8, "maxItems": 8, "items": { "type": "string", "pattern": "^E(02|03|04|05|07|08|09|10)$" }, "uniqueItems": true },
+    "unsupportedBranches": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/unsupported" } }
+  },
+  "$defs": {
+    "dependency": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ticketId", "branchId", "path", "packetRoot", "owner", "decision", "retired", "deletionExecuted", "blockers", "evidenceOutcomes"],
+      "properties": {
+        "ticketId": { "type": "string" }, "branchId": { "type": "string", "minLength": 1 }, "path": { "type": "string", "minLength": 1 }, "packetRoot": { "type": "string", "minLength": 1 }, "owner": { "type": "string" }, "decision": { "type": "string" }, "retired": { "type": "boolean" }, "deletionExecuted": { "type": "boolean" }, "blockers": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "evidenceOutcomes": { "type": "object", "additionalProperties": false, "required": ["golden-parity", "contract-parity", "effect-parity", "rollback-execution", "compatibility-window"], "properties": { "golden-parity": { "type": "string" }, "contract-parity": { "type": "string" }, "effect-parity": { "type": "string" }, "rollback-execution": { "type": "string" }, "compatibility-window": { "type": "string" } } }
+      }
+    },
+    "retained": {
+      "type": "object", "additionalProperties": false,
+      "required": ["surfaceId", "path", "classification", "owner", "registryParticipantId", "registryBacked", "expiresAt", "expiryCurrent"],
+      "properties": { "surfaceId": { "type": "string", "minLength": 1 }, "path": { "type": "string", "minLength": 1 }, "classification": { "enum": ["compatibility_facade", "platform_glue"] }, "owner": { "type": "string" }, "registryParticipantId": { "type": "string" }, "registryBacked": { "type": "boolean" }, "expiresAt": { "type": ["integer", "null"] }, "expiryCurrent": { "type": "boolean" } }
+    },
+    "mode": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mode", "available", "reason", "nodes"],
+      "properties": { "mode": { "enum": ["doctor", "lite", "normal", "full"] }, "available": { "type": "boolean" }, "reason": { "type": "string" }, "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } } }
+    },
+    "node": {
+      "type": "object", "additionalProperties": false,
+      "required": ["capabilityId", "registryBacked", "enveloped", "admission", "committed", "indexed"],
+      "properties": { "capabilityId": { "type": "string" }, "registryBacked": { "type": "boolean" }, "enveloped": { "type": "boolean" }, "admission": { "enum": ["admitted", "not_applicable", "rejected", "unknown"] }, "committed": { "type": "boolean" }, "indexed": { "type": "boolean" } }
+    },
+    "unsupported": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "subject", "dependency", "detail"],
+      "properties": { "code": { "type": "string", "minLength": 1 }, "subject": { "type": "string", "minLength": 1 }, "dependency": { "type": "string", "minLength": 1 }, "detail": { "type": "string", "minLength": 1 } }
+    }
+  }
+}

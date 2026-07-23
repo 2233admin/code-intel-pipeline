@@ -22,7 +22,15 @@ param(
 [switch]$AutoSaveMissingSentruxBaseline,
 [switch]$RequireUnderstandGraph,
 [switch]$SkipGitHubResearch,
-[switch]$NoIndexUpdate
+[switch]$SkipRepowise,
+[switch]$NoIndexUpdate,
+[switch]$ValidateInstallation,
+[switch]$LegacyCompatibility,
+[ValidateSet("auto", "enabled", "disabled")]
+[string]$ProactiveSkillSuggestions = "auto",
+[ValidateSet("auto", "ask", "enabled", "disabled")]
+[string]$AutomaticPullRequests = "auto",
+[string]$BugSkill = ""
 )
 
 Set-StrictMode -Version Latest
@@ -35,7 +43,26 @@ if ([string]::IsNullOrWhiteSpace($Config)) {
 $doctor = Join-Path $root "check-code-intel-tools.ps1"
 $runner = Join-Path $root "run-code-intel.ps1"
 $indexer = Join-Path $root "update-code-intel-index.ps1"
-$rustCli = Join-Path $root "target\debug\code-intel.exe"
+$platformModule = Join-Path (Join-Path $root "tools") "code-intel-platform.psm1"
+Import-Module $platformModule -Force
+$binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
+$rustCliCandidates = @(
+    (Join-Path $root "bin/$binaryName"),
+    (Join-Path $root "target/release/$binaryName"),
+    (Join-Path $root "target/debug/$binaryName")
+)
+$rustCli = @(
+    $rustCliCandidates |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+        ForEach-Object { Get-Item -LiteralPath $_ } |
+        Sort-Object LastWriteTimeUtc -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+)
+if ($rustCli.Count -gt 0) { $rustCli = $rustCli[0] } else { $rustCli = $null }
+
+if ($SkipRepowise -and $RepowiseDocs) {
+    throw "-SkipRepowise cannot be combined with -RepowiseDocs."
+}
 
 function Get-JsonProperty {
     param(
@@ -49,6 +76,152 @@ function Get-JsonProperty {
     return $prop.Value
 }
 
+function Get-RepoSelector {
+    param([string]$RepoName, [string]$DirectRepoPath)
+
+    if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) {
+        return @{ RepoPath = $DirectRepoPath }
+    }
+    return @{ Repo = $RepoName }
+}
+
+function Get-RunnerParameters {
+    param([string]$RepoName, [string]$DirectRepoPath)
+
+    $parameters = @{
+        Config = $Config
+        Mode = $Mode
+        Platform = $Platform
+        RepowiseProvider = $RepowiseProvider
+        RepowiseModel = $RepowiseModel
+        RepowiseReasoning = $RepowiseReasoning
+        ProactiveSkillSuggestions = $ProactiveSkillSuggestions
+        AutomaticPullRequests = $AutomaticPullRequests
+        BugSkill = $BugSkill
+    }
+    foreach ($entry in (Get-RepoSelector -RepoName $RepoName -DirectRepoPath $DirectRepoPath).GetEnumerator()) {
+        $parameters[$entry.Key] = $entry.Value
+    }
+    foreach ($switchEntry in @(
+        @{ Name = "RepowiseDocs"; Enabled = $RepowiseDocs },
+        @{ Name = "SaveSentruxBaseline"; Enabled = $SaveSentruxBaseline },
+        @{ Name = "AutoSaveMissingSentruxBaseline"; Enabled = $AutoSaveMissingSentruxBaseline },
+        @{ Name = "RequireUnderstandGraph"; Enabled = $RequireUnderstandGraph },
+        @{ Name = "SkipGitHubResearch"; Enabled = $SkipGitHubResearch },
+        @{ Name = "SkipRepowise"; Enabled = $SkipRepowise }
+    )) {
+        if ($switchEntry.Enabled) { $parameters[$switchEntry.Name] = $true }
+    }
+    return $parameters
+}
+
+function Get-DoctorParameters {
+    param([string]$RepoName, [string]$DirectRepoPath)
+
+    $parameters = @{
+        Config = $Config
+        Platform = $Platform
+        RequireRepowise = [bool]$RepowiseDocs
+    }
+    foreach ($entry in (Get-RepoSelector -RepoName $RepoName -DirectRepoPath $DirectRepoPath).GetEnumerator()) {
+        $parameters[$entry.Key] = $entry.Value
+    }
+    return $parameters
+}
+
+function Resolve-InvocationRepoPath {
+    param([string]$RepoName, [string]$DirectRepoPath)
+
+    if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) {
+        return (Get-Item -LiteralPath $DirectRepoPath -ErrorAction Stop).FullName
+    }
+    $configData = Get-Content -LiteralPath $Config -Raw | ConvertFrom-Json
+    $reposConfig = Get-JsonProperty $configData "repos"
+    $repoConfig = Get-JsonProperty $reposConfig $RepoName
+    $configuredPath = Get-JsonProperty $repoConfig "path"
+    if ([string]::IsNullOrWhiteSpace([string]$configuredPath)) {
+        throw "Repository alias has no configured path: $RepoName"
+    }
+    return (Get-Item -LiteralPath ([string]$configuredPath) -ErrorAction Stop).FullName
+}
+
+function Get-InvocationArtifactRoot {
+    $configData = Get-Content -LiteralPath $Config -Raw | ConvertFrom-Json
+    $configured = Get-JsonProperty $configData "artifactRoot"
+    if (-not [string]::IsNullOrWhiteSpace([string]$configured)) {
+        return [System.IO.Path]::GetFullPath([string]$configured)
+    }
+    return (Get-CodeIntelArtifactRoot -Platform $Platform)
+}
+
+function Publish-AuthoritativeCoreRun {
+    param([string]$ResolvedRepoPath)
+
+    $artifactRoot = Get-InvocationArtifactRoot
+    $repoName = Split-Path -Leaf $ResolvedRepoPath
+    $repoAuthority = Join-Path $artifactRoot $repoName
+    New-Item -ItemType Directory -Force -Path $repoAuthority | Out-Null
+    $temporaryRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+    $sourceRoot = Join-Path $temporaryRoot ("code-intel-a09-{0}-{1}" -f $PID, [guid]::NewGuid().ToString("N"))
+    $finalName = (Get-Date -Format "yyyyMMdd-HHmmss-fff") + "-core"
+    $committed = $false
+    try {
+        Write-Host "Code intel invoke: authoritative DAG $ResolvedRepoPath"
+        $dagOutput = @(& $rustCli run dag-coordinate --repo $ResolvedRepoPath --out $sourceRoot 2>&1)
+        $dagExitCode = $LASTEXITCODE
+        $dagManifest = try {
+            ($dagOutput -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop
+        }
+        catch {
+            $dagOutput | Out-Host
+            Write-Error "Authoritative DAG did not return a valid run manifest: $($_.Exception.Message)"
+            return $(if ($dagExitCode -ne 0) { $dagExitCode } else { 3 })
+        }
+        $dagOutcome = [string](Get-JsonProperty $dagManifest "outcome")
+        if ([string]::IsNullOrWhiteSpace($dagOutcome)) {
+            Write-Error "Authoritative DAG run manifest has no outcome."
+            return 3
+        }
+        $manifestRef = Join-Path $sourceRoot "run-manifest-ref.json"
+        if (-not (Test-Path -LiteralPath $manifestRef -PathType Leaf)) {
+            Write-Error "Authoritative DAG did not persist its commit handoff: $manifestRef"
+            return 3
+        }
+        Write-Host "Code intel invoke: atomic publication $repoName/$finalName"
+        $commitOutput = @(& $rustCli run commit `
+            --source-root $sourceRoot `
+            --authority-root $repoAuthority `
+            --manifest-ref $manifestRef `
+            --final-name $finalName 2>&1)
+        $commitExitCode = $LASTEXITCODE
+        if ($commitExitCode -ne 0) {
+            $commitOutput | Out-Host
+            return $commitExitCode
+        }
+        $committed = $true
+        Write-Host "Code intel invoke: authoritative run committed $repoName/$finalName outcome=$dagOutcome"
+        if ($dagOutcome -ne "completed") {
+            Write-Warning "Authoritative DAG outcome is $dagOutcome; the committed run is retained as failure evidence."
+            return $(if ($dagExitCode -ne 0) { $dagExitCode } else { 1 })
+        }
+        if ($dagExitCode -ne 0) {
+            Write-Warning "Authoritative DAG returned exit $dagExitCode for a completed manifest; refusing success."
+            return $dagExitCode
+        }
+        return 0
+    }
+    finally {
+        $resolvedSource = [System.IO.Path]::GetFullPath($sourceRoot)
+        if ($committed -and $resolvedSource.StartsWith($temporaryRoot, [System.StringComparison]::OrdinalIgnoreCase) -and
+            (Test-Path -LiteralPath $resolvedSource -PathType Container)) {
+            Remove-Item -LiteralPath $resolvedSource -Recurse -Force
+        }
+        elseif (-not $committed -and (Test-Path -LiteralPath $resolvedSource -PathType Container)) {
+            Write-Warning "Authoritative DAG staging retained for recovery: $resolvedSource"
+        }
+    }
+}
+
 function Invoke-OneRepo {
     param(
         [string]$RepoName,
@@ -56,66 +229,51 @@ function Invoke-OneRepo {
     )
 
     $label = if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) { $DirectRepoPath } else { $RepoName }
-    Write-Host "Code intel invoke: doctor $label"
-    $global:LASTEXITCODE = 0
-    if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) {
-        & $doctor -Config $Config -RepoPath $DirectRepoPath -Platform $Platform
-    }
-    else {
-        & $doctor -Config $Config -Repo $RepoName -Platform $Platform
-    }
-    if ($LASTEXITCODE -ne 0) {
-        return [pscustomobject][ordered]@{
-            repo = $label
-            ok = $false
-            stage = "doctor"
-            exitCode = $LASTEXITCODE
+    $resolvedRepoPath = Resolve-InvocationRepoPath -RepoName $RepoName -DirectRepoPath $DirectRepoPath
+    $legacyCode = 0
+    if ($LegacyCompatibility) {
+        Write-Warning "Legacy compatibility pipeline is enabled for $label; its artifacts are non-authoritative."
+        Write-Host "Code intel invoke: legacy doctor $label"
+        $global:LASTEXITCODE = 0
+        $doctorParams = Get-DoctorParameters -RepoName $RepoName -DirectRepoPath $DirectRepoPath
+        & $doctor @doctorParams
+        if ($LASTEXITCODE -ne 0) {
+            return [pscustomobject][ordered]@{
+                repo = $label
+                ok = $false
+                stage = "legacy_doctor"
+                exitCode = $LASTEXITCODE
+            }
         }
-    }
 
-    Write-Host "Code intel invoke: pipeline $label"
-    if ($RepowiseDocs -or $SaveSentruxBaseline -or $AutoSaveMissingSentruxBaseline -or $RequireUnderstandGraph -or $SkipGitHubResearch) {
-        $invokeParams = @{
-            Config = $Config
-            Mode = $Mode
-            Platform = $Platform
-        }
-        if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) { $invokeParams.RepoPath = $DirectRepoPath } else { $invokeParams.Repo = $RepoName }
-        if ($RepowiseDocs) { $invokeParams.RepowiseDocs = $true }
-        if (-not [string]::IsNullOrWhiteSpace($RepowiseProvider)) { $invokeParams.RepowiseProvider = $RepowiseProvider }
-        if (-not [string]::IsNullOrWhiteSpace($RepowiseModel)) { $invokeParams.RepowiseModel = $RepowiseModel }
-        if (-not [string]::IsNullOrWhiteSpace($RepowiseReasoning)) { $invokeParams.RepowiseReasoning = $RepowiseReasoning }
-        if ($SaveSentruxBaseline) { $invokeParams.SaveSentruxBaseline = $true }
-        if ($AutoSaveMissingSentruxBaseline) { $invokeParams.AutoSaveMissingSentruxBaseline = $true }
-        if ($RequireUnderstandGraph) { $invokeParams.RequireUnderstandGraph = $true }
-        if ($SkipGitHubResearch) { $invokeParams.SkipGitHubResearch = $true }
+        Write-Host "Code intel invoke: legacy compatibility pipeline $label"
+        $invokeParams = Get-RunnerParameters -RepoName $RepoName -DirectRepoPath $DirectRepoPath
         & $runner @invokeParams
-    }
-    else {
-        if (-not [string]::IsNullOrWhiteSpace($DirectRepoPath)) {
-            & $runner -Config $Config -RepoPath $DirectRepoPath -Mode $Mode -Platform $Platform -RepowiseProvider $RepowiseProvider -RepowiseModel $RepowiseModel -RepowiseReasoning $RepowiseReasoning
-        }
-        else {
-            & $runner -Config $Config -Repo $RepoName -Mode $Mode -Platform $Platform -RepowiseProvider $RepowiseProvider -RepowiseModel $RepowiseModel -RepowiseReasoning $RepowiseReasoning
-        }
+        $legacyCode = $LASTEXITCODE
     }
 
-    $code = $LASTEXITCODE
+    $publicationCode = Publish-AuthoritativeCoreRun -ResolvedRepoPath $resolvedRepoPath
+    $code = if ($legacyCode -ne 0) { $legacyCode } else { $publicationCode }
     return [pscustomobject][ordered]@{
         repo = $label
         ok = $code -eq 0
-        stage = "pipeline"
+        stage = if ($publicationCode -ne 0) { "authoritative_publication" } elseif ($legacyCode -ne 0) { "legacy_compatibility" } else { "authoritative_pipeline" }
         exitCode = $code
+        legacyCompatibility = [bool]$LegacyCompatibility
+        legacyExitCode = $legacyCode
+        publicationExitCode = $publicationCode
     }
 }
 
-if (-not (Test-Path -LiteralPath $doctor -PathType Leaf)) {
-    throw "Doctor script missing: $doctor"
+if ($LegacyCompatibility) {
+    if (-not (Test-Path -LiteralPath $doctor -PathType Leaf)) {
+        throw "Legacy doctor script missing: $doctor"
+    }
+    if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
+        throw "Legacy pipeline script missing: $runner"
+    }
 }
-if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
-    throw "Pipeline script missing: $runner"
-}
-if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
+if ($null -eq $rustCli) {
     Push-Location $root
     try {
         & cargo build -p code-intel | Out-Host
@@ -123,15 +281,36 @@ if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
     finally {
         Pop-Location
     }
+    $rustCli = Join-Path $root "target/debug/$binaryName"
 }
 if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
-    throw "Rust integration orchestrator missing: $rustCli"
+    throw "Rust integration orchestrator missing. Checked: $($rustCliCandidates -join ', ')"
 }
 
 Write-Host "Code intel invoke: validate integration orchestration"
-& $rustCli orchestrate --action Validate | Out-Host
-if ($LASTEXITCODE -ne 0) {
-    throw "Integration orchestration validation failed"
+Push-Location $root
+try {
+    & $rustCli orchestrate --action Validate | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "Integration orchestration validation failed"
+    }
+}
+finally {
+    Pop-Location
+}
+if ($ValidateInstallation) {
+    if ($LegacyCompatibility) {
+        $doctorCommand = Get-Command -Name $doctor -ErrorAction Stop
+        $runnerCommand = Get-Command -Name $runner -ErrorAction Stop
+        if (-not $doctorCommand.Parameters.ContainsKey('RequireRepowise')) {
+            throw "Legacy doctor does not expose the optional Repowise contract."
+        }
+        if (-not $runnerCommand.Parameters.ContainsKey('SkipRepowise')) {
+            throw "Legacy pipeline runner does not expose the optional Repowise contract."
+        }
+    }
+    Write-Host "Code intel invoke: installation validation passed; default route is the manifest-bound Rust DAG ($rustCli)"
+    exit 0
 }
 
 $targetRepos = @()

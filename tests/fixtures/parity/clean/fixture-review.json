@@ -1,0 +1,5 @@
+{
+  "schema": "code-intel-parity-fixture-review.v1",
+  "fixture": "clean",
+  "reviewReason": "Verifier-requested A00 normalization hardening: preserve non-path backslash semantics and test mutations through the input pipeline."
+}

@@ -95,9 +95,14 @@ Stop and report clearly if any required tool is missing:
 - `rg`
 - `git`
 - `python`
-- `repowise`
 - `sentrux`
+
+Optional enrichment providers should be reported as unavailable or skipped,
+not treated as beta-core installation failures:
+
+- `repowise` semantic memory and docs (required only when docs are explicitly requested)
 - Understand Anything skill/plugin
+- CodeNexus context/index assistance
 
 ## Workflow
 
@@ -115,7 +120,7 @@ Stop and report clearly if any required tool is missing:
 
 3. Add `-RepowiseDocs` when the user wants scoped repowise wiki generation instead of index-only refresh.
 
-   The pipeline will run `test-code-intel-provider.ps1` first. If provider quota is unavailable, docs generation is disabled for that run and the failure category is recorded.
+   The pipeline runs the production `Invoke-RepowiseProviderProbe.ps1` health seam first. If provider quota is unavailable, docs generation is disabled for that run while index status and index-only execution remain available. `test-code-intel-provider.ps1` is only a test wrapper over that seam.
 
 Use `-Mode lite` for a cheap status check. Use `-Mode full` when a fresh Understand Anything graph is needed.
 
@@ -198,9 +203,11 @@ Do not add Archon, Sourcegraph, or another RAG tool unless it clearly replaces o
 
 ## Failure Handling
 
-The pipeline classifies failures into four buckets. Use these exact meanings:
+The pipeline classifies failures into six buckets. Use these exact meanings:
 
 - `provider_quota`: upstream model or token quota/rate limit. Do not describe this as a local script failure.
+- `provider_unavailable`: an upstream route or supported model is temporarily absent, including HTTP 404 `model_not_found`. Do not describe this as a local tool failure.
+- `config_error`: endpoint, model, or credential configuration is invalid. Do not write credentials into repository files while fixing it.
 - `local_tool_error`: broken local command, bad script path, parse crash, CLI failure, or invalid local environment.
 - `graph_missing`: `.understand-anything/knowledge-graph.json` missing or explicitly required but unavailable.
 - `sentrux_fail`: structural regression, missing baseline requiring operator action, or sentrux gate failure.

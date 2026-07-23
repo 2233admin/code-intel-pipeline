@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-runtime-ci-ingest-request.v1",
+  "title": "Code Intel Runtime/CI Local Artifact Ingest Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "expectedSnapshotIdentity", "artifact", "policy"],
+  "properties": {
+    "schema": { "const": "code-intel-runtime-ci-ingest-request.v1" },
+    "expectedSnapshotIdentity": { "$ref": "#/$defs/digest" },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$)).+$" },
+        "sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluatedAt", "maxAgeSeconds"],
+      "properties": {
+        "evaluatedAt": { "type": "integer", "minimum": 0 },
+        "maxAgeSeconds": { "type": "integer", "minimum": 1 }
+      }
+    }
+  },
+  "$defs": { "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }
+}

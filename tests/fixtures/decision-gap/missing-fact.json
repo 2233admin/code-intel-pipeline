@@ -1,0 +1,24 @@
+{
+  "schema": "code-intel-decision-gap-detection-request.v1",
+  "branches": [
+    {
+      "branchId": "publication",
+      "status": "pending",
+      "blockers": [
+        {
+          "id": "fact-release-owner",
+          "kind": "missing_fact",
+          "blockedDecision": "identify the configured release owner",
+          "discoverableFactsChecked": [
+            { "factId": "fact-owner", "status": "missing" }
+          ],
+          "missingFactIds": ["fact-owner"],
+          "options": [],
+          "recommendedOptionId": "not-applicable",
+          "recommendationRationale": "inspect repository ownership configuration",
+          "affectedBranches": ["publication"]
+        }
+      ]
+    }
+  ]
+}

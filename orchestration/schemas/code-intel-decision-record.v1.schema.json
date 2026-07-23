@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-decision-record.v1.schema.json",
+  "title": "Code Intel Decision Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "id", "bindingDigest", "gap", "request", "response", "evidenceBinding",
+    "snapshotIdentity", "acceptedChoice", "authorityEvent", "consequences", "affectedBranches",
+    "recordedAt", "freshness", "reopenRule"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-decision-record.v1" },
+    "id": { "type": "string", "pattern": "^decision-record-v1:[0-9a-f]{64}$" },
+    "bindingDigest": { "$ref": "#/$defs/digest" },
+    "gap": { "$ref": "code-intel-decision-gap.v1.schema.json" },
+    "request": { "$ref": "code-intel-decision-request.v1.schema.json" },
+    "response": { "$ref": "code-intel-decision-response.v1.schema.json" },
+    "evidenceBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["refs", "digest"],
+      "properties": {
+        "refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidenceRef" } },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "snapshotIdentity": { "$ref": "#/$defs/digest" },
+    "acceptedChoice": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false, "required": ["kind", "optionId"],
+          "properties": { "kind": { "const": "choice" }, "optionId": { "$ref": "#/$defs/id" } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["kind", "text"],
+          "properties": { "kind": { "const": "free-form" }, "text": { "$ref": "#/$defs/id" } }
+        }
+      ]
+    },
+    "authorityEvent": { "$ref": "code-intel-authority-transition.v1.schema.json#/$defs/event" },
+    "consequences": { "type": "array", "items": { "$ref": "#/$defs/id" } },
+    "affectedBranches": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+    "recordedAt": { "type": "integer", "minimum": 0 },
+    "freshness": {
+      "type": "object", "additionalProperties": false, "required": ["evidenceExpiresAt", "state"],
+      "properties": {
+        "evidenceExpiresAt": { "type": "integer", "minimum": 0 },
+        "state": { "const": "current" }
+      }
+    },
+    "reopenRule": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidenceDigestChanged", "snapshotChanged", "evidenceExpired"],
+      "properties": {
+        "evidenceDigestChanged": { "const": true },
+        "snapshotChanged": { "const": true },
+        "evidenceExpired": { "const": true }
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1 },
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "evidenceRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["refId", "sha256", "observedAt", "expiresAt"],
+      "properties": {
+        "refId": { "$ref": "#/$defs/id" }, "sha256": { "$ref": "#/$defs/digest" },
+        "observedAt": { "type": "integer", "minimum": 0 }, "expiresAt": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

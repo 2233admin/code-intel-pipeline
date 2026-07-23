@@ -1,0 +1,36 @@
+{
+  "schema": "code-intel-python314-pon-development-policy.v1",
+  "sourceMethod": {
+    "project": "can1357/pon",
+    "uri": "https://github.com/can1357/pon",
+    "revision": "ab9067dbd2899c64c4d67a4bc27b8ad49472b126",
+    "adoption": "independent_conformance_method_reimplementation",
+    "licenseStatus": "unverified_no_declared_license_do_not_copy_or_auto_execute_upstream"
+  },
+  "authority": {
+    "runtime": "cpython",
+    "requiredMajor": 3,
+    "requiredMinor": 14
+  },
+  "projectPythonFiles": [
+    "Run-ScopedRepowiseDocs.py",
+    "test-scoped-repowise-validator.py"
+  ],
+  "corpus": "tests/fixtures/python314-compat/manifest.v1.json",
+  "pon": {
+    "defaultCommand": "pon",
+    "scriptArgsBeforePath": ["run"]
+  },
+  "profiles": {
+    "development": {
+      "requirePon": false,
+      "runPonWhenAvailable": true,
+      "requireProjectCompile": true
+    },
+    "pon-candidate": {
+      "requirePon": true,
+      "runPonWhenAvailable": true,
+      "requireProjectCompile": true
+    }
+  }
+}
