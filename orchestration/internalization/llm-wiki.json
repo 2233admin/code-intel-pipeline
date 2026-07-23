@@ -10,7 +10,7 @@
     "kind": "design_reference",
     "source": {
       "uri": "unbound-provider:llm-wiki; local-policy=docs/project-management-support.md",
-      "revision": "model-and-provider-unbound; local-policy-sha256:d03a5535198f3e45f9572b7f9bb4a23e77ba636c751636d8c697166ea5a5c9c3; local-boundary-test-sha256:559f58c2ae5079593c2389b0cbeb00336a6ca9f94f257679ea1735aae85a58ba"
+      "revision": "model-and-provider-unbound; local-policy-sha256:b82000428768583dd72423763215d72a8d605f69d6a7fd65327d9406a5ebaa44; local-boundary-test-sha256:a1d665ac95da71b0485c9ef0413187e888813a2746f4d2cd43c5be058bb0967f"
     },
     "license": {
       "id": "UNKNOWN-PROVIDER-AND-MODEL-TERMS",

@@ -1,21 +1,24 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
     "43ced9ef578e6484423468e059c93ef0bc5eeeb35d23271451b2d8f1a16f9bb6";
+static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn temp_dir(name: &str) -> PathBuf {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("clock")
         .as_nanos();
+    let sequence = TEMP_DIR_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!(
-        "code-intel-a01-{name}-{}-{nonce}",
-        std::process::id()
+        "code-intel-a01-{name}-{}-{nonce}-{sequence}",
+        std::process::id(),
     ))
 }
 
