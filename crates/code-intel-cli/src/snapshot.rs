@@ -890,19 +890,24 @@ fn stable_overlay_snapshot(
     repo: &Path,
     scopes: &[String],
 ) -> Result<(String, Overlay), SnapshotError> {
-    stable_overlay_snapshot_with(repo, scopes, || {})
+    stable_overlay_snapshot_with(repo, scopes, || {}, filesystem_ignore_controls)
 }
 
-fn stable_overlay_snapshot_with<F: FnOnce()>(
+fn stable_overlay_snapshot_with<F, I>(
     repo: &Path,
     scopes: &[String],
     between_reads: F,
-) -> Result<(String, Overlay), SnapshotError> {
-    let before = overlay_status(repo, scopes)?;
-    let first = digest_worktree(repo, scopes)?;
+    ignore_controls: I,
+) -> Result<(String, Overlay), SnapshotError>
+where
+    F: FnOnce(),
+    I: Fn(&Path, &[String]) -> Result<Vec<String>, SnapshotError>,
+{
+    let before = overlay_status_with(repo, scopes, &ignore_controls)?;
+    let first = digest_worktree(repo, scopes, &ignore_controls)?;
     between_reads();
-    let second = digest_worktree(repo, scopes)?;
-    let after = overlay_status(repo, scopes)?;
+    let second = digest_worktree(repo, scopes, &ignore_controls)?;
+    let after = overlay_status_with(repo, scopes, &ignore_controls)?;
     if first != second || before != after {
         return Err(SnapshotError::Io(
             "working tree changed while snapshot identity was being computed; retry".into(),
@@ -917,7 +922,14 @@ struct IndexEntry {
     oid: String,
 }
 
-fn digest_worktree(repo: &Path, scopes: &[String]) -> Result<String, SnapshotError> {
+fn digest_worktree<I>(
+    repo: &Path,
+    scopes: &[String],
+    ignore_controls: &I,
+) -> Result<String, SnapshotError>
+where
+    I: Fn(&Path, &[String]) -> Result<Vec<String>, SnapshotError>,
+{
     let mut index = index_entries(repo, scopes)?;
     for (path, entry) in index_entries(repo, &[".".to_string()])? {
         if ignore_control_relevant(&path, scopes) {
@@ -926,7 +938,7 @@ fn digest_worktree(repo: &Path, scopes: &[String]) -> Result<String, SnapshotErr
     }
     let mut paths = index.keys().cloned().collect::<BTreeSet<_>>();
     paths.extend(untracked_paths(repo, scopes)?);
-    paths.extend(filesystem_ignore_controls(repo, scopes)?);
+    paths.extend(ignore_controls(repo, scopes)?);
     let mut records = vec![b"code-intel-overlay-input.v1".to_vec()];
     for relative in paths {
         let indexed = index.get(&relative);
@@ -1111,7 +1123,14 @@ impl Overlay {
     }
 }
 
-fn overlay_status(repo: &Path, scopes: &[String]) -> Result<Overlay, SnapshotError> {
+fn overlay_status_with<I>(
+    repo: &Path,
+    scopes: &[String],
+    ignore_controls: &I,
+) -> Result<Overlay, SnapshotError>
+where
+    I: Fn(&Path, &[String]) -> Result<Vec<String>, SnapshotError>,
+{
     let mut args = vec![
         "status",
         "--porcelain=v1",
@@ -1120,7 +1139,7 @@ fn overlay_status(repo: &Path, scopes: &[String]) -> Result<Overlay, SnapshotErr
         "--",
     ];
     let mut pathspecs = scopes.to_vec();
-    pathspecs.extend(filesystem_ignore_controls(repo, scopes)?);
+    pathspecs.extend(ignore_controls(repo, scopes)?);
     pathspecs.extend(
         index_entries(repo, &[".".to_string()])?
             .into_keys()
@@ -1166,7 +1185,7 @@ fn overlay_status(repo: &Path, scopes: &[String]) -> Result<Overlay, SnapshotErr
     overlay.untracked.extend(untracked_paths(repo, scopes)?);
     let indexed = index_entries(repo, &[".".to_string()])?;
     overlay.untracked.extend(
-        filesystem_ignore_controls(repo, scopes)?
+        ignore_controls(repo, scopes)?
             .into_iter()
             .filter(|path| !indexed.contains_key(path)),
     );
@@ -1395,13 +1414,18 @@ mod tests {
             .status()
             .unwrap()
             .success());
-        let result = stable_overlay_snapshot_with(&repo, &[".".into()], || {
-            fs::write(
-                repo.join("file.txt"),
-                "content changed between complete reads",
-            )
-            .unwrap();
-        });
+        let result = stable_overlay_snapshot_with(
+            &repo,
+            &[".".into()],
+            || {
+                fs::write(
+                    repo.join("file.txt"),
+                    "content changed between complete reads",
+                )
+                .unwrap();
+            },
+            |_, _| Ok(Vec::new()),
+        );
         assert!(
             matches!(&result, Err(SnapshotError::Io(message)) if message.contains("changed")),
             "unexpected stable overlay result: {result:?}"
