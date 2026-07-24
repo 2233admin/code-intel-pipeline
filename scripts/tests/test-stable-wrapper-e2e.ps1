@@ -182,3 +182,8 @@ finally {
         Remove-Item -LiteralPath $resolved -Recurse -Force
     }
 }
+
+# The second wrapper invocation is expected to fail so the audit path can be
+# asserted. Do not let that intentionally non-zero native exit code become the
+# successful test script's process exit code.
+exit 0
