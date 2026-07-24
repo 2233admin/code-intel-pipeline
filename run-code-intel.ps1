@@ -99,6 +99,8 @@ $followUpAutomationModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-in
 Import-Module $followUpAutomationModule -Force
 $effectivePlatform = Get-CodeIntelPlatform -Platform $Platform
 $codeIntelPaths = Get-CodeIntelPaths -Platform $effectivePlatform -Root $PSScriptRoot
+$rustExecutableName = if ($effectivePlatform -eq "windows") { "code-intel.exe" } else { "code-intel" }
+$defaultRustCli = Join-Path $PSScriptRoot (Join-Path "target/debug" $rustExecutableName)
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
@@ -152,7 +154,7 @@ if (-not [string]::IsNullOrWhiteSpace($RepowiseAdapterRequest)) {
         $RepowiseAdapterMaxAgeSeconds -le 0) {
         throw "Repowise adapter facade requires artifact root, non-negative evaluated-at, and positive max-age"
     }
-    $rustCli = Join-Path $PSScriptRoot "target\debug\code-intel.exe"
+    $rustCli = $defaultRustCli
     if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
         throw "Repowise adapter binary is missing: $rustCli"
     }
@@ -170,7 +172,7 @@ if (-not [string]::IsNullOrWhiteSpace($GraphAdapterRequest)) {
         $GraphAdapterMaxAgeSeconds -le 0) {
         throw "Graph adapter facade requires artifact root, non-negative evaluated-at, and positive max-age"
     }
-    $rustCli = Join-Path $PSScriptRoot "target\debug\code-intel.exe"
+    $rustCli = $defaultRustCli
     if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
         throw "Graph adapter binary is missing: $rustCli"
     }
@@ -188,7 +190,7 @@ if (-not [string]::IsNullOrWhiteSpace($SentruxAdapterRequest)) {
         $SentruxAdapterMaxAgeSeconds -le 0) {
         throw "Sentrux adapter facade requires artifact root, non-negative evaluated-at, and positive max-age"
     }
-    $rustCli = Join-Path $PSScriptRoot "target\debug\code-intel.exe"
+    $rustCli = $defaultRustCli
     if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) { throw "Sentrux adapter binary is missing: $rustCli" }
     & $rustCli provider sentrux-adapt --request $SentruxAdapterRequest --artifact-root $SentruxAdapterArtifactRoot --evaluated-at $SentruxAdapterEvaluatedAt --max-age-seconds $SentruxAdapterMaxAgeSeconds
     exit $LASTEXITCODE
@@ -200,7 +202,7 @@ if (-not [string]::IsNullOrWhiteSpace($CodeNexusAdapterRequest)) {
         $CodeNexusAdapterMaxAgeSeconds -le 0) {
         throw "CodeNexus adapter facade requires artifact root, non-negative evaluated-at, and positive max-age"
     }
-    $rustCli = Join-Path $PSScriptRoot "target\debug\code-intel.exe"
+    $rustCli = $defaultRustCli
     if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
         throw "CodeNexus adapter binary is missing: $rustCli"
     }
@@ -216,7 +218,7 @@ if (-not [string]::IsNullOrWhiteSpace($SurvivalScanRequest)) {
     if ([string]::IsNullOrWhiteSpace($SurvivalScanArtifactRoot)) {
         throw "Repository survival scan facade requires an artifact root"
     }
-    $rustCli = Join-Path $PSScriptRoot "target\debug\code-intel.exe"
+    $rustCli = $defaultRustCli
     if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
         throw "Repository survival scan binary is missing: $rustCli"
     }
@@ -232,7 +234,7 @@ if (-not [string]::IsNullOrWhiteSpace($RunCommitManifestRef)) {
         [string]::IsNullOrWhiteSpace($RunCommitFinalName)) {
         throw "Run commit facade requires source root, authority root, manifest Artifact Ref, and final name"
     }
-    $rustCli = Join-Path $PSScriptRoot "target\debug\code-intel.exe"
+    $rustCli = $defaultRustCli
     if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
         throw "Run commit binary is missing: $rustCli"
     }
@@ -3244,7 +3246,7 @@ if ($DagCoordinate) {
     $dagRoot = $artifactRoot
     New-Item -ItemType Directory -Force -Path $dagRoot | Out-Null
     $dagOut = Join-Path $dagRoot ((Get-Date -Format "yyyyMMdd-HHmmss") + ".dag-staging-" + [guid]::NewGuid().ToString("N").Substring(0, 12))
-    $rustCli = Join-Path $PSScriptRoot "target\debug\code-intel.exe"
+    $rustCli = $defaultRustCli
     if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
         throw "DAG coordinator binary is missing: $rustCli"
     }
@@ -3432,7 +3434,7 @@ $toolState = [ordered]@{
 $workflowStackResult = $null
 $openSpecResult = $null
 if (-not $SkipOpenSpec) {
-    $rustCli = Join-Path $PSScriptRoot "target\debug\code-intel.exe"
+    $rustCli = $defaultRustCli
     if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
         throw "Workflow recommendation capability binary not found: $rustCli"
     }
@@ -3928,13 +3930,7 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -Liter
             throw "CODE_INTEL_SENTRUX_DSM_PROVIDER must be 'rust' or 'powershell'"
         }
         $sentruxDsmRustCli = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_RUST_CLI)) {
-            $rustExecutableName = if ([Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.InteropServices.OSPlatform]::Windows)) {
-                "code-intel.exe"
-            }
-            else {
-                "code-intel"
-            }
-            Join-Path $PSScriptRoot (Join-Path "target/debug" $rustExecutableName)
+            $defaultRustCli
         } else {
             [IO.Path]::GetFullPath($env:CODE_INTEL_RUST_CLI)
         }
@@ -4204,7 +4200,7 @@ $sentruxInsight["authoritativePrimaryTarget"] = Get-CodeIntelSentruxPrimaryTarge
 $runtimeCiSummary = $null
 if (-not [string]::IsNullOrWhiteSpace($RuntimeCiEvidenceRequest)) {
     if ([string]::IsNullOrWhiteSpace($RuntimeCiEvidenceArtifactRoot)) { throw "Runtime/CI evidence requires an artifact root" }
-    $runtimeCiCli = Join-Path $PSScriptRoot "target\debug\code-intel.exe"
+    $runtimeCiCli = $defaultRustCli
     if (-not (Test-Path -LiteralPath $runtimeCiCli -PathType Leaf)) { throw "Runtime/CI evidence provider binary is missing: $runtimeCiCli" }
     $runtimeCiSummaryPath = Join-Path $runDir "runtime-ci-summary.json"
     & $runtimeCiCli provider runtime-ci-evidence --artifact-root $RuntimeCiEvidenceArtifactRoot --request $RuntimeCiEvidenceRequest --out $runtimeCiSummaryPath
