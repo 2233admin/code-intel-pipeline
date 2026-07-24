@@ -152,9 +152,16 @@ jobs:
             gh release upload $tag $asset --clobber
           }
           else {
+            $notes = "Code Intel Pipeline $tag."
+            if ($tag.Contains("-")) {
+              $notes += " Pre-release build for integration testing before stable promotion."
+            }
+            else {
+              $notes += " Stable release."
+            }
             $releaseArgs = @(
               "--title", $tag,
-              "--notes", "Code Intel Pipeline $tag. Pre-release builds are intended for integration testing before stable promotion."
+              "--notes", $notes
             )
             if ($tag.Contains("-")) {
               $releaseArgs += "--prerelease"
