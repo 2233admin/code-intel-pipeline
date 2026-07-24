@@ -273,23 +273,7 @@ fn run_sentrux(
     subcommand: &str,
 ) -> Result<Output, AdapterError> {
     let explicit = tool_path_prefix.map(resolve_sentrux).transpose()?;
-    let mut command = match explicit.as_deref() {
-        #[cfg(windows)]
-        Some(path)
-            if path
-                .extension()
-                .and_then(|value| value.to_str())
-                .is_some_and(|extension| {
-                    matches!(extension.to_ascii_lowercase().as_str(), "cmd" | "bat")
-                }) =>
-        {
-            let mut command = Command::new("cmd.exe");
-            command.args(["/d", "/c"]).arg(path);
-            command
-        }
-        Some(path) => Command::new(path),
-        None => Command::new("sentrux"),
-    };
+    let mut command = sentrux_command(explicit.as_deref());
     let output = command
         .arg(subcommand)
         .arg(".")
@@ -306,6 +290,33 @@ fn run_sentrux(
         )));
     }
     Ok(output)
+}
+
+fn sentrux_command(explicit: Option<&Path>) -> Command {
+    match explicit {
+        #[cfg(windows)]
+        Some(path)
+            if path
+                .extension()
+                .and_then(|value| value.to_str())
+                .is_some_and(|extension| {
+                    matches!(extension.to_ascii_lowercase().as_str(), "cmd" | "bat")
+                }) =>
+        {
+            let mut command = Command::new("cmd.exe");
+            command.args(["/d", "/c"]).arg(path);
+            command
+        }
+        Some(path) => Command::new(path),
+        #[cfg(windows)]
+        None => {
+            let mut command = Command::new("cmd.exe");
+            command.args(["/d", "/c", "sentrux.cmd"]);
+            command
+        }
+        #[cfg(not(windows))]
+        None => Command::new("sentrux"),
+    }
 }
 
 fn resolve_sentrux(prefix: &Path) -> Result<PathBuf, AdapterError> {
@@ -441,4 +452,33 @@ fn publish_admission(
         domain_verdict,
         domain_failure: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sentrux_command;
+    use std::ffi::OsStr;
+
+    #[cfg(windows)]
+    #[test]
+    fn path_only_windows_shim_runs_through_command_processor() {
+        let command = sentrux_command(None);
+        assert_eq!(command.get_program(), OsStr::new("cmd.exe"));
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [
+                OsStr::new("/d"),
+                OsStr::new("/c"),
+                OsStr::new("sentrux.cmd")
+            ]
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn path_only_unix_binary_runs_directly() {
+        let command = sentrux_command(None);
+        assert_eq!(command.get_program(), OsStr::new("sentrux"));
+        assert_eq!(command.get_args().count(), 0);
+    }
 }
