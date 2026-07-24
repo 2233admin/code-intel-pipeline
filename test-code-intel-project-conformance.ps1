@@ -59,3 +59,7 @@ try {
 } finally {
     if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
 }
+
+# Expected fail-closed child invocations leave a non-zero native exit code behind.
+# Normalize the script's successful aggregate result for callers such as Actions.
+$global:LASTEXITCODE = 0
