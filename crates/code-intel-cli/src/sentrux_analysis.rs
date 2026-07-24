@@ -183,6 +183,7 @@ fn governed_visible_files(target: &Path) -> Option<BTreeSet<String>> {
             "--no-ignore-global",
             "--no-ignore-exclude",
         ])
+        .env_remove("RIPGREP_CONFIG_PATH")
         .current_dir(target)
         .output()
         .ok()?;
