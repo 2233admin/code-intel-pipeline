@@ -420,12 +420,33 @@ impl RunCheckpoint {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RunOutcome(&'static str);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunOutcome {
+    Completed,
+    DomainFailed,
+    DomainUnknown,
+    ProcessFailed,
+    Incomplete,
+}
 
 impl RunOutcome {
     pub fn as_str(&self) -> &'static str {
-        self.0
+        match self {
+            Self::Completed => "completed",
+            Self::DomainFailed => "domain_failed",
+            Self::DomainUnknown => "domain_unknown",
+            Self::ProcessFailed => "process_failed",
+            Self::Incomplete => "incomplete",
+        }
+    }
+
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Self::Completed => 0,
+            Self::DomainFailed => 10,
+            Self::DomainUnknown => 20,
+            Self::ProcessFailed | Self::Incomplete => 70,
+        }
     }
 }
 
@@ -733,13 +754,13 @@ impl Coordinator {
             .values()
             .any(|state| matches!(state, NodeState::ProcessFailed { .. }))
         {
-            RunOutcome("process_failed")
+            RunOutcome::ProcessFailed
         } else if self
             .states
             .values()
             .any(|state| matches!(state, NodeState::DomainFailed { .. }))
         {
-            RunOutcome("domain_failed")
+            RunOutcome::DomainFailed
         } else if self.states.values().any(|state| {
             matches!(
                 state,
@@ -749,11 +770,11 @@ impl Coordinator {
                 }
             )
         }) {
-            RunOutcome("domain_unknown")
+            RunOutcome::DomainUnknown
         } else if self.is_terminal() {
-            RunOutcome("completed")
+            RunOutcome::Completed
         } else {
-            RunOutcome("incomplete")
+            RunOutcome::Incomplete
         };
         RunManifest {
             schema: RUN_MANIFEST_SCHEMA,

@@ -150,23 +150,43 @@ fn parse_cli(raw: &[String]) -> Result<CommitCli, CommitError> {
 }
 
 fn execute_cli(cli: CommitCli) -> Result<CommitResult, CommitError> {
-    let bytes = fs::read(&cli.manifest_ref)
+    publish_existing(
+        &cli.source_root,
+        &cli.authority_root,
+        &cli.manifest_ref,
+        &cli.final_name,
+    )
+}
+
+pub(crate) fn publish_existing(
+    source_root: &Path,
+    authority_root: &Path,
+    manifest_ref: &Path,
+    final_name: &str,
+) -> Result<CommitResult, CommitError> {
+    if !source_root.is_dir() || !authority_root.is_dir() {
+        return Err(CommitError::Contract(
+            "source and authority roots must be existing directories".to_string(),
+        ));
+    }
+    validate_final_name(final_name)?;
+    let bytes = fs::read(manifest_ref)
         .map_err(|error| CommitError::HostIo(format!("read manifest Artifact Ref: {error}")))?;
     let text = std::str::from_utf8(&bytes)
         .map_err(|_| CommitError::Contract("manifest Artifact Ref is not UTF-8".to_string()))?;
     reject_duplicate_json_keys(text).map_err(CommitError::Contract)?;
     let source_manifest_ref: Value = serde_json::from_str(text)
         .map_err(|_| CommitError::Contract("manifest Artifact Ref is invalid JSON".to_string()))?;
-    let manifest = prevalidate_existing(&cli.source_root, &source_manifest_ref)?;
+    let manifest = prevalidate_existing(source_root, &source_manifest_ref)?;
     let snapshot = manifest["snapshotIdentity"].as_str().unwrap();
     let source_refs = manifest_artifact_refs(&manifest)?;
     let verified = artifact_ref::verify_inputs(
         &Value::Array(source_refs.clone()),
-        Some(&cli.source_root),
+        Some(source_root),
         snapshot,
     )
     .map_err(|error| CommitError::Contract(error.message().to_string()))?;
-    let mut writer = StagedWriter::begin(&cli.authority_root, snapshot).map_err(map_stage_error)?;
+    let mut writer = StagedWriter::begin(authority_root, snapshot).map_err(map_stage_error)?;
     let mut published_refs = Vec::with_capacity(source_refs.len());
     for (source_ref, artifact) in source_refs.iter().zip(verified.iter()) {
         let contract = artifact_ref::registered_contract(source_ref)
@@ -204,7 +224,7 @@ fn execute_cli(cli: CommitCli) -> Result<CommitResult, CommitError> {
     commit(
         staged,
         &staged_manifest_ref,
-        &cli.final_name,
+        final_name,
         CommitOptions::default(),
     )
 }

@@ -9,8 +9,10 @@ use crate::artifact_ref::{self, ArtifactError};
 use crate::capability::sha256_hex;
 use crate::dag_coordinator::{
     Coordinator, DagSpec, Dispatch, DomainVerdict, EdgeSpec, ExecutionFailure, NodeExecutor,
-    NodeOutcome, NodeSpec, VerifiedArtifactRef,
+    NodeOutcome, NodeSpec, RunOutcome, VerifiedArtifactRef,
 };
+use crate::execution_kernel::{self, RunError};
+use crate::execution_policy::{ExecutionPolicy, RunProfile, WorkingTreePolicy};
 use crate::snapshot;
 
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
@@ -21,19 +23,13 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
             return 64;
         }
     };
-    match execute(cli) {
-        Ok(manifest) => {
+    match execute_cli(cli) {
+        Ok(result) => {
             println!(
                 "{}",
-                serde_json::to_string(&manifest).expect("run manifest serializes")
+                serde_json::to_string(&result.output).expect("run result serializes")
             );
-            match manifest["outcome"].as_str() {
-                Some("completed") => 0,
-                Some("domain_failed") => 10,
-                Some("domain_unknown") => 20,
-                Some("process_failed" | "incomplete") => 70,
-                _ => 70,
-            }
+            result.exit_code
         }
         Err(error) => {
             eprintln!("{}", error.message);
@@ -42,27 +38,42 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
     }
 }
 
+struct CliResult {
+    output: Value,
+    exit_code: i32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RunCommand {
+    DagCoordinate,
+    Execute,
+}
+
 struct Cli {
+    command: RunCommand,
     repo: PathBuf,
     out: PathBuf,
+    authority_root: Option<PathBuf>,
+    final_name: Option<String>,
     manifest: Option<PathBuf>,
     max_concurrency: usize,
-    working_tree_policy: String,
-    scopes: Vec<String>,
+    policy: ExecutionPolicy,
     diagnosis_inputs: Option<PathBuf>,
     seed_artifact_root: Option<PathBuf>,
-    doctor_tool_path_prefix: Option<PathBuf>,
-    doctor_require_repowise: Option<bool>,
     session_evidence: Option<PathBuf>,
 }
 
 impl Cli {
     fn parse(raw: &[String]) -> Result<Self, String> {
-        if raw.first().map(String::as_str) != Some("dag-coordinate") {
-            return Err("usage: run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--manifest <integrations.json>] [--max-concurrency <n>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>]".into());
-        }
+        let command = match raw.first().map(String::as_str) {
+            Some("dag-coordinate") => RunCommand::DagCoordinate,
+            Some("execute") => RunCommand::Execute,
+            _ => return Err(usage()),
+        };
         let mut repo = None;
         let mut out = None;
+        let mut authority_root = None;
+        let mut final_name = None;
         let mut manifest = None;
         let mut max_concurrency = 2usize;
         let mut working_tree_policy = "explicit_overlay".to_string();
@@ -71,6 +82,11 @@ impl Cli {
         let mut seed_artifact_root = None;
         let mut doctor_tool_path_prefix = None;
         let mut doctor_require_repowise = None;
+        let mut doctor_require_understand = None;
+        let mut profile = match command {
+            RunCommand::DagCoordinate => RunProfile::Compatibility,
+            RunCommand::Execute => RunProfile::Default,
+        };
         let mut session_evidence = None;
         let mut index = 1;
         while index < raw.len() {
@@ -79,7 +95,10 @@ impl Cli {
                 flag,
                 "--repo"
                     | "--out"
+                    | "--authority-root"
+                    | "--final-name"
                     | "--manifest"
+                    | "--profile"
                     | "--max-concurrency"
                     | "--working-tree-policy"
                     | "--scope"
@@ -87,6 +106,7 @@ impl Cli {
                     | "--seed-artifact-root"
                     | "--doctor-tool-path-prefix"
                     | "--doctor-require-repowise"
+                    | "--doctor-require-understand"
                     | "--session-evidence"
             ) {
                 return Err(format!("unknown DAG run argument: {flag}"));
@@ -102,8 +122,20 @@ impl Cli {
                 "--out" if out.replace(PathBuf::from(value)).is_some() => {
                     return Err("duplicate --out".into())
                 }
+                "--authority-root" if authority_root.replace(PathBuf::from(value)).is_some() => {
+                    return Err("duplicate --authority-root".into())
+                }
+                "--final-name" if final_name.replace(value.clone()).is_some() => {
+                    return Err("duplicate --final-name".into())
+                }
                 "--manifest" if manifest.replace(PathBuf::from(value)).is_some() => {
                     return Err("duplicate --manifest".into())
+                }
+                "--profile" => {
+                    if command != RunCommand::Execute {
+                        return Err("--profile is available only for run execute".into());
+                    }
+                    profile = RunProfile::parse(value)?;
                 }
                 "--max-concurrency" => {
                     max_concurrency = value
@@ -130,12 +162,10 @@ impl Cli {
                     return Err("duplicate --doctor-tool-path-prefix".into())
                 }
                 "--doctor-require-repowise" => {
-                    let required = value.parse::<bool>().map_err(|_| {
-                        "--doctor-require-repowise must be true or false".to_string()
-                    })?;
-                    if doctor_require_repowise.replace(required).is_some() {
-                        return Err("duplicate --doctor-require-repowise".into());
-                    }
+                    doctor_require_repowise = Some(parse_bool_flag(flag, value)?);
+                }
+                "--doctor-require-understand" => {
+                    doctor_require_understand = Some(parse_bool_flag(flag, value)?);
                 }
                 "--session-evidence"
                     if session_evidence.replace(PathBuf::from(value)).is_some() =>
@@ -153,19 +183,15 @@ impl Cli {
                 repo.display()
             ));
         }
-        if scopes.is_empty() {
-            scopes.push(".".into());
-        }
         if diagnosis_inputs.is_some() != seed_artifact_root.is_some() {
             return Err(
                 "--diagnosis-inputs and --seed-artifact-root must be provided together".into(),
             );
         }
-        if diagnosis_inputs.is_some()
-            && (doctor_tool_path_prefix.is_some() || doctor_require_repowise.is_some())
-        {
+        if diagnosis_inputs.is_some() && doctor_tool_path_prefix.is_some() {
             return Err(
-                "doctor options are valid only for the default DAG containing doctor".into(),
+                "--doctor-tool-path-prefix is valid only for the default DAG containing doctor"
+                    .into(),
             );
         }
         if diagnosis_inputs.is_some() && session_evidence.is_some() {
@@ -192,46 +218,131 @@ impl Cli {
                     .join(&*prefix);
             }
         }
+        match command {
+            RunCommand::DagCoordinate => {
+                if authority_root.is_some() || final_name.is_some() {
+                    return Err(
+                        "--authority-root and --final-name are available only for run execute"
+                            .into(),
+                    );
+                }
+            }
+            RunCommand::Execute => {
+                if diagnosis_inputs.is_some() || seed_artifact_root.is_some() {
+                    return Err(
+                        "run execute does not accept diagnosis-only inputs; use run dag-coordinate for the non-authoritative compatibility primitive"
+                            .into(),
+                    );
+                }
+                let authority = authority_root
+                    .as_ref()
+                    .ok_or("run execute requires --authority-root")?;
+                if !authority.is_dir() {
+                    return Err(format!(
+                        "authority root is not a directory: {}",
+                        authority.display()
+                    ));
+                }
+                if final_name.is_none() {
+                    return Err("run execute requires --final-name".into());
+                }
+            }
+        }
+        let policy = ExecutionPolicy::for_profile(profile)
+            .with_working_tree(WorkingTreePolicy::parse(&working_tree_policy)?, scopes)
+            .with_doctor_overrides(
+                doctor_require_repowise,
+                doctor_require_understand,
+                doctor_tool_path_prefix,
+            );
         Ok(Self {
+            command,
             repo,
             out: out.ok_or("--out is required")?,
+            authority_root,
+            final_name,
             manifest,
             max_concurrency,
-            working_tree_policy,
-            scopes,
+            policy,
             diagnosis_inputs,
             seed_artifact_root,
-            doctor_tool_path_prefix,
-            doctor_require_repowise,
             session_evidence,
         })
     }
 }
 
-struct RunError {
-    exit_code: i32,
-    message: String,
+fn usage() -> String {
+    "usage: run <dag-coordinate|execute> --repo <repo-root> --out <run-staging-directory> [--authority-root <publication-root> --final-name <name>] [--profile <default|strict|offline>] [--manifest <integrations.json>] [--max-concurrency <n>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]".into()
 }
 
-impl RunError {
-    fn contract(message: impl Into<String>) -> Self {
-        Self {
-            exit_code: 65,
-            message: message.into(),
-        }
-    }
-
-    fn io(message: impl Into<String>) -> Self {
-        Self {
-            exit_code: 74,
-            message: message.into(),
-        }
+fn parse_bool_flag(flag: &str, value: &str) -> Result<bool, String> {
+    match value {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(format!("{flag} must be true or false")),
     }
 }
 
-fn execute(cli: Cli) -> Result<Value, RunError> {
+pub(crate) struct DagExecutionRequest {
+    pub(crate) repo: PathBuf,
+    pub(crate) out: PathBuf,
+    pub(crate) manifest: Option<PathBuf>,
+    pub(crate) max_concurrency: usize,
+    pub(crate) policy: ExecutionPolicy,
+    pub(crate) diagnosis_inputs: Option<PathBuf>,
+    pub(crate) seed_artifact_root: Option<PathBuf>,
+    pub(crate) session_evidence: Option<PathBuf>,
+}
+
+pub(crate) struct DagExecutionResult {
+    pub(crate) manifest: Value,
+    pub(crate) outcome: RunOutcome,
+    pub(crate) run_root: PathBuf,
+}
+
+fn execute_cli(cli: Cli) -> Result<CliResult, RunError> {
+    match cli.command {
+        RunCommand::DagCoordinate => {
+            let result = execute_dag(DagExecutionRequest {
+                repo: cli.repo,
+                out: cli.out,
+                manifest: cli.manifest,
+                max_concurrency: cli.max_concurrency,
+                policy: cli.policy,
+                diagnosis_inputs: cli.diagnosis_inputs,
+                seed_artifact_root: cli.seed_artifact_root,
+                session_evidence: cli.session_evidence,
+            })?;
+            Ok(CliResult {
+                output: result.manifest,
+                exit_code: result.outcome.exit_code(),
+            })
+        }
+        RunCommand::Execute => {
+            let result = execution_kernel::execute(execution_kernel::RunRequest {
+                repo: cli.repo,
+                staging_root: cli.out,
+                authority_root: cli
+                    .authority_root
+                    .expect("validated execute authority root"),
+                final_name: cli.final_name.expect("validated execute final name"),
+                manifest: cli.manifest,
+                max_concurrency: cli.max_concurrency,
+                policy: cli.policy,
+                session_evidence: cli.session_evidence,
+            })?;
+            let exit_code = result.exit_code();
+            Ok(CliResult {
+                output: result.to_json(),
+                exit_code,
+            })
+        }
+    }
+}
+
+pub(crate) fn execute_dag(cli: DagExecutionRequest) -> Result<DagExecutionResult, RunError> {
     let snapshot_document =
-        snapshot::build_for_dag(&cli.repo, &cli.working_tree_policy, &cli.scopes)
+        snapshot::build_for_dag(&cli.repo, cli.policy.working_tree(), cli.policy.scopes())
             .map_err(RunError::contract)?;
     let snapshot_identity = snapshot_document["snapshot"]["identity"]
         .as_str()
@@ -280,7 +391,7 @@ fn execute(cli: Cli) -> Result<Value, RunError> {
     };
     let registry = read_registry(&registry_path)?;
     let declarations = declarations(&registry)?;
-    let required = if diagnosis_mode {
+    let mut required = if diagnosis_mode {
         vec!["diagnosis.hospital"]
     } else {
         vec![
@@ -288,11 +399,19 @@ fn execute(cli: Cli) -> Result<Value, RunError> {
             "doctor",
             "inventory.rg",
             "evidence.native-code",
-            "provider.graph-adapt",
-            "provider.sentrux-adapt",
-            "diagnosis.hospital",
         ]
     };
+    if !diagnosis_mode {
+        if cli.policy.capability_enabled("provider.graph-adapt") {
+            required.push("provider.graph-adapt");
+        }
+        if cli.policy.capability_enabled("provider.sentrux-adapt") {
+            required.push("provider.sentrux-adapt");
+        }
+        if cli.policy.provider_diagnosis_enabled() {
+            required.push("diagnosis.hospital");
+        }
+    }
     for required in required {
         if !declarations.contains_key(required) {
             return Err(RunError::contract(format!(
@@ -350,31 +469,37 @@ fn execute(cli: Cli) -> Result<Value, RunError> {
                 "evidence.native-code",
                 request_identity("evidence.native-code"),
             ),
-            NodeSpec::new(
-                "evidence.graph",
-                "provider.graph-adapt",
-                request_identity("provider.graph-adapt"),
-            ),
-            NodeSpec::new(
-                "evidence.sentrux",
-                "provider.sentrux-adapt",
-                request_identity("provider.sentrux-adapt"),
-            ),
-            NodeSpec::new(
-                "diagnosis.hospital",
-                "diagnosis.hospital",
-                request_identity("diagnosis.hospital"),
-            ),
         ];
         let mut edges = vec![
             EdgeSpec::new("repo.snapshot", "doctor"),
             EdgeSpec::new("repo.snapshot", "inventory.rg"),
             EdgeSpec::new("inventory.rg", "evidence.native-code"),
-            EdgeSpec::new("repo.snapshot", "evidence.graph"),
-            EdgeSpec::new("repo.snapshot", "evidence.sentrux"),
-            EdgeSpec::new("evidence.graph", "diagnosis.hospital"),
-            EdgeSpec::new("evidence.sentrux", "diagnosis.hospital"),
         ];
+        if cli.policy.capability_enabled("provider.graph-adapt") {
+            nodes.push(NodeSpec::new(
+                "evidence.graph",
+                "provider.graph-adapt",
+                request_identity("provider.graph-adapt"),
+            ));
+            edges.push(EdgeSpec::new("repo.snapshot", "evidence.graph"));
+            edges.push(EdgeSpec::new("evidence.graph", "diagnosis.hospital"));
+        }
+        if cli.policy.capability_enabled("provider.sentrux-adapt") {
+            nodes.push(NodeSpec::new(
+                "evidence.sentrux",
+                "provider.sentrux-adapt",
+                request_identity("provider.sentrux-adapt"),
+            ));
+            edges.push(EdgeSpec::new("repo.snapshot", "evidence.sentrux"));
+            edges.push(EdgeSpec::new("evidence.sentrux", "diagnosis.hospital"));
+        }
+        if cli.policy.provider_diagnosis_enabled() {
+            nodes.push(NodeSpec::new(
+                "diagnosis.hospital",
+                "diagnosis.hospital",
+                request_identity("diagnosis.hospital"),
+            ));
+        }
         if !session_inputs.is_empty() {
             nodes.push(NodeSpec::new(
                 "verification.session-evidence",
@@ -400,16 +525,21 @@ fn execute(cli: Cli) -> Result<Value, RunError> {
         seeded_inputs,
         session_inputs,
         seed_artifact_root,
-        doctor_tool_path_prefix: cli.doctor_tool_path_prefix,
-        doctor_require_repowise: cli.doctor_require_repowise,
+        policy: cli.policy,
     };
     let manifest = Coordinator::new(spec)
         .map_err(|error| RunError::contract(error.to_string()))?
         .run_to_completion(&executor)
         .map_err(|error| RunError::contract(error.to_string()))?;
-    let manifest = manifest.to_json();
-    persist_commit_handoff(&run_root, &manifest, &snapshot_identity)?;
-    Ok(manifest)
+    let exit_code = manifest.outcome.exit_code();
+    let manifest_json = manifest.to_json();
+    persist_commit_handoff(&run_root, &manifest_json, &snapshot_identity)?;
+    debug_assert_eq!(exit_code, manifest.outcome.exit_code());
+    Ok(DagExecutionResult {
+        manifest: manifest_json,
+        outcome: manifest.outcome,
+        run_root,
+    })
 }
 
 fn stage_session_evidence(
@@ -496,14 +626,22 @@ struct CapabilityEnvelopeExecutor {
     seeded_inputs: Vec<VerifiedArtifactRef>,
     session_inputs: Vec<VerifiedArtifactRef>,
     seed_artifact_root: Option<PathBuf>,
-    doctor_tool_path_prefix: Option<PathBuf>,
-    doctor_require_repowise: Option<bool>,
+    policy: ExecutionPolicy,
 }
 
 impl NodeExecutor for CapabilityEnvelopeExecutor {
     fn execute(&self, dispatch: Dispatch) -> NodeOutcome {
+        let capability = dispatch.capability.clone();
         match self.execute_node(dispatch) {
             Ok(outcome) => outcome,
+            Err((ExecutionFailure::Unavailable, _))
+                if self
+                    .policy
+                    .capability_requirement(&capability)
+                    .is_some_and(|requirement| !requirement.is_required()) =>
+            {
+                NodeOutcome::success(DomainVerdict::NotApplicable, Vec::new())
+            }
             Err((failure, message)) => NodeOutcome::process_failure(failure, message),
         }
     }
@@ -545,24 +683,9 @@ impl CapabilityEnvelopeExecutor {
         let request_path = self
             .run_root
             .join(format!("{}.request.json", dispatch.node_id));
-        let mut options = match dispatch.capability.as_str() {
-            "diagnosis.hospital" => json!({}),
-            "doctor" => json!({"repoPath":self.repo,"manifestPath":self.registry_path}),
-            _ => json!({"repoPath":self.repo}),
-        };
-        if dispatch.capability == "doctor" {
-            if let Some(prefix) = &self.doctor_tool_path_prefix {
-                options["toolPathPrefix"] = json!(prefix);
-            }
-            if let Some(required) = self.doctor_require_repowise {
-                options["requireRepowise"] = json!(required);
-            }
-        }
-        if dispatch.capability == "provider.sentrux-adapt" {
-            if let Some(prefix) = &self.doctor_tool_path_prefix {
-                options["toolPathPrefix"] = json!(prefix);
-            }
-        }
+        let options =
+            self.policy
+                .capability_options(&dispatch.capability, &self.repo, &self.registry_path);
         let inputs = if dispatch.capability == "diagnosis.hospital" {
             dispatch
                 .inputs
@@ -585,7 +708,7 @@ impl CapabilityEnvelopeExecutor {
             "snapshot":self.snapshot,
             "options":options,
             "inputs":inputs,
-            "effectPolicy":{"allowedEffects":declaration["allowedEffects"]}
+            "effectPolicy":{"allowedEffects":self.policy.allowed_effects(declaration)}
         });
         fs::write(
             &request_path,

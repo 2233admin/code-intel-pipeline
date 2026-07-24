@@ -36,10 +36,24 @@ use std::time::Duration;
 
 use dag_coordinator::{
     Coordinator, CoordinatorErrorKind, DagSpec, DomainVerdict, EdgeSpec, ExecutionFailure,
-    NodeExecutor, NodeOutcome, NodeSpec, NodeState, RunCheckpoint, VerifiedArtifactRef,
+    NodeExecutor, NodeOutcome, NodeSpec, NodeState, RunCheckpoint, RunOutcome, VerifiedArtifactRef,
 };
 
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+#[test]
+fn run_outcome_owns_the_stable_process_exit_mapping() {
+    for (outcome, serialized, exit_code) in [
+        (RunOutcome::Completed, "completed", 0),
+        (RunOutcome::DomainFailed, "domain_failed", 10),
+        (RunOutcome::DomainUnknown, "domain_unknown", 20),
+        (RunOutcome::ProcessFailed, "process_failed", 70),
+        (RunOutcome::Incomplete, "incomplete", 70),
+    ] {
+        assert_eq!(outcome.as_str(), serialized);
+        assert_eq!(outcome.exit_code(), exit_code);
+    }
+}
 
 fn node(id: &str) -> NodeSpec {
     NodeSpec::new(id, format!("fixture.{id}"), format!("request-v1:{id}"))
