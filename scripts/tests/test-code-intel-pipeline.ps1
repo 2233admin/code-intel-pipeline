@@ -480,3 +480,9 @@ sentruxAgentGitStats = $sentruxAgentGitStats
 }
 
 $result | ConvertTo-Json -Depth 6
+
+# The pipeline can intentionally return a non-zero native exit code when the
+# only accepted failure is a missing graph provider. All assertions above have
+# validated that outcome, so do not leak the captured native exit code as this
+# smoke test's process exit status on Unix hosts.
+exit 0

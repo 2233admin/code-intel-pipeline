@@ -148,3 +148,8 @@ finally {
 }
 
 Write-Host "GitHub solution research tests passed: $base"
+
+# The rate-limit fixture intentionally leaves the fake native gh command with
+# exit code 1. Reaching this point means every fail-closed assertion passed, so
+# make the contract test's process result explicit.
+exit 0

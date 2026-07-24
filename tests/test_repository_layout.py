@@ -42,6 +42,16 @@ class RepositoryLayoutTests(unittest.TestCase):
             (archive / "sentrux-failure-normalization-review-log.md").is_file()
         )
 
+    def test_pipeline_workflows_checkout_complete_git_history(self) -> None:
+        for name in ("ci.yml", "release.yml"):
+            with self.subTest(name=name):
+                text = (ROOT / ".github" / "workflows" / name).read_text(
+                    encoding="utf-8"
+                )
+                checkout_count = text.count("uses: actions/checkout@v4")
+                self.assertGreater(checkout_count, 0)
+                self.assertEqual(text.count("fetch-depth: 0"), checkout_count)
+
 
 if __name__ == "__main__":
     unittest.main()
