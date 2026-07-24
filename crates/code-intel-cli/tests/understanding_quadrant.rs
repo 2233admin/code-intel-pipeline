@@ -6,6 +6,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
+#[path = "support/sha256.rs"]
+mod sha256_support;
+
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 static TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
 
@@ -38,19 +41,7 @@ fn root() -> PathBuf {
 }
 
 fn sha256(path: &Path) -> String {
-    let output = Command::new("certutil")
-        .arg("-hashfile")
-        .arg(path)
-        .arg("SHA256")
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(str::trim)
-        .find(|line| line.len() == 64 && line.bytes().all(|byte| byte.is_ascii_hexdigit()))
-        .unwrap()
-        .to_ascii_lowercase()
+    sha256_support::sha256(path)
 }
 
 fn provenance(pointer: &str) -> Value {

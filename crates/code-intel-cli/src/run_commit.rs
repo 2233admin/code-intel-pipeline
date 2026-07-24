@@ -909,13 +909,49 @@ fn rename_linux_no_replace(
     }
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(target_os = "macos")]
+fn rename_directory_no_replace(source: &Path, destination: &Path) -> Result<(), CommitError> {
+    rename_macos_no_replace(source, destination, "promote staged run")
+}
+#[cfg(target_os = "macos")]
+fn rename_file_no_replace(source: &Path, destination: &Path) -> Result<(), CommitError> {
+    rename_macos_no_replace(source, destination, "publish completion marker")
+}
+
+#[cfg(target_os = "macos")]
+fn rename_macos_no_replace(
+    source: &Path,
+    destination: &Path,
+    action: &str,
+) -> Result<(), CommitError> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    unsafe extern "C" {
+        fn renamex_np(old: *const i8, new: *const i8, flags: u32) -> i32;
+    }
+    const RENAME_EXCL: u32 = 0x0000_0004;
+    let source = CString::new(source.as_os_str().as_bytes())
+        .map_err(|_| CommitError::Contract("source path contains NUL".to_string()))?;
+    let destination = CString::new(destination.as_os_str().as_bytes())
+        .map_err(|_| CommitError::Contract("destination path contains NUL".to_string()))?;
+    let result = unsafe { renamex_np(source.as_ptr(), destination.as_ptr(), RENAME_EXCL) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(CommitError::Collision(format!(
+            "{action} without replacement: {}",
+            std::io::Error::last_os_error()
+        )))
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 fn rename_directory_no_replace(_: &Path, _: &Path) -> Result<(), CommitError> {
     Err(CommitError::HostIo(
         "atomic no-replace directory promotion is unsupported on this platform".to_string(),
     ))
 }
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 fn rename_file_no_replace(_: &Path, _: &Path) -> Result<(), CommitError> {
     Err(CommitError::HostIo(
         "atomic no-replace marker publication is unsupported on this platform".to_string(),

@@ -6,6 +6,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
+#[path = "support/sha256.rs"]
+mod sha256_support;
+
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const EVIDENCE_SCHEMA: &str = "code-intel-compatibility-retirement-evidence.v1";
 const NOW: u64 = 3_000_000;
@@ -37,19 +40,7 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 fn sha256(path: &Path) -> String {
-    let output = Command::new("certutil")
-        .arg("-hashfile")
-        .arg(path)
-        .arg("SHA256")
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(str::trim)
-        .find(|line| line.len() == 64 && line.bytes().all(|b| b.is_ascii_hexdigit()))
-        .unwrap()
-        .to_ascii_lowercase()
+    sha256_support::sha256(path)
 }
 fn declaration() -> Value {
     declaration_for("compatibility.retirement-gate")
