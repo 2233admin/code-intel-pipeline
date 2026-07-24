@@ -194,11 +194,24 @@ fn doctor_cli_reports_nonconforming_provider_and_manifest_drift_as_domain_failur
     fs::create_dir_all(&repo).unwrap();
     fs::create_dir_all(&fixture_bin).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
+    #[cfg(windows)]
     fs::write(
         fixture_bin.join("sentrux.cmd"),
         "@echo off\r\necho Authorization: Bearer fixture-secret-token\r\nexit /b 0\r\n",
     )
     .unwrap();
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let sentrux = fixture_bin.join("sentrux");
+        fs::write(
+            &sentrux,
+            "#!/bin/sh\necho 'Authorization: Bearer fixture-secret-token'\nexit 0\n",
+        )
+        .unwrap();
+        fs::set_permissions(&sentrux, fs::Permissions::from_mode(0o755)).unwrap();
+    }
 
     let mut drift: Value = serde_json::from_slice(&fs::read(manifest_path()).unwrap()).unwrap();
     let doctor = drift["integrations"]

@@ -268,7 +268,8 @@ fn run_e01(temp: &Path, request: &Value, request_name: &str, out: &str) -> std::
 }
 
 fn assert_schema_valid(document: &Path, schema: &Path) {
-    let output = Command::new("powershell")
+    let powershell = if cfg!(windows) { "powershell" } else { "pwsh" };
+    let output = Command::new(powershell)
         .args([
             "-NoLogo",
             "-NoProfile",
