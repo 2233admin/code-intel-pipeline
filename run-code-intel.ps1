@@ -501,6 +501,18 @@ function Get-StepFailureCategory {
     return $null
 }
 
+function Get-CodeIntelEffectiveFailedSteps {
+    param(
+        [object[]]$FailedSteps,
+        [int]$BlockingSentruxDebt
+    )
+
+    return @($FailedSteps | Where-Object {
+        $category = [string](Get-StepFailureCategory $_)
+        $category -ne "sentrux_fail" -or $BlockingSentruxDebt -gt 0
+    })
+}
+
 function Test-GitHubSolutionResearchRequired {
 param([object]$FailureCounts)
 
@@ -3884,12 +3896,9 @@ $effectiveFailureCounts = [ordered]@{
     graphMissing = [int]$failureCounts.graphMissing
     sentruxFail = [int]$preliminarySentruxDebtRegister.summary.blocking
 }
-$effectiveFailed = @($failed | Where-Object {
-    $category = Get-StepFailureCategory $_
-    if ($null -eq $category) { return $true }
-    if ([string](Get-CodeIntelObjectValue $category "category") -ne "sentrux_fail") { return $true }
-    return ([int]$preliminarySentruxDebtRegister.summary.blocking -gt 0)
-})
+$effectiveFailed = @(Get-CodeIntelEffectiveFailedSteps `
+    -FailedSteps $failed `
+    -BlockingSentruxDebt ([int]$preliminarySentruxDebtRegister.summary.blocking))
 # R08 reviewed retirement: the representative authenticated blocker query was not
 # reproducible. Production runs remain local-only and expose no GitHub call site.
 $githubResearch = New-GitHubSolutionResearchNotApplicable
@@ -4186,12 +4195,9 @@ $followUpAutomation = New-CodeIntelFollowUpAutomation `
     -BugSkill $BugSkill
 $followUpAutomationPath = Join-Path $runDir "follow-up-automation.json"
 $effectiveFailureCounts["sentruxFail"] = [int]$sentruxDebtRegister.summary.blocking
-$effectiveFailed = @($failed | Where-Object {
-    $category = Get-StepFailureCategory $_
-    if ($null -eq $category) { return $true }
-    if ([string](Get-CodeIntelObjectValue $category "category") -ne "sentrux_fail") { return $true }
-    return ([int]$sentruxDebtRegister.summary.blocking -gt 0)
-})
+$effectiveFailed = @(Get-CodeIntelEffectiveFailedSteps `
+    -FailedSteps $failed `
+    -BlockingSentruxDebt ([int]$sentruxDebtRegister.summary.blocking))
 $sentruxInsight["failures"] = Get-CodeIntelSentruxFailureSummary -Failures $sentruxFailures -Path $sentruxFailuresPath
 $sentruxInsight["debtRegister"] = Get-CodeIntelSentruxDebtSummary -DebtRegister $sentruxDebtRegister -Path $sentruxDebtRegisterPath
 $sentruxInsight["authoritativePrimaryTarget"] = Get-CodeIntelSentruxPrimaryTargetText -Failures $sentruxFailures
