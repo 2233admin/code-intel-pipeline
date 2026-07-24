@@ -10,7 +10,7 @@
     "kind": "design_reference",
     "source": {
       "uri": "https://obsidian.md; local-policy=docs/project-management-support.md",
-      "revision": "product-version-unbound; local-policy-sha256:b82000428768583dd72423763215d72a8d605f69d6a7fd65327d9406a5ebaa44; local-boundary-test-sha256:2e07e6c32a473660d0c599cdba13140591bec1667e060ae57c7063b63ad96635"
+      "revision": "product-version-unbound; local-policy-sha256:b82000428768583dd72423763215d72a8d605f69d6a7fd65327d9406a5ebaa44; local-boundary-test-sha256:23fc91489fb33ad7c3092820ae860e7ecf674d55e405e14bc55889b6b9669e5c"
     },
     "license": {
       "id": "PROPRIETARY-APPLICATION-TERMS-UNVERIFIED",
