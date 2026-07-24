@@ -105,6 +105,16 @@ no_god_files = false
             throw "authoritative default spine did not produce a pass domain verdict for $nodeId"
         }
     }
+    $doctorArtifact = @($completedManifest.nodes.doctor.artifacts |
+        Where-Object { [string]$_.type -eq "doctor.observation" } |
+        Select-Object -First 1)
+    if ($doctorArtifact.Count -ne 1) {
+        throw "authoritative doctor observation was not published"
+    }
+    $doctorObservation = Get-Content -LiteralPath (Join-Path $completedRun.FullName ([string]$doctorArtifact[0].path)) -Raw | ConvertFrom-Json
+    if ([bool]$doctorObservation.environmentPolicy.policy.requireRepowise) {
+        throw "-SkipRepowise did not reach the authoritative doctor policy"
+    }
     $completedIndex = Get-Content -LiteralPath (Join-Path $artifactRoot "index.json") -Raw | ConvertFrom-Json
     $completedEntry = @($completedIndex.entries | Where-Object { [string]$_.repo -eq "fixture-repo" })
     if ($completedEntry.Count -ne 1 -or [string]$completedEntry[0].run -ne $completedRun.Name -or [string]$completedEntry[0].outcome -ne "completed") {

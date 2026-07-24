@@ -338,7 +338,7 @@
         "resume": "target/debug/code-intel.exe resume --repo <repo-path> --json",
         "classify": "target/debug/code-intel.exe classify --report <report-path> --json",
         "evidenceValidate": "target/debug/code-intel.exe evidence validate --request <request.json> --artifact-root <artifact-directory>",
-        "dagCoordinate": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory>"
+        "dagCoordinate": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--doctor-require-repowise <true|false>]"
       },
       "artifactContract": [
         "orchestration/integrations.json",
@@ -1111,7 +1111,7 @@
       "entrypoint": "crates/code-intel-cli/src/dag_run.rs",
       "capabilities": ["deterministic_dag", "bounded_concurrency", "resumable_run_state", "a03_verified_seeded_diagnosis"],
       "commands": {
-        "run": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--doctor-tool-path-prefix <controlled-tool-directory>]",
+        "run": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--doctor-tool-path-prefix <controlled-tool-directory>] [--doctor-require-repowise <true|false>]",
         "diagnosis": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> --diagnosis-inputs <artifact-refs.json> --seed-artifact-root <artifact-root>",
         "facade": "run-code-intel.ps1 -RepoPath <repo-root> -ArtifactRoot <artifact-root> -DagCoordinate"
       },
