@@ -59,3 +59,9 @@ try {
 } finally {
     if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
 }
+
+# The final fixture deliberately executes a fail-closed conformance gate that
+# returns 1. Reaching this point means its result and all prior fixtures matched
+# the contract, so do not leak that intentional native status to a caller that
+# composes this script with other tests.
+exit 0
