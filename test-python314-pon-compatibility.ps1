@@ -82,6 +82,7 @@ raise SystemExit(0)
     }
 
     Write-Host "PASS Python 3.14/Pon lane: development, missing backend, matching backend, and divergence paths verified"
+    $global:LASTEXITCODE = 0
 } finally {
     if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
 }
