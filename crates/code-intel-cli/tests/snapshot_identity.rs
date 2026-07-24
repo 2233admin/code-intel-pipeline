@@ -443,8 +443,15 @@ fn head_snapshot_binds_gitlink_lfs_pointer_and_case_sensitive_scope() {
     );
 
     let lower = ok_json(snapshot(&repo, "head_only", &["src"]));
-    let upper = ok_json(snapshot(&repo, "head_only", &["SRC"]));
-    assert_ne!(lower["snapshot"]["identity"], upper["snapshot"]["identity"]);
+    let upper = snapshot(&repo, "head_only", &["SRC"]);
+    if repo.join("SRC").exists() {
+        let upper = ok_json(upper);
+        assert_ne!(lower["snapshot"]["identity"], upper["snapshot"]["identity"]);
+    } else {
+        assert_eq!(upper.status.code(), Some(64));
+        assert!(upper.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&upper.stderr).contains("does not exist"));
+    }
 }
 
 #[test]
