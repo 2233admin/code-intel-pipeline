@@ -1735,7 +1735,7 @@ function New-CodeIntelSurgeryPlan {
         verification = @(
             "Invoke-SentruxAgentTool.ps1 check_rules `"$SentruxTargetPath`"",
             "Invoke-SentruxAgentTool.ps1 session_end `"$SentruxTargetPath`"",
-            "test-code-intel-pipeline.ps1 -RepoPath `"$RepoPath`" -SentruxPath `"$((Get-RelativePathSafe $RepoPath $SentruxTargetPath) -replace '\\', '/')`" -SkipRepowise -Mode normal"
+            "scripts/tests/test-code-intel-pipeline.ps1 -RepoPath `"$RepoPath`" -SentruxPath `"$((Get-RelativePathSafe $RepoPath $SentruxTargetPath) -replace '\\', '/')`" -SkipRepowise -Mode normal"
         )
         discharge_criteria = $Hospital.triage.discharge_criteria
         evidence = [ordered]@{

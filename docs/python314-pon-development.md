@@ -15,8 +15,8 @@ that Pon supports every Python 3.14 feature.
 Run:
 
 ```powershell
-./Test-Python314PonCompatibility.ps1 -Profile development
-./Test-Python314PonCompatibility.ps1 -Profile pon-candidate -PonCommand pon -Json
+./scripts/tests/Test-Python314PonCompatibility.ps1 -Profile development
+./scripts/tests/Test-Python314PonCompatibility.ps1 -Profile pon-candidate -PonCommand pon -Json
 ```
 
 The policy is `orchestration/python314-pon-development-policy.v1.json`. The corpus manifest is

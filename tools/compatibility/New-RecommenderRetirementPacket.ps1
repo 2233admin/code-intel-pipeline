@@ -48,7 +48,7 @@ function New-ArtifactRef([string]$ArtifactSchema, [string]$Type, [string]$Relati
 }
 
 $verification = [ordered]@{}
-& pwsh -NoLogo -NoProfile -File (Join-Path $RepoRoot "test-workflow-recommendation-brief.ps1") | Out-Null
+& pwsh -NoLogo -NoProfile -File (Join-Path $RepoRoot "scripts/tests/test-workflow-recommendation-brief.ps1") | Out-Null
 $verification.brief = ($LASTEXITCODE -eq 0)
 & cargo test -p code-intel --test capability_exec advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_parity --quiet | Out-Null
 $verification.facadeParity = ($LASTEXITCODE -eq 0)
@@ -88,7 +88,7 @@ function Add-Evidence([string]$Name, [string]$Class, [object]$Details) {
 }
 
 $replacement = Add-Evidence "replacement-atom" "replacement_atom" ([ordered]@{ outcome = "passed"; status = "production_ready"; capability = $replacementId; verification = $verification })
-$golden = Add-Evidence "golden-parity" "golden_parity" ([ordered]@{ outcome = "passed"; assertionCount = 4; command = "test-workflow-recommendation-brief.ps1" })
+$golden = Add-Evidence "golden-parity" "golden_parity" ([ordered]@{ outcome = "passed"; assertionCount = 4; command = "scripts/tests/test-workflow-recommendation-brief.ps1" })
 $contract = Add-Evidence "contract-parity" "contract_parity" ([ordered]@{ outcome = "passed"; assertionCount = 8; command = "cargo test -p code-intel --test capability_exec advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_parity" })
 $effects = Add-Evidence "effect-parity" "effect_parity" ([ordered]@{ outcome = "passed"; assertionCount = 3; declaredEffects = @(); observedEffects = @(); noAutoInit = $true })
 $registry = Add-Evidence "registry-reconciliation" "registry_reconciliation" ([ordered]@{ outcome = "passed"; registryParticipantId = "facade.workflow-recommender.inline"; replacementCapabilityId = $replacementId; status = "deleted"; providerPreflightUntouched = $providerPreflightPresent })

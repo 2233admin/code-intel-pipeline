@@ -57,7 +57,7 @@
   "ownedModifications": [
     { "path": "docs/plans/pon-parity-floor-idea.md", "description": "Idea file and acceptance boundary for the selective internalization", "evidenceIds": ["local:pon-ratchet:corpus-level-gap", "local:pon-ratchet:no-runtime-dependency"] },
     { "path": "docs/pon-conformance-ratchet.md", "description": "Pipeline-owned semantic mapping, exclusions, provenance, and exit criteria", "evidenceIds": ["local:pon-ratchet:source-revision-pinned", "local:pon-ratchet:existing-oracle-unchanged"] },
-    { "path": "test-parity-floor.ps1", "description": "Monotonic floor checker and explicitly reviewed updater over the existing oracle", "evidenceIds": ["local:pon-ratchet:five-floor-cases-pass", "local:pon-ratchet:missing-case-rejected", "local:pon-ratchet:empty-review-rejected"] },
+    { "path": "scripts/tests/test-parity-floor.ps1", "description": "Monotonic floor checker and explicitly reviewed updater over the existing oracle", "evidenceIds": ["local:pon-ratchet:five-floor-cases-pass", "local:pon-ratchet:missing-case-rejected", "local:pon-ratchet:empty-review-rejected"] },
     { "path": "tests/fixtures/parity/parity-floor.json", "description": "Initial five-case committed parity floor", "evidenceIds": ["local:pon-ratchet:five-existing-parity-cases", "local:pon-ratchet:five-floor-cases-pass"] }
   ],
   "rollback": {

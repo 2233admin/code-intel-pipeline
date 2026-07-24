@@ -39,6 +39,13 @@ def write_release_archive(path: Path, *, installer: str = "Write-Output 'ok'\n")
 
 
 class SkillPackageTests(unittest.TestCase):
+    def test_defaults_to_fixed_v030_stable_release(self) -> None:
+        bootstrap = load_bootstrap_module()
+        self.assertEqual(bootstrap.DEFAULT_STABLE_VERSION, "v0.3.0")
+        self.assertEqual(bootstrap.resolve_version(None, "stable"), "v0.3.0")
+        self.assertEqual(bootstrap.resolve_version("0.2.0", "stable"), "v0.2.0")
+        self.assertIsNone(bootstrap.resolve_version(None, "prerelease"))
+
     def test_uses_canonical_skill_layout(self) -> None:
         self.assertTrue((SKILL_DIR / "SKILL.md").is_file())
         self.assertTrue((SKILL_DIR / "agents" / "openai.yaml").is_file())

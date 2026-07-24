@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -111,6 +112,37 @@ fn dsm_snapshot_preserves_contract_and_excludes_non_governed_source() {
     assert_eq!(rust["functions"][0]["params"], 1);
     assert_eq!(rust["functions"][0]["complexity"], 3);
     assert_eq!(rust["source_anchor"]["label"], "src/lib.rs:1");
+}
+
+#[test]
+fn dsm_inventory_ignores_external_ripgrep_configuration() {
+    let fixture = Fixture::new();
+    fixture.write("src/lib.rs", "pub fn kept() {}\n");
+    fixture.write(".gitignore", "work/\n");
+    fixture.write("work/generated.rs", "fn generated() {}\n");
+    fixture.write("ripgrep.conf", "--no-ignore\n");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["sentrux", "dsm"])
+        .arg(&fixture.root)
+        .env("RIPGREP_CONFIG_PATH", fixture.root.join("ripgrep.conf"))
+        .output()
+        .expect("run DSM with an external ripgrep configuration");
+    assert!(
+        output.status.success(),
+        "DSM failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let snapshot: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("DSM JSON output");
+
+    assert_eq!(snapshot["scope"]["included_files"], 1);
+    assert_eq!(file(&snapshot, "src/lib.rs")["path"], "src/lib.rs");
+    assert!(snapshot["file_details"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|detail| detail["path"] != "work/generated.rs"));
 }
 
 #[test]
@@ -244,7 +276,12 @@ fn production_pipeline_prefers_rust_dsm_with_explicit_powershell_rollback() {
     assert!(pipeline.contains("CODE_INTEL_RUST_CLI"));
     assert!(pipeline.contains("& $sentruxDsmRustCli sentrux dsm $sentruxTargetPath"));
     assert!(pipeline.contains("& $sentruxAgentTool dsm $sentruxTargetPath"));
-    assert!(pipeline.contains("RuntimeInformation]::IsOSPlatform"));
+    assert!(pipeline.contains("$rustExecutableName = if ($effectivePlatform -eq \"windows\")"));
+    assert!(pipeline.contains(
+        "$defaultRustCli = Join-Path $PSScriptRoot (Join-Path \"target/debug\" $rustExecutableName)"
+    ));
+    assert!(pipeline.contains("$sentruxDsmRustCli = if"));
+    assert!(pipeline.contains("$defaultRustCli"));
     assert!(pipeline.contains("$dsmLaunchError = $_.Exception.Message"));
     assert!(pipeline.contains("Sentrux DSM provider: $sentruxDsmProvider"));
 }

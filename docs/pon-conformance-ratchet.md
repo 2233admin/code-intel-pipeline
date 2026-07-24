@@ -8,8 +8,8 @@ copied into Code Intel Pipeline.
 
 ## Absorbed semantics
 
-1. **Oracle and floor are separate.** `test-parity-baseline.ps1` remains the byte-stable parity
-   oracle for each case. `test-parity-floor.ps1` only records which cases have already earned a
+1. **Oracle and floor are separate.** `scripts/tests/test-parity-baseline.ps1` remains the byte-stable parity
+   oracle for each case. `scripts/tests/test-parity-floor.ps1` only records which cases have already earned a
    pass and the minimum passing count.
 2. **The proven set is monotonic.** A normal run fails if a committed floor case disappears or no
    longer passes. Updating the floor cannot remove an old case or lower the count.
@@ -23,19 +23,19 @@ copied into Code Intel Pipeline.
 ## Local implementation
 
 - `tests/fixtures/parity/parity-floor.json`: committed set-and-count floor.
-- `test-parity-floor.ps1`: monotonic checker and guarded updater.
-- `test-parity-baseline.ps1`: existing per-case oracle; unchanged by this internalization.
+- `scripts/tests/test-parity-floor.ps1`: monotonic checker and guarded updater.
+- `scripts/tests/test-parity-baseline.ps1`: existing per-case oracle; unchanged by this internalization.
 
 Run:
 
 ```powershell
-pwsh -NoProfile -File ./test-parity-floor.ps1
+pwsh -NoProfile -File ./scripts/tests/test-parity-floor.ps1
 ```
 
 Promote newly passing fixtures only after reviewing their semantic coverage:
 
 ```powershell
-pwsh -NoProfile -File ./test-parity-floor.ps1 -UpdateFloor -ReviewReason "<why the new cases are trustworthy>"
+pwsh -NoProfile -File ./scripts/tests/test-parity-floor.ps1 -UpdateFloor -ReviewReason "<why the new cases are trustworthy>"
 ```
 
 ## Deliberately not absorbed

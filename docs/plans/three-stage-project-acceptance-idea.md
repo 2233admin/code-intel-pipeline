@@ -4,19 +4,19 @@
 > Source: local code-intel-pipeline
 
 ## Abstract
-Provide one language-neutral acceptance entry point for agent, landing, and promotion decisions. Reuse `Test-CodeIntelProjectConformance.ps1` and its policy so each stage selects an existing project profile instead of copying suite logic.
+Provide one language-neutral acceptance entry point for agent, landing, and promotion decisions. Reuse `scripts/tests/Test-CodeIntelProjectConformance.ps1` and its policy so each stage selects an existing project profile instead of copying suite logic.
 
 ## Core Insight
 The three stages differ by required evidence strength, not by language: agent work needs explicit targeted checks plus the fast project profile, landing needs fast project conformance, and promotion needs full project conformance.
 
 ## Target Repo
-- Path: `D:\projects\_tools\code-intel-pipeline`
+- Path: `<repo>`
 - Branch: `codex/code-intel-atomic-model`
 - Current state: dirty shared workspace with concurrent agent changes; this lane owns only new acceptance-layer files.
 
 ## Success Criteria
 - [x] `Invoke-CodeIntelAcceptance.ps1 -Stage agent|land|promote` maps stages to targeted+fast, fast, and full respectively.
-- [x] The entry point delegates project suites to `Test-CodeIntelProjectConformance.ps1` without duplicating suite implementations.
+- [x] The entry point delegates project suites to `scripts/tests/Test-CodeIntelProjectConformance.ps1` without duplicating suite implementations.
 - [x] Machine output uses only `pass`, `fail`, `blocked`, or `skipped-with-reason` outcome statuses and fails closed.
 - [x] Agent targeted checks are explicit argv arrays, repository-contained, and reject shell syntax or path escape.
 - [x] Self-contained fixtures prove stage mapping, failure propagation, injection resistance, and repository paths containing spaces.

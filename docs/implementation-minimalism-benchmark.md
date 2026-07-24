@@ -44,7 +44,7 @@ Measured impact is tracked in `docs/ponytail-impact-scoreboard.md`.
 Run the skill benchmark gate after changing this document, `skills/code-intel-pipeline/SKILL.md`, or related ADRs:
 
 ```powershell
-.\test-skill-development-benchmark.ps1 -RepoPath .
+.\scripts/tests/test-skill-development-benchmark.ps1 -RepoPath .
 ```
 
 The check verifies Code Intel internalized the implementation minimalism benchmark and its safety boundaries without making Ponytail a runtime dependency.

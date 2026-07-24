@@ -33,10 +33,11 @@ Follow-up automation can proactively propose `/investigate` for actionable scan 
 - `check-code-intel-tools.ps1`: 环境 doctor。
 - `install-code-intel-pipeline.ps1`: 安装和修复入口。
 - `Find-CodeIntelProjects.ps1`: 项目发现入口。
-- `Invoke-GreenfieldSpecExtraction.ps1`: Greenfield 行为规格抽取适配器。
+- `bootstrap-new-machine.ps1`: 新机器自举入口。
+- `Invoke-SentruxAgentTool.ps1`: Sentrux 兼容入口。
 - `crates/code-intel-cli`: Rust policy/artifact CLI core。
 
-内部脚本、benchmark、实验入口后续分批迁到 `scripts/` 或 incubator 目录；每次迁移必须保留兼容 shim 或同步更新 CI/release。
+PowerShell 合同测试已迁到 `scripts/tests/`。其余根目录兼容 facade 仍被安装器、集成清单和 Rust 合同绑定，后续迁移到 `scripts/powershell/` 时必须同时更新这些契约或保留兼容 shim，不能只做文件移动。
 
 ## Public beta 范围
 
@@ -147,31 +148,31 @@ WizTree CLI/CSV 只是项目发现加速输入；真正选中项目后再运行 
 完整 smoke test：
 
 ```powershell
-.\test-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo
+.\scripts/tests/test-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo
 ```
 
 单元级回归测试（覆盖 fail-open / 假绿类修复 + fail-open lint，不依赖真实 repo，跑在临时目录里）：
 
 ```powershell
-.\test-regression-fixes.ps1 -VerboseOutput
+.\scripts/tests/test-regression-fixes.ps1 -VerboseOutput
 ```
 
 GitHub research artifact contract 离线测试：
 
 ```powershell
-.\test-github-solution-research.ps1 -RepoPath C:\path\to\your\repo
+.\scripts/tests/test-github-solution-research.ps1 -RepoPath C:\path\to\your\repo
 ```
 
 Skill development benchmark contract 测试：
 
 ```powershell
-.\test-skill-development-benchmark.ps1 -RepoPath C:\path\to\your\repo
+.\scripts/tests/test-skill-development-benchmark.ps1 -RepoPath C:\path\to\your\repo
 ```
 
 Project management support contract 测试：
 
 ```powershell
-.\test-project-management-support.ps1 -RepoPath C:\path\to\your\repo
+.\scripts/tests/test-project-management-support.ps1 -RepoPath C:\path\to\your\repo
 ```
 
 从 GitHub Release ZIP 运行时，解压后直接使用稳定入口；不需要 Cargo，也不依赖仓库里的 `target/`：
@@ -189,7 +190,7 @@ Project management support contract 测试：
 Greenfield 行为规格适配器测试：
 
 ```powershell
-.\test-greenfield-integration.ps1
+.\scripts/tests/test-greenfield-integration.ps1
 ```
 
 大仓库建议指定核心范围：
@@ -515,7 +516,7 @@ overlays/sentrux/vlang
 ```powershell
 sentrux plugin validate ~/.sentrux/plugins/vlang
 sentrux plugin list
-.\Test-SentruxVlangOverlay.ps1
+.\scripts/tests/Test-SentruxVlangOverlay.ps1
 ```
 
 不安装覆盖包：
@@ -581,8 +582,8 @@ $env:CODE_INTEL_BASE_URL = "https://your-endpoint/v1"
 跑 docs 前可先做 preflight:
 
 ```powershell
-.\test-code-intel-provider.ps1 -Json                              # 按 env 选 provider
-.\test-code-intel-provider.ps1 -Provider ollama -Model qwen3:4b   # 显式指定
+.\scripts/tests/test-code-intel-provider.ps1 -Json                              # 按 env 选 provider
+.\scripts/tests/test-code-intel-provider.ps1 -Provider ollama -Model qwen3:4b   # 显式指定
 ```
 
 ## Understand Anything 图谱
@@ -699,13 +700,13 @@ tools
 
 ```text
 本项目完整链路：
-test-code-intel-pipeline.ps1 -RepoPath $env:CODE_INTEL_HOME -Mode normal
+scripts/tests/test-code-intel-pipeline.ps1 -RepoPath $env:CODE_INTEL_HOME -Mode normal
 
 GitHub fresh clone：
-test-code-intel-pipeline.ps1 -RepoPath <tmp>/code-intel-pipeline-online-test -Mode normal
+scripts/tests/test-code-intel-pipeline.ps1 -RepoPath <tmp>/code-intel-pipeline-online-test -Mode normal
 
 Katana 大仓库 scoped：
-test-code-intel-pipeline.ps1 -RepoPath <k-atana-path> -SentruxPath backend -Mode normal
+scripts/tests/test-code-intel-pipeline.ps1 -RepoPath <k-atana-path> -SentruxPath backend -Mode normal
 ```
 
 Katana 结果示例：

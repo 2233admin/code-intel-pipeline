@@ -48,7 +48,7 @@
       "comparisonStatus": "reviewed-retirement-no-unique-value"
     },
     "r08GitHubResearch": {
-      "command": "pwsh -NoProfile -File test-github-solution-research.ps1",
+      "command": "pwsh -NoProfile -File scripts/tests/test-github-solution-research.ps1",
       "fixtureElapsedMs": 855.4559,
       "readOnlyCommandFamilies": 1,
       "rateLimitFallbacksPassed": 1,
@@ -97,7 +97,7 @@
       "rollbackRoutesTested": ["git", "unversioned-explicit-overlay"]
     },
     "r12Greenfield": {
-      "command": "pwsh -NoProfile -File test-greenfield-integration.ps1",
+      "command": "pwsh -NoProfile -File scripts/tests/test-greenfield-integration.ps1",
       "fixtureElapsedMs": 2127.4285,
       "planArtifacts": 2,
       "explicitAnalyzeFixtures": 1,

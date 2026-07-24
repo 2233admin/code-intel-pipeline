@@ -12,17 +12,22 @@ install and CI contract:
 - `check-code-intel-tools.ps1`: environment doctor.
 - `install-code-intel-pipeline.ps1`: installer and repair entry point.
 - `Find-CodeIntelProjects.ps1`: local project discovery entry point.
+- `bootstrap-new-machine.ps1`: new-machine bootstrap entry point.
+- `Invoke-SentruxAgentTool.ps1`: Sentrux compatibility entry point.
 - `README.md`, `CHANGELOG.md`, `CONTEXT.md`: operator-facing docs.
 - `Cargo.toml`, `Cargo.lock`, `crates/code-intel-cli`: Rust CLI policy core.
 
 ## Internal Script Buckets
 
-Future file moves should use these buckets:
+Internal scripts use these buckets:
 
 - `scripts/tests/`: PowerShell contract tests and smoke tests.
 - `scripts/benchmarks/`: benchmark and A/B scripts.
 - `scripts/adapters/`: tool-specific helper wrappers.
 - `scripts/incubator/`: experiments that are not in the shipped product path.
+
+The seven public PowerShell entry points stay at the repository root. Test
+scripts are internal and must remain under `scripts/tests/`.
 
 Do not move a root PowerShell file without one of these:
 

@@ -12,7 +12,7 @@ It does not merge, push, publish, or promote anything. It only returns an accept
 | `land` | project conformance only | `fast` |
 | `promote` | project conformance only | `full` |
 
-Project suites remain owned by `Test-CodeIntelProjectConformance.ps1` and
+Project suites remain owned by `scripts/tests/Test-CodeIntelProjectConformance.ps1` and
 `orchestration/code-intel-project-conformance-policy.v1.json`. The three-stage entry point delegates
 to that command; it does not duplicate suite definitions or test implementations.
 
@@ -29,7 +29,7 @@ they are resolved and containment-checked before any command runs:
 $target = @{
     id = "acceptance-contract"
     kind = "pwsh"
-    file = "test-code-intel-acceptance.ps1"
+    file = "scripts/tests/test-code-intel-acceptance.ps1"
     args = @()
 } | ConvertTo-Json -Compress
 
@@ -95,7 +95,7 @@ the project-wide profile.
 ## Contract test
 
 ```powershell
-./test-code-intel-acceptance.ps1
+./scripts/tests/test-code-intel-acceptance.ps1
 ```
 
 The test uses an isolated repository-shaped fixture whose path contains spaces. It proves all three

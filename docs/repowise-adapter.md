@@ -34,7 +34,7 @@ check was rejected. Missing CLI emits no fabricated evidence. Native diagnostics
 The `run-code-intel.ps1 -RepowiseAdapterRequest ...` facade selects this same Rust route.
 
 `Invoke-RepowiseProviderProbe.ps1` is the production health probe. The historical
-`test-code-intel-provider.ps1` name is now only a test wrapper over that production seam.
+`scripts/tests/test-code-intel-provider.ps1` name is now only a test wrapper over that production seam.
 `run-code-intel.ps1` uses the production probe and continues index-only execution when optional
 docs health fails. Existing direct Repowise CLI/index commands remain compatibility and rollback
 surfaces; they are optional diagnostics/rollback only, and their raw output has no evidence or fact authority.

@@ -43,7 +43,7 @@ For this repository, the queue's project-local config should use the fast unifie
 export default {
   integrationBranch: "integration",
   productionBranch: "main",
-  checkCommand: "pwsh -NoProfile -File ./Test-CodeIntelProjectConformance.ps1 -Profile fast",
+  checkCommand: "pwsh -NoProfile -File ./scripts/tests/Test-CodeIntelProjectConformance.ps1 -Profile fast",
   checksRequired: true,
 };
 ```

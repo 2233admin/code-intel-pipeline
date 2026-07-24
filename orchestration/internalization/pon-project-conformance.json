@@ -59,8 +59,8 @@
     { "path": "docs/plans/pon-project-conformance-mapping-idea.md", "description": "Problem statement, mapping decision, and constraints", "evidenceIds": ["local:pon-project-conformance:project-policy-gap"] },
     { "path": "docs/code-intel-project-conformance.md", "description": "Human-readable project acceptance contract and authority boundary", "evidenceIds": ["local:pon-project-conformance:eight-mechanism-map"] },
     { "path": "orchestration/code-intel-project-conformance-policy.v1.json", "description": "Machine-owned mechanism mapping, immutable profile requirements, and executable suite declarations", "evidenceIds": ["local:pon-project-conformance:policy-weakening-rejected"] },
-    { "path": "Test-CodeIntelProjectConformance.ps1", "description": "Executable fast/full project gate", "evidenceIds": ["local:pon-project-conformance:fast-five-suites-pass", "local:pon-project-conformance:full-fails-closed"] },
-    { "path": "test-code-intel-project-conformance.ps1", "description": "Positive and fail-closed mutation coverage for the project gate", "evidenceIds": ["local:pon-project-conformance:policy-weakening-rejected"] },
+    { "path": "scripts/tests/Test-CodeIntelProjectConformance.ps1", "description": "Executable fast/full project gate", "evidenceIds": ["local:pon-project-conformance:fast-five-suites-pass", "local:pon-project-conformance:full-fails-closed"] },
+    { "path": "scripts/tests/test-code-intel-project-conformance.ps1", "description": "Positive and fail-closed mutation coverage for the project gate", "evidenceIds": ["local:pon-project-conformance:policy-weakening-rejected"] },
     { "path": "orchestration/acceptance/known-divergences.v1.json", "description": "Empty design placeholder; not yet an active comparison exception surface", "evidenceIds": ["gap:pon-project-conformance:active-divergence-ledger"] }
   ],
   "rollback": {

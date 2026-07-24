@@ -156,7 +156,7 @@
       "implementation": {
         "source": "crates/code-intel-cli/src/native_code_evidence.rs",
         "symbols": ["SUPPORTED_HEURISTICS", "native-minimal"],
-        "tests": ["crates/code-intel-cli/tests/native_code_evidence.rs", "Test-LanguageAdapterAcceptance.ps1"]
+        "tests": ["crates/code-intel-cli/tests/native_code_evidence.rs", "scripts/tests/Test-LanguageAdapterAcceptance.ps1"]
       }
     },
     {

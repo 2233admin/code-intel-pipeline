@@ -13,7 +13,7 @@
       "ponForm": "byte-exact comparison with CPython",
       "codeIntelForm": "reviewed canonical machine-artifact fixtures",
       "status": "implemented",
-      "evidence": ["test-parity-baseline.ps1", "tests/fixtures/parity"]
+      "evidence": ["scripts/tests/test-parity-baseline.ps1", "tests/fixtures/parity"]
     },
     {
       "id": "conformance-corpus",
@@ -27,14 +27,14 @@
       "ponForm": "JIT and AOT paths must agree with the same external oracle",
       "codeIntelForm": "supported evidence paths emit the same normalized artifact contracts",
       "status": "implemented",
-      "evidence": ["test-parity-baseline.ps1", "crates/code-intel-cli/tests/pon_multilanguage_mapping.rs"]
+      "evidence": ["scripts/tests/test-parity-baseline.ps1", "crates/code-intel-cli/tests/pon_multilanguage_mapping.rs"]
     },
     {
       "id": "monotonic-floor",
       "ponForm": "committed passing module floor cannot regress",
       "codeIntelForm": "committed passing fixture set and count cannot regress",
       "status": "implemented",
-      "evidence": ["test-parity-floor.ps1", "tests/fixtures/parity/parity-floor.json"]
+      "evidence": ["scripts/tests/test-parity-floor.ps1", "tests/fixtures/parity/parity-floor.json"]
     },
     {
       "id": "expected-divergence-ledger",
@@ -48,14 +48,14 @@
       "ponForm": "differential fuzzing rejects unexpected divergence",
       "codeIntelForm": "negative mutations must fail the exact project gate that owns the invariant",
       "status": "implemented",
-      "evidence": ["test-language-adapter-acceptance.ps1"]
+      "evidence": ["scripts/tests/test-language-adapter-acceptance.ps1"]
     },
     {
       "id": "deterministic-stress",
       "ponForm": "free-threading and repeated execution stress",
       "codeIntelForm": "fresh-root and repeated-run artifact determinism",
       "status": "partial",
-      "evidence": ["test-parity-baseline.ps1", "orchestration/acceptance/native-code-evidence-candidate.json"]
+      "evidence": ["scripts/tests/test-parity-baseline.ps1", "orchestration/acceptance/native-code-evidence-candidate.json"]
     },
     {
       "id": "performance-ratchet",
@@ -99,12 +99,12 @@
     {
       "id": "parity-floor",
       "mechanisms": ["reference-oracle", "monotonic-floor", "deterministic-stress"],
-      "command": { "kind": "pwsh", "file": "test-parity-floor.ps1", "args": [] }
+      "command": { "kind": "pwsh", "file": "scripts/tests/test-parity-floor.ps1", "args": [] }
     },
     {
       "id": "adapter-contract",
       "mechanisms": ["mutation-robustness", "normalized-output-parity"],
-      "command": { "kind": "pwsh", "file": "test-language-adapter-acceptance.ps1", "args": [] }
+      "command": { "kind": "pwsh", "file": "scripts/tests/test-language-adapter-acceptance.ps1", "args": [] }
     },
     {
       "id": "multilanguage-corpus",
@@ -114,19 +114,19 @@
     {
       "id": "python314-development",
       "mechanisms": ["reference-oracle", "conformance-corpus", "normalized-output-parity", "deterministic-stress"],
-      "command": { "kind": "pwsh", "file": "Test-Python314PonCompatibility.ps1", "args": ["-Profile", "development", "-Json"] }
+      "command": { "kind": "pwsh", "file": "scripts/tests/Test-Python314PonCompatibility.ps1", "args": ["-Profile", "development", "-Json"] }
     },
     {
       "id": "merge-queue-contract",
       "mechanisms": ["mutation-robustness", "deterministic-stress"],
-      "command": { "kind": "pwsh", "file": "test-multi-agent-merge-queue.ps1", "args": [] }
+      "command": { "kind": "pwsh", "file": "scripts/tests/test-multi-agent-merge-queue.ps1", "args": [] }
     },
     {
       "id": "pipeline-smoke",
       "mechanisms": ["conformance-corpus", "deterministic-stress"],
       "command": {
         "kind": "pwsh",
-        "file": "test-code-intel-pipeline.ps1",
+        "file": "scripts/tests/test-code-intel-pipeline.ps1",
         "args": ["-RepoPath", ".", "-SkipRepowise", "-AllowGraphMissing", "-SkipSentruxGate", "-SkipGitHubResearch", "-Mode", "normal"]
       }
     }

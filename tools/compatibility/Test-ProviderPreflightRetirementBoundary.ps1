@@ -14,7 +14,7 @@ if ($run -notmatch 'Index-only repowise will still run\.') {
     throw "provider quota/failure no longer preserves the index-only route"
 }
 
-$testWrapper = Get-Content -LiteralPath (Join-Path $RepoRoot "test-code-intel-provider.ps1") -Raw
+$testWrapper = Get-Content -LiteralPath (Join-Path $RepoRoot "scripts/tests/test-code-intel-provider.ps1") -Raw
 if ($testWrapper -notmatch 'Invoke-RepowiseProviderProbe\.ps1') {
     throw "test-only compatibility wrapper no longer delegates to the production probe"
 }

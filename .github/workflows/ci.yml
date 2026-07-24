@@ -23,6 +23,11 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Validate repository layout and Skill package
+        run: |
+          python tests/test_repository_layout.py -v
+          python tests/test_skill_package.py -v
+
       - name: Setup Rust
         shell: pwsh
         run: rustup default stable
@@ -60,23 +65,23 @@ jobs:
             "Invoke-ScopedRepowise.ps1",
             "Find-CodeIntelProjects.ps1",
             "Invoke-GitHubSolutionResearch.ps1",
-            "test-code-intel-pipeline.ps1",
-            "test-stable-wrapper-e2e.ps1",
-            "test-github-solution-research.ps1",
-            "test-hospital-trust-contract.ps1",
-            "test-atomic-capability-contract.ps1",
-            "test-project-discovery.ps1",
-            "test-project-management-support.ps1",
-            "Test-CodeIntelProjectConformance.ps1",
-            "test-code-intel-project-conformance.ps1",
+            "scripts/tests/test-code-intel-pipeline.ps1",
+            "scripts/tests/test-stable-wrapper-e2e.ps1",
+            "scripts/tests/test-github-solution-research.ps1",
+            "scripts/tests/test-hospital-trust-contract.ps1",
+            "scripts/tests/test-atomic-capability-contract.ps1",
+            "scripts/tests/test-project-discovery.ps1",
+            "scripts/tests/test-project-management-support.ps1",
+            "scripts/tests/Test-CodeIntelProjectConformance.ps1",
+            "scripts/tests/test-code-intel-project-conformance.ps1",
             "Invoke-MultiAgentMergeQueue.ps1",
-            "test-multi-agent-merge-queue.ps1",
-            "test-integration-orchestration.ps1",
-            "Test-Python314PonCompatibility.ps1",
-            "test-python314-pon-compatibility.ps1",
-            "test-scoped-repowise-security.ps1",
-            "test-scoped-repowise-worktree.ps1",
-            "test-skill-development-benchmark.ps1",
+            "scripts/tests/test-multi-agent-merge-queue.ps1",
+            "scripts/tests/test-integration-orchestration.ps1",
+            "scripts/tests/Test-Python314PonCompatibility.ps1",
+            "scripts/tests/test-python314-pon-compatibility.ps1",
+            "scripts/tests/test-scoped-repowise-security.ps1",
+            "scripts/tests/test-scoped-repowise-worktree.ps1",
+            "scripts/tests/test-skill-development-benchmark.ps1",
             "tools/New-BetaPackage.ps1",
             "tools/Test-BetaPackage.ps1"
           )
@@ -132,55 +137,55 @@ jobs:
 
       - name: GitHub research contract tests
         shell: pwsh
-        run: .\test-github-solution-research.ps1 -RepoPath .
+        run: .\scripts/tests/test-github-solution-research.ps1 -RepoPath .
 
       - name: Project discovery contract tests
         shell: pwsh
-        run: .\test-project-discovery.ps1 -RepoPath .
+        run: .\scripts/tests/test-project-discovery.ps1 -RepoPath .
 
       - name: Project management support contract tests
         shell: pwsh
-        run: .\test-project-management-support.ps1 -RepoPath .
+        run: .\scripts/tests/test-project-management-support.ps1 -RepoPath .
 
       - name: Atomic capability contract tests
         shell: pwsh
-        run: .\test-atomic-capability-contract.ps1 -RepoPath .
+        run: .\scripts/tests/test-atomic-capability-contract.ps1 -RepoPath .
 
       - name: Skill development benchmark contract tests
         shell: pwsh
-        run: .\test-skill-development-benchmark.ps1 -RepoPath .
+        run: .\scripts/tests/test-skill-development-benchmark.ps1 -RepoPath .
 
       - name: Hospital fail-closed contract tests
         shell: pwsh
-        run: .\test-hospital-trust-contract.ps1
+        run: .\scripts/tests/test-hospital-trust-contract.ps1
 
       - name: Scoped Repowise trust-boundary tests
         shell: pwsh
         run: |
-          .\test-scoped-repowise-security.ps1
-          .\test-scoped-repowise-worktree.ps1
+          .\scripts/tests/test-scoped-repowise-security.ps1
+          .\scripts/tests/test-scoped-repowise-worktree.ps1
 
       - name: Scoped Repowise manifest validator tests
         run: python .\test-scoped-repowise-validator.py
 
       - name: Core PowerShell regression tests
         shell: pwsh
-        run: .\test-regression-fixes.ps1
+        run: .\scripts/tests/test-regression-fixes.ps1
 
       - name: Python 3.14 and project conformance
         shell: pwsh
         run: |
-          .\test-python314-pon-compatibility.ps1
-          .\test-integration-orchestration.ps1
-          .\test-code-intel-project-conformance.ps1
+          .\scripts/tests/test-python314-pon-compatibility.ps1
+          .\scripts/tests/test-integration-orchestration.ps1
+          .\scripts/tests/test-code-intel-project-conformance.ps1
 
       - name: Pipeline smoke
         shell: pwsh
-        run: .\test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -SkipGitHubResearch -Mode normal
+        run: .\scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -SkipGitHubResearch -Mode normal
 
       - name: Stable wrapper authoritative outcome E2E
         shell: pwsh
-        run: .\test-stable-wrapper-e2e.ps1
+        run: .\scripts/tests/test-stable-wrapper-e2e.ps1
 
       - name: Package
         shell: pwsh
@@ -221,6 +226,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.14"
+
+      - name: Validate repository layout and Skill package
+        run: |
+          python tests/test_repository_layout.py -v
+          python tests/test_skill_package.py -v
 
       - name: Setup Rust
         shell: pwsh
@@ -265,23 +275,23 @@ jobs:
             "Invoke-ScopedRepowise.ps1",
             "Find-CodeIntelProjects.ps1",
             "Invoke-GitHubSolutionResearch.ps1",
-            "test-code-intel-pipeline.ps1",
-            "test-stable-wrapper-e2e.ps1",
-            "test-github-solution-research.ps1",
-            "test-hospital-trust-contract.ps1",
-            "test-atomic-capability-contract.ps1",
-            "test-project-discovery.ps1",
-            "test-project-management-support.ps1",
-            "Test-CodeIntelProjectConformance.ps1",
-            "test-code-intel-project-conformance.ps1",
+            "scripts/tests/test-code-intel-pipeline.ps1",
+            "scripts/tests/test-stable-wrapper-e2e.ps1",
+            "scripts/tests/test-github-solution-research.ps1",
+            "scripts/tests/test-hospital-trust-contract.ps1",
+            "scripts/tests/test-atomic-capability-contract.ps1",
+            "scripts/tests/test-project-discovery.ps1",
+            "scripts/tests/test-project-management-support.ps1",
+            "scripts/tests/Test-CodeIntelProjectConformance.ps1",
+            "scripts/tests/test-code-intel-project-conformance.ps1",
             "Invoke-MultiAgentMergeQueue.ps1",
-            "test-multi-agent-merge-queue.ps1",
-            "test-integration-orchestration.ps1",
-            "Test-Python314PonCompatibility.ps1",
-            "test-python314-pon-compatibility.ps1",
-            "test-scoped-repowise-security.ps1",
-            "test-scoped-repowise-worktree.ps1",
-            "test-skill-development-benchmark.ps1",
+            "scripts/tests/test-multi-agent-merge-queue.ps1",
+            "scripts/tests/test-integration-orchestration.ps1",
+            "scripts/tests/Test-Python314PonCompatibility.ps1",
+            "scripts/tests/test-python314-pon-compatibility.ps1",
+            "scripts/tests/test-scoped-repowise-security.ps1",
+            "scripts/tests/test-scoped-repowise-worktree.ps1",
+            "scripts/tests/test-skill-development-benchmark.ps1",
             "tools/New-BetaPackage.ps1",
             "tools/Test-BetaPackage.ps1"
           )
@@ -335,26 +345,26 @@ jobs:
 
       - name: Hospital fail-closed contract tests
         shell: pwsh
-        run: ./test-hospital-trust-contract.ps1
+        run: ./scripts/tests/test-hospital-trust-contract.ps1
 
       - name: Atomic capability contract tests
         shell: pwsh
-        run: ./test-atomic-capability-contract.ps1 -RepoPath .
+        run: ./scripts/tests/test-atomic-capability-contract.ps1 -RepoPath .
 
       - name: Scoped Repowise manifest validator tests
         run: python ./test-scoped-repowise-validator.py
 
       - name: Python 3.14 compatibility lane
         shell: pwsh
-        run: ./test-python314-pon-compatibility.ps1
+        run: ./scripts/tests/test-python314-pon-compatibility.ps1
 
       - name: Multi-agent merge queue contract
         shell: pwsh
-        run: ./test-multi-agent-merge-queue.ps1
+        run: ./scripts/tests/test-multi-agent-merge-queue.ps1
 
       - name: Pipeline smoke
         shell: pwsh
-        run: ./test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxCheck -SkipSentruxGate -SkipGitHubResearch -Mode normal
+        run: ./scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxCheck -SkipSentruxGate -SkipGitHubResearch -Mode normal
 
       - name: Hardcoded path scan
         shell: pwsh

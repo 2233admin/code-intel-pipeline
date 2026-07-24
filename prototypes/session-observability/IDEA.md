@@ -11,7 +11,7 @@ creates a materially better review surface without coupling the core pipeline to
 
 ## Target implementation
 
-- Repository: `D:\projects\_tools\code-intel-pipeline`
+- Repository: `<repo>`
 - Prototype: `prototypes/session-observability`
 - Production files touched: none
 - Input contracts:

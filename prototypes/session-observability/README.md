@@ -12,7 +12,7 @@ or derived session data.
 ## Run
 
 ```powershell
-cargo run --manifest-path D:\projects\_tools\code-intel-pipeline\prototypes\session-observability\Cargo.toml -- --trace <trace.json> --hotspots <sentrux-hotspots.json>
+cargo run --manifest-path <repo>\prototypes\session-observability\Cargo.toml -- --trace <trace.json> --hotspots <sentrux-hotspots.json>
 ```
 
 Use `n`/`p` for adjacent events, `e` for the next edit, `v` for the next verification, `x` for the

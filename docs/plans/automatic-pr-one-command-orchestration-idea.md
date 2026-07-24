@@ -15,7 +15,7 @@ Decision Port, Decision Record store, proposal evidence binding, and executor wh
 separate validation boundaries.
 
 ## Target Repo
-- Path: `D:\projects\_tools\code-intel-pipeline`
+- Path: `<repo>`
 - Branch: current local branch
 - Current state: dirty shared worktree; preserve unrelated changes
 

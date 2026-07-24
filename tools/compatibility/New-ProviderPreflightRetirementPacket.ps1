@@ -26,7 +26,7 @@ function New-Ref([string]$Schema, [string]$Type, [string]$Relative) {
     [ordered]@{ schema="code-intel-artifact-ref.v1"; artifactSchema=$Schema; type=$Type; path=($Relative -replace '\\','/'); sha256=((Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()); consumedSnapshotIdentity=$snapshotIdentity }
 }
 
-& pwsh -NoLogo -NoProfile -File (Join-Path $RepoRoot "test-repowise-adapter-contract.ps1") | Out-Null
+& pwsh -NoLogo -NoProfile -File (Join-Path $RepoRoot "scripts/tests/test-repowise-adapter-contract.ps1") | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "B01 adapter contract failed" }
 & cargo test -p code-intel --test capability_exec repowise_route::public_route_translates_and_a04_validates_success_quota_and_index_only --quiet | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "B01 public route parity failed" }
@@ -62,7 +62,7 @@ function Add-Evidence([string]$Name, [string]$Class, [object]$Details) {
     New-Ref "code-intel-compatibility-retirement-evidence.v1" "compatibility.retirement-evidence" $relative
 }
 $replacement = Add-Evidence "replacement-atom" "replacement_atom" ([ordered]@{ outcome="passed"; status="production_ready"; capability=$replacementId; publicRoute=$true; a04Validated=$true })
-$golden = Add-Evidence "golden-parity" "golden_parity" ([ordered]@{ outcome="passed"; assertionCount=3; command="test-repowise-adapter-contract.ps1" })
+$golden = Add-Evidence "golden-parity" "golden_parity" ([ordered]@{ outcome="passed"; assertionCount=3; command="scripts/tests/test-repowise-adapter-contract.ps1" })
 $contract = Add-Evidence "contract-parity" "contract_parity" ([ordered]@{ outcome="passed"; assertionCount=3; command="targeted B01/A04 capability_exec tests" })
 $effects = Add-Evidence "effect-parity" "effect_parity" ([ordered]@{ outcome="passed"; assertionCount=3; currentProbeCalls=1; legacyWrapperCalls=0; indexOnlyPreserved=$true })
 $registry = Add-Evidence "registry-reconciliation" "registry_reconciliation" ([ordered]@{ outcome="passed"; registryParticipantId="facade.provider-preflight.test-wrapper"; replacementCapabilityId=$replacementId; status="deleted"; historicalSourceRevision=$SourceRevision; installerDiagnosticOutOfScope=$true })

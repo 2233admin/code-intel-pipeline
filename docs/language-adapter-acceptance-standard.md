@@ -47,7 +47,7 @@ The gate also enforces monotonic policy strength: candidate cannot be weaker tha
 ## Commands
 
 ```powershell
-.\Test-LanguageAdapterAcceptance.ps1 `
+.\scripts/tests/Test-LanguageAdapterAcceptance.ps1 `
   -Report .\orchestration\acceptance\native-code-evidence-candidate.json `
   -Json
 ```

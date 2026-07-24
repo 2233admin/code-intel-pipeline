@@ -25,6 +25,7 @@ from typing import Any
 REPOSITORY = "2233admin/code-intel-pipeline"
 API_ROOT = f"https://api.github.com/repos/{REPOSITORY}"
 USER_AGENT = "code-intel-pipeline-skill-bootstrap/1"
+DEFAULT_STABLE_VERSION = "v0.3.0"
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 TAG_PATTERN = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._-]*$")
 WINDOWS_RESERVED_NAMES = {
@@ -87,6 +88,14 @@ def normalize_tag(version: str) -> str:
     if not TAG_PATTERN.fullmatch(tag):
         raise BootstrapError(f"Unsupported release tag: {version!r}")
     return tag
+
+
+def resolve_version(version: str | None, channel: str) -> str | None:
+    if version:
+        return normalize_tag(version)
+    if channel == "stable":
+        return DEFAULT_STABLE_VERSION
+    return None
 
 
 def fetch_release(version: str | None, channel: str) -> dict[str, Any]:
@@ -500,7 +509,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--channel",
         choices=("stable", "prerelease"),
         default="stable",
-        help="Release channel when --version is omitted.",
+        help=(
+            "Release channel when --version is omitted. Stable uses the Skill's "
+            f"pinned {DEFAULT_STABLE_VERSION} release."
+        ),
     )
     parser.add_argument(
         "--install-root",
@@ -536,7 +548,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if not repo_path.is_dir():
         raise BootstrapError(f"Repository path does not exist: {repo_path}")
     install_root = args.install_root.expanduser().resolve()
-    release = fetch_release(args.version, args.channel)
+    requested_version = resolve_version(args.version, args.channel)
+    release = fetch_release(requested_version, args.channel)
     asset = select_release_asset(release, "windows")
     actual_channel = "prerelease" if release.get("prerelease") else "stable"
     plan: dict[str, Any] = {
@@ -544,6 +557,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "status": "planned" if args.dry_run else "installing",
         "channel": actual_channel,
         "tag": asset["tag"],
+        "version_source": (
+            "explicit"
+            if args.version
+            else "pinned_stable"
+            if args.channel == "stable"
+            else "channel"
+        ),
         "asset": asset["name"],
         "url": asset["url"],
         "sha256": asset["sha256"],

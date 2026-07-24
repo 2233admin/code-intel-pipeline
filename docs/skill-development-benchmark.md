@@ -39,7 +39,7 @@ Use this benchmark before promoting a local skill into a shared or published pac
 Run the lightweight benchmark contract check before changing or publishing `skills/code-intel-pipeline/SKILL.md`:
 
 ```powershell
-.\test-skill-development-benchmark.ps1 -RepoPath .
+.\scripts/tests/test-skill-development-benchmark.ps1 -RepoPath .
 ```
 
 This check does not run `yao-meta-skill`. It verifies that Code Intel has internalized the benchmark boundaries and required quality surfaces.

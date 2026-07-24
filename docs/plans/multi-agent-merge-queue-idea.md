@@ -15,7 +15,7 @@ Pon-derived project conformance decide whether work is acceptable; the merge que
 accepted lane may rebase, check, and push without racing other lanes.
 
 ## Target Repo
-- Path: `D:\projects\_tools\code-intel-pipeline`
+- Path: `<repo>`
 - Branch: current working branch
 - Current state: dirty worktree with pre-existing user changes; add only isolated adapter, policy,
   documentation, registry, record, and tests.

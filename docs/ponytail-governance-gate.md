@@ -57,7 +57,7 @@ failures exit 74. The gate is not coupled to the A09 DAG runner.
 Run the focused CI contract with:
 
 ```powershell
-./test-ponytail-gate-contract.ps1 -RepoPath .
+./scripts/tests/test-ponytail-gate-contract.ps1 -RepoPath .
 ```
 
 No Ponytail package or runtime is installed or invoked. The source project remains a reference;

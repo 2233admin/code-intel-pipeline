@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.0] — 2026-07-23
+## [0.3.0] — 2026-07-24
 
 ### Added
 
@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Runtime/CI and file-boundary evidence providers, transactional artifact
   contracts, model request synthesis, executable handles, and compatibility
   retirement approval evidence.
+- An installable Codex Skill whose stable bootstrap is pinned to the verified
+  `v0.3.0` GitHub Release and validates the published SHA-256 digest before
+  extraction.
 
 ### Changed
 
@@ -45,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   informational while structural metric increases remain blocking.
 - The stable wrapper resolves the packaged `bin/code-intel.exe` before any
   development-tree or Cargo fallback.
+- PowerShell contract tests now live under `scripts/tests/`; the seven public
+  compatibility entry points remain at the repository root.
 
 ### Security
 

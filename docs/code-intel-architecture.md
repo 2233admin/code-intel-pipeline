@@ -41,8 +41,8 @@ Artifact ownership and reader/writer boundaries are defined in `docs/artifact-da
 
 8. Stable-ops helpers
    - `install-code-intel-pipeline.ps1`
-   - `test-code-intel-provider.ps1` (test wrapper only)
-   - `test-code-intel-pipeline.ps1`
+   - `scripts/tests/test-code-intel-provider.ps1` (test wrapper only)
+   - `scripts/tests/test-code-intel-pipeline.ps1`
    - `update-code-intel-index.ps1`
    - `tools/sentrux-shim`
 
@@ -195,7 +195,7 @@ Batch run:
 Smoke test:
 
 ```powershell
-& "$env:CODE_INTEL_HOME/test-code-intel-pipeline.ps1" -RepoPath <repo-path>
+& "$env:CODE_INTEL_HOME/scripts/tests/test-code-intel-pipeline.ps1" -RepoPath <repo-path>
 ```
 
 Artifact index:

@@ -67,7 +67,7 @@ cargo build -p code-intel
 .\target\debug\code-intel.exe provider --action Validate
 .\target\debug\code-intel.exe route --action Validate
 .\target\debug\code-intel.exe orchestrate --action Plan --json
-.\test-integration-orchestration.ps1
+.\scripts/tests/test-integration-orchestration.ps1
 ```
 
 6. Only then wire the adapter into the Rust runtime or a compatibility script such as `run-code-intel.ps1`, `check-code-intel-tools.ps1`, or `install-code-intel-pipeline.ps1`.

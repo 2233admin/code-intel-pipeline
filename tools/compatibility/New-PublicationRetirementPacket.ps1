@@ -9,7 +9,7 @@ function Ref([string]$s,[string]$t,[string]$r){$p=Join-Path $OutDir ($r-replace'
 $boundary=(& pwsh -NoLogo -NoProfile -File (Join-Path $RepoRoot "tools\compatibility\Test-PublicationRetirementBoundary.ps1")|ConvertFrom-Json)
 & cargo test -p code-intel --test run_commit staged_run_is_promoted_and_completion_marker_is_published_last --quiet|Out-Null;if($LASTEXITCODE-ne0){throw "marker-last test failed"}
 & cargo test -p code-intel --test run_commit every_publication_phase_is_fail_closed_and_post_promotion_is_recoverable --quiet|Out-Null;if($LASTEXITCODE-ne0){throw "A07 phase matrix failed"}
-& pwsh -NoLogo -NoProfile -File (Join-Path $RepoRoot "test-dag-facade.ps1")|Out-Null;if($LASTEXITCODE-ne0){throw "A09 facade parity failed"}
+& pwsh -NoLogo -NoProfile -File (Join-Path $RepoRoot "scripts/tests/test-dag-facade.ps1")|Out-Null;if($LASTEXITCODE-ne0){throw "A09 facade parity failed"}
 $runPath=Join-Path $RepoRoot "run-code-intel.ps1";$run=[IO.File]::ReadAllText($runPath);$indexPath=Join-Path $RepoRoot "update-code-intel-index.ps1";$indexHash=(Get-FileHash $indexPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $initial='(?s)\$stagingNonce = \[guid\]::NewGuid\(\)\.ToString\("N"\)\.Substring\(0, 12\).*?New-Item -ItemType Directory -Force -Path \$runDir \| Out-Null\r?\n'
 $final='(?s)# A run is authoritative only after every materialized view has been written,.*?Set-Content -LiteralPath \(Join-Path \$runDir "run-complete\.json"\) -Encoding UTF8\r?\n'
@@ -18,7 +18,7 @@ $snapshot=ShaText (((Get-FileHash $runPath -Algorithm SHA256).Hash.ToLowerInvari
 $rid="retire-publication-branch";$bid="run-code-intel.publication.legacy-staging-marker";$rep="run.commit";$call="run-code-intel.ps1::$bid";$expiry=$EvaluatedAt+2592000
 function Ev([string]$n,[string]$c,[object]$d){$v=[ordered]@{schema="code-intel-compatibility-retirement-evidence.v1";snapshotIdentity=$snapshot;id="e05.$n";evidenceClass=$c;retirementId=$rid;legacyBranchId=$bid;replacementCapabilityId=$rep;details=$d};$r="evidence/$n.json";Write-Json (Join-Path $OutDir $r) $v;Ref "code-intel-compatibility-retirement-evidence.v1" "compatibility.retirement-evidence" $r}
 $atom=Ev "replacement-atom" "replacement_atom" ([ordered]@{outcome="passed";status="production_ready";capability=$rep;markerLast=$true})
-$gold=Ev "golden-parity" "golden_parity" ([ordered]@{outcome="passed";assertionCount=4;normalizedA00Parity=$true;command="test-dag-facade.ps1 + marker-last A07 test"})
+$gold=Ev "golden-parity" "golden_parity" ([ordered]@{outcome="passed";assertionCount=4;normalizedA00Parity=$true;command="scripts/tests/test-dag-facade.ps1 + marker-last A07 test"})
 $contract=Ev "contract-parity" "contract_parity" ([ordered]@{outcome="blocked";assertionCount=7;a07PhaseMatrix="passed_internal";facadeFailureMatrix="blocked_no_public_injection";a09ToA07Connected=$boundary.a09ToA07Connected;blocker="normal facade A09 handoff is not yet routed into A07"})
 $effects=Ev "effect-parity" "effect_parity" ([ordered]@{outcome="blocked";assertionCount=3;declaredEffects=@("local_write");indexTraversalChanged=$false;blocker="end-to-end A09 to A07 effect parity is not yet available"})
 $registry=Ev "registry-reconciliation" "registry_reconciliation" ([ordered]@{outcome="passed";registryParticipantId="facade.publication.legacy-staging-marker";replacementCapabilityId=$rep;status="declared";indexTraversalExcluded=$true})

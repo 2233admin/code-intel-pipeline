@@ -16,7 +16,7 @@ Rule: measured impact only. If a value was not measured, record `not_measured`. 
 | benchmark_after_seconds | not_measured | not_measured | not_measured | not_measured | No before/after timing benchmark has been run. |
 | cost_before | not_measured | not_measured | not_measured | not_measured | No token, API, or tool-cost baseline has been captured. |
 | cost_after | not_measured | not_measured | not_measured | not_measured | No token, API, or tool-cost baseline has been captured. |
-| quality_gate_status | passed | passed | unchanged | measured | `test-skill-development-benchmark.ps1 -RepoPath .` passed after adding the benchmark docs. |
+| quality_gate_status | passed | passed | unchanged | measured | `scripts/tests/test-skill-development-benchmark.ps1 -RepoPath .` passed after adding the benchmark docs. |
 
 ## Scoreboard Contract
 

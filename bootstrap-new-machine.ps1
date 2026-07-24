@@ -99,7 +99,7 @@ if (-not $SkipSmoke) {
         Platform = $effectivePlatform
         SkipRepowise = $true
     }
-    $smokeResult = Invoke-JsonScript (Join-Path $root "test-code-intel-pipeline.ps1") $smokeParams
+    $smokeResult = Invoke-JsonScript (Join-Path $root "scripts/tests/test-code-intel-pipeline.ps1") $smokeParams
 }
 
 $ok = [bool]$installResult.ok -and [bool]$doctorResult.ok -and ($SkipSmoke -or [bool]$smokeResult.ok)

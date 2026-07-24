@@ -968,11 +968,11 @@
       "title": "compatibility.facade-finalize",
       "claimStatus": "implemented_blocked",
       "evidenceCommands": [
-        "pwsh -NoProfile -File test-compatibility-facade-finalize.ps1"
+        "pwsh -NoProfile -File scripts/tests/test-compatibility-facade-finalize.ps1"
       ],
       "artifacts": [
         "Invoke-CompatibilityFacadeFinalize.ps1",
-        "test-compatibility-facade-finalize.ps1",
+        "scripts/tests/test-compatibility-facade-finalize.ps1",
         "orchestration/facade-finalize-policy.v1.json",
         "orchestration/schemas/code-intel-compatibility-facade-finalize.v1.schema.json",
         "docs/compatibility-facade-finalize.md"

@@ -1474,7 +1474,7 @@ fn ticket_r23_r24_r25_reference_records_add_no_external_write_ui_or_model_runtim
         );
         assert_recomputable_sha(
             &record,
-            "test-project-management-support.ps1",
+            "scripts/tests/test-project-management-support.ps1",
             "local-boundary-test-sha256",
         );
         assert_eq!(record["economics"]["benefit"]["value"], 0);
@@ -1557,7 +1557,7 @@ fn claude_code_merge_queue_record_traces_optional_adapter_and_keeps_promotion_hu
     );
     assert_recomputable_sha(
         &record,
-        "test-multi-agent-merge-queue.ps1",
+        "scripts/tests/test-multi-agent-merge-queue.ps1",
         "local-conformance-sha256",
     );
     assert_recomputable_sha(

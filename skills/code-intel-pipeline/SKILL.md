@@ -15,23 +15,25 @@ skill.
 2. Reuse that installation when it is valid.
 3. Bootstrap only when the user requested installation or the task explicitly requires the
    missing pipeline.
-4. From this skill directory, inspect the stable release plan:
+4. From this skill directory, inspect the fixed `v0.3.0` stable release plan:
 
 ```powershell
 python scripts/bootstrap.py --repo-path "<repo-path>" --dry-run --json
 ```
 
-5. Review the reported release tag, asset URL, SHA-256 digest, destination, and target repository.
+5. Review the reported release tag, version source, asset URL, SHA-256 digest, destination, and
+   target repository.
 6. Install the verified stable release:
 
 ```powershell
 python scripts/bootstrap.py --repo-path "<repo-path>" --json
 ```
 
-Add `--version <tag>` only for a requested version. Add `--channel prerelease` only when the user
-explicitly requests a prerelease. Add `--install-missing` only when the user authorizes installing
-third-party dependencies. Never put provider keys in commands, repository files, artifacts, or
-Skill resources.
+The default is deliberately pinned to `v0.3.0`; it does not drift when another release becomes
+latest. Add `--version <tag>` only for a requested version. Add `--channel prerelease` only when the
+user explicitly requests the latest published prerelease. Add `--install-missing` only when the
+user authorizes installing third-party dependencies. Never put provider keys in commands,
+repository files, artifacts, or Skill resources.
 
 The bootstrap script supports the currently published Windows release package. Stop with the
 reported platform error on unsupported systems instead of substituting an unverified source

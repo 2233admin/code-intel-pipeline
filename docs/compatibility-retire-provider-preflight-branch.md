@@ -31,7 +31,7 @@ pwsh -NoProfile -File tools/compatibility/Restore-ProviderPreflightLegacyBranch.
   -RehearsalRoot work/e03-provider-preflight-rollback-<unix-seconds>
 ```
 
-The B01/A04 proving set is `test-repowise-adapter-contract.ps1`, the quota/index-only case in
+The B01/A04 proving set is `scripts/tests/test-repowise-adapter-contract.ps1`, the quota/index-only case in
 `repowise_route`, and the quota plus index-only cases in `repowise_adapter`. These prove that docs
 quota does not erase a current index and that index-only evidence still passes A04.
 

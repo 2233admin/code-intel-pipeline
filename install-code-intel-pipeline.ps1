@@ -860,15 +860,15 @@ $requiredFiles = @(
     "check-code-intel-tools.ps1",
     "invoke-code-intel.ps1",
     "Install-SentruxVlangOverlay.ps1",
-    "Test-SentruxVlangOverlay.ps1",
+    "scripts/tests/Test-SentruxVlangOverlay.ps1",
     "run-code-intel.ps1",
     "Invoke-SentruxAgentTool.ps1",
     "Invoke-ScopedRepowise.ps1",
     "Run-ScopedRepowiseDocs.py",
     "Invoke-CodeNexusLite.ps1",
     "bootstrap-new-machine.ps1",
-    "test-code-intel-pipeline.ps1",
-    "test-code-intel-provider.ps1",
+    "scripts/tests/test-code-intel-pipeline.ps1",
+    "scripts/tests/test-code-intel-provider.ps1",
     "update-code-intel-index.ps1",
     "tools/code-intel-platform.psm1"
 )
@@ -988,7 +988,7 @@ if (-not [string]::IsNullOrWhiteSpace($Repo) -or -not [string]::IsNullOrWhiteSpa
 }
 
 if ($CheckProvider) {
-    $providerScript = Join-Path $root "test-code-intel-provider.ps1"
+    $providerScript = Join-Path $root "scripts/tests/test-code-intel-provider.ps1"
     $providerName = [Environment]::GetEnvironmentVariable("CODE_INTEL_PROVIDER", "Process")
     if ([string]::IsNullOrWhiteSpace($providerName)) {
         $providerName = [Environment]::GetEnvironmentVariable("CODE_INTEL_PROVIDER", "User")
@@ -1006,14 +1006,14 @@ if ($CheckProvider) {
         $providerRaw = & $providerScript @providerParams
         $providerResult = $providerRaw | ConvertFrom-Json
         if ($null -eq $providerResult) {
-            Add-Check $checks $providerLabel "provider" $true $false "provider script returned no output" "Run test-code-intel-provider.ps1 -Json manually."
+            Add-Check $checks $providerLabel "provider" $true $false "provider script returned no output" "Run scripts/tests/test-code-intel-provider.ps1 -Json manually."
         } else {
             $detail = if ($providerResult.ok) { $providerResult.message } else { "$($providerResult.category): $($providerResult.message)" }
             Add-Check $checks $providerLabel "provider" $true ([bool]$providerResult.ok) $detail "Check provider quota or CODE_INTEL_* provider env vars."
         }
     }
     catch {
-        Add-Check $checks $providerLabel "provider" $true $false $_.Exception.Message "Run test-code-intel-provider.ps1 -Json manually."
+        Add-Check $checks $providerLabel "provider" $true $false $_.Exception.Message "Run scripts/tests/test-code-intel-provider.ps1 -Json manually."
     }
 }
 

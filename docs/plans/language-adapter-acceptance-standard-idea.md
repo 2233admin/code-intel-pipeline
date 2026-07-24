@@ -10,7 +10,7 @@ Define one machine-executable acceptance standard for every language adapter. Se
 Language coverage and production readiness are different axes. A Python or Rust adapter may emit the same structural contract while having very different precision, and a semantically strong adapter may still be research-only because provenance, rollback, or independent verification is incomplete.
 
 ## Target Repo
-- Path: `D:\projects\_tools\code-intel-pipeline`
+- Path: `<repo>`
 - Branch: current working branch
 - Current state: large pre-existing dirty worktree; additions must stay isolated
 
