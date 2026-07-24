@@ -630,12 +630,16 @@ function Get-ExcludedSourceReason {
     $excludedParts = @(
         ".git", ".repowise", ".understand-anything", ".sentrux",
         "node_modules", ".pnpm", ".yarn",
+        "vendor", "vendors", "third_party", "third-party", "external",
         "target", "dist", "build", "out", "coverage",
         ".venv", "venv", "env", ".tox", "__pycache__",
         ".next", ".nuxt", ".turbo", ".cache"
     )
     foreach ($part in $parts) {
         if ($excludedParts -contains $part) {
+            return "excluded_dir:$part"
+        }
+        if ($part.StartsWith(".") -and $part.Length -gt 1) {
             return "excluded_dir:$part"
         }
     }
@@ -650,6 +654,9 @@ function Get-ExcludedSourceReason {
         return "bundled_or_minified_file"
     }
     if ($leaf -match ".+-[A-Za-z0-9_]{6,}\.(js|jsx|mjs|cjs)$" -and $leaf -match "[0-9]" -and $leaf -cmatch "[A-Z]") {
+        return "hashed_bundle_file"
+    }
+    if ($leafLower -match "\.[0-9a-f]{12,}(\.rtl)?\.(js|jsx|mjs|cjs|css)$") {
         return "hashed_bundle_file"
     }
     if ($lower -match "/assets/" -and $leaf -match "^(chunk-|vendor-|index-|assets?).+-[A-Za-z0-9_-]{6,}\.(js|jsx|mjs|cjs)$") {

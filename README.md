@@ -17,7 +17,7 @@ Follow-up automation can proactively propose `/investigate` for actionable scan 
 <p align="center">
   <code>rg</code> + <code>Repowise</code> + <code>Understand Anything</code> + <code>Sentrux</code> + <code>CodeNexus context</code>
   <br>
-  一条给 AI Agent 用的本地代码理解流水线。
+  一条给 AI Agent 用的本地代码理解管线。
 </p>
 
 ---
