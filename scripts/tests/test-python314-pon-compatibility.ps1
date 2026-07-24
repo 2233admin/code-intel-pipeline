@@ -85,3 +85,5 @@ raise SystemExit(0)
 } finally {
     if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
 }
+
+exit 0
