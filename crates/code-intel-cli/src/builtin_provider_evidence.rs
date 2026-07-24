@@ -272,7 +272,10 @@ fn run_sentrux(
     tool_path_prefix: Option<&Path>,
     subcommand: &str,
 ) -> Result<Output, AdapterError> {
-    let explicit = tool_path_prefix.map(resolve_sentrux).transpose()?;
+    let explicit = match tool_path_prefix {
+        Some(prefix) => Some(resolve_sentrux(prefix)?),
+        None => resolve_sentrux_from_path(),
+    };
     let mut command = match explicit.as_deref() {
         #[cfg(windows)]
         Some(path)
@@ -309,12 +312,7 @@ fn run_sentrux(
 }
 
 fn resolve_sentrux(prefix: &Path) -> Result<PathBuf, AdapterError> {
-    let names: &[&str] = if cfg!(windows) {
-        &["sentrux.exe", "sentrux.cmd", "sentrux.bat", "sentrux"]
-    } else {
-        &["sentrux"]
-    };
-    names
+    sentrux_names()
         .iter()
         .map(|name| prefix.join(name))
         .find(|path| path.is_file())
@@ -324,6 +322,61 @@ fn resolve_sentrux(prefix: &Path) -> Result<PathBuf, AdapterError> {
                 prefix.display()
             ))
         })
+}
+
+#[cfg(windows)]
+fn resolve_sentrux_from_path() -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    resolve_sentrux_in_directories(std::env::split_paths(&path))
+}
+
+#[cfg(not(windows))]
+fn resolve_sentrux_from_path() -> Option<PathBuf> {
+    None
+}
+
+#[cfg(windows)]
+fn resolve_sentrux_in_directories(
+    directories: impl IntoIterator<Item = PathBuf>,
+) -> Option<PathBuf> {
+    directories.into_iter().find_map(|directory| {
+        sentrux_names()
+            .iter()
+            .map(|name| directory.join(name))
+            .find(|path| path.is_file())
+    })
+}
+
+fn sentrux_names() -> &'static [&'static str] {
+    if cfg!(windows) {
+        &["sentrux.exe", "sentrux.cmd", "sentrux.bat", "sentrux"]
+    } else {
+        &["sentrux"]
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::resolve_sentrux_in_directories;
+    use std::{fs, process, time::SystemTime};
+
+    #[test]
+    fn path_resolution_includes_windows_command_shims() {
+        let nonce = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("test clock is after the Unix epoch")
+            .as_nanos();
+        let root =
+            std::env::temp_dir().join(format!("code-intel-sentrux-path-{}-{nonce}", process::id()));
+        fs::create_dir_all(&root).expect("create Sentrux PATH fixture");
+        let shim = root.join("sentrux.cmd");
+        fs::write(&shim, b"@echo off\r\nexit /b 0\r\n").expect("write Sentrux command shim");
+
+        let resolved = resolve_sentrux_in_directories([root.clone()]);
+        assert_eq!(resolved.as_deref(), Some(shim.as_path()));
+
+        fs::remove_dir_all(root).expect("remove Sentrux PATH fixture");
+    }
 }
 
 fn command_evidence(subcommand: &str, output: &Output) -> Value {

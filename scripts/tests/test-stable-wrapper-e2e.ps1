@@ -64,7 +64,24 @@ no_god_files = false
 
     $success = Invoke-StableWrapper
     if ($success.ExitCode -ne 0) {
-        throw "stable wrapper rejected a repository containing an unsupported binary file:`n$($success.Output)"
+        $failureDetails = ""
+        $authority = Join-Path $artifactRoot "fixture-repo"
+        $failedRun = Get-ChildItem -LiteralPath $authority -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like "*-core" } |
+            Sort-Object Name -Descending |
+            Select-Object -First 1
+        if ($null -ne $failedRun) {
+            $failedMarkerPath = Join-Path $failedRun.FullName "run-complete.json"
+            if (Test-Path -LiteralPath $failedMarkerPath -PathType Leaf) {
+                $failedMarker = Get-Content -LiteralPath $failedMarkerPath -Raw | ConvertFrom-Json
+                $failedManifestPath = Join-Path $failedRun.FullName ([string]$failedMarker.manifest.path)
+                if (Test-Path -LiteralPath $failedManifestPath -PathType Leaf) {
+                    $failedManifest = Get-Content -LiteralPath $failedManifestPath -Raw | ConvertFrom-Json
+                    $failureDetails = "`nAuthoritative manifest:`n" + ($failedManifest | ConvertTo-Json -Depth 20)
+                }
+            }
+        }
+        throw "stable wrapper rejected a repository containing an unsupported binary file:`n$($success.Output)$failureDetails"
     }
     if ($success.Output -match "legacy compatibility pipeline") {
         throw "stable wrapper default route still executed the legacy pipeline"
@@ -146,7 +163,10 @@ no_god_files = false
 finally {
     $resolved = [System.IO.Path]::GetFullPath($testRoot)
     $leaf = Split-Path -Leaf $resolved
-    if ($resolved.StartsWith($temporaryRoot, [System.StringComparison]::OrdinalIgnoreCase) -and
+    if ($env:CODE_INTEL_E2E_KEEP_TEMP -eq "1") {
+        Write-Host "Stable wrapper E2E fixture retained: $resolved"
+    }
+    elseif ($resolved.StartsWith($temporaryRoot, [System.StringComparison]::OrdinalIgnoreCase) -and
         $leaf.StartsWith("code-intel-wrapper-e2e-", [System.StringComparison]::Ordinal) -and
         (Test-Path -LiteralPath $resolved -PathType Container)) {
         Remove-Item -LiteralPath $resolved -Recurse -Force
