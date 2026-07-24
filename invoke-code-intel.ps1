@@ -122,6 +122,7 @@ function Get-DoctorParameters {
         Config = $Config
         Platform = $Platform
         RequireRepowise = [bool]$RepowiseDocs
+        RequireUnderstand = [bool]$RequireUnderstandGraph
     }
     foreach ($entry in (Get-RepoSelector -RepoName $RepoName -DirectRepoPath $DirectRepoPath).GetEnumerator()) {
         $parameters[$entry.Key] = $entry.Value
@@ -167,7 +168,14 @@ function Publish-AuthoritativeCoreRun {
     $committed = $false
     try {
         Write-Host "Code intel invoke: authoritative DAG $ResolvedRepoPath"
-        $dagOutput = @(& $rustCli run dag-coordinate --repo $ResolvedRepoPath --out $sourceRoot 2>&1)
+        $dagArguments = @(
+            "run", "dag-coordinate",
+            "--repo", $ResolvedRepoPath,
+            "--out", $sourceRoot,
+            "--doctor-require-repowise", ([bool]$RepowiseDocs).ToString().ToLowerInvariant(),
+            "--doctor-require-understand", ([bool]$RequireUnderstandGraph).ToString().ToLowerInvariant()
+        )
+        $dagOutput = @(& $rustCli @dagArguments 2>&1)
         $dagExitCode = $LASTEXITCODE
         $dagManifest = try {
             ($dagOutput -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop

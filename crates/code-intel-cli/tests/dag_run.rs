@@ -79,6 +79,8 @@ fn production_run_route_executes_snapshot_then_inventory() {
         .arg(&out)
         .arg("--doctor-tool-path-prefix")
         .arg(&doctor_tools)
+        .args(["--doctor-require-repowise", "false"])
+        .args(["--doctor-require-understand", "true"])
         .output()
         .unwrap();
     assert_eq!(
@@ -120,6 +122,8 @@ fn production_run_route_executes_snapshot_then_inventory() {
         serde_json::from_slice(&fs::read(out.join("inventory.rg.result.json")).unwrap()).unwrap();
     let doctor_result: Value =
         serde_json::from_slice(&fs::read(out.join("doctor.result.json")).unwrap()).unwrap();
+    let doctor_request: Value =
+        serde_json::from_slice(&fs::read(out.join("doctor.request.json")).unwrap()).unwrap();
     let native_result: Value =
         serde_json::from_slice(&fs::read(out.join("evidence.native-code.result.json")).unwrap())
             .unwrap();
@@ -138,6 +142,8 @@ fn production_run_route_executes_snapshot_then_inventory() {
         assert_eq!(envelope["domainVerdict"], "pass");
     }
     assert_eq!(snapshot_request["capability"], "repo.snapshot");
+    assert_eq!(doctor_request["options"]["requireRepowise"], false);
+    assert_eq!(doctor_request["options"]["requireUnderstand"], true);
     assert_eq!(inventory_request["capability"], "inventory.rg");
     assert_eq!(inventory_request["inputs"].as_array().unwrap().len(), 1);
     assert_eq!(

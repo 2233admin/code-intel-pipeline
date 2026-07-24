@@ -52,13 +52,15 @@ struct Cli {
     diagnosis_inputs: Option<PathBuf>,
     seed_artifact_root: Option<PathBuf>,
     doctor_tool_path_prefix: Option<PathBuf>,
+    doctor_require_repowise: bool,
+    doctor_require_understand: bool,
     session_evidence: Option<PathBuf>,
 }
 
 impl Cli {
     fn parse(raw: &[String]) -> Result<Self, String> {
         if raw.first().map(String::as_str) != Some("dag-coordinate") {
-            return Err("usage: run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--manifest <integrations.json>] [--max-concurrency <n>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>]".into());
+            return Err("usage: run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--manifest <integrations.json>] [--max-concurrency <n>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]".into());
         }
         let mut repo = None;
         let mut out = None;
@@ -69,6 +71,8 @@ impl Cli {
         let mut diagnosis_inputs = None;
         let mut seed_artifact_root = None;
         let mut doctor_tool_path_prefix = None;
+        let mut doctor_require_repowise = true;
+        let mut doctor_require_understand = false;
         let mut session_evidence = None;
         let mut index = 1;
         while index < raw.len() {
@@ -84,6 +88,8 @@ impl Cli {
                     | "--diagnosis-inputs"
                     | "--seed-artifact-root"
                     | "--doctor-tool-path-prefix"
+                    | "--doctor-require-repowise"
+                    | "--doctor-require-understand"
                     | "--session-evidence"
             ) {
                 return Err(format!("unknown DAG run argument: {flag}"));
@@ -125,6 +131,12 @@ impl Cli {
                         .is_some() =>
                 {
                     return Err("duplicate --doctor-tool-path-prefix".into())
+                }
+                "--doctor-require-repowise" => {
+                    doctor_require_repowise = parse_bool_flag(flag, value)?;
+                }
+                "--doctor-require-understand" => {
+                    doctor_require_understand = parse_bool_flag(flag, value)?;
                 }
                 "--session-evidence"
                     if session_evidence.replace(PathBuf::from(value)).is_some() =>
@@ -190,8 +202,18 @@ impl Cli {
             diagnosis_inputs,
             seed_artifact_root,
             doctor_tool_path_prefix,
+            doctor_require_repowise,
+            doctor_require_understand,
             session_evidence,
         })
+    }
+}
+
+fn parse_bool_flag(flag: &str, value: &str) -> Result<bool, String> {
+    match value {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(format!("{flag} must be true or false")),
     }
 }
 
@@ -388,6 +410,8 @@ fn execute(cli: Cli) -> Result<Value, RunError> {
         session_inputs,
         seed_artifact_root,
         doctor_tool_path_prefix: cli.doctor_tool_path_prefix,
+        doctor_require_repowise: cli.doctor_require_repowise,
+        doctor_require_understand: cli.doctor_require_understand,
     };
     let manifest = Coordinator::new(spec)
         .map_err(|error| RunError::contract(error.to_string()))?
@@ -483,6 +507,8 @@ struct CapabilityEnvelopeExecutor {
     session_inputs: Vec<VerifiedArtifactRef>,
     seed_artifact_root: Option<PathBuf>,
     doctor_tool_path_prefix: Option<PathBuf>,
+    doctor_require_repowise: bool,
+    doctor_require_understand: bool,
 }
 
 impl NodeExecutor for CapabilityEnvelopeExecutor {
@@ -536,6 +562,8 @@ impl CapabilityEnvelopeExecutor {
             _ => json!({"repoPath":self.repo}),
         };
         if dispatch.capability == "doctor" {
+            options["requireRepowise"] = json!(self.doctor_require_repowise);
+            options["requireUnderstand"] = json!(self.doctor_require_understand);
             if let Some(prefix) = &self.doctor_tool_path_prefix {
                 options["toolPathPrefix"] = json!(prefix);
             }
