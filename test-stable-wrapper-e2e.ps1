@@ -175,3 +175,7 @@ finally {
         Remove-Item -LiteralPath $resolved -Recurse -Force
     }
 }
+
+# The expected fail-closed wrapper invocation leaves its native exit code behind.
+# Normalize the successful aggregate result for callers such as GitHub Actions.
+$global:LASTEXITCODE = 0
