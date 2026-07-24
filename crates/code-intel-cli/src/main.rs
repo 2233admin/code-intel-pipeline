@@ -6,6 +6,7 @@ use std::process;
 
 use serde_json::Value;
 
+mod adapter_contract;
 mod admissibility;
 mod artifact_index;
 mod artifact_ref;
@@ -42,6 +43,10 @@ mod staged_artifact;
 mod survival_scan;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+fn run_capability(raw: &[String]) -> i32 {
+    capability::run_raw(raw, capability_inventory::execute)
+}
 
 #[derive(Debug, Default)]
 struct Args {
@@ -313,7 +318,7 @@ const RAW_ROUTES: &[RawRoute] = &[
         command: "capability",
         subcommand: None,
         argument_offset: 1,
-        runner: capability::run_raw,
+        runner: run_capability,
     },
     RawRoute {
         command: "model",

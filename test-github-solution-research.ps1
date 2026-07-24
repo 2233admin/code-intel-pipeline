@@ -121,11 +121,12 @@ finally {
     $env:PATH = $oldPath
 }
 
-@'
+$fakeToken = "ghp_" + "supersecret123456789"
+@"
 @echo off
-echo HTTP 429 API rate limit token=ghp_supersecret123456789 1>&2
+echo HTTP 429 API rate limit token=$fakeToken 1>&2
 exit /b 1
-'@ | Set-Content -LiteralPath $fakeGh -Encoding ASCII
+"@ | Set-Content -LiteralPath $fakeGh -Encoding ASCII
 $oldPath = $env:PATH
 try {
     $env:PATH = $fakeBin + [IO.Path]::PathSeparator + $oldPath

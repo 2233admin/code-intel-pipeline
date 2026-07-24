@@ -7,14 +7,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Map, Value};
 
-use crate::artifact_ref;
-use crate::capability_inventory::{self, AdapterError};
+use crate::adapter_contract::{AdapterError, AdapterOutput};
+use crate::artifact_ref::{self, VerifiedArtifact};
 
 const ZERO_DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 const MAX_JSON_BYTES: usize = 8 * 1024 * 1024;
 const MAX_JSON_DEPTH: usize = 128;
 
-pub(crate) fn run_raw(raw: &[String]) -> i32 {
+type AdapterExecutor =
+    fn(&str, &Value, &[VerifiedArtifact], &Path) -> Result<AdapterOutput, AdapterError>;
+
+pub(crate) fn run_raw(raw: &[String], execute_adapter: AdapterExecutor) -> i32 {
     let parsed = match parse_cli(raw) {
         Ok(parsed) => parsed,
         Err(message) => {
@@ -28,6 +31,7 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
         &parsed.out,
         parsed.artifact_root.as_deref(),
         parsed.manifest.as_deref(),
+        execute_adapter,
     );
     if let Some(result) = outcome.result {
         if let Err(message) = validate_result_envelope(&result) {
@@ -113,6 +117,7 @@ fn execute_cli(
     out_dir: &Path,
     artifact_root: Option<&Path>,
     manifest: Option<&Path>,
+    execute_adapter: AdapterExecutor,
 ) -> CliOutcome {
     let request = match read_one_request(request_file) {
         Ok(request) => request,
@@ -164,7 +169,7 @@ fn execute_cli(
             return failure_from_declaration(&request, &declaration, exit, error.message());
         }
     };
-    match capability_inventory::execute(&adapter, &request, &verified_inputs, out_dir) {
+    match execute_adapter(&adapter, &request, &verified_inputs, out_dir) {
         Ok(output) => {
             let domain_verdict = output.domain_verdict.as_str();
             let domain_failure = output.domain_failure.clone();

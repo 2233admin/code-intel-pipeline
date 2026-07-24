@@ -6,9 +6,9 @@ use std::time::Instant;
 
 use serde_json::{json, Value};
 
+use crate::adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterError, AdapterOutput};
 use crate::artifact_ref::VerifiedArtifact;
 use crate::capability::sha256_hex;
-use crate::capability_inventory::{AdapterArtifact, AdapterError, AdapterOutput};
 
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TARGET_MS: u64 = 60_000;
@@ -66,7 +66,7 @@ pub(crate) fn execute(
             },
         ],
         observed_effects: vec!["local_write".into()],
-        domain_verdict: crate::capability_inventory::AdapterDomainVerdict::Pass,
+        domain_verdict: AdapterDomainVerdict::Pass,
         domain_failure: None,
     })
 }

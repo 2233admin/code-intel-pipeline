@@ -172,7 +172,7 @@ Install or repair a teammate machine:
 
 `-InstallMissing` is explicit by design. The default installer is a doctor; the install mode attempts supported CLI installs and records every attempt in `installActions`.
 
-`-RepairSkillLinks` installs the bundled `skill/` copy into the user profile when the shared `.agents` skill is absent, then links Codex and Claude to that shared copy.
+`-RepairSkillLinks` installs the bundled `skills/code-intel-pipeline/` package into the user profile when the shared `.agents` skill is absent, then links Codex and Claude to that shared copy.
 
 Doctor and normal run:
 

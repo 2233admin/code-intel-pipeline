@@ -6,6 +6,8 @@ on:
       - "crates/code-nexus-lite/**"
       - ".claude/skills/**"
       - "skills/**"
+      - "tests/test_skill_package.py"
+      - "install-code-intel-pipeline.ps1"
   workflow_dispatch:
 
 jobs:
@@ -197,3 +199,6 @@ jobs:
               print(f"  ✗ {f}: {err}")
           sys.exit(1 if bad else 0)
           PYEOF
+
+      - name: Validate Code Intel Skill package
+        run: python tests/test_skill_package.py -v

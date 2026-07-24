@@ -22,7 +22,7 @@ if (-not $facade.Contains("Index-only repowise will still run.")) {
 
 $probe = Join-Path $root "Invoke-RepowiseProviderProbe.ps1"
 try {
-    $env:CODE_INTEL_API_KEY = "sk-contract-secret-123456"
+    $env:CODE_INTEL_API_KEY = "sk-" + "contract-secret-123456"
     $raw = & $probe -Provider mock -Json
     if ($LASTEXITCODE -ne 0) { throw "Mock Repowise provider health probe failed" }
     if ([string]$raw -match "contract-secret") { throw "Repowise health output leaked a secret" }

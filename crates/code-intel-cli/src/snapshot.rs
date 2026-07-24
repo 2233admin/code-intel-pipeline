@@ -1396,9 +1396,16 @@ mod tests {
             .unwrap()
             .success());
         let result = stable_overlay_snapshot_with(&repo, &[".".into()], || {
-            fs::write(repo.join("file.txt"), "two").unwrap();
+            fs::write(
+                repo.join("file.txt"),
+                "content changed between complete reads",
+            )
+            .unwrap();
         });
-        assert!(matches!(result, Err(SnapshotError::Io(message)) if message.contains("changed")));
+        assert!(
+            matches!(&result, Err(SnapshotError::Io(message)) if message.contains("changed")),
+            "unexpected stable overlay result: {result:?}"
+        );
         fs::remove_dir_all(repo).unwrap();
     }
 

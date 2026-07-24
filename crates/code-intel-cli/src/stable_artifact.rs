@@ -120,7 +120,7 @@ fn open_windows(path: &Path, directory: bool) -> std::io::Result<File> {
         .open(path)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn platform_read<F>(
     root: &Path,
     components: &[&str],
@@ -133,9 +133,18 @@ where
     use std::ffi::CString;
     use std::os::fd::{AsRawFd, FromRawFd};
     use std::os::unix::ffi::OsStrExt;
+    #[cfg(target_os = "linux")]
     const O_CLOEXEC: i32 = 0x80000;
+    #[cfg(target_os = "linux")]
     const O_DIRECTORY: i32 = 0x10000;
+    #[cfg(target_os = "linux")]
     const O_NOFOLLOW: i32 = 0x20000;
+    #[cfg(target_os = "macos")]
+    const O_CLOEXEC: i32 = 0x01000000;
+    #[cfg(target_os = "macos")]
+    const O_DIRECTORY: i32 = 0x00100000;
+    #[cfg(target_os = "macos")]
+    const O_NOFOLLOW: i32 = 0x00000100;
     unsafe extern "C" {
         fn open(pathname: *const i8, flags: i32, ...) -> i32;
         fn openat(dirfd: i32, pathname: *const i8, flags: i32, ...) -> i32;
@@ -177,7 +186,7 @@ where
     unreachable!()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn verify_held_unix(held: &[(std::path::PathBuf, FileId)]) -> Result<(), StableReadError> {
     use std::os::unix::fs::MetadataExt;
     for (path, expected) in held {
@@ -198,7 +207,7 @@ fn verify_held_unix(held: &[(std::path::PathBuf, FileId)]) -> Result<(), StableR
     Ok(())
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 fn platform_read<F>(
     root: &Path,
     components: &[&str],
@@ -208,13 +217,28 @@ fn platform_read<F>(
 where
     F: FnMut(usize, &Path) -> Result<(), StableReadError>,
 {
-    let mut held = Vec::new();
+    let root_metadata =
+        fs::symlink_metadata(root).map_err(|error| open_error(root, error, "root"))?;
+    if root_metadata.file_type().is_symlink() {
+        return Err(StableReadError::Boundary(format!(
+            "stable artifact root is a symlink: {}",
+            root.display()
+        )));
+    }
     let root_handle = File::open(root).map_err(|error| open_error(root, error, "root"))?;
     reject_kind(&root_handle, true, root)?;
-    held.push(root_handle);
+    let root_id = file_id(&root_handle)?;
+    if metadata_file_id(&root_metadata) != root_id {
+        return Err(StableReadError::Identity(format!(
+            "artifact root identity changed: {}",
+            root.display()
+        )));
+    }
+    let mut held = vec![(root.to_path_buf(), root_id, root_handle)];
     let mut path = root.to_path_buf();
     for (index, component) in components.iter().enumerate() {
         hook(index, &path)?;
+        verify_held_fallback(&held)?;
         path.push(component);
         let final_component = index + 1 == components.len();
         let metadata =
@@ -227,16 +251,57 @@ where
         }
         let opened = File::open(&path).map_err(|error| component_open_error(&path, error))?;
         reject_kind(&opened, !final_component, &path)?;
+        let id = file_id(&opened)?;
+        if metadata_file_id(&metadata) != id {
+            return Err(StableReadError::Identity(format!(
+                "artifact component identity changed: {}",
+                path.display()
+            )));
+        }
+        verify_held_fallback(&held)?;
         if final_component {
-            let id = file_id(&opened)?;
             return Ok(StableRead {
                 bytes: read_bounded(opened, max_bytes, &path)?,
                 id,
             });
         }
-        held.push(opened);
+        held.push((path.clone(), id, opened));
     }
     unreachable!()
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+fn verify_held_fallback(
+    held: &[(std::path::PathBuf, FileId, File)],
+) -> Result<(), StableReadError> {
+    for (path, expected, _) in held {
+        let metadata =
+            fs::symlink_metadata(path).map_err(|error| component_open_error(path, error))?;
+        if metadata.file_type().is_symlink() || metadata_file_id(&metadata) != *expected {
+            return Err(StableReadError::Identity(format!(
+                "artifact directory identity changed: {}",
+                path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn metadata_file_id(metadata: &fs::Metadata) -> FileId {
+    use std::os::unix::fs::MetadataExt;
+    FileId {
+        volume: metadata.dev(),
+        file: metadata.ino() as u128,
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn metadata_file_id(metadata: &fs::Metadata) -> FileId {
+    FileId {
+        volume: 0,
+        file: metadata.len() as u128,
+    }
 }
 
 fn reject_kind(handle: &File, directory: bool, path: &Path) -> Result<(), StableReadError> {
@@ -287,6 +352,10 @@ fn is_boundary_open_error(error: &std::io::Error) -> bool {
     }
     #[cfg(target_os = "linux")]
     if matches!(error.raw_os_error(), Some(20 | 40)) {
+        return true;
+    }
+    #[cfg(target_os = "macos")]
+    if matches!(error.raw_os_error(), Some(20 | 62)) {
         return true;
     }
     false
@@ -481,9 +550,9 @@ mod tests {
         let _ = fs::remove_dir_all(base);
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
-    fn linux_root_intermediate_and_leaf_links_are_typed_boundaries() {
+    fn unix_root_intermediate_and_leaf_links_are_typed_boundaries() {
         use std::os::unix::fs::symlink;
         let base = std::env::temp_dir().join(format!(
             "code-intel-linux-link-types-{}",

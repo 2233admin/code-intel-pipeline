@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
 
 use super::{AdapterArtifact, AdapterError, AdapterOutput};
+use crate::adapter_contract::AdapterDomainVerdict;
 use crate::artifact_ref::VerifiedArtifact;
 use crate::capability::sha256_hex;
 use crate::snapshot;
@@ -260,7 +261,7 @@ pub(crate) fn execute(
     Ok(AdapterOutput {
         artifacts,
         observed_effects: vec!["repo_read".into(), "local_write".into()],
-        domain_verdict: crate::capability_inventory::AdapterDomainVerdict::Pass,
+        domain_verdict: AdapterDomainVerdict::Pass,
         domain_failure: None,
     })
 }

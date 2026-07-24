@@ -5,6 +5,7 @@ use std::path::Path;
 use serde_json::{json, Value};
 
 use super::{AdapterArtifact, AdapterError, AdapterOutput};
+use crate::adapter_contract::AdapterDomainVerdict;
 use crate::artifact_ref::VerifiedArtifact;
 
 const CRITICALITY_THRESHOLD: u64 = 50;
@@ -66,7 +67,7 @@ pub(crate) fn execute(
             bytes,
         }],
         observed_effects: vec!["local_write".into()],
-        domain_verdict: crate::capability_inventory::AdapterDomainVerdict::Pass,
+        domain_verdict: AdapterDomainVerdict::Pass,
         domain_failure: None,
     })
 }

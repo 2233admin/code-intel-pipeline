@@ -39,6 +39,10 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Validate Skill package and bootstrap security
+        shell: pwsh
+        run: python tests/test_skill_package.py -v
+
       - name: Setup Rust
         shell: pwsh
         run: rustup default stable
@@ -113,6 +117,28 @@ jobs:
           }
           Copy-Item -LiteralPath target\release\code-intel.exe -Destination dist\code-intel-pipeline\bin\code-intel.exe -Force
           Compress-Archive -Path dist\code-intel-pipeline -DestinationPath "dist\code-intel-pipeline-$version-windows.zip" -Force
+
+      - name: Validate packaged Skill bootstrap
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $asset = "dist\code-intel-pipeline-$tag-windows.zip"
+          $expanded = Join-Path $env:RUNNER_TEMP "code-intel-release-layout"
+          Expand-Archive -LiteralPath $asset -DestinationPath $expanded
+          $payload = Join-Path $expanded "code-intel-pipeline"
+          $required = @(
+            (Join-Path $payload "install-code-intel-pipeline.ps1"),
+            (Join-Path $payload "skills\code-intel-pipeline\SKILL.md"),
+            (Join-Path $payload "skills\code-intel-pipeline\agents\openai.yaml"),
+            (Join-Path $payload "skills\code-intel-pipeline\scripts\bootstrap.py"),
+            (Join-Path $payload "bin\code-intel.exe")
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Release package is missing required file: $path"
+            }
+          }
+          python (Join-Path $payload "skills\code-intel-pipeline\scripts\bootstrap.py") --help
 
       - name: Create GitHub Release
         shell: pwsh

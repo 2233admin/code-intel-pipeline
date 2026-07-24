@@ -6,6 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
+#[path = "../src/adapter_contract.rs"]
+mod adapter_contract;
 #[path = "../src/admissibility.rs"]
 mod admissibility;
 #[path = "../src/artifact_ref.rs"]

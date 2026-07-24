@@ -698,25 +698,101 @@ function Ensure-SkillSource {
         [bool]$Repair
     )
 
-    $skillFile = Join-Path $Path "SKILL.md"
-    $ok = Test-Path -LiteralPath $skillFile -PathType Leaf
-    $detail = if ($ok) { $Path } else { "missing: $Path" }
+    function Test-BundledSkillCurrent {
+        param(
+            [string]$InstalledPath,
+            [string]$SourcePath
+        )
 
-    if (-not $ok -and $Repair) {
-        $bundledSkillFile = Join-Path $BundledPath "SKILL.md"
+        $bundledSkillFile = Join-Path $SourcePath "SKILL.md"
         if (-not (Test-Path -LiteralPath $bundledSkillFile -PathType Leaf)) {
-            $detail = "bundled skill missing: $BundledPath"
+            return $false
         }
-        else {
-            New-Item -ItemType Directory -Force -Path $Path | Out-Null
-            Copy-Item -LiteralPath (Join-Path $BundledPath "SKILL.md") -Destination (Join-Path $Path "SKILL.md") -Force
-            $bundledAgents = Join-Path $BundledPath "agents"
-            if (Test-Path -LiteralPath $bundledAgents -PathType Container) {
-                Copy-Item -LiteralPath $bundledAgents -Destination $Path -Recurse -Force
+        if (-not (Test-Path -LiteralPath $InstalledPath -PathType Container)) {
+            return $false
+        }
+        $sourceFiles = @(
+            Get-ChildItem -LiteralPath $SourcePath -File -Recurse -Force |
+                ForEach-Object { [System.IO.Path]::GetRelativePath($SourcePath, $_.FullName) } |
+                Sort-Object
+        )
+        $installedFiles = @(
+            Get-ChildItem -LiteralPath $InstalledPath -File -Recurse -Force |
+                ForEach-Object { [System.IO.Path]::GetRelativePath($InstalledPath, $_.FullName) } |
+                Sort-Object
+        )
+        if ([string]::Join("`n", $sourceFiles) -cne [string]::Join("`n", $installedFiles)) {
+            return $false
+        }
+        foreach ($relative in $sourceFiles) {
+            $source = Join-Path $SourcePath $relative
+            $destination = Join-Path $InstalledPath $relative
+            if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) {
+                return $false
             }
-            $ok = Test-Path -LiteralPath $skillFile -PathType Leaf
-            $detail = if ($ok) { "installed from bundled skill: $BundledPath" } else { "install failed: $Path" }
+            $sourceDigest = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+            $destinationDigest = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
+            if ($sourceDigest -ne $destinationDigest) {
+                return $false
+            }
         }
+        return $true
+    }
+
+    function Install-BundledSkillAtomically {
+        param(
+            [string]$InstalledPath,
+            [string]$SourcePath
+        )
+
+        $parent = Split-Path -Parent $InstalledPath
+        $leaf = Split-Path -Leaf $InstalledPath
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+        $nonce = [guid]::NewGuid().ToString("N")
+        $staging = Join-Path $parent ".$leaf.staging-$nonce"
+        $backup = Join-Path $parent ".$leaf.backup-$nonce"
+        $hadExisting = Test-Path -LiteralPath $InstalledPath
+        try {
+            New-Item -ItemType Directory -Path $staging | Out-Null
+            foreach ($item in @(Get-ChildItem -LiteralPath $SourcePath -Force)) {
+                $destination = Join-Path $staging $item.Name
+                if ($item.PSIsContainer) {
+                    Copy-Item -LiteralPath $item.FullName -Destination $destination -Recurse -Force
+                }
+                else {
+                    Copy-Item -LiteralPath $item.FullName -Destination $destination -Force
+                }
+            }
+            if ($hadExisting) {
+                Move-Item -LiteralPath $InstalledPath -Destination $backup
+            }
+            Move-Item -LiteralPath $staging -Destination $InstalledPath
+            if (Test-Path -LiteralPath $backup) {
+                Remove-Item -LiteralPath $backup -Recurse -Force
+            }
+        }
+        catch {
+            if (-not (Test-Path -LiteralPath $InstalledPath) -and (Test-Path -LiteralPath $backup)) {
+                Move-Item -LiteralPath $backup -Destination $InstalledPath
+            }
+            throw
+        }
+        finally {
+            if (Test-Path -LiteralPath $staging) {
+                Remove-Item -LiteralPath $staging -Recurse -Force
+            }
+        }
+    }
+
+    $bundledSkillFile = Join-Path $BundledPath "SKILL.md"
+    $bundledAvailable = Test-Path -LiteralPath $bundledSkillFile -PathType Leaf
+    $ok = $bundledAvailable -and (Test-BundledSkillCurrent $Path $BundledPath)
+    $detail = if ($ok) { $Path } elseif (-not $bundledAvailable) { "bundled skill missing: $BundledPath" } else { "missing or outdated: $Path" }
+
+    if (-not $ok -and $Repair -and $bundledAvailable) {
+        Install-BundledSkillAtomically $Path $BundledPath
+        $ok = Test-BundledSkillCurrent $Path $BundledPath
+        $detail = if ($ok) { "installed current bundled skill atomically: $BundledPath" } else { "install failed: $Path" }
     }
 
     Add-Check $Checks "skill:source" "skill" $true $ok $detail "Run with -RepairSkillLinks to install the bundled skill into $Path."
@@ -829,7 +905,7 @@ $userProfile = Get-CodeIntelHomeDirectory
 $skillSource = Join-Path (Join-Path (Join-Path $userProfile ".agents") "skills") "code-intel-pipeline"
 $codexSkill = Join-Path (Join-Path (Join-Path $userProfile ".codex") "skills") "code-intel-pipeline"
 $claudeSkill = Join-Path (Join-Path (Join-Path $userProfile ".claude") "skills") "code-intel-pipeline"
-$bundledSkill = Join-Path $root "skill"
+$bundledSkill = Join-Path (Join-Path $root "skills") "code-intel-pipeline"
 Ensure-SkillSource $checks $skillSource $bundledSkill $RepairSkillLinks
 Ensure-SkillLink $checks "codex" $codexSkill $skillSource $RepairSkillLinks
 Ensure-SkillLink $checks "claude" $claudeSkill $skillSource $RepairSkillLinks

@@ -29,12 +29,12 @@ function Assert-FrontMatterField {
     )
 
     if ($Text -notmatch "(?m)^$([regex]::Escape($Field)):\s*\S") {
-        throw "skill/SKILL.md missing frontmatter field: $Field"
+        throw "skills/code-intel-pipeline/SKILL.md missing frontmatter field: $Field"
     }
 }
 
 $root = (Resolve-Path -LiteralPath $RepoPath).Path
-$skillPath = Join-Path $root "skill/SKILL.md"
+$skillPath = Join-Path $root "skills/code-intel-pipeline/SKILL.md"
 $contextPath = Join-Path $root "CONTEXT.md"
 $skillBenchmarkPath = Join-Path $root "docs/skill-development-benchmark.md"
 $skillBenchmarkAdrPath = Join-Path $root "docs/adr/0004-yao-meta-skill-as-skill-development-benchmark.md"
@@ -46,12 +46,12 @@ $goalIntakePath = Join-Path $root "docs/agent-goal-intake.md"
 $harnessReferencePath = Join-Path $root "docs/harness-factory-reference.md"
 
 if (-not (Test-Path -LiteralPath $skillPath -PathType Leaf)) {
-    throw "Missing skill/SKILL.md"
+    throw "Missing skills/code-intel-pipeline/SKILL.md"
 }
 
 $skillText = Get-Content -LiteralPath $skillPath -Raw
 if (-not $skillText.StartsWith("---")) {
-    throw "skill/SKILL.md must start with YAML frontmatter."
+    throw "skills/code-intel-pipeline/SKILL.md must start with YAML frontmatter."
 }
 
 Assert-FrontMatterField $skillText "name"
@@ -68,7 +68,7 @@ $requiredSkillLinks = @(
 
 foreach ($link in $requiredSkillLinks) {
     if ($skillText -notmatch [regex]::Escape($link)) {
-        throw "skill/SKILL.md missing canonical link: $link"
+        throw "skills/code-intel-pipeline/SKILL.md missing canonical link: $link"
     }
 }
 
@@ -177,6 +177,69 @@ foreach ($check in $ponytailImpactScoreboardChecks) {
         -Path $ponytailImpactScoreboardPath `
         -Pattern $check[0] `
         -Message "Ponytail impact scoreboard must $($check[1])."
+}
+
+$installerPath = Join-Path $root "install-code-intel-pipeline.ps1"
+$tokens = $null
+$parseErrors = $null
+$installerAst = [System.Management.Automation.Language.Parser]::ParseFile(
+    $installerPath,
+    [ref]$tokens,
+    [ref]$parseErrors
+)
+if ($parseErrors.Count -gt 0) {
+    throw "Installer must parse before Skill upgrade regression tests run."
+}
+foreach ($functionName in @("Add-Check", "Ensure-SkillSource")) {
+    $definition = $installerAst.FindAll(
+        {
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq $functionName
+        },
+        $true
+    ) | Select-Object -First 1
+    if ($null -eq $definition) {
+        throw "Installer missing function required by Skill upgrade test: $functionName"
+    }
+    . ([scriptblock]::Create($definition.Extent.Text))
+}
+
+$upgradeRoot = Join-Path ([System.IO.Path]::GetTempPath()) "code-intel-skill-upgrade-$([guid]::NewGuid().ToString('N'))"
+$installedSkill = Join-Path $upgradeRoot "code-intel-pipeline"
+try {
+    New-Item -ItemType Directory -Force -Path $installedSkill | Out-Null
+    Copy-Item -LiteralPath $skillPath -Destination (Join-Path $installedSkill "SKILL.md")
+    $upgradeChecks = New-Object System.Collections.Generic.List[object]
+    Ensure-SkillSource $upgradeChecks $installedSkill (Split-Path -Parent $skillPath) $true
+    $installedBootstrap = Join-Path $installedSkill "scripts/bootstrap.py"
+    if (-not (Test-Path -LiteralPath $installedBootstrap -PathType Leaf)) {
+        throw "RepairSkillLinks must upgrade an older Skill that lacks scripts/bootstrap.py."
+    }
+    if (-not $upgradeChecks[$upgradeChecks.Count - 1].ok) {
+        throw "Upgraded Skill source must pass installer checks."
+    }
+
+    Set-Content -LiteralPath $installedBootstrap -Value "tampered" -Encoding utf8
+    $upgradeChecks.Clear()
+    Ensure-SkillSource $upgradeChecks $installedSkill (Split-Path -Parent $skillPath) $true
+    $expectedDigest = (Get-FileHash -LiteralPath (Join-Path (Split-Path -Parent $skillPath) "scripts/bootstrap.py") -Algorithm SHA256).Hash
+    $actualDigest = (Get-FileHash -LiteralPath $installedBootstrap -Algorithm SHA256).Hash
+    if ($actualDigest -ne $expectedDigest) {
+        throw "RepairSkillLinks must atomically restore modified Skill resources."
+    }
+
+    Set-Content -LiteralPath (Join-Path $installedSkill "stale-resource.txt") -Value "obsolete" -Encoding utf8
+    $upgradeChecks.Clear()
+    Ensure-SkillSource $upgradeChecks $installedSkill (Split-Path -Parent $skillPath) $true
+    if (Test-Path -LiteralPath (Join-Path $installedSkill "stale-resource.txt")) {
+        throw "RepairSkillLinks must atomically remove resources that are not in the bundled Skill."
+    }
+}
+finally {
+    if (Test-Path -LiteralPath $upgradeRoot) {
+        Remove-Item -LiteralPath $upgradeRoot -Recurse -Force
+    }
 }
 
 Write-Host "Skill development benchmark checks passed."

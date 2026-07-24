@@ -4,12 +4,12 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use crate::adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterError, AdapterOutput};
 use crate::artifact_ref::{
     normalized_retirement_call_path, retirement_portable_paths,
     validate_retirement_deletion_diff_value, VerifiedArtifact,
 };
 use crate::capability::{reject_duplicate_json_keys, sha256_hex};
-use crate::capability_inventory::{AdapterArtifact, AdapterError, AdapterOutput};
 
 const TEMPLATE_SCHEMA: &str = "code-intel-compatibility-retirement-ticket-template.v1";
 
@@ -176,7 +176,7 @@ pub(crate) fn execute(
             bytes: template.bytes().to_vec(),
         }],
         observed_effects: vec!["local_write".into()],
-        domain_verdict: crate::capability_inventory::AdapterDomainVerdict::Pass,
+        domain_verdict: AdapterDomainVerdict::Pass,
         domain_failure: None,
     })
 }

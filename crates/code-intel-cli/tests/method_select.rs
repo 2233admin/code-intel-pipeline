@@ -1,3 +1,5 @@
+#[path = "../src/adapter_contract.rs"]
+mod adapter_contract;
 #[path = "../src/admissibility.rs"]
 mod admissibility;
 #[path = "../src/artifact_ref.rs"]

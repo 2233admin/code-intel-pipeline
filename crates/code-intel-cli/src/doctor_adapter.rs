@@ -6,6 +6,7 @@ use std::process::Command;
 use serde_json::{json, Value};
 
 use super::{AdapterArtifact, AdapterError, AdapterOutput};
+use crate::adapter_contract::AdapterDomainVerdict;
 use crate::artifact_ref::VerifiedArtifact;
 use crate::capability::sha256_hex;
 
@@ -21,9 +22,9 @@ pub(crate) fn execute(
     let document = adapt(request, &options, &bootstrap, &manifest)?;
     let domain_failure = diagnosis(&document);
     let domain_verdict = if domain_failure.is_some() {
-        crate::capability_inventory::AdapterDomainVerdict::Fail
+        AdapterDomainVerdict::Fail
     } else {
-        crate::capability_inventory::AdapterDomainVerdict::Pass
+        AdapterDomainVerdict::Pass
     };
     let bytes = serde_json::to_vec(&document).map_err(|error| {
         AdapterError::Internal(format!("serialize doctor observation: {error}"))

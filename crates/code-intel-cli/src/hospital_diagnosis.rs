@@ -4,8 +4,8 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
+use crate::adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterError, AdapterOutput};
 use crate::artifact_ref::VerifiedArtifact;
-use crate::capability_inventory::{AdapterArtifact, AdapterError, AdapterOutput};
 
 #[derive(Default)]
 struct Signals {
@@ -55,23 +55,22 @@ pub(crate) fn execute(
     }
     let machine = diagnose(request, &signals);
     let domain_verdict = match machine["domainVerdict"].as_str() {
-        Some("pass") => crate::capability_inventory::AdapterDomainVerdict::Pass,
-        Some("fail") => crate::capability_inventory::AdapterDomainVerdict::Fail,
-        Some("unknown") => crate::capability_inventory::AdapterDomainVerdict::Unknown,
-        Some("not_applicable") => crate::capability_inventory::AdapterDomainVerdict::NotApplicable,
+        Some("pass") => AdapterDomainVerdict::Pass,
+        Some("fail") => AdapterDomainVerdict::Fail,
+        Some("unknown") => AdapterDomainVerdict::Unknown,
+        Some("not_applicable") => AdapterDomainVerdict::NotApplicable,
         other => {
             return Err(AdapterError::Contract(format!(
                 "hospital diagnosis has unsupported domain verdict: {other:?}"
             )))
         }
     };
-    let domain_failure =
-        (domain_verdict == crate::capability_inventory::AdapterDomainVerdict::Fail).then(|| {
-            machine["triage"]["primary_diagnosis"]
-                .as_str()
-                .unwrap_or("hospital domain failure")
-                .to_string()
-        });
+    let domain_failure = (domain_verdict == AdapterDomainVerdict::Fail).then(|| {
+        machine["triage"]["primary_diagnosis"]
+            .as_str()
+            .unwrap_or("hospital domain failure")
+            .to_string()
+    });
     let surgery = machine["surgery_plan"].clone();
     let hospital_bytes = serde_json::to_vec(&machine)
         .map_err(|error| AdapterError::Internal(format!("serialize hospital report: {error}")))?;

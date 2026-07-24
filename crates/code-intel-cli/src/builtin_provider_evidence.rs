@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 use super::{AdapterArtifact, AdapterError, AdapterOutput};
+use crate::adapter_contract::AdapterDomainVerdict;
 use crate::artifact_ref::VerifiedArtifact;
 use crate::capability::sha256_hex;
 use crate::snapshot;
@@ -414,10 +415,10 @@ fn publish_admission(
     effects: &[&str],
 ) -> Result<AdapterOutput, AdapterError> {
     let domain_verdict = match admission["domainVerdict"].as_str() {
-        Some("observed") => crate::capability_inventory::AdapterDomainVerdict::Pass,
-        Some("unknown") => crate::capability_inventory::AdapterDomainVerdict::Unknown,
-        Some("not_applicable") => crate::capability_inventory::AdapterDomainVerdict::NotApplicable,
-        Some("fail") => crate::capability_inventory::AdapterDomainVerdict::Fail,
+        Some("observed") => AdapterDomainVerdict::Pass,
+        Some("unknown") => AdapterDomainVerdict::Unknown,
+        Some("not_applicable") => AdapterDomainVerdict::NotApplicable,
+        Some("fail") => AdapterDomainVerdict::Fail,
         other => {
             return Err(AdapterError::Contract(format!(
                 "evidence admission has unsupported domain verdict: {other:?}"

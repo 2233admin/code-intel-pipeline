@@ -5,6 +5,7 @@ use std::path::Path;
 use serde_json::{json, Value};
 
 use super::{AdapterArtifact, AdapterError, AdapterOutput};
+use crate::adapter_contract::AdapterDomainVerdict;
 use crate::artifact_ref::{
     normalized_retirement_call_path, retirement_portable_paths, VerifiedArtifact,
 };
@@ -103,7 +104,7 @@ fn publish_decision(out: &Path, decision: Value) -> Result<AdapterOutput, Adapte
             bytes,
         }],
         observed_effects: vec!["local_write".into()],
-        domain_verdict: crate::capability_inventory::AdapterDomainVerdict::Pass,
+        domain_verdict: AdapterDomainVerdict::Pass,
         domain_failure: None,
     })
 }

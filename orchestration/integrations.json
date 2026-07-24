@@ -284,8 +284,8 @@
           "id": "doctor.envelope.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "ab13db09de8fed217296e6f482dd204448a53780ec10b11dfefe2ef5e44763b4",
-            "7152c417c594225692bd1910dffc222d25f96158b1b908a58c4e30b688b6e2e9"
+            "cc37c3df902ba62b699f63545e46b5e73aa517ca3f412ff62f25da6ccc8b1cb0",
+            "7da01a3ab993baf727d0ec9a3c4152bcd512a287b5b3a2cb5a55b3f2a5d694f0"
           ]
         },
         "determinism": "external_nondeterministic",
@@ -510,10 +510,11 @@
         "id": "provider.graph-builtin.compat",
         "version": "1.0.0",
         "toolchainDigests": [
-          "a04226fab56751d014460e1596328e503b6a9afbf2efd5e84ab7b0790831149e",
-          "bc6c27f45e0d1e0ccd12546da02e221b6193cfb4a5df3d18096a6b335bf4114a",
+          "c8e61647db2b92909a83d5f0a0d53d3a2558103715f74b6fc7054d0f4ce79968",
+          "6671234c5b00847c7130f535cca5b049030d67f34f6e5341faf45f45b9d01c95",
           "339536b6756cecd60b706faafb3ee9f53f8c1436ac6d2becb0448d27dc0b0322",
-          "52644a812174988ede91d98ddfec63c6a91f8478277d7bf74c73f106dd0f776b"
+          "52644a812174988ede91d98ddfec63c6a91f8478277d7bf74c73f106dd0f776b",
+          "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26"
         ]
       },
       "determinism": "external_nondeterministic",
@@ -527,7 +528,8 @@
         "crates/code-intel-cli/src/builtin_provider_evidence.rs",
         "crates/code-intel-cli/src/graph.rs",
         "crates/code-intel-cli/src/graph_adapter.rs",
-        "crates/code-intel-cli/src/admissibility.rs"
+        "crates/code-intel-cli/src/admissibility.rs",
+        "crates/code-intel-cli/src/adapter_contract.rs"
       ]
     },
       "artifactContract": [
@@ -559,9 +561,10 @@
         "id": "provider.sentrux-builtin.compat",
         "version": "1.0.0",
         "toolchainDigests": [
-          "a04226fab56751d014460e1596328e503b6a9afbf2efd5e84ab7b0790831149e",
+          "c8e61647db2b92909a83d5f0a0d53d3a2558103715f74b6fc7054d0f4ce79968",
           "5aaf4f6e79dacf5b067efab1d07c9d2937000d97a22cf4c81ac9697edf0dc3d4",
-          "52644a812174988ede91d98ddfec63c6a91f8478277d7bf74c73f106dd0f776b"
+          "52644a812174988ede91d98ddfec63c6a91f8478277d7bf74c73f106dd0f776b",
+          "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26"
         ]
       },
       "determinism": "external_nondeterministic",
@@ -574,7 +577,8 @@
       "inputs": [
         "crates/code-intel-cli/src/builtin_provider_evidence.rs",
         "crates/code-intel-cli/src/sentrux_adapter.rs",
-        "crates/code-intel-cli/src/admissibility.rs"
+        "crates/code-intel-cli/src/admissibility.rs",
+        "crates/code-intel-cli/src/adapter_contract.rs"
       ]
     },
       "artifactContract": ["orchestration/schemas/code-intel-structural-evidence-port.v1.schema.json", "orchestration/schemas/code-intel-sentrux-route-result.v1.schema.json", "orchestration/schemas/code-intel-evidence-admissibility-result.v1.schema.json"],
@@ -679,7 +683,7 @@
           "id": "project.orientation.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "cdba6713cdb468882b8a04f226209c11b31e5f27d123197f5fc06c1ce1047458"
+            "6a5a3e18f68b13406b5cd4b2198050aff2a86f74b61024aaeb5d4850572761c2"
           ]
         },
         "determinism": "deterministic",
@@ -722,8 +726,8 @@
           "id": "understanding.quadrant.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "60fbb6e482158a08b3d4d21e1c0309d9b1b2b89be7cd4be39442a66339f2dfdf",
-            "7152c417c594225692bd1910dffc222d25f96158b1b908a58c4e30b688b6e2e9"
+            "713daf121490de0eb9e3a94139318da47b46d4368fce5ef09c5719b8d546f403",
+            "7da01a3ab993baf727d0ec9a3c4152bcd512a287b5b3a2cb5a55b3f2a5d694f0"
           ]
         },
         "determinism": "deterministic",
@@ -769,7 +773,7 @@
           "id": "project.orientation-benchmark.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "f85db17bbf64ad5c61600bee6db92657640b31e5014a9f3d0d1fd39e1662eb92"
+            "d65a4162a2063cb4b3fb86556169bd009eeb5ce4640c2e7d59a267b05af12c19"
           ]
         },
         "determinism": "external_nondeterministic",
@@ -813,8 +817,8 @@
           "id": "delivery.light-speed-measure.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "35befeb27f87bbdad5b5d081542208dc2aecf25af707f145fcbf58aa18f16444",
-            "7152c417c594225692bd1910dffc222d25f96158b1b908a58c4e30b688b6e2e9",
+            "3ba256f4ca0bf62aca08f688f7ecf31800dd10e68371054e2f1605eff197ea81",
+            "7da01a3ab993baf727d0ec9a3c4152bcd512a287b5b3a2cb5a55b3f2a5d694f0",
             "e14f72c8191157263ee6964eb00250bc8235fe6cee715aa2b9cfa3362e47b1a8",
             "b118ba78ff3ef4a189525c642184cbd320a268d2885681ab153544db554c5965",
             "e3072b6b01a4f692c2ac75c7c4995747f9a0fd1ce4f32e1ab1599f348661f570",
@@ -875,9 +879,9 @@
           "id": "compatibility.retirement-gate.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "864c14aba381c0ecb8262c91de0866f0415e4b88e815de2f564f1beddd3207d3",
+            "13968a5e5da8923b00ab8495b5b848e0f41514e7c004c183ae2311d35d5ff2a3",
             "e14f72c8191157263ee6964eb00250bc8235fe6cee715aa2b9cfa3362e47b1a8",
-            "7152c417c594225692bd1910dffc222d25f96158b1b908a58c4e30b688b6e2e9"
+            "7da01a3ab993baf727d0ec9a3c4152bcd512a287b5b3a2cb5a55b3f2a5d694f0"
           ]
         },
         "determinism": "deterministic",
@@ -926,9 +930,9 @@
           "id": "compatibility.retirement-ticket-template.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "1b3875caa63b7b8ebaac5dfc38c2e8b858920127377f4b7da54c4ce5b585b9f3",
+            "a6da84444e815dd94c15887190c7d6bd48c7bca5975fb5d493eb77ab39f27d80",
             "e14f72c8191157263ee6964eb00250bc8235fe6cee715aa2b9cfa3362e47b1a8",
-            "7152c417c594225692bd1910dffc222d25f96158b1b908a58c4e30b688b6e2e9"
+            "7da01a3ab993baf727d0ec9a3c4152bcd512a287b5b3a2cb5a55b3f2a5d694f0"
           ]
         },
         "determinism": "deterministic",
@@ -1182,7 +1186,7 @@
           "id": "evidence.native-code.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "c47c86ee56ba5bb9a16cfd5c8742b70f0e9a64d6da1f83289a0e65818defffa5"
+            "44f89f430ebf776b35e705d482807dd58a2803723268b4e162c9a753fadf8390"
           ]
         },
         "determinism": "deterministic",
@@ -1355,7 +1359,7 @@
           "id": "diagnosis.hospital.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "391adefd7648ea7979585b22687a49fdaa7dcbf26f685ac4ee433861b4347c31"
+            "1d3f7b5c4dcb22c8c22869e99d04e7657f7d461bdd61a20d365cdaf16b2d3d20"
           ]
         },
         "determinism": "deterministic",
