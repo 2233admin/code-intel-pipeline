@@ -362,7 +362,7 @@ fn inventory(request: &Value, out: &Path) -> Result<AdapterOutput, AdapterError>
         .into_iter()
         .map(String::into_bytes)
         .collect::<Vec<_>>();
-    let bytes = join_records(&records, if cfg!(windows) { b'\n' } else { 0 });
+    let bytes = join_records(&records, b'\n');
     publish(out, &bytes, |_| Ok(()))?;
     Ok(AdapterOutput {
         artifacts: vec![AdapterArtifact {

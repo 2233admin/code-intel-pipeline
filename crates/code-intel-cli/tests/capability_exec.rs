@@ -1482,6 +1482,7 @@ fn normalized_inventory_matches_real_legacy_runner_with_custom_exclude() {
         .arg(&repo)
         .arg("-Mode")
         .arg("lite")
+        .arg("-SkipOpenSpec")
         .arg("-ArtifactRoot")
         .arg(&artifacts)
         .arg("-InventoryExclude")

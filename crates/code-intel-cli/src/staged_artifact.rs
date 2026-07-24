@@ -935,7 +935,7 @@ mod platform {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod platform {
     use super::*;
     use std::ffi::CString;
@@ -944,11 +944,26 @@ mod platform {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 
     const O_WRONLY: i32 = 1;
+    #[cfg(target_os = "linux")]
     const O_CREAT: i32 = 0x40;
+    #[cfg(target_os = "linux")]
     const O_EXCL: i32 = 0x80;
+    #[cfg(target_os = "linux")]
     const O_CLOEXEC: i32 = 0x80000;
+    #[cfg(target_os = "linux")]
     const O_DIRECTORY: i32 = 0x10000;
+    #[cfg(target_os = "linux")]
     const O_NOFOLLOW: i32 = 0x20000;
+    #[cfg(target_os = "macos")]
+    const O_CREAT: i32 = 0x0200;
+    #[cfg(target_os = "macos")]
+    const O_EXCL: i32 = 0x0800;
+    #[cfg(target_os = "macos")]
+    const O_CLOEXEC: i32 = 0x01000000;
+    #[cfg(target_os = "macos")]
+    const O_DIRECTORY: i32 = 0x00100000;
+    #[cfg(target_os = "macos")]
+    const O_NOFOLLOW: i32 = 0x00000100;
 
     unsafe extern "C" {
         fn open(pathname: *const i8, flags: i32, ...) -> i32;
@@ -1104,14 +1119,14 @@ mod platform {
     }
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 mod platform {
     use super::*;
 
     fn unsupported() -> std::io::Error {
         std::io::Error::new(
             std::io::ErrorKind::Unsupported,
-            "secure staged writes are supported only on Windows and Linux",
+            "secure staged writes are supported only on Windows, Linux, and macOS",
         )
     }
 
