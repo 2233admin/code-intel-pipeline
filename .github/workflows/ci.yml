@@ -27,6 +27,10 @@ jobs:
         shell: pwsh
         run: rustup default stable
 
+      - name: Install ripgrep
+        shell: pwsh
+        run: choco install ripgrep -y --no-progress
+
       - name: Rust format
         shell: pwsh
         run: cargo fmt -p code-intel -- --check
@@ -112,20 +116,6 @@ jobs:
           if ($hits.Count -gt 0) {
             $hits | ForEach-Object { Write-Host $_ }
             throw "Secret-like patterns found."
-          }
-
-      - name: Install ripgrep
-        shell: pwsh
-        run: |
-          if ($IsWindows) {
-            choco install ripgrep -y --no-progress
-          }
-          elseif ($IsMacOS) {
-            brew install ripgrep
-          }
-          else {
-            sudo apt-get update
-            sudo apt-get install -y ripgrep
           }
 
       - name: Install portable pipeline
@@ -236,6 +226,20 @@ jobs:
         shell: pwsh
         run: rustup default stable
 
+      - name: Install ripgrep
+        shell: pwsh
+        run: |
+          if ($IsWindows) {
+            choco install ripgrep -y --no-progress
+          }
+          elseif ($IsMacOS) {
+            brew install ripgrep
+          }
+          else {
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+          }
+
       - name: Rust format
         shell: pwsh
         run: cargo fmt -p code-intel -- --check
@@ -317,20 +321,6 @@ jobs:
           if ($hits.Count -gt 0) {
             $hits | ForEach-Object { Write-Host $_ }
             throw "Secret-like patterns found."
-          }
-
-      - name: Install ripgrep
-        shell: pwsh
-        run: |
-          if ($IsWindows) {
-            choco install ripgrep -y --no-progress
-          }
-          elseif ($IsMacOS) {
-            brew install ripgrep
-          }
-          else {
-            sudo apt-get update
-            sudo apt-get install -y ripgrep
           }
 
       - name: Install portable pipeline

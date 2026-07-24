@@ -47,6 +47,10 @@ jobs:
         shell: pwsh
         run: rustup default stable
 
+      - name: Install ripgrep
+        shell: pwsh
+        run: choco install ripgrep -y --no-progress
+
       - name: Rust format
         shell: pwsh
         run: cargo fmt -p code-intel -- --check
@@ -62,10 +66,6 @@ jobs:
       - name: Build Rust CLI
         shell: pwsh
         run: cargo build -p code-intel --release
-
-      - name: Install ripgrep
-        shell: pwsh
-        run: choco install ripgrep -y --no-progress
 
       - name: Install portable pipeline
         shell: pwsh
