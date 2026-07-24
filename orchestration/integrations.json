@@ -338,7 +338,8 @@
         "resume": "target/debug/code-intel.exe resume --repo <repo-path> --json",
         "classify": "target/debug/code-intel.exe classify --report <report-path> --json",
         "evidenceValidate": "target/debug/code-intel.exe evidence validate --request <request.json> --artifact-root <artifact-directory>",
-        "dagCoordinate": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--doctor-require-repowise <true|false>]"
+        "dagCoordinate": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]",
+        "execute": "target/debug/code-intel.exe run execute --repo <repo-root> --out <run-staging-directory> --authority-root <publication-root> --final-name <name> [--profile default|strict|offline]"
       },
       "artifactContract": [
         "orchestration/integrations.json",
@@ -1103,6 +1104,27 @@
       "extensionPoint": "A07 consumes a fully validated A09 manifest and A06-restaged refs. It owns publication only; A08 index admission remains separate."
     },
     {
+      "id": "run.execute",
+      "stage": "preflight",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-kernel",
+      "required": true,
+      "entrypoint": "crates/code-intel-cli/src/execution_kernel.rs",
+      "capabilities": ["authoritative_execution", "compiled_execution_policy", "typed_run_outcome", "atomic_publication"],
+      "commands": {
+        "run": "target/debug/code-intel.exe run execute --repo <repo-root> --out <run-staging-directory> --authority-root <publication-root> --final-name <name> [--profile default|strict|offline]",
+        "facade": "invoke-code-intel.ps1 -RepoPath <repo-root> -Mode <lite|normal|full>"
+      },
+      "artifactContract": [
+        "orchestration/schemas/code-intel-run-dag.v1.schema.json",
+        "orchestration/schemas/code-intel-run-state.v1.schema.json",
+        "orchestration/schemas/code-intel-run-manifest.v1.schema.json",
+        "orchestration/schemas/code-intel-run-commit.v1.schema.json",
+        "orchestration/schemas/code-intel-execution-result.v1.schema.json"
+      ],
+      "extensionPoint": "Run profiles compile into one immutable ExecutionPolicy. Capability adapters execute behind A01 envelopes; the kernel alone owns coordination, typed outcome mapping, and atomic publication."
+    },
+    {
       "id": "run.dag-coordinate",
       "stage": "preflight",
       "owner": "code-intel-pipeline",
@@ -1111,7 +1133,7 @@
       "entrypoint": "crates/code-intel-cli/src/dag_run.rs",
       "capabilities": ["deterministic_dag", "bounded_concurrency", "resumable_run_state", "a03_verified_seeded_diagnosis"],
       "commands": {
-        "run": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--doctor-tool-path-prefix <controlled-tool-directory>] [--doctor-require-repowise <true|false>]",
+        "run": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--doctor-tool-path-prefix <controlled-tool-directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]",
         "diagnosis": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> --diagnosis-inputs <artifact-refs.json> --seed-artifact-root <artifact-root>",
         "facade": "run-code-intel.ps1 -RepoPath <repo-root> -ArtifactRoot <artifact-root> -DagCoordinate"
       },

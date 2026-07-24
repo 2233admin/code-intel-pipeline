@@ -23,6 +23,8 @@ mod dag_run;
 mod decision_port;
 mod decision_record;
 mod evidence_query;
+mod execution_kernel;
+mod execution_policy;
 mod file_boundary;
 mod graph;
 mod method_catalog;
@@ -1426,6 +1428,7 @@ fn print_help() {
     println!("  decision request-response --request <request.json|-> [--response <response.json>|--cancel <cancellation.json>] --now <unix-seconds> --branch <branch-id>...");
     println!("  decision record --resolution <resolution.json> --store <record-directory>");
     println!("  decision replay --query <query.json> --store <record-directory>");
+    println!("  run execute --repo <repo-root> --out <run-staging-directory> --authority-root <publication-root> --final-name <name> [--profile default|strict|offline] [--manifest <integrations.json>] [--max-concurrency <n>] [--session-evidence <session-evidence.json>]");
     println!("  run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--manifest <integrations.json>] [--max-concurrency <n>] [--session-evidence <session-evidence.json>]");
     println!("  run commit --source-root <A09-artifact-root> --authority-root <publication-root> --manifest-ref <artifact-ref.json> --final-name <name>");
     println!("  governance ponytail-gate --request <request.json|->");

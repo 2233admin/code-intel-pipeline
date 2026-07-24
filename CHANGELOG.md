@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-24
+
+### Added
+
+- One authoritative typed execution kernel that owns DAG execution, structured outcomes,
+  atomic publication, and the stable process exit contract.
+- Default, strict, offline, and compatibility execution profiles compiled into one immutable
+  policy, with optional provider unavailability represented explicitly.
+
+### Changed
+
+- The PowerShell entrypoint is now a thin adapter over `run execute` and validates the
+  versioned execution-result schema before returning.
+- The internal graph remains authoritative by default; Sentrux acceleration and external
+  enrichment stay optional, while strict mode requires every enabled provider.
+
 ## [0.3.0] — 2026-07-24
 
 ### Added

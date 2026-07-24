@@ -206,40 +206,41 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     .unwrap();
     let doctor_tools = doctor_tool_fixture(&root, true);
 
-    let dag = Command::new(env!("CARGO_BIN_EXE_code-intel"))
-        .args(["run", "dag-coordinate", "--repo"])
+    let execution = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["run", "execute", "--repo"])
         .arg(&repo)
         .arg("--out")
         .arg(&source)
+        .arg("--authority-root")
+        .arg(&repo_authority)
+        .args(["--final-name", "run-001"])
         .arg("--doctor-tool-path-prefix")
         .arg(&doctor_tools)
         .output()
         .unwrap();
     assert_eq!(
-        dag.status.code(),
+        execution.status.code(),
         Some(0),
         "stdout={} stderr={}",
-        String::from_utf8_lossy(&dag.stdout),
-        String::from_utf8_lossy(&dag.stderr)
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
     );
-
-    let commit = Command::new(env!("CARGO_BIN_EXE_code-intel"))
-        .args(["run", "commit", "--source-root"])
-        .arg(&source)
-        .arg("--authority-root")
-        .arg(&repo_authority)
-        .arg("--manifest-ref")
-        .arg(source.join("run-manifest-ref.json"))
-        .args(["--final-name", "run-001"])
-        .output()
-        .unwrap();
+    let execution: Value = serde_json::from_slice(&execution.stdout).unwrap();
+    assert_eq!(execution["schema"], "code-intel-execution-result.v1");
+    assert_eq!(execution["outcome"], "completed");
+    assert_eq!(execution["exitCode"], 0);
+    assert_eq!(execution["manifest"]["outcome"], "completed");
+    assert_eq!(execution["publication"]["status"], "committed");
+    assert_eq!(execution["publication"]["name"], "run-001");
+    assert_eq!(execution["publication"]["marker"], "run-complete.json");
     assert_eq!(
-        commit.status.code(),
-        Some(0),
-        "stdout={} stderr={}",
-        String::from_utf8_lossy(&commit.stdout),
-        String::from_utf8_lossy(&commit.stderr)
+        execution["publication"]["path"],
+        repo_authority.join("run-001").to_string_lossy().as_ref()
     );
+    let doctor_request: Value =
+        serde_json::from_slice(&fs::read(source.join("doctor.request.json")).unwrap()).unwrap();
+    assert_eq!(doctor_request["options"]["requireRepowise"], false);
+    assert_eq!(doctor_request["options"]["requireUnderstand"], false);
 
     let index = Command::new(env!("CARGO_BIN_EXE_code-intel"))
         .args(["artifact", "index", "--artifact-root"])
@@ -353,22 +354,34 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
     let root = temp_dir();
     let repo = root.join("repo");
     let out = root.join("run");
+    let artifact_root = root.join("artifacts");
+    let authority = artifact_root.join("fixture-repo");
     fs::create_dir_all(repo.join("src")).unwrap();
+    fs::create_dir_all(&authority).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
     let doctor_tools = doctor_tool_fixture(&root, false);
 
     let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
-        .args(["run", "dag-coordinate", "--repo"])
+        .args(["run", "execute", "--repo"])
         .arg(&repo)
         .arg("--out")
         .arg(&out)
+        .arg("--authority-root")
+        .arg(&authority)
+        .args(["--final-name", "failed-001"])
         .arg("--doctor-tool-path-prefix")
         .arg(&doctor_tools)
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(10));
-    let manifest: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let execution: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(execution["schema"], "code-intel-execution-result.v1");
+    assert_eq!(execution["outcome"], "domain_failed");
+    assert_eq!(execution["exitCode"], 10);
+    assert_eq!(execution["publication"]["status"], "committed");
+    assert_eq!(execution["publication"]["name"], "failed-001");
+    let manifest = &execution["manifest"];
     assert_eq!(manifest["outcome"], "domain_failed");
     assert_eq!(manifest["nodes"]["doctor"]["status"], "domain_failed");
     let doctor_artifacts = manifest["nodes"]["doctor"]["artifacts"]
@@ -401,20 +414,6 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
         .unwrap()
         .contains("provider conformance failed"));
 
-    let artifact_root = root.join("artifacts");
-    let authority = artifact_root.join("fixture-repo");
-    fs::create_dir_all(&authority).unwrap();
-    let commit = Command::new(env!("CARGO_BIN_EXE_code-intel"))
-        .args(["run", "commit", "--source-root"])
-        .arg(&out)
-        .arg("--authority-root")
-        .arg(&authority)
-        .arg("--manifest-ref")
-        .arg(out.join("run-manifest-ref.json"))
-        .args(["--final-name", "failed-001"])
-        .output()
-        .unwrap();
-    assert_eq!(commit.status.code(), Some(0));
     let committed_root = authority.join("failed-001");
     let marker: Value =
         serde_json::from_slice(&fs::read(committed_root.join("run-complete.json")).unwrap())
@@ -556,6 +555,209 @@ fn optional_session_evidence_is_snapshot_bound_a03_verified_and_manifested() {
     assert!(out
         .join("verification.session-evidence/session-evidence.json")
         .is_file());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn checked_in_execution_result_schema_is_closed_and_binds_outcomes_to_exit_codes() {
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../../orchestration/schemas/code-intel-execution-result.v1.schema.json"
+    ))
+    .unwrap();
+    assert_eq!(schema["$id"], "code-intel-execution-result.v1.schema.json");
+    assert_eq!(schema["additionalProperties"], false);
+    assert_eq!(
+        schema["properties"]["schema"]["const"],
+        "code-intel-execution-result.v1"
+    );
+    assert_eq!(
+        schema["properties"]["publication"]["additionalProperties"],
+        false
+    );
+    assert_eq!(
+        schema["properties"]["publication"]["properties"]["marker"]["type"],
+        "string"
+    );
+
+    let pairs = schema["oneOf"].as_array().unwrap();
+    assert_eq!(pairs.len(), 4);
+    assert!(pairs.iter().any(|pair| {
+        pair["properties"]["outcome"]["const"] == "completed"
+            && pair["properties"]["exitCode"]["const"] == 0
+    }));
+    assert!(pairs.iter().any(|pair| {
+        pair["properties"]["outcome"]["const"] == "domain_failed"
+            && pair["properties"]["exitCode"]["const"] == 10
+    }));
+    assert!(pairs.iter().any(|pair| {
+        pair["properties"]["outcome"]["const"] == "domain_unknown"
+            && pair["properties"]["exitCode"]["const"] == 20
+    }));
+    assert!(pairs.iter().any(|pair| {
+        pair["properties"]["outcome"]["enum"] == json!(["process_failed", "incomplete"])
+            && pair["properties"]["exitCode"]["const"] == 70
+    }));
+}
+
+#[test]
+fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
+    let root = temp_dir();
+    let repo = root.join("repo");
+    let out = root.join("offline-staging");
+    let authority = root.join("authority");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::create_dir_all(&authority).unwrap();
+    fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
+    let doctor_tools = doctor_tool_fixture(&root, true);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["run", "execute", "--repo"])
+        .arg(&repo)
+        .arg("--out")
+        .arg(&out)
+        .arg("--authority-root")
+        .arg(&authority)
+        .args(["--final-name", "offline-001", "--profile", "offline"])
+        .args(["--doctor-require-repowise", "true"])
+        .args(["--doctor-require-understand", "true"])
+        .arg("--doctor-tool-path-prefix")
+        .arg(&doctor_tools)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let execution: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let nodes = execution["manifest"]["nodes"].as_object().unwrap();
+    assert!(!nodes.contains_key("evidence.graph"));
+    assert!(!nodes.contains_key("evidence.sentrux"));
+    assert!(!nodes.contains_key("diagnosis.hospital"));
+    assert!(nodes.contains_key("repo.snapshot"));
+    assert!(nodes.contains_key("inventory.rg"));
+    assert!(nodes.contains_key("evidence.native-code"));
+
+    assert!(!out.join("evidence.graph.request.json").exists());
+    assert!(!out.join("evidence.sentrux.request.json").exists());
+    let doctor_request: Value =
+        serde_json::from_slice(&fs::read(out.join("doctor.request.json")).unwrap()).unwrap();
+    assert_eq!(doctor_request["options"]["requireRepowise"], false);
+    assert_eq!(doctor_request["options"]["requireUnderstand"], false);
+
+    let result_path = root.join("execution-result.json");
+    fs::write(&result_path, &output.stdout).unwrap();
+    let schema = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../orchestration/schemas/code-intel-execution-result.v1.schema.json");
+    let validated = Command::new("pwsh")
+        .args([
+            "-NoLogo",
+            "-NoProfile",
+            "-Command",
+            "param($Document,$Schema); if (-not (Get-Content -Raw -LiteralPath $Document | Test-Json -SchemaFile $Schema -ErrorAction Stop)) { exit 1 }",
+        ])
+        .arg(&result_path)
+        .arg(&schema)
+        .output()
+        .unwrap();
+    assert!(
+        validated.status.success(),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&validated.stdout),
+        String::from_utf8_lossy(&validated.stderr)
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn authoritative_execute_rejects_diagnosis_only_runs_before_staging_or_publication() {
+    let root = temp_dir();
+    let repo = root.join("repo");
+    let out = root.join("staging");
+    let authority = root.join("authority");
+    fs::create_dir_all(&repo).unwrap();
+    fs::create_dir_all(&authority).unwrap();
+    fs::write(repo.join("README.md"), "fixture\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["run", "execute", "--repo"])
+        .arg(&repo)
+        .arg("--out")
+        .arg(&out)
+        .arg("--authority-root")
+        .arg(&authority)
+        .args(["--final-name", "diagnosis-only"])
+        .arg("--diagnosis-inputs")
+        .arg(root.join("inputs.json"))
+        .arg("--seed-artifact-root")
+        .arg(root.join("seed"))
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(64));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("does not accept diagnosis-only inputs")
+    );
+    assert!(!out.exists());
+    assert!(!authority.join("diagnosis-only").exists());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn strict_profile_cannot_be_weakened_and_keeps_all_provider_nodes_required() {
+    let root = temp_dir();
+    let repo = root.join("repo");
+    let out = root.join("strict-staging");
+    let authority = root.join("authority");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::create_dir_all(&authority).unwrap();
+    fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
+    let doctor_tools = doctor_tool_fixture(&root, true);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["run", "execute", "--repo"])
+        .arg(&repo)
+        .arg("--out")
+        .arg(&out)
+        .arg("--authority-root")
+        .arg(&authority)
+        .args(["--final-name", "strict-001", "--profile", "strict"])
+        .args(["--doctor-require-repowise", "false"])
+        .args(["--doctor-require-understand", "false"])
+        .arg("--doctor-tool-path-prefix")
+        .arg(&doctor_tools)
+        .output()
+        .unwrap();
+
+    assert!(
+        matches!(output.status.code(), Some(0) | Some(10)),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let execution: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        execution["exitCode"].as_i64(),
+        output.status.code().map(i64::from)
+    );
+    assert_eq!(
+        execution["manifest"]["outcome"], execution["outcome"],
+        "typed result and terminal manifest must agree"
+    );
+    let nodes = execution["manifest"]["nodes"].as_object().unwrap();
+    assert!(nodes.contains_key("evidence.graph"));
+    assert!(nodes.contains_key("evidence.sentrux"));
+    assert!(nodes.contains_key("diagnosis.hospital"));
+
+    let doctor_request: Value =
+        serde_json::from_slice(&fs::read(out.join("doctor.request.json")).unwrap()).unwrap();
+    assert_eq!(doctor_request["options"]["requireRepowise"], true);
+    assert_eq!(doctor_request["options"]["requireUnderstand"], true);
 
     let _ = fs::remove_dir_all(root);
 }

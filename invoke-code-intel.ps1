@@ -122,6 +122,7 @@ function Get-DoctorParameters {
         Config = $Config
         Platform = $Platform
         RequireRepowise = [bool]$RepowiseDocs
+        RequireUnderstand = [bool]$RequireUnderstandGraph
     }
     foreach ($entry in (Get-RepoSelector -RepoName $RepoName -DirectRepoPath $DirectRepoPath).GetEnumerator()) {
         $parameters[$entry.Key] = $entry.Value
@@ -167,50 +168,74 @@ function Publish-AuthoritativeCoreRun {
     $committed = $false
     try {
         Write-Host "Code intel invoke: authoritative DAG $ResolvedRepoPath"
-        $dagArguments = @("run", "dag-coordinate", "--repo", $ResolvedRepoPath, "--out", $sourceRoot)
-        if ($SkipRepowise) {
-            $dagArguments += @("--doctor-require-repowise", "false")
-        }
+        $dagArguments = @(
+            "run", "execute",
+            "--repo", $ResolvedRepoPath,
+            "--out", $sourceRoot,
+            "--authority-root", $repoAuthority,
+            "--final-name", $finalName,
+            "--profile", "default",
+            "--doctor-require-repowise", ([bool]$RepowiseDocs).ToString().ToLowerInvariant(),
+            "--doctor-require-understand", ([bool]$RequireUnderstandGraph).ToString().ToLowerInvariant()
+        )
         $dagOutput = @(& $rustCli @dagArguments 2>&1)
         $dagExitCode = $LASTEXITCODE
-        $dagManifest = try {
+        $executionResult = try {
             ($dagOutput -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop
         }
         catch {
             $dagOutput | Out-Host
-            Write-Error "Authoritative DAG did not return a valid run manifest: $($_.Exception.Message)"
+            Write-Error "Authoritative execution kernel did not return a valid result: $($_.Exception.Message)"
             return $(if ($dagExitCode -ne 0) { $dagExitCode } else { 3 })
         }
-        $dagOutcome = [string](Get-JsonProperty $dagManifest "outcome")
+        if ([string](Get-JsonProperty $executionResult "schema") -ne "code-intel-execution-result.v1") {
+            Write-Error "Authoritative execution kernel returned an unsupported result schema."
+            return 3
+        }
+        $executionSchema = Join-Path $root "orchestration/schemas/code-intel-execution-result.v1.schema.json"
+        if (-not (($executionResult | ConvertTo-Json -Depth 100 -Compress) |
+                Test-Json -SchemaFile $executionSchema -ErrorAction Stop)) {
+            Write-Error "Authoritative execution kernel result violates its checked-in schema."
+            return 3
+        }
+        $dagOutcome = [string](Get-JsonProperty $executionResult "outcome")
         if ([string]::IsNullOrWhiteSpace($dagOutcome)) {
-            Write-Error "Authoritative DAG run manifest has no outcome."
+            Write-Error "Authoritative execution result has no outcome."
             return 3
         }
-        $manifestRef = Join-Path $sourceRoot "run-manifest-ref.json"
-        if (-not (Test-Path -LiteralPath $manifestRef -PathType Leaf)) {
-            Write-Error "Authoritative DAG did not persist its commit handoff: $manifestRef"
+        $manifest = Get-JsonProperty $executionResult "manifest"
+        if ([string](Get-JsonProperty $manifest "outcome") -ne $dagOutcome) {
+            Write-Error "Authoritative execution result outcome does not match its manifest."
             return 3
         }
-        Write-Host "Code intel invoke: atomic publication $repoName/$finalName"
-        $commitOutput = @(& $rustCli run commit `
-            --source-root $sourceRoot `
-            --authority-root $repoAuthority `
-            --manifest-ref $manifestRef `
-            --final-name $finalName 2>&1)
-        $commitExitCode = $LASTEXITCODE
-        if ($commitExitCode -ne 0) {
-            $commitOutput | Out-Host
-            return $commitExitCode
+        $reportedExitCode = 0
+        if (-not [int]::TryParse(
+                [string](Get-JsonProperty $executionResult "exitCode"),
+                [ref]$reportedExitCode
+            ) -or $reportedExitCode -ne $dagExitCode) {
+            Write-Error "Authoritative execution result exitCode does not match the process exit code."
+            return 3
+        }
+        $publication = Get-JsonProperty $executionResult "publication"
+        $publishedPath = [string](Get-JsonProperty $publication "path")
+        $expectedPublishedPath = [System.IO.Path]::GetFullPath((Join-Path $repoAuthority $finalName))
+        if ([string](Get-JsonProperty $publication "status") -ne "committed" -or
+            [string](Get-JsonProperty $publication "name") -ne $finalName -or
+            [string]::IsNullOrWhiteSpace($publishedPath) -or
+            [System.IO.Path]::GetFullPath($publishedPath) -ne $expectedPublishedPath -or
+            -not (Test-Path -LiteralPath (Join-Path $publishedPath "run-complete.json") -PathType Leaf)) {
+            Write-Error "Authoritative execution kernel did not publish a committed run."
+            return 3
         }
         $committed = $true
         Write-Host "Code intel invoke: authoritative run committed $repoName/$finalName outcome=$dagOutcome"
-        if ($dagOutcome -ne "completed") {
-            Write-Warning "Authoritative DAG outcome is $dagOutcome; the committed run is retained as failure evidence."
-            return $(if ($dagExitCode -ne 0) { $dagExitCode } else { 1 })
-        }
         if ($dagExitCode -ne 0) {
-            Write-Warning "Authoritative DAG returned exit $dagExitCode for a completed manifest; refusing success."
+            Write-Warning "Authoritative DAG outcome is $dagOutcome; the committed run is retained as failure evidence."
             return $dagExitCode
+        }
+        if ($dagOutcome -ne "completed") {
+            Write-Warning "Authoritative execution kernel returned success for non-completed outcome $dagOutcome."
+            return 3
         }
         return 0
     }

@@ -43,7 +43,7 @@ PowerShell 合同测试已迁到 `scripts/tests/`。其余根目录兼容 facade
 
 当前已发布兼容面仍是 **Windows PowerShell public beta**，但后续功能开发已经转向 Rust/MoonBit 路线，不再扩大 PowerShell surface。测试版承诺的是：稳定入口可运行、核心报告可事务化落盘、结构退化不会被伪装成成功、发布 ZIP 可在没有源码树和 Rust toolchain 的干净目录中启动。
 
-0.3.0 核心路径：
+0.4.0 核心路径：
 
 - `invoke-code-intel.ps1` / `run-code-intel.ps1`
 - `code-intel.exe` 的 A01-A09 capability/DAG/policy/artifact core
