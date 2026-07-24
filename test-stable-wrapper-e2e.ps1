@@ -25,6 +25,28 @@ function Invoke-StableWrapper {
     }
 }
 
+function Get-LatestAuthoritativeManifest {
+    try {
+        $authority = Join-Path $artifactRoot "fixture-repo"
+        $latestRun = Get-ChildItem -LiteralPath $authority -Directory -ErrorAction Stop |
+            Where-Object { $_.Name -like "*-core" } |
+            Sort-Object Name -Descending |
+            Select-Object -First 1
+        if ($null -eq $latestRun) {
+            return "no authoritative run was published"
+        }
+
+        $markerPath = Join-Path $latestRun.FullName "run-complete.json"
+        $marker = Get-Content -LiteralPath $markerPath -Raw -ErrorAction Stop | ConvertFrom-Json
+        $manifestPath = Join-Path $latestRun.FullName ([string]$marker.manifest.path)
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop | ConvertFrom-Json
+        return ($manifest | ConvertTo-Json -Depth 20 -Compress)
+    }
+    catch {
+        return "authoritative manifest unavailable: $($_.Exception.Message)"
+    }
+}
+
 try {
     New-Item -ItemType Directory -Path $repo -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $repo "assets") -Force | Out-Null
@@ -64,7 +86,8 @@ no_god_files = false
 
     $success = Invoke-StableWrapper
     if ($success.ExitCode -ne 0) {
-        throw "stable wrapper rejected a repository containing an unsupported binary file:`n$($success.Output)"
+        $manifestDiagnostic = Get-LatestAuthoritativeManifest
+        throw "stable wrapper rejected a repository containing an unsupported binary file:`n$($success.Output)`nAuthoritative manifest: $manifestDiagnostic"
     }
     if ($success.Output -match "legacy compatibility pipeline") {
         throw "stable wrapper default route still executed the legacy pipeline"
