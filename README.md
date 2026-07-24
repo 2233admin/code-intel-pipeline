@@ -22,13 +22,31 @@ Follow-up automation can proactively propose `/investigate` for actionable scan 
 
 ---
 
+## 30 秒开始
+
+在要分析的仓库目录中运行稳定入口；不传参数时默认分析当前目录：
+
+```powershell
+code-intel .
+```
+
+或显式指定仓库：
+
+```powershell
+code-intel C:\path\to\your\repo
+```
+
+首次安装、Skill 安装和依赖说明见[完整上手](#安装与完整上手)。
+
 ## 仓库入口
 
-这个仓库的根目录暂时保留 PowerShell 入口，只为兼容已发布包和团队脚本；它们处于退休路径，不接受新产品逻辑。新实现优先进入 Rust core，MoonBit 仅用于隔离验证。真正的治理边界见 [Repository Layout](docs/repository-layout.md)。
+编译后的 `code-intel` 是唯一正式入口。PowerShell 只保留安装、恢复和旧命令转发，不实现 Pipeline 语义。真正的治理边界见 [Repository Layout](docs/repository-layout.md)。
 
 公共入口：
 
-- `invoke-code-intel.ps1`: 推荐人工入口，先 doctor 再运行 pipeline。
+- `code-intel`: 人工和 Agent 的正式主入口。
+- `code-intel.ps1`: PowerShell 7.2+ 恢复启动器；健康安装只转发，`-Update` 才显式更新。
+- `invoke-code-intel.ps1`: v0.x 兼容转发器，不再推荐新调用。
 - `run-code-intel.ps1`: 兼容 facade；默认 normal 路径调用 Rust DAG、原子提交和 committed-only 索引，旧扫描器分支必须显式启用。
 - `check-code-intel-tools.ps1`: 环境 doctor。
 - `install-code-intel-pipeline.ps1`: 安装和修复入口。
@@ -45,7 +63,7 @@ PowerShell 合同测试已迁到 `scripts/tests/`。其余根目录兼容 facade
 
 0.4.0 核心路径：
 
-- `invoke-code-intel.ps1` / `run-code-intel.ps1`
+- `code-intel` Primary Operator Entry
 - `code-intel.exe` 的 A01-A09 capability/DAG/policy/artifact core
 - `rg` inventory、native code evidence、内部 graph provider、真实 Sentrux `gate`/`check` 命令证据和 Hospital diagnosis
 - snapshot-bound staging、A07 原子提交、A08 completed-only 索引、query/impact/freshness
@@ -106,7 +124,7 @@ GPT 娘坐在空白处，不紧不慢。她把文件列成星图，把依赖连�
 
 这套系统的边界很清楚：它负责看清楚、量出来、拦退化、给下一步方向。真正修改代码，还是人和 Agent 一起做。
 
-## 一分钟上手
+## 安装与完整上手
 
 Codex 可以先安装官方结构的 Skill 包，再由 Skill 下载并校验稳定版 Release：
 
@@ -119,20 +137,20 @@ https://github.com/2233admin/code-intel-pipeline/tree/main/skills/code-intel-pip
 
 Skill 默认只解析稳定版，校验 GitHub Release 提供的 SHA-256 后才解压。预发布版本和第三方依赖安装都需要显式选择。
 
-Windows PowerShell：
+人工用户从 GitHub Release 下载并解压安装包；Agent 用户通过 Skill 安装。源码安装仍可使用：
 
 ```powershell
 git clone https://github.com/2233admin/code-intel-pipeline.git
 cd code-intel-pipeline
 .\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo -RepairSkillLinks -InstallMissing
-.\check-code-intel-tools.ps1 -RepoPath C:\path\to\your\repo
-.\run-code-intel.ps1 -RepoPath C:\path\to\your\repo -Mode normal
+code-intel C:\path\to\your\repo
 ```
 
-稳定入口：
+PowerShell 恢复入口：
 
 ```powershell
-.\invoke-code-intel.ps1 -RepoPath C:\path\to\your\repo -Mode normal
+.\code-intel.ps1 C:\path\to\your\repo
+.\code-intel.ps1 -Update
 ```
 
 先找候选项目：
@@ -143,7 +161,7 @@ cd code-intel-pipeline
 .\Find-CodeIntelProjects.ps1 -WizTreeCsv C:\tmp\wiztree.csv -Json
 ```
 
-WizTree CLI/CSV 只是项目发现加速输入；真正选中项目后再运行 `invoke-code-intel.ps1`。
+WizTree CLI/CSV 只是项目发现加速输入；真正选中项目后再运行 `code-intel <path>`。
 
 完整 smoke test：
 
@@ -175,16 +193,16 @@ Project management support contract 测试：
 .\scripts/tests/test-project-management-support.ps1 -RepoPath C:\path\to\your\repo
 ```
 
-从 GitHub Release ZIP 运行时，解压后直接使用稳定入口；不需要 Cargo，也不依赖仓库里的 `target/`：
+从 GitHub Release ZIP 运行时，安装后直接使用编译入口；不需要 Cargo，也不依赖仓库里的 `target/`：
 
 ```powershell
-.\invoke-code-intel.ps1 -RepoPath C:\path\to\your\repo -Mode normal
+code-intel C:\path\to\your\repo
 ```
 
-如果不需要语义索引，或本机没有 Repowise：
+只使用离线核心能力：
 
 ```powershell
-.\invoke-code-intel.ps1 -RepoPath C:\path\to\your\repo -Mode normal -SkipRepowise
+code-intel C:\path\to\your\repo --mode lite
 ```
 
 Greenfield 行为规格适配器测试：
@@ -193,10 +211,10 @@ Greenfield 行为规格适配器测试：
 .\scripts/tests/test-greenfield-integration.ps1
 ```
 
-大仓库建议指定核心范围：
+普通用户直接运行主入口；兼容 runner 只保留给维护测试：
 
 ```powershell
-.\run-code-intel.ps1 -RepoPath C:\path\to\your\repo -Mode normal -SentruxPath backend
+code-intel C:\path\to\your\repo --mode normal
 ```
 
 ## 新机器部署
@@ -527,23 +545,19 @@ sentrux plugin list
 
 ## Repowise 语义记忆
 
-Repowise 是硬依赖语义记忆层。默认单步超时 `180` 秒；超时会作为 Repowise 失败写进报告，不再静默跳过：
+Repowise 是可选语义记忆层。`normal` 在可用时使用，`lite` 不依赖它，`full` 才要求所有可选 provider 就绪：
 
 ```powershell
-.\run-code-intel.ps1 -RepoPath C:\path\to\repo -Mode normal -RepowiseTimeoutSeconds 60
+code-intel C:\path\to\repo --mode normal
 ```
 
-如果指定了 `-SentruxPath backend`，Repowise 会默认跟随同一 scope，避免把根目录里的外部轮子、临时文件、研究仓库一起吃进去。
+要缩小 scope，直接把目标路径指向相应子目录，避免把根目录里的外部轮子、临时文件、研究仓库一起吃进去。
 
 ```powershell
-.\run-code-intel.ps1 -RepoPath C:\path\to\repo -Mode normal -SentruxPath backend
+code-intel C:\path\to\repo\backend --mode normal
 ```
 
-如果想生成 Repowise wiki 文档：
-
-```powershell
-.\run-code-intel.ps1 -RepoPath C:\path\to\repo -Mode normal -RepowiseDocs
-```
+Repowise wiki 文档属于兼容适配器维护能力，不是正式主入口参数。
 
 如果 provider 限流，报告会显示 `provider_quota`。这不是本地脚本坏了。
 
@@ -660,7 +674,7 @@ reason = "App 不应依赖 core 内部实现"
 保存 baseline：
 
 ```powershell
-.\run-code-intel.ps1 -RepoPath C:\path\to\repo -Mode normal -SentruxPath backend -SaveSentruxBaseline
+sentrux gate --save C:\path\to\repo\backend
 ```
 
 不要用新 baseline 掩盖真实退化。
@@ -685,13 +699,13 @@ tools
 如果你要治理核心模块，直接指定 scope：
 
 ```powershell
-.\run-code-intel.ps1 -RepoPath C:\path\to\repo -SentruxPath backend -Mode normal
+code-intel C:\path\to\repo\backend --mode normal
 ```
 
 如果你要分析 `tools/` 里的某个外部轮子，把 scope 指到那个轮子，而不是让它污染主项目：
 
 ```powershell
-.\run-code-intel.ps1 -RepoPath C:\path\to\repo\tools\some-lib -Mode normal
+code-intel C:\path\to\repo\tools\some-lib --mode normal
 ```
 
 ## 真实跑通过的路径
@@ -766,14 +780,10 @@ CI 使用 Sentrux lite core 保底，所以 runner 没装真实 `sentrux` 时也
 先 scoped：
 
 ```powershell
-.\run-code-intel.ps1 -RepoPath C:\path\to\repo -SentruxPath backend -Mode normal
+code-intel C:\path\to\repo\backend --mode normal
 ```
 
-再缩短超时：
-
-```powershell
-.\run-code-intel.ps1 -RepoPath C:\path\to\repo -SentruxPath backend -Mode normal -RepowiseTimeoutSeconds 60
-```
+仍然过慢时切到 `--mode lite`；provider 超时只在兼容适配器配置中维护。
 
 ### 报告显示 `surgery_plan`
 

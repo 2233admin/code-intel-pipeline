@@ -8,38 +8,43 @@ It is built around one rule: keep the entrypoint small, keep tool roles explicit
 
 Artifact ownership and reader/writer boundaries are defined in `docs/artifact-data-contract.md`.
 
-1. `orchestration/integrations.json` and `code-intel.exe orchestrate`
+1. Compiled `code-intel`
+   Primary Operator Entry and execution kernel. `code-intel .` runs the default
+   `normal` profile; `--mode lite|full` selects an explicit alternative.
+
+2. `orchestration/integrations.json` and `code-intel orchestrate`
    Integration registry and fusion layer. New scanners, memory systems, graph providers, governance strategies, and compatibility shims must be registered here before they are wired into runner scripts.
 
    `orchestration/capability-contract.v1.json` defines the Capability Atom declaration/request/result, Snapshot Identity, Artifact Ref, Effect Boundary, Domain Verdict, Run Commit, Materialized View, cache-key, and transactional publication vocabulary. `orchestration/schemas/code-intel-capability-envelope.v1.schema.json` rejects malformed envelopes and impossible outcome combinations. Existing integrations migrate behind that contract one atom at a time; the registry remains the graph authority. Runtime effect enforcement is not yet implemented.
 
-2. Rust targets
+3. Rust targets
    - `crates/code-intel-cli`: compiled `code-intel` CLI for integration orchestration, artifact resume, classify, and artifact doctor contracts.
    - `crates/code-nexus-lite`: incubated source, not a Cargo workspace member and not shipped as a beta binary. The supported beta surface is the optional CodeNexus compatibility adapter and artifact contract.
 
-3. `invoke-code-intel.ps1`
-   Thin operator entrypoint. Runs doctor first, then the pipeline. Supports one direct repo path, one configured repo alias, a repo list, or all configured repos.
+4. PowerShell compatibility
+   - `code-intel.ps1`: recovery/update launcher for official GitHub releases.
+   - `invoke-code-intel.ps1`: quiet v0.x compatibility forwarder.
 
-4. `check-code-intel-tools.ps1`
+5. `check-code-intel-tools.ps1`
    Environment doctor. Verifies local tools, Understand Anything presence, repo path, and Sentrux scope state.
 
-5. `run-code-intel.ps1`
-   Main orchestrator. Produces artifacts, summary, report, hospital diagnosis, and failure classification.
+6. `run-code-intel.ps1`
+   Compatibility adapter host used by capabilities not yet internalized.
 
-6. Tool adapters
+7. Tool adapters
    - `rg`: exact inventory
    - `repowise`: optional semantic index and docs; included in the default plan but non-blocking
    - `Understand Anything`: optional graph artifact
    - `sentrux`: structure gate
    - `sentruxInsight`: parsed structural deltas and follow-up hints for agents
 
-7. Scoped helpers
+8. Scoped helpers
    - `Invoke-ScopedRepowise.ps1`
    - `Invoke-RepowiseProviderProbe.ps1`
    - `Run-ScopedRepowiseDocs.py`
    - `Invoke-SentruxAgentTool.ps1`
 
-8. Stable-ops helpers
+9. Stable-ops helpers
    - `install-code-intel-pipeline.ps1`
    - `scripts/tests/test-code-intel-provider.ps1` (test wrapper only)
    - `scripts/tests/test-code-intel-pipeline.ps1`
@@ -174,22 +179,17 @@ Install or repair a teammate machine:
 
 `-RepairSkillLinks` installs the bundled `skills/code-intel-pipeline/` package into the user profile when the shared `.agents` skill is absent, then links Codex and Claude to that shared copy.
 
-Doctor and normal run:
+Normal run:
 
 ```powershell
-& "$env:CODE_INTEL_HOME/invoke-code-intel.ps1" -RepoPath <repo-path> -Mode normal
+code-intel <repo-path>
 ```
 
-Docs-enabled run:
+Explicit profiles:
 
 ```powershell
-& "$env:CODE_INTEL_HOME/invoke-code-intel.ps1" -RepoPath <repo-path> -Mode normal -RepowiseDocs
-```
-
-Batch run:
-
-```powershell
-& "$env:CODE_INTEL_HOME/invoke-code-intel.ps1" -Config "$env:CODE_INTEL_HOME/pipeline.config.json" -All -Mode lite
+code-intel <repo-path> --mode lite
+code-intel <repo-path> --mode full
 ```
 
 Smoke test:

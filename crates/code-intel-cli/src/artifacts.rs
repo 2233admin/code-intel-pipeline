@@ -279,7 +279,7 @@ fn print_optional_path(label: &str, path: Option<&PathBuf>) {
     }
 }
 
-fn resolve_artifact_root(explicit: Option<&Path>) -> Result<PathBuf> {
+pub(crate) fn resolve_artifact_root(explicit: Option<&Path>) -> Result<PathBuf> {
     if let Some(path) = explicit {
         return Ok(path.to_path_buf());
     }

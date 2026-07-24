@@ -478,7 +478,7 @@ fn is_lower_hex(value: &str) -> bool {
         .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn write_index(path: &Path, value: &Value) -> Result<(), IndexError> {
+pub(crate) fn write_index(path: &Path, value: &Value) -> Result<(), IndexError> {
     let parent = path
         .parent()
         .filter(|parent| parent.is_dir())

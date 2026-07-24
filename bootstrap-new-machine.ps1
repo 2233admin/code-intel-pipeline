@@ -117,7 +117,7 @@ $result = [ordered]@{
         markdown = $mdPath
     }
     nextAction = if ($ok) {
-        "Run invoke-code-intel.ps1 -RepoPath $repo -Mode $Mode for normal use."
+        "Run code-intel `"$repo`" --mode $Mode for normal use."
     }
     elseif (-not [bool]$installResult.ok) {
         "Fix install.missingRequired first."

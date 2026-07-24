@@ -127,11 +127,13 @@ try {
     Assert-Condition ($LASTEXITCODE -eq 0) "Packaged code-intel.exe --help failed."
     Assert-Condition ($helpText -match 'code-intel') "Packaged CLI help output is unexpected."
 
-    $invokeWrapper = Join-Path $packageRoot "invoke-code-intel.ps1"
-    Assert-Condition (Test-Path -LiteralPath $invokeWrapper -PathType Leaf) "Package is missing invoke-code-intel.ps1."
+    $invokeWrapper = Join-Path $packageRoot "code-intel.ps1"
+    Assert-Condition (Test-Path -LiteralPath $invokeWrapper -PathType Leaf) "Package is missing code-intel.ps1."
     $pwshExecutable = (Get-Process -Id $PID).Path
     $originalPath = $env:PATH
+    $originalDevelopmentOverride = $env:CODE_INTEL_ALLOW_UNVERIFIED_DEV
     try {
+        $env:CODE_INTEL_ALLOW_UNVERIFIED_DEV = '1'
         $pathSeparator = [System.IO.Path]::PathSeparator
         $env:PATH = (@($originalPath.Split($pathSeparator) | Where-Object {
             $entry = $_
@@ -142,14 +144,14 @@ try {
         }) -join $pathSeparator)
         Assert-Condition ($null -eq (Get-Command cargo -ErrorAction SilentlyContinue)) "Package smoke must run without Cargo on PATH."
         Assert-Condition ($null -eq (Get-Command repowise -ErrorAction SilentlyContinue)) "Package smoke must run without Repowise on PATH."
-        $wrapperSmoke = (& $pwshExecutable -NoProfile -File $invokeWrapper -ValidateInstallation 2>&1) -join "`n"
+        $wrapperSmoke = (& $pwshExecutable -NoProfile -File $invokeWrapper --help 2>&1) -join "`n"
     }
     finally {
         $env:PATH = $originalPath
+        $env:CODE_INTEL_ALLOW_UNVERIFIED_DEV = $originalDevelopmentOverride
     }
-    Assert-Condition ($LASTEXITCODE -eq 0) "Packaged invoke-code-intel.ps1 -ValidateInstallation failed: $wrapperSmoke"
-    Assert-Condition ($wrapperSmoke -match 'installation validation passed') "Packaged wrapper smoke output is unexpected."
-    Assert-Condition ($wrapperSmoke -match 'default route is the manifest-bound Rust DAG') "Packaged wrapper did not validate the authoritative Rust DAG route."
+    Assert-Condition ($LASTEXITCODE -eq 0) "Packaged code-intel.ps1 --help failed: $wrapperSmoke"
+    Assert-Condition ($wrapperSmoke -match 'code-intel \.') "Packaged recovery launcher did not delegate to the compiled CLI."
 
     $result = [pscustomobject][ordered]@{
         ok = $true

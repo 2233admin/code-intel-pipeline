@@ -338,7 +338,7 @@ fn read_limited(reader: impl Read) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn discover_manifest(explicit: Option<&Path>) -> Option<PathBuf> {
+pub(crate) fn discover_manifest(explicit: Option<&Path>) -> Option<PathBuf> {
     if let Some(path) = explicit {
         return path.is_file().then(|| path.to_path_buf());
     }
@@ -346,17 +346,22 @@ fn discover_manifest(explicit: Option<&Path>) -> Option<PathBuf> {
         let path = PathBuf::from(path);
         return path.is_file().then_some(path);
     }
-    if let Some(home) = env::var_os("CODE_INTEL_HOME") {
-        let path = PathBuf::from(home)
-            .join("orchestration")
-            .join("integrations.json");
-        return path.is_file().then_some(path);
-    }
     let mut candidates = vec![];
     if let Ok(exe) = env::current_exe() {
         if let Some(parent) = exe.parent() {
-            candidates.push(parent.join("orchestration").join("integrations.json"));
+            candidates.extend(
+                parent
+                    .ancestors()
+                    .map(|root| root.join("orchestration").join("integrations.json")),
+            );
         }
+    }
+    if let Some(home) = env::var_os("CODE_INTEL_HOME") {
+        candidates.push(
+            PathBuf::from(home)
+                .join("orchestration")
+                .join("integrations.json"),
+        );
     }
     candidates.push(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))

@@ -348,7 +348,9 @@ fn publish(out: &Path, relative: &str, bytes: &[u8]) -> Result<(), AdapterError>
 }
 
 fn pipeline_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+    crate::capability::discover_manifest(None)
+        .and_then(|manifest| manifest.parent()?.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(".."))
 }
 
 fn required_existing_directory(value: Option<&Value>, name: &str) -> Result<PathBuf, AdapterError> {

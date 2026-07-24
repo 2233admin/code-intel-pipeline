@@ -240,7 +240,7 @@ $result = @(
             sizeBytes = [long]$candidate.sizeBytes
             lastWriteTime = if ($null -ne $candidate.lastWriteTime) { ([datetime]$candidate.lastWriteTime).ToString("o") } else { "" }
             source = [string]$candidate.source
-            recommendedCommand = ".\invoke-code-intel.ps1 -RepoPath `"$($candidate.path)`" -Mode normal"
+            recommendedCommand = "code-intel `"$($candidate.path)`""
         }
     }
 ) | Sort-Object score, sizeBytes, path -Descending

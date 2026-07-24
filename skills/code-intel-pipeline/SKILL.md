@@ -10,12 +10,12 @@ skill.
 
 ## Resolve the installation
 
-1. Check whether `CODE_INTEL_HOME` points to a directory containing
-   `invoke-code-intel.ps1`.
-2. Reuse that installation when it is valid.
+1. Check whether `code-intel --help` succeeds.
+2. Reuse that installation when it is valid. Use `code-intel.ps1` only to repair a missing or
+   invalid installation.
 3. Bootstrap only when the user requested installation or the task explicitly requires the
    missing pipeline.
-4. From this skill directory, inspect the fixed `v0.3.0` stable release plan:
+4. From this skill directory, inspect the latest published stable release plan:
 
 ```powershell
 python scripts/bootstrap.py --repo-path "<repo-path>" --dry-run --json
@@ -29,11 +29,11 @@ python scripts/bootstrap.py --repo-path "<repo-path>" --dry-run --json
 python scripts/bootstrap.py --repo-path "<repo-path>" --json
 ```
 
-The default is deliberately pinned to `v0.3.0`; it does not drift when another release becomes
-latest. Add `--version <tag>` only for a requested version. Add `--channel prerelease` only when the
-user explicitly requests the latest published prerelease. Add `--install-missing` only when the
-user authorizes installing third-party dependencies. Never put provider keys in commands,
-repository files, artifacts, or Skill resources.
+The default follows GitHub's latest published stable release. Add `--version <tag>` only for a
+requested version. Add `--channel prerelease` only when the user explicitly requests the latest
+published prerelease. Add `--install-missing` only when the user authorizes installing third-party
+dependencies. Never put provider keys in commands, repository files, artifacts, or Skill
+resources.
 
 The bootstrap script supports the currently published Windows release package. Stop with the
 reported platform error on unsupported systems instead of substituting an unverified source
@@ -41,21 +41,14 @@ archive.
 
 ## Run the pipeline
 
-Run the doctor before analysis:
+Run the compiled Primary Operator Entry:
 
 ```powershell
-& "$env:CODE_INTEL_HOME/check-code-intel-tools.ps1" -RepoPath "<repo-path>" -Json
+code-intel "<repo-path>"
 ```
 
-Run the stable wrapper:
-
-```powershell
-& "$env:CODE_INTEL_HOME/invoke-code-intel.ps1" -RepoPath "<repo-path>" -Mode normal
-```
-
-Use `-Mode lite` for a cheap environment and inventory pass. Use `-Mode full` only when a fresh,
-richer graph is required. Use the raw `run-code-intel.ps1` entry point only for a flag unavailable
-on the stable wrapper.
+Use `--mode lite` for local-only core evidence. Use `--mode full` only when every optional provider
+must be present. Do not call the legacy PowerShell pipeline.
 
 Read generated artifacts in this order:
 

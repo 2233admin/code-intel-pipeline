@@ -6,7 +6,7 @@ use std::process::Command;
 use serde_json::{json, Value};
 
 use crate::artifact_ref::{self, ArtifactError};
-use crate::capability::sha256_hex;
+use crate::capability::{self, sha256_hex};
 use crate::dag_coordinator::{
     Coordinator, DagSpec, Dispatch, DomainVerdict, EdgeSpec, ExecutionFailure, NodeExecutor,
     NodeOutcome, NodeSpec, RunOutcome, VerifiedArtifactRef,
@@ -888,9 +888,11 @@ fn declarations(registry: &Value) -> Result<BTreeMap<String, Value>, RunError> {
 }
 
 fn default_registry() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("orchestration")
-        .join("integrations.json")
+    capability::discover_manifest(None).unwrap_or_else(|| {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("orchestration")
+            .join("integrations.json")
+    })
 }

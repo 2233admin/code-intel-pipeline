@@ -2,9 +2,9 @@
 
 ## Supported surface
 
-The public beta ships as a Windows ZIP and uses PowerShell 7.2 or newer. The
-stable entrypoint is `invoke-code-intel.ps1`; the packaged Rust core is
-`bin/code-intel.exe`. A release package must not require Cargo, a source-tree
+The public beta ships as a Windows ZIP. The stable entrypoint is the packaged
+`bin/code-intel.exe`; `code-intel.ps1` is the PowerShell 7.2+ recovery launcher
+and `invoke-code-intel.ps1` is a v0.x compatibility forwarder. A release package must not require Cargo, a source-tree
 `target/` directory, or a local Rust installation.
 
 The beta core covers repository inventory, Sentrux structural evidence,
@@ -14,8 +14,8 @@ not redefine whether the core pipeline is usable.
 
 | Capability | Beta status | Missing-provider behavior |
 | --- | --- | --- |
-| Stable PowerShell entrypoint and doctor | Core | Fail with an actionable local error |
-| `code-intel.exe` policy/artifact core | Core | Fail; packaged binary is required |
+| Compiled `code-intel` entrypoint and doctor | Core | Fail with an actionable local error |
+| PowerShell recovery launcher | Recovery | Verify and repair from the official GitHub release |
 | `rg` inventory | Core | Fail with an actionable local error |
 | Sentrux structural evidence | Core | Report real gate/check failure |
 | Transactional run commit and reports | Core | Fail closed; incomplete runs are not indexed |
@@ -38,13 +38,12 @@ surface is the optional compatibility adapter and its artifact contract.
 4. Run:
 
 ```powershell
-.\invoke-code-intel.ps1 -RepoPath C:\path\to\repo -Mode normal -SkipRepowise
+.\bin\code-intel.exe C:\path\to\repo
 ```
 
-Remove `-SkipRepowise` when Repowise is installed and semantic memory is
-desired. Optional providers remain in the default orchestration plan so a
-configured machine gets the richer result without using a different product
-path.
+Use `--mode lite` or `--mode full` only when the default `normal` profile is
+not appropriate. Optional providers remain in the orchestration plan and are
+used when available.
 
 ## Known limits
 
@@ -58,8 +57,7 @@ path.
 
 ## Upgrade and rollback
 
-Release ZIPs are self-contained. Extract a new beta beside the previous one,
-run the package smoke test, and then switch the caller's path. Rollback means
-switching the path back to the previous extracted directory; do not overwrite
-the old directory in place. Generated artifacts live outside the package under
-the platform Code Intel data root.
+Release ZIPs are self-contained. `code-intel.ps1 -Update` installs a verified
+official stable release while retaining a verified local fallback. Manual
+rollback means switching back to the previous extracted directory. Generated
+artifacts live outside the package under the platform Code Intel data root.

@@ -19,11 +19,8 @@ Disable or change the suggestion in `pipeline.config.json`:
 }
 ```
 
-CLI values override configuration:
-
-```powershell
-pwsh -File invoke-code-intel.ps1 -RepoPath C:\repo -ProactiveSkillSuggestions enabled -BugSkill /investigate
-```
+The primary entry currently reads this policy from `pipeline.config.json`; it
+does not expose a separate CLI override.
 
 ## Automatic pull requests
 
@@ -35,10 +32,6 @@ The choices are:
 - `enable_once_for_snapshot`: enter the exact-proposal flow. `Invoke-CodeIntelAutomaticPullRequestFlow.ps1` delegates to the executor only after proposal-specific consent, C07 replay, snapshot, HEAD, repository-mutation, and network checks all pass.
 
 `enabled` means the operator requested the execution path; it is not sufficient authority by itself. The execution atom remains fail-closed until it receives scoped authorization artifacts and both runtime effect switches. `disabled` emits neither a consent request nor an external effect.
-
-```powershell
-pwsh -File invoke-code-intel.ps1 -RepoPath C:\repo -AutomaticPullRequests ask
-```
 
 The core Pipeline never calls `gh pr create` from the advisory path. It does not listen to Codex, Claude, or OpenCode chat messages directly; a host that wants chat-triggered suggestions must submit normalized bug evidence to the Pipeline.
 The automatic-PR question is a feature-flow opt-in, not authority to publish a particular pull

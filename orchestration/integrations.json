@@ -10,7 +10,8 @@
   "productionRegistry": {
     "mode": "enforce",
     "productionFiles": [
-      "invoke-code-intel.ps1",
+      "crates/code-intel-cli/src/doctor_adapter.rs",
+      "crates/code-intel-cli/src/main.rs",
       "run-code-intel.ps1"
     ],
     "participants": [
@@ -18,10 +19,10 @@
         "capabilityId": "doctor",
         "status": "declared",
         "callSite": {
-          "source": "invoke-code-intel.ps1",
-          "anchor": "$doctor = Join-Path $root \"check-code-intel-tools.ps1\""
+          "source": "crates/code-intel-cli/src/doctor_adapter.rs",
+          "anchor": "let bootstrap = run_bootstrap(&options)?;"
         },
-        "envelope": "legacy-powershell-script-result.v1",
+        "envelope": "rust-capability-result.v1",
         "owner": "code-intel-pipeline",
         "dependencies": [],
         "effects": ["repo_read", "process_execute"],
@@ -161,10 +162,10 @@
         "capabilityId": "artifact.index-committed-only",
         "status": "declared",
         "callSite": {
-          "source": "invoke-code-intel.ps1",
-          "anchor": "$indexer = Join-Path $root \"update-code-intel-index.ps1\""
+          "source": "crates/code-intel-cli/src/main.rs",
+          "anchor": "artifact_index::write_index(&artifact_root.join(\"index.json\"), &index)"
         },
-        "envelope": "legacy-powershell-script-result.v1",
+        "envelope": "rust-capability-result.v1",
         "owner": "code-intel-pipeline",
         "dependencies": ["run.commit"],
         "effects": ["local_write"],
@@ -284,7 +285,7 @@
           "id": "doctor.envelope.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "cc37c3df902ba62b699f63545e46b5e73aa517ca3f412ff62f25da6ccc8b1cb0",
+            "fedeeb8350ae252209f8d8de1a62fbde9148811e7bde29723ea26aacf7ccacbb",
             "979c365d82ba1a2c16232551d38feb8ebc8cf7a75c13b6c9dfcac2ef2f331266"
           ]
         },

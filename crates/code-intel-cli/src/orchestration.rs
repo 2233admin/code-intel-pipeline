@@ -226,8 +226,8 @@ struct ProductionParticipant {
 const PRODUCTION_PARTICIPANTS: [ProductionParticipant; 12] = [
     ProductionParticipant {
         capability_id: "doctor",
-        source: "invoke-code-intel.ps1",
-        marker: "$doctor = Join-Path $root \"check-code-intel-tools.ps1\"",
+        source: "crates/code-intel-cli/src/doctor_adapter.rs",
+        marker: "let bootstrap = run_bootstrap(&options)?;",
     },
     ProductionParticipant {
         capability_id: "diagnosis.hospital",
@@ -282,8 +282,8 @@ const PRODUCTION_PARTICIPANTS: [ProductionParticipant; 12] = [
     },
     ProductionParticipant {
         capability_id: "artifact.index-committed-only",
-        source: "invoke-code-intel.ps1",
-        marker: "$indexer = Join-Path $root \"update-code-intel-index.ps1\"",
+        source: "crates/code-intel-cli/src/main.rs",
+        marker: "artifact_index::write_index(&artifact_root.join(\"index.json\"), &index)",
     },
 ];
 

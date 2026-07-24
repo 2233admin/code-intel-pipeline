@@ -62,6 +62,7 @@ jobs:
         shell: pwsh
         run: |
           $files = @(
+            "code-intel.ps1",
             "invoke-code-intel.ps1",
             "run-code-intel.ps1",
             "Invoke-ScopedRepowise.ps1",
@@ -69,6 +70,7 @@ jobs:
             "Invoke-GitHubSolutionResearch.ps1",
             "scripts/tests/test-code-intel-pipeline.ps1",
             "scripts/tests/test-stable-wrapper-e2e.ps1",
+            "scripts/tests/test-primary-launchers.ps1",
             "scripts/tests/test-github-solution-research.ps1",
             "scripts/tests/test-hospital-trust-contract.ps1",
             "scripts/tests/test-atomic-capability-contract.ps1",
@@ -274,6 +276,7 @@ jobs:
         shell: pwsh
         run: |
           $files = @(
+            "code-intel.ps1",
             "invoke-code-intel.ps1",
             "run-code-intel.ps1",
             "Invoke-ScopedRepowise.ps1",
@@ -281,6 +284,7 @@ jobs:
             "Invoke-GitHubSolutionResearch.ps1",
             "scripts/tests/test-code-intel-pipeline.ps1",
             "scripts/tests/test-stable-wrapper-e2e.ps1",
+            "scripts/tests/test-primary-launchers.ps1",
             "scripts/tests/test-github-solution-research.ps1",
             "scripts/tests/test-hospital-trust-contract.ps1",
             "scripts/tests/test-atomic-capability-contract.ps1",

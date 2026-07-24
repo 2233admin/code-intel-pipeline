@@ -2,7 +2,7 @@
 
 Project Management Support is Code Intel Pipeline's agent-intake layer for turning repository evidence into trackable work and durable project knowledge. It internalizes the useful setup concepts from `mattpocock/skills`: issue tracker choice, triage label vocabulary, and domain documentation layout.
 
-It is not scanner runtime. Do not install `mattpocock/skills`, Linear clients, Obsidian plugins, or wiki tooling to run Code Intel Pipeline. Scanner-owned artifact runs remain produced only by `run-code-intel.ps1` and `invoke-code-intel.ps1`.
+It is not scanner runtime. Do not install `mattpocock/skills`, Linear clients, Obsidian plugins, or wiki tooling to run Code Intel Pipeline. Scanner-owned artifact runs are produced and published by the compiled `code-intel` execution kernel.
 
 ## Surfaces
 
