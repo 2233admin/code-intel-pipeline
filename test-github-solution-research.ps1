@@ -148,3 +148,4 @@ finally {
 }
 
 Write-Host "GitHub solution research tests passed: $base"
+$global:LASTEXITCODE = 0

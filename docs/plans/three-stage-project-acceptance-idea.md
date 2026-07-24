@@ -10,7 +10,7 @@ Provide one language-neutral acceptance entry point for agent, landing, and prom
 The three stages differ by required evidence strength, not by language: agent work needs explicit targeted checks plus the fast project profile, landing needs fast project conformance, and promotion needs full project conformance.
 
 ## Target Repo
-- Path: `D:\projects\_tools\code-intel-pipeline`
+- Path: `<repo-root>`
 - Branch: `codex/code-intel-atomic-model`
 - Current state: dirty shared workspace with concurrent agent changes; this lane owns only new acceptance-layer files.
 

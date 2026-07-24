@@ -32,7 +32,7 @@ must remain release gates as the model or provider set changes.
 
 ## Target Repo
 
-- Path: `D:\projects\_tools\code-intel-pipeline`
+- Path: `<repo-root>`
 - Branch: `agent/sentrux-rust-dsm-kernel`
 - Current state: heavily dirty shared worktree; preserve existing changes and avoid broad rewrites.
 - Baseline self-run: `20260723-035204`; orchestration passes after the session adapter stage repair,

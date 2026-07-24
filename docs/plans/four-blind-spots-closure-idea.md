@@ -10,7 +10,7 @@ Close four verified architecture gaps without adding a new indexing stack: gener
 Each gap belongs behind an existing Pipeline-owned boundary. The fix is to add small deterministic observations and adapters, then admit them through existing snapshot/freshness/provenance rules instead of coupling providers or copying their internals.
 
 ## Target Repo
-- Path: `D:\projects\_tools\code-intel-pipeline`
+- Path: `<repo-root>`
 - Branch: current working tree
 - Current state: full Rust tests pass, but normal self-scan is red because Sentrux reports two blocking worsened debts; CodeNexus-lite incorrectly ranks a generated `work/` rollback file.
 
@@ -39,4 +39,4 @@ Each gap belongs behind an existing Pipeline-owned boundary. The fix is to add s
 1. Targeted negative and fixture tests.
 2. Closed-schema validation and integration registry audit.
 3. `cargo fmt --all -- --check`, `cargo check -p code-intel`, full `cargo test -q -p code-intel`.
-4. `invoke-code-intel.ps1 -RepoPath D:\projects\_tools\code-intel-pipeline -Mode normal`, followed by summary, hospital, and understanding review.
+4. `invoke-code-intel.ps1 -RepoPath <repo-root> -Mode normal`, followed by summary, hospital, and understanding review.

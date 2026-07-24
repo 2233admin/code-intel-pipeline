@@ -10,7 +10,7 @@ Map the language-independent part of pon's frontend/conformance architecture ont
 The Pipeline already owns the sufficient intermediate representation: the tuple of `files`, `symbols`, `symbol-chunks`, and `imports`. The missing protection is a multilingual conformance floor that proves language adapters normalize into this shared contract while unsupported semantics remain explicit unknowns.
 
 ## Target Repo
-- Path: `D:\projects\_tools\code-intel-pipeline`
+- Path: `<repo-root>`
 - Branch: current working branch
 - Current state: large pre-existing dirty worktree; new work must stay in isolated files
 

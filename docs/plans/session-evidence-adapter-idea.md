@@ -17,7 +17,7 @@ snapshot identity, and review semantics must therefore belong to Code Intel.
 
 ## Target Repo
 
-- Path: `D:\projects\_tools\code-intel-pipeline`
+- Path: `<repo-root>`
 - Branch: current user working branch
 - Current state: heavily modified/untracked; implementation must be additive and avoid rewriting
   unrelated work

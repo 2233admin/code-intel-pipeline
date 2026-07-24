@@ -3,7 +3,7 @@
 - Status: manual_required
 - Reason: Invalid search query "( rust compile blocker error[E0432]:\" unresolved import crate::authority in compatibility_retirement_gate.rs\" ) type:pr".
 The search query contains invalid syntax.
-- Repo: D:\projects\_tools\code-intel-pipeline
+- Repo: <repo-root>
 - Mode: normal
 
 ## Generated Queries

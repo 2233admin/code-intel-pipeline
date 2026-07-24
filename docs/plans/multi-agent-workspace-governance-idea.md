@@ -10,7 +10,7 @@ Add a read-only workspace preflight that inventories Git changes before a coding
 A merge queue cannot recover provenance after several agents have already written into the same dirty root. The cheapest reliable control is therefore a deterministic, machine-readable gate before mutation begins.
 
 ## Target Repo
-- Path: `D:\projects\_tools\code-intel-pipeline`
+- Path: `<repo-root>`
 - Branch: discovered at runtime
 - Current state: intentionally dirty; existing tracked and untracked changes are user-owned and must remain untouched
 

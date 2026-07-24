@@ -14,7 +14,7 @@ a whole may only grow. A committed set-and-count floor turns current compatibili
 ratchet without changing the underlying parity oracle.
 
 ## Target Repo
-- Path: `D:\projects\_tools\code-intel-pipeline`
+- Path: `<repo-root>`
 - Branch: current working tree
 - Current state: existing parity fixtures and guarded golden updates; no corpus-level monotonic floor
 
