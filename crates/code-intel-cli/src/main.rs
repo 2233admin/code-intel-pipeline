@@ -3,8 +3,9 @@ use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 mod adapter_contract;
 mod admissibility;
@@ -207,12 +208,287 @@ struct ResumeSummary {
 
 fn main() {
     let raw: Vec<String> = env::args().skip(1).collect();
+    if is_primary_invocation(&raw) {
+        process::exit(run_primary(&raw));
+    }
     if let Some(exit_code) = dispatch_raw_command(&raw) {
         process::exit(exit_code);
     }
     if let Err(err) = run() {
         eprintln!("error: {err}");
         process::exit(1);
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct PrimaryArgs {
+    repo: PathBuf,
+    mode: String,
+    artifact_root: Option<PathBuf>,
+    json: bool,
+}
+
+fn is_primary_invocation(raw: &[String]) -> bool {
+    raw.is_empty()
+        || raw.first().is_some_and(|first| {
+            !first.starts_with('-') && resolve_raw_route(raw).is_none() && !is_named_command(first)
+        })
+        || matches!(
+            raw.first().map(String::as_str),
+            Some("--mode" | "--artifact-root" | "--json")
+        )
+}
+
+fn is_named_command(command: &str) -> bool {
+    matches!(
+        command,
+        "resume"
+            | "classify"
+            | "doctor"
+            | "sentrux-normalize"
+            | "sentrux-debt-register"
+            | "graph"
+            | "understand"
+            | "orchestrate"
+            | "orchestration"
+            | "provider"
+            | "providers"
+            | "route"
+            | "routes"
+            | "sentrux"
+            | "help"
+    )
+}
+
+fn parse_primary_args(raw: &[String]) -> std::result::Result<PrimaryArgs, String> {
+    let mut repo = None;
+    let mut mode = "normal".to_string();
+    let mut artifact_root = None;
+    let mut json = false;
+    let mut index = 0;
+    while index < raw.len() {
+        match raw[index].as_str() {
+            "--mode" | "--artifact-root" => {
+                let flag = raw[index].as_str();
+                let value = raw
+                    .get(index + 1)
+                    .filter(|value| !value.is_empty() && !value.starts_with("--"))
+                    .ok_or_else(|| format!("{flag} requires one value"))?;
+                if flag == "--mode" {
+                    if !matches!(value.as_str(), "lite" | "normal" | "full") {
+                        return Err("--mode must be lite, normal, or full".into());
+                    }
+                    mode = value.clone();
+                } else if artifact_root.replace(PathBuf::from(value)).is_some() {
+                    return Err("duplicate --artifact-root".into());
+                }
+                index += 2;
+            }
+            "--json" => {
+                json = true;
+                index += 1;
+            }
+            token if token.starts_with('-') => {
+                return Err(format!("unknown primary entry argument: {token}"));
+            }
+            token => {
+                if repo.replace(PathBuf::from(token)).is_some() {
+                    return Err("only one repository path may be supplied".into());
+                }
+                index += 1;
+            }
+        }
+    }
+    let repo = repo.unwrap_or(env::current_dir().map_err(|error| error.to_string())?);
+    if !repo.is_dir() {
+        return Err(format!(
+            "repository path is not a directory: {}",
+            repo.display()
+        ));
+    }
+    Ok(PrimaryArgs {
+        repo: fs::canonicalize(repo).map_err(|error| error.to_string())?,
+        mode,
+        artifact_root,
+        json,
+    })
+}
+
+fn run_primary(raw: &[String]) -> i32 {
+    let json = raw.iter().any(|argument| argument == "--json");
+    let args = match parse_primary_args(raw) {
+        Ok(args) => args,
+        Err(error) => {
+            print_primary_error(json, None, None, 64, &error);
+            return 64;
+        }
+    };
+    match execute_primary(&args) {
+        Ok(code) => code,
+        Err(error) => {
+            print_primary_error(
+                args.json,
+                Some(&args.repo),
+                Some(&args.mode),
+                error.exit_code,
+                &error.message,
+            );
+            error.exit_code
+        }
+    }
+}
+
+fn execute_primary(args: &PrimaryArgs) -> std::result::Result<i32, execution_kernel::RunError> {
+    let artifact_root = artifacts::resolve_artifact_root(args.artifact_root.as_deref())
+        .map_err(|error| execution_kernel::RunError::io(error.to_string()))?;
+    fs::create_dir_all(&artifact_root).map_err(|error| {
+        execution_kernel::RunError::io(format!("create artifact root: {error}"))
+    })?;
+    let repo_name = args
+        .repo
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| execution_kernel::RunError::contract("repository has no usable name"))?;
+    let authority_root = artifact_root.join(repo_name);
+    fs::create_dir_all(&authority_root).map_err(|error| {
+        execution_kernel::RunError::io(format!("create repository authority root: {error}"))
+    })?;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| execution_kernel::RunError::io(error.to_string()))?
+        .as_millis();
+    let final_name = format!("{nonce}-{}-core", process::id());
+    let staging_root = env::temp_dir().join(format!("code-intel-a09-{final_name}"));
+    let profile = match args.mode.as_str() {
+        "lite" => execution_policy::RunProfile::Offline,
+        "normal" => execution_policy::RunProfile::Default,
+        "full" => execution_policy::RunProfile::Strict,
+        _ => unreachable!("primary mode is validated"),
+    };
+    let result = execution_kernel::execute(execution_kernel::RunRequest {
+        repo: args.repo.clone(),
+        staging_root: staging_root.clone(),
+        authority_root,
+        final_name,
+        manifest: None,
+        max_concurrency: 2,
+        policy: execution_policy::ExecutionPolicy::for_profile(profile),
+        session_evidence: None,
+    })?;
+    if staging_root.is_dir() {
+        fs::remove_dir_all(&staging_root).map_err(|error| {
+            execution_kernel::RunError::io(format!("remove committed staging directory: {error}"))
+        })?;
+    }
+    let index = artifact_index::rebuild(&artifact_root).map_err(|error| {
+        execution_kernel::RunError::io(format!("rebuild artifact index: {error}"))
+    })?;
+    artifact_index::write_index(&artifact_root.join("index.json"), &index).map_err(|error| {
+        execution_kernel::RunError::io(format!("publish artifact index: {error}"))
+    })?;
+    let output = primary_result(&args, &result);
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string(&output).expect("primary result serializes")
+        );
+    } else {
+        print_primary_summary(&output);
+    }
+    Ok(result.exit_code())
+}
+
+fn print_primary_error(
+    json_output: bool,
+    repo: Option<&Path>,
+    mode: Option<&str>,
+    exit_code: i32,
+    diagnostic: &str,
+) {
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string(&json!({
+                "schema": "code-intel-primary-result.v1",
+                "repo": repo,
+                "mode": mode,
+                "outcome": "error",
+                "exitCode": exit_code,
+                "publication": Value::Null,
+                "failureNode": Value::Null,
+                "diagnostic": diagnostic,
+            }))
+            .expect("primary error result serializes")
+        );
+    } else {
+        eprintln!("Code Intel error: {diagnostic}");
+    }
+}
+
+fn primary_result(args: &PrimaryArgs, result: &execution_kernel::ExecutionResult) -> Value {
+    let (failure_node, diagnostic) = first_failure(&result.manifest)
+        .map(|(node, diagnostic)| (Value::String(node), Value::String(diagnostic)))
+        .unwrap_or((Value::Null, Value::Null));
+    json!({
+        "schema": "code-intel-primary-result.v1",
+        "repo": args.repo,
+        "mode": args.mode,
+        "outcome": result.outcome.as_str(),
+        "exitCode": result.exit_code(),
+        "publication": {
+            "path": result.publication.path,
+            "marker": result.publication.path.join("run-complete.json"),
+        },
+        "failureNode": failure_node,
+        "diagnostic": diagnostic,
+    })
+}
+
+fn first_failure(manifest: &Value) -> Option<(String, String)> {
+    manifest["nodes"]
+        .as_object()?
+        .iter()
+        .find_map(|(node, value)| {
+            matches!(
+                value["status"].as_str(),
+                Some("process_failed" | "domain_failed" | "domain_unknown")
+            )
+            .then(|| {
+                (
+                    node.clone(),
+                    value["diagnostic"]
+                        .as_str()
+                        .or_else(|| value["failure"].as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                )
+            })
+        })
+}
+
+fn print_primary_summary(output: &Value) {
+    let passed = output["exitCode"].as_i64() == Some(0);
+    println!(
+        "[{}] {}",
+        if passed { "PASS" } else { "FAIL" },
+        output["repo"].as_str().unwrap_or("")
+    );
+    println!("  Outcome: {}", output["outcome"].as_str().unwrap_or(""));
+    println!(
+        "  Run evidence: {}",
+        output["publication"]["marker"].as_str().unwrap_or("")
+    );
+    if let Some(node) = output["failureNode"].as_str() {
+        let diagnostic = output["diagnostic"].as_str().unwrap_or("");
+        println!(
+            "  Cause: {node}{}",
+            if diagnostic.is_empty() {
+                String::new()
+            } else {
+                format!(" - {diagnostic}")
+            }
+        );
     }
 }
 
@@ -470,7 +746,7 @@ fn run() -> Result<()> {
         "route" | "routes" => cmd_route(&args),
         "sentrux" => cmd_sentrux(&args),
         "help" | "--help" | "-h" => {
-            print_help();
+            print_help(args.full);
             Ok(())
         }
         other => Err(format!("unknown command: {other}").into()),
@@ -588,6 +864,7 @@ fn set_switch_arg(args: &mut Args, flag: &str) -> bool {
     match flag {
         "--write" => args.write = true,
         "--full" => args.full = true,
+        "--all" if matches!(args.command.as_str(), "help" | "--help" | "-h") => args.full = true,
         "--json" => args.json = true,
         "--help" | "-h" => args.command = "help".to_string(),
         _ => return false,
@@ -1398,41 +1675,58 @@ fn cmd_sentrux(args: &Args) -> Result<()> {
     })
 }
 
-fn print_help() {
-    println!("code-intel <command> [options]");
-    println!();
-    println!("Commands:");
-    println!("  resume --repo <path> [--artifact-root <path>] [--json]");
-    println!("  classify --report <path> [--json]");
-    println!("  sentrux-normalize --steps <report.json> [--out <sentrux-failures.json>]");
-    println!("  sentrux-debt-register --failures <sentrux-failures.json> [--repo <path>] [--out <sentrux-debt-register.json>]");
-    println!("  doctor [--artifact-root <path>] [--json]");
-    println!("  graph --repo <path> [--language zh] [--full] [--write] [--json]");
-    println!("  provider [--action List|Plan|Validate|Invoke] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--language zh] [--write] [--json]");
-    println!("  provider repowise-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>");
-    println!("  provider graph-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>");
-    println!("  provider sentrux-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>");
-    println!("  provider session-adapt --repo <repo> --trace <mindwalk-trace.json> [--hotspots <sentrux-hotspots-or-dsm.json>] [--out <session-evidence.json>] [--working-tree-policy head_only|explicit_overlay]");
-    println!("  provider file-boundary --request <request.json> --out <result.json>");
-    println!("  provider runtime-ci-evidence --artifact-root <directory> --request <request.json> --out <summary.json>");
-    println!("  route [--action List|Plan|Validate] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--json]");
-    println!("  sentrux <dsm|scan|health|check|gate|check_rules|gate_save> <path>");
-    println!("  capability exec <id> --request <request.json|-> --out <staging-dir> [--artifact-root <directory>] [--manifest <integrations.json>]");
-    println!("  model inventory-validate --request <inventory.json> [--out <validated.json>]");
-    println!("  model route --request <routing-request.json> [--out <routing-result.json>]");
-    println!("  snapshot identity --repo <root> --working-tree-policy <head_only|explicit_overlay> [--scope <relative-path>]...");
-    println!("  evidence validate --request <request.json> --artifact-root <directory>");
-    println!("  artifact index --artifact-root <root> [--output <index.json>] [--operation rebuild|incremental] [--existing <index.json>]");
-    println!("  artifact query --artifact-root <root> --repo <name> [--repo-path <path>] [--artifact-schema <schema>] [--type <artifact-type>] [--contains <text>] [--limit <1..100>]");
-    println!("  change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]...");
-    println!("  decision request-response --request <request.json|-> [--response <response.json>|--cancel <cancellation.json>] --now <unix-seconds> --branch <branch-id>...");
-    println!("  decision record --resolution <resolution.json> --store <record-directory>");
-    println!("  decision replay --query <query.json> --store <record-directory>");
-    println!("  run execute --repo <repo-root> --out <run-staging-directory> --authority-root <publication-root> --final-name <name> [--profile default|strict|offline] [--manifest <integrations.json>] [--max-concurrency <n>] [--session-evidence <session-evidence.json>]");
-    println!("  run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--manifest <integrations.json>] [--max-concurrency <n>] [--session-evidence <session-evidence.json>]");
-    println!("  run commit --source-root <A09-artifact-root> --authority-root <publication-root> --manifest-ref <artifact-ref.json> --final-name <name>");
-    println!("  governance ponytail-gate --request <request.json|->");
-    println!("  orchestrate [--action Validate|List|Plan] [--repo <path>] [--mode lite|normal|full] [--capability <name>] [--manifest <path>] [--json]");
+const HELP_TEXT: &str = r#"Code Intel Pipeline
+
+Quick start:
+  code-intel .
+  code-intel <path> --mode lite|normal|full
+
+Common commands:
+  code-intel doctor --json
+  code-intel graph --repo <path> --write
+  code-intel resume --repo <path> --json
+  code-intel sentrux check <path>
+
+Advanced commands:
+  code-intel --help --all"#;
+
+const FULL_HELP_TEXT: &str = r#"code-intel <command> [options]
+
+Commands:
+  resume --repo <path> [--artifact-root <path>] [--json]
+  classify --report <path> [--json]
+  sentrux-normalize --steps <report.json> [--out <sentrux-failures.json>]
+  sentrux-debt-register --failures <sentrux-failures.json> [--repo <path>] [--out <sentrux-debt-register.json>]
+  doctor [--artifact-root <path>] [--json]
+  graph --repo <path> [--language zh] [--full] [--write] [--json]
+  provider [--action List|Plan|Validate|Invoke] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--language zh] [--write] [--json]
+  provider repowise-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
+  provider graph-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
+  provider sentrux-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
+  provider session-adapt --repo <repo> --trace <mindwalk-trace.json> [--hotspots <sentrux-hotspots-or-dsm.json>] [--out <session-evidence.json>] [--working-tree-policy head_only|explicit_overlay]
+  provider file-boundary --request <request.json> --out <result.json>
+  provider runtime-ci-evidence --artifact-root <directory> --request <request.json> --out <summary.json>
+  route [--action List|Plan|Validate] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--json]
+  sentrux <dsm|scan|health|check|gate|check_rules|gate_save> <path>
+  capability exec <id> --request <request.json|-> --out <staging-dir> [--artifact-root <directory>] [--manifest <integrations.json>]
+  model inventory-validate --request <inventory.json> [--out <validated.json>]
+  model route --request <routing-request.json> [--out <routing-result.json>]
+  snapshot identity --repo <root> --working-tree-policy <head_only|explicit_overlay> [--scope <relative-path>]...
+  evidence validate --request <request.json> --artifact-root <directory>
+  artifact index --artifact-root <root> [--output <index.json>] [--operation rebuild|incremental] [--existing <index.json>]
+  artifact query --artifact-root <root> --repo <name> [--repo-path <path>] [--artifact-schema <schema>] [--type <artifact-type>] [--contains <text>] [--limit <1..100>]
+  change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]...
+  decision request-response --request <request.json|-> [--response <response.json>|--cancel <cancellation.json>] --now <unix-seconds> --branch <branch-id>...
+  decision record --resolution <resolution.json> --store <record-directory>
+  decision replay --query <query.json> --store <record-directory>
+  run execute --repo <repo-root> --out <run-staging-directory> --authority-root <publication-root> --final-name <name> [--profile default|strict|offline] [--manifest <integrations.json>] [--max-concurrency <n>] [--session-evidence <session-evidence.json>]
+  run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--manifest <integrations.json>] [--max-concurrency <n>] [--session-evidence <session-evidence.json>]
+  run commit --source-root <A09-artifact-root> --authority-root <publication-root> --manifest-ref <artifact-ref.json> --final-name <name>
+  governance ponytail-gate --request <request.json|->
+  orchestrate [--action Validate|List|Plan] [--repo <path>] [--mode lite|normal|full] [--capability <name>] [--manifest <path>] [--json]"#;
+
+fn print_help(full: bool) {
+    println!("{}", if full { FULL_HELP_TEXT } else { HELP_TEXT });
 }
 
 #[cfg(test)]
@@ -1450,6 +1744,18 @@ mod tests {
         let args = parse_args(Vec::new()).expect("empty CLI should parse");
 
         assert_eq!(args.command, "help");
+    }
+
+    #[test]
+    fn default_help_prioritizes_the_happy_path_and_hides_internal_commands() {
+        let args = parse_args(cli_args(&["--help", "--all"])).expect("full help should parse");
+
+        assert!(args.full);
+        assert!(HELP_TEXT.contains("Quick start"));
+        assert!(HELP_TEXT.contains("code-intel ."));
+        assert!(HELP_TEXT.contains("code-intel --help --all"));
+        assert!(!HELP_TEXT.contains("provider graph-adapt"));
+        assert!(FULL_HELP_TEXT.contains("provider graph-adapt"));
     }
 
     #[test]

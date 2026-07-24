@@ -11,6 +11,7 @@ PUBLIC_ROOT_ENTRY_POINTS = {
     "check-code-intel-tools.ps1",
     "Find-CodeIntelProjects.ps1",
     "install-code-intel-pipeline.ps1",
+    "code-intel.ps1",
     "invoke-code-intel.ps1",
     "Invoke-SentruxAgentTool.ps1",
     "run-code-intel.ps1",

@@ -10,18 +10,18 @@ $temporaryRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
 $testRoot = Join-Path $temporaryRoot ("code-intel-wrapper-e2e-{0}-{1}" -f $PID, [guid]::NewGuid().ToString("N"))
 $repo = Join-Path $testRoot "fixture-repo"
 $artifactRoot = Join-Path $testRoot "artifacts"
-$config = Join-Path $testRoot "pipeline.config.json"
 
 function Invoke-StableWrapper {
-    $output = @(& pwsh -NoLogo -NoProfile -File (Join-Path $root "invoke-code-intel.ps1") `
-        -RepoPath $repo `
-        -Config $config `
-        -Mode lite `
-        -SkipRepowise `
-        -SkipGitHubResearch 2>&1)
-    return [pscustomobject]@{
-        ExitCode = $LASTEXITCODE
-        Output = ($output -join [Environment]::NewLine)
+    Push-Location $repo
+    try {
+        $output = @(& $rustCli --artifact-root $artifactRoot 2>&1)
+        return [pscustomobject]@{
+            ExitCode = $LASTEXITCODE
+            Output = ($output -join [Environment]::NewLine)
+        }
+    }
+    finally {
+        Pop-Location
     }
 }
 
@@ -49,19 +49,6 @@ no_god_files = false
     & git -C $repo -c user.name=CodeIntelTest -c user.email=code-intel-test@example.invalid commit --quiet -m baseline
     if ($LASTEXITCODE -ne 0) { throw "fixture Git commit failed" }
 
-    $configuration = [ordered]@{
-        artifactRoot = $artifactRoot
-        repowiseWorkspaceRoot = ""
-        codeEvidence = [ordered]@{
-            enabled = $false
-            nativeMinimal = $false
-            adapters = [ordered]@{}
-        }
-        inventoryExclude = @()
-        repos = [ordered]@{}
-    }
-    $configuration | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $config -Encoding utf8NoBOM
-
     $success = Invoke-StableWrapper
     if ($success.ExitCode -ne 0) {
         $failureDetails = ""
@@ -85,6 +72,11 @@ no_god_files = false
     }
     if ($success.Output -match "legacy compatibility pipeline") {
         throw "stable wrapper default route still executed the legacy pipeline"
+    }
+    if ($success.Output -notmatch "\[PASS\]" -or
+        $success.Output -notmatch "Outcome:\s+completed" -or
+        $success.Output -notmatch "Run evidence:") {
+        throw "stable wrapper did not print the user-facing success summary:`n$($success.Output)"
     }
     $authority = Join-Path $artifactRoot "fixture-repo"
     $completedRun = Get-ChildItem -LiteralPath $authority -Directory |
@@ -164,8 +156,19 @@ no_god_files = false
     if ($failedDiagnostic.Count -ne 1 -or [string]$failedDiagnostic[0].reason -notmatch "process_failed") {
         throw "failed audit run was not classified outside the authoritative index"
     }
-    if ($failure.Output -notmatch "authoritative_publication" -or $failure.Output -notmatch "FAILED") {
-        throw "stable wrapper did not expose the authoritative publication failure in its batch summary"
+    if ($failure.Output -notmatch "\[FAIL\]" -or
+        $failure.Output -notmatch "Outcome:\s+process_failed" -or
+        $failure.Output -notmatch "Cause:\s+evidence\.native-code" -or
+        $failure.Output -notmatch "Run evidence:") {
+        throw "stable wrapper did not expose the authoritative failure in its user-facing summary:`n$($failure.Output)"
+    }
+
+    $missingRepo = Join-Path $testRoot "missing-repo"
+    $invalidOutput = @(& $rustCli $missingRepo --artifact-root $artifactRoot 2>&1)
+    if ($LASTEXITCODE -eq 0 -or
+        ($invalidOutput -join [Environment]::NewLine) -notmatch "repository path is not a directory:" -or
+        ($invalidOutput -join [Environment]::NewLine) -match "main\.rs:\d+") {
+        throw "primary entry did not return a concise invalid-path error:`n$($invalidOutput -join [Environment]::NewLine)"
     }
 
     Write-Host "Stable wrapper E2E: OK"

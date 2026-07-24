@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import shutil
 import tempfile
 import unittest
@@ -33,16 +34,16 @@ def write_release_archive(path: Path, *, installer: str = "Write-Output 'ok'\n")
         for name, content in {
             "install-code-intel-pipeline.ps1": installer,
             "check-code-intel-tools.ps1": "Write-Output 'doctor'\n",
+            "code-intel.ps1": "Write-Output 'launch'\n",
             "invoke-code-intel.ps1": "Write-Output 'invoke'\n",
         }.items():
             handle.writestr(f"code-intel-pipeline/{name}", content)
 
 
 class SkillPackageTests(unittest.TestCase):
-    def test_defaults_to_fixed_v030_stable_release(self) -> None:
+    def test_defaults_to_latest_published_stable_release(self) -> None:
         bootstrap = load_bootstrap_module()
-        self.assertEqual(bootstrap.DEFAULT_STABLE_VERSION, "v0.3.0")
-        self.assertEqual(bootstrap.resolve_version(None, "stable"), "v0.3.0")
+        self.assertIsNone(bootstrap.resolve_version(None, "stable"))
         self.assertEqual(bootstrap.resolve_version("0.2.0", "stable"), "v0.2.0")
         self.assertIsNone(bootstrap.resolve_version(None, "prerelease"))
 
@@ -254,8 +255,38 @@ class SkillPackageTests(unittest.TestCase):
                 (destination / "install-code-intel-pipeline.ps1").write_text(
                     "tampered\n", encoding="utf-8"
                 )
-                with self.assertRaises(bootstrap.BootstrapError):
-                    bootstrap.install_release(asset, temp_path / "installs")
+                repaired_destination, repaired_status = bootstrap.install_release(
+                    asset, temp_path / "installs"
+                )
+                self.assertEqual(repaired_destination, destination)
+                self.assertEqual(repaired_status, "repaired")
+                self.assertNotEqual(
+                    (destination / "install-code-intel-pipeline.ps1").read_text(
+                        encoding="utf-8"
+                    ),
+                    "tampered\n",
+                )
+
+                marker_data = json.loads(marker.read_text(encoding="utf-8"))
+                marker_data["manifest_sha256"] = "0" * 64
+                marker.write_text(json.dumps(marker_data), encoding="utf-8")
+                _, marker_status = bootstrap.install_release(
+                    asset, temp_path / "installs"
+                )
+                self.assertEqual(marker_status, "repaired")
+                self.assertNotEqual(
+                    json.loads(marker.read_text(encoding="utf-8"))[
+                        "manifest_sha256"
+                    ],
+                    "0" * 64,
+                )
+
+                (destination / "code-intel.ps1").unlink()
+                _, missing_file_status = bootstrap.install_release(
+                    asset, temp_path / "installs"
+                )
+                self.assertEqual(missing_file_status, "repaired")
+                self.assertTrue((destination / "code-intel.ps1").is_file())
 
 
 if __name__ == "__main__":

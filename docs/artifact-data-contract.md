@@ -4,7 +4,9 @@ Code Intel artifact files are the handoff surface between the scanner, CLI consu
 
 ## Authority
 
-`run-code-intel.ps1` is the only producer of fresh artifact runs. `code-intel resume`, `code-intel classify`, `code-intel doctor`, and indexers consume existing runs; they do not replace scanner evidence.
+The compiled `code-intel` execution kernel is the authority for fresh artifact
+runs and publication. Compatibility adapters may collect evidence, but they do
+not own Run Commit or index admission.
 
 Agent Goal Intake is an upstream product boundary. It may shape the operator's goal before a scan starts, but it must not produce, mutate, or reinterpret artifact-run files after scanner execution.
 
@@ -14,7 +16,7 @@ An artifact run is one timestamped directory for one target repository:
 <artifact-root>\<repo-name>\<timestamp>\
 ```
 
-Do not hand-edit artifact runs. Regenerate them with `invoke-code-intel.ps1` or `run-code-intel.ps1`.
+Do not hand-edit artifact runs. Regenerate them with `code-intel <repo-path>`.
 
 ## Files
 

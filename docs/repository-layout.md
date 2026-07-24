@@ -7,15 +7,16 @@ This repository is converging toward a smaller public surface.
 Keep these files at the repository root until a release explicitly changes the
 install and CI contract:
 
-- `invoke-code-intel.ps1`: stable operator entry point.
-- `run-code-intel.ps1`: current artifact-producing pipeline orchestrator.
+- `code-intel.ps1`: recovery and update launcher for the compiled CLI.
+- `invoke-code-intel.ps1`: v0.x compatibility forwarder.
+- `run-code-intel.ps1`: compatibility adapter host for capabilities not yet internalized.
 - `check-code-intel-tools.ps1`: environment doctor.
 - `install-code-intel-pipeline.ps1`: installer and repair entry point.
 - `Find-CodeIntelProjects.ps1`: local project discovery entry point.
 - `bootstrap-new-machine.ps1`: new-machine bootstrap entry point.
 - `Invoke-SentruxAgentTool.ps1`: Sentrux compatibility entry point.
 - `README.md`, `CHANGELOG.md`, `CONTEXT.md`: operator-facing docs.
-- `Cargo.toml`, `Cargo.lock`, `crates/code-intel-cli`: Rust CLI policy core.
+- `Cargo.toml`, `Cargo.lock`, `crates/code-intel-cli`: primary compiled CLI and execution kernel.
 
 ## Internal Script Buckets
 
@@ -26,7 +27,7 @@ Internal scripts use these buckets:
 - `scripts/adapters/`: tool-specific helper wrappers.
 - `scripts/incubator/`: experiments that are not in the shipped product path.
 
-The seven public PowerShell entry points stay at the repository root. Test
+The public PowerShell compatibility and recovery entry points stay at the repository root. Test
 scripts are internal and must remain under `scripts/tests/`.
 
 Do not move a root PowerShell file without one of these:
@@ -37,7 +38,7 @@ Do not move a root PowerShell file without one of these:
 
 ## Rust Core Boundary
 
-The Rust CLI owns pure policy and artifact-consumer logic first:
+The Rust CLI owns the primary operator entry, execution kernel, policy, and artifact contracts:
 
 - artifact resume
 - failure classification
@@ -48,8 +49,8 @@ The Rust CLI owns pure policy and artifact-consumer logic first:
 
 The current policy contract is documented in `docs/rust-policy-core.md`.
 
-The PowerShell pipeline still owns local orchestration and tool invocation until
-the Rust policy contract is stable enough to become the runner.
+PowerShell remains for recovery, compatibility, and adapters that have not yet
+been internalized.
 
 ## Incubator Boundary
 

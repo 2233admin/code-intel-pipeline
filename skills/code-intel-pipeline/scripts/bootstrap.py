@@ -25,7 +25,6 @@ from typing import Any
 REPOSITORY = "2233admin/code-intel-pipeline"
 API_ROOT = f"https://api.github.com/repos/{REPOSITORY}"
 USER_AGENT = "code-intel-pipeline-skill-bootstrap/1"
-DEFAULT_STABLE_VERSION = "v0.3.0"
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 TAG_PATTERN = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._-]*$")
 WINDOWS_RESERVED_NAMES = {
@@ -93,8 +92,6 @@ def normalize_tag(version: str) -> str:
 def resolve_version(version: str | None, channel: str) -> str | None:
     if version:
         return normalize_tag(version)
-    if channel == "stable":
-        return DEFAULT_STABLE_VERSION
     return None
 
 
@@ -335,6 +332,7 @@ def find_payload_root(extracted_root: Path) -> Path:
     required = (
         "install-code-intel-pipeline.ps1",
         "check-code-intel-tools.ps1",
+        "code-intel.ps1",
         "invoke-code-intel.ps1",
     )
     missing = [name for name in required if not (payload / name).is_file()]
@@ -426,24 +424,9 @@ def install_release(asset: dict[str, str], install_root: Path) -> tuple[Path, st
             )
         try:
             metadata = json.loads(marker.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
-            raise BootstrapError(
-                f"Existing release marker is unreadable: {marker}"
-            ) from error
-        if not isinstance(metadata, dict):
-            raise BootstrapError(f"Existing release marker is invalid: {marker}")
-        expected_marker = {
-            "tag": tag,
-            "asset": asset["name"],
-            "url": asset["url"],
-            "sha256": asset["sha256"],
-        }
-        if any(metadata.get(key) != value for key, value in expected_marker.items()):
-            raise BootstrapError(
-                f"Existing release marker does not match GitHub metadata: {destination}"
-            )
-        find_payload_root(destination)
-        existing_metadata = metadata
+            existing_metadata = metadata if isinstance(metadata, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            existing_metadata = {}
 
     install_root.mkdir(parents=True, exist_ok=True)
     staging_root = install_root / f".staging-{tag}-{uuid.uuid4().hex}"
@@ -461,32 +444,42 @@ def install_release(asset: dict[str, str], install_root: Path) -> tuple[Path, st
         payload = find_payload_root(staging_root)
         verified_manifest = payload_manifest(payload)
         verified_manifest_digest = manifest_digest(verified_manifest)
-        if existing_metadata is not None:
-            installed_manifest = payload_manifest(destination)
-            if installed_manifest != verified_manifest:
-                raise BootstrapError(
-                    f"Existing release files do not match the verified GitHub asset: {destination}"
-                )
-            return destination, "already_installed"
-
+        verified_metadata = {
+            "schema": "code-intel-skill-release.v2",
+            "tag": tag,
+            "asset": asset["name"],
+            "url": asset["url"],
+            "sha256": asset["sha256"],
+            "manifest_sha256": verified_manifest_digest,
+            "files": verified_manifest,
+        }
         payload_marker = payload / RELEASE_MARKER
         payload_marker.write_text(
-            json.dumps(
-                {
-                    "schema": "code-intel-skill-release.v2",
-                    "tag": tag,
-                    "asset": asset["name"],
-                    "url": asset["url"],
-                    "sha256": asset["sha256"],
-                    "manifest_sha256": verified_manifest_digest,
-                    "files": verified_manifest,
-                },
-                indent=2,
-                sort_keys=True,
-            )
+            json.dumps(verified_metadata, indent=2, sort_keys=True)
             + "\n",
             encoding="utf-8",
         )
+        if existing_metadata is not None:
+            try:
+                find_payload_root(destination)
+                installed_manifest = payload_manifest(destination)
+            except (BootstrapError, OSError):
+                installed_manifest = {}
+            if (
+                existing_metadata == verified_metadata
+                and installed_manifest == verified_manifest
+            ):
+                return destination, "already_installed"
+            replaced = install_root / f".replaced-{tag}-{uuid.uuid4().hex}"
+            destination.replace(replaced)
+            try:
+                payload.replace(destination)
+            except BaseException:
+                replaced.replace(destination)
+                raise
+            shutil.rmtree(replaced)
+            return destination, "repaired"
+
         payload.replace(destination)
         return destination, "installed"
     finally:
@@ -509,10 +502,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--channel",
         choices=("stable", "prerelease"),
         default="stable",
-        help=(
-            "Release channel when --version is omitted. Stable uses the Skill's "
-            f"pinned {DEFAULT_STABLE_VERSION} release."
-        ),
+        help="Release channel when --version is omitted. Stable uses GitHub's latest release.",
     )
     parser.add_argument(
         "--install-root",
@@ -560,8 +550,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "version_source": (
             "explicit"
             if args.version
-            else "pinned_stable"
-            if args.channel == "stable"
             else "channel"
         ),
         "asset": asset["name"],

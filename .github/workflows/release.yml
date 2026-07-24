@@ -132,6 +132,7 @@ jobs:
           $payload = Join-Path $expanded "code-intel-pipeline"
           $required = @(
             (Join-Path $payload "install-code-intel-pipeline.ps1"),
+            (Join-Path $payload "code-intel.ps1"),
             (Join-Path $payload "skills\code-intel-pipeline\SKILL.md"),
             (Join-Path $payload "skills\code-intel-pipeline\agents\openai.yaml"),
             (Join-Path $payload "skills\code-intel-pipeline\scripts\bootstrap.py"),

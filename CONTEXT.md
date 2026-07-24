@@ -7,6 +7,12 @@ Code Intel Pipeline is an independent engineering-intelligence domain. It turns 
 **Code Intel Pipeline**: The independent engineering-intelligence system that turns a Target Repository and its delivery evidence into deterministic engineering facts, derived views, diagnoses, and plans. OpenCLI Admin and other systems are consumers, not owners or internal modules of this domain.
 _Avoid_: OpenCLI Admin feature, analyzer, crawler, generic scanner
 
+**Primary Operator Entry**: The canonical command surface through which humans and Agents request pipeline runs and related operations. It owns the user-visible command contract and is the only entry presented as the default.
+_Avoid_: Preferred wrapper, one of several equivalent runners
+
+**Recovery Launcher**: A compatibility surface that restores access to the Primary Operator Entry by locating, validating, installing, repairing, or starting it. It never owns or independently implements Pipeline semantics.
+_Avoid_: Redundant Pipeline, alternate scanner, second implementation
+
 **Agent Goal Intake**: The pre-scan task-contract layer that turns vague work into a bounded goal, verification evidence, constraints, iteration policy, stop conditions, and pause conditions.
 _Avoid_: Scanner, prompt template, backlog item
 
