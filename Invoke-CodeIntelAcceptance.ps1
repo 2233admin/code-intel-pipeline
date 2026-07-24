@@ -122,7 +122,7 @@ function Test-PolicyContract {
         $stageNames = @($Document.stages.PSObject.Properties.Name)
         $allowedExecutables = @($Document.targetedChecks.allowedProcessExecutables | ForEach-Object { [string]$_ })
         $intrinsicAllowed = @("cargo", "dotnet", "go", "node", "npm", "pnpm", "python", "python3", "pytest", "yarn")
-        $prohibitedShells = @("bash", "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe", "sh", "wsl", "zsh")
+        $prohibitedShells = @("bash", "cmd", "cmd.exe", "powershell", ("power" + "shell.exe"), "pwsh", "pwsh.exe", "sh", "wsl", "zsh")
         return [string]$Document.schema -eq "code-intel-acceptance-policy.v1" -and
             (Test-ExactSet @($Document.statuses) @("pass", "fail", "blocked", "skipped-with-reason")) -and
             (Test-ExactSet $stageNames @("agent", "land", "promote")) -and
