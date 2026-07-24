@@ -41,7 +41,7 @@ Measured impact is tracked in `docs/ponytail-impact-scoreboard.md`.
 
 ## Local Check
 
-Run the skill benchmark gate after changing this document, `skill/SKILL.md`, or related ADRs:
+Run the skill benchmark gate after changing this document, `skills/code-intel-pipeline/SKILL.md`, or related ADRs:
 
 ```powershell
 .\test-skill-development-benchmark.ps1 -RepoPath .

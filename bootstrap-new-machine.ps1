@@ -71,6 +71,7 @@ $installParams = @{
     RepoPath = $repo
     Platform = $effectivePlatform
     Json = $true
+    RequireRepowise = [bool]$RequireRepowise
 }
 if (-not $NoInstallMissing) {
     $installParams.InstallMissing = $true
@@ -78,15 +79,14 @@ if (-not $NoInstallMissing) {
 }
 if (-not $NoRepairSkillLinks) { $installParams.RepairSkillLinks = $true }
 if ($CheckProvider) { $installParams.CheckProvider = $true }
-if ($RequireRepowise) { $installParams.RequireRepowise = $true }
 if ($RequireUnderstand) { $installParams.RequireUnderstand = $true }
 
 $doctorParams = @{
     RepoPath = $repo
     Platform = $effectivePlatform
     Json = $true
+    RequireRepowise = [bool]$RequireRepowise
 }
-if ($RequireRepowise) { $doctorParams.RequireRepowise = $true }
 if ($RequireUnderstand) { $doctorParams.RequireUnderstand = $true }
 
 $installResult = Invoke-JsonScript (Join-Path $root "install-code-intel-pipeline.ps1") $installParams

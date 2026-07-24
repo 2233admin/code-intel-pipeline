@@ -1,0 +1,77 @@
+{
+  "schema": "code-intel-method-selection-rules.v1",
+  "rules": [
+    {
+      "methodId": "contract-testing",
+      "signalIds": ["integration-drift", "late-interface-failure"],
+      "contraindications": [
+        { "signalId": "no-observable-contract", "cardText": "The boundary has no observable contract" },
+        { "signalId": "private-implementation-assertions", "cardText": "Tests would assert private implementation details instead of compatibility" }
+      ]
+    },
+    {
+      "methodId": "critical-path-pert",
+      "signalIds": ["dependency-congestion", "schedule-slippage"],
+      "contraindications": [
+        { "signalId": "work-not-decomposable", "cardText": "Work cannot be decomposed into dependency-linked activities" },
+        { "signalId": "unmodeled-resource-dominance", "cardText": "Resource contention dominates but is absent from the model" }
+      ]
+    },
+    {
+      "methodId": "fault-tree-analysis",
+      "signalIds": ["hazardous-top-event", "multi-cause-failure"],
+      "contraindications": [
+        { "signalId": "top-event-undefined", "cardText": "The analysis question is exploratory rather than a defined top event" },
+        { "signalId": "boolean-model-invalid", "cardText": "Temporal or continuous dynamics invalidate Boolean-event modeling" }
+      ]
+    },
+    {
+      "methodId": "fmea",
+      "signalIds": ["design-change-risk", "recurrent-component-failure"],
+      "contraindications": [
+        { "signalId": "single-known-top-event", "cardText": "A single known top event is the only analysis target" },
+        { "signalId": "ratings-treated-as-probabilities", "cardText": "Scores would be used as precise probabilities without calibration" }
+      ]
+    },
+    {
+      "methodId": "pdca",
+      "signalIds": ["repeated-corrective-action", "uncontrolled-improvement"],
+      "contraindications": [
+        { "signalId": "irreversible-uncontrolled-change", "cardText": "The proposed action is irreversible without prior risk controls" },
+        { "signalId": "no-measurable-trial", "cardText": "No measurable target or bounded trial can be defined" }
+      ]
+    },
+    {
+      "methodId": "root-cause-analysis",
+      "signalIds": ["causal-uncertainty", "recurrent-incident"],
+      "contraindications": [
+        { "signalId": "prospective-enumeration-request", "cardText": "The request is to enumerate prospective failure modes rather than explain an observed effect" },
+        { "signalId": "opinion-only-causality", "cardText": "Evidence is limited to an unaudited opinion or post hoc story" }
+      ]
+    },
+    {
+      "methodId": "spc",
+      "signalIds": ["process-variation", "unstable-quality"],
+      "contraindications": [
+        { "signalId": "one-off-data", "cardText": "Data are one-off rather than a repeated process" },
+        { "signalId": "control-limit-as-specification", "cardText": "Specification conformance is being inferred solely from control limits" }
+      ]
+    },
+    {
+      "methodId": "strangler-migration",
+      "signalIds": ["high-risk-rewrite", "replaceable-seams"],
+      "contraindications": [
+        { "signalId": "no-isolatable-seam", "cardText": "There is no isolatable routing or responsibility seam" },
+        { "signalId": "unsafe-dual-operation", "cardText": "Dual operation creates unacceptable safety or consistency risk" }
+      ]
+    },
+    {
+      "methodId": "value-stream-queue-delay",
+      "signalIds": ["handoff-wait", "long-lead-time"],
+      "contraindications": [
+        { "signalId": "aggregate-counts-only", "cardText": "Only aggregate completion counts exist with no item flow" },
+        { "signalId": "dependency-schedule-only", "cardText": "A dependency schedule is being mistaken for an operational queue model" }
+      ]
+    }
+  ]
+}

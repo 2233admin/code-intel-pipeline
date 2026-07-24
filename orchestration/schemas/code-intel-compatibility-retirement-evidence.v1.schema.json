@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "code-intel-compatibility-retirement-evidence.v1",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "snapshotIdentity", "id", "evidenceClass", "retirementId", "legacyBranchId", "replacementCapabilityId", "details"],
+  "properties": {
+    "schema": { "const": "code-intel-compatibility-retirement-evidence.v1" },
+    "snapshotIdentity": { "type": "string", "minLength": 1 },
+    "id": { "type": "string", "minLength": 1 },
+    "evidenceClass": { "enum": ["replacement_atom", "golden_parity", "contract_parity", "effect_parity", "registry_reconciliation", "compatibility_window", "rollback_execution", "usage_observation", "independent_approval", "c00_necessity", "dependency_approval"] },
+    "retirementId": { "type": "string", "minLength": 1 },
+    "legacyBranchId": { "type": "string", "minLength": 1 },
+    "replacementCapabilityId": { "type": "string", "minLength": 1 },
+    "details": { "type": "object", "minProperties": 1 }
+  }
+}

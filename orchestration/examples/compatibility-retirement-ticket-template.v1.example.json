@@ -1,0 +1,26 @@
+{
+  "schema":"code-intel-compatibility-retirement-ticket-template.v1",
+  "snapshotIdentity":"snapshot-example",
+  "ticketId":"ticket-retire-recommender-branch",
+  "retirementId":"retire-recommender-branch",
+  "legacyBranch":{"capabilityId":"pipeline.legacy-recommender","branchId":"legacy.recommender","callPath":"run-code-intel.ps1::legacy.recommender"},
+  "replacement":{"capabilityId":"advisory.workflow-recommend","dependencies":["D02"]},
+  "affectedFiles":["run-code-intel.ps1"],
+  "evidence":{
+    "golden":{"schema":"code-intel-artifact-ref.v1","artifactSchema":"code-intel-compatibility-retirement-evidence.v1","type":"compatibility.retirement-evidence","path":"golden.json","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","consumedSnapshotIdentity":"snapshot-example"},
+    "contract":{"schema":"code-intel-artifact-ref.v1","artifactSchema":"code-intel-compatibility-retirement-evidence.v1","type":"compatibility.retirement-evidence","path":"contract.json","sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","consumedSnapshotIdentity":"snapshot-example"},
+    "effects":{"schema":"code-intel-artifact-ref.v1","artifactSchema":"code-intel-compatibility-retirement-evidence.v1","type":"compatibility.retirement-evidence","path":"effects.json","sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","consumedSnapshotIdentity":"snapshot-example"},
+    "usage":{"schema":"code-intel-artifact-ref.v1","artifactSchema":"code-intel-compatibility-retirement-evidence.v1","type":"compatibility.retirement-evidence","path":"usage.json","sha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","consumedSnapshotIdentity":"snapshot-example"},
+    "rollbackRehearsal":{"schema":"code-intel-artifact-ref.v1","artifactSchema":"code-intel-compatibility-retirement-evidence.v1","type":"compatibility.retirement-evidence","path":"rollback.json","sha256":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","consumedSnapshotIdentity":"snapshot-example"},
+    "deletionDiff":{"schema":"code-intel-artifact-ref.v1","artifactSchema":"code-intel-compatibility-retirement-deletion-diff.v1","type":"compatibility.retirement-deletion-diff","path":"deletion-diff.json","sha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","consumedSnapshotIdentity":"snapshot-example"}
+  },
+  "source":{
+    "retirementDecision":{"schema":"code-intel-artifact-ref.v1","artifactSchema":"code-intel-compatibility-retirement-decision.v1","type":"compatibility.retirement-decision","path":"decision.json","sha256":"1111111111111111111111111111111111111111111111111111111111111111","consumedSnapshotIdentity":"snapshot-example"},
+    "retirementManifest":{"schema":"code-intel-artifact-ref.v1","artifactSchema":"code-intel-compatibility-retirement-manifest.v1","type":"compatibility.retirement-manifest","path":"manifest.json","sha256":"2222222222222222222222222222222222222222222222222222222222222222","consumedSnapshotIdentity":"snapshot-example"}
+  },
+  "owner":"executor-recommender",
+  "verifier":"verifier-independent",
+  "observationExpiry":4102444800,
+  "status":"draft",
+  "authorityBoundary":"template_only_no_approval_or_deletion_authority"
+}

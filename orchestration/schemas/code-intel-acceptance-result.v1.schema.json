@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://code-intel.local/schemas/code-intel-acceptance-result.v1.schema.json",
+  "title": "Code Intel three-stage acceptance result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "stage", "profile", "status", "reason", "checks"],
+  "properties": {
+    "schema": { "const": "code-intel-acceptance-result.v1" },
+    "stage": { "enum": ["agent", "land", "promote"] },
+    "profile": { "enum": ["fast", "full"] },
+    "status": { "$ref": "#/$defs/status" },
+    "reason": { "type": "string" },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "status", "exitCode", "reason", "outputTail"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["targeted", "project-conformance"] },
+          "status": { "$ref": "#/$defs/status" },
+          "exitCode": { "type": ["integer", "null"] },
+          "reason": { "type": "string" },
+          "outputTail": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "status": { "enum": ["pass", "fail", "blocked", "skipped-with-reason"] }
+  }
+}

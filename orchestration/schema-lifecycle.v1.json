@@ -1,0 +1,176 @@
+{
+  "schema": "code-intel-schema-lifecycle.v1",
+  "policy": {
+    "breakingChange": "publish-new-version",
+    "compatibleChange": "additive-only",
+    "retirement": "evidence-backed-compatibility-window",
+    "coreRuntimeRule": "implementation-and-tests-required"
+  },
+  "contracts": [
+    {
+      "schemaPath": "orchestration/schemas/code-intel-schema-lifecycle.v1.schema.json",
+      "schemaId": "code-intel-schema-lifecycle.v1.schema.json",
+      "logicalSchemas": ["code-intel-schema-lifecycle.v1"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/tests/schema_lifecycle.rs",
+        "symbols": ["lifecycle_catalog_is_coherent"],
+        "tests": ["crates/code-intel-cli/tests/schema_lifecycle.rs"]
+      }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-intel-repository-snapshot.v1.schema.json",
+      "schemaId": "https://code-intel.local/schemas/code-intel-repository-snapshot.v1.schema.json",
+      "logicalSchemas": ["code-intel-repository-snapshot.v1"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/snapshot.rs",
+        "symbols": ["code-intel-repository-snapshot.v1"],
+        "tests": ["crates/code-intel-cli/tests/snapshot_identity.rs", "crates/code-intel-cli/tests/artifact_ref.rs"]
+      }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-intel-run-dag.v1.schema.json",
+      "schemaId": "https://code-intel.local/schemas/code-intel-run-dag.v1.schema.json",
+      "logicalSchemas": ["code-intel-run-dag.v1"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/dag_coordinator.rs",
+        "symbols": ["DAG_SCHEMA", "validate_spec"],
+        "tests": ["crates/code-intel-cli/tests/dag_coordinator.rs", "crates/code-intel-cli/tests/dag_run.rs"]
+      }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-intel-run-state.v1.schema.json",
+      "schemaId": "https://code-intel.local/schemas/code-intel-run-state.v1.schema.json",
+      "logicalSchemas": ["code-intel-run-state.v1"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/dag_coordinator.rs",
+        "symbols": ["RUN_STATE_SCHEMA", "validate_checkpoint_history"],
+        "tests": ["crates/code-intel-cli/tests/dag_coordinator.rs"]
+      }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-intel-run-manifest.v1.schema.json",
+      "schemaId": "https://code-intel.local/schemas/code-intel-run-manifest.v1.schema.json",
+      "logicalSchemas": ["code-intel-run-manifest.v1"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/run_commit.rs",
+        "symbols": ["validate_run_manifest_bytes", "validate_run_manifest"],
+        "tests": ["crates/code-intel-cli/tests/run_commit.rs", "crates/code-intel-cli/tests/dag_run.rs"]
+      }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-intel-staged-artifact-set.v1.schema.json",
+      "schemaId": "code-intel-staged-artifact-set.v1",
+      "logicalSchemas": ["code-intel-staged-artifact-set.v1"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/staged_artifact.rs",
+        "symbols": ["to_manifest_value", "prepare_for_commit"],
+        "tests": ["crates/code-intel-cli/tests/staged_artifact.rs", "crates/code-intel-cli/tests/run_commit.rs"]
+      }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-intel-run-commit.v1.schema.json",
+      "schemaId": "code-intel-run-commit.v1.schema.json",
+      "logicalSchemas": ["code-intel-run-commit.v1"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/run_commit.rs",
+        "symbols": ["validate_committed_run", "validate_published_marker"],
+        "tests": ["crates/code-intel-cli/tests/run_commit.rs", "crates/code-intel-cli/tests/artifact_index.rs"]
+      }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-intel-artifact-index.v1.schema.json",
+      "schemaId": "code-intel-artifact-index.v1.schema.json",
+      "logicalSchemas": ["code-intel-artifact-index.v1"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/artifact_index.rs",
+        "symbols": ["validate_index", "validate_index_entry"],
+        "tests": ["crates/code-intel-cli/tests/artifact_index.rs"]
+      }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-intel-evidence-query.v1.schema.json",
+      "schemaId": "code-intel-evidence-query.v1.schema.json",
+      "logicalSchemas": ["code-intel-evidence-query.v1"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/evidence_query.rs",
+        "symbols": ["run_raw", "code-intel-evidence-query.v1"],
+        "tests": ["crates/code-intel-cli/tests/dag_run.rs"]
+      }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-intel-change-impact.v1.schema.json",
+      "schemaId": "code-intel-change-impact.v1.schema.json",
+      "logicalSchemas": ["code-intel-change-impact.v1"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/change_impact.rs",
+        "symbols": ["run_raw", "code-intel-change-impact.v1"],
+        "tests": ["crates/code-intel-cli/tests/dag_run.rs"]
+      }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-evidence-native-artifacts.v1.schema.json",
+      "schemaId": "https://code-intel.local/schemas/code-evidence-native-artifacts.v1.schema.json",
+      "logicalSchemas": [
+        "code-evidence-files.v1",
+        "code-evidence-symbols.v1",
+        "code-evidence-chunks.v1",
+        "code-evidence-symbol-chunks.v1",
+        "code-evidence-imports.v1",
+        "code-evidence-scorecard.v1",
+        "code-evidence-coverage.v1",
+        "agent-code-slice-ranking.v1"
+      ],
+      "shape": "closed-composite",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/native_code_evidence.rs",
+        "symbols": ["SUPPORTED_HEURISTICS", "native-minimal"],
+        "tests": ["crates/code-intel-cli/tests/native_code_evidence.rs", "Test-LanguageAdapterAcceptance.ps1"]
+      }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-intel-session-evidence.v1.schema.json",
+      "schemaId": "code-intel-session-evidence.v1.schema.json",
+      "logicalSchemas": ["code-intel-session-evidence.v1"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/session_evidence.rs",
+        "symbols": ["validate_artifact_value", "code-intel-session-evidence.v1"],
+        "tests": ["crates/code-intel-cli/tests/session_evidence.rs", "crates/code-intel-cli/tests/dag_run.rs"]
+      }
+    }
+  ]
+}

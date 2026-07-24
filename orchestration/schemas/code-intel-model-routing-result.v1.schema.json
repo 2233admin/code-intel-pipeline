@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-model-routing-result.v1.schema.json",
+  "title": "Code Intel model routing result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "selected", "authorization", "attempts", "manualAction"],
+  "properties": {
+    "schema": { "const": "code-intel-model-routing-result.v1" },
+    "status": { "enum": ["ready", "consent_required", "deterministic_degraded"] },
+    "selected": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["candidateId", "channelKind", "provider", "model", "costScope", "readinessState"],
+          "properties": {
+            "candidateId": { "$ref": "#/$defs/portableId" },
+            "channelKind": { "enum": ["local_compatible", "ollama", "claude_cli", "opencode_cli", "codex_cli"] },
+            "provider": { "type": ["string", "null"], "minLength": 1 },
+            "model": { "type": ["string", "null"], "minLength": 1 },
+            "costScope": { "$ref": "#/$defs/costScope" },
+            "readinessState": { "const": "ready" }
+          }
+        }
+      ]
+    },
+    "authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["consumptionAuthorization", "externalData", "paidSpend"],
+      "properties": {
+        "consumptionAuthorization": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "scopes"],
+          "properties": {
+            "status": { "$ref": "#/$defs/consent" },
+            "scopes": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/costScope" } }
+          }
+        },
+        "externalData": { "$ref": "#/$defs/statusObject" },
+        "paidSpend": { "$ref": "#/$defs/statusObject" }
+      }
+    },
+    "attempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidateId", "readinessState", "eligible", "failureCategory", "reason"],
+        "properties": {
+          "candidateId": { "$ref": "#/$defs/portableId" },
+          "readinessState": { "enum": ["discovered", "executable_verified", "auth_present", "model_available", "egress_allowed", "spend_allowed", "ready"] },
+          "eligible": { "type": "boolean" },
+          "failureCategory": {
+            "type": ["string", "null"],
+            "enum": [null, "consent_required", "model_unavailable", "provider_unavailable", "provider_quota", "config_error", "local_tool_error", "adapter_protocol_error", "external_data_forbidden", "paid_usage_forbidden"]
+          },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "manualAction": { "type": ["string", "null"], "enum": [null, "obtain_explicit_authorization", "provide_or_enable_model_channel"] }
+  },
+  "$defs": {
+    "portableId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "consent": { "enum": ["unanswered", "granted", "denied"] },
+    "costScope": { "enum": ["local_compute", "subscription_cli", "free_or_internal_quota", "metered_api"] },
+    "statusObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": { "status": { "$ref": "#/$defs/consent" } }
+    }
+  }
+}

@@ -24,12 +24,53 @@ param(
     [string]$RepowiseProvider = "",
     [string]$RepowiseModel = "",
     [string]$RepowiseReasoning = "",
+    [string]$ModelRoutingResult = "",
+    [string]$ModelInventoryResult = "",
+    [string]$ModelExecutableHandle = "",
+    [string]$ModelPromptFile = "",
+    [string]$ModelEndpoint = "",
+    [ValidateSet("", "openai", "anthropic", "ollama")]
+    [string]$ModelProtocol = "",
+    [string]$ModelCredentialEnvName = "",
+    [ValidateRange(1, 3600)]
+    [int]$ModelTimeoutSeconds = 300,
+    [ValidateSet("json", "jsonl")]
+    [string]$ModelResponseFormat = "json",
+    [string]$ModelAdapterRequest = "",
+    [string]$ModelAdapterArtifactRoot = "",
+    [string]$RuntimeCiEvidenceRequest = "",
+    [string]$RuntimeCiEvidenceArtifactRoot = "",
+    [string]$RepowiseAdapterRequest = "",
+    [string]$RepowiseAdapterArtifactRoot = "",
+    [long]$RepowiseAdapterEvaluatedAt = 0,
+    [long]$RepowiseAdapterMaxAgeSeconds = 0,
+    [string]$GraphAdapterRequest = "",
+    [string]$GraphAdapterArtifactRoot = "",
+    [long]$GraphAdapterEvaluatedAt = 0,
+    [long]$GraphAdapterMaxAgeSeconds = 0,
+    [string]$SentruxAdapterRequest = "",
+    [string]$SentruxAdapterArtifactRoot = "",
+    [long]$SentruxAdapterEvaluatedAt = 0,
+    [long]$SentruxAdapterMaxAgeSeconds = 0,
+    [string]$CodeNexusAdapterRequest = "",
+    [string]$CodeNexusAdapterArtifactRoot = "",
+    [long]$CodeNexusAdapterEvaluatedAt = 0,
+    [long]$CodeNexusAdapterMaxAgeSeconds = 0,
+    [string]$SurvivalScanRequest = "",
+    [string]$SurvivalScanArtifactRoot = "",
+    [string]$RunCommitSourceRoot = "",
+    [string]$RunCommitAuthorityRoot = "",
+    [string]$RunCommitManifestRef = "",
+    [string]$RunCommitFinalName = "",
     [string[]]$InventoryExclude = @(),
+
+    [switch]$DagCoordinate,
 
     [switch]$SaveSentruxBaseline,
     [switch]$AutoSaveMissingSentruxBaseline,
     [switch]$SkipRepowise,
     [switch]$RepowiseDocs,
+    [switch]$AllowRepowiseShadowMutation,
     [switch]$SkipRepomix,
     [ValidateSet("xml", "markdown", "json", "plain")]
     [string]$RepomixStyle = "markdown",
@@ -41,7 +82,12 @@ param(
 [switch]$SkipGitHubResearch,
 [switch]$WorkspaceAdd,
 [switch]$SkipOpenSpec,
-[switch]$AutoOpenSpec
+[switch]$AutoOpenSpec,
+[ValidateSet("auto", "enabled", "disabled")]
+[string]$ProactiveSkillSuggestions = "auto",
+[ValidateSet("auto", "ask", "enabled", "disabled")]
+[string]$AutomaticPullRequests = "auto",
+[string]$BugSkill = ""
 )
 
 Set-StrictMode -Version Latest
@@ -49,8 +95,12 @@ $ErrorActionPreference = "Stop"
 
 $platformModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-intel-platform.psm1"
 Import-Module $platformModule -Force
+$followUpAutomationModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-intel-follow-up-automation.psm1"
+Import-Module $followUpAutomationModule -Force
 $effectivePlatform = Get-CodeIntelPlatform -Platform $Platform
 $codeIntelPaths = Get-CodeIntelPaths -Platform $effectivePlatform -Root $PSScriptRoot
+$rustExecutableName = if ($effectivePlatform -eq "windows") { "code-intel.exe" } else { "code-intel" }
+$defaultRustCli = Join-Path $PSScriptRoot (Join-Path "target/debug" $rustExecutableName)
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
@@ -59,6 +109,142 @@ $env:PYTHONUTF8 = "1"
 $env:TERM = "xterm"
 $env:NO_COLOR = "1"
 $env:RICH_FORCE_TERMINAL = "0"
+
+if (-not [string]::IsNullOrWhiteSpace($ModelInventoryResult)) {
+    if ([string]::IsNullOrWhiteSpace($ModelRoutingResult) -or
+        [string]::IsNullOrWhiteSpace($ModelPromptFile) -or
+        [string]::IsNullOrWhiteSpace($ModelAdapterArtifactRoot)) {
+        throw "Model request synthesis requires inventory, routing, prompt, and adapter artifact root"
+    }
+    $synthesisScript = Join-Path $PSScriptRoot "New-ModelAdapterRequest.ps1"
+    $delegateScript = Join-Path $PSScriptRoot "Invoke-ModelChannelDelegate.ps1"
+    if (-not (Test-Path -LiteralPath $synthesisScript -PathType Leaf) -or -not (Test-Path -LiteralPath $delegateScript -PathType Leaf)) {
+        throw "Model request synthesis or delegate implementation is missing"
+    }
+    New-Item -ItemType Directory -Force -Path $ModelAdapterArtifactRoot | Out-Null
+    $synthesizedRequest = Join-Path ([IO.Path]::GetFullPath($ModelAdapterArtifactRoot)) "model-adapter-request.v2.json"
+    $synthesisParameters = @{
+        Inventory = $ModelInventoryResult
+        Routing = $ModelRoutingResult
+        PromptFile = $ModelPromptFile
+        OutputPath = $synthesizedRequest
+        TimeoutSeconds = $ModelTimeoutSeconds
+        ResponseFormat = $ModelResponseFormat
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ModelExecutableHandle)) { $synthesisParameters.ExecutableHandle = $ModelExecutableHandle }
+    if (-not [string]::IsNullOrWhiteSpace($ModelEndpoint)) { $synthesisParameters.Endpoint = $ModelEndpoint }
+    if (-not [string]::IsNullOrWhiteSpace($ModelProtocol)) { $synthesisParameters.Protocol = $ModelProtocol }
+    if (-not [string]::IsNullOrWhiteSpace($ModelCredentialEnvName)) { $synthesisParameters.CredentialEnvName = $ModelCredentialEnvName }
+    & $synthesisScript @synthesisParameters | Out-Null
+    & $delegateScript -Request $synthesizedRequest -ArtifactRoot $ModelAdapterArtifactRoot
+    exit $LASTEXITCODE
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ModelAdapterRequest)) {
+    if ([string]::IsNullOrWhiteSpace($ModelAdapterArtifactRoot)) { throw "Model adapter facade requires an artifact root" }
+    $delegateScript = Join-Path $PSScriptRoot "Invoke-ModelChannelDelegate.ps1"
+    if (-not (Test-Path -LiteralPath $delegateScript -PathType Leaf)) { throw "Model channel delegate is missing: $delegateScript" }
+    & $delegateScript -Request $ModelAdapterRequest -ArtifactRoot $ModelAdapterArtifactRoot
+    exit $LASTEXITCODE
+}
+
+if (-not [string]::IsNullOrWhiteSpace($RepowiseAdapterRequest)) {
+    if ([string]::IsNullOrWhiteSpace($RepowiseAdapterArtifactRoot) -or
+        $RepowiseAdapterEvaluatedAt -lt 0 -or
+        $RepowiseAdapterMaxAgeSeconds -le 0) {
+        throw "Repowise adapter facade requires artifact root, non-negative evaluated-at, and positive max-age"
+    }
+    $rustCli = $defaultRustCli
+    if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
+        throw "Repowise adapter binary is missing: $rustCli"
+    }
+    & $rustCli provider repowise-adapt `
+        --request $RepowiseAdapterRequest `
+        --artifact-root $RepowiseAdapterArtifactRoot `
+        --evaluated-at $RepowiseAdapterEvaluatedAt `
+        --max-age-seconds $RepowiseAdapterMaxAgeSeconds
+    exit $LASTEXITCODE
+}
+
+if (-not [string]::IsNullOrWhiteSpace($GraphAdapterRequest)) {
+    if ([string]::IsNullOrWhiteSpace($GraphAdapterArtifactRoot) -or
+        $GraphAdapterEvaluatedAt -lt 0 -or
+        $GraphAdapterMaxAgeSeconds -le 0) {
+        throw "Graph adapter facade requires artifact root, non-negative evaluated-at, and positive max-age"
+    }
+    $rustCli = $defaultRustCli
+    if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
+        throw "Graph adapter binary is missing: $rustCli"
+    }
+    & $rustCli provider graph-adapt `
+        --request $GraphAdapterRequest `
+        --artifact-root $GraphAdapterArtifactRoot `
+        --evaluated-at $GraphAdapterEvaluatedAt `
+        --max-age-seconds $GraphAdapterMaxAgeSeconds
+    exit $LASTEXITCODE
+}
+
+if (-not [string]::IsNullOrWhiteSpace($SentruxAdapterRequest)) {
+    if ([string]::IsNullOrWhiteSpace($SentruxAdapterArtifactRoot) -or
+        $SentruxAdapterEvaluatedAt -lt 0 -or
+        $SentruxAdapterMaxAgeSeconds -le 0) {
+        throw "Sentrux adapter facade requires artifact root, non-negative evaluated-at, and positive max-age"
+    }
+    $rustCli = $defaultRustCli
+    if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) { throw "Sentrux adapter binary is missing: $rustCli" }
+    & $rustCli provider sentrux-adapt --request $SentruxAdapterRequest --artifact-root $SentruxAdapterArtifactRoot --evaluated-at $SentruxAdapterEvaluatedAt --max-age-seconds $SentruxAdapterMaxAgeSeconds
+    exit $LASTEXITCODE
+}
+
+if (-not [string]::IsNullOrWhiteSpace($CodeNexusAdapterRequest)) {
+    if ([string]::IsNullOrWhiteSpace($CodeNexusAdapterArtifactRoot) -or
+        $CodeNexusAdapterEvaluatedAt -lt 0 -or
+        $CodeNexusAdapterMaxAgeSeconds -le 0) {
+        throw "CodeNexus adapter facade requires artifact root, non-negative evaluated-at, and positive max-age"
+    }
+    $rustCli = $defaultRustCli
+    if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
+        throw "CodeNexus adapter binary is missing: $rustCli"
+    }
+    & $rustCli provider codenexus-adapt `
+        --request $CodeNexusAdapterRequest `
+        --artifact-root $CodeNexusAdapterArtifactRoot `
+        --evaluated-at $CodeNexusAdapterEvaluatedAt `
+        --max-age-seconds $CodeNexusAdapterMaxAgeSeconds
+    exit $LASTEXITCODE
+}
+
+if (-not [string]::IsNullOrWhiteSpace($SurvivalScanRequest)) {
+    if ([string]::IsNullOrWhiteSpace($SurvivalScanArtifactRoot)) {
+        throw "Repository survival scan facade requires an artifact root"
+    }
+    $rustCli = $defaultRustCli
+    if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
+        throw "Repository survival scan binary is missing: $rustCli"
+    }
+    & $rustCli repository survival-scan `
+        --request $SurvivalScanRequest `
+        --artifact-root $SurvivalScanArtifactRoot
+    exit $LASTEXITCODE
+}
+
+if (-not [string]::IsNullOrWhiteSpace($RunCommitManifestRef)) {
+    if ([string]::IsNullOrWhiteSpace($RunCommitSourceRoot) -or
+        [string]::IsNullOrWhiteSpace($RunCommitAuthorityRoot) -or
+        [string]::IsNullOrWhiteSpace($RunCommitFinalName)) {
+        throw "Run commit facade requires source root, authority root, manifest Artifact Ref, and final name"
+    }
+    $rustCli = $defaultRustCli
+    if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
+        throw "Run commit binary is missing: $rustCli"
+    }
+    & $rustCli run commit `
+        --source-root $RunCommitSourceRoot `
+        --authority-root $RunCommitAuthorityRoot `
+        --manifest-ref $RunCommitManifestRef `
+        --final-name $RunCommitFinalName
+    exit $LASTEXITCODE
+}
 
 function Resolve-Repo {
     param([string]$Path)
@@ -105,512 +291,7 @@ $output = & git -C $Path rev-parse --is-inside-work-tree 2>$null
 return ($LASTEXITCODE -eq 0 -and [string]$output -eq "true")
 }
 
-# ============ 三栈工作流推荐器 (Workflow Stack Recommender) ============
-# NOTE: this block is duplicated in OpenSpec-Detector.ps1 (standalone script).
-# Keep both copies in sync when editing.
-
-function Get-CodeMetrics {
-    param([string]$Path)
-
-    $excludeDirNames = @("node_modules", ".git", "target", "dist", "build", "vendor", "venv", ".venv", "__pycache__")
-    $includeExt = @(
-        "*.ts", "*.tsx", "*.js", "*.jsx", "*.rs", "*.py", "*.go",
-        "*.ps1", "*.psm1", "*.cs", "*.java", "*.kt", "*.swift", "*.vue", "*.svelte", "*.v"
-    )
-
-    $allFiles = @(Get-ChildItem -Path $Path -Recurse -File -Include $includeExt -ErrorAction SilentlyContinue |
-        Where-Object {
-            $full = $_.FullName
-            -not ($excludeDirNames | Where-Object { $full -match [regex]::Escape("\$_\") -or $full -match [regex]::Escape("/$_/") })
-        })
-
-    $totalFiles = $allFiles.Count
-    $totalLines = 0
-    foreach ($file in $allFiles) {
-        try {
-            $totalLines += (Get-Content $file.FullName -ErrorAction SilentlyContinue | Measure-Object -Line).Lines
-        }
-        catch { }
-    }
-
-    return @{
-        lines = $totalLines
-        files = $totalFiles
-        estimated = $false
-    }
-}
-
-function Get-GovernanceIndicators {
-    param([string]$Path)
-
-    return @{
-        hasDesign = Test-Path "$Path/design.md"
-        hasSpecs = Test-Path "$Path/specs"
-        hasSecurityReview = (Test-Path "$Path/security-review.md") -or (Test-Path "$Path/docs/security-review.md")
-        hasArchitecture = Test-Path "$Path/architecture.md"
-        hasOpenSpec = Test-Path "$Path/openspec"
-        hasSpecKit = Test-Path "$Path/.specify"
-        hasADRs = (Test-Path "$Path/docs/adr") -or (Test-Path "$Path/adr")
-        hasConstitution = Test-Path "$Path/constitution.md"
-        hasIssueTemplates = Test-Path "$Path/.github/ISSUE_TEMPLATE"
-    }
-}
-
-function Get-CollaborationMetrics {
-    param([string]$Path)
-
-    try {
-        $contributors = @(& git -C $Path log --format=%ae 2>$null | Sort-Object -Unique)
-        $lastCommit = & git -C $Path log -1 --format=%ci 2>$null
-        $firstCommit = & git -C $Path log --reverse --format=%ci 2>$null | Select-Object -First 1
-        # repoAgeDays = age since FIRST commit (brownfield detection);
-        # lastCommitAgeDays = staleness since LAST commit (activity detection).
-        # Using last-commit age for both would judge every active old repo "greenfield".
-        $lastCommitAgeDays = if ($lastCommit) {
-            ((Get-Date) - [DateTime]::Parse($lastCommit)).Days
-        } else { 9999 }
-        $repoAge = if ($firstCommit) {
-            ((Get-Date) - [DateTime]::Parse($firstCommit)).Days
-        } else { 0 }
-
-        return @{
-            contributors = $contributors.Count
-            repoAgeDays = $repoAge
-            lastCommitAgeDays = $lastCommitAgeDays
-        }
-    }
-    catch {
-        return @{
-            contributors = 0
-            repoAgeDays = 0
-            lastCommitAgeDays = 9999
-        }
-    }
-}
-
-function Get-CICDScore {
-    param([string]$Path)
-
-    $score = 0
-
-    if (Test-Path "$Path/.github/workflows") { $score += 10 }
-    if (Test-Path "$Path/.gitlab-ci.yml") { $score += 10 }
-    if (Test-Path "$Path/Jenkinsfile") { $score += 10 }
-    if (Test-Path "$Path/azure-pipelines.yml") { $score += 10 }
-    if (Test-Path "$Path/.circleci") { $score += 10 }
-
-    return $score
-}
-
-function Test-CodeIntelHasDeployIndicators {
-    param([string]$Path)
-
-    if (Test-Path "$Path/Dockerfile") { return $true }
-    if (Test-Path "$Path/docker-compose.yml") { return $true }
-    if (Test-Path "$Path/docker-compose.yaml") { return $true }
-
-    $workflowsDir = "$Path/.github/workflows"
-    if (Test-Path $workflowsDir) {
-        $matches = @(Get-ChildItem -Path $workflowsDir -Filter "*.yml" -ErrorAction SilentlyContinue) +
-                   @(Get-ChildItem -Path $workflowsDir -Filter "*.yaml" -ErrorAction SilentlyContinue)
-        foreach ($wf in $matches) {
-            try {
-                $content = Get-Content -LiteralPath $wf.FullName -Raw -ErrorAction SilentlyContinue
-                if ($content -match "(?i)deploy") { return $true }
-            }
-            catch { }
-        }
-    }
-    return $false
-}
-
-function Test-CodeIntelHasWebFrontend {
-    param([string]$Path)
-
-    $packageJsonPath = "$Path/package.json"
-    if (Test-Path $packageJsonPath) {
-        try {
-            $pkg = Get-Content -LiteralPath $packageJsonPath -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
-            $deps = @()
-            if ($pkg.PSObject.Properties["dependencies"]) { $deps += $pkg.dependencies.PSObject.Properties.Name }
-            if ($pkg.PSObject.Properties["devDependencies"]) { $deps += $pkg.devDependencies.PSObject.Properties.Name }
-            $frontendMarkers = @("react", "vue", "next", "svelte", "vite")
-            foreach ($marker in $frontendMarkers) {
-                if ($deps | Where-Object { $_ -match "(?i)$marker" }) { return $true }
-            }
-        }
-        catch { }
-    }
-
-    foreach ($dir in @("frontend", "web", "ui")) {
-        if (Test-Path "$Path/$dir") { return $true }
-    }
-    return $false
-}
-
-function Get-TestCoverage {
-    param([string]$Path)
-
-    $hasTests = $false
-    $testPatterns = @("*/test/*", "*/tests/*", "*/__tests__/*", "*_test.*", "*_tests.*", "*.spec.*", "*.test.*")
-
-    foreach ($pattern in $testPatterns) {
-        $found = @(Get-ChildItem -Path $Path -Recurse -Include $pattern -ErrorAction SilentlyContinue)
-        if ($found.Count -gt 0) {
-            $hasTests = $true
-            break
-        }
-    }
-
-    return $hasTests
-}
-
-function New-SpecDrivenRecommendationBrief {
-    param(
-        [string]$Tool,
-        [string]$Verdict,
-        [int]$Score,
-        [object[]]$Reasons,
-        [object[]]$EntrySkills,
-        [hashtable]$Metrics,
-        [hashtable]$Governance,
-        [hashtable]$Collaboration
-    )
-
-    $recommended = if ($Verdict -eq "not_needed") { "none" } else { $Tool }
-    $why = @($Reasons | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -First 6)
-    if ($why.Count -eq 0) {
-        $why = @("No strong spec-governance signal was detected.")
-    }
-
-    $confidence = if ($Verdict -eq "already_adopted") { "high" }
-    elseif ($Score -ge 70) { "high" }
-    elseif ($Score -ge 50) { "medium" }
-    elseif ($Score -ge 30) { "medium-low" }
-    else { "low" }
-
-    $doNotDoYet = @(
-        "Do not auto-run init from Code Intel Pipeline.",
-        "Do not create or update external issue trackers without explicit authorization."
-    )
-
-    $acceptance = @(
-        "PRD or feature requirements are decomposed into explicit phases.",
-        "Each phase names deliverables and requirement coverage.",
-        "Tasks map to acceptance tests before implementation starts.",
-        "Completion conditions are explicit and verifiable."
-    )
-
-    if ($recommended -eq "openspec-opsx") {
-        $doFirst = if ($Verdict -eq "already_adopted") {
-            @(
-                "Create the next OpenSpec proposal/spec/design/tasks chain.",
-                "Split the work into phases with named deliverables.",
-                "Map each phase to requirement coverage and acceptance tests."
-            )
-        } else {
-            @(
-                "Run openspec init only after the operator accepts the recommendation.",
-                "Write the first proposal/spec/design/tasks chain.",
-                "Split the first change into phases with deliverables, acceptance tests, and done criteria."
-            )
-        }
-        $whyNot = @("spec-kit is usually simpler for a greenfield 0->1 project before continuous change management exists.")
-        $fallback = "Use spec-kit if this is actually a new greenfield product with little brownfield governance need."
-    }
-    elseif ($recommended -eq "spec-kit") {
-        $doFirst = if ($Verdict -eq "already_adopted") {
-            @(
-                "Refresh constitution.md if project rules changed.",
-                "Create the next feature spec.",
-                "Derive plan/tasks with requirement coverage, acceptance tests, and done criteria."
-            )
-        } else {
-            @(
-                "Run specify init only after the operator accepts the recommendation.",
-                "Write constitution.md.",
-                "Create the first feature spec, then derive plan/tasks with acceptance tests and done criteria."
-            )
-        }
-        $whyNot = @("OpenSpec OPSX is stronger for brownfield continuous change management across existing systems.")
-        $fallback = "Use OpenSpec OPSX if this is actually a brownfield migration or governance-heavy change-control project."
-    }
-    else {
-        $doFirst = @(
-            "Do not initialize a spec framework yet.",
-            "Keep lightweight README, issue, or design notes until the project has enough scope."
-        )
-        $whyNot = @("The current score is below the threshold for a spec-driven layer.")
-        $fallback = "Re-run the detector when code size, collaboration, CI, tests, or governance files grow."
-    }
-
-    return [ordered]@{
-        recommended = $recommended
-        verdict = $Verdict
-        confidence = $confidence
-        why = $why
-        whyNot = $whyNot
-        doFirst = $doFirst
-        doNotDoYet = $doNotDoYet
-        fallback = $fallback
-        acceptance = $acceptance
-        sourceMethod = "EternallLight/improving-ai-agent-openspec methodology: PRD decomposition, phase plan, requirement coverage, acceptance tests, done criteria."
-    }
-}
-
-function Get-SpecDrivenRecommendation {
-    param(
-        [hashtable]$Metrics,
-        [hashtable]$Governance,
-        [hashtable]$Collaboration,
-        [int]$CICDScore,
-        [bool]$HasTests
-    )
-
-    # Already adopted one of the two real tools
-    if ($Governance.hasOpenSpec) {
-        return @{
-            stack = "spec-driven"
-            tool = "openspec-opsx"
-            verdict = "already_adopted"
-            score = 100
-            reasons = @("Detected openspec/ directory (OpenSpec OPSX already in use)")
-            entrySkills = @()
-        }
-    }
-    if ($Governance.hasSpecKit) {
-        return @{
-            stack = "spec-driven"
-            tool = "spec-kit"
-            verdict = "already_adopted"
-            score = 100
-            reasons = @("Detected .specify/ directory (spec-kit already in use)")
-            entrySkills = @()
-        }
-    }
-
-    $score = 0
-    $reasons = @()
-
-    # Code size scoring
-    if ($Metrics.lines -gt 50000) {
-        $score += 40
-        $reasons += "Large codebase ($($Metrics.lines) lines)"
-    }
-    elseif ($Metrics.lines -gt 10000) {
-        $score += 25
-        $reasons += "Medium codebase ($($Metrics.lines) lines)"
-    }
-    elseif ($Metrics.lines -gt 5000) {
-        $score += 10
-        $reasons += "Small codebase ($($Metrics.lines) lines)"
-    }
-
-    # Governance file scoring
-    if ($Governance.hasDesign) { $score += 20; $reasons += "design.md exists" }
-    if ($Governance.hasArchitecture) { $score += 15; $reasons += "architecture.md exists" }
-    if ($Governance.hasSpecs) { $score += 25; $reasons += "specs/ directory exists" }
-    if ($Governance.hasSecurityReview) { $score += 25; $reasons += "Security review file exists" }
-    if ($Governance.hasADRs) { $score += 15; $reasons += "ADR documentation exists" }
-    if ($Governance.hasConstitution) { $score += 20; $reasons += "constitution.md exists" }
-
-    # Collaboration scoring
-    if ($Collaboration.contributors -gt 5) {
-        $score += 25
-        $reasons += "Multi-contributor ($($Collaboration.contributors) people)"
-    }
-    elseif ($Collaboration.contributors -gt 2) {
-        $score += 15
-        $reasons += "Small team ($($Collaboration.contributors) people)"
-    }
-
-    if ($Collaboration.repoAgeDays -gt 365) {
-        $score += 10
-        $reasons += "Mature project ($($Collaboration.repoAgeDays) days)"
-    }
-
-    # CI/CD scoring
-    if ($CICDScore -gt 0) {
-        $score += $CICDScore
-        $reasons += "CI/CD pipeline detected"
-    }
-
-    # Test scoring
-    if ($HasTests) { $score += 5 } else { $score -= 5 }
-
-    $verdict = if ($score -ge 50) { "recommended" }
-               elseif ($score -ge 30) { "optional" }
-               else { "not_needed" }
-
-    # Which real tool to point at: brownfield (lots of existing source, established repo)
-    # vs greenfield (near-empty repo / young repo) -> spec-kit for 0->1 bootstrapping.
-    $isBrownfield = ($Metrics.files -gt 5) -and ($Collaboration.repoAgeDays -gt 90)
-    $tool = if ($isBrownfield) { "openspec-opsx" } else { "spec-kit" }
-    if ($isBrownfield) {
-        $reasons += "Brownfield project (files=$($Metrics.files), repoAgeDays=$($Collaboration.repoAgeDays)) -> OpenSpec OPSX fits ongoing change management"
-    } else {
-        $reasons += "Greenfield/young project (files=$($Metrics.files), repoAgeDays=$($Collaboration.repoAgeDays)) -> spec-kit fits 0->1 bootstrapping"
-    }
-
-    $entrySkills = @(if ($verdict -eq "not_needed") { }
-                   elseif ($tool -eq "openspec-opsx") { "openspec init" }
-                   else { "specify init" })
-
-    return @{
-        stack = "spec-driven"
-        tool = $tool
-        verdict = $verdict
-        score = $score
-        reasons = $reasons
-        entrySkills = $entrySkills
-        metrics = $Metrics
-        governance = $Governance
-        collaboration = $Collaboration
-    }
-}
-
-function Get-MattFlowRecommendation {
-    param(
-        [hashtable]$Metrics,
-        [hashtable]$Governance,
-        [hashtable]$Collaboration
-    )
-
-    $reasons = @()
-    $isActive = $Collaboration.lastCommitAgeDays -le 90
-    $hasSource = $Metrics.files -gt 5
-
-    $verdict = if ($isActive -and $hasSource) { "recommended" } else { "not_needed" }
-
-    if ($isActive) { $reasons += "Active development (last commit $($Collaboration.lastCommitAgeDays)d ago)" }
-    else { $reasons += "No commits in the last 90 days (last commit $($Collaboration.lastCommitAgeDays)d ago)" }
-
-    if ($hasSource) { $reasons += "In-development project (files=$($Metrics.files))" }
-    else { $reasons += "Too few source files (files=$($Metrics.files))" }
-
-    $entrySkills = @()
-    if ($verdict -eq "recommended") {
-        if ($Governance.hasIssueTemplates) {
-            $entrySkills += "/triage"
-            $reasons += ".github/ISSUE_TEMPLATE detected -> incoming issue triage"
-        }
-        $entrySkills += "/grill-with-docs"
-        if ($Metrics.lines -gt 20000 -or $Collaboration.contributors -gt 2) {
-            $entrySkills += "/to-prd"
-            $entrySkills += "/to-issues"
-            $reasons += "Large project (lines=$($Metrics.lines), contributors=$($Collaboration.contributors)) -> add PRD/issue breakdown"
-        }
-    }
-
-    return @{
-        stack = "matt-flow"
-        verdict = $verdict
-        reasons = $reasons
-        entrySkills = $entrySkills
-    }
-}
-
-function Get-GstackRecommendation {
-    param(
-        [string]$Path,
-        [hashtable]$Collaboration
-    )
-
-    $reasons = @()
-    $isActive = $Collaboration.lastCommitAgeDays -le 90
-    $verdict = if ($isActive) { "recommended" } else { "not_needed" }
-
-    if ($isActive) { $reasons += "Active development (last commit $($Collaboration.lastCommitAgeDays)d ago)" }
-    else { $reasons += "No commits in the last 90 days (last commit $($Collaboration.lastCommitAgeDays)d ago)" }
-
-    $entrySkills = @()
-    if ($verdict -eq "recommended") {
-        $hasWebFrontend = Test-CodeIntelHasWebFrontend -Path $Path
-        $hasDeploy = Test-CodeIntelHasDeployIndicators -Path $Path
-
-        if ($hasWebFrontend) {
-            $entrySkills += "/qa"
-            $entrySkills += "/design-review"
-            $reasons += "Web frontend detected -> QA + design review"
-        }
-        if ($hasDeploy) {
-            $entrySkills += "/ship"
-            $entrySkills += "/canary"
-            $reasons += "Deploy indicators detected (Dockerfile/compose/CI deploy step) -> ship + canary"
-        }
-        if ($entrySkills.Count -eq 0) {
-            $entrySkills += "/review"
-            $reasons += "Default delivery gate"
-        }
-    }
-
-    return @{
-        stack = "gstack"
-        verdict = $verdict
-        reasons = $reasons
-        entrySkills = $entrySkills
-    }
-}
-
-function Invoke-WorkflowStackDetector {
-    param(
-        [string]$RepoPath,
-        [bool]$AutoMode = $false
-    )
-
-    $metrics = Get-CodeMetrics -Path $RepoPath
-    $governance = Get-GovernanceIndicators -Path $RepoPath
-    $collaboration = Get-CollaborationMetrics -Path $RepoPath
-    $cicdScore = Get-CICDScore -Path $RepoPath
-    $hasTests = Get-TestCoverage -Path $RepoPath
-
-    $specDriven = Get-SpecDrivenRecommendation -Metrics $metrics -Governance $governance -Collaboration $collaboration -CICDScore $cicdScore -HasTests $hasTests
-    $specDriven["recommendationBrief"] = New-SpecDrivenRecommendationBrief `
-        -Tool $specDriven.tool `
-        -Verdict $specDriven.verdict `
-        -Score $specDriven.score `
-        -Reasons $specDriven.reasons `
-        -EntrySkills $specDriven.entrySkills `
-        -Metrics $metrics `
-        -Governance $governance `
-        -Collaboration $collaboration
-    $mattFlow = Get-MattFlowRecommendation -Metrics $metrics -Governance $governance -Collaboration $collaboration
-    $gstack = Get-GstackRecommendation -Path $RepoPath -Collaboration $collaboration
-
-    $workflows = @($mattFlow, $gstack, $specDriven)
-
-    $lines = @()
-    foreach ($wf in $workflows) {
-        $skillsText = if ($wf.entrySkills.Count -gt 0) { $wf.entrySkills -join " " } else { "(none)" }
-        $toolText = if ($wf.PSObject -and $wf.ContainsKey("tool")) { " tool=$($wf.tool)" } else { "" }
-        $lines += "- $($wf.stack)${toolText}: $($wf.verdict) -> $skillsText"
-    }
-
-    $message = @"
-
-Workflow Stack Recommendations
-
-$($lines -join "`n")
-
-"@
-
-    return @{
-        workflows = $workflows
-        specDriven = $specDriven
-        mattFlow = $mattFlow
-        gstack = $gstack
-        message = $message.Trim()
-    }
-}
-
-function Show-WorkflowStackSuggestion {
-    param(
-        [hashtable]$Result,
-        [bool]$AutoMode = $false
-    )
-
-    Write-Host $Result.message
-}
+# Workflow recommendations are owned by the standalone advisory atom in OpenSpec-Detector.ps1.
 
 function Get-JsonProperty {
     param(
@@ -810,10 +491,28 @@ function Get-StepFailureCategory {
     if (($name -like "repowise*" -or $name -eq "provider preflight") -and $blob -match "rate_limit|quota|usage limit exceeded|error code: 429|too many requests|provider_quota") {
         return "provider_quota"
     }
+    if (($name -like "repowise*" -or $name -eq "provider preflight") -and $blob -match "provider_unavailable|model_not_found|not_found_error|error code: 404|status code: 404") {
+        return "provider_unavailable"
+    }
+    if (($name -like "repowise*" -or $name -eq "provider preflight") -and $blob -match "config_error|authentication_error|invalid api key|not authorized|token not match") {
+        return "config_error"
+    }
     if ($status -eq "failed") {
         return "local_tool_error"
     }
     return $null
+}
+
+function Get-CodeIntelEffectiveFailedSteps {
+    param(
+        [object[]]$FailedSteps,
+        [int]$BlockingSentruxDebt
+    )
+
+    return @($FailedSteps | Where-Object {
+        $category = [string](Get-StepFailureCategory $_)
+        $category -ne "sentrux_fail" -or $BlockingSentruxDebt -gt 0
+    })
 }
 
 function Test-GitHubSolutionResearchRequired {
@@ -1427,52 +1126,18 @@ $importsArray = @($imports.ToArray())
 ([ordered]@{ schema = "code-evidence-symbol-chunks.v1"; mappings = $symbolChunksArray }) | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $fullDir "symbol-chunks.json") -Encoding UTF8
 ([ordered]@{ schema = "code-evidence-imports.v1"; imports = $importsArray }) | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $fullDir "imports.json") -Encoding UTF8
 
-$adapterConfig = $null
-if ($null -ne $CodeEvidenceConfig) {
-$adapters = Get-JsonProperty $CodeEvidenceConfig "adapters" $null
-if ($null -ne $adapters) { $adapterConfig = Get-JsonProperty $adapters "cocoindex-code" $null }
-}
-$cocoEnabled = [bool](Get-JsonProperty $adapterConfig "enabled" $false)
-$cocoRequired = [bool](Get-JsonProperty $adapterConfig "required" $false)
-$cocoCommand = [string](Get-JsonProperty $adapterConfig "command" "ccc")
-if ([string]::IsNullOrWhiteSpace($cocoCommand)) { $cocoCommand = "ccc" }
-
-if (-not $cocoEnabled) {
+# R07 reviewed retirement: this compatibility artifact is a static tombstone.
+# There is intentionally no configuration lookup, executable discovery, or provider invocation.
 $cocoOutcome = [ordered]@{
 schema = "code-evidence-adapter-outcome.v1"
 adapter = "cocoindex-code"
 enabled = $false
-required = $cocoRequired
+required = $false
 status = "skipped"
 fatal = $false
-reasonCode = "disabled"
-reason = "cocoindex-code adapter disabled by config."
-command = $cocoCommand
-}
-} elseif (-not (Test-CommandAvailable $cocoCommand)) {
-$cocoOutcome = [ordered]@{
-schema = "code-evidence-adapter-outcome.v1"
-adapter = "cocoindex-code"
-enabled = $true
-required = $cocoRequired
-status = "skipped"
-fatal = $false
-reasonCode = "command_unavailable"
-reason = "cocoindex-code command '$cocoCommand' was not found."
-command = $cocoCommand
-}
-} else {
-$cocoOutcome = [ordered]@{
-schema = "code-evidence-adapter-outcome.v1"
-adapter = "cocoindex-code"
-enabled = $true
-required = $cocoRequired
-status = "available"
-fatal = $false
-reasonCode = "available"
-reason = "cocoindex-code command '$cocoCommand' is available; native minimal layer remains default."
-command = $cocoCommand
-}
+reasonCode = "reviewed_deletion"
+reason = "cocoindex-code is a reviewed retirement tombstone; legacy configuration cannot restore discovery or invocation."
+command = ""
 }
 
 $cocoOutcomePath = Join-Path $adapterDir "outcome.json"
@@ -1896,15 +1561,29 @@ function New-HospitalStateMachine {
     # Keep this guard self-contained because the state-machine seam is also
     # extracted independently by the regression harness.
     $providerQuotaCount = 0
+    $providerUnavailableCount = 0
+    $configErrorCount = 0
     if ($FailureCounts -is [System.Collections.IDictionary] -and $FailureCounts.Contains("providerQuota")) {
         $providerQuotaCount = [int]$FailureCounts["providerQuota"]
     }
     elseif ($null -ne $FailureCounts -and $null -ne $FailureCounts.PSObject.Properties["providerQuota"]) {
         $providerQuotaCount = [int]$FailureCounts.providerQuota
     }
+    if ($FailureCounts -is [System.Collections.IDictionary] -and $FailureCounts.Contains("providerUnavailable")) {
+        $providerUnavailableCount = [int]$FailureCounts["providerUnavailable"]
+    }
+    elseif ($null -ne $FailureCounts -and $null -ne $FailureCounts.PSObject.Properties["providerUnavailable"]) {
+        $providerUnavailableCount = [int]$FailureCounts.providerUnavailable
+    }
+    if ($FailureCounts -is [System.Collections.IDictionary] -and $FailureCounts.Contains("configError")) {
+        $configErrorCount = [int]$FailureCounts["configError"]
+    }
+    elseif ($null -ne $FailureCounts -and $null -ne $FailureCounts.PSObject.Properties["configError"]) {
+        $configErrorCount = [int]$FailureCounts.configError
+    }
 
     $toolsOk = ([int]$FailureCounts.localToolError -eq 0)
-    $providerAvailable = ($providerQuotaCount -eq 0)
+    $providerAvailable = ($providerQuotaCount -eq 0 -and $providerUnavailableCount -eq 0 -and $configErrorCount -eq 0)
     $graphOk = ([int]$FailureCounts.graphMissing -eq 0)
     $sentruxOk = ([int]$FailureCounts.sentruxFail -eq 0 -and $RulesExists -and $GateStatus -eq "passed" -and $CheckStatus -eq "passed")
     $surgeryDebtCleared = ($StructuralEvidenceComplete -and $FailingWhatIfCount -eq 0)
@@ -2115,12 +1794,20 @@ function Get-HospitalDiagnosis {
     )
 
     $providerQuotaCount = Get-FailureCount $FailureCounts "providerQuota"
+    $providerUnavailableCount = Get-FailureCount $FailureCounts "providerUnavailable"
+    $configErrorCount = Get-FailureCount $FailureCounts "configError"
 
     if ($FailureCounts.localToolError -gt 0) {
         return [ordered]@{ severity = "red"; primaryDiagnosis = "local tool failure" }
     }
     if ($providerQuotaCount -gt 0) {
         return [ordered]@{ severity = "amber"; primaryDiagnosis = "provider quota exhausted" }
+    }
+    if ($providerUnavailableCount -gt 0) {
+        return [ordered]@{ severity = "amber"; primaryDiagnosis = "provider unavailable" }
+    }
+    if ($configErrorCount -gt 0) {
+        return [ordered]@{ severity = "amber"; primaryDiagnosis = "provider configuration error" }
     }
     if ($FailureCounts.sentruxFail -gt 0) {
         return [ordered]@{ severity = "red"; primaryDiagnosis = "architecture gate failure" }
@@ -2147,9 +1834,13 @@ function Get-HospitalNextProtocol {
     )
 
     $providerQuotaCount = Get-FailureCount $FailureCounts "providerQuota"
+    $providerUnavailableCount = Get-FailureCount $FailureCounts "providerUnavailable"
+    $configErrorCount = Get-FailureCount $FailureCounts "configError"
 
     if ($FailureCounts.localToolError -gt 0) { return "triage" }
     if ($providerQuotaCount -gt 0) { return "triage" }
+    if ($providerUnavailableCount -gt 0) { return "triage" }
+    if ($configErrorCount -gt 0) { return "triage" }
     if ($null -ne $GitHubResearch -and [bool]$GitHubResearch.required) { return "github_solution_research" }
     if ($FailureCounts.graphMissing -gt 0) { return "diagnose" }
     if (-not $RulesExists) { return "govern" }
@@ -2168,6 +1859,8 @@ function Get-HospitalAdmissionReason {
         "known modernization debt" { return "Admit for planned surgery: what-if scenarios show debt that should be scheduled, not ignored." }
         "architecture gate failure" { return "Admit for structural treatment: Sentrux gate or rules failed." }
         "provider quota exhausted" { return "Admit for triage: provider quota prevented complete evidence collection." }
+        "provider unavailable" { return "Admit for triage: the configured upstream provider route or model was unavailable." }
+        "provider configuration error" { return "Admit for triage: provider credentials, endpoint, or model configuration must be corrected." }
         "structural evidence incomplete" { return "Admit for diagnosis: required structural summaries are incomplete." }
         "local tool failure" { return "Admit for triage: local toolchain failed before diagnosis can be trusted." }
         default { return "Admit until the next protocol clears the diagnosis." }
@@ -2184,10 +1877,14 @@ function Get-HospitalTreatmentPlan {
     )
 
     $providerQuotaCount = Get-FailureCount $FailureCounts "providerQuota"
+    $providerUnavailableCount = Get-FailureCount $FailureCounts "providerUnavailable"
+    $configErrorCount = Get-FailureCount $FailureCounts "configError"
 
     $treatment = @()
     if ($FailureCounts.localToolError -gt 0) { $treatment += "Fix local tool errors before interpreting architecture signals." }
     if ($providerQuotaCount -gt 0) { $treatment += "Restore provider quota or use a complete local evidence path before interpreting the result." }
+    if ($providerUnavailableCount -gt 0) { $treatment += "Verify the provider model catalog and route availability; keep local index-only evidence available." }
+    if ($configErrorCount -gt 0) { $treatment += "Correct provider endpoint, model, or credential configuration before retrying provider-backed docs." }
     if ($FailureCounts.graphMissing -gt 0) { $treatment += "Refresh Understand graph with: $UnderstandCommand" }
     if (-not $RulesExists) { $treatment += "Add .sentrux/rules.toml for the chosen scope." }
     if ($FailingWhatIfCount -gt 0) { $treatment += "Use what-if failures as the tightening roadmap; start with the first failing scenario." }
@@ -2323,6 +2020,7 @@ function New-HospitalModalities {
         [object]$SentruxFileDetailsSummary,
         [object]$CodeNexusContextSummary,
         [object]$SentruxWhatIfSummary,
+        [object]$RuntimeCiSummary,
         [string]$GovernanceArtifact,
         [string]$GovernanceFinding
     )
@@ -2332,8 +2030,9 @@ function New-HospitalModalities {
     $ctFinding = if ($CtStatus -eq "available") { "$($SentruxDsmSummary.modules) modules, $($SentruxFileDetailsSummary.functions) functions" } else { "not generated" }
     $mriArtifact = if ($MriStatus -eq "available") { [string]$CodeNexusContextSummary.path } else { "" }
     $mriFinding = if ($MriStatus -eq "available") { "$($CodeNexusContextSummary.files) files, $($CodeNexusContextSummary.references) references" } else { "not generated" }
-    $petArtifact = if ($PetStatus -eq "available") { [string]$SentruxWhatIfSummary.path } else { "" }
-    $petFinding = if ($PetStatus -eq "available") { "$($SentruxWhatIfSummary.failing) failing what-if scenarios" } else { "not generated" }
+    $petArtifact = if ($null -ne $RuntimeCiSummary) { [string]$RuntimeCiSummary.path } elseif ($PetStatus -eq "available") { [string]$SentruxWhatIfSummary.path } else { "" }
+    $petFinding = if ($null -ne $RuntimeCiSummary) { "runtime/CI health=$($RuntimeCiSummary.health); freshness=$($RuntimeCiSummary.freshness); completeness=$($RuntimeCiSummary.completeness)" } elseif ($PetStatus -eq "available") { "$($SentruxWhatIfSummary.failing) failing what-if scenarios" } else { "not generated" }
+    $petLimitation = if ($null -ne $RuntimeCiSummary) { "Provider-neutral runtime/CI evidence is cited; provider logs remain outside this report." } else { "No live runtime trace is captured yet." }
     $chartFinding = if ($null -ne $RepowiseStep) { [string]$RepowiseStep.status } else { "not run" }
 
     return @(
@@ -2341,7 +2040,7 @@ function New-HospitalModalities {
         (New-Modality "anatomy" "Understand Anything architecture graph" $UnderstandStep $GraphScore (Join-Path (Join-Path $RepoPath ".understand-anything") "knowledge-graph.json") (Get-FirstLine ([string]$UnderstandStep.output)) "Requires a prebuilt graph from the Understand tool.")
         (New-Modality "ct" "Sentrux DSM, hotspots, and structural slices" $SentruxGateStep $CtScore $ctArtifact $ctFinding "Static structure is not runtime truth.")
         (New-Modality "mri" "CodeNexus context and impact localization" $null $MriScore $mriArtifact $mriFinding "Lite mode is local evidence, not a full semantic backend.")
-        (New-Modality "pet" "execution proxy: test gaps, evolution, and what-if risk" $null $PetScore $petArtifact $petFinding "No live runtime trace is captured yet.")
+        (New-Modality "pet" "runtime/CI evidence with test gaps, evolution, and what-if fallback" $null $PetScore $petArtifact $petFinding $petLimitation)
         (New-Modality "chart" "Repowise long-term project memory" $RepowiseStep $MemoryScore "" $chartFinding "Provider quota and index freshness can limit semantic memory.")
         (New-Modality "governance" "rules, gate, and session safety rails" $SentruxCheckStep $GovernanceScore $GovernanceArtifact $GovernanceFinding "Rules only protect boundaries that have been encoded.")
     )
@@ -2502,7 +2201,8 @@ function New-HospitalScoreBlock {
         [object]$SentruxFileDetailsObject,
         [object]$SentruxEvolutionObject,
         [object]$SentruxWhatIfObject,
-        [object]$CodeNexusContextObject
+        [object]$CodeNexusContextObject,
+        [object]$RuntimeCiSummary
     )
 
     $rulesExists = [bool]$SentruxInsight["rulesExists"]
@@ -2513,10 +2213,10 @@ function New-HospitalScoreBlock {
     $memoryScore = Get-StepScore $RepowiseStep
     $mriStatus = if ($null -ne $CodeNexusContextObject) { "available" } else { "missing" }
     $ctStatus = if ($null -ne $SentruxDsmObject -and $null -ne $SentruxFileDetailsObject) { "available" } else { "missing" }
-    $petStatus = if ($null -ne $SentruxWhatIfObject -and $null -ne $SentruxEvolutionObject) { "available" } else { "missing" }
+    $petStatus = if ($null -ne $RuntimeCiSummary) { if ([string]$RuntimeCiSummary.health -eq "unknown") { "unknown" } else { "available" } } elseif ($null -ne $SentruxWhatIfObject -and $null -ne $SentruxEvolutionObject) { "available" } else { "missing" }
     $mriScore = if ($mriStatus -eq "available") { 100 } else { 0 }
     $ctScore = if ($ctStatus -eq "available") { 100 } else { 0 }
-    $petScore = if ($petStatus -eq "available") { 70 } else { 0 }
+    $petScore = if ($null -ne $RuntimeCiSummary) { switch ([string]$RuntimeCiSummary.health) { "green" { 100 } "red" { 0 } default { 30 } } } elseif ($petStatus -eq "available") { 70 } else { 0 }
     $resolutionScore = Get-ImportResolutionScore $Measurements.resolved_ratio
     $pollutionStatus = [string]$Measurements.pollution_status
     $pollutionScore = if ($pollutionStatus -eq "unknown") { 0 } elseif ($Measurements.excluded_files -gt 0) { 100 } else { 80 }
@@ -2645,6 +2345,7 @@ function New-CodeIntelHospitalReport {
 [object]$SentruxEvolutionSummary,
 [object]$SentruxWhatIfSummary,
 [object]$CodeNexusContextSummary,
+[object]$RuntimeCiSummary,
 [string]$UnderstandCommand,
 [object]$ToolState,
 [object]$GitHubResearch
@@ -2675,7 +2376,8 @@ function New-CodeIntelHospitalReport {
         -SentruxFileDetailsObject $artifacts.file_details `
         -SentruxEvolutionObject $artifacts.evolution `
         -SentruxWhatIfObject $artifacts.what_if `
-        -CodeNexusContextObject $artifacts.codenexus
+        -CodeNexusContextObject $artifacts.codenexus `
+        -RuntimeCiSummary $RuntimeCiSummary
     $evidence = New-HospitalEvidenceBlock $artifacts.hotspots $artifacts.what_if $CodeNexusContextSummary
 
     $currentTopHotspot = ""
@@ -2730,6 +2432,7 @@ function New-CodeIntelHospitalReport {
         -SentruxFileDetailsSummary $SentruxFileDetailsSummary `
         -CodeNexusContextSummary $CodeNexusContextSummary `
         -SentruxWhatIfSummary $SentruxWhatIfSummary `
+        -RuntimeCiSummary $RuntimeCiSummary `
         -GovernanceArtifact $scores.governance_artifact `
         -GovernanceFinding $scores.governance_finding
 
@@ -2769,6 +2472,7 @@ function New-CodeIntelHospitalReport {
             report = $ReportPath
         summary = $SummaryPath
         understanding = $UnderstandingPath
+        runtime_ci = if ($null -ne $RuntimeCiSummary) { [string]$RuntimeCiSummary.path } else { "" }
         github_solution_research = if ($null -ne $GitHubResearch) { [string]$GitHubResearch.path } else { "" }
         github_solution_research_markdown = if ($null -ne $GitHubResearch) { [string]$GitHubResearch.markdown } else { "" }
     }
@@ -3270,17 +2974,26 @@ function Get-CodeIntelSentruxDebtClassification {
 
     $before = Get-CodeIntelObjectValue $Record "before"
     $after = Get-CodeIntelObjectValue $Record "after"
-    if ($source -eq "sentrux gate" -and $null -ne $before -and $null -ne $after -and [int]$after -gt [int]$before) {
-        return [ordered]@{
-            classification = "worsened_debt"
-            reason = "Sentrux gate reports a structural metric increased in this run."
+    if ($source -eq "sentrux gate" -and $null -ne $before -and $null -ne $after) {
+        $beforeNumber = [double]$before
+        $afterNumber = [double]$after
+        $worsened = if ($kind -eq "quality") {
+            $afterNumber -lt $beforeNumber
         }
-    }
+        else {
+            $afterNumber -gt $beforeNumber
+        }
 
-    if ($source -eq "sentrux gate" -and $null -ne $before -and $null -ne $after -and [int]$after -le [int]$before) {
+        if ($worsened) {
+            return [ordered]@{
+                classification = "worsened_debt"
+                reason = "Sentrux gate reports that this structural metric moved in its regressing direction."
+            }
+        }
+
         return [ordered]@{
             classification = "informational"
-            reason = "Sentrux gate metric did not increase in this run."
+            reason = "Sentrux gate metric was stable or moved in its improving direction."
         }
     }
 
@@ -3513,11 +3226,200 @@ $defaultInventoryExclude = @(
 $allInventoryExclude = @($defaultInventoryExclude + $InventoryExclude | Select-Object -Unique)
 
 $artifactRoot = Join-Path $ArtifactRoot $repoName
-$runDir = Join-Path $artifactRoot $timestamp
+$finalRunDir = Join-Path $artifactRoot $timestamp
+if (Test-Path -LiteralPath $finalRunDir) {
+    $suffix = 1
+    do {
+        $candidate = Join-Path $artifactRoot ("{0}-{1:D2}" -f $timestamp, $suffix)
+        $suffix++
+    } while (Test-Path -LiteralPath $candidate)
+    $finalRunDir = $candidate
+}
+
+$followUpConfig = Get-JsonProperty $configData "followUpAutomation"
+$followUpSettings = Resolve-CodeIntelFollowUpSettings -Config $followUpConfig -ProactiveSkillSuggestions $ProactiveSkillSuggestions -AutomaticPullRequests $AutomaticPullRequests -BugSkill $BugSkill
+$ProactiveSkillSuggestions = [string]$followUpSettings.proactiveSkillSuggestions
+$AutomaticPullRequests = [string]$followUpSettings.automaticPullRequests
+$BugSkill = [string]$followUpSettings.bugSkill
+
+if ($DagCoordinate) {
+    $dagRoot = $artifactRoot
+    New-Item -ItemType Directory -Force -Path $dagRoot | Out-Null
+    $dagOut = Join-Path $dagRoot ((Get-Date -Format "yyyyMMdd-HHmmss") + ".dag-staging-" + [guid]::NewGuid().ToString("N").Substring(0, 12))
+    $rustCli = $defaultRustCli
+    if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
+        throw "DAG coordinator binary is missing: $rustCli"
+    }
+    & $rustCli run dag-coordinate --repo $repoPath --out $dagOut
+    if ($LASTEXITCODE -ne 0) {
+        throw "DAG coordinator failed with exit code $LASTEXITCODE"
+    }
+    return
+}
+$stagingNonce = [guid]::NewGuid().ToString("N").Substring(0, 12)
+$runDir = "$finalRunDir.staging-$stagingNonce"
 New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 
 $steps = New-Object System.Collections.Generic.List[object]
 $notes = New-Object System.Collections.Generic.List[string]
+$modelChannel = [ordered]@{
+    status = "not_requested"
+    category = $null
+    routeArtifact = $null
+    assistanceDossier = $null
+    selectedAdapter = $null
+    selectedModel = $null
+}
+$modelConsumptionConsent = "unanswered"
+$modelExternalDataConsent = "unanswered"
+$modelPaidSpendConsent = "unanswered"
+$modelCostScope = "metered_api"
+
+function New-ModelAssistanceDossier {
+    param(
+        [string]$Destination,
+        [string]$Status,
+        [string]$Category,
+        [string[]]$Reasons
+    )
+    $dossier = [ordered]@{
+        schema = "code-intel-model-assistance-dossier.v1"
+        status = "manual_required"
+        category = $Category
+        reason = @($Reasons | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+        artifactRefs = [ordered]@{
+            run = $runDir
+            fileInventory = (Join-Path $runDir "files.txt")
+            report = (Join-Path $finalRunDir "report.json")
+            understanding = (Join-Path $finalRunDir "understanding.md")
+        }
+        minimalContext = [ordered]@{
+            repo = $repoPath
+            mode = $Mode
+            requestedTask = "Generate the optional provider-backed repository documentation from the emitted deterministic code-intel artifacts."
+        }
+        copyablePrompt = "Using only the explicitly approved repository artifacts, produce the optional documentation analysis. Cite Artifact Refs, distinguish observed facts from inference, and return a machine-readable summary plus Markdown. Do not request or expose credentials."
+        resume = [ordered]@{
+            command = "pwsh -File run-code-intel.ps1 -RepoPath <repo> -ModelRoutingResult <routing-result.json> -RepowiseDocs"
+            requiredState = @("route_ready", "consumption_authorized", "external_data_authorized_if_required", "paid_spend_authorized_if_metered")
+            currentStatus = $Status
+        }
+    }
+    [IO.File]::WriteAllText($Destination, ($dossier | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
+    return $dossier
+}
+
+function Assert-ExactModelProperties {
+    param([object]$Object, [string[]]$Names, [string]$Label)
+    if ($null -eq $Object) { throw "$Label must be an object" }
+    $actual = @($Object.PSObject.Properties.Name | Sort-Object)
+    $expected = @($Names | Sort-Object)
+    if (($actual -join "`n") -ne ($expected -join "`n")) { throw "$Label must contain exactly: $($Names -join ', ')" }
+}
+
+function Assert-ModelEnum {
+    param([string]$Value, [string[]]$Allowed, [string]$Label)
+    if ($Value -notin $Allowed) { throw "$Label is outside the closed vocabulary" }
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ModelRoutingResult)) {
+    $routePath = (Resolve-Path -LiteralPath $ModelRoutingResult -ErrorAction Stop).Path
+    $route = Get-Content -LiteralPath $routePath -Raw | ConvertFrom-Json -ErrorAction Stop
+    Assert-ExactModelProperties $route @("schema", "status", "selected", "authorization", "attempts", "manualAction") "model routing result"
+    if ([string]$route.schema -ne "code-intel-model-routing-result.v1") { throw "model routing result schema is unsupported" }
+    $routeStatus = [string]$route.status
+    Assert-ModelEnum $routeStatus @("ready", "consent_required", "deterministic_degraded") "model routing status"
+    Assert-ExactModelProperties $route.authorization @("consumptionAuthorization", "externalData", "paidSpend") "model routing authorization"
+    Assert-ExactModelProperties $route.authorization.consumptionAuthorization @("status", "scopes") "consumption authorization"
+    Assert-ExactModelProperties $route.authorization.externalData @("status") "external-data authorization"
+    Assert-ExactModelProperties $route.authorization.paidSpend @("status") "paid-spend authorization"
+    $modelConsumptionConsent = [string]$route.authorization.consumptionAuthorization.status
+    $modelExternalDataConsent = [string]$route.authorization.externalData.status
+    $modelPaidSpendConsent = [string]$route.authorization.paidSpend.status
+    foreach ($statusValue in @($modelConsumptionConsent, $modelExternalDataConsent, $modelPaidSpendConsent)) {
+        Assert-ModelEnum $statusValue @("unanswered", "granted", "denied") "model authorization status"
+    }
+    $allowedScopes = @("local_compute", "subscription_cli", "free_or_internal_quota", "metered_api")
+    $authorizationScopes = @($route.authorization.consumptionAuthorization.scopes | ForEach-Object { [string]$_ })
+    foreach ($scope in $authorizationScopes) { Assert-ModelEnum $scope $allowedScopes "authorized consumption scope" }
+    if (@($authorizationScopes | Sort-Object -Unique).Count -ne $authorizationScopes.Count) { throw "authorized consumption scopes must be unique" }
+    $selected = $route.selected
+    $routeCategory = $null
+    $attemptReasons = [Collections.Generic.List[string]]::new()
+    foreach ($attempt in @($route.attempts)) {
+        Assert-ExactModelProperties $attempt @("candidateId", "readinessState", "eligible", "failureCategory", "reason") "model routing attempt"
+        if ([string]::IsNullOrWhiteSpace([string]$attempt.candidateId) -or [string]::IsNullOrWhiteSpace([string]$attempt.reason)) { throw "model routing attempt ids and reasons must be non-empty" }
+        Assert-ModelEnum ([string]$attempt.readinessState) @("discovered", "executable_verified", "auth_present", "model_available", "egress_allowed", "spend_allowed", "ready") "model readiness state"
+        if ($attempt.eligible -isnot [bool]) { throw "model routing attempt eligible must be boolean" }
+        if ($null -ne $attempt.failureCategory) {
+            Assert-ModelEnum ([string]$attempt.failureCategory) @("consent_required", "model_unavailable", "provider_unavailable", "provider_quota", "config_error", "local_tool_error", "adapter_protocol_error", "external_data_forbidden", "paid_usage_forbidden") "model failure category"
+            if ($null -eq $routeCategory) { $routeCategory = [string]$attempt.failureCategory }
+        }
+        $attemptReasons.Add("$([string]$attempt.candidateId):$([string]$attempt.reason)")
+    }
+    if ($routeStatus -ne "ready" -and $null -eq $routeCategory) { $routeCategory = "model_unavailable" }
+    $modelChannel.status = $routeStatus
+    $modelChannel.category = $routeCategory
+    $modelChannel.routeArtifact = $routePath
+    if ($null -ne $selected) {
+        Assert-ExactModelProperties $selected @("candidateId", "channelKind", "provider", "model", "costScope", "readinessState") "selected model route"
+        if ([string]::IsNullOrWhiteSpace([string]$selected.candidateId)) { throw "selected model candidateId must be non-empty" }
+        if ($null -ne $selected.provider -and [string]::IsNullOrWhiteSpace([string]$selected.provider)) { throw "selected provider must be null or non-empty" }
+        if ($null -ne $selected.model -and [string]::IsNullOrWhiteSpace([string]$selected.model)) { throw "selected model must be null or non-empty" }
+        Assert-ModelEnum ([string]$selected.channelKind) @("local_compatible", "ollama", "claude_cli", "opencode_cli", "codex_cli") "selected channel kind"
+        if ([string]$selected.readinessState -ne "ready") { throw "selected model route must have readinessState=ready" }
+        $modelChannel.selectedAdapter = [string]$selected.channelKind
+        $modelChannel.selectedModel = if ($null -eq $selected.model) { $null } else { [string]$selected.model }
+        $modelCostScope = [string]$selected.costScope
+        Assert-ModelEnum $modelCostScope $allowedScopes "selected cost scope"
+        if ($null -ne $selected.provider -and [string]::IsNullOrWhiteSpace($RepowiseProvider)) { $RepowiseProvider = [string]$selected.provider }
+        if ($null -ne $selected.model -and [string]::IsNullOrWhiteSpace($RepowiseModel)) { $RepowiseModel = [string]$selected.model }
+    }
+    if ($routeStatus -eq "ready" -and $null -eq $selected) { throw "ready model route requires selected" }
+    if ($routeStatus -ne "ready" -and $null -ne $selected) { throw "non-ready model route must not select a candidate" }
+    if ($routeStatus -eq "ready" -and $null -ne $route.manualAction) { throw "ready model route must not require manual action" }
+    if ($routeStatus -eq "consent_required" -and [string]$route.manualAction -ne "obtain_explicit_authorization") { throw "consent-required route has an invalid manual action" }
+    if ($routeStatus -eq "deterministic_degraded" -and [string]$route.manualAction -ne "provide_or_enable_model_channel") { throw "degraded route has an invalid manual action" }
+    if ($routeStatus -eq "ready" -and $RepowiseDocs -and ([string]$selected.channelKind -eq "claude_cli" -or $null -eq $selected.provider)) {
+        $routeStatus = "deterministic_degraded"
+        $routeCategory = "config_error"
+        $modelChannel.status = $routeStatus
+        $modelChannel.category = $routeCategory
+        $attemptReasons.Add("$([string]$selected.candidateId):selected route is delegate-only for this workload; invoke -ModelAdapterRequest or select a Repowise-compatible provider route")
+    }
+    if ($routeStatus -ne "ready") {
+        $RepowiseDocs = $false
+        $reasons = if ($attemptReasons.Count -gt 0) { @($attemptReasons) } else { @([string]$route.manualAction) }
+        $dossierPath = Join-Path $runDir "model-assistance-dossier.json"
+        [void](New-ModelAssistanceDossier -Destination $dossierPath -Status $routeStatus -Category $routeCategory -Reasons $reasons)
+        $modelChannel.assistanceDossier = $dossierPath
+        $steps.Add([pscustomobject][ordered]@{
+            name = "provider-backed documentation"
+            startedAt = (Get-Date).ToString("o")
+            status = "manual_required"
+            exitCode = 0
+            output = "deterministic_degraded; category=$routeCategory; dossier=$dossierPath"
+            error = ""
+            finishedAt = (Get-Date).ToString("o")
+            durationMs = 0
+        })
+        $notes.Add("Optional model work is deterministic_degraded; deterministic inventory, graph, Sentrux, hospital, and registry work continues.")
+    }
+}
+elseif ($RepowiseDocs) {
+    $RepowiseDocs = $false
+    $modelChannel.status = "consent_required"
+    $modelChannel.category = "consent_required"
+    $dossierPath = Join-Path $runDir "model-assistance-dossier.json"
+    [void](New-ModelAssistanceDossier -Destination $dossierPath -Status "consent_required" -Category "consent_required" -Reasons @("No model routing result with explicit consumption authorization was supplied."))
+    $modelChannel.assistanceDossier = $dossierPath
+    $steps.Add([pscustomobject][ordered]@{
+        name = "provider-backed documentation"; startedAt = (Get-Date).ToString("o"); status = "manual_required"; exitCode = 0
+        output = "deterministic_degraded; category=consent_required; dossier=$dossierPath"; error = ""
+        finishedAt = (Get-Date).ToString("o"); durationMs = 0
+    })
+    $notes.Add("Provider-backed docs were not invoked because consumption authorization is unanswered; deterministic work continues.")
+}
 
 $toolState = [ordered]@{
     rg = Test-CommandAvailable "rg"
@@ -3527,15 +3429,47 @@ $toolState = [ordered]@{
     git = Test-CommandAvailable "git"
 }
 
-# Three-stack workflow recommender (matt-flow / gstack / spec-driven).
-# -SkipOpenSpec / -AutoOpenSpec keep their historical names/semantics: Skip disables
-# the whole detector, Auto suppresses interactive prompts (this detector never prompts).
+# Historical options now map to the standalone advisory atom: Skip disables it and
+# Auto is recorded as a compatibility option. The atom never prompts or initializes tools.
 $workflowStackResult = $null
 $openSpecResult = $null
 if (-not $SkipOpenSpec) {
-    $workflowStackResult = Invoke-WorkflowStackDetector -RepoPath $repoPath -AutoMode $AutoOpenSpec
-    $openSpecResult = $workflowStackResult.specDriven
-    $notes.Add("Spec-driven score: $($openSpecResult.score)/100 ($($openSpecResult.verdict), tool=$($openSpecResult.tool))")
+    $rustCli = $defaultRustCli
+    if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
+        throw "Workflow recommendation capability binary not found: $rustCli"
+    }
+    $snapshotText = (& $rustCli snapshot identity --repo $repoPath --working-tree-policy explicit_overlay --scope . | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw "Workflow recommendation snapshot failed with exit code $LASTEXITCODE" }
+    $workflowSnapshot = $snapshotText | ConvertFrom-Json
+    $workflowRequest = [ordered]@{
+        schema = "code-intel-capability-request.v1"
+        capability = "advisory.workflow-recommend"
+        contractVersion = 1
+        implementation = [ordered]@{
+            id = "advisory.workflow-recommend.compat"
+            version = "1.0.0"
+            toolchainDigests = @(
+                "03d9cbed70d83c59f7d9540fccc606ce0b2723135efd2c5e32943d367008a199",
+                "748c8b087c9d1a68f9aa5711cda200204ac0d05845058a1ee50058b161582de9"
+            )
+        }
+        snapshot = $workflowSnapshot.snapshot
+        options = [ordered]@{ repoPath = $repoPath; auto = [bool]$AutoOpenSpec }
+        inputs = @()
+        effectPolicy = [ordered]@{ allowedEffects = @() }
+    }
+    $workflowRequestPath = Join-Path $runDir "workflow-recommendation.request.json"
+    $workflowOut = Join-Path $runDir "workflow-recommendation"
+    [IO.File]::WriteAllText($workflowRequestPath, ($workflowRequest | ConvertTo-Json -Depth 20 -Compress), [Text.UTF8Encoding]::new($false))
+    $workflowEnvelopeText = (& $rustCli capability exec advisory.workflow-recommend --request $workflowRequestPath --out $workflowOut | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw "Workflow recommendation capability failed with exit code $LASTEXITCODE" }
+    $workflowEnvelope = $workflowEnvelopeText | ConvertFrom-Json
+    if (@($workflowEnvelope.declaredEffects).Count -ne 0 -or @($workflowEnvelope.observedEffects).Count -ne 0) {
+        throw "Workflow recommendation capability violated its zero-effect envelope"
+    }
+    $workflowStackResult = Get-Content -LiteralPath (Join-Path $workflowOut "workflow-recommendation.json") -Raw | ConvertFrom-Json -AsHashtable
+    $openSpecResult = $workflowStackResult.recommendation
+    $notes.Add("Spec-driven score: $($openSpecResult.score)/100 ($($openSpecResult.verdict), tool=$($openSpecResult.candidate))")
 }
 else {
     $openSpecResult = @{
@@ -3553,17 +3487,17 @@ if (-not $toolState.rg) {
 }
 
 if ($RepowiseDocs -and -not $SkipRepowise) {
-    $providerPreflightScript = Join-Path $PSScriptRoot "test-code-intel-provider.ps1"
-    $preflightStep = Invoke-LoggedStep "provider preflight" {
-        if (-not (Test-Path -LiteralPath $providerPreflightScript -PathType Leaf)) {
-            throw "provider preflight script not found: $providerPreflightScript"
+    $providerProbeScript = Join-Path $PSScriptRoot "Invoke-RepowiseProviderProbe.ps1"
+    $preflightStep = Invoke-LoggedStep "repowise provider health" {
+        if (-not (Test-Path -LiteralPath $providerProbeScript -PathType Leaf)) {
+            throw "Repowise provider health probe not found: $providerProbeScript"
         }
-        & $providerPreflightScript -Json -Provider $RepowiseProvider -Model $RepowiseModel
+        & $providerProbeScript -Json -Provider $RepowiseProvider -Model $RepowiseModel
     }
     $steps.Add($preflightStep)
     if ($preflightStep.status -ne "passed") {
         $RepowiseDocs = $false
-        $notes.Add("Repowise docs disabled because provider preflight failed. Index-only repowise will still run.")
+        $notes.Add("Repowise docs disabled because provider health failed. Index-only repowise will still run.")
     }
 }
 
@@ -3602,8 +3536,14 @@ $steps.Add((Invoke-LoggedStep "rg file inventory" {
     foreach ($pattern in $allInventoryExclude) {
         $rgArgs += @("-g", $pattern)
     }
-    $rgArgs += $repoPath
-    $files = & rg @rgArgs
+    Push-Location -LiteralPath $repoPath
+    try {
+        # Run from the repository authority so ripgrep emits relocation-safe relative paths.
+        $files = @(& rg @rgArgs)
+    }
+    finally {
+        Pop-Location
+    }
 
     $fileListPath = Join-Path $runDir "files.txt"
     $files | Set-Content -LiteralPath $fileListPath -Encoding UTF8
@@ -3641,19 +3581,10 @@ $repomixPack = [ordered]@{
     path = ""
     summaryPath = ""
 }
-$repomixTool = Join-Path $PSScriptRoot "Invoke-RepomixCodePack.ps1"
-if (-not $SkipRepomix -and (Test-Path -LiteralPath $repomixTool -PathType Leaf)) {
-    $repomixPack = & $repomixTool `
-        -RepoPath $repoPath `
-        -ArtifactDir $runDir `
-        -Style $RepomixStyle `
-        -Compress:$RepomixCompress
-    if ([string]$repomixPack.status -eq "failed") {
-        $notes.Add("Repomix pack failed: $($repomixPack.error)")
-    }
-}
-elseif ($SkipRepomix) {
-    $repomixPack["reason"] = "Skipped by -SkipRepomix."
+$repomixPack["reason"] = if ($SkipRepomix) {
+    "Skipped by -SkipRepomix."
+} else {
+    "Repomix production participation was reviewed and removed; no pinned executable or production conformance evidence is present."
 }
 
 $nodeLintHygieneStep = Get-NodeLintHygieneStep -RepoPath $repoPath -RgAvailable $toolState.rg
@@ -3713,7 +3644,19 @@ if (-not $SkipRepowise) {
         })
     }
     else {
-        if ($RepowiseScopePaths.Count -gt 0 -or $RepowiseRootFiles.Count -gt 0) {
+        if (($RepowiseScopePaths.Count -gt 0 -or $RepowiseRootFiles.Count -gt 0) -and -not $AllowRepowiseShadowMutation) {
+            $steps.Add([pscustomobject][ordered]@{
+                name = "repowise scoped authority"
+                startedAt = (Get-Date).ToString("o")
+                status = "skipped"
+                exitCode = $null
+                output = ""
+                error = "Scoped Repowise requires explicit -AllowRepowiseShadowMutation authority."
+                finishedAt = (Get-Date).ToString("o")
+                durationMs = 0
+            })
+        }
+        elseif ($RepowiseScopePaths.Count -gt 0 -or $RepowiseRootFiles.Count -gt 0) {
             $scopedRepowiseScript = Join-Path $PSScriptRoot "Invoke-ScopedRepowise.ps1"
             if ($RepowiseDocs -and $Mode -ne "lite") {
                 $repowiseStep = Invoke-LoggedStep "repowise scoped docs" {
@@ -3723,7 +3666,15 @@ if (-not $SkipRepowise) {
                         -ShadowRoot $RepowiseShadowRoot `
                         -ScopePaths $RepowiseScopePaths `
                         -RootFiles $RepowiseRootFiles `
+                        -AllowShadowWorktreeMutation `
                         -TimeoutSeconds $RepowiseTimeoutSeconds `
+                        -Provider $RepowiseProvider `
+                        -Model $RepowiseModel `
+                        -Reasoning $RepowiseReasoning `
+                        -ConsumptionConsent $modelConsumptionConsent `
+                        -ExternalDataConsent $modelExternalDataConsent `
+                        -PaidSpendConsent $modelPaidSpendConsent `
+                        -CostScope $modelCostScope `
                         -Docs
                 }
                 $steps.Add((Convert-OptionalRepowiseTimeout $repowiseStep))
@@ -3736,7 +3687,11 @@ if (-not $SkipRepowise) {
                         -ShadowRoot $RepowiseShadowRoot `
                         -ScopePaths $RepowiseScopePaths `
                         -RootFiles $RepowiseRootFiles `
-                        -TimeoutSeconds $RepowiseTimeoutSeconds
+                        -AllowShadowWorktreeMutation `
+                        -TimeoutSeconds $RepowiseTimeoutSeconds `
+                        -Provider $RepowiseProvider `
+                        -Model $RepowiseModel `
+                        -Reasoning $RepowiseReasoning
                 }
                 $steps.Add((Convert-OptionalRepowiseTimeout $repowiseStep))
             }
@@ -3923,6 +3878,8 @@ $failureClassifications = @(
 )
 $failureCounts = [ordered]@{
     providerQuota = @($failureClassifications | Where-Object { $_.category -eq "provider_quota" }).Count
+    providerUnavailable = @($failureClassifications | Where-Object { $_.category -eq "provider_unavailable" }).Count
+    configError = @($failureClassifications | Where-Object { $_.category -eq "config_error" }).Count
     localToolError = @($failureClassifications | Where-Object { $_.category -eq "local_tool_error" }).Count
     graphMissing = @($failureClassifications | Where-Object { $_.category -eq "graph_missing" }).Count
     sentruxFail = @($failureClassifications | Where-Object { $_.category -eq "sentrux_fail" }).Count
@@ -3935,65 +3892,18 @@ $preliminarySentruxDebtRegister = New-CodeIntelSentruxDebtRegister `
     -RunTimestamp $timestamp
 $effectiveFailureCounts = [ordered]@{
     providerQuota = [int]$failureCounts.providerQuota
+    providerUnavailable = [int]$failureCounts.providerUnavailable
+    configError = [int]$failureCounts.configError
     localToolError = [int]$failureCounts.localToolError
     graphMissing = [int]$failureCounts.graphMissing
     sentruxFail = [int]$preliminarySentruxDebtRegister.summary.blocking
 }
-$effectiveFailed = @($failed | Where-Object {
-    $category = Get-StepFailureCategory $_
-    if ($null -eq $category) { return $true }
-    if ([string](Get-CodeIntelObjectValue $category "category") -ne "sentrux_fail") { return $true }
-    return ([int]$preliminarySentruxDebtRegister.summary.blocking -gt 0)
-})
+$effectiveFailed = @(Get-CodeIntelEffectiveFailedSteps `
+    -FailedSteps $failed `
+    -BlockingSentruxDebt ([int]$preliminarySentruxDebtRegister.summary.blocking))
+# R08 reviewed retirement: the representative authenticated blocker query was not
+# reproducible. Production runs remain local-only and expose no GitHub call site.
 $githubResearch = New-GitHubSolutionResearchNotApplicable
-if ((-not $SkipGitHubResearch) -and (Test-GitHubSolutionResearchRequired $effectiveFailureCounts)) {
-    $githubResearchScript = Join-Path $PSScriptRoot "Invoke-GitHubSolutionResearch.ps1"
-    $failedResearchSteps = @($steps | Where-Object { $_.status -eq "failed" -or $_.status -eq "manual_required" } | ForEach-Object {
-        [ordered]@{
-            name = $_.name
-            status = $_.status
-            error = $_.error
-            output = $_.output
-        }
-    })
-    try {
-        $githubResearch = & $githubResearchScript `
-            -RepoPath $repoPath `
-            -ArtifactDir $runDir `
-            -FailedSteps $failedResearchSteps `
-            -FailureClassifications $failureClassifications `
-            -Mode $Mode `
-            -SentruxFailures $preliminarySentruxFailures `
-            -SkipGitHubResearch:$SkipGitHubResearch
-    }
-    catch {
-        $researchJsonPath = Join-Path $runDir "github-solution-research.json"
-        $researchMarkdownPath = Join-Path $runDir "github-solution-research.md"
-        $githubResearch = [ordered]@{
-            status = "manual_required"
-            required = $true
-            path = $researchJsonPath
-            markdown = $researchMarkdownPath
-            reason = "GitHub solution research helper failed: $($_.Exception.Message)"
-            candidates = 0
-            queries = 0
-            evidenceLinks = @()
-            exitCriteria = @(
-                "GitHub evidence linked or GitHub evidence insufficiency recorded",
-                "helper failure recorded before local-only diagnosis continues"
-            )
-        }
-        $githubResearch | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $researchJsonPath -Encoding UTF8
-        @(
-            "# GitHub Solution Research",
-            "",
-            "- Status: manual_required",
-            "- Reason: $($githubResearch.reason)",
-            "",
-            "Run github-solution-research manually with the failed pipeline step details."
-        ) | Set-Content -LiteralPath $researchMarkdownPath -Encoding UTF8
-    }
-}
 
 $sentruxInsight = New-SentruxInsight -RepoName $repoName -TargetPath $sentruxTargetPath -BaselinePath $baselinePath -Steps $steps
 $sentruxDsmPath = Join-Path $runDir "sentrux-dsm.json"
@@ -4011,16 +3921,74 @@ $codeNexusContextSummary = $null
 $sentruxAgentTool = Join-Path $PSScriptRoot "Invoke-SentruxAgentTool.ps1"
 if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -LiteralPath $sentruxAgentTool -PathType Leaf)) {
     try {
-        $previousErrorActionPreference = $ErrorActionPreference
-        try {
-            $ErrorActionPreference = "Continue"
-            $dsmRaw = & $sentruxAgentTool dsm $sentruxTargetPath 2>&1
+        $sentruxDsmPreference = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_SENTRUX_DSM_PROVIDER)) {
+            "rust"
+        } else {
+            $env:CODE_INTEL_SENTRUX_DSM_PROVIDER.Trim().ToLowerInvariant()
         }
-        finally {
-            $ErrorActionPreference = $previousErrorActionPreference
+        if ($sentruxDsmPreference -notin @("rust", "powershell")) {
+            throw "CODE_INTEL_SENTRUX_DSM_PROVIDER must be 'rust' or 'powershell'"
         }
-        $dsmText = ($dsmRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
-        $dsmObject = $dsmText | ConvertFrom-Json
+        $sentruxDsmRustCli = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_RUST_CLI)) {
+            $defaultRustCli
+        } else {
+            [IO.Path]::GetFullPath($env:CODE_INTEL_RUST_CLI)
+        }
+        $dsmObject = $null
+        $sentruxDsmProvider = ""
+        if ($sentruxDsmPreference -eq "rust" -and (Test-Path -LiteralPath $sentruxDsmRustCli -PathType Leaf)) {
+            $previousErrorActionPreference = $ErrorActionPreference
+            $dsmRaw = @()
+            $dsmExitCode = $null
+            $dsmLaunchError = $null
+            try {
+                $ErrorActionPreference = "Continue"
+                $global:LASTEXITCODE = 0
+                try {
+                    $dsmRaw = & $sentruxDsmRustCli sentrux dsm $sentruxTargetPath 2>&1
+                    $dsmExitCode = $global:LASTEXITCODE
+                }
+                catch {
+                    $dsmLaunchError = $_.Exception.Message
+                }
+            }
+            finally {
+                $ErrorActionPreference = $previousErrorActionPreference
+            }
+            if (-not [string]::IsNullOrWhiteSpace($dsmLaunchError)) {
+                $notes.Add("Rust Sentrux DSM could not be launched ($dsmLaunchError); using the explicit PowerShell compatibility fallback.")
+            }
+            elseif ($dsmExitCode -eq 0) {
+                $dsmText = ($dsmRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
+                try {
+                    $dsmObject = $dsmText | ConvertFrom-Json
+                    $sentruxDsmProvider = "rust"
+                }
+                catch {
+                    $notes.Add("Rust Sentrux DSM returned invalid JSON; using the explicit PowerShell compatibility fallback.")
+                }
+            }
+            else {
+                $notes.Add("Rust Sentrux DSM exited with code $dsmExitCode; using the explicit PowerShell compatibility fallback.")
+            }
+        }
+        elseif ($sentruxDsmPreference -eq "rust") {
+            $notes.Add("Rust Sentrux DSM binary was unavailable at $sentruxDsmRustCli; using the explicit PowerShell compatibility fallback.")
+        }
+        if ($null -eq $dsmObject) {
+            $previousErrorActionPreference = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = "Continue"
+                $dsmRaw = & $sentruxAgentTool dsm $sentruxTargetPath 2>&1
+            }
+            finally {
+                $ErrorActionPreference = $previousErrorActionPreference
+            }
+            $dsmText = ($dsmRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
+            $dsmObject = $dsmText | ConvertFrom-Json
+            $sentruxDsmProvider = "powershell_compatibility"
+        }
+        $notes.Add("Sentrux DSM provider: $sentruxDsmProvider")
         $fileDetails = @($dsmObject.file_details)
         $dsmObject.PSObject.Properties.Remove("file_details")
         $dsmObject | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $sentruxDsmPath -Encoding UTF8
@@ -4213,16 +4181,35 @@ $sentruxDebtRegister = New-CodeIntelSentruxDebtRegister `
     -RepoPath $repoPath `
     -RunTimestamp $timestamp `
     -OutputPath $sentruxDebtRegisterPath
+$followUpAutomation = New-CodeIntelFollowUpAutomation `
+    -FailureClassifications $failureClassifications `
+    -BlockingSentruxDebt ([int]$sentruxDebtRegister.summary.blocking) `
+    -EvidencePath $sentruxDebtRegisterPath `
+    -OutputDirectory $runDir `
+    -ProactiveSkillSuggestions $ProactiveSkillSuggestions `
+    -AutomaticPullRequests $AutomaticPullRequests `
+    -BugSkill $BugSkill
+$followUpAutomationPath = Join-Path $runDir "follow-up-automation.json"
 $effectiveFailureCounts["sentruxFail"] = [int]$sentruxDebtRegister.summary.blocking
-$effectiveFailed = @($failed | Where-Object {
-    $category = Get-StepFailureCategory $_
-    if ($null -eq $category) { return $true }
-    if ([string](Get-CodeIntelObjectValue $category "category") -ne "sentrux_fail") { return $true }
-    return ([int]$sentruxDebtRegister.summary.blocking -gt 0)
-})
+$effectiveFailed = @(Get-CodeIntelEffectiveFailedSteps `
+    -FailedSteps $failed `
+    -BlockingSentruxDebt ([int]$sentruxDebtRegister.summary.blocking))
 $sentruxInsight["failures"] = Get-CodeIntelSentruxFailureSummary -Failures $sentruxFailures -Path $sentruxFailuresPath
 $sentruxInsight["debtRegister"] = Get-CodeIntelSentruxDebtSummary -DebtRegister $sentruxDebtRegister -Path $sentruxDebtRegisterPath
 $sentruxInsight["authoritativePrimaryTarget"] = Get-CodeIntelSentruxPrimaryTargetText -Failures $sentruxFailures
+$runtimeCiSummary = $null
+if (-not [string]::IsNullOrWhiteSpace($RuntimeCiEvidenceRequest)) {
+    if ([string]::IsNullOrWhiteSpace($RuntimeCiEvidenceArtifactRoot)) { throw "Runtime/CI evidence requires an artifact root" }
+    $runtimeCiCli = $defaultRustCli
+    if (-not (Test-Path -LiteralPath $runtimeCiCli -PathType Leaf)) { throw "Runtime/CI evidence provider binary is missing: $runtimeCiCli" }
+    $runtimeCiSummaryPath = Join-Path $runDir "runtime-ci-summary.json"
+    & $runtimeCiCli provider runtime-ci-evidence --artifact-root $RuntimeCiEvidenceArtifactRoot --request $RuntimeCiEvidenceRequest --out $runtimeCiSummaryPath
+    if ($LASTEXITCODE -ne 0) { throw "Runtime/CI evidence provider rejected the request" }
+    $runtimeCiSummary = Read-JsonFileSafe $runtimeCiSummaryPath
+    if ($null -eq $runtimeCiSummary -or [string]$runtimeCiSummary.schema -ne "code-intel-runtime-ci-summary.v1") { throw "Runtime/CI summary is missing or invalid" }
+    $runtimeCiSummary | Add-Member -NotePropertyName path -NotePropertyValue $runtimeCiSummaryPath
+}
+
 $hospitalReport = New-CodeIntelHospitalReport `
     -RepoPath $repoPath `
     -Mode $Mode `
@@ -4239,6 +4226,7 @@ $hospitalReport = New-CodeIntelHospitalReport `
     -SentruxEvolutionSummary $sentruxEvolutionSummary `
 -SentruxWhatIfSummary $sentruxWhatIfSummary `
 -CodeNexusContextSummary $codeNexusContextSummary `
+-RuntimeCiSummary $runtimeCiSummary `
 -UnderstandCommand $understandCommand `
 -ToolState $toolState `
 -GitHubResearch $githubResearch
@@ -4313,6 +4301,7 @@ $report = [ordered]@{
     sentruxPath = if ([string]::IsNullOrWhiteSpace($SentruxPath)) { $repoPath } else { (Resolve-ChildPath $repoPath $SentruxPath) }
     tools = $toolState
     understandCommand = $understandCommand
+    modelChannel = $modelChannel
     steps = $steps
     sentruxInsight = $sentruxInsight
     sentruxFailures = Get-CodeIntelSentruxFailureSummary -Failures $sentruxFailures -Path $sentruxFailuresPath
@@ -4322,28 +4311,30 @@ $report = [ordered]@{
     sentruxHotspots = $sentruxHotspotsSummary
     sentruxEvolution = $sentruxEvolutionSummary
         sentruxWhatIf = $sentruxWhatIfSummary
-        codeNexusContext = $codeNexusContextSummary
+    codeNexusContext = $codeNexusContextSummary
+    runtimeCi = $runtimeCiSummary
         codeEvidence = $codeEvidence
         repomixPack = $repomixPack
         githubResearch = $githubResearch
         openSpec = [ordered]@{
             recommendation = $openSpecResult.verdict
             score = $openSpecResult.score
-            tool = $openSpecResult.tool
+            tool = if ($openSpecResult.Contains("candidate")) { $openSpecResult.candidate } else { $openSpecResult.tool }
             reasons = $openSpecResult.reasons
-            recommendationBrief = if ($openSpecResult.ContainsKey("recommendationBrief")) { $openSpecResult.recommendationBrief } else { $null }
+            recommendationBrief = if ($openSpecResult.Contains("brief")) { $openSpecResult.brief } elseif ($openSpecResult.Contains("recommendationBrief")) { $openSpecResult.recommendationBrief } else { $null }
         }
+        workflowRecommendation = $workflowStackResult
         workflows = if ($workflowStackResult) {
-            @($workflowStackResult.workflows | ForEach-Object {
+            @($workflowStackResult.alternatives | ForEach-Object {
                 $wf = $_
                 [ordered]@{
                 stack = $wf.stack
-                tool = if ($wf.ContainsKey("tool")) { $wf.tool } else { $null }
+                tool = if ($wf.Contains("candidate")) { $wf.candidate } elseif ($wf.Contains("tool")) { $wf.tool } else { $null }
                 verdict = $wf.verdict
-                    score = if ($wf.ContainsKey("score")) { $wf.score } else { $null }
+                    score = if ($wf.Contains("score")) { $wf.score } else { $null }
                     reasons = $wf.reasons
                     entrySkills = $wf.entrySkills
-                    recommendationBrief = if ($wf.ContainsKey("recommendationBrief")) { $wf.recommendationBrief } else { $null }
+                    recommendationBrief = if ($wf.Contains("brief")) { $wf.brief } elseif ($wf.Contains("recommendationBrief")) { $wf.recommendationBrief } else { $null }
                 }
             })
         } else { @() }
@@ -4365,6 +4356,11 @@ researchRequired = $hospitalReport.triage.research_required
 }
     notes = $notes
     failureClassifications = $failureClassifications
+    followUpAutomation = [ordered]@{
+        path = $followUpAutomationPath
+        proactiveSkillSuggestions = $followUpAutomation.proactiveSkillSuggestions
+        automaticPullRequests = $followUpAutomation.automaticPullRequests
+    }
     summary = [ordered]@{
         failed = $failed.Count
         effectiveFailed = $effectiveFailed.Count
@@ -4402,17 +4398,18 @@ $summaryLines = @(
     "## Workflow Stack Recommendations",
     "",
     $(if ($workflowStackResult) {
-        @($workflowStackResult.workflows | ForEach-Object {
+        @($workflowStackResult.alternatives | ForEach-Object {
             $wf = $_
-            $toolText = if ($wf.ContainsKey("tool") -and $wf.tool) { " (tool=$($wf.tool))" } else { "" }
+            $workflowTool = if ($wf.Contains("candidate")) { $wf.candidate } elseif ($wf.Contains("tool")) { $wf.tool } else { $null }
+            $toolText = if ($workflowTool) { " (tool=$workflowTool)" } else { "" }
             $skillsText = if ($wf.entrySkills.Count -gt 0) { $wf.entrySkills -join " " } else { "(none)" }
             "- $($wf.stack)${toolText}: $($wf.verdict -replace '_', ' ') -> $skillsText"
         }) -join "`n"
         } else {
             "- spec-driven: skipped -> (none)"
         }),
-        $(if ($workflowStackResult -and $workflowStackResult.specDriven -and $workflowStackResult.specDriven.ContainsKey("recommendationBrief")) {
-            $brief = $workflowStackResult.specDriven.recommendationBrief
+        $(if ($workflowStackResult -and $workflowStackResult.recommendation -and $workflowStackResult.recommendation.Contains("brief")) {
+            $brief = $workflowStackResult.recommendation.brief
             $doFirstText = @($brief.doFirst) -join "; "
             $guardrailText = @($brief.doNotDoYet) -join "; "
             $acceptanceText = @($brief.acceptance) -join "; "
@@ -4427,9 +4424,15 @@ $summaryLines = @(
     "- Failed: $($failed.Count)",
     "- Effective failed: $($effectiveFailed.Count)",
     "- Manual required: $($manual.Count)",
+    "- Model channel: $($modelChannel.status)",
+    $(if ($modelChannel.assistanceDossier) { "- Model assistance dossier: $($modelChannel.assistanceDossier)" } else { "- Model assistance dossier: (none)" }),
     "- Skipped: $(@($steps | Where-Object { $_.status -eq 'skipped' }).Count)",
     "- Provider quota: $($failureCounts.providerQuota)",
+    "- Provider unavailable: $($failureCounts.providerUnavailable)",
+    "- Provider config error: $($failureCounts.configError)",
     "- Local tool error: $($failureCounts.localToolError)",
+    "",
+    (Get-CodeIntelFollowUpSummaryLines -Automation $followUpAutomation),
     "- Graph missing: $($failureCounts.graphMissing)",
     "- Sentrux fail: $($failureCounts.sentruxFail)",
     "- Blocking Sentrux debt: $($sentruxDebtRegister.summary.blocking)",
@@ -4440,6 +4443,7 @@ $summaryLines = @(
 "- Hospital score: $($hospitalReport.triage.overall_score)",
 "- Next protocol: $($hospitalReport.triage.next_protocol)",
 "- GitHub research: $githubResearchSummary",
+"- Follow-up automation: ``$followUpAutomationPath`` (skillSuggestions=$($followUpAutomation.proactiveSkillSuggestions.status), automaticPrConsent=$($followUpAutomation.automaticPullRequests.consentStatus), execution=$($followUpAutomation.automaticPullRequests.executionStatus))",
 "",
 "## Steps"
 )
@@ -4512,6 +4516,9 @@ if ($null -ne $sentruxWhatIfSummary) {
 if ($null -ne $codeNexusContextSummary) {
     $summaryLines += "- CodeNexus context: $($codeNexusContextSummary.path) (files=$($codeNexusContextSummary.files), references=$($codeNexusContextSummary.references), commits=$($codeNexusContextSummary.recentCommits), topFile=$($codeNexusContextSummary.topFile))"
 }
+if ($null -ne $runtimeCiSummary) {
+    $summaryLines += "- Runtime/CI: $($runtimeCiSummary.path) (health=$($runtimeCiSummary.health), freshness=$($runtimeCiSummary.freshness), completeness=$($runtimeCiSummary.completeness))"
+}
 foreach ($metric in $sentruxMetrics) {
     $summaryLines += "- Metric $($metric.name): $($metric.before) -> $($metric.after) (delta $($metric.delta), regressed=$($metric.regressed))"
 }
@@ -4549,6 +4556,12 @@ $sentruxSteps = @($steps | Where-Object { $_.name -like "sentrux*" })
 $nextAction = "No immediate action required; keep this artifact as the latest clean code-intel snapshot."
 if ($failureCounts.providerQuota -gt 0) {
     $nextAction = "Provider quota blocked part of the run. Retry provider-backed docs/index work after quota resets."
+}
+elseif ($failureCounts.providerUnavailable -gt 0) {
+    $nextAction = "The upstream provider route or selected model was unavailable. Verify the provider model catalog and retry without treating this as a local tool failure."
+}
+elseif ($failureCounts.configError -gt 0) {
+    $nextAction = "Correct the provider endpoint, model, or credential configuration, then retry provider-backed docs."
 }
 elseif ($failureCounts.localToolError -gt 0) {
     $nextAction = "Fix the local tool error shown in report.json, then rerun the pipeline."
@@ -4618,6 +4631,8 @@ $understandingLines = @(
     "",
     "## Failure Categories",
     "- provider_quota: $($failureCounts.providerQuota)",
+    "- provider_unavailable: $($failureCounts.providerUnavailable)",
+    "- config_error: $($failureCounts.configError)",
     "- local_tool_error: $($failureCounts.localToolError)",
     "- graph_missing: $($failureCounts.graphMissing)",
     "- sentrux_fail: $($failureCounts.sentruxFail)",
@@ -4629,7 +4644,10 @@ $understandingLines = @(
     "- If `graph_missing > 0`, run: ``$understandCommand``",
     "- If ``sentrux_fail > 0``, inspect Sentrux output in ``report.json`` before saving a new baseline.",
     "- If ``provider_quota > 0``, treat it as an upstream quota/rate issue, not a local indexing failure.",
+    "- If ``provider_unavailable > 0``, verify the upstream model catalog/route; do not repair the local toolchain for an upstream 404.",
+    "- If ``config_error > 0``, correct endpoint/model/credential configuration without writing secrets into repository files.",
     "- If ``local_tool_error > 0``, inspect command output and PATH/tool installation before changing repo code.",
+    "- If automatic PR consent is ``pending``, present ``automatic-pr-consent.request.json`` to the user. A recommendation or response alone does not authorize PR creation.",
     "",
     "## Problem Steps",
     "$(if ($problemSteps.Count -gt 0) { ($problemSteps | ForEach-Object { '- ' + $_.name + ': ' + $_.status }) -join [Environment]::NewLine } else { '- none' })",
@@ -4639,12 +4657,48 @@ $understandingLines = @(
 )
 $understandingLines | Set-Content -LiteralPath $understandingPath -Encoding UTF8
 
+# A run is authoritative only after every materialized view has been written,
+# staging paths have been replaced with their published locations, the staged
+# directory has been promoted, and run-complete.json is written last.
+$textExtensions = @(".json", ".md", ".txt", ".yaml", ".yml", ".toml")
+$escapedRunDir = ($runDir | ConvertTo-Json -Compress).Trim('"')
+$escapedFinalRunDir = ($finalRunDir | ConvertTo-Json -Compress).Trim('"')
+foreach ($file in Get-ChildItem -LiteralPath $runDir -File -ErrorAction Stop) {
+    if ($file.Extension.ToLowerInvariant() -notin $textExtensions) { continue }
+    if ($file.Name -like "repomix-output.*") { continue }
+    $content = [System.IO.File]::ReadAllText($file.FullName)
+    if ($content.Contains($runDir) -or $content.Contains($escapedRunDir)) {
+        [System.IO.File]::WriteAllText(
+            $file.FullName,
+            $content.Replace($escapedRunDir, $escapedFinalRunDir).Replace($runDir, $finalRunDir),
+            [System.Text.UTF8Encoding]::new($false)
+        )
+    }
+}
+
+[System.IO.Directory]::Move($runDir, $finalRunDir)
+$runDir = $finalRunDir
+$reportPath = Join-Path $runDir "report.json"
+$summaryPath = Join-Path $runDir "summary.md"
+$understandingPath = Join-Path $runDir "understanding.md"
+$hospitalReportPath = Join-Path $runDir "hospital-report.json"
+$hospitalMarkdownPath = Join-Path $runDir "hospital.md"
+$reportDigest = (Get-FileHash -LiteralPath $reportPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$runCommit = [ordered]@{
+    schema = "code-intel-run-commit.v1"
+    generatedAt = (Get-Date).ToString("o")
+    report = "report.json"
+    reportSha256 = $reportDigest
+}
+$runCommit | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $runDir "run-complete.json") -Encoding UTF8
+
 Write-Host "Code intel pipeline complete"
 Write-Host "Repo: $repoPath"
 Write-Host "Report: $reportPath"
 Write-Host "Summary: $summaryPath"
 Write-Host "Understanding: $understandingPath"
 Write-Host "Hospital: $hospitalMarkdownPath"
+Write-CodeIntelFollowUpPrompt -Automation $followUpAutomation -RunDirectory $runDir
 if ($manual.Count -gt 0) {
     Write-Host "Manual step required: $understandCommand"
 }

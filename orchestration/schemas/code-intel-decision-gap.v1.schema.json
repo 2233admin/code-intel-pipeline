@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-decision-gap.v1.schema.json",
+  "title": "Code Intel Decision Gap",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "kind",
+    "blockedDecision",
+    "discoverableFactsChecked",
+    "options",
+    "recommendedAnswer",
+    "affectedBranches",
+    "authorityRequired",
+    "authorityState",
+    "effects"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-decision-gap.v1" },
+    "id": { "type": "string", "minLength": 1 },
+    "kind": {
+      "enum": ["intent", "priority", "resource_allocation", "risk_acceptance", "tradeoff"]
+    },
+    "blockedDecision": { "type": "string", "minLength": 1 },
+    "discoverableFactsChecked": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["factId", "status"],
+        "properties": {
+          "factId": { "type": "string", "minLength": 1 },
+          "status": { "const": "resolved" }
+        }
+      }
+    },
+    "options": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "consequence"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 },
+          "consequence": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "recommendedAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "optionId", "rationale"],
+      "properties": {
+        "kind": { "const": "proposal" },
+        "optionId": { "type": "string", "minLength": 1 },
+        "rationale": { "type": "string", "minLength": 1 }
+      }
+    },
+    "affectedBranches": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "authorityRequired": { "const": true },
+    "authorityState": { "const": "unresolved" },
+    "effects": { "const": [] }
+  }
+}

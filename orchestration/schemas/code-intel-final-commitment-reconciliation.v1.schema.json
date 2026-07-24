@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-final-commitment-reconciliation.v1.schema.json",
+  "title": "Code Intel final commitment reconciliation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "sourcePlan",
+    "sourcePlanSha256",
+    "ticketCount",
+    "allowedClaimStatuses",
+    "statusPolicy",
+    "items"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-final-commitment-reconciliation.v1" },
+    "sourcePlan": { "const": "docs/plans/adr-0010-execution-plan.md" },
+    "sourcePlanSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "ticketCount": { "const": 69 },
+    "allowedClaimStatuses": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "implemented_verified" },
+        { "const": "implemented_pending_verification" },
+        { "const": "implemented_blocked" },
+        { "const": "retirement_blocked" },
+        { "const": "not_implemented" }
+      ],
+      "items": false,
+      "minItems": 5,
+      "maxItems": 5
+    },
+    "statusPolicy": { "type": "string", "minLength": 1 },
+    "items": {
+      "type": "array",
+      "minItems": 69,
+      "maxItems": 69,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ticketId",
+          "title",
+          "claimStatus",
+          "evidenceCommands",
+          "artifacts",
+          "independentVerdict",
+          "blockers"
+        ],
+        "properties": {
+          "ticketId": { "type": "string", "pattern": "^[A-Z][0-9]{2}$" },
+          "title": { "type": "string", "minLength": 1 },
+          "claimStatus": {
+            "enum": [
+              "implemented_verified",
+              "implemented_pending_verification",
+              "implemented_blocked",
+              "retirement_blocked",
+              "not_implemented"
+            ]
+          },
+          "evidenceCommands": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "artifacts": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "independentVerdict": { "enum": ["verified", "blocked", "pending"] },
+          "blockers": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  }
+}

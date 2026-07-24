@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xart.local/code-intel/schemas/code-intel-architecture-graph-port.v1.schema.json",
+  "title": "Code Intel Architecture Graph Provider Port v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "completeness",
+    "freshness",
+    "expectedSnapshotIdentity",
+    "sourceSnapshotIdentity",
+    "provider",
+    "provenance",
+    "payload",
+    "anatomyUsable"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-architecture-graph-port.v1" },
+    "status": { "enum": ["current", "partial", "missing"] },
+    "completeness": { "enum": ["complete", "partial"] },
+    "freshness": { "enum": ["current", "stale", "snapshot_mismatch"] },
+    "expectedSnapshotIdentity": { "$ref": "#/$defs/digest" },
+    "sourceSnapshotIdentity": { "$ref": "#/$defs/digest" },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "implementationId", "fallbackIdentity"],
+      "properties": {
+        "mode": { "enum": ["internal", "external"] },
+        "implementationId": { "type": "string", "minLength": 1 },
+        "fallbackIdentity": { "type": ["string", "null"], "minLength": 1 }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceRevision", "observedAt"],
+      "properties": {
+        "sourceRevision": { "type": "string", "minLength": 1 },
+        "observedAt": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "artifactSchema", "type", "path", "sha256", "consumedSnapshotIdentity"],
+      "properties": {
+        "schema": { "const": "code-intel-artifact-ref.v1" },
+        "artifactSchema": { "const": "code-intel-evidence-payload.v1" },
+        "type": { "const": "observed.evidence.payload" },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "consumedSnapshotIdentity": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "anatomyUsable": { "type": "boolean" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

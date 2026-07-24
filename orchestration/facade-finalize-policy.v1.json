@@ -1,0 +1,37 @@
+{
+  "schema": "code-intel-compatibility-facade-finalize-policy.v1",
+  "ticketId": "E06",
+  "dependencyTickets": [
+    { "ticketId": "E02", "directory": "orchestration/retirements/e02-recommender", "branchId": "run-code-intel.workflow-recommender.inline", "path": "run-code-intel.ps1" },
+    { "ticketId": "E03", "directory": "orchestration/retirements/e03-provider-preflight", "branchId": "run-code-intel.provider-preflight.test-wrapper", "path": "run-code-intel.ps1" },
+    { "ticketId": "E04", "directory": "orchestration/retirements/e04-codenexus-direct", "branchId": "run-code-intel.codenexus-lite.direct", "path": "run-code-intel.ps1" },
+    { "ticketId": "E05", "directory": "orchestration/retirements/e05-publication", "branchId": "run-code-intel.publication.legacy-staging-marker", "path": "run-code-intel.ps1" },
+    { "ticketId": "E07", "directory": "orchestration/retirements/e07-native-code", "branchId": "run-code-intel.native-code.embedded", "path": "run-code-intel.ps1" },
+    { "ticketId": "E08", "directory": "orchestration/retirements/e08-hospital", "branchId": "run-code-intel.hospital.embedded-diagnosis-render", "path": "run-code-intel.ps1" },
+    { "ticketId": "E09", "directory": "orchestration/retirements/e09-doctor-wrapper", "branchId": "invoke-code-intel.doctor.direct-production", "path": "invoke-code-intel.ps1" },
+    { "ticketId": "E10", "directory": "orchestration/retirements/e10-index", "branchId": "update-code-intel-index.legacy-compatibility-traversal", "path": "update-code-intel-index.ps1" }
+  ],
+  "retainedPowerShell": [
+    { "surfaceId": "audit.facade-finalize", "path": "Invoke-CompatibilityFacadeFinalize.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "compatibility.facade-finalize", "expiresAt": null, "classification": "platform_glue" },
+    { "surfaceId": "public.invoke", "path": "invoke-code-intel.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "runtime.code-intel", "expiresAt": null, "classification": "compatibility_facade" },
+    { "surfaceId": "public.pipeline", "path": "run-code-intel.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "runtime.code-intel", "expiresAt": null, "classification": "compatibility_facade" },
+    { "surfaceId": "bootstrap.doctor", "path": "check-code-intel-tools.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "doctor", "expiresAt": null, "classification": "platform_glue" },
+    { "surfaceId": "bootstrap.fresh-machine", "path": "bootstrap-new-machine.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "bootstrap.fresh-machine", "expiresAt": null, "classification": "platform_glue" },
+    { "surfaceId": "compat.index", "path": "update-code-intel-index.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "artifact.index-committed-only", "expiresAt": null, "classification": "compatibility_facade" },
+    { "surfaceId": "compat.repowise", "path": "Invoke-ScopedRepowise.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "memory.repowise", "expiresAt": null, "classification": "platform_glue" },
+    { "surfaceId": "compat.sentrux", "path": "Invoke-SentruxAgentTool.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "structure.sentrux", "expiresAt": null, "classification": "compatibility_facade" },
+    { "surfaceId": "compat.codenexus", "path": "Invoke-CodeNexusLite.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "localization.codenexus-lite", "expiresAt": null, "classification": "compatibility_facade" },
+    { "surfaceId": "compat.workflow-recommend", "path": "Invoke-WorkflowRecommendation.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "advisory.workflow-recommend", "expiresAt": null, "classification": "compatibility_facade" },
+    { "surfaceId": "compat.openspec-detector", "path": "OpenSpec-Detector.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "advisory.workflow-recommend", "expiresAt": null, "classification": "compatibility_facade" }
+  ],
+  "modeMatrix": [
+    { "mode": "doctor", "fixture": "doctor.json", "requiredCapabilities": ["doctor"] },
+    { "mode": "lite", "fixture": "lite.json", "requiredCapabilities": ["doctor", "repository.snapshot-identity", "inventory.rg", "evidence.native-code", "diagnosis.hospital", "run.commit", "artifact.index-committed-only"] },
+    { "mode": "normal", "fixture": "normal.json", "requiredCapabilities": ["doctor", "repository.snapshot-identity", "inventory.rg", "evidence.native-code", "diagnosis.hospital", "run.commit", "artifact.index-committed-only"] },
+    { "mode": "full", "fixture": "full.json", "requiredCapabilities": ["doctor", "repository.snapshot-identity", "inventory.rg", "evidence.native-code", "diagnosis.hospital", "run.commit", "artifact.index-committed-only"] }
+  ],
+  "parity": {
+    "a00Evidence": "orchestration/baseline-manifest.json",
+    "rollbackTickets": ["E02", "E03", "E04", "E05", "E07", "E08", "E09", "E10"]
+  }
+}

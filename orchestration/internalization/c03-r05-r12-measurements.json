@@ -1,0 +1,111 @@
+{
+  "schema": "code-intel-c03-internalization-measurements.v1",
+  "measuredAt": "2026-07-14T03:41:00+08:00",
+  "host": "windows-x86_64-audited-workspace",
+  "observations": {
+    "r05Repomix": {
+      "commandAvailable": false,
+      "npmRegistryMetadataEntries": 3,
+      "npmPackageTarballEntries": 3,
+      "npmInstalledOrExtractedExecutableEntries": 0,
+      "cacheAuditDefinition": "npm cache contains three registry metadata entries and three retrievable Repomix package tarballs, but no installed/extracted executable tree and no verified runnable Repomix command.",
+      "productionCallSitesAfterReview": 0,
+      "productionRegistryStatus": "deleted",
+      "reason": "Cached tarball payload bytes do not establish an installed runnable command or pinned production conformance; B07 reviewed deletion remains valid."
+    },
+    "r06NativeCodeEvidence": {
+      "command": "cargo test -p code-intel --test native_code_evidence --quiet",
+      "testsPassed": 4,
+      "fixtureFiles": 2,
+      "producedArtifactRefs": 8,
+      "normalizedLegacyParityArtifacts": 6,
+      "parserKind": "line-heuristic",
+      "unsupportedLanguageRelationshipPrecision": "unknown",
+      "suiteElapsedMs": 27110,
+      "sourceSha256": "44f89f430ebf776b35e705d482807dd58a2803723268b4e162c9a753fadf8390",
+      "testSha256": "08c5d7f3bc9b5cc65fa8dcb9ebbc9eb9d7359b56c070ad9e4516254d09bd7dcb",
+      "labeledCorpus": {
+        "fixture": "orchestration/internalization/fixtures/r06-native-labeled-corpus.json",
+        "samples": 12,
+        "supportedHeuristicSamples": 10,
+        "unsupportedSamples": 2,
+        "truePositives": 6,
+        "falsePositives": 2,
+        "falseNegatives": 2,
+        "trueNegatives": 2,
+        "precision": 0.75,
+        "recall": 0.75,
+        "supportedCoverage": 0.833333,
+        "elapsedMs": 3620
+      }
+    },
+    "r07Cocoindex": {
+      "installedVersion": "0.2.37",
+      "productionSemanticInvocations": 0,
+      "productionRegistryStatus": "deleted",
+      "productionIntegrationPresent": false,
+      "commandDiscoveryCallSites": 0,
+      "comparisonStatus": "reviewed-retirement-no-unique-value"
+    },
+    "r08GitHubResearch": {
+      "command": "pwsh -NoProfile -File test-github-solution-research.ps1",
+      "fixtureElapsedMs": 855.4559,
+      "readOnlyCommandFamilies": 1,
+      "rateLimitFallbacksPassed": 1,
+      "credentialRedactionFixturesPassed": 1,
+      "externalWriteCommands": 0,
+      "representativeLiveRun": {
+        "measuredAt": "2026-07-14T03:39:12.3361140+08:00",
+        "elapsedMs": 13591.4758,
+        "blocker": "error[E0432]: unresolved import crate::authority in compatibility_retirement_gate.rs",
+        "status": "manual_required",
+        "reasonCode": "invalid-query",
+        "candidates": 0,
+        "resolutionAtK": 0,
+        "reproducible": false,
+        "rateCostRequests": 1,
+        "externalWrites": 0,
+        "generatedQuery": "rust compile blocker error[E0432]: unresolved import crate::authority in compatibility_retirement_gate.rs",
+        "invocationExitCodes": [1, 1, 0, 0],
+        "resultArtifact": "orchestration/internalization/evidence/r08-live-20260714/github-solution-research.json",
+        "resultArtifactSha256": "f838958011ac2ec9e8a525f5d0d0d249dd78c8fd481628f84061b97eef463b6c",
+        "returnedUrls": [],
+        "returnedSourceRevisions": []
+      },
+      "productionRegistryStatus": "deleted"
+    },
+    "r10Git": {
+      "installedVersion": "2.54.0.windows.1",
+      "command": "cargo test -p code-intel --test snapshot_identity --quiet",
+      "testsPassed": 12,
+      "suiteElapsedMs": 27509.7763,
+      "sourceSha256": "ed40e9b578b7af2e5b28f19536190b620e98ea5beaa5eced01dd5b3306bf3b4f",
+      "testSha256": "e04f936cc457c400820c46dbd09c1f6251e74e9791eca08be4c6051314b8d87b",
+      "revParseSamples": 20,
+      "revParseP50Ms": 167.65,
+      "revParseP95Ms": 422.294,
+      "revParseMaxMs": 445.58,
+      "mutationCommandsInSnapshotAdapter": 0,
+      "localLicensePath": "C:/Program Files/Git/LICENSE.txt",
+      "localLicenseSha256": "5b2198d1645f767585e8a88ac0499b04472164c0d2da22e75ecf97ef443ab32e",
+      "alternateVcsContractFixture": "orchestration/internalization/fixtures/r10-alternate-vcs-port.json",
+      "alternateMismatchExitCode": 65,
+      "alternateMismatchPublishesArtifacts": false,
+      "alternateAdapterActuallyExecuted": true,
+      "repowiseShadowMutationAuthorityDefault": "deny",
+      "repowiseDeclaredEffects": ["repo_read", "process_execute", "local_write", "repo_mutation"],
+      "rollbackRoutesTested": ["git", "unversioned-explicit-overlay"]
+    },
+    "r12Greenfield": {
+      "command": "pwsh -NoProfile -File test-greenfield-integration.ps1",
+      "fixtureElapsedMs": 2127.4285,
+      "planArtifacts": 2,
+      "explicitAnalyzeFixtures": 1,
+      "autoAnalyzeWithoutFlag": 0,
+      "externalProviderWrites": 0,
+      "reviewAuthorityGranted": false,
+      "externalPluginProductionIntegrationPresent": false,
+      "retirementReason": "No executable plugin source revision, local license, effect review, or reviewed generated-spec value could be bound; only the pipeline-owned plan-only handoff remains."
+    }
+  }
+}

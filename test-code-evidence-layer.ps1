@@ -180,8 +180,8 @@ try {
     if ([bool]$cocoOutcome.required) {
         throw "Expected disabled cocoindex-code adapter outcome to record required=false."
     }
-    if ([string]$cocoOutcome.reasonCode -ne "disabled") {
-        throw "Expected disabled cocoindex-code reasonCode=disabled."
+    if ([string]$cocoOutcome.reasonCode -ne "reviewed_deletion") {
+        throw "Expected cocoindex-code tombstone reasonCode=reviewed_deletion."
     }
 
     $agentRanking = Read-JsonFile $agentRankingJson
@@ -224,20 +224,23 @@ try {
     if ([bool]$enabledOutcome.fatal) {
         throw "Expected missing cocoindex-code command to stay non-fatal."
     }
-    if (-not [bool]$enabledOutcome.enabled) {
-        throw "Expected enabled cocoindex-code adapter outcome to record enabled=true."
+    if ([bool]$enabledOutcome.enabled) {
+        throw "Reviewed cocoindex-code retirement must ignore legacy enabled=true configuration."
     }
-    if ([string]$enabledOutcome.command -ne "definitely-missing-ccc-for-code-intel-test") {
-        throw "Expected cocoindex-code outcome to record configured command."
+    if (-not [string]::IsNullOrEmpty([string]$enabledOutcome.command)) {
+        throw "Reviewed cocoindex-code retirement must not restore a configured command."
     }
     if ([bool]$enabledOutcome.required) {
         throw "Expected missing cocoindex-code command scenario to record required=false."
     }
-    if ([string]$enabledOutcome.reasonCode -ne "command_unavailable") {
-        throw "Expected missing cocoindex-code command reasonCode=command_unavailable."
+    if ([string]$enabledOutcome.reasonCode -ne "reviewed_deletion") {
+        throw "Expected cocoindex-code tombstone reasonCode=reviewed_deletion."
     }
-    if ([string]$enabledOutcome.reason -notmatch "not found|unavailable|missing") {
-        throw "Expected missing cocoindex-code reason to mention unavailable command."
+    if ([string]$enabledOutcome.reason -notmatch "reviewed retirement tombstone|cannot restore") {
+        throw "Expected cocoindex-code tombstone to explain that legacy config cannot restore it."
+    }
+    if ([string]$enabledOutcome.reason -match "definitely-missing-ccc") {
+        throw "Retired cocoindex-code tombstone leaked the legacy configured command."
     }
 
     Write-Host "PASS code evidence layer connectivity: $($runDir.FullName)"

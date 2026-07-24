@@ -1,0 +1,105 @@
+{
+  "artifacts": {
+    "hospital": {
+      "artifacts": {
+        "report": "<TEMP_ROOT>/artifacts/parity-partial-evidence/20260713-010203/report.json"
+      },
+      "generatedAt": "<TIME>",
+      "modalities": [
+        {
+          "artifact": "<TEMP_ROOT>/artifacts/parity-partial-evidence/20260713-010203/files.txt",
+          "name": "xray",
+          "status": "passed"
+        },
+        {
+          "artifact": "<TEMP_ROOT>/repos/parity-partial-evidence/.understand-anything/knowledge-graph.json",
+          "finding": "anatomy.understand_graph missing",
+          "name": "anatomy",
+          "status": "missing"
+        }
+      ],
+      "repo": "parity-partial-evidence",
+      "schema": "code-intel-hospital.v1",
+      "state_machine": {
+        "current_state": "graph_refresh"
+      },
+      "triage": {
+        "disposition": "observe",
+        "next_protocol": "graph_refresh",
+        "primary_diagnosis": "architecture graph missing",
+        "research_required": false,
+        "research_status": "not_applicable",
+        "status": "amber"
+      }
+    },
+    "report": {
+      "artifactDir": "<TEMP_ROOT>/artifacts/parity-partial-evidence/20260713-010203",
+      "mode": "normal",
+      "paths": {
+        "repo": "<TEMP_ROOT>/repos/parity-partial-evidence"
+      },
+      "repo": "parity-partial-evidence",
+      "steps": [
+        {
+          "error": "graph_missing",
+          "exitCode": 0,
+          "finishedAt": "<TIME>",
+          "name": "understand graph",
+          "output": "knowledge graph missing",
+          "startedAt": "<TIME>",
+          "status": "manual_required"
+        },
+        {
+          "error": "",
+          "exitCode": 0,
+          "finishedAt": "<TIME>",
+          "name": "rg file inventory",
+          "output": "files=9",
+          "startedAt": "<TIME>",
+          "status": "passed"
+        }
+      ],
+      "summary": {
+        "blockingSentruxDebt": 0,
+        "effectiveFailed": 0,
+        "effectiveFailureCategories": {
+          "graphMissing": 1,
+          "localToolError": 0,
+          "providerQuota": 0,
+          "sentruxFail": 0
+        },
+        "failed": 0,
+        "failureCategories": {
+          "graphMissing": 1,
+          "localToolError": 0,
+          "providerQuota": 0,
+          "sentruxFail": 0
+        },
+        "knownSentruxDebt": 0,
+        "manualRequired": 1,
+        "passed": 5,
+        "skipped": 2
+      },
+      "tools": {
+        "git": true,
+        "repowise": false,
+        "rg": true,
+        "sentrux": true
+      },
+      "understanding": "<TEMP_ROOT>/artifacts/parity-partial-evidence/20260713-010203/understanding.md"
+    }
+  },
+  "case": "partial-evidence",
+  "missingEvidence": [
+    "anatomy.understand_graph"
+  ],
+  "provenance": {
+    "producer": "run-code-intel.ps1",
+    "snapshotIdentity": "git:partial-evidence-fixture-head",
+    "tools": [
+      "git",
+      "rg",
+      "sentrux"
+    ]
+  }
+}

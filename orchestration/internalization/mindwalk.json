@@ -1,0 +1,217 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.mindwalk-session-evidence-record",
+  "projectId": "code-intel-pipeline",
+  "subject": {
+    "name": "Mindwalk session evidence adapter and selectively owned normalization",
+    "kind": "selectively_owned_implementation",
+    "source": {
+      "uri": "https://github.com/cosmtrek/mindwalk",
+      "revision": "e208b6b8504138843f671e031f28129b66003a67"
+    },
+    "license": {
+      "id": "MIT",
+      "obligations": [
+        "retain the upstream copyright and MIT permission notice if Mindwalk source is copied or distributed",
+        "keep Pipeline-owned reimplementation distinct from upstream parser, storage, UI, and LLM behavior"
+      ]
+    }
+  },
+  "adoption": {
+    "rung": "adapt",
+    "ownedBoundary": [
+      "Pipeline owns snapshot binding, repository-relative path normalization, privacy reduction, Sentrux joins, advisory signals, schema, and conformance tests",
+      "Mindwalk remains an optional trace producer; its parser, Go implementation, persistence, UI, summaries, and LLM workflow are not vendored or required",
+      "session evidence is advisory only and is not a fact source, gate, or automatic scan dependency"
+    ],
+    "necessityEvidence": {
+      "evidenceIds": [
+        "local:mindwalk:prototype-real-session-117-joins",
+        "local:mindwalk:production-smoke-19-matched-targets"
+      ],
+      "checkedAt": 1784748981,
+      "expiresAt": 1792524981
+    },
+    "compatibilityEvidence": {
+      "evidenceIds": [
+        "local:mindwalk:trace-v1-compatible-e208b6b8504138843f671e031f28129b66003a67",
+        "gap:mindwalk:future-trace-schema-compatibility"
+      ],
+      "checkedAt": 1784748981,
+      "expiresAt": 1792524981
+    },
+    "conformanceEvidence": {
+      "evidenceIds": [
+        "local:mindwalk:adapter-source-sha256:fff59db3f54abee633b7174704c912c9bccf06c83afae1272e6bb1159eff1cb6",
+        "local:mindwalk:adapter-tests-sha256:f6d3e4eb4e3b23208017b2591e73eee9adf2f7abcc5721b23e50d57a72875977",
+        "local:mindwalk:production-smoke-sha256:33c3c0c28e3c6b7d06ff53043606641c38c3a4890edcd3f2c7bddfc0f737aa45"
+      ],
+      "checkedAt": 1784748981,
+      "expiresAt": 1792524981
+    }
+  },
+  "operationTrace": [
+    {
+      "integrationId": "provider.session-adapt",
+      "operation": "adapt",
+      "command": "target/debug/code-intel.exe provider session-adapt --repo <repo-path> --trace <mindwalk-trace.json> [--hotspots <sentrux-hotspots-or-dsm.json>] [--out <session-evidence.json>]",
+      "implementationIdentity": {
+        "providerId": "mindwalk",
+        "implementationId": "code-intel.session-evidence.rust.v1",
+        "activation": "optional_advisory"
+      },
+      "source": {
+        "path": "crates/code-intel-cli/src/session_evidence.rs",
+        "sha256": "fff59db3f54abee633b7174704c912c9bccf06c83afae1272e6bb1159eff1cb6"
+      },
+      "conformance": {
+        "path": "crates/code-intel-cli/tests/session_evidence.rs",
+        "sha256": "f6d3e4eb4e3b23208017b2591e73eee9adf2f7abcc5721b23e50d57a72875977",
+        "testName": "normalizes_private_trace_and_joins_structural_evidence"
+      }
+    }
+  ],
+  "economics": {
+    "benefit": {
+      "metric": "repository targets joined to structural evidence in representative production smoke",
+      "value": 19,
+      "unit": "targets"
+    },
+    "cost": {
+      "metric": "normalized representative session evidence artifact size",
+      "value": 38415,
+      "unit": "bytes"
+    },
+    "benefitEvidence": {
+      "evidenceIds": [
+        "local:mindwalk:production-smoke-19-matched-targets",
+        "local:mindwalk:production-smoke-11-structural-attention-touches"
+      ],
+      "checkedAt": 1784748981,
+      "expiresAt": 1792524981
+    },
+    "costEvidence": {
+      "evidenceIds": [
+        "local:mindwalk:production-smoke-artifact-bytes-38415",
+        "gap:mindwalk:representative-latency-and-maintenance-cost"
+      ],
+      "checkedAt": 1784748981,
+      "expiresAt": 1792524981
+    }
+  },
+  "assurance": {
+    "maintenanceEvidence": {
+      "evidenceIds": [
+        "local:mindwalk:single-rust-adapter-boundary",
+        "gap:mindwalk:future-trace-schema-compatibility"
+      ],
+      "checkedAt": 1784748981,
+      "expiresAt": 1792524981
+    },
+    "securityEvidence": {
+      "evidenceIds": [
+        "local:mindwalk:no-raw-marks-summaries-or-absolute-paths",
+        "local:mindwalk:regular-file-symlink-and-size-guards",
+        "gap:mindwalk:hostile-trace-fuzzing"
+      ],
+      "checkedAt": 1784748981,
+      "expiresAt": 1792524981
+    }
+  },
+  "update": {
+    "policy": "Before 2026-10-21, recheck Mindwalk trace schema and license, run hostile-trace coverage, and measure representative latency and value before considering automatic invocation or production authority",
+    "nextCheckAt": 1792524981,
+    "evidence": {
+      "evidenceIds": [
+        "gap:mindwalk:future-trace-schema-compatibility",
+        "gap:mindwalk:hostile-trace-fuzzing",
+        "gap:mindwalk:representative-latency-and-maintenance-cost"
+      ],
+      "checkedAt": 1784748981,
+      "expiresAt": 1792524981
+    }
+  },
+  "ownedModifications": [
+    {
+      "path": "crates/code-intel-cli/src/session_evidence.rs",
+      "description": "Pipeline-owned native Rust privacy, snapshot, normalization, structural join, and advisory signal boundary",
+      "evidenceIds": [
+        "local:mindwalk:adapter-source-sha256:fff59db3f54abee633b7174704c912c9bccf06c83afae1272e6bb1159eff1cb6"
+      ]
+    },
+    {
+      "path": "orchestration/schemas/code-intel-session-evidence.v1.schema.json",
+      "description": "Pipeline-owned normalized session evidence contract",
+      "evidenceIds": [
+        "local:mindwalk:session-evidence-schema-v1"
+      ]
+    },
+    {
+      "path": "orchestration/integrations.json",
+      "description": "Optional provider.session-adapt registry declaration without automatic scan invocation",
+      "evidenceIds": [
+        "local:registry:provider.session-adapt"
+      ]
+    }
+  ],
+  "rollback": {
+    "strategy": "disable or remove provider.session-adapt while retaining the existing Code Intel scan and Sentrux structure workflow; no default scan path depends on this adapter",
+    "evidence": {
+      "evidenceIds": [
+        "local:mindwalk:optional-provider-boundary",
+        "local:mindwalk:no-default-scan-dependency"
+      ],
+      "checkedAt": 1784748981,
+      "expiresAt": 1792524981
+    }
+  },
+  "exit": {
+    "strategy": "replace the external trace producer or delete the adapter without changing the normalized evidence contract or core scan workflow",
+    "replacementCriteria": [
+      "replacement emits bounded event, target, error, edit, and verification observability grades",
+      "replacement passes privacy, path containment, snapshot identity, non-overwrite, and structural join conformance",
+      "replacement remains optional until separately approved for automatic invocation"
+    ],
+    "evidence": {
+      "evidenceIds": [
+        "local:mindwalk:provider-neutral-session-evidence-contract",
+        "local:mindwalk:adapter-conformance-tests"
+      ],
+      "checkedAt": 1784748981,
+      "expiresAt": 1792524981
+    }
+  },
+  "retirement": {
+    "status": "candidate",
+    "triggers": [
+      "representative sessions show no actionable value beyond existing Code Intel artifacts",
+      "Mindwalk trace compatibility or privacy cannot be maintained within the bounded adapter",
+      "an internal trace producer makes the external Mindwalk adapter redundant"
+    ],
+    "evidence": {
+      "evidenceIds": [
+        "local:mindwalk:optional-provider-boundary",
+        "gap:mindwalk:representative-latency-and-maintenance-cost"
+      ],
+      "checkedAt": 1784748981,
+      "expiresAt": 1792524981
+    }
+  },
+  "lifecycle": {
+    "previousStatus": null,
+    "status": "research",
+    "effectiveAt": 1784748981,
+    "replacementRecordId": null,
+    "evidenceIds": [
+      "local:mindwalk:adapter-conformance-tests",
+      "local:mindwalk:production-smoke-19-matched-targets",
+      "gap:mindwalk:hostile-trace-fuzzing",
+      "gap:mindwalk:representative-latency-and-maintenance-cost"
+    ],
+    "authorityEvent": null
+  },
+  "provenance": {
+    "recordedAt": 1784748981,
+    "recordedBy": "code-intel-maintainer"
+  }
+}

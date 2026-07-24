@@ -1,0 +1,29 @@
+{
+  "schema": "code-intel-python314-compat-corpus.v1",
+  "cases": [
+    {
+      "id": "core-language",
+      "path": "tests/fixtures/python314-compat/core_language.py",
+      "ponRequired": true,
+      "expectedExitCode": 0,
+      "expectedStdout": "factorial=120\nevens=0,4,16\nmatch=pair:3:7\n",
+      "expectedStderr": ""
+    },
+    {
+      "id": "exceptions-and-objects",
+      "path": "tests/fixtures/python314-compat/exceptions_and_objects.py",
+      "ponRequired": true,
+      "expectedExitCode": 0,
+      "expectedStdout": "counter=5\nerror=ZeroDivisionError\nfinally=done\n",
+      "expectedStderr": ""
+    },
+    {
+      "id": "python314-template-strings",
+      "path": "tests/fixtures/python314-compat/python314_template_strings.py",
+      "ponRequired": false,
+      "expectedExitCode": 0,
+      "expectedStdout": "type=Template\nstrings=('hello ', '')\nvalue=world\n",
+      "expectedStderr": ""
+    }
+  ]
+}

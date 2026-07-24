@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-file-boundary-request.v1.schema.json",
+  "title": "Code Intel file boundary request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "targetFile", "expectedSnapshotIdentity", "policy", "document"],
+  "properties": {
+    "schema": { "const": "code-intel-file-boundary-request.v1" },
+    "targetFile": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "expectedSnapshotIdentity": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluatedAt", "maxAgeSeconds"],
+      "properties": {
+        "evaluatedAt": { "type": "integer", "minimum": 0 },
+        "maxAgeSeconds": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "document": { "$ref": "code-intel-file-boundary-document.v1.schema.json" }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "schema": "code-intel-method-card.v1",
+  "id": "fmea",
+  "version": "1.0.0",
+  "name": "Failure modes and effects analysis",
+  "problemSignals": [
+    { "id": "design-change-risk", "description": "A design or process change introduces uncertain failure modes." },
+    { "id": "recurrent-component-failure", "description": "Component or process-step failures need systematic prioritization." }
+  ],
+  "requiredEvidence": [
+    { "id": "functions-and-requirements", "description": "Bounded functions, requirements, interfaces, and operating conditions." },
+    { "id": "failure-mode-evidence", "description": "Observed failures, analogous history, tests, or justified expert elicitation." }
+  ],
+  "assumptions": ["Analysis granularity is consistent", "Severity, occurrence, and detection scales are defined before scoring"],
+  "deterministicSteps": [
+    { "id": "enumerate-functions", "action": "Enumerate bounded functions and requirements at one declared analysis level.", "requires": ["evidence:functions-and-requirements"], "produces": ["function-boundary"] },
+    { "id": "enumerate-failure-modes", "action": "For each function enumerate failure modes, effects, causes, controls, and evidence source.", "requires": ["evidence:failure-mode-evidence", "step:enumerate-functions"], "produces": ["failure-mode-table"] },
+    { "id": "rank-actions", "action": "Apply the declared ordinal scales and rank recommended risk-reduction actions without treating rank as observed probability.", "requires": ["step:enumerate-failure-modes"], "produces": ["risk-action-register"] }
+  ],
+  "outputs": [
+    { "id": "function-boundary", "description": "Declared FMEA scope and analysis level." },
+    { "id": "failure-mode-table", "description": "Traceable modes, effects, causes, controls, and evidence." },
+    { "id": "risk-action-register", "description": "Prioritized proposed controls with scale limitations." }
+  ],
+  "confidenceRules": [
+    { "level": "high", "whenAll": ["Functions and interfaces are complete", "Failure modes have operational or test evidence", "Scales are calibrated"] },
+    { "level": "medium", "whenAll": ["Scope is complete", "Some occurrence or detection ratings rely on expert judgment"] },
+    { "level": "unknown", "whenAll": ["Analysis level is mixed", "Failure-mode coverage cannot be assessed"] }
+  ],
+  "cost": { "relative": "high", "drivers": ["Function count", "Cross-functional review", "Failure-history quality"] },
+  "contraindications": ["A single known top event is the only analysis target", "Scores would be used as precise probabilities without calibration"],
+  "implementationPorts": [
+    { "id": "fmea-register", "kind": "deterministic_tool", "contract": ["Preserve function-to-mode-to-effect traceability", "Keep rating scales and evidence explicit"] }
+  ],
+  "source": { "title": "IEC 60812 Failure modes and effects analysis", "version": "IEC 60812:2018 boundary summary", "reference": "IEC 60812" },
+  "applicabilityBoundary": { "inScope": ["Inductive failure-mode enumeration", "Risk-control prioritization"], "outOfScope": ["Precise reliability probability estimation", "Deductive minimal cut-set derivation"] },
+  "relatedMethodIds": ["fault-tree-analysis", "root-cause-analysis"],
+  "executionPolicy": "catalog_only_no_selection_or_execution"
+}

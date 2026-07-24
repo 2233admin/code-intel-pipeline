@@ -1,0 +1,5 @@
+{
+  "status": "crashed",
+  "authoritativeRules": [],
+  "nativeFailure": { "kind": "provider_unavailable", "message": "provider process exited before normalization" }
+}

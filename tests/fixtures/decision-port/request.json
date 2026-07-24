@@ -1,0 +1,37 @@
+{
+  "schema": "code-intel-decision-request.v1",
+  "correlationId": "decision-42",
+  "gapId": "risk-gap-7",
+  "question": "Accept the bounded residual publication risk?",
+  "recommendation": {
+    "optionId": "accept-risk",
+    "rationale": "The residual is bounded and rollback is proven."
+  },
+  "evidenceRefs": [
+    {
+      "refId": "risk-report",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "observedAt": 1700000000,
+      "expiresAt": 1700000080
+    }
+  ],
+  "options": [
+    {
+      "id": "accept-risk",
+      "label": "Accept bounded risk",
+      "consequence": "Publication proceeds with the documented rollback."
+    },
+    {
+      "id": "defer",
+      "label": "Defer publication",
+      "consequence": "Publication remains blocked until mitigation is complete."
+    }
+  ],
+  "authorityNeeded": {
+    "kind": "risk_acceptance",
+    "actorIds": ["release-owner"]
+  },
+  "issuedAt": 1700000010,
+  "expiresAt": 1700000100,
+  "affectedBranches": ["publication"]
+}

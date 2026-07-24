@@ -83,6 +83,35 @@ Assert-Contract ($contract.contractVersion -eq 1) "Capability contract version m
 Assert-Contract ($contract.envelopeSchema -eq "orchestration/schemas/code-intel-capability-envelope.v1.schema.json") "Contract must bind the canonical JSON Schema."
 Assert-Contract ($registry.policy.capabilityContract -eq "orchestration/capability-contract.v1.json") "Integration registry must bind the canonical capability contract."
 
+$toolchainEvidenceCapabilities = 0
+$rootPrefix = [System.IO.Path]::TrimEndingDirectorySeparator($root) + [System.IO.Path]::DirectorySeparatorChar
+foreach ($integration in @($registry.integrations)) {
+    $evidenceProperty = $integration.PSObject.Properties["toolchainDigestEvidence"]
+    if ($null -eq $evidenceProperty) { continue }
+
+    $implementationProperty = $integration.capabilityDeclaration.PSObject.Properties["implementation"]
+    Assert-Contract ($null -ne $implementationProperty) "$($integration.id) toolchain evidence requires an implementation declaration."
+    Assert-Contract ([string]$evidenceProperty.Value.algorithm -eq "sha256") "$($integration.id) toolchain evidence must use SHA-256."
+
+    $inputs = @($evidenceProperty.Value.inputs)
+    $declaredDigests = @($implementationProperty.Value.toolchainDigests)
+    Assert-Contract ($inputs.Count -gt 0) "$($integration.id) toolchain evidence must declare at least one input."
+    Assert-Contract ($inputs.Count -eq $declaredDigests.Count) "$($integration.id) toolchain evidence input/digest counts differ."
+
+    for ($index = 0; $index -lt $inputs.Count; $index++) {
+        $relativePath = [string]$inputs[$index]
+        Assert-Contract (-not [string]::IsNullOrWhiteSpace($relativePath)) "$($integration.id) toolchain evidence contains an empty input path."
+        Assert-Contract (-not [System.IO.Path]::IsPathFullyQualified($relativePath)) "$($integration.id) toolchain evidence input must be repository-relative: $relativePath"
+        $sourcePath = [System.IO.Path]::GetFullPath((Join-Path $root $relativePath))
+        Assert-Contract ($sourcePath.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) "$($integration.id) toolchain evidence escapes the repository: $relativePath"
+        Assert-Contract (Test-Path -LiteralPath $sourcePath -PathType Leaf) "$($integration.id) toolchain evidence input is missing: $relativePath"
+        $actualDigest = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        $declaredDigest = ([string]$declaredDigests[$index]).ToLowerInvariant()
+        Assert-Contract ($declaredDigest -eq $actualDigest) "$($integration.id) toolchain digest is stale for $relativePath."
+    }
+    $toolchainEvidenceCapabilities++
+}
+
 $expectedVocabulary = @("Capability Atom", "Snapshot Identity", "Artifact Ref", "Effect Boundary", "Domain Verdict", "Run Commit", "Materialized View")
 $expectedVerdicts = @("pass", "fail", "unknown", "not_applicable")
 $expectedEffects = @("repo_read", "local_write", "network", "repo_mutation")
@@ -157,6 +186,7 @@ $result = [ordered]@{
     snapshotIdentity = $digestA
     status = "completed"
     verdict = "pass"
+    domainVerdict = "pass"
     exitCode = 0
     determinism = "deterministic"
     declaredEffects = @("repo_read", "local_write")
@@ -179,12 +209,14 @@ Assert-EnvelopesCoherent $declaration $request $result "valid envelope chain"
 $domainFail = ConvertTo-CanonicalFixtureJson $result | ConvertFrom-Json
 $domainFail.status = "completed"
 $domainFail.verdict = "fail"
+$domainFail.domainVerdict = "fail"
 $domainFail.exitCode = 10
 Assert-SchemaValid (ConvertTo-CanonicalFixtureJson $domainFail) $schemaPath "valid domain-fail result"
 
 $blocked = ConvertTo-CanonicalFixtureJson $result | ConvertFrom-Json
 $blocked.status = "blocked"
 $blocked.verdict = "unknown"
+$blocked.domainVerdict = "unknown"
 $blocked.exitCode = 20
 Assert-SchemaValid (ConvertTo-CanonicalFixtureJson $blocked) $schemaPath "valid blocked result"
 
@@ -195,6 +227,7 @@ foreach ($status in @($contract.result.statuses)) {
             $candidate = ConvertTo-CanonicalFixtureJson $result | ConvertFrom-Json
             $candidate.status = $status
             $candidate.verdict = $verdict
+            $candidate.domainVerdict = $verdict
             $candidate.exitCode = $exitCode
             $actualValid = Test-Json -Json (ConvertTo-CanonicalFixtureJson $candidate) -SchemaFile $schemaPath -ErrorAction SilentlyContinue
             $mapping = @($contract.exitCodes | Where-Object { $_.code -eq $exitCode })[0]
@@ -263,5 +296,6 @@ foreach ($case in $coherenceMutators) {
     rejectedSchemaFixtures = 6
     rejectedCoherenceFixtures = $coherenceMutators.Count
     vocabularyTerms = $expectedVocabulary.Count
+    toolchainEvidenceCapabilities = $toolchainEvidenceCapabilities
     completionMarker = $contract.publication.completionMarker
 } | ConvertTo-Json -Depth 4

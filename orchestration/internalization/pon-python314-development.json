@@ -1,0 +1,107 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.pon-python314-development-record",
+  "projectId": "code-intel-pipeline",
+  "subject": {
+    "name": "CPython 3.14-first development with optional Pon parity",
+    "kind": "design_reference",
+    "source": {
+      "uri": "https://github.com/can1357/pon",
+      "revision": "ab9067dbd2899c64c4d67a4bc27b8ad49472b126; local-plan-sha256:c8beddcd8168c804679bc4bca89dc8341ccadc3127348d4b2195a050660f6e9c; local-doc-sha256:acb4e37bb7eb4a6bb09ad8f539d884280f28f284f549e61697d218578475ad03; local-policy-sha256:73d9afd8bb6f5d2892a557929a38dfea45694b3a71b8cd41c70dd93b4fff93b3; local-gate-sha256:e0ff9490f383d782d1cd687adaceec19cd06adf7d64377871a1802164eadb154; local-test-sha256:602afdf5720088c82b055fd5a58fce3d2d92a1dff8306a51d2f0237d1f4cd5a9; local-manifest-sha256:67e7d8ba21cadf39f92cc92577859fedae1ceb14b091344260d65cee9d96b58e"
+    },
+    "license": {
+      "id": "UNKNOWN-RESEARCH-ONLY",
+      "obligations": [
+        "do not copy, vendor, distribute, install, or automatically execute pon source until a license is declared and verified",
+        "retain source attribution for the independently implemented differential-development method"
+      ]
+    }
+  },
+  "adoption": {
+    "rung": "reimplement",
+    "ownedBoundary": [
+      "CPython 3.14 is the authoritative runtime and repository Python entry points compile against it",
+      "Pon is optional for development but mandatory for a pon-candidate compatibility claim",
+      "only ponRequired corpus cases participate in the current alternative-backend claim",
+      "the gate never installs Pon and no real Pon runtime was available during this implementation"
+    ],
+    "necessityEvidence": {
+      "evidenceIds": ["local:python314:installed-runtime", "local:python314:default-python-is-3.10", "local:python314:explicit-runtime-agreement-needed"],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    },
+    "compatibilityEvidence": {
+      "evidenceIds": ["local:python314:project-files-compile", "local:python314:three-corpus-cases-pass", "local:python314:no-runtime-install", "local:python314:project-fast-suite-pass"],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    },
+    "conformanceEvidence": {
+      "evidenceIds": ["local:python314:development-pass-pon-unavailable", "local:python314:missing-pon-candidate-rejected", "local:python314:matching-test-backend-pass", "local:python314:divergent-test-backend-rejected", "gap:python314:real-pon-execution", "gap:python314:independent-verifier"],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    }
+  },
+  "economics": {
+    "benefit": { "metric": "reviewed CPython 3.14 compatibility corpus", "value": 3, "unit": "cases" },
+    "cost": { "metric": "new installed runtime dependencies", "value": 0, "unit": "dependencies" },
+    "benefitEvidence": { "evidenceIds": ["local:python314:three-corpus-cases-pass", "local:python314:project-files-compile"], "checkedAt": 1784073600, "expiresAt": 1791849600 },
+    "costEvidence": { "evidenceIds": ["local:python314:no-runtime-install"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "assurance": {
+    "maintenanceEvidence": { "evidenceIds": ["local:python314:source-revision-pinned", "local:python314:corpus-manifest-pinned", "gap:python314:update-review"], "checkedAt": 1784073600, "expiresAt": 1791849600 },
+    "securityEvidence": { "evidenceIds": ["local:python314:no-runtime-install", "gap:python314:upstream-license", "gap:python314:real-pon-security-review"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "update": {
+    "policy": "Before 2026-10-13, recheck Pon license/revision, run the required corpus against an operator-supplied real Pon executable, and review promotion of additional Python 3.14 cases",
+    "nextCheckAt": 1791849600,
+    "evidence": { "evidenceIds": ["gap:python314:update-review", "gap:python314:real-pon-execution", "gap:python314:upstream-license"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "ownedModifications": [
+    { "path": "docs/plans/python314-pon-development-lane-idea.md", "description": "Development agreement, boundaries, and verification plan", "evidenceIds": ["local:python314:explicit-runtime-agreement-needed"] },
+    { "path": "docs/python314-pon-development.md", "description": "Team-facing CPython-first and Pon-candidate usage contract", "evidenceIds": ["local:python314:development-pass-pon-unavailable"] },
+    { "path": "orchestration/python314-pon-development-policy.v1.json", "description": "Pinned runtime authority, project files, corpus, and profile requirements", "evidenceIds": ["local:python314:source-revision-pinned", "local:python314:corpus-manifest-pinned"] },
+    { "path": "Test-Python314PonCompatibility.ps1", "description": "Executable discovery, compile, corpus, and optional differential gate", "evidenceIds": ["local:python314:project-files-compile", "local:python314:divergent-test-backend-rejected"] },
+    { "path": "test-python314-pon-compatibility.ps1", "description": "Positive, unavailable, and divergent backend coverage", "evidenceIds": ["local:python314:matching-test-backend-pass", "local:python314:missing-pon-candidate-rejected"] },
+    { "path": "tests/fixtures/python314-compat/manifest.v1.json", "description": "Three-case corpus with two Pon-required cases and one CPython-only Python 3.14 feature", "evidenceIds": ["local:python314:three-corpus-cases-pass", "local:python314:corpus-manifest-pinned"] },
+    { "path": ".github/workflows/ci.yml", "description": "Additive Python 3.14 baseline plus Windows and cross-platform compatibility execution; pre-existing user workflow edits preserved", "evidenceIds": ["local:python314:ci-python314-baseline", "local:python314:cross-platform-gate"] }
+  ],
+  "rollback": {
+    "strategy": "remove the Python 3.14/Pon policy, gate, test, corpus, documentation, project-conformance suite entry, and this record; existing Python utilities remain unchanged",
+    "evidence": { "evidenceIds": ["local:python314:no-runtime-install", "local:python314:rollback-independent"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "exit": {
+    "strategy": "retire the Pon reference when the runtime lane becomes an independently owned Python backend compatibility standard, or remove the optional backend if real Pon never passes the required corpus",
+    "replacementCriteria": [
+      "CPython 3.14 remains the explicit semantic authority",
+      "alternative backends cannot claim compatibility without differential execution",
+      "CPython-only language features remain visible rather than being removed to improve parity"
+    ],
+    "evidence": { "evidenceIds": ["local:python314:rollback-independent", "gap:python314:real-pon-execution", "gap:python314:independent-local-specification"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "retirement": {
+    "status": "candidate",
+    "triggers": [
+      "a native runtime compatibility coordinator replaces the PowerShell gate",
+      "real Pon cannot satisfy the required corpus during the review window",
+      "upstream provenance or license cannot be maintained"
+    ],
+    "evidence": { "evidenceIds": ["local:record:pon-python314-development", "gap:python314:real-pon-execution"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "lifecycle": {
+    "previousStatus": null,
+    "status": "research",
+    "effectiveAt": 1784073600,
+    "replacementRecordId": null,
+    "evidenceIds": [
+      "local:record:pon-python314-development",
+      "local:python314:source-revision-pinned",
+      "local:python314:development-pass-pon-unavailable",
+      "local:python314:divergent-test-backend-rejected",
+      "gap:python314:real-pon-execution",
+      "gap:python314:upstream-license",
+      "gap:python314:independent-verifier"
+    ],
+    "authorityEvent": null
+  },
+  "provenance": { "recordedAt": 1784073600, "recordedBy": "codex-python314-pon-development-review" }
+}

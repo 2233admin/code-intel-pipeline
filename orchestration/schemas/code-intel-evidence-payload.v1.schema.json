@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-evidence-payload.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "data"],
+  "properties": {
+    "schema": { "const": "code-intel-evidence-payload.v1" },
+    "data": { "type": "object" }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "status": "complete",
+  "authoritativeRules": [
+    { "kind": "future_architecture_rule", "status": "evaluated", "verdict": "pass", "failure": { "kind": "none" } }
+  ],
+  "nativeFailure": { "kind": "none" }
+}

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-model-channel-inventory-result.v1.schema.json",
+  "title": "Code Intel model channel inventory result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "candidates", "configurationBrokers"],
+  "properties": {
+    "schema": { "const": "code-intel-model-channel-inventory-result.v1" },
+    "candidates": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/candidate" }
+    },
+    "configurationBrokers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/broker" }
+    }
+  },
+  "$defs": {
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "channelKind", "provider", "model", "costScope", "endpointConfigured", "discovered", "executableVerified", "authPresent", "modelAvailable", "externalEgress", "source", "diagnostics"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonempty" },
+        "channelKind": { "enum": ["local_compatible", "ollama", "claude_cli", "opencode_cli", "codex_cli"] },
+        "provider": { "type": ["string", "null"], "minLength": 1 },
+        "model": { "type": ["string", "null"], "minLength": 1 },
+        "costScope": { "$ref": "#/$defs/costScope" },
+        "endpointConfigured": { "type": "boolean" },
+        "discovered": { "type": "boolean" },
+        "executableVerified": { "type": "boolean" },
+        "authPresent": { "enum": ["unknown", "present", "absent", "not_applicable"] },
+        "modelAvailable": { "enum": ["unknown", "available", "unavailable"] },
+        "externalEgress": { "type": "boolean" },
+        "source": { "enum": ["user_input", "local_discovery", "cc_switch", "cli_config"] },
+        "diagnostics": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/diagnostic" } }
+      }
+    },
+    "broker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "discovered", "configPresent", "diagnostics"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonempty" },
+        "kind": { "enum": ["cc_switch", "manual_config"] },
+        "discovered": { "type": "boolean" },
+        "configPresent": { "type": "boolean" },
+        "diagnostics": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/diagnostic" } }
+      }
+    },
+    "nonempty": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "costScope": { "enum": ["local_compute", "subscription_cli", "free_or_internal_quota", "metered_api"] },
+    "diagnostic": {
+      "enum": ["candidate_verified", "version_probe_passed", "fallback_candidate_selected", "candidate_timed_out", "candidate_verification_failed", "endpoint_configured", "endpoint_not_configured", "model_declared_by_user", "model_not_declared", "endpoint_value_not_collected", "model_catalog_observed", "auth_method_api_key", "auth_method_oauth", "auth_method_subscription", "auth_method_unknown", "installation_present", "installation_not_found", "config_present_content_not_read", "config_not_found", "presence_only", "credential_values_not_collected", "endpoint_values_not_collected", "endpoint_not_probed", "endpoint_probe_passed", "endpoint_probe_failed", "model_not_in_catalog"]
+    }
+  }
+}

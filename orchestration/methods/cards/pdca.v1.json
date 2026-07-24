@@ -1,0 +1,39 @@
+{
+  "schema": "code-intel-method-card.v1",
+  "id": "pdca",
+  "version": "1.0.0",
+  "name": "Plan-Do-Check-Act",
+  "problemSignals": [
+    { "id": "uncontrolled-improvement", "description": "Changes are made without a baseline, prediction, or learning loop." },
+    { "id": "repeated-corrective-action", "description": "Corrective actions recur without standardized follow-through." }
+  ],
+  "requiredEvidence": [
+    { "id": "baseline-and-target", "description": "Operational definition, baseline measure, target, and observation window." },
+    { "id": "change-hypothesis", "description": "A bounded change, predicted effect, risks, and rollback condition." }
+  ],
+  "assumptions": ["The change can be bounded and observed", "The check interval is long enough to detect the predicted effect"],
+  "deterministicSteps": [
+    { "id": "plan", "action": "Record baseline, target, hypothesis, change scope, safeguards, and check criteria.", "requires": ["evidence:baseline-and-target", "evidence:change-hypothesis"], "produces": ["cycle-plan"] },
+    { "id": "do-check", "action": "Apply only the bounded trial and compare observed measures with the plan using the declared criteria.", "requires": ["step:plan"], "produces": ["learning-record"] },
+    { "id": "act", "action": "Classify the result as standardize, adapt, abandon, or repeat and preserve the evidence for the next cycle.", "requires": ["step:do-check"], "produces": ["next-cycle-decision"] }
+  ],
+  "outputs": [
+    { "id": "cycle-plan", "description": "Bounded improvement hypothesis and evaluation contract." },
+    { "id": "learning-record", "description": "Observed comparison against the prediction." },
+    { "id": "next-cycle-decision", "description": "Evidence-linked proposal for standardization or another cycle." }
+  ],
+  "confidenceRules": [
+    { "level": "high", "whenAll": ["Baseline and target are operationally defined", "Trial scope is controlled", "Observed window meets the plan"] },
+    { "level": "medium", "whenAll": ["Trial is bounded", "Confounders or sample size limit attribution"] },
+    { "level": "unknown", "whenAll": ["No baseline exists", "The change and check criteria were altered during the cycle"] }
+  ],
+  "cost": { "relative": "medium", "drivers": ["Measurement delay", "Trial isolation", "Rollback and standardization effort"] },
+  "contraindications": ["The proposed action is irreversible without prior risk controls", "No measurable target or bounded trial can be defined"],
+  "implementationPorts": [
+    { "id": "pdca-ledger", "kind": "manual", "contract": ["Bind each phase to one cycle identity", "Do not convert the Act phase into automatic adoption authority"] }
+  ],
+  "source": { "title": "Shewhart-Deming improvement cycle", "version": "catalog interpretation 1.0", "reference": "Established PDCA quality practice" },
+  "applicabilityBoundary": { "inScope": ["Controlled iterative improvement", "Corrective-action learning loops"], "outOfScope": ["Unbounded transformation programs", "Automatic approval of successful trials"] },
+  "relatedMethodIds": ["root-cause-analysis", "spc"],
+  "executionPolicy": "catalog_only_no_selection_or_execution"
+}

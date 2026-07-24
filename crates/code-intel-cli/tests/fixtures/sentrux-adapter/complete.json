@@ -1,0 +1,12 @@
+{
+  "status": "complete",
+  "authoritativeRules": [
+    { "kind": "max_cc", "status": "evaluated", "verdict": "pass", "failure": { "kind": "none" } },
+    { "kind": "max_cycles", "status": "evaluated", "verdict": "pass", "failure": { "kind": "none" } },
+    { "kind": "max_coupling", "status": "evaluated", "verdict": "fail", "failure": { "kind": "none" } },
+    { "kind": "no_god_files", "status": "evaluated", "verdict": "pass", "failure": { "kind": "none" } },
+    { "kind": "layer_order", "status": "evaluated", "verdict": "pass", "failure": { "kind": "none" } },
+    { "kind": "boundary_dependency", "status": "evaluated", "verdict": "pass", "failure": { "kind": "none" } }
+  ],
+  "nativeFailure": { "kind": "none" }
+}

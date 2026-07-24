@@ -1,0 +1,29 @@
+{
+  "schema": "code-intel-decision-gap-detection-request.v1",
+  "branches": [
+    { "branchId": "inventory", "status": "completed", "blockers": [] },
+    {
+      "branchId": "publication",
+      "status": "pending",
+      "blockers": [
+        {
+          "id": "gap-risk-release",
+          "kind": "risk_acceptance",
+          "blockedDecision": "publish release with residual risk",
+          "discoverableFactsChecked": [
+            { "factId": "fact-tests", "status": "resolved" },
+            { "factId": "fact-rollback", "status": "resolved" }
+          ],
+          "missingFactIds": [],
+          "options": [
+            { "id": "accept", "label": "Accept risk", "consequence": "release now with recorded residual risk" },
+            { "id": "defer", "label": "Defer release", "consequence": "delay publication until mitigation completes" }
+          ],
+          "recommendedOptionId": "defer",
+          "recommendationRationale": "preserve the fail-closed publication boundary",
+          "affectedBranches": ["publication"]
+        }
+      ]
+    }
+  ]
+}

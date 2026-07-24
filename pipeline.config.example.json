@@ -18,6 +18,15 @@
     "style": "markdown",
     "compress": false
   },
+  "followUpAutomation": {
+    "proactiveSkillSuggestions": {
+      "enabled": true,
+      "bugSkill": "/investigate"
+    },
+    "automaticPullRequests": {
+      "mode": "ask"
+    }
+  },
   "inventoryExclude": [
     "!**/tools/**",
     "!**/vendor/**",

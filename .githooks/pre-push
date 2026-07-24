@@ -1,0 +1,45 @@
+#!/usr/bin/env sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+queue_command="$repo_root/node_modules/.bin/claude-code-merge-queue"
+
+# Git for Windows can prepend user shim directories ahead of the Windows Python
+# launcher. Keep the native launcher discoverable so the CPython 3.14 acceptance
+# lane behaves the same in pre-push as it does in PowerShell.
+if [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev/null 2>&1; then
+  windows_apps="$(cygpath -u "$LOCALAPPDATA")/Microsoft/WindowsApps"
+  PATH="$windows_apps:$PATH"
+  export PATH
+fi
+
+if [ ! -f "$queue_command" ]; then
+  printf '%s\n' 'pre-push: repository-local claude-code-merge-queue is missing; run Install-MultiAgentMergeQueue.ps1.' >&2
+  exit 1
+fi
+
+payload="$(mktemp "${TMPDIR:-/tmp}/code-intel-pre-push.XXXXXX")"
+trap 'rm -f "$payload"' EXIT HUP INT TERM
+cat >"$payload"
+
+# Required landing guard: claude-code-merge-queue check-push
+if ! "$queue_command" check-push "$@" <"$payload"; then
+  exit 1
+fi
+
+previous_hooks_path="$(git config --local --get codeIntel.mergeQueue.previousHooksPath || true)"
+if [ -n "$previous_hooks_path" ]; then
+  case "$previous_hooks_path" in
+    /* | [A-Za-z]:/*) previous_hook="$previous_hooks_path/pre-push" ;;
+    *) previous_hook="$repo_root/$previous_hooks_path/pre-push" ;;
+  esac
+
+  current_hook="$repo_root/.githooks/pre-push"
+  if [ -f "$previous_hook" ] && [ "$previous_hook" != "$current_hook" ]; then
+    if [ -x /usr/bin/bash ]; then
+      /usr/bin/bash "$previous_hook" "$@" <"$payload"
+    else
+      sh "$previous_hook" "$@" <"$payload"
+    fi
+  fi
+fi

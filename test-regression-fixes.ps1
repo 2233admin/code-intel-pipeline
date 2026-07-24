@@ -682,7 +682,13 @@ Test-Case "update-code-intel-index.ps1 skips unparseable report.json and still i
         # Repo A: broken report.json (malformed JSON) -- must be skipped, not crash the run.
         $repoABroken = Join-Path (Join-Path $artifactRoot "repoA") "20260701-000000"
         New-Item -ItemType Directory -Force -Path $repoABroken | Out-Null
-        Set-Content -LiteralPath (Join-Path $repoABroken "report.json") -Value "{ broken json not closed " -Encoding UTF8
+        $brokenReportPath = Join-Path $repoABroken "report.json"
+        Set-Content -LiteralPath $brokenReportPath -Value "{ broken json not closed " -Encoding UTF8
+        [ordered]@{
+            schema = "code-intel-run-commit.v1"
+            report = "report.json"
+            reportSha256 = (Get-FileHash -LiteralPath $brokenReportPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $repoABroken "run-complete.json") -Encoding UTF8
 
         # Repo B: healthy report.json -- must still be indexed.
         $repoBHealthy = Join-Path (Join-Path $artifactRoot "repoB") "20260701-000000"
@@ -696,13 +702,19 @@ Test-Case "update-code-intel-index.ps1 skips unparseable report.json and still i
                 skipped = 0
             }
         }
-        $healthyReport | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $repoBHealthy "report.json") -Encoding UTF8
+        $healthyReportPath = Join-Path $repoBHealthy "report.json"
+        $healthyReport | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $healthyReportPath -Encoding UTF8
+        [ordered]@{
+            schema = "code-intel-run-commit.v1"
+            report = "report.json"
+            reportSha256 = (Get-FileHash -LiteralPath $healthyReportPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $repoBHealthy "run-complete.json") -Encoding UTF8
         Set-Content -LiteralPath (Join-Path $repoBHealthy "summary.md") -Value "# summary" -Encoding UTF8
 
         $indexScript = Join-Path $root "update-code-intel-index.ps1"
         $outputPath = Join-Path $artifactRoot "index.md"
-        $raw = & $indexScript -ArtifactRoot $artifactRoot -OutputPath $outputPath -WarningAction SilentlyContinue 2>&1
-        Assert-Equal 0 $LASTEXITCODE "update-code-intel-index.ps1 must exit 0 even with one broken report.json present (regression: da46886 fix 6)"
+        $raw = & $indexScript -ArtifactRoot $artifactRoot -OutputPath $outputPath -LegacyCompatibilityMode -WarningAction SilentlyContinue 2>&1
+        Assert-Equal 0 $LASTEXITCODE "the explicit legacy index branch must exit 0 even with one broken committed report.json present (regression: da46886 fix 6)"
 
         $jsonOut = $raw | Where-Object { $_ -notmatch "^WARNING" } | ConvertFrom-Json
         Assert-True $jsonOut.ok "index refresh must report ok=true overall"

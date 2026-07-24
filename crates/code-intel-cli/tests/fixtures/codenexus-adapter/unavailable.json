@@ -1,0 +1,9 @@
+{
+  "providerMode": "full",
+  "status": "unavailable",
+  "providerId": "codenexus.full",
+  "implementationId": "codenexus.service.v1",
+  "sourceRevision": "unavailable-at-full-revision-7",
+  "activation": "primary",
+  "effects": ["network_provider"]
+}

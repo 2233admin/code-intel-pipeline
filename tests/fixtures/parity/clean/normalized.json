@@ -1,0 +1,108 @@
+{
+  "artifacts": {
+    "hospital": {
+      "artifacts": {
+        "report": "<TEMP_ROOT>/artifacts/parity-clean/20260713-010203/report.json"
+      },
+      "generatedAt": "<TIME>",
+      "modalities": [
+        {
+          "artifact": "<TEMP_ROOT>/artifacts/parity-clean/20260713-010203/files.txt",
+          "name": "xray",
+          "status": "passed"
+        },
+        {
+          "artifact": "<TEMP_ROOT>/repos/parity-clean/.understand-anything/knowledge-graph.json",
+          "name": "anatomy",
+          "status": "passed"
+        }
+      ],
+      "repo": "parity-clean",
+      "schema": "code-intel-hospital.v1",
+      "state_machine": {
+        "current_state": "discharge_ready"
+      },
+      "triage": {
+        "disposition": "discharge_ready",
+        "next_protocol": "discharge",
+        "primary_diagnosis": "clean run",
+        "research_required": false,
+        "research_status": "not_applicable",
+        "status": "green"
+      }
+    },
+    "report": {
+      "artifactDir": "<TEMP_ROOT>/artifacts/parity-clean/20260713-010203",
+      "mode": "normal",
+      "paths": {
+        "repo": "<TEMP_ROOT>/repos/parity-clean"
+      },
+      "repo": "parity-clean",
+      "steps": [
+        {
+          "error": "",
+          "exitCode": 0,
+          "finishedAt": "<TIME>",
+          "name": "git status",
+          "output": "## main",
+          "startedAt": "<TIME>",
+          "status": "passed"
+        },
+        {
+          "error": "",
+          "exitCode": 0,
+          "finishedAt": "<TIME>",
+          "name": "rg file inventory",
+          "output": "files=12",
+          "startedAt": "<TIME>",
+          "status": "passed"
+        }
+      ],
+      "summary": {
+        "blockingSentruxDebt": 0,
+        "effectiveFailed": 0,
+        "effectiveFailureCategories": {
+          "graphMissing": 0,
+          "localToolError": 0,
+          "providerQuota": 0,
+          "sentruxFail": 0
+        },
+        "failed": 0,
+        "failureCategories": {
+          "graphMissing": 0,
+          "localToolError": 0,
+          "providerQuota": 0,
+          "sentruxFail": 0
+        },
+        "knownSentruxDebt": 0,
+        "manualRequired": 0,
+        "passed": 8,
+        "skipped": 0
+      },
+      "tools": {
+        "git": true,
+        "repowise": true,
+        "rg": true,
+        "sentrux": true
+      },
+      "understanding": "<TEMP_ROOT>/artifacts/parity-clean/20260713-010203/understanding.md"
+    }
+  },
+  "case": "clean",
+  "missingEvidence": [],
+  "provenance": {
+    "producer": "run-code-intel.ps1",
+    "snapshotIdentity": "git:clean-fixture-head",
+    "tools": [
+      "git",
+      "rg",
+      "repowise",
+      "sentrux"
+    ]
+  },
+  "semanticBackslashSamples": [
+    "deny\\allow",
+    "tool\\name",
+    "a\\b"
+  ]
+}

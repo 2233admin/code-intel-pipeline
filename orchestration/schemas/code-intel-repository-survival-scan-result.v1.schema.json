@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://code-intel.local/schemas/code-intel-repository-survival-scan-result.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "snapshotIdentity", "repository", "inventory", "providerDiagnosis", "completeness", "structuralVerdict", "limitations", "engineeringFacts"],
+  "properties": {
+    "schema": { "const": "code-intel-repository-survival-scan-result.v1" },
+    "status": { "const": "completed" },
+    "snapshotIdentity": { "$ref": "#/definitions/sha256" },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "identity", "revision", "dirty", "sourceSha256"],
+      "properties": {
+        "kind": { "enum": ["git", "git_unborn", "unversioned"] },
+        "identity": { "type": "string", "pattern": "^(git-lineage-v1|content-v1):[a-f0-9]{64}$" },
+        "revision": { "type": "string", "minLength": 1 },
+        "dirty": { "type": "boolean" },
+        "sourceSha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileCount", "extensions", "sourceSha256"],
+      "properties": {
+        "fileCount": { "type": "integer", "minimum": 0 },
+        "extensions": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 1 } },
+        "sourceSha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "providerDiagnosis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["providerId", "status", "domainVerdict"],
+      "properties": {
+        "providerId": { "type": "string", "minLength": 1 },
+        "status": { "const": "provider_unavailable" },
+        "domainVerdict": { "const": "unknown" }
+      }
+    },
+    "completeness": { "const": "reduced" },
+    "structuralVerdict": { "const": "unknown" },
+    "limitations": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "engineeringFacts": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "value", "sourceSha256"],
+        "properties": {
+          "kind": { "enum": ["repository_identity", "repository_revision", "inventory_file_count"] },
+          "value": {},
+          "sourceSha256": { "$ref": "#/definitions/sha256" }
+        }
+      }
+    }
+  },
+  "definitions": { "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+}

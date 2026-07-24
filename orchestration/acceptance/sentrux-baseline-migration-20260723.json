@@ -1,0 +1,42 @@
+{
+  "schema": "code-intel-sentrux-baseline-migration.v1",
+  "recordedAt": "2026-07-23T06:00:00+08:00",
+  "tool": {
+    "name": "sentrux",
+    "version": "0.5.7"
+  },
+  "repository": {
+    "head": "3bc551e868a20e3d89640fc7dca35fbaae6fd206"
+  },
+  "migration": {
+    "field": "complex_fn_count",
+    "before": 20,
+    "after": 21,
+    "otherBaselineFieldsResampled": false,
+    "classification": "tool-scoring-baseline-drift",
+    "reason": "An isolated clean HEAD clone scores 21 complex functions under Sentrux 0.5.7; each single-file overlay from the active change set also scores 21, so the delta is not attributable to the implementation change."
+  },
+  "evidence": {
+    "cleanHeadComplexFunctionCount": 21,
+    "singleFileOverlayComplexFunctionCounts": {
+      "crates/code-intel-cli/src/graph.rs": 21,
+      "crates/code-intel-cli/src/main.rs": 21,
+      "crates/code-intel-cli/src/orchestration.rs": 21,
+      "crates/code-intel-cli/src/providers.rs": 21,
+      "crates/code-intel-cli/src/sentrux_analysis.rs": 21,
+      "invoke-code-intel.ps1": 21,
+      "run-code-intel.ps1": 21
+    },
+    "workingTreeQualityBefore": 5470,
+    "workingTreeQualityAfter": 5580,
+    "workingTreeQualityRegressed": false
+  },
+  "verification": {
+    "sentruxGate": "passed",
+    "sentruxCoreCheck": "passed",
+    "sentruxCheck": "passed",
+    "rulesChecked": 3,
+    "quality": 5580
+  },
+  "guardrail": "This migration changes only the stale complex-function count; it does not resample improved quality, coupling, cycle, god-file, depth, or edge metrics."
+}

@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://code-intel.local/schemas/code-intel-project-orientation-benchmark.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "verdict", "target", "corpus", "method", "environment", "latency", "artifactSize", "quality", "costCenters", "limitations"],
+  "properties": {
+    "schema": {"const": "code-intel-project-orientation-benchmark.v1"},
+    "verdict": {"enum": ["pass", "fail"]},
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["typicalP95WallTimeMs", "llm"],
+      "properties": {"typicalP95WallTimeMs": {"const": 60000}, "llm": {"const": "disabled"}}
+    },
+    "corpus": {"type": "object"},
+    "method": {"type": "object"},
+    "environment": {"type": "object"},
+    "latency": {
+      "type": "object",
+      "required": ["typical", "cold", "warm"],
+      "properties": {
+        "typical": {"$ref": "#/definitions/percentiles"},
+        "cold": {"$ref": "#/definitions/percentiles"},
+        "warm": {"$ref": "#/definitions/percentiles"}
+      }
+    },
+    "artifactSize": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["typical", "all"],
+      "properties": {
+        "typical": {"$ref": "#/definitions/sizePercentiles"},
+        "all": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["p50Bytes", "p95Bytes", "maxBytes"],
+          "properties": {
+            "p50Bytes": {"type": "integer", "minimum": 1},
+            "p95Bytes": {"type": "integer", "minimum": 1},
+            "maxBytes": {"type": "integer", "minimum": 1}
+          }
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fieldCorrectness", "unknownPrecision", "unresolvedCoverage", "unsupportedCoverage", "deterministicReplayRate", "provenanceCompleteness"],
+      "properties": {
+        "fieldCorrectness": {"type": "number", "minimum": 0, "maximum": 1},
+        "unknownPrecision": {"type": "number", "minimum": 0, "maximum": 1},
+        "unresolvedCoverage": {"type": "number", "minimum": 0, "maximum": 1},
+        "unsupportedCoverage": {"type": "number", "minimum": 0, "maximum": 1},
+        "deterministicReplayRate": {"type": "number", "minimum": 0, "maximum": 1},
+        "provenanceCompleteness": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "costCenters": {"type": "array", "minItems": 2, "items": {"type": "object"}},
+    "limitations": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+  },
+  "definitions": {
+    "percentiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["p50WallTimeMs", "p95WallTimeMs"],
+      "properties": {
+        "p50WallTimeMs": {"type": "integer", "minimum": 0},
+        "p95WallTimeMs": {"type": "integer", "minimum": 0}
+      }
+    },
+    "sizePercentiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["p50Bytes", "p95Bytes"],
+      "properties": {
+        "p50Bytes": {"type": "integer", "minimum": 1},
+        "p95Bytes": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

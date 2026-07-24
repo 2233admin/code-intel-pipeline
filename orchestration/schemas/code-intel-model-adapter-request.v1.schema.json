@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-model-adapter-request.v1.schema.json",
+  "title": "Code Intel model adapter request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "adapter", "executable", "endpoint", "protocol", "credentialEnvName", "model", "promptFile", "timeoutSeconds", "consent", "costScope", "externalData", "responseFormat"],
+  "properties": {
+    "schema": { "const": "code-intel-model-adapter-request.v1" },
+    "adapter": { "$ref": "#/$defs/adapter" },
+    "executable": { "type": ["string", "null"], "minLength": 1 },
+    "endpoint": { "type": ["string", "null"], "pattern": "^https?://[^\\s]+$" },
+    "protocol": { "type": ["string", "null"], "enum": [null, "openai", "anthropic", "ollama"] },
+    "credentialEnvName": { "type": ["string", "null"], "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "model": { "$ref": "#/$defs/nonempty" },
+    "promptFile": { "$ref": "#/$defs/nonempty" },
+    "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
+    "consent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["consumption", "localCompute", "paidSpend", "externalData"],
+      "properties": {
+        "consumption": { "$ref": "#/$defs/consent" },
+        "localCompute": { "$ref": "#/$defs/consent" },
+        "paidSpend": { "$ref": "#/$defs/consent" },
+        "externalData": { "$ref": "#/$defs/consent" }
+      }
+    },
+    "costScope": { "$ref": "#/$defs/costScope" },
+    "externalData": { "type": "boolean" },
+    "responseFormat": { "enum": ["json", "jsonl"] }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "adapter": { "enum": ["claude_cli", "opencode_cli", "codex_cli"] } }, "required": ["adapter"] },
+      "then": {
+        "properties": {
+          "executable": { "$ref": "#/$defs/nonempty" },
+          "endpoint": { "type": "null" },
+          "protocol": { "type": "null" },
+          "credentialEnvName": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "adapter": { "const": "ollama" } }, "required": ["adapter"] },
+      "then": {
+        "properties": {
+          "executable": { "type": "null" },
+          "endpoint": { "type": "string", "pattern": "^https?://[^\\s]+$" },
+          "protocol": { "const": "ollama" },
+          "credentialEnvName": { "type": "null" },
+          "responseFormat": { "const": "json" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "adapter": { "const": "local_compatible" } }, "required": ["adapter"] },
+      "then": {
+        "properties": {
+          "executable": { "type": "null" },
+          "endpoint": { "type": "string", "pattern": "^https?://[^\\s]+$" },
+          "protocol": { "enum": ["openai", "anthropic"] },
+          "credentialEnvName": { "type": ["string", "null"], "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+          "responseFormat": { "const": "json" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "adapter": { "enum": ["claude_cli", "opencode_cli", "codex_cli", "ollama", "local_compatible"] },
+    "consent": { "enum": ["unanswered", "granted", "denied"] },
+    "costScope": { "enum": ["local_compute", "subscription_cli", "free_or_internal_quota", "metered_api"] },
+    "nonempty": { "type": "string", "minLength": 1 }
+  }
+}

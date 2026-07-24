@@ -1,0 +1,92 @@
+{
+  "snapshot": {
+    "schema": "code-intel-repository-snapshot.v1",
+    "snapshot": {
+      "identity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "repoIdentity": "content-v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "head": "unversioned",
+      "workingTreePolicy": "explicit_overlay",
+      "scope": ["."],
+      "inputDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "dirtyOverlay": {
+      "present": true,
+      "digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "paths": ["src/main.rs"],
+      "members": {
+        "trackedModified": [],
+        "trackedDeleted": [],
+        "untracked": ["src/main.rs"],
+        "renamed": [],
+        "typeChanged": [],
+        "staged": []
+      },
+      "ignoredPolicy": "excluded_by_git_ignore"
+    },
+    "repository": {"kind": "unversioned"}
+  },
+  "inventory": "Cargo.toml\nREADME.md\nsrc/lib.rs\nsrc/main.rs\ntests/orientation.rs\n",
+  "survival": {
+    "schema": "code-intel-repository-survival-scan-result.v1",
+    "status": "completed",
+    "snapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "repository": {
+      "kind": "unversioned",
+      "identity": "content-v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "revision": "unversioned",
+      "dirty": true,
+      "sourceSha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "inventory": {
+      "fileCount": 5,
+      "extensions": {"md": 1, "rs": 3, "toml": 1},
+      "sourceSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "providerDiagnosis": {
+      "providerId": "codenexus.full",
+      "status": "provider_unavailable",
+      "domainVerdict": "unknown"
+    },
+    "completeness": "reduced",
+    "structuralVerdict": "unknown",
+    "limitations": [
+      "only repository identity and basic file inventory are available",
+      "deeper structural perception requires an admitted provider result"
+    ],
+    "engineeringFacts": [
+      {"kind": "repository_identity", "value": "content-v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "sourceSha256": "1111111111111111111111111111111111111111111111111111111111111111"},
+      {"kind": "repository_revision", "value": "unversioned", "sourceSha256": "1111111111111111111111111111111111111111111111111111111111111111"},
+      {"kind": "inventory_file_count", "value": 5, "sourceSha256": "2222222222222222222222222222222222222222222222222222222222222222"}
+    ]
+  },
+  "nativeFiles": {
+    "schema": "code-evidence-files.v1",
+    "files": [
+      {"path": "Cargo.toml", "language": "text", "bytes": 40, "lines": 4, "textHash": "3333333333333333333333333333333333333333333333333333333333333333", "source": "native-minimal"},
+      {"path": "README.md", "language": "text", "bytes": 0, "lines": 0, "textHash": "4444444444444444444444444444444444444444444444444444444444444444", "source": "native-minimal"},
+      {"path": "src/lib.rs", "language": "rust", "bytes": 20, "lines": 1, "textHash": "5555555555555555555555555555555555555555555555555555555555555555", "source": "native-minimal"},
+      {"path": "src/main.rs", "language": "rust", "bytes": 13, "lines": 1, "textHash": "6666666666666666666666666666666666666666666666666666666666666666", "source": "native-minimal"},
+      {"path": "tests/orientation.rs", "language": "rust", "bytes": 18, "lines": 1, "textHash": "7777777777777777777777777777777777777777777777777777777777777777", "source": "native-minimal"}
+    ]
+  },
+  "nativeCoverage": {
+    "schema": "code-evidence-coverage.v1",
+    "producer": "native-minimal",
+    "parserKind": "line-heuristic",
+    "supportedHeuristics": ["rust"],
+    "unsupportedFiles": ["Cargo.toml", "README.md"],
+    "symbolPrecision": "heuristic",
+    "importPrecision": "heuristic",
+    "relationshipPrecision": "unknown",
+    "callGraph": "unknown",
+    "effects": ["repo_read", "local_write"]
+  },
+  "nativeRanking": {
+    "schema": "agent-code-slice-ranking.v1",
+    "strategy": "native-evidence-default",
+    "files": [
+      {"path": "src/main.rs", "language": "rust", "score": 40, "reasons": ["entrypoint"], "symbols": null, "imports": null},
+      {"path": "tests/orientation.rs", "language": "rust", "score": 35, "reasons": ["test"], "symbols": null, "imports": null}
+    ]
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-runtime-ci-summary.v1",
+  "title": "Code Intel Runtime/CI Deterministic Consumer Summary v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "admission", "health", "freshness", "completeness", "expectedSnapshotIdentity", "sourceSnapshotIdentity", "provider", "provenance", "observedAt", "signals", "facts", "failureKind"],
+  "properties": {
+    "schema": { "const": "code-intel-runtime-ci-summary.v1" },
+    "admission": { "enum": ["accepted", "rejected"] },
+    "health": { "enum": ["green", "red", "unknown"] },
+    "freshness": { "enum": ["current", "stale", "snapshot_mismatch", "missing"] },
+    "completeness": { "enum": ["complete", "partial", "missing"] },
+    "expectedSnapshotIdentity": { "$ref": "#/$defs/digest" },
+    "sourceSnapshotIdentity": { "oneOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] },
+    "provider": { "oneOf": [{ "$ref": "#/$defs/provider" }, { "type": "null" }] },
+    "provenance": { "oneOf": [{ "$ref": "#/$defs/provenance" }, { "type": "null" }] },
+    "observedAt": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+    "signals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tests", "build", "runtime"],
+      "properties": {
+        "tests": { "$ref": "#/$defs/signal" },
+        "build": { "$ref": "#/$defs/signal" },
+        "runtime": { "$ref": "#/$defs/signal" }
+      }
+    },
+    "facts": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["tests_observed_passed", "build_observed_passed", "runtime_observed_healthy", "runtime_ci_observed_failure"] }
+    },
+    "failureKind": { "enum": ["none", "artifact_missing", "snapshot_mismatch", "stale", "partial_coverage", "observed_failure"] }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "provider": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "runId", "sourceRevision"],
+      "properties": { "id": { "type": "string", "minLength": 1 }, "runId": { "type": "string", "minLength": 1 }, "sourceRevision": { "type": "string", "minLength": 1 } }
+    },
+    "provenance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["collectorId", "collectorVersion", "collectionId", "collectedAt"],
+      "properties": { "collectorId": { "type": "string", "minLength": 1 }, "collectorVersion": { "type": "string", "minLength": 1 }, "collectionId": { "type": "string", "minLength": 1 }, "collectedAt": { "type": "integer", "minimum": 0 } }
+    },
+    "signal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "observed", "summary"],
+      "properties": { "status": { "enum": ["passed", "failed", "cancelled", "healthy", "degraded", "unknown"] }, "observed": { "type": "boolean" }, "summary": { "type": "string", "minLength": 1 } }
+    }
+  }
+}
