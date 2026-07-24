@@ -179,6 +179,7 @@ fn governed_visible_files(target: &Path) -> Option<BTreeSet<String>> {
         .arg("--files")
         .args([
             "--hidden",
+            "--no-require-git",
             "--no-ignore-parent",
             "--no-ignore-global",
             "--no-ignore-exclude",
