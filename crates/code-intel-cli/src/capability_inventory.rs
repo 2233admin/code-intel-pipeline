@@ -32,8 +32,11 @@ mod project_orientation_benchmark;
 #[path = "understanding_quadrant.rs"]
 mod understanding_quadrant;
 
-const EXCLUDES: [&str; 10] = [
+const EXCLUDES: [&str; 11] = [
     "!**/.git/**",
+    // In a linked git worktree `.git` is a pointer FILE, which `!**/.git/**`
+    // does not match; without this the self-scan process-fails in worktrees.
+    "!**/.git",
     "!**/node_modules/**",
     "!**/.repowise/**",
     "!**/.understand-anything/**",

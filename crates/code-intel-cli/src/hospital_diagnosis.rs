@@ -20,6 +20,7 @@ struct Signals {
     native_seen: bool,
     modernization_debt: bool,
     top_target: Option<String>,
+    failing_rules: Vec<Value>,
     admissions: BTreeMap<String, String>,
 }
 
@@ -196,6 +197,14 @@ fn consume_admission(input: &VerifiedArtifact, signals: &mut Signals) -> Result<
             });
         signals.structural_failure =
             rules.is_some_and(|items| items.iter().any(|rule| rule["verdict"] == "fail"));
+        if let Some(items) = rules {
+            signals.failing_rules.extend(
+                items
+                    .iter()
+                    .filter(|rule| rule["verdict"] == "fail")
+                    .cloned(),
+            );
+        }
     }
     if let Some(native) = data.get("nativeCode") {
         require_provider_modality(provider, "native_code")?;
@@ -291,12 +300,42 @@ fn diagnose(request: &Value, s: &Signals) -> Value {
     } else {
         ("green", "clean snapshot", "post_op", "observe", "pass")
     };
-    let treatment = treatment(diagnosis, s.top_target.as_deref());
-    let surgery_status = if next_protocol == "surgery_plan" && s.top_target.is_some() {
+    let structural_target = s.failing_rules.iter().find_map(|rule| {
+        rule["details"]["violations"]
+            .as_array()
+            .and_then(|violations| {
+                violations.iter().find_map(|violation| {
+                    violation["targets"]
+                        .as_array()
+                        .and_then(|targets| targets.first())
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+            })
+    });
+    let surgery_target = if diagnosis == "architecture gate failure" {
+        structural_target.clone().or_else(|| s.top_target.clone())
+    } else {
+        s.top_target.clone()
+    };
+    let treatment = treatment(diagnosis, surgery_target.as_deref(), &s.failing_rules);
+    let surgery_status = if (next_protocol == "surgery_plan" && s.top_target.is_some())
+        || (diagnosis == "architecture gate failure" && surgery_target.is_some())
+    {
         "planned"
     } else {
         "not_required"
     };
+    let failing_rules = s
+        .failing_rules
+        .iter()
+        .map(|rule| {
+            json!({
+                "kind": rule["kind"],
+                "details": rule.get("details").cloned().unwrap_or(Value::Null),
+            })
+        })
+        .collect::<Vec<_>>();
     let evidence = s
         .admissions
         .iter()
@@ -313,6 +352,7 @@ fn diagnose(request: &Value, s: &Signals) -> Value {
             "status":status,
             "disposition":disposition,
             "primary_diagnosis":diagnosis,
+            "failing_rules":failing_rules,
             "overall_score":null,
             "next_protocol":next_protocol,
             "research_status":"not_applicable",
@@ -337,7 +377,7 @@ fn diagnose(request: &Value, s: &Signals) -> Value {
             "schema":"code-intel-surgery-plan.v1",
             "status":surgery_status,
             "admission":{"disposition":disposition,"diagnosis":diagnosis,"reason":admission_reason(diagnosis)},
-            "primary_target":{"file":s.top_target,"name":null,"source_anchor":null,"complexity":null,"scenario":null,"scenario_action":null,"codenexus_file":null},
+            "primary_target":{"file":surgery_target,"name":null,"source_anchor":null,"complexity":null,"scenario":null,"scenario_action":null,"codenexus_file":null},
             "operating_plan":if surgery_status == "planned" { vec!["Open the admitted primary target before editing.","Make one bounded repair and preserve behavior."] } else { Vec::<&str>::new() },
             "verification":["Rerun the smallest affected test.","Re-admit current structural evidence before discharge."],
             "discharge_criteria":["the admitted structural verdict is pass"]
@@ -362,7 +402,7 @@ fn admission_reason(diagnosis: &str) -> &'static str {
     }
 }
 
-fn treatment(diagnosis: &str, target: Option<&str>) -> Vec<String> {
+fn treatment(diagnosis: &str, target: Option<&str>, failing: &[Value]) -> Vec<String> {
     let mut plan = vec![match diagnosis {
         "local tool failure" => "Fix local tool errors before interpreting architecture signals.".into(),
         "provider quota exhausted" => "Restore provider quota or use a complete admitted local evidence path before interpreting the result.".into(),
@@ -373,6 +413,44 @@ fn treatment(diagnosis: &str, target: Option<&str>) -> Vec<String> {
         "known modernization debt" => "Repair the first admitted modernization target and verify behavior.".into(),
         _ => "Keep this admitted evidence set as the clean comparison baseline.".into(),
     }];
+    if diagnosis == "architecture gate failure" {
+        for rule in failing {
+            let kind = rule["kind"].as_str().unwrap_or("unknown");
+            let violations = rule["details"]["violations"].as_array();
+            match violations {
+                Some(violations) => {
+                    for violation in violations.iter().take(3) {
+                        let message = violation["message"].as_str().unwrap_or("");
+                        let targets = violation["targets"]
+                            .as_array()
+                            .map(|targets| {
+                                targets
+                                    .iter()
+                                    .filter_map(Value::as_str)
+                                    .take(3)
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            })
+                            .unwrap_or_default();
+                        if targets.is_empty() {
+                            plan.push(format!("Failing rule {kind}: {message}."));
+                        } else {
+                            plan.push(format!(
+                                "Failing rule {kind}: {message} (targets: {targets})."
+                            ));
+                        }
+                    }
+                }
+                None => plan.push(format!(
+                    "Failing rule {kind}: no structured violation details were admitted."
+                )),
+            }
+        }
+        plan.push(
+            "Rerun the smallest gate: code-intel sentrux --operation check --repo <repo-root>."
+                .into(),
+        );
+    }
     if let Some(target) = target {
         plan.push(format!("Start the bounded review at {target}."));
     }
@@ -380,7 +458,7 @@ fn treatment(diagnosis: &str, target: Option<&str>) -> Vec<String> {
 }
 
 fn render_hospital(value: &Value) -> String {
-    format!(
+    let mut report = format!(
         "# Code Intel Hospital Report\n\n- Status: {}\n- Disposition: {}\n- Primary diagnosis: {}\n- Next protocol: {}\n\n## Treatment\n{}\n",
         value["triage"]["status"].as_str().unwrap_or("unknown"),
         value["triage"]["disposition"].as_str().unwrap_or("admit"),
@@ -394,7 +472,38 @@ fn render_hospital(value: &Value) -> String {
             .map(|item| format!("- {item}"))
             .collect::<Vec<_>>()
             .join("\n")
-    )
+    );
+    let failing = value["triage"]["failing_rules"].as_array();
+    if let Some(failing) = failing.filter(|rules| !rules.is_empty()) {
+        report.push_str("\n## Failing rules\n");
+        for rule in failing {
+            let kind = rule["kind"].as_str().unwrap_or("unknown");
+            match rule["details"]["violations"].as_array() {
+                Some(violations) => {
+                    for violation in violations {
+                        let message = violation["message"].as_str().unwrap_or("");
+                        let targets = violation["targets"]
+                            .as_array()
+                            .map(|targets| {
+                                targets
+                                    .iter()
+                                    .filter_map(Value::as_str)
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            })
+                            .unwrap_or_default();
+                        if targets.is_empty() {
+                            report.push_str(&format!("- {kind}: {message}\n"));
+                        } else {
+                            report.push_str(&format!("- {kind}: {message} (targets: {targets})\n"));
+                        }
+                    }
+                }
+                None => report.push_str(&format!("- {kind}: no structured violation details\n")),
+            }
+        }
+    }
+    report
 }
 
 fn render_surgery(value: &Value) -> String {

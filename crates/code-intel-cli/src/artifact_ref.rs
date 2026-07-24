@@ -3,8 +3,11 @@ use std::path::{Component, Path};
 
 use serde_json::{json, Value};
 
-use crate::capability::{reject_duplicate_json_keys, sha256_hex, validate_artifact_ref_shape};
+#[path = "content_contract.rs"]
+mod content_contract;
+
 use crate::stable_artifact::{self, FileId, StableReadError};
+use content_contract::{reject_duplicate_json_keys, sha256_hex, validate_artifact_ref_shape};
 
 const MAX_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;
 
@@ -483,7 +486,8 @@ fn validate_sentrux_command_observation(bytes: &[u8]) -> Result<(), String> {
         if !seen.insert(id) {
             return Err("Sentrux command ids must be unique".into());
         }
-        if command["argv"] != json!(["sentrux", id, "."])
+        if (command["argv"] != json!(["sentrux", id, "."])
+            && command["argv"] != json!(["code-intel", "sentrux", id, "."]))
             || (!command["exitCode"].is_null() && command["exitCode"].as_i64().is_none())
             || !command["success"].is_boolean()
             || !command["stdout"].is_string()

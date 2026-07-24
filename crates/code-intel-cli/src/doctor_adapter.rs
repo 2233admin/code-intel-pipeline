@@ -153,6 +153,87 @@ fn validate_snapshot_input(
 }
 
 fn run_bootstrap(options: &Options) -> Result<Value, AdapterError> {
+    // The PowerShell bootstrap stays authoritative when it is present and
+    // conforming; a kernel run must not process-fail just because wrapper
+    // side-files or pwsh are absent (bare `run execute`, extracted release
+    // package). The native observation covers those environments.
+    match run_script_bootstrap(options) {
+        Ok(value) => Ok(value),
+        Err(AdapterError::Unavailable(_) | AdapterError::Contract(_)) => {
+            Ok(native_bootstrap(options))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn native_bootstrap(options: &Options) -> Value {
+    let prefix = options.tool_path_prefix.as_deref();
+    let rg = tool_available("rg", prefix);
+    let git = tool_available("git", prefix);
+    let repowise = tool_available("repowise", prefix);
+    let understand = tool_available("understand", prefix);
+    let external_sentrux = tool_available("sentrux", prefix);
+    let mut ok = rg && git && options.repo_path.is_dir();
+    if options.require_repowise {
+        ok &= repowise;
+    }
+    if options.require_understand {
+        ok &= understand;
+    }
+    json!({
+        "schema":"code-intel-doctor-bootstrap-observation.v1",
+        "authority":"observation_only",
+        "source":"native-fallback",
+        "ok": ok,
+        "checks":{
+            "repo":{"exists": options.repo_path.is_dir()},
+            "tools":[
+                {"name":"rg","required":true,"found":rg},
+                {"name":"git","required":true,"found":git},
+                {"name":"repowise","required":options.require_repowise,"found":repowise},
+                {"name":"understand","required":options.require_understand,"found":understand},
+                {"name":"sentrux","required":false,"found":external_sentrux}
+            ],
+            "sentrux":{
+                "builtin":{"found":true},
+                "core":{"found":external_sentrux},
+                "pro":{"found":false}
+            },
+            "graphProvider":{"sourceFound":true,"cargoFound":true,"binaryFound":true}
+        }
+    })
+}
+
+fn tool_available(name: &str, prefix: Option<&Path>) -> bool {
+    let candidates: &[String] = &if cfg!(windows) {
+        vec![
+            format!("{name}.exe"),
+            format!("{name}.cmd"),
+            format!("{name}.bat"),
+            name.to_string(),
+        ]
+    } else {
+        vec![name.to_string()]
+    };
+    if let Some(prefix) = prefix {
+        if candidates
+            .iter()
+            .any(|candidate| prefix.join(candidate).is_file())
+        {
+            return true;
+        }
+    }
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path).any(|directory| {
+        candidates
+            .iter()
+            .any(|candidate| directory.join(candidate).is_file())
+    })
+}
+
+fn run_script_bootstrap(options: &Options) -> Result<Value, AdapterError> {
     let script = pipeline_root().join("check-code-intel-tools.ps1");
     if !script.is_file() {
         return Err(AdapterError::Unavailable(format!(
@@ -265,6 +346,15 @@ fn adapt(
         .pointer("/checks/sentrux/pro/found")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let sentrux_builtin = raw
+        .pointer("/checks/sentrux/builtin/found")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    // The built-in engine makes an external Sentrux optional, but a PRESENT
+    // external installation must still conform: a broken overlay on PATH is
+    // exactly the verdict-drift hazard this doctor exists to surface.
+    let external_sentrux = tool_present("sentrux");
+    let sentrux_ready = (sentrux_builtin && !external_sentrux) || (sentrux_core && sentrux_pro);
     let graph_source = raw
         .pointer("/checks/graphProvider/sourceFound")
         .and_then(Value::as_bool)
@@ -298,7 +388,7 @@ fn adapt(
         "tools":tool_observations,
         "providers":[
             {"id":"repowise","presence":if tool_present("repowise") {"present"} else {"missing"},"readiness":if tool_present("repowise") {"ready"} else {"unavailable"},"conformance":"not_evaluated","admissibility":"not_evaluated"},
-            {"id":"sentrux","presence":if tool_present("sentrux") {"present"} else {"missing"},"readiness":if sentrux_core && sentrux_pro {"ready"} else {"unavailable"},"conformance":if tool_present("sentrux") && sentrux_core && sentrux_pro {"conforming"} else if tool_present("sentrux") {"nonconforming"} else {"not_evaluated"},"admissibility":"not_evaluated"},
+            {"id":"sentrux","presence":if sentrux_builtin || tool_present("sentrux") {"present"} else {"missing"},"readiness":if sentrux_ready {"ready"} else {"unavailable"},"conformance":if sentrux_ready {"conforming"} else if tool_present("sentrux") {"nonconforming"} else {"not_evaluated"},"admissibility":"not_evaluated"},
             {"id":"graph.code-intel","presence":if graph_source && graph_cargo {"present"} else {"missing"},"readiness":if graph_source && graph_cargo && graph_binary {"ready"} else {"unavailable"},"conformance":if graph_source && graph_cargo {"conforming"} else {"not_evaluated"},"admissibility":"not_evaluated"}
         ],
         "manifest":{"reconciled":manifest_ok,"registryReconciled":registry_ok,"findingCount":manifest["errors"].as_array().map_or(0, Vec::len)},

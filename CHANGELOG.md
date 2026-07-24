@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Built-in `sentrux-native` structural gate engine (`code-intel sentrux --operation
+  scan|health|check|gate|save_baseline`): deterministic metrics, structured
+  violations with target files, and real resolved-import cycle detection for
+  Rust modules (sentrux-lite hardcoded `cycle_count = 0`). The `evidence.sentrux`
+  DAG node now runs this engine in-process by default; an external Sentrux is
+  used only when `options.toolPathPrefix` is given.
+- Baseline v2 (`code-intel-sentrux-baseline.v2`) carries engine identity,
+  version, source commit, and scope. The gate fail-closes on engine mismatch
+  instead of comparing numbers produced by different engines and scales.
+- Structural rules may carry `details.violations` (rule, message, targets)
+  through the adapter/admission chain; the Hospital report and surgery plan now
+  name the first failing rule, its target files, and the smallest rerun
+  command, and plan a bounded surgery whenever an actionable target exists.
+- Execution results expose a `failures` block that separates process failures
+  from domain failures so a tooling error can no longer visually swallow an
+  architecture-gate verdict.
+- CI and the release workflow run a release-blocking authoritative self-scan
+  (`run execute` on the exact candidate tree, no skip flags).
+- Stable release zips are packaged from `git archive HEAD`, ship with a
+  `.sha256` and a `release-manifest.json` (tag, commit, zip digest), and the
+  packaged binary must pass its own `check` and `gate` against the packaged
+  payload before publication.
+
+### Fixed
+
+- Removed the `dag_run` <-> `execution_kernel` module cycle by moving the run
+  CLI front-end to `run_cli.rs` and `RunError` to `run_error.rs`, and the
+  previously undetected `artifact_ref` <-> `capability` cycle by extracting the
+  shared content-contract primitives into `content_contract.rs`.
+- Kernel runs no longer process-fail outside wrapper environments: the doctor
+  adapter falls back to a native tool observation when the PowerShell bootstrap
+  is unavailable or nonconforming, and the built-in gate engine satisfies the
+  Sentrux requirement when no external Sentrux is installed (a present but
+  nonconforming external overlay still fails conformance on purpose).
+- Repository inventory no longer treats the `.git` pointer file of a linked
+  git worktree as an unexplained extra path.
+
 ## [0.4.0] — 2026-07-24
 
 ### Added

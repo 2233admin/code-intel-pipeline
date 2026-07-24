@@ -6,6 +6,7 @@ use crate::dag_coordinator::RunOutcome;
 use crate::dag_run::{self, DagExecutionRequest};
 use crate::execution_policy::ExecutionPolicy;
 use crate::run_commit;
+use crate::run_error::RunError;
 
 pub(crate) struct RunRequest {
     pub(crate) repo: PathBuf,
@@ -51,32 +52,36 @@ impl ExecutionResult {
             "schema":"code-intel-execution-result.v1",
             "outcome":self.outcome.as_str(),
             "exitCode":self.exit_code(),
+            "failures":failures(&self.manifest),
             "manifest":self.manifest,
             "publication":self.publication.to_json(),
         })
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct RunError {
-    pub(crate) exit_code: i32,
-    pub(crate) message: String,
-}
-
-impl RunError {
-    pub(crate) fn contract(message: impl Into<String>) -> Self {
-        Self {
-            exit_code: 65,
-            message: message.into(),
+/// Split node failures by class so a process hiccup (tooling, environment)
+/// can never visually swallow a domain verdict such as a failed architecture
+/// gate — the run outcome keeps ProcessFailed precedence, but both lists are
+/// always reported side by side.
+pub(crate) fn failures(manifest: &Value) -> Value {
+    let mut process = Vec::new();
+    let mut domain = Vec::new();
+    if let Some(nodes) = manifest["nodes"].as_object() {
+        for (node, state) in nodes {
+            match state["status"].as_str() {
+                Some("process_failed") => process.push(json!({
+                    "node": node,
+                    "diagnostic": state["diagnostic"].as_str().unwrap_or(""),
+                })),
+                Some("domain_failed") => domain.push(json!({
+                    "node": node,
+                    "verdict": state["verdict"].as_str().unwrap_or("fail"),
+                })),
+                _ => {}
+            }
         }
     }
-
-    pub(crate) fn io(message: impl Into<String>) -> Self {
-        Self {
-            exit_code: 74,
-            message: message.into(),
-        }
-    }
+    json!({"process": process, "domain": domain})
 }
 
 pub(crate) fn execute(request: RunRequest) -> Result<ExecutionResult, RunError> {

@@ -164,11 +164,15 @@ fn normalize_rules(value: &Value) -> Result<Vec<Value>, String> {
         .ok_or("Sentrux authoritative rules must be an array")?;
     let mut normalized = BTreeMap::new();
     for rule in rules {
-        exact(
+        exact_with_optional(
             rule,
             &["kind", "status", "verdict", "failure"],
+            &["details"],
             "Sentrux authoritative rule",
         )?;
+        if let Some(details) = rule.get("details") {
+            validate_rule_details(details)?;
+        }
         let kind = rule["kind"]
             .as_str()
             .filter(|kind| !kind.is_empty())
@@ -320,6 +324,71 @@ fn sorted_effects(value: &Value) -> Result<Vec<&str>, String> {
         return Err("Sentrux must declare at least one effect".to_string());
     }
     Ok(result.into_iter().collect())
+}
+
+const MAX_RULE_DETAIL_VIOLATIONS: usize = 32;
+const MAX_RULE_DETAIL_TARGETS: usize = 16;
+const MAX_RULE_DETAIL_TEXT: usize = 1024;
+
+/// Optional structured failure evidence on a rule: which concrete violations
+/// produced the verdict and which files to open first. This is what lets the
+/// Hospital name targets instead of a bare "architecture gate failure".
+fn validate_rule_details(details: &Value) -> Result<(), String> {
+    exact(details, &["violations"], "Sentrux rule details")?;
+    let violations = details["violations"]
+        .as_array()
+        .ok_or("Sentrux rule detail violations must be an array")?;
+    if violations.is_empty() || violations.len() > MAX_RULE_DETAIL_VIOLATIONS {
+        return Err("Sentrux rule detail violations must be non-empty and bounded".to_string());
+    }
+    for violation in violations {
+        exact(
+            violation,
+            &["rule", "message", "targets"],
+            "Sentrux rule detail violation",
+        )?;
+        let rule_ok = violation["rule"]
+            .as_str()
+            .is_some_and(|text| !text.is_empty() && text.len() <= MAX_RULE_DETAIL_TEXT);
+        let message_ok = violation["message"]
+            .as_str()
+            .is_some_and(|text| !text.is_empty() && text.len() <= MAX_RULE_DETAIL_TEXT);
+        let targets = violation["targets"]
+            .as_array()
+            .ok_or("Sentrux rule detail targets must be an array")?;
+        let targets_ok = targets.len() <= MAX_RULE_DETAIL_TARGETS
+            && targets.iter().all(|target| {
+                target
+                    .as_str()
+                    .is_some_and(|text| !text.is_empty() && text.len() <= MAX_RULE_DETAIL_TEXT)
+            });
+        if !rule_ok || !message_ok || !targets_ok {
+            return Err("Sentrux rule detail violation fields are invalid".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn exact_with_optional(
+    value: &Value,
+    required: &[&str],
+    optional: &[&str],
+    label: &str,
+) -> Result<(), String> {
+    let actual = value
+        .as_object()
+        .ok_or_else(|| format!("{label} must be an object"))?
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let missing = required.iter().any(|field| !actual.contains(field));
+    let unexpected = actual
+        .iter()
+        .any(|field| !required.contains(field) && !optional.contains(field));
+    if missing || unexpected {
+        return Err(format!("{label} fields are invalid"));
+    }
+    Ok(())
 }
 
 fn exact(value: &Value, fields: &[&str], label: &str) -> Result<(), String> {
