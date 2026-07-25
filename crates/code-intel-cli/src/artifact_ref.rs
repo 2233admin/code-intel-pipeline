@@ -1187,8 +1187,8 @@ fn validate_hospital_audit_block(value: &Value) -> Result<(), String> {
         || value["overall"]
             .as_f64()
             .is_some_and(|score| (0.0..=10.0).contains(&score));
-    let findings_total_valid = value["findings_total"].is_null()
-        || value["findings_total"].as_u64().is_some();
+    let findings_total_valid =
+        value["findings_total"].is_null() || value["findings_total"].as_u64().is_some();
     let by_severity_valid = value["by_severity"].is_null()
         || value["by_severity"].as_object().is_some_and(|counts| {
             counts.iter().all(|(severity, count)| {
@@ -3300,8 +3300,8 @@ mod tests {
 
         let mut score_out_of_range = with_audit.clone();
         score_out_of_range["audit"]["overall"] = json!(11.0);
-        let error =
-            validate_hospital_report(&serde_json::to_vec(&score_out_of_range).unwrap()).unwrap_err();
+        let error = validate_hospital_report(&serde_json::to_vec(&score_out_of_range).unwrap())
+            .unwrap_err();
         assert!(error.contains("audit block"));
 
         let mut unknown_severity = with_audit.clone();
@@ -3312,8 +3312,7 @@ mod tests {
 
         let mut extra_key = with_audit.clone();
         extra_key["audit"]["surprise"] = json!(true);
-        let error =
-            validate_hospital_report(&serde_json::to_vec(&extra_key).unwrap()).unwrap_err();
+        let error = validate_hospital_report(&serde_json::to_vec(&extra_key).unwrap()).unwrap_err();
         assert!(error.contains("audit block"));
     }
 }

@@ -57,8 +57,10 @@ fn fixture_value() -> Value {
 }
 
 fn registry_value() -> Value {
-    serde_json::from_slice(&fs::read(repo_root().join("orchestration/audit/departments.v1.json")).unwrap())
-        .unwrap()
+    serde_json::from_slice(
+        &fs::read(repo_root().join("orchestration/audit/departments.v1.json")).unwrap(),
+    )
+    .unwrap()
 }
 
 /// Mirrors the `Test-Json` shell-out already used by

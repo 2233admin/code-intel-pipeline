@@ -150,9 +150,7 @@ fn optional_string_array(
                     item.as_str()
                         .filter(|value| !value.is_empty())
                         .map(str::to_string)
-                        .ok_or_else(|| {
-                            format!("{context}.{key} entries must be non-empty strings")
-                        })
+                        .ok_or_else(|| format!("{context}.{key} entries must be non-empty strings"))
                 })
                 .collect()
         }
@@ -466,7 +464,12 @@ impl EvidenceRef {
             path: optional_str(object, "path")?,
             line_start: optional_nullable_uint_min(object, "line_start", 1, "evidence entry")?,
             line_end: optional_nullable_uint_min(object, "line_end", 1, "evidence entry")?,
-            modality: optional_nullable_enum(object, "modality", "evidence entry", Modality::parse)?,
+            modality: optional_nullable_enum(
+                object,
+                "modality",
+                "evidence entry",
+                Modality::parse,
+            )?,
             note: optional_str(object, "note")?,
         })
     }
@@ -504,14 +507,24 @@ pub(crate) struct DepartmentRun {
 
 impl DepartmentRun {
     fn from_value(value: &Value) -> Result<Self, String> {
-        let object = closed_object(value, &["id", "status", "applicability"], &[], "department run")?;
+        let object = closed_object(
+            value,
+            &["id", "status", "applicability"],
+            &[],
+            "department run",
+        )?;
         let applicability = object
             .get("applicability")
             .ok_or_else(|| "department run is missing required field \"applicability\"".to_string())
             .and_then(Applicability::from_value)?;
         Ok(Self {
             id: required_str(object, "id", "department run")?,
-            status: required_enum(object, "status", "department run", DepartmentRunStatus::parse)?,
+            status: required_enum(
+                object,
+                "status",
+                "department run",
+                DepartmentRunStatus::parse,
+            )?,
             applicability,
         })
     }
@@ -667,7 +680,11 @@ impl CoverageRow {
         Ok(Self {
             department: required_str(object, "department", "coverage row")?,
             coverage: required_enum(object, "coverage", "coverage row", Coverage::parse)?,
-            inspected_evidence: required_string_array(object, "inspected_evidence", "coverage row")?,
+            inspected_evidence: required_string_array(
+                object,
+                "inspected_evidence",
+                "coverage row",
+            )?,
             exclusions: required_string_array(object, "exclusions", "coverage row")?,
         })
     }
@@ -1168,7 +1185,13 @@ impl DepartmentRegistry {
     fn from_value(value: &Value) -> Result<Self, String> {
         let object = closed_object(
             value,
-            &["schema", "catalogVersion", "rubrics", "findingContract", "departments"],
+            &[
+                "schema",
+                "catalogVersion",
+                "rubrics",
+                "findingContract",
+                "departments",
+            ],
             &[],
             "department registry",
         )?;
@@ -1199,7 +1222,9 @@ impl DepartmentRegistry {
     }
 
     pub(crate) fn contains(&self, id: &str) -> bool {
-        self.departments.iter().any(|department| department.id == id)
+        self.departments
+            .iter()
+            .any(|department| department.id == id)
     }
 
     /// Registry-level invariants: unique department ids, rubric files that
@@ -1360,7 +1385,10 @@ mod tests {
             .push(duplicate);
         let report = AuditReport::parse(&serde_json::to_vec(&value).unwrap()).unwrap();
         let error = report.validate(&registry()).unwrap_err();
-        assert!(error.contains("coverage rows, expected exactly 1"), "{error}");
+        assert!(
+            error.contains("coverage rows, expected exactly 1"),
+            "{error}"
+        );
     }
 
     #[test]
