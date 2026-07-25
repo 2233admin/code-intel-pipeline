@@ -241,8 +241,10 @@ elseif (-not [string]::IsNullOrWhiteSpace([string]$repoPath)) {
 # The structural gate engine ships inside the code-intel binary; an external
 # sentrux on PATH is an optional overlay, not a bootstrap requirement.
 $builtinSentrux = ($null -ne (Get-Command "code-intel" -ErrorAction SilentlyContinue)) -or
-    (Test-Path -LiteralPath (Join-Path $pipelineRoot "target\release\code-intel.exe") -PathType Leaf) -or
-    (Test-Path -LiteralPath $codeIntelGraphBinary -PathType Leaf)
+    (Test-Path -LiteralPath (Join-Path $pipelineRoot "target/release/code-intel.exe") -PathType Leaf) -or
+    (Test-Path -LiteralPath (Join-Path $pipelineRoot "target/release/code-intel") -PathType Leaf) -or
+    (Test-Path -LiteralPath (Join-Path $pipelineRoot "target/debug/code-intel.exe") -PathType Leaf) -or
+    (Test-Path -LiteralPath (Join-Path $pipelineRoot "target/debug/code-intel") -PathType Leaf)
 $tools = @(
     Test-Tool "rg" $true
     Test-Tool "git" $true
