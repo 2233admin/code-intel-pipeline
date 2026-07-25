@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 
 use crate::adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterError, AdapterOutput};
 use crate::artifact_ref::VerifiedArtifact;
+use crate::audit_report::AuditReport;
 
 #[derive(Default)]
 struct Signals {
@@ -54,7 +55,7 @@ pub(crate) fn execute(
         }
         consume_admission(input, &mut signals)?;
     }
-    let machine = diagnose(request, &signals);
+    let machine = diagnose(request, &signals, None);
     let domain_verdict = match machine["domainVerdict"].as_str() {
         Some("pass") => AdapterDomainVerdict::Pass,
         Some("fail") => AdapterDomainVerdict::Fail,
@@ -77,7 +78,7 @@ pub(crate) fn execute(
         .map_err(|error| AdapterError::Internal(format!("serialize hospital report: {error}")))?;
     let surgery_bytes = serde_json::to_vec(&surgery)
         .map_err(|error| AdapterError::Internal(format!("serialize surgery plan: {error}")))?;
-    let hospital_markdown = render_hospital(&machine).into_bytes();
+    let hospital_markdown = render_hospital(&machine, None).into_bytes();
     let surgery_markdown = render_surgery(&surgery).into_bytes();
     fs::create_dir_all(out)
         .map_err(|error| AdapterError::Io(format!("create hospital output directory: {error}")))?;
@@ -240,7 +241,7 @@ fn require_provider_modality(provider: &str, modality: &str) -> Result<(), Adapt
     }
 }
 
-fn diagnose(request: &Value, s: &Signals) -> Value {
+fn diagnose(request: &Value, s: &Signals, audit: Option<&AuditReport>) -> Value {
     let (status, diagnosis, next_protocol, disposition, domain_verdict) = if s.local_tool_failure {
         (
             "unknown",
@@ -341,7 +342,7 @@ fn diagnose(request: &Value, s: &Signals) -> Value {
         .iter()
         .map(|(provider, admission)| json!({"provider":provider,"admissionIdentity":admission}))
         .collect::<Vec<_>>();
-    json!({
+    let mut machine = json!({
         "schema":"code-intel-hospital.v1",
         "domainVerdict":domain_verdict,
         "generatedAt":null,
@@ -382,7 +383,11 @@ fn diagnose(request: &Value, s: &Signals) -> Value {
             "verification":["Rerun the smallest affected test.","Re-admit current structural evidence before discharge."],
             "discharge_criteria":["the admitted structural verdict is pass"]
         }
-    })
+    });
+    if let Some(report) = audit {
+        machine["audit"] = report.summary("audit-report.json").to_value();
+    }
+    machine
 }
 
 fn admission_reason(diagnosis: &str) -> &'static str {
@@ -457,7 +462,7 @@ fn treatment(diagnosis: &str, target: Option<&str>, failing: &[Value]) -> Vec<St
     plan
 }
 
-fn render_hospital(value: &Value) -> String {
+fn render_hospital(value: &Value, audit: Option<&AuditReport>) -> String {
     let mut report = format!(
         "# Code Intel Hospital Report\n\n- Status: {}\n- Disposition: {}\n- Primary diagnosis: {}\n- Next protocol: {}\n\n## Treatment\n{}\n",
         value["triage"]["status"].as_str().unwrap_or("unknown"),
@@ -503,6 +508,9 @@ fn render_hospital(value: &Value) -> String {
             }
         }
     }
+    if let Some(report_data) = audit {
+        report.push_str(&crate::audit_report::render_markdown_section(report_data));
+    }
     report
 }
 
@@ -514,4 +522,56 @@ fn render_surgery(value: &Value) -> String {
             .as_str()
             .unwrap_or("unknown")
     )
+}
+
+#[cfg(test)]
+mod audit_wiring_tests {
+    use super::*;
+
+    fn clean_signals() -> Signals {
+        Signals {
+            graph_seen: true,
+            graph_current: true,
+            structural_seen: true,
+            structural_trusted: true,
+            structural_rules: true,
+            ..Signals::default()
+        }
+    }
+
+    fn sample_request() -> Value {
+        json!({"snapshot": {"repoIdentity": "content-v1:test"}})
+    }
+
+    fn sample_audit_report() -> AuditReport {
+        let bytes = fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/audit/audit-report.v1.example.json"),
+        )
+        .unwrap();
+        AuditReport::parse(&bytes).unwrap()
+    }
+
+    #[test]
+    fn audit_absent_omits_the_audit_key_and_section() {
+        let machine = diagnose(&sample_request(), &clean_signals(), None);
+        assert!(machine.get("audit").is_none());
+        let markdown = render_hospital(&machine, None);
+        assert!(!markdown.contains("## Audit"));
+    }
+
+    #[test]
+    fn audit_present_embeds_the_summary_and_renders_the_section() {
+        let report = sample_audit_report();
+        let machine = diagnose(&sample_request(), &clean_signals(), Some(&report));
+        assert_eq!(machine["audit"]["status"], "present");
+        assert_eq!(machine["audit"]["artifact"], "audit-report.json");
+        assert_eq!(machine["audit"]["overall"], 7.0);
+        assert_eq!(machine["audit"]["findings_total"], 1);
+        assert_eq!(machine["audit"]["by_severity"]["medium"], 1);
+
+        let markdown = render_hospital(&machine, Some(&report));
+        assert!(markdown.contains("## Audit"));
+        assert!(markdown.contains("medium | security-001 |"));
+    }
 }

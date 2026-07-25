@@ -25,7 +25,8 @@
     "treatment": { "$ref": "#/$defs/treatment" },
     "protocols": { "type": "array" },
     "tools": { "type": "object" },
-    "surgery_plan": { "$ref": "#/$defs/surgeryPlan" }
+    "surgery_plan": { "$ref": "#/$defs/surgeryPlan" },
+    "audit": { "$ref": "#/$defs/audit" }
   },
   "$defs": {
     "artifacts": {
@@ -152,6 +153,29 @@
         "operating_plan": { "type": "array", "items": { "type": "string" } },
         "verification": { "type": "array", "minItems": 1, "items": { "type": "string" } },
         "discharge_criteria": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "artifact", "overall", "findings_total", "by_severity"],
+      "properties": {
+        "status": { "enum": ["absent", "present"] },
+        "artifact": { "type": ["string", "null"] },
+        "overall": { "type": ["number", "null"], "minimum": 0, "maximum": 10 },
+        "findings_total": { "type": ["integer", "null"], "minimum": 0 },
+        "by_severity": { "$ref": "#/$defs/auditBySeverity" }
+      }
+    },
+    "auditBySeverity": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "critical": { "type": "integer", "minimum": 0 },
+        "high": { "type": "integer", "minimum": 0 },
+        "medium": { "type": "integer", "minimum": 0 },
+        "low": { "type": "integer", "minimum": 0 },
+        "info": { "type": "integer", "minimum": 0 }
       }
     }
   }
