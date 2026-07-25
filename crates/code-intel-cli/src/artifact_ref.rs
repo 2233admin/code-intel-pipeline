@@ -1119,28 +1119,31 @@ fn validate_hospital_report(bytes: &[u8]) -> Result<(), String> {
     reject_duplicate_json_keys(text)?;
     let value: Value = serde_json::from_str(text)
         .map_err(|error| format!("hospital report is not JSON: {error}"))?;
-    exact_object_keys(
-        &value,
-        &[
-            "schema",
-            "domainVerdict",
-            "generatedAt",
-            "repo",
-            "mode",
-            "artifacts",
-            "triage",
-            "state_machine",
-            "modalities",
-            "policies",
-            "report_quality",
-            "diagnosis",
-            "treatment",
-            "protocols",
-            "tools",
-            "surgery_plan",
-        ],
-        "hospital report",
-    )?;
+    let mut expected = vec![
+        "schema",
+        "domainVerdict",
+        "generatedAt",
+        "repo",
+        "mode",
+        "artifacts",
+        "triage",
+        "state_machine",
+        "modalities",
+        "policies",
+        "report_quality",
+        "diagnosis",
+        "treatment",
+        "protocols",
+        "tools",
+        "surgery_plan",
+    ];
+    // "audit" is the additive optional block from code-intel-hospital.v1; reports
+    // without it must keep passing unchanged.
+    if let Some(audit) = value.get("audit") {
+        expected.push("audit");
+        validate_hospital_audit_block(audit)?;
+    }
+    exact_object_keys(&value, &expected, "hospital report")?;
     if value["schema"] != "code-intel-hospital.v1"
         || !matches!(
             value["domainVerdict"].as_str(),
@@ -1164,6 +1167,46 @@ fn validate_hospital_report(bytes: &[u8]) -> Result<(), String> {
         return Err("hospital report verdict/triage contract is invalid".into());
     }
     validate_surgery_plan_value(&value["surgery_plan"])
+}
+
+fn validate_hospital_audit_block(value: &Value) -> Result<(), String> {
+    exact_object_keys(
+        value,
+        &[
+            "status",
+            "artifact",
+            "overall",
+            "findings_total",
+            "by_severity",
+        ],
+        "hospital report audit block",
+    )?;
+    let status_valid = matches!(value["status"].as_str(), Some("absent" | "present"));
+    let artifact_valid = value["artifact"].is_null() || value["artifact"].is_string();
+    let overall_valid = value["overall"].is_null()
+        || value["overall"]
+            .as_f64()
+            .is_some_and(|score| (0.0..=10.0).contains(&score));
+    let findings_total_valid = value["findings_total"].is_null()
+        || value["findings_total"].as_u64().is_some();
+    let by_severity_valid = value["by_severity"].is_null()
+        || value["by_severity"].as_object().is_some_and(|counts| {
+            counts.iter().all(|(severity, count)| {
+                matches!(
+                    severity.as_str(),
+                    "critical" | "high" | "medium" | "low" | "info"
+                ) && count.as_u64().is_some()
+            })
+        });
+    if !(status_valid
+        && artifact_valid
+        && overall_valid
+        && findings_total_valid
+        && by_severity_valid)
+    {
+        return Err("hospital report audit block contract is invalid".into());
+    }
+    Ok(())
 }
 
 fn validate_surgery_plan(bytes: &[u8]) -> Result<(), String> {
@@ -3205,5 +3248,72 @@ mod tests {
         );
         let error = validate_retirement_deletion_diff_value(&hidden).unwrap_err();
         assert!(error.contains("touched paths differ"));
+    }
+
+    fn minimal_hospital_report() -> Value {
+        json!({
+            "schema": "code-intel-hospital.v1",
+            "domainVerdict": "pass",
+            "generatedAt": null,
+            "repo": null,
+            "mode": null,
+            "artifacts": null,
+            "triage": {
+                "status": "green",
+                "disposition": "observe",
+                "next_protocol": "post_op"
+            },
+            "state_machine": null,
+            "modalities": null,
+            "policies": null,
+            "report_quality": null,
+            "diagnosis": null,
+            "treatment": null,
+            "protocols": null,
+            "tools": null,
+            "surgery_plan": {
+                "schema": "code-intel-surgery-plan.v1",
+                "status": "not_required",
+                "admission": {},
+                "primary_target": {},
+                "operating_plan": [],
+                "verification": [],
+                "discharge_criteria": []
+            }
+        })
+    }
+
+    #[test]
+    fn hospital_report_accepts_the_optional_audit_block_and_rejects_malformed_ones() {
+        let base = minimal_hospital_report();
+        validate_hospital_report(&serde_json::to_vec(&base).unwrap()).unwrap();
+
+        let mut with_audit = base.clone();
+        with_audit["audit"] = json!({
+            "status": "present",
+            "artifact": "audit-report.json",
+            "overall": 7.0,
+            "findings_total": 1,
+            "by_severity": { "medium": 1 }
+        });
+        validate_hospital_report(&serde_json::to_vec(&with_audit).unwrap()).unwrap();
+
+        let mut score_out_of_range = with_audit.clone();
+        score_out_of_range["audit"]["overall"] = json!(11.0);
+        let error =
+            validate_hospital_report(&serde_json::to_vec(&score_out_of_range).unwrap()).unwrap_err();
+        assert!(error.contains("audit block"));
+
+        let mut unknown_severity = with_audit.clone();
+        unknown_severity["audit"]["by_severity"] = json!({ "catastrophic": 1 });
+        let error =
+            validate_hospital_report(&serde_json::to_vec(&unknown_severity).unwrap()).unwrap_err();
+        assert!(error.contains("audit block"));
+
+        let mut extra_key = with_audit.clone();
+        extra_key["audit"]["surprise"] = json!(true);
+        let error =
+            validate_hospital_report(&serde_json::to_vec(&extra_key).unwrap()).unwrap_err();
+        assert!(error.contains("audit block"));
     }
 }

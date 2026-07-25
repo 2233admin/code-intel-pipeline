@@ -1,0 +1,114 @@
+{
+  "schema": "code-intel-audit-report.v1",
+  "generatedAt": null,
+  "repo": "code-intel-pipeline",
+  "rubric_version": "v1",
+  "departments": [
+    {
+      "id": "security",
+      "status": "assessed",
+      "applicability": {
+        "applicable": "yes",
+        "reason": "The repository ships capability adapters that shell out to external processes and admit evidence from providers, so the security dimension is in scope.",
+        "surface_evidence": [
+          "crates/code-intel-cli/src/capability_inventory.rs"
+        ]
+      }
+    },
+    {
+      "id": "ai-safety",
+      "status": "not_assessed",
+      "applicability": {
+        "applicable": "no",
+        "reason": "This snapshot has no AI-facing surface (no prompt construction or model I/O boundary) for the ai-safety department to inspect."
+      }
+    },
+    {
+      "id": "supply-chain",
+      "status": "not_assessed",
+      "applicability": {
+        "applicable": "unknown",
+        "reason": "The supply-chain department is disabled in orchestration/audit/departments.v1.json for this run; applicability was not evaluated."
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "security-001",
+      "department": "security",
+      "title": "Workflow recommendation shells out to pwsh with an unvalidated repo path",
+      "severity": "medium",
+      "confidence": "high",
+      "status": "confirmed",
+      "affected_area": "crates/code-intel-cli/src/capability_inventory.rs",
+      "evidence": [
+        {
+          "kind": "file",
+          "source": "xray file inventory plus a targeted read of capability_inventory.rs",
+          "path": "crates/code-intel-cli/src/capability_inventory.rs",
+          "line_start": 156,
+          "line_end": 165,
+          "modality": "xray",
+          "note": "Command::new(\"pwsh\") receives options.repoPath after only an is_dir() check; the path is not canonicalized or bounded to the artifact root."
+        }
+      ],
+      "problem": "advisory.workflow-recommend builds a pwsh Command using the caller-supplied repoPath option after only an is_dir() check. It does not canonicalize the path or bound it to the artifact root or an allow-listed directory set before the external process starts.",
+      "failure_scenario": "A caller with request-construction access supplies a repoPath outside the intended workspace, such as a mounted directory containing unrelated material. The legacy facade script runs against that path and its stdout is trusted as a workflow proposal, so the returned proposal can carry details about a directory the caller was never meant to reach.",
+      "minimal_fix": "Canonicalize repoPath and reject any value that resolves outside the configured artifact root before constructing the pwsh Command.",
+      "long_term_fix": "Replace the PowerShell facade invocation with the in-process Rust recommendation path once it reaches parity, removing the external-process boundary entirely.",
+      "regression_test": "Add a capability_inventory test asserting advisory.workflow-recommend returns AdapterError::InvalidOptions when repoPath resolves outside the artifact root.",
+      "estimated_effort": "hours",
+      "redacted": false
+    }
+  ],
+  "score_dashboard": {
+    "entries": [
+      {
+        "department": "security",
+        "score": 7.0,
+        "justification": "One confirmed medium-severity finding in the advisory workflow-recommendation path; xray and ct evidence were both inspected and no high-or-critical issue was found."
+      },
+      {
+        "department": "ai-safety",
+        "score": null,
+        "justification": "Not assessed: the applicability check found no AI-facing surface in this snapshot."
+      },
+      {
+        "department": "supply-chain",
+        "score": null,
+        "justification": "Not assessed: the supply-chain department is disabled in the registry for this run."
+      }
+    ],
+    "overall": 7.0
+  },
+  "coverage_matrix": [
+    {
+      "department": "security",
+      "coverage": "high",
+      "inspected_evidence": [
+        "xray file inventory",
+        "ct structural evidence",
+        "manual read of capability_inventory.rs"
+      ],
+      "exclusions": [
+        "mri (CodeNexus-lite) context was not inspected this run"
+      ]
+    },
+    {
+      "department": "ai-safety",
+      "coverage": "not_assessed",
+      "inspected_evidence": [],
+      "exclusions": [
+        "ai-safety applicability check returned no; department is out of scope for this snapshot"
+      ]
+    },
+    {
+      "department": "supply-chain",
+      "coverage": "not_assessed",
+      "inspected_evidence": [],
+      "exclusions": [
+        "supply-chain department is disabled in orchestration/audit/departments.v1.json"
+      ]
+    }
+  ]
+}

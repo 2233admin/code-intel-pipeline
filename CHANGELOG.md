@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Audit kernel (T1): a shared contract for audit departments that run as
+  hospital departments over existing modality evidence. Adds the
+  `code-intel-audit-report.v1` schema, `orchestration/audit/rubrics/`
+  (severity, confidence, evidence, coverage, scoring — adapted from
+  [Fuck_My_Shit_Mountain](https://github.com/XiNian-dada/Fuck_My_Shit_Mountain),
+  MIT), and `crates/code-intel-cli/src/audit_report.rs` with a fail-closed
+  `validate()` and a `departments.v1.json` registry loader. `hospital-report.json`
+  gains an optional `audit` summary block and `hospital.md` gains an optional
+  `## Audit` section; both are additive and render nothing when no audit ran.
+  See `docs/audit-report.md`.
+
 ## [0.5.1-beta.1] — 2026-07-25
 
 ### Added

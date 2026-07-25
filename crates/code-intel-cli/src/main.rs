@@ -12,6 +12,7 @@ mod admissibility;
 mod artifact_index;
 mod artifact_ref;
 mod artifacts;
+mod audit_report;
 mod authority;
 mod capability;
 mod capability_inventory;

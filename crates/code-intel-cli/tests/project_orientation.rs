@@ -9,6 +9,8 @@ use serde_json::{json, Value};
 mod adapter_contract;
 #[path = "../src/artifact_ref.rs"]
 mod artifact_ref;
+#[path = "../src/audit_report.rs"]
+mod audit_report;
 #[path = "../src/capability.rs"]
 mod capability;
 #[path = "../src/capability_inventory.rs"]
