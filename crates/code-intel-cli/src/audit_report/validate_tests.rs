@@ -339,3 +339,66 @@ fn rejects_assessed_department_with_a_not_assessed_coverage_row() {
         "{error}"
     );
 }
+
+/// Evidence grounding: a department is an agent, so the failure mode the
+/// filesystem-free rules cannot see is a citation that resolves nowhere.
+#[test]
+fn grounds_the_example_fixture_evidence_in_the_real_tree() {
+    let report = AuditReport::parse(&fixture_bytes()).unwrap();
+    report.validate_evidence_grounding(&repo_root()).unwrap();
+}
+
+#[test]
+fn rejects_file_evidence_that_does_not_exist_in_the_repository() {
+    let mut value = fixture_value();
+    value["findings"][0]["evidence"][0] = json!({
+        "kind": "file",
+        "source": "targeted read",
+        "path": "crates/code-intel-cli/src/does-not-exist.rs",
+        "line_start": 1,
+        "line_end": 2
+    });
+    let report = AuditReport::parse(&serde_json::to_vec(&value).unwrap()).unwrap();
+    let error = report
+        .validate_evidence_grounding(&repo_root())
+        .unwrap_err();
+    assert!(
+        error.contains("does not resolve under the repository"),
+        "{error}"
+    );
+}
+
+#[test]
+fn rejects_file_evidence_escaping_the_repository_root() {
+    let mut value = fixture_value();
+    value["findings"][0]["evidence"][0] = json!({
+        "kind": "file",
+        "source": "targeted read",
+        "path": "../../../etc/passwd"
+    });
+    let report = AuditReport::parse(&serde_json::to_vec(&value).unwrap()).unwrap();
+    let error = report
+        .validate_evidence_grounding(&repo_root())
+        .unwrap_err();
+    assert!(
+        error.contains("not portable repo-relative syntax"),
+        "{error}"
+    );
+}
+
+#[test]
+fn rejects_file_evidence_citing_lines_past_the_end_of_the_file() {
+    let mut value = fixture_value();
+    value["findings"][0]["evidence"][0] = json!({
+        "kind": "file",
+        "source": "targeted read",
+        "path": "Cargo.toml",
+        "line_start": 900_000,
+        "line_end": 900_001
+    });
+    let report = AuditReport::parse(&serde_json::to_vec(&value).unwrap()).unwrap();
+    let error = report
+        .validate_evidence_grounding(&repo_root())
+        .unwrap_err();
+    assert!(error.contains("but the file has"), "{error}");
+}

@@ -1,7 +1,9 @@
+use std::{fs, path::Path};
+
 use super::{
     enums::{Coverage, DepartmentRunStatus, EvidenceKind, FindingStatus},
     model::AuditReport,
-    registry::DepartmentRegistry,
+    registry::{repo_relative_path, DepartmentRegistry},
 };
 
 fn round1(value: f64) -> f64 {
@@ -308,6 +310,53 @@ impl AuditReport {
             }
         }
 
+        Ok(())
+    }
+
+    /// Grounds file evidence in the tree it claims to cite. `validate()` above
+    /// is filesystem-free — it can only check that a confirmed finding *has* a
+    /// path, not that the path names a real file. A department is an agent, so
+    /// an unresolvable or drifted citation is the expected failure mode, and
+    /// without this pass a fabricated `path` validates green. Every `file`
+    /// evidence entry must therefore be repo-relative, exist under `repo_root`,
+    /// and carry a line range that fits the file it points at.
+    pub(crate) fn validate_evidence_grounding(&self, repo_root: &Path) -> Result<(), String> {
+        for finding in &self.findings {
+            for entry in &finding.evidence {
+                if entry.kind != EvidenceKind::File {
+                    continue;
+                }
+                let Some(path) = entry.path.as_deref() else {
+                    continue;
+                };
+                let relative =
+                    repo_relative_path(path, &format!("finding \"{}\" evidence", finding.id))?;
+                let resolved = repo_root.join(&relative);
+                let contents = fs::read(&resolved).map_err(|error| {
+                    format!(
+                        "finding \"{}\" cites evidence that does not resolve under the repository: {relative} ({error})",
+                        finding.id
+                    )
+                })?;
+                let Some(line_start) = entry.line_start else {
+                    continue;
+                };
+                let lines = contents.iter().filter(|byte| **byte == b'\n').count() as u64 + 1;
+                let line_end = entry.line_end.unwrap_or(line_start);
+                if line_end < line_start {
+                    return Err(format!(
+                        "finding \"{}\" cites {relative} with line_end {line_end} before line_start {line_start}",
+                        finding.id
+                    ));
+                }
+                if line_end > lines {
+                    return Err(format!(
+                        "finding \"{}\" cites {relative} lines {line_start}-{line_end} but the file has {lines} lines",
+                        finding.id
+                    ));
+                }
+            }
+        }
         Ok(())
     }
 }
