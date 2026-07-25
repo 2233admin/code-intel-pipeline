@@ -151,7 +151,118 @@ fn run_raw_exits_nonzero_on_a_failing_validate() {
 
 #[test]
 fn render_prints_the_audit_markdown_section() {
-    let markdown = render(&fixture_path()).unwrap();
+    let markdown = render(&fixture_path(), RenderFormat::Markdown).unwrap();
     assert!(markdown.contains("## Audit"));
     assert!(markdown.contains("| security |"));
+}
+
+#[test]
+fn render_with_html_format_produces_a_self_contained_document() {
+    let html = render(&fixture_path(), RenderFormat::Html).unwrap();
+    assert!(html.starts_with("<!doctype html>"), "{html}");
+    assert!(html.contains("code-intel-pipeline"), "{html}");
+}
+
+#[test]
+fn parse_format_defaults_to_markdown_and_accepts_html() {
+    let without_format = vec![
+        "--operation".to_string(),
+        "render".to_string(),
+        "--report".to_string(),
+        "report.json".to_string(),
+    ];
+    assert!(matches!(
+        parse(&without_format),
+        Ok(Operation::Render {
+            format: RenderFormat::Markdown,
+            ..
+        })
+    ));
+
+    let with_html = vec![
+        "--operation".to_string(),
+        "render".to_string(),
+        "--report".to_string(),
+        "report.json".to_string(),
+        "--format".to_string(),
+        "html".to_string(),
+    ];
+    assert!(matches!(
+        parse(&with_html),
+        Ok(Operation::Render {
+            format: RenderFormat::Html,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn parse_rejects_unknown_format() {
+    let raw = vec![
+        "--operation".to_string(),
+        "render".to_string(),
+        "--report".to_string(),
+        "report.json".to_string(),
+        "--format".to_string(),
+        "pdf".to_string(),
+    ];
+    let error = parse(&raw).unwrap_err();
+    assert!(error.contains("unknown --format"), "{error}");
+}
+
+#[test]
+fn parse_scope_requires_repo_and_since() {
+    let missing_repo = vec![
+        "--operation".to_string(),
+        "scope".to_string(),
+        "--since".to_string(),
+        "HEAD~1".to_string(),
+    ];
+    let error = parse(&missing_repo).unwrap_err();
+    assert!(error.contains("requires --repo"), "{error}");
+
+    let missing_since = vec![
+        "--operation".to_string(),
+        "scope".to_string(),
+        "--repo".to_string(),
+        ".".to_string(),
+    ];
+    let error = parse(&missing_since).unwrap_err();
+    assert!(error.contains("requires --since"), "{error}");
+}
+
+#[test]
+fn scope_against_head_tilde_1_lists_only_existing_changed_files() {
+    let repo = repo_root();
+    let value = scope(&repo, "HEAD~1").unwrap();
+    assert_eq!(value["kind"], "diff");
+    assert_eq!(value["since"], "HEAD~1");
+    let files = value["files"].as_array().unwrap();
+    assert!(!files.is_empty(), "{value}");
+    for file in files {
+        let relative = file.as_str().unwrap();
+        assert!(
+            repo.join(relative).is_file(),
+            "{relative} should exist on disk"
+        );
+    }
+}
+
+#[test]
+fn scope_rejects_a_bogus_since_ref() {
+    let error = scope(&repo_root(), "not-a-real-ref-xyz").unwrap_err();
+    assert!(!error.is_empty());
+}
+
+#[test]
+fn run_raw_exits_nonzero_on_a_bogus_scope_ref() {
+    let raw = vec![
+        "--operation".to_string(),
+        "scope".to_string(),
+        "--repo".to_string(),
+        repo_root().to_string_lossy().into_owned(),
+        "--since".to_string(),
+        "not-a-real-ref-xyz".to_string(),
+    ];
+    assert_eq!(run_raw(&raw), 65);
 }

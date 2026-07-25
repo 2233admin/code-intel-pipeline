@@ -50,6 +50,16 @@ If you discover a real secret (key, token, password, connection string):
 - Set `redacted: true` on the finding, and never place the secret value in the report, evidence excerpts, logs, or conversation output.
 - Identify it by path, variable/key name, secret type, and blast radius; recommend rotation when exposure is plausible.
 
+## Incremental runs
+
+When this run is scoped to a diff, get the scope block first — do not hand-roll the changed-file list:
+
+```bash
+code-intel audit --operation scope --repo <target-root> --since <git-ref>
+```
+
+Embed the printed block verbatim as the report's top-level `scope` field. Restrict every finding to evidence within `scope.files` — the kernel fails closed on a finding outside the declared diff. Name the diff limitation in every coverage row's `exclusions` (e.g. "incremental run scoped to N changed files; the rest of the tree was not swept this pass").
+
 ## Output contract
 
 Produce one `code-intel-audit-report.v1` JSON document (see `orchestration/schemas/code-intel-audit-report.v1.schema.json`):

@@ -49,6 +49,7 @@ Findings must never write secret material in plaintext. A finding about a leaked
 7. A department that scores `10.0` with zero findings must have `coverage: high` — see `orchestration/audit/rubrics/scoring.md`.
 8. Every department listed in the report has exactly one `coverage_matrix` row and at most one `score_dashboard` entry.
 9. A department whose `status` is `assessed` actually moves the health score: it has a non-null `score_dashboard` entry, and its `coverage_matrix` row is not `not_assessed`.
+10. When the optional top-level `scope.kind` is `"diff"`, `scope.since` must be present and non-empty, `scope.files` must be non-empty, and every finding's `file`-kind evidence entry that carries a `path` must name a path present in `scope.files` (compared after normalising `\` to `/` on both sides) — a finding outside the declared diff scope is a contract violation. A `full` scope, or no `scope` block at all, carries no such restriction. See "Incremental Audits" below.
 
 `validate()` is filesystem-free: it can see that a confirmed finding *has* a `path`, not that the path names a real file. Because a department is an agent, an unresolvable or drifted citation is the expected failure mode, so `validate_evidence_grounding(repo_root)` is a second pass that grounds every `file` evidence entry in the tree it claims to cite: the `path` must be portable repo-relative syntax, must resolve to a file under the repository root, and any `line_start`/`line_end` must be ordered and within that file. `code-intel audit --operation validate --repo <root>` runs it — that operation holds the repository the report cites. `--operation render` does not, and does not claim to.
 
@@ -68,7 +69,8 @@ The kernel does not care how a department produces its `audit-report.json` — o
 
 ## Validating a Report
 
-`code-intel audit` exposes two operations; both read the report from `--report <path>`.
+`code-intel audit` exposes three operations; `validate` and `render` read the report from
+`--report <path>`.
 
 - `--operation validate --repo <root> --report <path>` — parses the report structurally
   (`AuditReport::parse`, closed-object shape, no unknown fields), loads and self-validates
@@ -77,7 +79,37 @@ The kernel does not care how a department produces its `audit-report.json` — o
   one-line JSON summary — `{"ok":true,"findings_total":<n>,"overall":<score-or-null>,
   "departments_assessed":<n>}` — and exits `0`. On any failure it prints
   `{"ok":false,"error":"<message>"}` to stdout and exits nonzero.
-- `--operation render --report <path>` — parses the report and prints the same `## Audit`
-  markdown section `hospital.md` renders, so a department (or a person) can eyeball the result
-  without a full pipeline run. It does not need `--repo`: `render_markdown_section` only reads
-  the parsed report, never the registry.
+- `--operation render --report <path> [--format markdown|html]` — parses the report and prints
+  it either as the same `## Audit` markdown section `hospital.md` renders (`--format markdown`,
+  the default — existing invocations with no `--format` are unchanged), or as one self-contained
+  HTML document (`--format html`): a header (repo, overall score, rubric version, and the scope
+  line when a `scope` block is present), the score dashboard, the coverage matrix, findings
+  grouped by severity (critical to info), and a fix-order section ordering findings by severity
+  then department. The HTML has inline `<style>` only — no external CSS, JS, fonts, images, or
+  any other network reference — so it opens correctly from a `file://` path. It is rendered
+  directly from the parsed, validated `AuditReport` model, never from a raw template string, so
+  there is no placeholder-substitution failure mode for a separate report linter to catch;
+  every interpolated value passes through one escaping helper (`escape_html`) before it reaches
+  the page. Neither format needs `--repo`: both renderers only read the parsed report, never the
+  registry.
+
+## Incremental Audits
+
+A report may carry an optional top-level `scope` block: `{"kind": "full" | "diff", "since":
+<git-ref-or-null>, "files": [<path>, ...]}`. `kind: "full"` — or no `scope` block at all — means
+the run swept the whole tree and carries no path restriction. `kind: "diff"` declares that the
+run scoped itself to a set of changed files; fail-closed rule 10 above then requires `since` and
+`files` to both be present and non-empty, and every finding's `file`-kind evidence to cite a path
+listed in `files`.
+
+`code-intel audit --operation scope --repo <root> --since <git-ref>` computes that file set:
+`git diff --name-only <since>...HEAD` (three-dot — everything HEAD changed since it diverged
+from `since`) against `--repo`, run through the hardened git wrapper since `--repo` is a
+repository the operator pointed at, not one this process owns. It normalises paths to forward
+slashes, drops paths that no longer exist in the working tree (a deleted file cannot carry file
+evidence), sorts and dedups, and prints a ready-to-embed scope block as one-line JSON —
+`{"kind":"diff","since":"<ref>","files":[...]}`. A department (or a person) copies that block
+verbatim into the report's `scope` field, restricts its findings to files in it, and notes the
+diff limitation in every coverage row's `exclusions`. A non-zero git exit, or a git that cannot
+run at all, is a hard error — `{"ok":false,"error":"<message>"}` and a nonzero exit, exactly like
+`--operation validate` — this command never falls back to assuming everything changed.

@@ -103,7 +103,7 @@ impl AuditSummary {
     }
 }
 
-fn format_score(score: Option<f64>) -> String {
+pub(super) fn format_score(score: Option<f64>) -> String {
     match score {
         Some(value) => format!("{value:.1}"),
         None => "n/a".to_string(),
