@@ -251,6 +251,12 @@ pub(crate) fn registered_contract(artifact: &Value) -> Result<ArtifactContract, 
             max_bytes: 8 * 1024 * 1024,
             validate_payload: validate_hospital_report,
         }),
+        (Some("code-intel-audit-report.v1"), Some("diagnosis.audit")) => Ok(ArtifactContract {
+            artifact_schema: "code-intel-audit-report.v1",
+            artifact_type: "diagnosis.audit",
+            max_bytes: 8 * 1024 * 1024,
+            validate_payload: validate_audit_report,
+        }),
         (Some("code-intel-hospital-markdown.v1"), Some("diagnosis.hospital-view")) => {
             Ok(ArtifactContract {
                 artifact_schema: "code-intel-hospital-markdown.v1",
@@ -1207,6 +1213,19 @@ fn validate_hospital_audit_block(value: &Value) -> Result<(), String> {
         return Err("hospital report audit block contract is invalid".into());
     }
     Ok(())
+}
+
+/// Structural only: `AuditReport::parse` already enforces UTF-8, rejects
+/// duplicate JSON keys, and applies the closed-object
+/// `code-intel-audit-report.v1` shape. Registry-level validation
+/// (`report.validate(&registry)`, which needs
+/// `orchestration/audit/departments.v1.json` loaded from the repository
+/// root) is deliberately not run here: payload validators receive only the
+/// artifact bytes, no repo context, so that cross-artifact check is the
+/// CLI's job (`code-intel audit --operation validate --repo <root> --report
+/// <path>`), not the persist-time contract's.
+fn validate_audit_report(bytes: &[u8]) -> Result<(), String> {
+    crate::audit_report::AuditReport::parse(bytes).map(|_| ())
 }
 
 fn validate_surgery_plan(bytes: &[u8]) -> Result<(), String> {
@@ -3314,5 +3333,20 @@ mod tests {
         extra_key["audit"]["surprise"] = json!(true);
         let error = validate_hospital_report(&serde_json::to_vec(&extra_key).unwrap()).unwrap_err();
         assert!(error.contains("audit block"));
+    }
+
+    #[test]
+    fn audit_report_contract_accepts_the_fixture_and_rejects_an_unknown_field() {
+        let fixture = fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/audit/audit-report.v1.example.json"),
+        )
+        .unwrap();
+        validate_audit_report(&fixture).unwrap();
+
+        let mut value: Value = serde_json::from_slice(&fixture).unwrap();
+        value["bogus"] = json!(true);
+        let error = validate_audit_report(&serde_json::to_vec(&value).unwrap()).unwrap_err();
+        assert!(error.contains("unrecognized field"), "{error}");
     }
 }

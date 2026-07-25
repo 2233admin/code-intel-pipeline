@@ -1,6 +1,6 @@
 # Code Intel Audit Report
 
-The audit layer runs audit dimensions as hospital departments. Each department consumes the modality evidence hospital mode already admits (`xray`, `anatomy`, `ct`, `mri`, `pet`, `chart`, `governance`, see `docs/hospital-mode.md`) plus any targeted reads it takes to resolve a finding, and produces findings, a score dashboard, and a coverage matrix in a shared, fail-closed contract. This is the audit kernel: the artifact contract, the finding contract, and the validation invariants every department's output must satisfy. It does not run departments itself — `orchestration/audit/departments.v1.json` currently registers three (`security`, `ai-safety`, `supply-chain`), all `enabled: false`.
+The audit layer runs audit dimensions as hospital departments. Each department consumes the modality evidence hospital mode already admits (`xray`, `anatomy`, `ct`, `mri`, `pet`, `chart`, `governance`, see `docs/hospital-mode.md`) plus any targeted reads it takes to resolve a finding, and produces findings, a score dashboard, and a coverage matrix in a shared, fail-closed contract. This is the audit kernel: the artifact contract, the finding contract, and the validation invariants every department's output must satisfy. It does not run departments itself — `orchestration/audit/departments.v1.json` currently registers three (`security`, `ai-safety`, `supply-chain`). `security` is `enabled: true` (its prompt lives at `orchestration/audit/prompts/security.md`); `ai-safety` and `supply-chain` remain `enabled: false` pending their own department tickets.
 
 Methodology adapted from [Fuck_My_Shit_Mountain](https://github.com/XiNian-dada/Fuck_My_Shit_Mountain) (MIT): the rubrics in `orchestration/audit/rubrics/` and the finding contract below are rewritten for this repo's evidence-first context, not copied.
 
@@ -60,4 +60,22 @@ Adding a department never requires a kernel change:
 2. Write the prompt file at the path the entry declares.
 3. Flip `enabled: true` once the prompt is ready to run. `DepartmentRegistry::validate()` will fail closed if the prompt file is still missing.
 
+`security` has completed all three steps (T2). `ai-safety` and `supply-chain` are registered but still `enabled: false`, pending their own department tickets (issues #20 and #21).
+
 The kernel does not care how a department produces its `audit-report.json` — only that the result satisfies the finding contract and the fail-closed invariants above.
+
+## Validating a Report
+
+`code-intel audit` exposes two operations; both read the report from `--report <path>`.
+
+- `--operation validate --repo <root> --report <path>` — parses the report structurally
+  (`AuditReport::parse`, closed-object shape, no unknown fields), loads and self-validates
+  `orchestration/audit/departments.v1.json` from `--repo`, then checks the report against it
+  (`report.validate(&registry)`, the fail-closed rules above). On success it prints a compact
+  one-line JSON summary — `{"ok":true,"findings_total":<n>,"overall":<score-or-null>,
+  "departments_assessed":<n>}` — and exits `0`. On any failure it prints
+  `{"ok":false,"error":"<message>"}` to stdout and exits nonzero.
+- `--operation render --report <path>` — parses the report and prints the same `## Audit`
+  markdown section `hospital.md` renders, so a department (or a person) can eyeball the result
+  without a full pipeline run. It does not need `--repo`: `render_markdown_section` only reads
+  the parsed report, never the registry.
