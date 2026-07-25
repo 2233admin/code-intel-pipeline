@@ -1,0 +1,8 @@
+[toolchain]
+# Pinned so CI, release, and local builds all use one compiler. An unpinned
+# `stable` makes released binaries unreproducible: the release zip ships a
+# .sha256 sidecar, which proves transport integrity but not that the bytes
+# can be rebuilt from this tree.
+channel = "1.95.0"
+components = ["rustfmt"]
+profile = "minimal"

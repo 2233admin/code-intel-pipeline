@@ -49,7 +49,9 @@ jobs:
 
       - name: Setup Rust
         shell: pwsh
-        run: rustup default stable
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
 
       - name: Install ripgrep
         shell: pwsh
@@ -137,6 +139,7 @@ jobs:
             tag = $version
             commit = (git rev-parse HEAD).Trim()
             zipSha256 = $hash
+            toolchain = (rustc --version).Trim()
             builtAt = (Get-Date).ToUniversalTime().ToString("o")
           }
           $manifest | ConvertTo-Json | Set-Content -Encoding ascii "$zip.release-manifest.json"

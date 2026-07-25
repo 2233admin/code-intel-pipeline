@@ -32,7 +32,9 @@ jobs:
 
       - name: Setup Rust
         shell: pwsh
-        run: rustup default stable
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
 
       - name: Install ripgrep
         shell: pwsh
@@ -251,7 +253,9 @@ jobs:
 
       - name: Setup Rust
         shell: pwsh
-        run: rustup default stable
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
 
       - name: Install ripgrep
         shell: pwsh
