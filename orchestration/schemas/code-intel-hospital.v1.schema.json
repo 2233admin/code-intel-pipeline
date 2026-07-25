@@ -50,7 +50,72 @@
         "research_status": { "type": "string" }, "research_required": { "type": "boolean" },
         "exit_criteria": { "type": "array", "items": { "type": "string" } },
         "admission_reason": { "type": "string", "minLength": 1 },
-        "discharge_criteria": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+        "discharge_criteria": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "failing_rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "details"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "minLength": 1
+              },
+              "details": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "violations"
+                    ],
+                    "properties": {
+                      "violations": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 32,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "rule",
+                            "message",
+                            "targets"
+                          ],
+                          "properties": {
+                            "rule": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "message": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "targets": {
+                              "type": "array",
+                              "maxItems": 16,
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "stateMachine": {
