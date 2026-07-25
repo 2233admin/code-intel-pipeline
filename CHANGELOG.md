@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-26
+
+This release adds the **audit layer**: audit dimensions run as hospital
+departments over the modality evidence the pipeline already gathers, and emit
+findings under one fail-closed contract. Three departments ship enabled
+(`security`, `ai-safety`, `supply-chain`), reports render as Markdown or as a
+self-contained HTML document, and an audit can be scoped to a git diff for
+pull-request review.
+
+The layer was pointed at this repository before shipping. It found the
+unpinned toolchain and the mutable CI action tags fixed below; the git config
+hardening came out of the same pass. Methodology adapted from
+[Fuck_My_Shit_Mountain](https://github.com/XiNian-dada/Fuck_My_Shit_Mountain)
+(MIT).
+
 ### Fixed
 
 - Git no longer runs inside a scanned repository with that repository's own
