@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "code-intel-compatibility-retirement-decision.v1",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "snapshotIdentity", "retirementId", "legacyBranch", "replacement", "approvalSubjectSha256", "decision", "blockers", "authorityBoundary", "gainLedgerProjection"],
+  "properties": {
+    "schema": { "const": "code-intel-compatibility-retirement-decision.v1" },
+    "snapshotIdentity": { "type": "string", "minLength": 1 },
+    "retirementId": { "type": "string", "minLength": 1 },
+    "legacyBranch": { "type": "object" },
+    "replacement": { "type": "object" },
+    "approvalSubjectSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "decision": { "enum": ["approved", "blocked"] },
+    "blockers": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "authorityBoundary": { "const": "approval_only_no_deletion_authority" },
+    "gainLedgerProjection": { "type": "object", "additionalProperties": false, "required": ["id", "status", "gain", "evidenceCount"], "properties": { "id": { "type": "string", "minLength": 1 }, "status": { "enum": ["approved-for-ticket", "blocked"] }, "gain": { "type": "string", "minLength": 1 }, "evidenceCount": { "type": "integer", "minimum": 1 } } }
+  }
+}

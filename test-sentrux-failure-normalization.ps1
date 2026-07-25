@@ -9,7 +9,8 @@ $prefixLength = $runnerText.IndexOf($marker)
 if ($prefixLength -lt 0) {
     throw "Could not find runner execution marker."
 }
-Invoke-Expression $runnerText.Substring(0, $prefixLength)
+$runnerPrefix = $runnerText.Substring(0, $prefixLength).Replace('$PSScriptRoot', '$root')
+Invoke-Expression $runnerPrefix
 
 function New-TestStep {
     param(
@@ -49,6 +50,9 @@ try {
         -HotspotsPath $hotspotsPath `
         -OutputPath (Join-Path $base "named.json")
     $namedDebt = New-CodeIntelSentruxDebtRegister -Failures $named -RepoPath $root -RunTimestamp "2026-07-02T00:00:00Z" -OutputPath (Join-Path $base "named-debt.json")
+    $knownEffectiveFailures = @(Get-CodeIntelEffectiveFailedSteps `
+        -FailedSteps @((New-TestStep "sentrux check" "failed" "run-code-intel.ps1:Get-CodeEvidenceSymbols (cc=311)")) `
+        -BlockingSentruxDebt ([int]$namedDebt.summary.blocking))
 
     if ([string]$named.schema -ne "code-intel-sentrux-failures.v1") { throw "Unexpected failure schema." }
     if ([string]$named.status -ne "failed") { throw "Named offender should produce failed status." }
@@ -61,6 +65,7 @@ try {
     if ([string]$namedDebt.schema -ne "code-intel-sentrux-debt-register.v1") { throw "Unexpected debt schema." }
     if ([int]$namedDebt.summary.knownDebt -ne 1) { throw "Named current offender should be known debt." }
     if ([int]$namedDebt.summary.blocking -ne 0) { throw "Known debt should not block." }
+    if ($knownEffectiveFailures.Count -ne 0) { throw "Known non-blocking Sentrux debt should not produce an effective failure." }
     if ((Get-Content -LiteralPath (Join-Path $base "named-debt.json") -Raw | ConvertFrom-Json).schema -ne "code-intel-sentrux-debt-register.v1") {
         throw "Written debt artifact should parse as JSON."
     }
@@ -77,9 +82,28 @@ try {
         (New-TestStep "sentrux gate" "failed" "Complex functions increased: 7 -> 11`nComplex functions increased: 11 → 12")
     )
     $worsenedDebt = New-CodeIntelSentruxDebtRegister -Failures $worsened -RepoPath $root
+    $blockingEffectiveFailures = @(Get-CodeIntelEffectiveFailedSteps `
+        -FailedSteps @((New-TestStep "sentrux gate" "failed" "Complex functions increased: 7 -> 11")) `
+        -BlockingSentruxDebt ([int]$worsenedDebt.summary.blocking))
     if ([string]$worsened.gate.target.status -ne "aggregate") { throw "Gate regression should be aggregate." }
     if ([int]$worsenedDebt.summary.worsenedDebt -lt 1) { throw "Gate increase should be worsened debt." }
     if ([int]$worsenedDebt.summary.blocking -lt 1) { throw "Worsened debt should block." }
+    if ($blockingEffectiveFailures.Count -ne 1) { throw "Blocking Sentrux debt should remain an effective failure." }
+
+    $localToolEffectiveFailures = @(Get-CodeIntelEffectiveFailedSteps `
+        -FailedSteps @((New-TestStep "inventory" "failed" "" "tool failed")) `
+        -BlockingSentruxDebt 0)
+    if ($localToolEffectiveFailures.Count -ne 1) { throw "Non-Sentrux failures must remain effective." }
+
+    $mixedDirection = New-CodeIntelSentruxFailures -Steps @(
+        (New-TestStep "sentrux gate" "failed" "Quality: 4726 -> 5389`nComplex functions increased: 20 -> 22")
+    )
+    $mixedDirectionDebt = New-CodeIntelSentruxDebtRegister -Failures $mixedDirection -RepoPath $root
+    $qualityDebt = @($mixedDirectionDebt.entries | Where-Object { [string]$_.kind -eq "quality" })
+    if ($qualityDebt.Count -ne 1) { throw "Mixed-direction gate output should preserve one quality record." }
+    if ([string]$qualityDebt[0].classification -ne "informational") { throw "Increasing quality must not be classified as worsened debt." }
+    if ([int]$mixedDirectionDebt.summary.worsenedDebt -ne 1) { throw "Only complex_functions should be worsened debt." }
+    if ([int]$mixedDirectionDebt.summary.blocking -ne 1) { throw "Only the complex_functions regression should block." }
 
     $otherNamed = New-CodeIntelSentruxFailures -Steps @(
         (New-TestStep "sentrux check" "failed" "other.ps1:New-BigFunction (cc=101)")

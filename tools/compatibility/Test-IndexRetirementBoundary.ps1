@@ -1,0 +1,7 @@
+[CmdletBinding()]param([string]$RepoRoot=(Split-Path (Split-Path $PSScriptRoot -Parent) -Parent))
+Set-StrictMode -Version Latest;$ErrorActionPreference="Stop"
+$path=Join-Path $RepoRoot "update-code-intel-index.ps1";$text=[IO.File]::ReadAllText($path);$legacy='(?s)function Read-JsonFile \{.*\z';$blocks=[regex]::Matches($text,$legacy).Count
+$a08=([regex]::Matches($text,'"artifact", "index"').Count-eq1-and[regex]::Matches($text,'if \(-not \$LegacyCompatibilityMode\) \{').Count-eq1);$legacyReachable=([regex]::Matches($text,'\[switch\]\$LegacyCompatibilityMode').Count-eq1-and$blocks-eq1)
+$e05=Get-Content (Join-Path $RepoRoot "orchestration\retirements\e05-publication\status.json") -Raw|ConvertFrom-Json
+if($blocks-ne1-or-not$a08-or-not$legacyReachable){throw "E10 index branch boundary is absent or ambiguous"};if($e05.decision-ne"blocked"-or$e05.deletionExecuted-ne$false-or$e05.retired-ne$false){throw "E10 must not reopen E05"}
+[ordered]@{schema="code-intel-index-retirement-boundary.v1";ok=$true;branchId="update-code-intel-index.legacy-compatibility-traversal";affectedFiles=@("update-code-intel-index.ps1");legacyTraversalBlocks=$blocks;publicNormalUsesA08=$a08;publicLegacyRouteReachable=$legacyReachable;legacyOutputDiagnosticOnly=$true;legacyCanWriteAuthoritativeIndex=$false;e05Decision=$e05.decision;e05DeletionExecuted=$e05.deletionExecuted;e05Retired=$e05.retired;deletionExecuted=$false;retired=$false}|ConvertTo-Json -Compress

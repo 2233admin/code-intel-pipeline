@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-decision-response.v1.schema.json",
+  "title": "Code Intel Decision Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "correlationId", "gapId", "answer", "actorProvenance", "timestamp"],
+  "properties": {
+    "schema": { "const": "code-intel-decision-response.v1" },
+    "correlationId": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._-]+$" },
+    "gapId": { "type": "string", "minLength": 1 },
+    "answer": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "optionId"],
+          "properties": {
+            "kind": { "const": "choice" },
+            "optionId": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "text"],
+          "properties": {
+            "kind": { "const": "free-form" },
+            "text": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "actorProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actorId", "authorityKind", "source"],
+      "properties": {
+        "actorId": { "type": "string", "minLength": 1 },
+        "authorityKind": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 }
+      }
+    },
+    "timestamp": { "type": "integer", "minimum": 0 }
+  }
+}

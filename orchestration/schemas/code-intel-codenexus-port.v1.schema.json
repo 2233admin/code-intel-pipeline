@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-codenexus-port.v1",
+  "title": "Code Intel CodeNexus Provider Port v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "completeness",
+    "freshness",
+    "expectedSnapshotIdentity",
+    "sourceSnapshotIdentity",
+    "provider",
+    "provenance",
+    "boundary",
+    "effects",
+    "payload",
+    "failureKind",
+    "perceptionUsable"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-codenexus-port.v1" },
+    "status": { "enum": ["current", "partial", "unavailable"] },
+    "completeness": { "enum": ["complete", "partial"] },
+    "freshness": { "enum": ["current", "stale", "snapshot_mismatch"] },
+    "expectedSnapshotIdentity": { "$ref": "#/$defs/digest" },
+    "sourceSnapshotIdentity": { "$ref": "#/$defs/digest" },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "providerId", "implementationId", "activation"],
+      "properties": {
+        "mode": { "enum": ["full", "lite"] },
+        "providerId": { "type": "string", "minLength": 1 },
+        "implementationId": { "type": "string", "minLength": 1 },
+        "activation": { "enum": ["primary", "explicit_fallback", "legacy_rollback"] }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceRevision", "observedAt"],
+      "properties": {
+        "sourceRevision": { "type": "string", "minLength": 1 },
+        "observedAt": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transport", "storageOwnership", "impactSemanticsOwnership"],
+      "properties": {
+        "transport": { "const": "artifact_ref" },
+        "storageOwnership": { "const": "provider" },
+        "impactSemanticsOwnership": { "const": "provider" }
+      }
+    },
+    "effects": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "network_provider",
+          "read_provider_artifact",
+          "read_repository",
+          "read_git_history",
+          "read_sentrux_artifacts",
+          "write_compatibility_artifact"
+        ]
+      }
+    },
+    "payload": { "$ref": "#/$defs/artifactRef" },
+    "failureKind": { "enum": ["none", "provider_unavailable", "domain_unknown"] },
+    "perceptionUsable": { "type": "boolean" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "artifactSchema",
+        "type",
+        "path",
+        "sha256",
+        "consumedSnapshotIdentity"
+      ],
+      "properties": {
+        "schema": { "const": "code-intel-artifact-ref.v1" },
+        "artifactSchema": { "const": "code-intel-evidence-payload.v1" },
+        "type": { "const": "observed.evidence.payload" },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "consumedSnapshotIdentity": { "$ref": "#/$defs/digest" }
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-auto-pr-authorization.v1.schema.json",
+  "title": "Code Intel one-time automatic pull request authorization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "authorizationId", "decision", "repository", "snapshotIdentity",
+    "expectedHead", "baseBranch", "headBranch", "title", "body", "draft",
+    "consent", "decisionRecord", "issuedAt", "expiresAt"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-auto-pr-authorization.v1" },
+    "authorizationId": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "decision": { "const": "approved" },
+    "repository": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+    "snapshotIdentity": { "$ref": "#/$defs/sha256" },
+    "expectedHead": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "baseBranch": { "$ref": "#/$defs/nonEmpty" },
+    "headBranch": { "$ref": "#/$defs/nonEmpty" },
+    "title": { "$ref": "#/$defs/nonEmpty" },
+    "body": { "$ref": "#/$defs/nonEmpty" },
+    "draft": { "const": true },
+    "consent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "actorId", "source", "recordedAt"],
+      "properties": {
+        "kind": { "const": "enable_once_for_snapshot" },
+        "actorId": { "$ref": "#/$defs/nonEmpty" },
+        "source": { "$ref": "#/$defs/nonEmpty" },
+        "recordedAt": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "decisionRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "bindingDigest", "authorityEventId"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^decision-record-v1:[0-9a-f]{64}$" },
+        "bindingDigest": { "$ref": "#/$defs/sha256" },
+        "authorityEventId": { "$ref": "#/$defs/nonEmpty" }
+      }
+    },
+    "issuedAt": { "type": "integer", "minimum": 0 },
+    "expiresAt": { "type": "integer", "minimum": 0 }
+  },
+  "$defs": {
+    "nonEmpty": { "type": "string", "minLength": 1 },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

@@ -887,6 +887,10 @@ function Get-ModuleName {
         return "backend/$($parts[1])"
     }
 
+    if ($parts[0] -in @("crates", "packages")) {
+        return "$($parts[0])/$($parts[1])"
+    }
+
     if ($parts[0] -in @("app", "src", "tests")) {
         if ($parts.Count -ge 4 -and $parts[1] -eq "markets") {
             if ($parts.Count -eq 4) {
@@ -1277,7 +1281,7 @@ function Add-DsmEdge {
     if (-not $Edges.ContainsKey($key)) {
         $Edges[$key] = [ordered]@{ from = $From; to = $To; count = 0 }
     }
-    $Edges[$key]["count"] = 1
+    $Edges[$key]["count"] = [int]$Edges[$key]["count"] + 1
 }
 
 function ConvertTo-HeatColor {
@@ -1399,7 +1403,10 @@ function Get-ParamCount {
 }
 
 function Measure-FunctionComplexity {
-    param([string[]]$Lines)
+    param(
+        [string[]]$Lines,
+        [switch]$IgnoreArrowSyntax
+    )
 
     $complexity = 1
     foreach ($line in $Lines) {
@@ -1408,7 +1415,7 @@ function Measure-FunctionComplexity {
         if ($trimmed.StartsWith("#") -or $trimmed.StartsWith("//")) { continue }
         $complexity += [regex]::Matches($trimmed, "\b(if|elif|for|while|except|case|catch|match|guard|when|with)\b").Count
         $complexity += [regex]::Matches($trimmed, "&&|\|\|").Count
-        if ($trimmed -match "\s=>\s") { $complexity++ }
+        if (-not $IgnoreArrowSyntax -and $trimmed -match "\s=>\s") { $complexity++ }
     }
     return $complexity
 }
@@ -1444,7 +1451,8 @@ function New-FunctionMetric {
         [string[]]$BodyLines,
         [string]$Params = "",
         [bool]$IsAsync = $false,
-        [bool]$IsPublic = $false
+        [bool]$IsPublic = $false,
+        [switch]$IgnoreArrowSyntax
     )
 
     $stats = Measure-LineStats $BodyLines
@@ -1455,11 +1463,77 @@ function New-FunctionMetric {
         end_line = $EndLine
         lines = $stats["lines"]
         loc = $stats["loc"]
-        complexity = Measure-FunctionComplexity $BodyLines
+        complexity = Measure-FunctionComplexity -Lines $BodyLines -IgnoreArrowSyntax:$IgnoreArrowSyntax
         params = Get-ParamCount $Params
         async = $IsAsync
         public = $IsPublic
     }
+}
+
+function Get-CodeStructuralLine {
+    param(
+        [string]$Line,
+        [ref]$InBlockComment
+    )
+
+    $result = [ordered]@{ opens = 0; closes = 0; semicolon = $false; arrow_expression = $false }
+    $chars = @($Line.ToCharArray())
+    $quote = 0
+    $escaped = $false
+    for ($index = 0; $index -lt $chars.Count; $index++) {
+        $code = [int]$chars[$index]
+        $nextCode = if ($index + 1 -lt $chars.Count) { [int]$chars[$index + 1] } else { -1 }
+        if ($InBlockComment.Value) {
+            if ($code -eq 42 -and $nextCode -eq 47) {
+                $InBlockComment.Value = $false
+                $index++
+            }
+            continue
+        }
+        if ($quote -ne 0) {
+            if ($escaped) {
+                $escaped = $false
+            }
+            elseif ($code -eq 92 -or ($quote -eq 96 -and $code -eq 96)) {
+                $escaped = $true
+            }
+            elseif ($code -eq $quote) {
+                $quote = 0
+            }
+            continue
+        }
+        if ($code -eq 47 -and $nextCode -eq 47) { break }
+        if ($code -eq 47 -and $nextCode -eq 42) {
+            $InBlockComment.Value = $true
+            $index++
+            continue
+        }
+        if ($code -eq 35 -and $Line.Substring(0, $index).Trim().Length -eq 0) { break }
+        $isRustLifetime = $false
+        if ($code -eq 39 -and $nextCode -ge 0 -and ([char]$nextCode -match "[A-Za-z_]")) {
+            $isRustLifetime = -not (@($chars[($index + 1)..($chars.Count - 1)] | Where-Object { [int]$_ -eq 39 }).Count -gt 0)
+        }
+        if (($code -in @(34, 39, 96)) -and -not $isRustLifetime) {
+            $quote = $code
+            continue
+        }
+        switch ($code) {
+            123 { $result["opens"] = [int]$result["opens"] + 1 }
+            125 { $result["closes"] = [int]$result["closes"] + 1 }
+            59 { $result["semicolon"] = $true }
+            61 { if ($nextCode -eq 62) { $result["arrow_expression"] = $true } }
+        }
+    }
+    return $result
+}
+
+function Test-IsCLikeFunctionDeclaration {
+    param([string]$Line)
+
+    return $Line -match "^\s*(?:(?:pub(?:\([^)]*\))?|export)\s+)?(?:(?:async)\s+)?fn\s+[A-Za-z_][A-Za-z0-9_]*\s*\(" -or
+        $Line -match "^\s*(?:export\s+)?(?:async\s+)?function\s+[A-Za-z_][A-Za-z0-9_]*\s*\(" -or
+        $Line -match "^\s*(?:export\s+)?(?:const|let|var)\s+[A-Za-z_][A-Za-z0-9_]*\s*=.*=>" -or
+        $Line -match "^\s*function\s+[A-Za-z_][A-Za-z0-9_:-]*"
 }
 
 function Get-CLikeFunctionEndLine {
@@ -1470,19 +1544,20 @@ function Get-CLikeFunctionEndLine {
 
     $braceDepth = 0
     $seenBrace = $false
+    $inBlockComment = $false
     for ($i = $StartIndex; $i -lt $Lines.Count; $i++) {
         $line = $Lines[$i]
-        foreach ($char in $line.ToCharArray()) {
-            if ($char -eq "{") {
-                $braceDepth++
-                $seenBrace = $true
-            }
-            elseif ($char -eq "}") {
-                $braceDepth--
-                if ($seenBrace -and $braceDepth -le 0) {
-                    return $i
-                }
-            }
+        $structure = Get-CodeStructuralLine -Line $line -InBlockComment ([ref]$inBlockComment)
+        $braceDepth += [int]$structure["opens"] - [int]$structure["closes"]
+        if ([int]$structure["opens"] -gt 0) { $seenBrace = $true }
+        if ($seenBrace -and $braceDepth -le 0) {
+            return $i
+        }
+        if (-not $seenBrace -and ($structure["semicolon"] -or $structure["arrow_expression"])) {
+            return $i
+        }
+        if ($i -gt $StartIndex -and (Test-IsCLikeFunctionDeclaration $line)) {
+            return [math]::Max($StartIndex, $i - 1)
         }
     }
     return $StartIndex
@@ -1501,7 +1576,14 @@ function Get-FunctionsFromPython {
         for ($j = $i + 1; $j -lt $Lines.Count; $j++) {
             $candidate = $Lines[$j]
             $trimmed = $candidate.Trim()
-            if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith("#") -or $trimmed.StartsWith("@")) { continue }
+            if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith("#")) { continue }
+            if ($trimmed.StartsWith("@")) {
+                if ((Get-LeadingWhitespaceCount $candidate) -le $indent) {
+                    $end = [math]::Max($i, $j - 1)
+                    break
+                }
+                continue
+            }
             if ((Get-LeadingWhitespaceCount $candidate) -le $indent) {
                 $end = [math]::Max($i, $j - 1)
                 break
@@ -1586,7 +1668,8 @@ function Get-FunctionsFromJavaScriptLike {
                     -BodyLines $body `
                     -Params $match.Groups[4].Value `
                     -IsAsync (-not [string]::IsNullOrWhiteSpace($match.Groups[3].Value)) `
-                    -IsPublic (-not [string]::IsNullOrWhiteSpace($match.Groups[1].Value))
+                    -IsPublic (-not [string]::IsNullOrWhiteSpace($match.Groups[1].Value)) `
+                    -IgnoreArrowSyntax
             }
             continue
         }
@@ -1600,7 +1683,8 @@ function Get-FunctionsFromJavaScriptLike {
             -BodyLines $body `
             -Params $match.Groups[4].Value `
             -IsAsync (-not [string]::IsNullOrWhiteSpace($match.Groups[2].Value)) `
-            -IsPublic (-not [string]::IsNullOrWhiteSpace($match.Groups[1].Value))
+            -IsPublic (-not [string]::IsNullOrWhiteSpace($match.Groups[1].Value)) `
+            -IgnoreArrowSyntax
     }
     return $functions
 }
@@ -1814,29 +1898,63 @@ function New-DsmModuleState {
 function Get-DsmImportTargetsForFile {
     param(
         [string]$Extension,
-        [string]$Content
+        [string]$Content,
+        [string]$SourcePath,
+        [object]$Modules
     )
 
     $targets = New-Object System.Collections.Generic.List[string]
     switch ($Extension) {
         ".py" {
-            foreach ($match in [regex]::Matches($Content, "(?m)^\s*(?:from|import)\s+([A-Za-z_][A-Za-z0-9_\.]*)")) {
-                $targets.Add((Get-ModuleName ($match.Groups[1].Value -replace "\.", "/")))
+            foreach ($match in [regex]::Matches($Content, "(?m)^\s*(?:from|import)\s+([\.]*[A-Za-z_][A-Za-z0-9_\.]*)")) {
+                $token = $match.Groups[1].Value
+                $leadingDots = ([regex]::Match($token, "^\.*")).Value.Length
+                $parts = New-Object System.Collections.Generic.List[string]
+                if ($leadingDots -gt 0) {
+                    foreach ($part in @((Normalize-RelativeFilePath $SourcePath) -split "/" | Select-Object -SkipLast 1)) {
+                        $parts.Add($part)
+                    }
+                    for ($level = 1; $level -lt $leadingDots -and $parts.Count -gt 0; $level++) {
+                        $parts.RemoveAt($parts.Count - 1)
+                    }
+                }
+                foreach ($part in @(($token.Substring($leadingDots)) -split "\." | Where-Object { $_ })) {
+                    $parts.Add($part)
+                }
+                $importPath = $parts -join "/"
+                foreach ($candidate in @(
+                    (Get-ModuleName "$importPath.py"),
+                    (Get-ModuleName "$importPath/__init__.py"),
+                    (Get-ModuleName $importPath)
+                )) {
+                    if ($Modules.Contains($candidate)) {
+                        $targets.Add($candidate)
+                        break
+                    }
+                }
             }
         }
         ".rs" {
-            foreach ($match in [regex]::Matches($Content, "(?m)^\s*mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;")) {
-                $targets.Add("src/$($match.Groups[1].Value).rs")
-            }
-            foreach ($match in [regex]::Matches($Content, "use\s+crate::([A-Za-z_][A-Za-z0-9_]*)")) {
-                $targets.Add("src/$($match.Groups[1].Value).rs")
+            foreach ($match in [regex]::Matches($Content, "(?m)^\s*use\s+([A-Za-z_][A-Za-z0-9_]*)::")) {
+                $name = $match.Groups[1].Value
+                if ($name -in @("crate", "self", "super", "std", "core", "alloc")) { continue }
+                foreach ($candidate in @("crates/$name", "packages/$name", $name)) {
+                    if ($Modules.Contains($candidate)) {
+                        $targets.Add($candidate)
+                        break
+                    }
+                }
             }
         }
         ".v" {
             foreach ($match in [regex]::Matches($Content, "(?m)^\s*import\s+([A-Za-z_][A-Za-z0-9_\.]*)")) {
                 $root = ($match.Groups[1].Value -split "\.")[0]
                 foreach ($target in @($root, "$root.v", ($match.Groups[1].Value -replace "\.", "/"))) {
-                    $targets.Add($target)
+                    $candidate = Get-ModuleName $target
+                    if ($Modules.Contains($candidate)) {
+                        $targets.Add($candidate)
+                        break
+                    }
                 }
             }
         }
@@ -1876,7 +1994,7 @@ function Get-DsmEdgesForFiles {
         if ([string]::IsNullOrWhiteSpace($content)) { continue }
 
         $from = Get-ModuleName $file
-        foreach ($target in @(Get-DsmImportTargetsForFile -Extension $ext -Content $content)) {
+        foreach ($target in @(Get-DsmImportTargetsForFile -Extension $ext -Content $content -SourcePath $file -Modules $Modules)) {
             Add-DsmEdgeIfAllowed `
                 -Edges $edges `
                 -Modules $Modules `
@@ -1924,27 +2042,91 @@ function New-DsmGraphState {
     }
 }
 
+function Get-DsmReachableModules {
+    param(
+        [string]$Start,
+        [object]$Adjacency
+    )
+
+    $seen = @{}
+    $queue = New-Object System.Collections.Generic.Queue[string]
+    if ($Adjacency.ContainsKey($Start)) {
+        foreach ($target in $Adjacency[$Start]) { $queue.Enqueue($target) }
+    }
+    while ($queue.Count -gt 0) {
+        $current = $queue.Dequeue()
+        if ($seen.ContainsKey($current)) { continue }
+        $seen[$current] = $true
+        if ($Adjacency.ContainsKey($current)) {
+            foreach ($target in $Adjacency[$current]) {
+                if (-not $seen.ContainsKey($target)) { $queue.Enqueue($target) }
+            }
+        }
+    }
+    return $seen
+}
+
 function Get-DsmExecutionDepths {
     param(
         [object]$Modules,
         [object]$Edges
     )
 
-    $depths = @{}
-    foreach ($name in $Modules.Keys) { $depths[$name] = 0 }
-    for ($i = 0; $i -lt [math]::Max(1, $Modules.Keys.Count); $i++) {
+    $names = @($Modules.Keys)
+    $adjacency = @{}
+    foreach ($name in $names) { $adjacency[$name] = New-Object System.Collections.Generic.List[string] }
+    foreach ($edge in $Edges.Values) {
+        $from = [string]$edge["from"]
+        $to = [string]$edge["to"]
+        if ($adjacency.ContainsKey($from) -and $adjacency.ContainsKey($to) -and -not $adjacency[$from].Contains($to)) {
+            $adjacency[$from].Add($to)
+        }
+    }
+
+    $reachable = @{}
+    foreach ($name in $names) {
+        $reachable[$name] = Get-DsmReachableModules -Start $name -Adjacency $adjacency
+    }
+    $componentByModule = @{}
+    $componentCount = 0
+    foreach ($name in $names) {
+        if ($componentByModule.ContainsKey($name)) { continue }
+        foreach ($candidate in $names) {
+            if ($componentByModule.ContainsKey($candidate)) { continue }
+            if ($candidate -eq $name -or
+                ($reachable[$name].ContainsKey($candidate) -and $reachable[$candidate].ContainsKey($name))) {
+                $componentByModule[$candidate] = $componentCount
+            }
+        }
+        $componentCount++
+    }
+
+    $componentEdges = @{}
+    foreach ($edge in $Edges.Values) {
+        $fromComponent = [int]$componentByModule[[string]$edge["from"]]
+        $toComponent = [int]$componentByModule[[string]$edge["to"]]
+        if ($fromComponent -ne $toComponent) {
+            $componentEdges["$fromComponent->$toComponent"] = [ordered]@{ from = $fromComponent; to = $toComponent }
+        }
+    }
+    $componentDepths = @{}
+    for ($component = 0; $component -lt $componentCount; $component++) { $componentDepths[$component] = 0 }
+    for ($i = 0; $i -lt [math]::Max(1, $componentCount); $i++) {
         $changed = $false
-        foreach ($edge in $Edges.Values) {
-            $from = [string]$edge["from"]
-            $to = [string]$edge["to"]
-            if (-not $depths.ContainsKey($from) -or -not $depths.ContainsKey($to)) { continue }
-            $candidate = [int]$depths[$to] + 1
-            if ($candidate -gt [int]$depths[$from]) {
-                $depths[$from] = [math]::Min(99, $candidate)
+        foreach ($edge in $componentEdges.Values) {
+            $from = [int]$edge["from"]
+            $to = [int]$edge["to"]
+            $candidate = [int]$componentDepths[$to] + 1
+            if ($candidate -gt [int]$componentDepths[$from]) {
+                $componentDepths[$from] = [math]::Min(99, $candidate)
                 $changed = $true
             }
         }
         if (-not $changed) { break }
+    }
+    $depths = @{}
+    foreach ($name in $names) {
+        $depths[$name] = [int]$componentDepths[[int]$componentByModule[$name]]
     }
     return $depths
 }

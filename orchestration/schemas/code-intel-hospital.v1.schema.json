@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-hospital.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "domainVerdict", "generatedAt", "repo", "mode", "artifacts", "triage", "state_machine", "modalities", "policies", "report_quality", "diagnosis", "treatment", "protocols", "tools", "surgery_plan"],
+  "properties": {
+    "schema": { "const": "code-intel-hospital.v1" },
+    "domainVerdict": { "enum": ["pass", "fail", "unknown"] },
+    "generatedAt": { "type": "null" },
+    "repo": { "type": "string", "minLength": 1 },
+    "mode": { "const": "atom" },
+    "artifacts": { "$ref": "#/$defs/artifacts" },
+    "triage": { "$ref": "#/$defs/triage" },
+    "state_machine": { "$ref": "#/$defs/stateMachine" },
+    "modalities": { "type": "array", "items": { "$ref": "#/$defs/admission" } },
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["precedence"],
+      "properties": { "precedence": { "type": "array", "minItems": 8, "maxItems": 8, "items": { "type": "string", "minLength": 1 } } }
+    },
+    "report_quality": { "$ref": "#/$defs/reportQuality" },
+    "diagnosis": { "$ref": "#/$defs/diagnosis" },
+    "treatment": { "$ref": "#/$defs/treatment" },
+    "protocols": { "type": "array" },
+    "tools": { "type": "object" },
+    "surgery_plan": { "$ref": "#/$defs/surgeryPlan" }
+  },
+  "$defs": {
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runDir", "report", "summary", "understanding"],
+      "properties": {
+        "runDir": { "type": "string" }, "report": { "const": "hospital-report.json" },
+        "summary": { "type": "string" }, "understanding": { "type": "string" }
+      }
+    },
+    "triage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "disposition", "primary_diagnosis", "overall_score", "next_protocol", "research_status", "research_required", "exit_criteria", "admission_reason", "discharge_criteria"],
+      "properties": {
+        "status": { "enum": ["green", "amber", "red", "unknown"] },
+        "disposition": { "enum": ["admit", "observe", "discharge_ready"] },
+        "primary_diagnosis": { "type": "string", "minLength": 1 },
+        "overall_score": { "type": ["number", "null"] },
+        "next_protocol": { "enum": ["triage", "diagnose", "govern", "surgery_plan", "post_op"] },
+        "research_status": { "type": "string" }, "research_required": { "type": "boolean" },
+        "exit_criteria": { "type": "array", "items": { "type": "string" } },
+        "admission_reason": { "type": "string", "minLength": 1 },
+        "discharge_criteria": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "stateMachine": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "current_state", "disposition", "next_protocol", "states", "transitions"],
+      "properties": {
+        "schema": { "const": "code-intel-hospital-state-machine.v1" },
+        "current_state": { "type": "string" }, "disposition": { "type": "string" }, "next_protocol": { "type": "string" },
+        "states": { "type": "array", "minItems": 6, "items": { "type": "string" } }, "transitions": { "type": "array" }
+      }
+    },
+    "admission": {
+      "type": "object", "additionalProperties": false, "required": ["provider", "admissionIdentity"],
+      "properties": { "provider": { "type": "string", "minLength": 1 }, "admissionIdentity": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }
+    },
+    "reportQuality": {
+      "type": "object", "additionalProperties": false, "required": ["overall_score", "diagnostic_score", "governance_score", "dimensions"],
+      "properties": { "overall_score": { "type": "null" }, "diagnostic_score": { "type": "null" }, "governance_score": { "type": "null" }, "dimensions": { "type": "array" } }
+    },
+    "diagnosis": {
+      "type": "object", "additionalProperties": false, "required": ["findings", "impression", "risk", "evidence"],
+      "properties": { "findings": { "type": "array", "minItems": 1, "items": { "type": "string" } }, "impression": { "type": "string" }, "risk": { "type": "string" }, "evidence": { "type": "array", "items": { "$ref": "#/$defs/admission" } } }
+    },
+    "treatment": {
+      "type": "object", "additionalProperties": false, "required": ["plan", "follow_up"],
+      "properties": { "plan": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }, "follow_up": { "type": "array", "items": { "type": "string" } } }
+    },
+    "surgeryPlan": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "status", "admission", "primary_target", "operating_plan", "verification", "discharge_criteria"],
+      "properties": {
+        "schema": { "const": "code-intel-surgery-plan.v1" }, "status": { "enum": ["planned", "not_required"] },
+        "admission": { "type": "object" }, "primary_target": { "type": "object" },
+        "operating_plan": { "type": "array", "items": { "type": "string" } },
+        "verification": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "discharge_criteria": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+      }
+    }
+  }
+}

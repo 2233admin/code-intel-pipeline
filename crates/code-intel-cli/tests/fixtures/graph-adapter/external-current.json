@@ -1,0 +1,11 @@
+{
+  "providerMode": "external",
+  "status": "current",
+  "sourceRevision": "understand-r9",
+  "fallback": {
+    "identity": "understand-anything.compat.v1",
+    "activation": "explicit_fallback",
+    "reason": "operator selected compatibility provider"
+  },
+  "graphPresent": true
+}

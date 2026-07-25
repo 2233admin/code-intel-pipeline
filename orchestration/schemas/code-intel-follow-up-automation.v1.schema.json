@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-follow-up-automation.v1.schema.json",
+  "title": "Code Intel Follow-up Automation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "generatedAt", "evidence", "proactiveSkillSuggestions", "automaticPullRequests", "effects"],
+  "properties": {
+    "schema": { "const": "code-intel-follow-up-automation.v1" },
+    "generatedAt": { "type": "string", "minLength": 1 },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "proactiveSkillSuggestions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "suggestions", "effects"],
+      "properties": {
+        "status": { "enum": ["enabled", "disabled"] },
+        "suggestions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "skill", "trigger", "reasons", "kind", "effects"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "skill": { "type": "string", "minLength": 1 },
+              "trigger": { "type": "string", "minLength": 1 },
+              "reasons": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+              "kind": { "const": "proposal" },
+              "effects": { "type": "array", "maxItems": 0 }
+            }
+          }
+        },
+        "effects": { "type": "array", "maxItems": 0 }
+      }
+    },
+    "automaticPullRequests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["defaultEnabled", "configuredMode", "proposalStatus", "consentStatus", "decisionRequest", "executionStatus", "orchestrator", "executor", "requiredEffects", "effects"],
+      "properties": {
+        "defaultEnabled": { "const": false },
+        "configuredMode": { "enum": ["ask", "enabled", "disabled"] },
+        "proposalStatus": { "enum": ["not_applicable", "proposed"] },
+        "consentStatus": { "enum": ["unasked", "pending", "disabled", "explicit_mode_requested"] },
+        "decisionRequest": { "type": ["string", "null"] },
+        "executionStatus": { "const": "not_authorized" },
+        "orchestrator": { "const": "Invoke-CodeIntelAutomaticPullRequestFlow.ps1" },
+        "executor": { "const": "Invoke-CodeIntelAutomaticPullRequest.ps1" },
+        "requiredEffects": { "type": "array", "const": ["repo_mutation", "network"] },
+        "effects": { "type": "array", "maxItems": 0 }
+      }
+    },
+    "effects": { "type": "array", "maxItems": 0 }
+  }
+}

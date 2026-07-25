@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-model-executable-handle.v1.schema.json",
+  "title": "Code Intel content-bound executable handle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "adapter", "executablePath", "sha256", "length", "lastWriteTimeUtcTicks", "observedAt", "expiresAt", "identity"],
+  "properties": {
+    "schema": { "const": "code-intel-model-executable-handle.v1" },
+    "adapter": { "enum": ["claude_cli", "opencode_cli", "codex_cli"] },
+    "executablePath": { "type": "string", "minLength": 1 },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "length": { "type": "integer", "minimum": 0 },
+    "lastWriteTimeUtcTicks": { "type": "integer", "minimum": 0 },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "identity": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

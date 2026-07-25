@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-staged-artifact-set.v1",
+  "title": "Code Intel staged artifact set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "snapshotIdentity",
+    "artifacts"
+  ],
+  "properties": {
+    "schema": {
+      "const": "code-intel-staged-artifact-set.v1"
+    },
+    "snapshotIdentity": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifactRef"
+      }
+    }
+  },
+  "$defs": {
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "artifactSchema",
+        "type",
+        "path",
+        "sha256",
+        "consumedSnapshotIdentity"
+      ],
+      "properties": {
+        "schema": {
+          "const": "code-intel-artifact-ref.v1"
+        },
+        "artifactSchema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^objects/sha256/[0-9a-f]{64}$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "consumedSnapshotIdentity": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

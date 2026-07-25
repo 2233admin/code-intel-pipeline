@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-decision-cancellation.v1.schema.json",
+  "title": "Code Intel Decision Cancellation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "correlationId", "gapId", "actorProvenance", "timestamp", "reason"],
+  "properties": {
+    "schema": { "const": "code-intel-decision-cancellation.v1" },
+    "correlationId": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9._-]+$" },
+    "gapId": { "type": "string", "minLength": 1 },
+    "actorProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actorId", "authorityKind", "source"],
+      "properties": {
+        "actorId": { "type": "string", "minLength": 1 },
+        "authorityKind": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 }
+      }
+    },
+    "timestamp": { "type": "integer", "minimum": 0 },
+    "reason": { "type": "string", "minLength": 1 }
+  }
+}

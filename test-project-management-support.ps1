@@ -31,7 +31,7 @@ $domainPath = Join-Path $root "docs/agents/domain.md"
 $adrPath = Join-Path $root "docs/adr/0006-project-management-support-as-agent-intake.md"
 $contextPath = Join-Path $root "CONTEXT.md"
 $readmePath = Join-Path $root "README.md"
-$skillPath = Join-Path $root "skill/SKILL.md"
+$skillPath = Join-Path $root "skills/code-intel-pipeline/SKILL.md"
 
 $checks = @(
     @{
@@ -137,7 +137,7 @@ $checks = @(
     @{
         Path = $skillPath
         Pattern = "docs/project-management-support.md"
-        Message = "skill/SKILL.md must link project management support doc."
+        Message = "skills/code-intel-pipeline/SKILL.md must link project management support doc."
     }
 )
 

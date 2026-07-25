@@ -1,0 +1,40 @@
+{
+  "schema": "code-intel-ponytail-gate-policy.v1",
+  "changeKinds": ["artifact", "dependency", "abstraction", "file", "test", "documentation", "process"],
+  "operations": ["add", "delete", "reuse"],
+  "allowedCurrentValueSources": [
+    "operator_requested_outcome",
+    "committed_engineering_plan_deliverable",
+    "verified_defect_or_risk",
+    "required_contract_or_gate",
+    "evidence_closing_spike",
+    "approved_debt_reduction"
+  ],
+  "forbiddenValueSources": ["future_maybe"],
+  "firstSufficientSolutionRungs": [
+    "do_nothing",
+    "repository_reuse",
+    "standard_library",
+    "platform_native",
+    "installed_dependency",
+    "one_liner",
+    "smallest_local_implementation"
+  ],
+  "nonFilterableRequirements": [
+    "verification",
+    "evidence",
+    "safety",
+    "error_handling",
+    "accessibility",
+    "data_loss_prevention",
+    "artifact_contract"
+  ],
+  "bypassAuthoritySchema": "code-intel-authority-event.v1",
+  "rules": {
+    "currentValue": "every change must name one allowed current value source backed by known evidence",
+    "firstSufficient": "every rung below the selected rung must be rejected once with known evidence",
+    "protectedRequirements": "verification, evidence, safety, and the documented engineering boundaries cannot be filtered out",
+    "bypass": "only a scoped, approved, unexpired, unreplayed A05 authority event covering value-source, lower-rung, and all required trace evidence may bypass a value or rung rejection",
+    "modes": "report_only retains rejection traces without blocking; enforce blocks when any rejection remains"
+  }
+}

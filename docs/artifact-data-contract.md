@@ -20,6 +20,9 @@ Do not hand-edit artifact runs. Regenerate them with `invoke-code-intel.ps1` or 
 
 Machine-authoritative files:
 
+- `run-complete.json`: final Run Commit marker. Its `reportSha256` binds the
+  published `report.json`; a run without a valid marker is incomplete and must
+  not enter the authoritative artifact index.
 - `report.json`: scanner execution summary, step outcomes, raw and effective failure categories, artifact paths, and compact summaries.
 - `repomix-summary.json`: Repomix package metadata for the single-file AI context pack.
 - `sentrux-failures.json`: normalized Sentrux check/gate failures. `sentrux check` and `sentrux gate` stdout are authoritative; hotspots and file-details are enrichment only.
@@ -43,8 +46,49 @@ Tool evidence:
 - `repomix-output.md`, `repomix-output.xml`, `repomix-output.json`, `repomix-output.txt`
 - `sentrux-dsm.json`, `sentrux-file-details.json`, `sentrux-hotspots.json`, `sentrux-evolution.json`, `sentrux-what-if.json`
 - `codenexus-context.json`
+- Optional `session-evidence.json` using `code-intel-session-evidence.v1`. It is a privacy-reduced,
+  snapshot-bound session-review artifact with advisory-only authority; raw traces, prompts, event
+  summaries, user-message marks, absolute paths, and outside-path values are not published.
+- Optional `competitive-intelligence-request.json`, `competitive-intelligence-prompt.md`, and `competitive-score.json`. These are advisory market/product intelligence from the external `compete` workflow; they have no hospital, gate, or discharge authority.
 - Repowise Understand Anything outputs referenced `report.json`
 - Greenfield workspace outputs, when generated: `greenfield-workspace/output/specs`, `greenfield-workspace/output/test-vectors`, `greenfield-workspace/output/validation`, `greenfield-workspace/provenance`
+
+## Native Code Evidence Canonical Order
+
+The array order in native code-evidence artifacts is not semantic. Producers
+and parity checks use one canonical order so filesystem traversal order cannot
+change an otherwise equivalent result:
+
+- `files` and `ranking.files`: ascending by normalized `path`;
+- `symbols`: ascending by `file`, `startLine`, `kind`, then `name`;
+- `chunks`: ascending by `file`, `startLine`, `endLine`, then `id`;
+- symbol-to-chunk mappings: ascending by `symbolId`, then `chunkId`;
+- `imports`: ascending by `file`, `line`, then `target`.
+
+Only those array permutations are normalized. Ranking `score` and `reasons`,
+field values, and the cardinality shape of each value (`null`, scalar, or
+array) remain semantic and must match exactly.
+
+## Transactional Publication Contract
+
+Artifact production uses a staging directory named
+`<timestamp>.staging-<nonce>`. The scanner writes artifacts there, rewrites
+published path references, promotes the directory to its final timestamped
+name, and writes `run-complete.json` last. This compatibility contract binds
+and minimally validates `report.json`; it is not yet a whole-artifact manifest
+or snapshot validation protocol.
+
+`run-complete.json` uses schema `code-intel-run-commit.v1` and contains:
+
+- `generatedAt`: publication timestamp;
+- `report`: the repository-relative authoritative report path, currently
+  `report.json`;
+- `reportSha256`: lowercase SHA-256 of the published report bytes.
+
+Consumers and indexers must reject staging directories, missing or unparseable
+markers, unknown marker schemas, invalid digests, and report digest mismatches.
+Older timestamp directories without a marker remain readable only through an
+explicit direct path; they are not authoritative index candidates.
 
 ## Sentrux Failure Contract
 
@@ -113,6 +157,8 @@ Artifact consumers must preserve these fields:
 - `report.summary.effectiveFailed`
 - `report.summary.manualRequired`
 - `report.summary.failureCategories.providerQuota`
+- `report.summary.failureCategories.providerUnavailable`
+- `report.summary.failureCategories.configError`
 - `report.summary.failureCategories.localToolError`
 - `report.summary.failureCategories.graphMissing`
 - `report.summary.failureCategories.sentruxFail`

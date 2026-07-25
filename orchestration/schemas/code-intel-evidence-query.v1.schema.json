@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-evidence-query.v1.schema.json",
+  "title": "Code Intel verified evidence query result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "repo", "run", "runIdentity", "runOutcome", "authority", "snapshotIdentity", "freshness", "coverage", "confidence", "query", "matches"],
+  "properties": {
+    "schema": { "const": "code-intel-evidence-query.v1" },
+    "repo": { "type": "string", "minLength": 1 },
+    "run": { "type": "string", "minLength": 1 },
+    "runIdentity": { "type": "string", "pattern": "^dag-v1:([a-f0-9]{2})+$" },
+    "runOutcome": { "enum": ["completed", "domain_failed", "process_failed"] },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "indexSchema"],
+      "properties": {
+        "status": { "const": "committed" },
+        "indexSchema": { "const": "code-intel-artifact-index.v1" }
+      }
+    },
+    "snapshotIdentity": { "$ref": "#/$defs/digest" },
+    "freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "recordedIdentity", "currentIdentity", "workingTreePolicy", "scope"],
+      "properties": {
+        "status": { "enum": ["current", "stale", "unknown"] },
+        "recordedIdentity": { "$ref": "#/$defs/digest" },
+        "currentIdentity": { "oneOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] },
+        "workingTreePolicy": { "oneOf": [{ "enum": ["head_only", "explicit_overlay"] }, { "type": "null" }] },
+        "scope": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "availableArtifactTypes", "requestedEvidenceStatus", "unknowns"],
+      "properties": {
+        "status": { "enum": ["complete", "partial"] },
+        "availableArtifactTypes": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "requestedEvidenceStatus": { "enum": ["available", "unavailable", "not_requested"] },
+        "unknowns": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "confidence": { "enum": ["high", "limited"] },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactSchema", "type", "contains", "limit"],
+      "properties": {
+        "artifactSchema": { "type": ["string", "null"] },
+        "type": { "type": ["string", "null"] },
+        "contains": { "type": ["string", "null"] },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    },
+    "matches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["artifactRef", "matchedBy", "preview", "previewTruncated", "explanation"],
+        "properties": {
+          "artifactRef": { "$ref": "code-intel-run-manifest.v1.schema.json#/definitions/artifactRef" },
+          "matchedBy": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["all", "artifact_schema", "artifact_type", "content"] } },
+          "preview": { "type": "string" },
+          "previewTruncated": { "type": "boolean" },
+          "explanation": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

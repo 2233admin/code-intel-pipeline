@@ -1,0 +1,37 @@
+{
+  "schema": "code-intel-method-card.v1",
+  "id": "contract-testing",
+  "version": "1.0.0",
+  "name": "Contract testing",
+  "problemSignals": [
+    { "id": "integration-drift", "description": "Consumer expectations and provider behavior change independently." },
+    { "id": "late-interface-failure", "description": "Interface incompatibility is detected only in integrated environments." }
+  ],
+  "requiredEvidence": [
+    { "id": "consumer-provider-contracts", "description": "Versioned requests, responses, invariants, and compatibility expectations." },
+    { "id": "provider-verification-context", "description": "Deterministic provider state and verifier inputs for each interaction." }
+  ],
+  "assumptions": ["The interaction boundary can be isolated", "Examples encode externally observable behavior rather than implementation details"],
+  "deterministicSteps": [
+    { "id": "normalize-contracts", "action": "Normalize each consumer expectation into a versioned interaction contract.", "requires": ["evidence:consumer-provider-contracts"], "produces": ["contract-suite"] },
+    { "id": "verify-provider", "action": "Replay every normalized interaction against the declared provider state and record exact mismatches.", "requires": ["evidence:provider-verification-context", "step:normalize-contracts"], "produces": ["compatibility-report"] }
+  ],
+  "outputs": [
+    { "id": "contract-suite", "description": "Versioned executable interaction expectations." },
+    { "id": "compatibility-report", "description": "Per-interaction pass, fail, or unverifiable result with evidence." }
+  ],
+  "confidenceRules": [
+    { "level": "high", "whenAll": ["All production-relevant interactions are represented", "Provider states are reproducible", "Every contract passes"] },
+    { "level": "medium", "whenAll": ["Core interactions are represented", "Known optional interactions remain unverified"] },
+    { "level": "unknown", "whenAll": ["Provider state or interaction coverage cannot be established"] }
+  ],
+  "cost": { "relative": "medium", "drivers": ["Number of consumer-provider pairs", "Provider-state fixture maintenance"] },
+  "contraindications": ["The boundary has no observable contract", "Tests would assert private implementation details instead of compatibility"],
+  "implementationPorts": [
+    { "id": "contract-runner", "kind": "deterministic_tool", "contract": ["Accept versioned interactions and provider states", "Emit per-interaction evidence without deployment authority"] }
+  ],
+  "source": { "title": "Consumer-driven contract testing practice", "version": "catalog interpretation 1.0", "reference": "C01 engineering-method baseline" },
+  "applicabilityBoundary": { "inScope": ["Service APIs", "Message schemas", "Library-facing interfaces"], "outOfScope": ["Whole-system performance qualification", "Internal refactoring with no contract change"] },
+  "relatedMethodIds": ["strangler-migration"],
+  "executionPolicy": "catalog_only_no_selection_or_execution"
+}

@@ -1,0 +1,47 @@
+{
+  "case": "clean",
+  "provenance": {
+    "producer": "run-code-intel.ps1",
+    "snapshotIdentity": "git:clean-fixture-head",
+    "tools": ["git", "rg", "repowise", "sentrux"]
+  },
+  "missingEvidence": [],
+  "semanticBackslashSamples": ["deny\\allow", "tool\\name", "a\\b"],
+  "artifacts": {
+    "report": {
+      "repo": "parity-clean",
+      "mode": "normal",
+      "artifactDir": "{{TEMP_ROOT}}/artifacts/parity-clean/20260713-010203",
+      "paths": { "repo": "{{TEMP_ROOT}}/repos/parity-clean" },
+      "tools": { "git": true, "rg": true, "repowise": true, "sentrux": true },
+      "steps": [
+        { "name": "git status", "startedAt": "{{TIME}}", "finishedAt": "{{TIME}}", "status": "passed", "exitCode": 0, "output": "## main", "error": "" },
+        { "name": "rg file inventory", "startedAt": "{{TIME}}", "finishedAt": "{{TIME}}", "status": "passed", "exitCode": 0, "output": "files=12", "error": "" }
+      ],
+      "summary": {
+        "failed": 0,
+        "effectiveFailed": 0,
+        "manualRequired": 0,
+        "passed": 8,
+        "skipped": 0,
+        "failureCategories": { "providerQuota": 0, "localToolError": 0, "graphMissing": 0, "sentruxFail": 0 },
+        "effectiveFailureCategories": { "providerQuota": 0, "localToolError": 0, "graphMissing": 0, "sentruxFail": 0 },
+        "blockingSentruxDebt": 0,
+        "knownSentruxDebt": 0
+      },
+      "understanding": "{{TEMP_ROOT}}/artifacts/parity-clean/20260713-010203/understanding.md"
+    },
+    "hospital": {
+      "schema": "code-intel-hospital.v1",
+      "generatedAt": "{{TIME}}",
+      "repo": "parity-clean",
+      "artifacts": { "report": "{{TEMP_ROOT}}/artifacts/parity-clean/20260713-010203/report.json" },
+      "triage": { "status": "green", "disposition": "discharge_ready", "primary_diagnosis": "clean run", "next_protocol": "discharge", "research_status": "not_applicable", "research_required": false },
+      "state_machine": { "current_state": "discharge_ready" },
+      "modalities": [
+        { "name": "xray", "status": "passed", "artifact": "{{TEMP_ROOT}}/artifacts/parity-clean/20260713-010203/files.txt" },
+        { "name": "anatomy", "status": "passed", "artifact": "{{TEMP_ROOT}}/repos/parity-clean/.understand-anything/knowledge-graph.json" }
+      ]
+    }
+  }
+}

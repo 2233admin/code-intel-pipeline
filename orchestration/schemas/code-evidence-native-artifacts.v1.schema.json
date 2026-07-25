@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://code-intel.local/schemas/code-evidence-native-artifacts.v1.schema.json",
+  "title": "Native Code Evidence stable v1 artifacts",
+  "oneOf": [
+    { "$ref": "#/$defs/files" },
+    { "$ref": "#/$defs/symbols" },
+    { "$ref": "#/$defs/chunks" },
+    { "$ref": "#/$defs/symbolChunks" },
+    { "$ref": "#/$defs/imports" },
+    { "$ref": "#/$defs/scorecard" },
+    { "$ref": "#/$defs/coverage" },
+    { "$ref": "#/$defs/ranking" }
+  ],
+  "$defs": {
+    "path": { "type": "string", "minLength": 1, "not": { "pattern": "(^|/)\\.\\.(/|$)" } },
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "files": {
+      "type": "object", "additionalProperties": false, "required": ["schema", "files"],
+      "properties": {
+        "schema": { "const": "code-evidence-files.v1" },
+        "files": { "type": "array", "items": { "$ref": "#/$defs/file" } }
+      }
+    },
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "language", "bytes", "lines", "textHash", "source"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" }, "language": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 0 }, "lines": { "type": "integer", "minimum": 0 },
+        "textHash": { "$ref": "#/$defs/digest" }, "source": { "const": "native-minimal" }
+      }
+    },
+    "symbols": {
+      "type": "object", "additionalProperties": false, "required": ["schema", "symbols"],
+      "properties": { "schema": { "const": "code-evidence-symbols.v1" }, "symbols": { "type": "array", "items": { "$ref": "#/$defs/symbol" } } }
+    },
+    "symbol": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "name", "file", "startLine", "endLine", "language", "confidence", "source"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 }, "kind": { "type": "string", "minLength": 1 }, "name": { "type": "string", "minLength": 1 },
+        "file": { "$ref": "#/$defs/path" }, "startLine": { "type": "integer", "minimum": 1 }, "endLine": { "type": "integer", "minimum": 1 },
+        "language": { "type": "string", "minLength": 1 }, "confidence": { "const": 0.55 }, "source": { "const": "native-minimal" }
+      }
+    },
+    "chunks": {
+      "type": "object", "additionalProperties": false, "required": ["schema", "chunks"],
+      "properties": { "schema": { "const": "code-evidence-chunks.v1" }, "chunks": { "type": "array", "items": { "$ref": "#/$defs/chunk" } } }
+    },
+    "chunk": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "file", "startLine", "endLine", "kind", "containsSymbols", "textHash", "source"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 }, "file": { "$ref": "#/$defs/path" },
+        "startLine": { "type": "integer", "minimum": 1 }, "endLine": { "type": "integer", "minimum": 1 }, "kind": { "const": "file" },
+        "containsSymbols": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "textHash": { "$ref": "#/$defs/digest" }, "source": { "const": "native-minimal" }
+      }
+    },
+    "symbolChunks": {
+      "type": "object", "additionalProperties": false, "required": ["schema", "mappings"],
+      "properties": {
+        "schema": { "const": "code-evidence-symbol-chunks.v1" },
+        "mappings": { "type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["symbolId", "chunkId", "relation", "confidence"],
+          "properties": { "symbolId": { "type": "string", "minLength": 1 }, "chunkId": { "type": "string", "minLength": 1 }, "relation": { "const": "contained_by" }, "confidence": { "const": 0.55 } }
+        } }
+      }
+    },
+    "imports": {
+      "type": "object", "additionalProperties": false, "required": ["schema", "imports"],
+      "properties": { "schema": { "const": "code-evidence-imports.v1" }, "imports": { "type": "array", "items": { "$ref": "#/$defs/import" } } }
+    },
+    "import": {
+      "type": "object", "additionalProperties": false,
+      "required": ["file", "line", "target", "language", "confidence", "source"],
+      "properties": { "file": { "$ref": "#/$defs/path" }, "line": { "type": "integer", "minimum": 1 }, "target": { "type": "string", "minLength": 1 }, "language": { "type": "string", "minLength": 1 }, "confidence": { "const": 0.6 }, "source": { "const": "native-minimal" } }
+    },
+    "scorecard": {
+      "type": "object", "additionalProperties": false, "required": ["schema", "status", "nativeMinimal", "adapters", "metrics", "coverage"],
+      "properties": {
+        "schema": { "const": "code-evidence-scorecard.v1" }, "status": { "const": "ok" }, "nativeMinimal": { "const": true },
+        "adapters": { "type": "array", "maxItems": 0 }, "metrics": { "type": "object" }, "coverage": { "type": "object" }
+      }
+    },
+    "coverage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "producer", "parserKind", "supportedHeuristics", "unsupportedFiles", "symbolPrecision", "importPrecision", "relationshipPrecision", "callGraph", "effects"],
+      "properties": {
+        "schema": { "const": "code-evidence-coverage.v1" }, "producer": { "const": "native-minimal" }, "parserKind": { "const": "line-heuristic" },
+        "supportedHeuristics": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "unsupportedFiles": { "type": "array", "items": { "$ref": "#/$defs/path" }, "uniqueItems": true },
+        "symbolPrecision": { "const": "heuristic" }, "importPrecision": { "const": "heuristic" },
+        "relationshipPrecision": { "const": "unknown" }, "callGraph": { "const": "unknown" },
+        "effects": { "const": ["repo_read", "local_write"] }
+      }
+    },
+    "ranking": {
+      "type": "object", "additionalProperties": false, "required": ["schema", "strategy", "files"],
+      "properties": {
+        "schema": { "const": "agent-code-slice-ranking.v1" }, "strategy": { "const": "native-evidence-default" },
+        "files": { "type": "array", "items": { "type": "object" } }
+      }
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://code-intel.local/schemas/code-intel-run-manifest.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "runIdentity", "snapshotIdentity", "outcome", "nodes"],
+  "properties": {
+    "schema": { "const": "code-intel-run-manifest.v1" },
+    "runIdentity": { "$ref": "#/definitions/runIdentity" },
+    "snapshotIdentity": { "$ref": "#/definitions/digest" },
+    "outcome": { "enum": ["completed", "domain_failed", "domain_unknown", "process_failed", "incomplete"] },
+    "nodes": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+      "additionalProperties": { "$ref": "#/definitions/nodeState" }
+    }
+  },
+  "definitions": {
+    "runIdentity": { "type": "string", "pattern": "^dag-v1:([a-f0-9]{2})+$" },
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "artifactSchema", "type", "path", "sha256", "consumedSnapshotIdentity"],
+      "properties": {
+        "schema": { "const": "code-intel-artifact-ref.v1" },
+        "artifactSchema": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/definitions/digest" },
+        "consumedSnapshotIdentity": { "$ref": "#/definitions/digest" }
+      }
+    },
+    "nodeState": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["status"], "properties": { "status": { "const": "pending" } } },
+        { "type": "object", "additionalProperties": false, "required": ["status"], "properties": { "status": { "const": "running" } } },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "verdict", "artifacts"],
+          "properties": {
+            "status": { "const": "succeeded" },
+            "verdict": { "enum": ["pass", "unknown", "not_applicable"] },
+            "artifacts": { "type": "array", "items": { "$ref": "#/definitions/artifactRef" } }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "verdict", "diagnostic", "artifacts"],
+          "properties": {
+            "status": { "const": "domain_failed" },
+            "verdict": { "const": "fail" },
+            "diagnostic": { "type": "string", "minLength": 1 },
+            "artifacts": { "type": "array", "items": { "$ref": "#/definitions/artifactRef" } }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "failure", "diagnostic"],
+          "properties": {
+            "status": { "const": "process_failed" },
+            "failure": { "enum": ["contract", "unavailable", "internal", "io"] },
+            "diagnostic": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "blockedBy"],
+          "properties": {
+            "status": { "const": "dependency_blocked" },
+            "blockedBy": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } }
+          }
+        }
+      ]
+    }
+  }
+}

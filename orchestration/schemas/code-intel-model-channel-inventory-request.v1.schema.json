@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-model-channel-inventory-request.v1.schema.json",
+  "title": "Code Intel model channel inventory request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "discover", "userCandidates"],
+  "properties": {
+    "schema": { "const": "code-intel-model-channel-inventory-request.v1" },
+    "discover": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["ollama", "claude_cli", "opencode_cli", "codex_cli", "cc_switch"] }
+    },
+    "userCandidates": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "channelKind", "provider", "model", "costScope", "endpointConfigured", "externalEgress"],
+        "properties": {
+          "id": { "$ref": "#/$defs/nonempty" },
+          "channelKind": { "const": "local_compatible" },
+          "provider": { "type": ["string", "null"], "minLength": 1 },
+          "model": { "type": ["string", "null"], "minLength": 1 },
+          "costScope": { "$ref": "#/$defs/costScope" },
+          "endpointConfigured": { "type": "boolean" },
+          "externalEgress": { "type": "boolean" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "nonempty": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "costScope": { "enum": ["local_compute", "subscription_cli", "free_or_internal_quota", "metered_api"] }
+  }
+}

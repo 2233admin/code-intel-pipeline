@@ -1,0 +1,27 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.mattpocock-skills-record",
+  "projectId": "code-intel-pipeline",
+  "subject": { "name": "mattpocock/skills absorbed project-management concepts", "kind": "selectively_owned_implementation", "source": { "uri": "https://github.com/mattpocock/skills", "revision": "unverified-upstream; local-adr-sha256:1431a4dfbe2462f67ea541842000e1c9f94c2cb71b1b168ae558b332245d97ec" }, "license": { "id": "UNKNOWN-RESEARCH-ONLY", "obligations": ["do not distribute, vendor, invoke, or production-enable until exact upstream revision and license text are verified", "retain attribution for issue, triage, domain-documentation, and workflow concept traces"] } },
+  "adoption": {
+    "rung": "reimplement",
+    "ownedBoundary": ["issue-tracker choice contract", "triage label vocabulary", "domain-documentation layout", "idea-to-ship workflow advisory concept", "no mattpocock/skills runtime dependency or external-write authority"],
+    "necessityEvidence": { "evidenceIds": ["local:adr-0006:absorbed-concepts", "gap:mattpocock-skills:upstream-revision", "gap:mattpocock-skills:license"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "compatibilityEvidence": { "evidenceIds": ["local:project-management-support:no-runtime", "local:b06:no-external-write-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "conformanceEvidence": { "evidenceIds": ["local:trace:issue-choice", "local:trace:triage-vocabulary", "local:trace:domain-doc-layout", "local:trace:workflow-concept"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+  },
+  "economics": { "benefit": { "metric": "retained concepts independently traced to pipeline-owned boundaries", "value": 4, "unit": "concepts" }, "cost": { "metric": "pipeline-owned concept trace entries", "value": 4, "unit": "entries" }, "benefitEvidence": { "evidenceIds": ["local:trace:issue-choice", "local:trace:triage-vocabulary", "local:trace:domain-doc-layout", "local:trace:workflow-concept"], "checkedAt": 1783900800, "expiresAt": 1791676800 }, "costEvidence": { "evidenceIds": ["local:record:mattpocock-skills"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "assurance": { "maintenanceEvidence": { "evidenceIds": ["gap:mattpocock-skills:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 }, "securityEvidence": { "evidenceIds": ["gap:mattpocock-skills:security-review"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "update": { "policy": "Before 2026-10-11, verify upstream revision/license and recheck each retained concept; delete any concept without behavioral evidence", "nextCheckAt": 1791676800, "evidence": { "evidenceIds": ["gap:mattpocock-skills:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "ownedModifications": [
+    { "path": "docs/adr/0006-project-management-support-as-agent-intake.md", "description": "Pipeline-owned issue-tracker choice boundary", "evidenceIds": ["local:trace:issue-choice"] },
+    { "path": "docs/project-management-support.md", "description": "Pipeline-owned triage vocabulary boundary", "evidenceIds": ["local:trace:triage-vocabulary"] },
+    { "path": "docs/project-management-support.md", "description": "Pipeline-owned domain-documentation layout boundary", "evidenceIds": ["local:trace:domain-doc-layout"] },
+    { "path": "docs/openspec-detector.md", "description": "Pipeline-owned idea-to-ship workflow advisory concept", "evidenceIds": ["local:trace:workflow-concept", "local:b06:no-external-write-boundary"] }
+  ],
+  "rollback": { "strategy": "remove individual unused source references while retaining pipeline-owned project-management contracts and audit history", "evidence": { "evidenceIds": ["local:reference-map:replace-independently"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "exit": { "strategy": "retire the source reference independently; retain only concepts with local behavioral contracts or replace their provenance", "replacementCriteria": ["every retained concept has an independent local contract and conformance test", "unused concepts are deleted", "no external-write authority is introduced"], "evidence": { "evidenceIds": ["local:reference-map:replace-independently"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "retirement": { "status": "candidate", "triggers": ["upstream revision/license remains unverifiable", "a retained concept lacks independent evidence", "the source reference creates runtime or external-write coupling"], "evidence": { "evidenceIds": ["local:record:mattpocock-skills"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "lifecycle": { "previousStatus": null, "status": "research", "effectiveAt": 1783900800, "replacementRecordId": null, "evidenceIds": ["local:record:mattpocock-skills", "gap:mattpocock-skills:upstream-revision", "gap:mattpocock-skills:license"], "authorityEvent": null },
+  "provenance": { "recordedAt": 1783900800, "recordedBy": "dependency-expert" }
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "code-intel-compatibility-retirement-manifest.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "snapshotIdentity", "retirementId", "approvalSubject", "independentApproval"],
+  "properties": {
+    "schema": { "const": "code-intel-compatibility-retirement-manifest.v1" },
+    "snapshotIdentity": { "type": "string", "minLength": 1 },
+    "retirementId": { "$ref": "#/definitions/id" },
+    "approvalSubject": {
+      "type": "object", "additionalProperties": false,
+      "required": ["legacyBranch", "replacement", "parity", "registryReconciliation", "compatibilityWindow", "rollback", "usageObservation", "necessityEvidence", "dependencyStates", "lineReductionEvidence"],
+      "properties": {
+        "legacyBranch": { "type": "object", "additionalProperties": false, "required": ["capabilityId", "branchId", "callPath", "affectedFiles", "owner", "registryParticipantId"], "properties": { "capabilityId": { "$ref": "#/definitions/id" }, "branchId": { "$ref": "#/definitions/id" }, "callPath": { "type": "string", "pattern": "^[^\\\\/:]+(?:/[^\\\\/:]+)*::[^:]+$" }, "affectedFiles": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^[^\\\\/:]+(?:/[^\\\\/:]+)*$" } }, "owner": { "$ref": "#/definitions/id" }, "registryParticipantId": { "$ref": "#/definitions/id" } } },
+        "replacement": { "type": "object", "additionalProperties": false, "required": ["capabilityId", "implementationId", "dependencies", "atomEvidence"], "properties": { "capabilityId": { "$ref": "#/definitions/id" }, "implementationId": { "$ref": "#/definitions/id" }, "dependencies": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/definitions/id" } }, "atomEvidence": { "$ref": "#/definitions/ref" } } },
+        "parity": { "type": "object", "additionalProperties": false, "required": ["golden", "contract", "effects"], "properties": { "golden": { "$ref": "#/definitions/ref" }, "contract": { "$ref": "#/definitions/ref" }, "effects": { "$ref": "#/definitions/ref" } } },
+        "registryReconciliation": { "$ref": "#/definitions/ref" },
+        "compatibilityWindow": { "$ref": "#/definitions/ref" },
+        "rollback": { "type": "object", "additionalProperties": false, "required": ["command", "executionEvidence"], "properties": { "command": { "type": "string", "minLength": 1 }, "executionEvidence": { "$ref": "#/definitions/ref" } } },
+        "usageObservation": { "$ref": "#/definitions/ref" },
+        "necessityEvidence": { "$ref": "#/definitions/ref" },
+        "dependencyStates": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/definitions/ref" } },
+        "lineReductionEvidence": { "const": false }
+      }
+    },
+    "independentApproval": { "$ref": "#/definitions/ref" }
+  },
+  "definitions": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "sha": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "ref": { "type": "object", "additionalProperties": false, "required": ["schema", "artifactSchema", "type", "path", "sha256", "consumedSnapshotIdentity"], "properties": { "schema": { "const": "code-intel-artifact-ref.v1" }, "artifactSchema": { "const": "code-intel-compatibility-retirement-evidence.v1" }, "type": { "const": "compatibility.retirement-evidence" }, "path": { "type": "string", "minLength": 1 }, "sha256": { "$ref": "#/definitions/sha" }, "consumedSnapshotIdentity": { "type": "string", "minLength": 1 } } }
+  }
+}

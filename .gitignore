@@ -17,6 +17,8 @@ __pycache__/
 artifacts/
 cache/
 dist/
+work/
+node_modules/
 
 # Rust build artifacts (CodeNexus Lite + future crates)
 target/

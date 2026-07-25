@@ -1,0 +1,95 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.frontier-quality-loop-record",
+  "projectId": "code-intel-pipeline",
+  "subject": {
+    "name": "frontier quality-loop design reference",
+    "kind": "design_reference",
+    "source": {
+      "uri": "https://github.com/apoorvjain25/frontier",
+      "revision": "0b39eee3ec9ed0905ad7303772653c7e9bd17831; local-doc-sha256:0c45f253c6436414ba73ad6b11acd53b760073b67387f02c01ceccb49bbadb93"
+    },
+    "license": {
+      "id": "MIT",
+      "obligations": [
+        "retain the Frontier copyright and MIT permission notice when distributing copied text or substantial portions",
+        "keep source and pinned revision attribution in the Pipeline-owned semantic note"
+      ]
+    }
+  },
+  "adoption": {
+    "rung": "reimplement",
+    "ownedBoundary": [
+      "Pipeline-owned semantics for evidence-bound findings, author-reviewer separation, earned stop conditions, and advisory rule-candidate distillation",
+      "no Frontier runtime dependency, skill installation, agent invocation, craft-standard vendoring, automatic policy mutation, or model-routing authority"
+    ],
+    "necessityEvidence": {
+      "evidenceIds": ["local:frontier-quality-loop:semantic-map", "local:frontier-analysis:code-intel-slice", "gap:frontier:representative-defect-capture-measurement"],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    },
+    "compatibilityEvidence": {
+      "evidenceIds": ["local:frontier-quality-loop:existing-owner-map", "local:frontier-quality-loop:no-runtime-coupling"],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    },
+    "conformanceEvidence": {
+      "evidenceIds": ["local:frontier-quality-loop:four-semantics", "local:frontier-quality-loop:distillation-shape", "gap:frontier:independent-conformance-review"],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    }
+  },
+  "economics": {
+    "benefit": { "metric": "selectively absorbed quality-loop semantics", "value": 4, "unit": "semantics" },
+    "cost": { "metric": "new runtime dependencies or production invocations", "value": 0, "unit": "dependencies" },
+    "benefitEvidence": { "evidenceIds": ["local:frontier-quality-loop:four-semantics", "gap:frontier:representative-defect-capture-measurement"], "checkedAt": 1784073600, "expiresAt": 1791849600 },
+    "costEvidence": { "evidenceIds": ["local:frontier-quality-loop:no-runtime-coupling"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "assurance": {
+    "maintenanceEvidence": { "evidenceIds": ["local:frontier:revision-pinned", "gap:frontier:update-review"], "checkedAt": 1784073600, "expiresAt": 1791849600 },
+    "securityEvidence": { "evidenceIds": ["local:frontier-quality-loop:no-runtime-coupling", "gap:frontier:independent-security-review"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "update": {
+    "policy": "Before 2026-10-13, compare the pinned revision with upstream and measure whether distilled rule candidates catch repeated defects without creating noisy or automatic policy changes",
+    "nextCheckAt": 1791849600,
+    "evidence": { "evidenceIds": ["gap:frontier:update-review", "gap:frontier:representative-defect-capture-measurement"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "ownedModifications": [
+    {
+      "path": "docs/frontier-quality-loop.md",
+      "description": "Pipeline-owned selective semantic mapping and advisory rule-candidate contract",
+      "evidenceIds": ["local:frontier-quality-loop:semantic-map", "local:frontier-quality-loop:distillation-shape", "local:frontier-quality-loop:no-runtime-coupling"]
+    }
+  ],
+  "rollback": {
+    "strategy": "delete the semantic note and this research record; existing artifact, verifier, Sentrux, and completion contracts remain unchanged",
+    "evidence": { "evidenceIds": ["local:frontier-quality-loop:existing-owner-map", "local:frontier-quality-loop:no-runtime-coupling"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "exit": {
+    "strategy": "remove Frontier attribution after the four semantics are independently specified and regression-tested, or retire the semantics if measurement shows no value",
+    "replacementCriteria": [
+      "local contracts preserve evidence-bound findings and explicit unverified states",
+      "independent review and earned completion remain covered by executable checks",
+      "rule candidates cannot mutate governed policy without maintainer authority"
+    ],
+    "evidence": { "evidenceIds": ["local:frontier-quality-loop:existing-owner-map", "gap:frontier:representative-defect-capture-measurement"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "retirement": {
+    "status": "candidate",
+    "triggers": [
+      "the source revision or license can no longer be verified",
+      "the semantics duplicate executable Pipeline contracts without adding defect-capture value",
+      "distillation creates noisy rules or bypasses maintainer authority"
+    ],
+    "evidence": { "evidenceIds": ["local:record:frontier-quality-loop", "gap:frontier:representative-defect-capture-measurement"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "lifecycle": {
+    "previousStatus": null,
+    "status": "research",
+    "effectiveAt": 1784073600,
+    "replacementRecordId": null,
+    "evidenceIds": ["local:record:frontier-quality-loop", "local:frontier:revision-pinned", "gap:frontier:representative-defect-capture-measurement", "gap:frontier:independent-conformance-review", "gap:frontier:update-review", "gap:frontier:independent-security-review"],
+    "authorityEvent": null
+  },
+  "provenance": { "recordedAt": 1784073600, "recordedBy": "codex-frontier-review" }
+}

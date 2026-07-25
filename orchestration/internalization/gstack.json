@@ -1,0 +1,22 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.gstack-record",
+  "projectId": "code-intel-pipeline",
+  "subject": { "name": "gstack advisory candidate", "kind": "design_reference", "source": { "uri": "unverified-upstream:gstack; local-reference=docs/openspec-detector.md", "revision": "unverified-upstream; local-doc-sha256:02d4b04482a1bdb3650a4bd27e500a79ec675dc86ecbacb4780a9de54a710d2a" }, "license": { "id": "UNKNOWN-RESEARCH-ONLY", "obligations": ["do not distribute, vendor, invoke, or production-enable until canonical upstream URI, exact revision, and license are verified", "retain the local reference provenance and gap notice"] } },
+  "adoption": {
+    "rung": "reimplement",
+    "ownedBoundary": ["pipeline-owned delivery and quality advisory candidate data only", "no gstack runtime dependency", "no skill execution, deployment, commit, publish, or external-write authority"],
+    "necessityEvidence": { "evidenceIds": ["local:reference-capability-map:gstack-row", "gap:gstack:canonical-source", "gap:gstack:upstream-revision", "gap:gstack:license"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "compatibilityEvidence": { "evidenceIds": ["local:b06:proposal-effects-empty", "local:b06:no-execution-authority"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "conformanceEvidence": { "evidenceIds": ["local:atom:one-gstack-branch", "local:b06:a01-envelope-parity"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+  },
+  "economics": { "benefit": { "metric": "gstack candidate branches traced in the advisory atom", "value": 1, "unit": "branches" }, "cost": { "metric": "pipeline-owned gstack lifecycle records", "value": 1, "unit": "records" }, "benefitEvidence": { "evidenceIds": ["local:atom:one-gstack-branch"], "checkedAt": 1783900800, "expiresAt": 1791676800 }, "costEvidence": { "evidenceIds": ["local:record:gstack"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "assurance": { "maintenanceEvidence": { "evidenceIds": ["gap:gstack:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 }, "securityEvidence": { "evidenceIds": ["gap:gstack:security-review"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "update": { "policy": "Before 2026-10-11, establish canonical source URI, exact revision, license, release status, and relevant workflow semantics", "nextCheckAt": 1791676800, "evidence": { "evidenceIds": ["gap:gstack:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "ownedModifications": [ { "path": "OpenSpec-Detector.ps1", "description": "Pipeline-owned gstack delivery/quality recommendation branch; does not execute gstack", "evidenceIds": ["local:atom:one-gstack-branch", "local:b06:no-execution-authority"] } ],
+  "rollback": { "strategy": "delete the gstack candidate record and alternative while preserving facts, plan authority, and proposal schema", "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "exit": { "strategy": "replace with a pinned licensed delivery/quality candidate or retire the reference", "replacementCriteria": ["canonical provenance and license are verified", "replacement passes conformance, measurement, and zero-execution-authority tests"], "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "retirement": { "status": "candidate", "triggers": ["canonical source cannot be established", "candidate adds no unique measured advisory value", "execution-authority isolation regresses"], "evidence": { "evidenceIds": ["local:record:gstack"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "lifecycle": { "previousStatus": null, "status": "research", "effectiveAt": 1783900800, "replacementRecordId": null, "evidenceIds": ["local:record:gstack", "gap:gstack:canonical-source", "gap:gstack:upstream-revision", "gap:gstack:license"], "authorityEvent": null },
+  "provenance": { "recordedAt": 1783900800, "recordedBy": "dependency-expert" }
+}

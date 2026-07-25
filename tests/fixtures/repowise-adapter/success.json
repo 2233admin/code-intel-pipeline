@@ -1,0 +1,20 @@
+{
+  "schema": "code-intel-repowise-native-result.v1",
+  "implementation": { "version": "0.9.0", "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+  "sourceRevision": "repowise-r1",
+  "snapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "collectedAt": 1700000000,
+  "cli": { "status": "available" },
+  "health": { "status": "healthy" },
+  "index": {
+    "status": "current",
+    "observedAt": 1700000000,
+    "payload": { "schema": "code-intel-artifact-ref.v1", "artifactSchema": "code-intel-evidence-payload.v1", "type": "observed.evidence.payload", "path": "index-payload.json", "sha256": "1b58738176059cf37c82aea3b9201f91700355aba69d7748e1f191fb18a19966", "consumedSnapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+  },
+  "docs": {
+    "status": "complete",
+    "observedAt": 1700000000,
+    "payload": { "schema": "code-intel-artifact-ref.v1", "artifactSchema": "code-intel-evidence-payload.v1", "type": "observed.evidence.payload", "path": "docs-payload.json", "sha256": "a4cb5c13516dea88fdbe562f5b2eba39b98da8c936054e09c26df4351b5cdd66", "consumedSnapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+  },
+  "diagnostic": "ANTHROPIC_API_KEY=super-secret sk-live-123"
+}

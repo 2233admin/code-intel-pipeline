@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-notice-provenance.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "recordId", "noticeText", "provenance"],
+  "properties": {
+    "schema": { "const": "code-intel-notice-provenance.v1" },
+    "recordId": { "$ref": "#/$defs/id" }, "noticeText": { "$ref": "#/$defs/id" },
+    "provenance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source", "revision", "license", "ownedModifications", "recordedAt", "recordedBy"],
+      "properties": {
+        "source": { "$ref": "#/$defs/id" }, "revision": { "$ref": "#/$defs/id" },
+        "license": {
+          "type": "object", "additionalProperties": false, "required": ["id", "obligations"],
+          "properties": { "id": { "$ref": "#/$defs/id" }, "obligations": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } } }
+        },
+        "ownedModifications": {
+          "type": "array", "items": {
+            "type": "object", "additionalProperties": false, "required": ["path", "description", "evidenceIds"],
+            "properties": { "path": { "$ref": "#/$defs/id" }, "description": { "$ref": "#/$defs/id" }, "evidenceIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } } }
+          }
+        },
+        "recordedAt": { "type": "integer", "minimum": 0 }, "recordedBy": { "$ref": "#/$defs/id" }
+      }
+    }
+  },
+  "$defs": { "id": { "type": "string", "minLength": 1 } }
+}

@@ -1,0 +1,37 @@
+{
+  "schema": "code-intel-method-card.v1",
+  "id": "critical-path-pert",
+  "version": "1.0.0",
+  "name": "Critical path and PERT analysis",
+  "problemSignals": [
+    { "id": "schedule-slippage", "description": "Delivery dates move without a traceable dependency explanation." },
+    { "id": "dependency-congestion", "description": "Multiple activities wait on shared predecessors or scarce resources." }
+  ],
+  "requiredEvidence": [
+    { "id": "activity-network", "description": "Activities with explicit predecessor relationships and completion criteria." },
+    { "id": "activity-duration-estimates", "description": "Optimistic, most-likely, and pessimistic durations or justified fixed durations." }
+  ],
+  "assumptions": ["The activity graph is acyclic", "Duration estimates use a consistent unit and scope"],
+  "deterministicSteps": [
+    { "id": "validate-network", "action": "Validate activity identities, predecessor closure, acyclicity, and duration units.", "requires": ["evidence:activity-network", "evidence:activity-duration-estimates"], "produces": ["validated-network"] },
+    { "id": "calculate-paths", "action": "Compute expected durations, earliest/latest times, slack, and critical paths using declared formulas.", "requires": ["step:validate-network"], "produces": ["schedule-model"] }
+  ],
+  "outputs": [
+    { "id": "validated-network", "description": "Closed dependency graph with normalized duration evidence." },
+    { "id": "schedule-model", "description": "Expected schedule, slack, critical activities, and uncertainty assumptions." }
+  ],
+  "confidenceRules": [
+    { "level": "high", "whenAll": ["All dependencies are evidenced", "Duration ranges are calibrated from comparable work"] },
+    { "level": "medium", "whenAll": ["Dependency closure is complete", "Some durations rely on expert estimates"] },
+    { "level": "unknown", "whenAll": ["The graph is incomplete or cyclic", "Duration units or scopes conflict"] }
+  ],
+  "cost": { "relative": "medium", "drivers": ["Activity count", "Estimate calibration effort", "Dependency volatility"] },
+  "contraindications": ["Work cannot be decomposed into dependency-linked activities", "Resource contention dominates but is absent from the model"],
+  "implementationPorts": [
+    { "id": "network-scheduler", "kind": "deterministic_tool", "contract": ["Reject cycles and missing predecessors", "Emit formulas, slack, and all critical paths"] }
+  ],
+  "source": { "title": "Critical Path Method and Program Evaluation and Review Technique", "version": "catalog interpretation 1.0", "reference": "Established network scheduling practice" },
+  "applicabilityBoundary": { "inScope": ["Dependency-driven delivery planning", "Schedule sensitivity analysis"], "outOfScope": ["Product priority decisions", "Unmodeled resource-allocation optimization"] },
+  "relatedMethodIds": ["value-stream-queue-delay"],
+  "executionPolicy": "catalog_only_no_selection_or_execution"
+}

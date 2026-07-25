@@ -1,0 +1,9 @@
+{
+  "providerMode": "full",
+  "status": "current",
+  "providerId": "codenexus.full",
+  "implementationId": "codenexus.service.v1",
+  "sourceRevision": "full-revision-7",
+  "activation": "primary",
+  "effects": ["network_provider", "read_provider_artifact"]
+}

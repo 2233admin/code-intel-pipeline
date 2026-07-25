@@ -1,0 +1,89 @@
+{
+  "artifacts": {
+    "hospital": {
+      "artifacts": {
+        "report": "<TEMP_ROOT>/artifacts/parity-domain-fail/20260713-010203/report.json"
+      },
+      "generatedAt": "<TIME>",
+      "modalities": [
+        {
+          "artifact": "<TEMP_ROOT>/artifacts/parity-domain-fail/20260713-010203/sentrux-failures.json",
+          "finding": "src/domain.rs exceeds max_cc",
+          "name": "governance",
+          "status": "failed"
+        }
+      ],
+      "repo": "parity-domain-fail",
+      "schema": "code-intel-hospital.v1",
+      "state_machine": {
+        "current_state": "github_solution_research"
+      },
+      "triage": {
+        "disposition": "admit",
+        "next_protocol": "github_solution_research",
+        "primary_diagnosis": "new structural debt",
+        "research_required": true,
+        "research_status": "manual_required",
+        "status": "red"
+      }
+    },
+    "report": {
+      "artifactDir": "<TEMP_ROOT>/artifacts/parity-domain-fail/20260713-010203",
+      "mode": "normal",
+      "paths": {
+        "repo": "<TEMP_ROOT>/repos/parity-domain-fail"
+      },
+      "repo": "parity-domain-fail",
+      "steps": [
+        {
+          "error": "sentrux_fail",
+          "exitCode": 2,
+          "finishedAt": "<TIME>",
+          "name": "sentrux check",
+          "output": "max_cc exceeded: src/domain.rs",
+          "startedAt": "<TIME>",
+          "status": "failed"
+        }
+      ],
+      "summary": {
+        "blockingSentruxDebt": 1,
+        "effectiveFailed": 1,
+        "effectiveFailureCategories": {
+          "graphMissing": 0,
+          "localToolError": 0,
+          "providerQuota": 0,
+          "sentruxFail": 1
+        },
+        "failed": 1,
+        "failureCategories": {
+          "graphMissing": 0,
+          "localToolError": 0,
+          "providerQuota": 0,
+          "sentruxFail": 1
+        },
+        "knownSentruxDebt": 0,
+        "manualRequired": 0,
+        "passed": 5,
+        "skipped": 1
+      },
+      "tools": {
+        "git": true,
+        "repowise": false,
+        "rg": true,
+        "sentrux": true
+      },
+      "understanding": "<TEMP_ROOT>/artifacts/parity-domain-fail/20260713-010203/understanding.md"
+    }
+  },
+  "case": "domain-fail",
+  "missingEvidence": [],
+  "provenance": {
+    "producer": "run-code-intel.ps1",
+    "snapshotIdentity": "git:domain-fail-fixture-head",
+    "tools": [
+      "git",
+      "rg",
+      "sentrux"
+    ]
+  }
+}

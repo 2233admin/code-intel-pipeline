@@ -18,6 +18,8 @@
 
 ## Failure Categories
 - provider_quota:
+- provider_unavailable:
+- config_error:
 - local_tool_error:
 - graph_missing:
 - sentrux_fail:

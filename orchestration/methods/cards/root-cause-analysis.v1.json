@@ -1,0 +1,39 @@
+{
+  "schema": "code-intel-method-card.v1",
+  "id": "root-cause-analysis",
+  "version": "1.0.0",
+  "name": "Root-cause analysis",
+  "problemSignals": [
+    { "id": "recurrent-incident", "description": "The same failure or symptom recurs after local remediation." },
+    { "id": "causal-uncertainty", "description": "Multiple plausible contributing factors lack discriminating evidence." }
+  ],
+  "requiredEvidence": [
+    { "id": "incident-timeline", "description": "Time-ordered observations, changes, controls, and recovery actions." },
+    { "id": "causal-tests", "description": "Reproduction, counterfactual, comparison, or intervention evidence for candidate causes." }
+  ],
+  "assumptions": ["The analyzed effect is operationally defined", "Contributing conditions are not mislabeled as a single universal root"],
+  "deterministicSteps": [
+    { "id": "bound-effect", "action": "Define the effect, scope, occurrence window, and non-occurrence comparison.", "requires": ["evidence:incident-timeline"], "produces": ["bounded-problem"] },
+    { "id": "build-causal-chain", "action": "Enumerate candidate causal chains and distinguish observations, assumptions, and missing evidence.", "requires": ["step:bound-effect"], "produces": ["causal-hypotheses"] },
+    { "id": "test-causes", "action": "Apply the declared causal tests and retain supported, rejected, and unresolved hypotheses separately.", "requires": ["evidence:causal-tests", "step:build-causal-chain"], "produces": ["cause-assessment"] }
+  ],
+  "outputs": [
+    { "id": "bounded-problem", "description": "Operational effect and analysis boundary." },
+    { "id": "causal-hypotheses", "description": "Traceable candidate causal chains and evidence gaps." },
+    { "id": "cause-assessment", "description": "Supported, rejected, and unresolved causes with test evidence." }
+  ],
+  "confidenceRules": [
+    { "level": "high", "whenAll": ["Timeline is complete", "Cause predicts occurrence and non-occurrence", "Intervention or reproduction supports the chain"] },
+    { "level": "medium", "whenAll": ["Multiple independent observations support the chain", "Direct intervention evidence is unavailable"] },
+    { "level": "unknown", "whenAll": ["Only temporal correlation exists", "Competing hypotheses lack discriminating evidence"] }
+  ],
+  "cost": { "relative": "medium", "drivers": ["Reproduction difficulty", "Evidence retention quality", "Number of competing hypotheses"] },
+  "contraindications": ["The request is to enumerate prospective failure modes rather than explain an observed effect", "Evidence is limited to an unaudited opinion or post hoc story"],
+  "implementationPorts": [
+    { "id": "causal-evidence-ledger", "kind": "manual", "contract": ["Separate observation from hypothesis", "Preserve rejected and unresolved alternatives"] }
+  ],
+  "source": { "title": "Evidence-based root-cause analysis practice", "version": "catalog interpretation 1.0", "reference": "Causal investigation baseline" },
+  "applicabilityBoundary": { "inScope": ["Observed incidents and recurring defects", "Causal hypothesis testing"], "outOfScope": ["Prospective hazard enumeration", "Blame assignment"] },
+  "relatedMethodIds": ["fault-tree-analysis", "fmea", "pdca"],
+  "executionPolicy": "catalog_only_no_selection_or_execution"
+}

@@ -1,0 +1,19 @@
+{
+  "schema": "code-intel-repowise-native-result.v1",
+  "implementation": { "version": "0.9.0", "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+  "sourceRevision": "repowise-r1",
+  "snapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "collectedAt": 1700000000,
+  "cli": { "status": "available" },
+  "health": { "status": "healthy" },
+  "index": {
+    "status": "current",
+    "observedAt": 1700000000,
+    "payload": { "schema": "code-intel-artifact-ref.v1", "artifactSchema": "code-intel-evidence-payload.v1", "type": "observed.evidence.payload", "path": "index-payload.json", "sha256": "1b58738176059cf37c82aea3b9201f91700355aba69d7748e1f191fb18a19966", "consumedSnapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+  },
+  "docs": {
+    "status": "quota",
+    "observedAt": 1700000000,
+    "payload": { "schema": "code-intel-artifact-ref.v1", "artifactSchema": "code-intel-evidence-payload.v1", "type": "observed.evidence.payload", "path": "partial-docs-payload.json", "sha256": "d7677aecabbe555f5aebe19cc411ac3cadb5bd77dbfe33dc9c402f55b1385ffa", "consumedSnapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+  }
+}

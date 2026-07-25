@@ -1,0 +1,19 @@
+{
+  "schema": "code-intel-parity-floor.v1",
+  "minimumPassCount": 5,
+  "passingCases": [
+    "clean",
+    "dirty",
+    "domain-fail",
+    "partial-evidence",
+    "provider-unavailable"
+  ],
+  "updatePolicy": "monotonic_set_and_count_with_explicit_review_reason",
+  "source": {
+    "kind": "selective_method_reimplementation",
+    "uri": "https://github.com/can1357/pon",
+    "revision": "ab9067dbd2899c64c4d67a4bc27b8ad49472b126",
+    "licenseStatus": "unverified_no_declared_license_do_not_copy_code"
+  },
+  "reviewReason": "Establish the first corpus-level floor over the five existing byte-stable parity fixtures."
+}

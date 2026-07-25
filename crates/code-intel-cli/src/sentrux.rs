@@ -1,3 +1,4 @@
+use crate::sentrux_analysis;
 use crate::Result;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -11,6 +12,11 @@ pub fn run(options: &Options<'_>) -> Result<()> {
     let operation = options.operation.ok_or("sentrux requires an operation")?;
     let repo = options.repo.ok_or("sentrux requires a repo/path")?;
     let repo = repo.canonicalize()?;
+    if operation == "dsm" {
+        let snapshot = sentrux_analysis::analyze(&repo)?;
+        println!("{}", serde_json::to_string(&snapshot)?);
+        return Ok(());
+    }
     let repo_cli = cli_path(&repo);
 
     let mut args = Vec::new();
@@ -27,13 +33,8 @@ pub fn run(options: &Options<'_>) -> Result<()> {
     }
     args.push(repo_cli.clone());
 
-    let binary = if cfg!(windows) {
-        "sentrux.cmd"
-    } else {
-        "sentrux"
-    };
-
-    let output = Command::new(binary)
+    let mut command = sentrux_command();
+    let output = command
         .args(&args)
         .current_dir(&repo_cli)
         .stdout(Stdio::piped())
@@ -60,10 +61,52 @@ pub fn run(options: &Options<'_>) -> Result<()> {
     Ok(())
 }
 
+fn sentrux_command() -> Command {
+    #[cfg(windows)]
+    {
+        let mut command = Command::new("cmd.exe");
+        command.args(["/d", "/c", "sentrux.cmd"]);
+        command
+    }
+    #[cfg(not(windows))]
+    {
+        Command::new("sentrux")
+    }
+}
+
 fn cli_path(path: &Path) -> String {
     let text = path.to_string_lossy();
     if let Some(stripped) = text.strip_prefix(r"\\?\") {
         return stripped.to_string();
     }
     text.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sentrux_command;
+    use std::ffi::OsStr;
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_shim_runs_through_command_processor() {
+        let command = sentrux_command();
+        assert_eq!(command.get_program(), OsStr::new("cmd.exe"));
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [
+                OsStr::new("/d"),
+                OsStr::new("/c"),
+                OsStr::new("sentrux.cmd")
+            ]
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_binary_runs_directly() {
+        let command = sentrux_command();
+        assert_eq!(command.get_program(), OsStr::new("sentrux"));
+        assert_eq!(command.get_args().count(), 0);
+    }
 }

@@ -15,7 +15,7 @@ Artifact ownership and reader/writer boundaries are defined in `docs/artifact-da
 
 2. Rust targets
    - `crates/code-intel-cli`: compiled `code-intel` CLI for integration orchestration, artifact resume, classify, and artifact doctor contracts.
-   - `crates/code-nexus-lite`: compiled `code-nexus-lite` iii worker for CodeNexus scan/lite/doctor behavior.
+   - `crates/code-nexus-lite`: incubated source, not a Cargo workspace member and not shipped as a beta binary. The supported beta surface is the optional CodeNexus compatibility adapter and artifact contract.
 
 3. `invoke-code-intel.ps1`
    Thin operator entrypoint. Runs doctor first, then the pipeline. Supports one direct repo path, one configured repo alias, a repo list, or all configured repos.
@@ -28,19 +28,20 @@ Artifact ownership and reader/writer boundaries are defined in `docs/artifact-da
 
 6. Tool adapters
    - `rg`: exact inventory
-   - `repowise`: semantic index and optional docs
-   - `Understand Anything`: graph artifact
+   - `repowise`: optional semantic index and docs; included in the default plan but non-blocking
+   - `Understand Anything`: optional graph artifact
    - `sentrux`: structure gate
    - `sentruxInsight`: parsed structural deltas and follow-up hints for agents
 
 7. Scoped helpers
    - `Invoke-ScopedRepowise.ps1`
+   - `Invoke-RepowiseProviderProbe.ps1`
    - `Run-ScopedRepowiseDocs.py`
    - `Invoke-SentruxAgentTool.ps1`
 
 8. Stable-ops helpers
    - `install-code-intel-pipeline.ps1`
-   - `test-code-intel-provider.ps1`
+   - `test-code-intel-provider.ps1` (test wrapper only)
    - `test-code-intel-pipeline.ps1`
    - `update-code-intel-index.ps1`
    - `tools/sentrux-shim`
@@ -76,9 +77,11 @@ Detailed extension rules are in `docs/integration-orchestration.md`.
 
 ## Failure Model
 
-The pipeline classifies failures into four buckets:
+The pipeline classifies failures into six buckets:
 
 - `provider_quota`
+- `provider_unavailable`
+- `config_error`
 - `local_tool_error`
 - `graph_missing`
 - `sentrux_fail`
@@ -90,7 +93,7 @@ This classification is written into:
 
 `report.json` also includes `sentruxInsight`, a deterministic bridge between Sentrux output and agent action. It records parsed quality, coupling, cycle, and god-file deltas, scan scale, next actions, and CodeNexus hints so an operator can move from "score changed" to "inspect this dependency flow" without rereading raw gate text.
 
-`codenexus-context.json` is the portable CodeNexus-lite layer. It selects files from Sentrux hotspots and DSM risk, then attaches recent git commits and reference hits. A full CodeNexus backend can replace this layer later; the contract is already artifact-first.
+`codenexus-context.json` is the portable, optional CodeNexus compatibility layer. It selects files from Sentrux hotspots and DSM risk, then attaches recent git commits and reference hits. A full CodeNexus backend can replace this layer later; the contract is already artifact-first. Failure of this optional layer does not invalidate the beta core.
 
 `hospital-report.json` is the diagnosis layer over those artifacts. It does not replace the tools; it organizes their output into modalities and protocols:
 
@@ -131,6 +134,23 @@ This keeps nested external repos from poisoning indexing and keeps current worki
 
 ## Standard Commands
 
+The default `normal` route is one manifest-bound Rust production spine:
+
+```text
+A02 snapshot
+  -> doctor / inventory.rg / graph provider / Sentrux provider
+  -> native code evidence / Hospital diagnosis
+  -> A03 verified Artifact Refs
+  -> A09 terminal manifest
+  -> A07 atomic commit
+  -> A08 completed-only index
+  -> bounded query / impact / freshness reads
+```
+
+`domain_failed` and `domain_unknown` runs may be committed with verified diagnostic evidence for
+forensics, but they never enter the authoritative index. PowerShell entrypoints invoke this spine
+and retain legacy routes only as explicit compatibility surfaces.
+
 Install check:
 
 ```powershell
@@ -152,7 +172,7 @@ Install or repair a teammate machine:
 
 `-InstallMissing` is explicit by design. The default installer is a doctor; the install mode attempts supported CLI installs and records every attempt in `installActions`.
 
-`-RepairSkillLinks` installs the bundled `skill/` copy into the user profile when the shared `.agents` skill is absent, then links Codex and Claude to that shared copy.
+`-RepairSkillLinks` installs the bundled `skills/code-intel-pipeline/` package into the user profile when the shared `.agents` skill is absent, then links Codex and Claude to that shared copy.
 
 Doctor and normal run:
 

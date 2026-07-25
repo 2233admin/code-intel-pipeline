@@ -1,0 +1,37 @@
+{
+  "schema": "code-intel-model-routing-request.v1",
+  "inventory": {
+    "schema": "code-intel-model-channel-inventory-result.v1",
+    "candidates": [
+      {
+        "id": "ollama-local",
+        "channelKind": "ollama",
+        "provider": "ollama",
+        "model": "fixture-model",
+        "costScope": "local_compute",
+        "endpointConfigured": true,
+        "discovered": true,
+        "executableVerified": true,
+        "authPresent": "not_applicable",
+        "modelAvailable": "available",
+        "externalEgress": false,
+        "source": "local_discovery",
+        "diagnostics": []
+      }
+    ],
+    "configurationBrokers": []
+  },
+  "policy": {
+    "consumptionAuthorization": {
+      "status": "granted",
+      "scopes": ["local_compute"]
+    },
+    "externalData": { "status": "denied" },
+    "paidSpend": { "status": "denied" },
+    "selection": {
+      "pinnedAdapter": null,
+      "fallbackPolicy": "denied"
+    }
+  },
+  "workload": { "requiresExternalData": true }
+}

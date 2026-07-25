@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-compatibility-retirement-ticket-template.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema","snapshotIdentity","ticketId","retirementId","legacyBranch","replacement","affectedFiles","evidence","source","owner","verifier","observationExpiry","status","authorityBoundary"],
+  "properties": {
+    "schema": {"const":"code-intel-compatibility-retirement-ticket-template.v1"},
+    "snapshotIdentity": {"type":"string","minLength":1}, "ticketId": {"type":"string","minLength":1}, "retirementId": {"type":"string","minLength":1},
+    "legacyBranch": {"type":"object","additionalProperties":false,"required":["capabilityId","branchId","callPath"],"properties":{"capabilityId":{"type":"string","minLength":1},"branchId":{"type":"string","minLength":1},"callPath":{"type":"string","pattern":"^[^\\\\/:]+(?:/[^\\\\/:]+)*::[^:]+$"}}},
+    "replacement": {"type":"object","additionalProperties":false,"required":["capabilityId","dependencies"],"properties":{"capabilityId":{"type":"string","minLength":1},"dependencies":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","minLength":1}}}},
+    "affectedFiles": {"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "evidence": {"type":"object","additionalProperties":false,"required":["golden","contract","effects","usage","rollbackRehearsal","deletionDiff"],"properties":{"golden":{"$ref":"#/$defs/e00ref"},"contract":{"$ref":"#/$defs/e00ref"},"effects":{"$ref":"#/$defs/e00ref"},"usage":{"$ref":"#/$defs/e00ref"},"rollbackRehearsal":{"$ref":"#/$defs/e00ref"},"deletionDiff":{"$ref":"#/$defs/diffref"}}},
+    "source": {"type":"object","additionalProperties":false,"required":["retirementDecision","retirementManifest"],"properties":{"retirementDecision":{"$ref":"#/$defs/decisionref"},"retirementManifest":{"$ref":"#/$defs/manifestref"}}},
+    "owner":{"type":"string","minLength":1}, "verifier":{"type":"string","minLength":1}, "observationExpiry":{"type":"integer","minimum":0},
+    "status":{"const":"draft"}, "authorityBoundary":{"const":"template_only_no_approval_or_deletion_authority"}
+  },
+  "$defs": {
+    "sha":{"type":"string","pattern":"^[A-Fa-f0-9]{64}$"},
+    "ref":{"type":"object","additionalProperties":false,"required":["schema","artifactSchema","type","path","sha256","consumedSnapshotIdentity"],"properties":{"schema":{"const":"code-intel-artifact-ref.v1"},"artifactSchema":{"type":"string"},"type":{"type":"string"},"path":{"type":"string","minLength":1},"sha256":{"$ref":"#/$defs/sha"},"consumedSnapshotIdentity":{"type":"string","minLength":1}}},
+    "e00ref":{"allOf":[{"$ref":"#/$defs/ref"},{"properties":{"artifactSchema":{"const":"code-intel-compatibility-retirement-evidence.v1"},"type":{"const":"compatibility.retirement-evidence"}}}]},
+    "diffref":{"allOf":[{"$ref":"#/$defs/ref"},{"properties":{"artifactSchema":{"const":"code-intel-compatibility-retirement-deletion-diff.v1"},"type":{"const":"compatibility.retirement-deletion-diff"}}}]},
+    "decisionref":{"allOf":[{"$ref":"#/$defs/ref"},{"properties":{"artifactSchema":{"const":"code-intel-compatibility-retirement-decision.v1"},"type":{"const":"compatibility.retirement-decision"}}}]},
+    "manifestref":{"allOf":[{"$ref":"#/$defs/ref"},{"properties":{"artifactSchema":{"const":"code-intel-compatibility-retirement-manifest.v1"},"type":{"const":"compatibility.retirement-manifest"}}}]}
+  }
+}

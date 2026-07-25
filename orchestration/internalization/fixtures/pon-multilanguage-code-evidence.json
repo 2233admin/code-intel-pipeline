@@ -1,0 +1,74 @@
+{
+  "schema": "code-intel-pon-multilanguage-code-evidence-fixture.v1",
+  "contract": {
+    "files": ["path", "language", "bytes", "lines", "textHash", "source"],
+    "symbols": ["id", "kind", "name", "file", "startLine", "endLine", "language", "confidence", "source"],
+    "imports": ["file", "line", "target", "language", "confidence", "source"]
+  },
+  "samples": [
+    {
+      "path": "main.py",
+      "language": "python",
+      "supported": true,
+      "content": "from helpers import greet\n\ndef main():\n    return greet()\n",
+      "expectedSymbols": [{ "kind": "function", "name": "main" }],
+      "expectedImports": ["helpers"]
+    },
+    {
+      "path": "main.js",
+      "language": "javascript",
+      "supported": true,
+      "content": "import helper from \"./helper.js\";\nfunction main() { return helper(); }\n",
+      "expectedSymbols": [{ "kind": "function", "name": "main" }],
+      "expectedImports": ["./helper.js"]
+    },
+    {
+      "path": "main.ts",
+      "language": "typescript",
+      "supported": true,
+      "content": "import { Thing } from \"./types\";\nexport function build(): Thing { return {} as Thing; }\n",
+      "expectedSymbols": [{ "kind": "function", "name": "build" }],
+      "expectedImports": ["./types"]
+    },
+    {
+      "path": "main.rs",
+      "language": "rust",
+      "supported": true,
+      "content": "use crate::helper;\n\npub fn main() { helper::run(); }\n",
+      "expectedSymbols": [{ "kind": "function", "name": "main" }],
+      "expectedImports": ["crate::helper"]
+    },
+    {
+      "path": "main.go",
+      "language": "go",
+      "supported": true,
+      "content": "package main\n\nimport \"fmt\"\n\nfunc Main() { fmt.Println(\"ok\") }\n",
+      "expectedSymbols": [{ "kind": "function", "name": "Main" }],
+      "expectedImports": ["fmt"]
+    },
+    {
+      "path": "Main.java",
+      "language": "java",
+      "supported": true,
+      "content": "public class Main {}\n",
+      "expectedSymbols": [{ "kind": "class", "name": "Main" }],
+      "expectedImports": []
+    },
+    {
+      "path": "main.ps1",
+      "language": "powershell",
+      "supported": true,
+      "content": "function Invoke-Main { 'ok' }\n",
+      "expectedSymbols": [{ "kind": "function", "name": "Invoke-Main" }],
+      "expectedImports": []
+    },
+    {
+      "path": "Main.cs",
+      "language": "csharp",
+      "supported": false,
+      "content": "public class Main {}\n",
+      "expectedSymbols": [],
+      "expectedImports": []
+    }
+  ]
+}

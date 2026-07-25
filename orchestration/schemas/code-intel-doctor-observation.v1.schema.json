@@ -1,0 +1,116 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://code-intel.local/schemas/code-intel-doctor-observation.v1.schema.json",
+  "title": "Code Intel Doctor Observation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "snapshotIdentity", "environmentPolicy", "bootstrap", "repository", "tools", "providers", "manifest", "diagnostics", "engineeringFacts"],
+  "properties": {
+    "schema": { "const": "code-intel-doctor-observation.v1" },
+    "snapshotIdentity": { "$ref": "#/definitions/sha256" },
+    "environmentPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy", "sha256"],
+      "properties": {
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["platform", "requireRepowise", "requireUnderstand"],
+          "properties": {
+            "platform": { "enum": ["auto", "windows", "macos", "linux"] },
+            "requireRepowise": { "type": "boolean" },
+            "requireUnderstand": { "type": "boolean" }
+          }
+        },
+        "sha256": { "$ref": "#/definitions/sha256" }
+      }
+    },
+    "bootstrap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "authority", "ready"],
+      "properties": {
+        "schema": { "const": "code-intel-doctor-bootstrap-observation.v1" },
+        "authority": { "const": "observation_only" },
+        "ready": { "type": "boolean" }
+      }
+    },
+    "repository": { "$ref": "#/definitions/observation" },
+    "tools": {
+      "type": "array",
+      "items": {
+        "allOf": [
+          { "$ref": "#/definitions/toolObservation" }
+        ]
+      }
+    },
+    "providers": {
+      "type": "array",
+      "items": {
+        "allOf": [
+          { "$ref": "#/definitions/providerObservation" }
+        ]
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reconciled", "registryReconciled", "findingCount"],
+      "properties": {
+        "reconciled": { "type": "boolean" },
+        "registryReconciled": { "type": "boolean" },
+        "findingCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bootstrapReady", "manifestReady"],
+      "properties": {
+        "bootstrapReady": { "type": "boolean" },
+        "manifestReady": { "type": "boolean" }
+      }
+    },
+    "engineeringFacts": { "type": "array", "maxItems": 0 }
+  },
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["presence", "readiness", "conformance", "admissibility"],
+      "properties": {
+        "presence": { "enum": ["present", "missing"] },
+        "readiness": { "enum": ["ready", "unavailable"] },
+        "conformance": { "enum": ["conforming", "nonconforming", "not_evaluated"] },
+        "admissibility": { "const": "not_evaluated" }
+      }
+    },
+    "toolObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "required", "presence", "readiness", "conformance", "admissibility"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "presence": { "enum": ["present", "missing"] },
+        "readiness": { "enum": ["ready", "unavailable"] },
+        "conformance": { "enum": ["conforming", "nonconforming", "not_evaluated"] },
+        "admissibility": { "const": "not_evaluated" }
+      }
+    },
+    "providerObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "presence", "readiness", "conformance", "admissibility"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "presence": { "enum": ["present", "missing"] },
+        "readiness": { "enum": ["ready", "unavailable"] },
+        "conformance": { "enum": ["conforming", "nonconforming", "not_evaluated"] },
+        "admissibility": { "const": "not_evaluated" }
+      }
+    }
+  }
+}

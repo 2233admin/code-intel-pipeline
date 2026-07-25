@@ -301,6 +301,8 @@ if ($RequireUnderstand -and -not $checks.graphProvider.cargoFound) { $missing.Ad
 if ($repoState -and -not $repoState.exists) { $missing.Add("repo path") }
 
 $result = [ordered]@{
+    schema = "code-intel-doctor-bootstrap-observation.v1"
+    authority = "observation_only"
     ok = $missing.Count -eq 0
     missing = $missing
     platform = [ordered]@{

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-file-boundary-result.v1.schema.json",
+  "title": "Code Intel file boundary result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "resolution", "expectedSnapshotIdentity", "sourceSnapshotIdentity", "normalizedTargetFile", "freshness", "completeness", "boundary", "provenance", "diagnostics"],
+  "properties": {
+    "schema": { "const": "code-intel-file-boundary-result.v1" },
+    "status": { "enum": ["resolved", "unknown"] },
+    "resolution": { "const": "exact_path" },
+    "expectedSnapshotIdentity": { "$ref": "#/$defs/digest" },
+    "sourceSnapshotIdentity": { "$ref": "#/$defs/digest" },
+    "normalizedTargetFile": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "freshness": { "const": "current" },
+    "completeness": { "enum": ["complete", "partial", "unknown"] },
+    "boundary": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "role", "forbid", "gotcha", "checks"],
+          "properties": {
+            "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+            "role": { "type": ["string", "null"], "minLength": 1, "maxLength": 1024 },
+            "forbid": { "type": "array", "items": { "$ref": "#/$defs/rule" } },
+            "gotcha": { "type": "array", "items": { "$ref": "#/$defs/rule" } },
+            "checks": { "type": "array", "items": { "$ref": "#/$defs/check" } }
+          }
+        }
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceKind", "sourcePath", "sourceSha256", "observedAt"],
+      "properties": {
+        "sourceKind": { "const": "local_boundary_document" },
+        "sourcePath": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "sourceSha256": { "$ref": "#/$defs/digest" },
+        "observedAt": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "reference"],
+        "properties": {
+          "code": { "enum": ["unsupported_construct", "no_matching_boundary"] },
+          "reference": { "type": "string", "minLength": 1, "maxLength": 4096 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "ruleId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$" },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary"],
+      "properties": {
+        "id": { "$ref": "#/$defs/ruleId" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "command"],
+      "properties": {
+        "id": { "$ref": "#/$defs/ruleId" },
+        "command": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      }
+    }
+  }
+}

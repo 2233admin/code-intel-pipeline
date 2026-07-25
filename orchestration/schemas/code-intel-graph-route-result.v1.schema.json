@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xart.local/code-intel/schemas/code-intel-graph-route-result.v1.schema.json",
+  "title": "Code Intel Graph Adapter Route Result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "adapter", "admission", "engineeringFacts", "diagnostics"],
+  "properties": {
+    "schema": { "const": "code-intel-graph-route-result.v1" },
+    "status": { "enum": ["completed", "rejected"] },
+    "adapter": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "port", "evidence", "factPromotion"],
+          "properties": {
+            "schema": { "const": "code-intel-graph-adapter-result.v1" },
+            "port": { "$ref": "code-intel-architecture-graph-port.v1.schema.json" },
+            "evidence": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["request"],
+              "properties": { "request": { "type": "object" } }
+            },
+            "factPromotion": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["eligible", "requires", "engineeringFacts"],
+              "properties": {
+                "eligible": { "const": false },
+                "requires": { "const": "evidence.admissibility-validate" },
+                "engineeringFacts": { "type": "array", "maxItems": 0 }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "admission": { "type": ["object", "null"] },
+    "engineeringFacts": { "type": "array", "maxItems": 0 },
+    "diagnostics": { "type": "array", "items": { "type": "string" } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "completed" } } },
+      "then": {
+        "properties": {
+          "adapter": { "type": "object" },
+          "admission": { "type": "object" },
+          "diagnostics": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "rejected" } } },
+      "then": {
+        "properties": {
+          "adapter": { "type": "null" },
+          "admission": { "type": "null" },
+          "diagnostics": { "minItems": 1 }
+        }
+      }
+    }
+  ]
+}

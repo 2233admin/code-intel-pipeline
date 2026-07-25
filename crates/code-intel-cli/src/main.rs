@@ -6,14 +6,47 @@ use std::process;
 
 use serde_json::Value;
 
+mod adapter_contract;
+mod admissibility;
+mod artifact_index;
+mod artifact_ref;
 mod artifacts;
+mod authority;
+mod capability;
+mod capability_inventory;
+mod change_impact;
+mod codenexus_adapter;
+mod committed_evidence;
+mod compatibility_retirement_ticket;
+mod dag_coordinator;
+mod dag_run;
+mod decision_port;
+mod decision_record;
+mod evidence_query;
+mod file_boundary;
 mod graph;
+mod method_catalog;
+mod model_channels;
 mod orchestration;
+mod ponytail_gate;
+mod project_orientation_benchmark;
 mod providers;
 mod routes;
+mod run_commit;
+mod runtime_ci_evidence;
 mod sentrux;
+mod sentrux_analysis;
+mod session_evidence;
+mod snapshot;
+mod stable_artifact;
+mod staged_artifact;
+mod survival_scan;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+fn run_capability(raw: &[String]) -> i32 {
+    capability::run_raw(raw, capability_inventory::execute)
+}
 
 #[derive(Debug, Default)]
 struct Args {
@@ -115,6 +148,33 @@ mod sentrux_contract_tests {
         assert_eq!(debt["summary"]["newDebt"], 1);
         assert_eq!(debt["summary"]["blocking"], 1);
     }
+
+    #[test]
+    fn raw_routes_preserve_specific_dispatch_precedence_and_argument_offsets() {
+        let decision_record = vec!["decision".into(), "record".into(), "--store".into()];
+        let decision_default = vec!["decision".into(), "request-response".into()];
+        let artifact_index = vec!["artifact".into(), "index".into(), "--repo".into()];
+
+        let record_route = resolve_raw_route(&decision_record).expect("decision record route");
+        let default_route = resolve_raw_route(&decision_default).expect("decision default route");
+        let artifact_route = resolve_raw_route(&artifact_index).expect("artifact index route");
+
+        assert_eq!(record_route.subcommand, Some("record"));
+        assert_eq!(record_route.argument_offset, 1);
+        assert_eq!(default_route.subcommand, None);
+        assert_eq!(default_route.argument_offset, 1);
+        assert_eq!(artifact_route.subcommand, Some("index"));
+        assert_eq!(artifact_route.argument_offset, 1);
+    }
+
+    #[test]
+    fn legacy_parser_commands_are_not_intercepted_by_raw_routes() {
+        let doctor = vec!["doctor".into(), "--json".into()];
+        let provider_list = vec!["provider".into(), "--action".into(), "List".into()];
+
+        assert!(resolve_raw_route(&doctor).is_none());
+        assert!(resolve_raw_route(&provider_list).is_none());
+    }
 }
 
 #[derive(Debug)]
@@ -144,9 +204,253 @@ struct ResumeSummary {
 }
 
 fn main() {
+    let raw: Vec<String> = env::args().skip(1).collect();
+    if let Some(exit_code) = dispatch_raw_command(&raw) {
+        process::exit(exit_code);
+    }
     if let Err(err) = run() {
         eprintln!("error: {err}");
         process::exit(1);
+    }
+}
+
+type RawRunner = fn(&[String]) -> i32;
+
+struct RawRoute {
+    command: &'static str,
+    subcommand: Option<&'static str>,
+    argument_offset: usize,
+    runner: RawRunner,
+}
+
+const RAW_ROUTES: &[RawRoute] = &[
+    RawRoute {
+        command: "compatibility",
+        subcommand: Some("retirement-ticket"),
+        argument_offset: 2,
+        runner: compatibility_retirement_ticket::run_raw,
+    },
+    RawRoute {
+        command: "provider",
+        subcommand: Some("repowise-adapt"),
+        argument_offset: 2,
+        runner: providers::run_repowise_adapt_raw,
+    },
+    RawRoute {
+        command: "provider",
+        subcommand: Some("graph-adapt"),
+        argument_offset: 2,
+        runner: providers::run_graph_adapt_raw,
+    },
+    RawRoute {
+        command: "provider",
+        subcommand: Some("sentrux-adapt"),
+        argument_offset: 2,
+        runner: providers::run_sentrux_adapt_raw,
+    },
+    RawRoute {
+        command: "provider",
+        subcommand: Some("session-adapt"),
+        argument_offset: 2,
+        runner: session_evidence::run_raw,
+    },
+    RawRoute {
+        command: "provider",
+        subcommand: Some("codenexus-adapt"),
+        argument_offset: 2,
+        runner: providers::run_codenexus_adapt_raw,
+    },
+    RawRoute {
+        command: "provider",
+        subcommand: Some("file-boundary"),
+        argument_offset: 2,
+        runner: run_file_boundary_raw,
+    },
+    RawRoute {
+        command: "provider",
+        subcommand: Some("runtime-ci-evidence"),
+        argument_offset: 2,
+        runner: run_runtime_ci_raw,
+    },
+    RawRoute {
+        command: "repository",
+        subcommand: Some("survival-scan"),
+        argument_offset: 2,
+        runner: survival_scan::run_raw,
+    },
+    RawRoute {
+        command: "artifact",
+        subcommand: Some("index"),
+        argument_offset: 1,
+        runner: artifact_index::run_raw,
+    },
+    RawRoute {
+        command: "artifact",
+        subcommand: Some("query"),
+        argument_offset: 1,
+        runner: evidence_query::run_raw,
+    },
+    RawRoute {
+        command: "change",
+        subcommand: Some("impact"),
+        argument_offset: 1,
+        runner: change_impact::run_raw,
+    },
+    RawRoute {
+        command: "decision",
+        subcommand: Some("record"),
+        argument_offset: 1,
+        runner: decision_record::run_raw,
+    },
+    RawRoute {
+        command: "decision",
+        subcommand: Some("replay"),
+        argument_offset: 1,
+        runner: decision_record::run_raw,
+    },
+    RawRoute {
+        command: "run",
+        subcommand: Some("commit"),
+        argument_offset: 1,
+        runner: run_commit::run_raw,
+    },
+    RawRoute {
+        command: "capability",
+        subcommand: None,
+        argument_offset: 1,
+        runner: run_capability,
+    },
+    RawRoute {
+        command: "model",
+        subcommand: None,
+        argument_offset: 1,
+        runner: model_channels::run_raw,
+    },
+    RawRoute {
+        command: "benchmark",
+        subcommand: None,
+        argument_offset: 1,
+        runner: project_orientation_benchmark::run_raw,
+    },
+    RawRoute {
+        command: "snapshot",
+        subcommand: None,
+        argument_offset: 1,
+        runner: snapshot::run_raw,
+    },
+    RawRoute {
+        command: "evidence",
+        subcommand: None,
+        argument_offset: 1,
+        runner: admissibility::run_raw,
+    },
+    RawRoute {
+        command: "decision",
+        subcommand: None,
+        argument_offset: 1,
+        runner: decision_port::run_raw,
+    },
+    RawRoute {
+        command: "run",
+        subcommand: None,
+        argument_offset: 1,
+        runner: dag_run::run_raw,
+    },
+    RawRoute {
+        command: "governance",
+        subcommand: None,
+        argument_offset: 1,
+        runner: ponytail_gate::run_raw,
+    },
+];
+
+fn dispatch_raw_command(raw: &[String]) -> Option<i32> {
+    let route = resolve_raw_route(raw)?;
+    Some((route.runner)(&raw[route.argument_offset..]))
+}
+
+fn resolve_raw_route(raw: &[String]) -> Option<&'static RawRoute> {
+    let command = raw.first()?;
+    RAW_ROUTES.iter().find(|route| {
+        route.command == command
+            && route.subcommand.map_or(true, |subcommand| {
+                raw.get(1).map(String::as_str) == Some(subcommand)
+            })
+    })
+}
+
+fn raw_option(raw: &[String], name: &str) -> std::result::Result<PathBuf, String> {
+    let positions = raw
+        .iter()
+        .enumerate()
+        .filter_map(|(index, value)| (value == name).then_some(index))
+        .collect::<Vec<_>>();
+    if positions.len() != 1 {
+        return Err(format!("{name} must appear exactly once"));
+    }
+    raw.get(positions[0] + 1)
+        .filter(|value| !value.starts_with("--"))
+        .map(PathBuf::from)
+        .ok_or_else(|| format!("{name} requires a value"))
+}
+
+fn write_provider_result(out: &Path, value: &Value) -> std::result::Result<(), String> {
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent).map_err(|error| format!("create output directory: {error}"))?;
+    }
+    let bytes =
+        serde_json::to_vec_pretty(value).map_err(|error| format!("serialize output: {error}"))?;
+    fs::write(out, bytes).map_err(|error| format!("write output: {error}"))
+}
+
+fn run_file_boundary_raw(raw: &[String]) -> i32 {
+    let result = (|| -> std::result::Result<(), String> {
+        if raw.len() != 4 {
+            return Err("file-boundary requires --request <path> --out <path>".into());
+        }
+        let request = raw_option(raw, "--request")?;
+        let out = raw_option(raw, "--out")?;
+        let bytes = fs::read(request).map_err(|error| format!("read request: {error}"))?;
+        let text =
+            std::str::from_utf8(&bytes).map_err(|_| "file boundary request must be UTF-8 JSON")?;
+        capability::reject_duplicate_json_keys(text)?;
+        let value: Value =
+            serde_json::from_str(text).map_err(|error| format!("parse request: {error}"))?;
+        write_provider_result(&out, &file_boundary::resolve(&value)?)
+    })();
+    match result {
+        Ok(()) => 0,
+        Err(error) => {
+            eprintln!("error: {error}");
+            65
+        }
+    }
+}
+
+fn run_runtime_ci_raw(raw: &[String]) -> i32 {
+    let result = (|| -> std::result::Result<(), String> {
+        if raw.len() != 6 {
+            return Err(
+                "runtime-ci-evidence requires --artifact-root <path> --request <path> --out <path>"
+                    .into(),
+            );
+        }
+        let artifact_root = raw_option(raw, "--artifact-root")?;
+        let request = raw_option(raw, "--request")?;
+        let out = raw_option(raw, "--out")?;
+        let bytes = fs::read(request).map_err(|error| format!("read request: {error}"))?;
+        let value = runtime_ci_evidence::parse_request_bytes(&bytes)?;
+        write_provider_result(
+            &out,
+            &runtime_ci_evidence::ingest_request(&artifact_root, &value)?,
+        )
+    })();
+    match result {
+        Ok(()) => 0,
+        Err(error) => {
+            eprintln!("error: {error}");
+            65
+        }
     }
 }
 
@@ -1103,8 +1407,28 @@ fn print_help() {
     println!("  doctor [--artifact-root <path>] [--json]");
     println!("  graph --repo <path> [--language zh] [--full] [--write] [--json]");
     println!("  provider [--action List|Plan|Validate|Invoke] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--language zh] [--write] [--json]");
+    println!("  provider repowise-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>");
+    println!("  provider graph-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>");
+    println!("  provider sentrux-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>");
+    println!("  provider session-adapt --repo <repo> --trace <mindwalk-trace.json> [--hotspots <sentrux-hotspots-or-dsm.json>] [--out <session-evidence.json>] [--working-tree-policy head_only|explicit_overlay]");
+    println!("  provider file-boundary --request <request.json> --out <result.json>");
+    println!("  provider runtime-ci-evidence --artifact-root <directory> --request <request.json> --out <summary.json>");
     println!("  route [--action List|Plan|Validate] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--json]");
-    println!("  sentrux <scan|health|check|gate|check_rules|gate_save> <path>");
+    println!("  sentrux <dsm|scan|health|check|gate|check_rules|gate_save> <path>");
+    println!("  capability exec <id> --request <request.json|-> --out <staging-dir> [--artifact-root <directory>] [--manifest <integrations.json>]");
+    println!("  model inventory-validate --request <inventory.json> [--out <validated.json>]");
+    println!("  model route --request <routing-request.json> [--out <routing-result.json>]");
+    println!("  snapshot identity --repo <root> --working-tree-policy <head_only|explicit_overlay> [--scope <relative-path>]...");
+    println!("  evidence validate --request <request.json> --artifact-root <directory>");
+    println!("  artifact index --artifact-root <root> [--output <index.json>] [--operation rebuild|incremental] [--existing <index.json>]");
+    println!("  artifact query --artifact-root <root> --repo <name> [--repo-path <path>] [--artifact-schema <schema>] [--type <artifact-type>] [--contains <text>] [--limit <1..100>]");
+    println!("  change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]...");
+    println!("  decision request-response --request <request.json|-> [--response <response.json>|--cancel <cancellation.json>] --now <unix-seconds> --branch <branch-id>...");
+    println!("  decision record --resolution <resolution.json> --store <record-directory>");
+    println!("  decision replay --query <query.json> --store <record-directory>");
+    println!("  run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--manifest <integrations.json>] [--max-concurrency <n>] [--session-evidence <session-evidence.json>]");
+    println!("  run commit --source-root <A09-artifact-root> --authority-root <publication-root> --manifest-ref <artifact-ref.json> --final-name <name>");
+    println!("  governance ponytail-gate --request <request.json|->");
     println!("  orchestrate [--action Validate|List|Plan] [--repo <path>] [--mode lite|normal|full] [--capability <name>] [--manifest <path>] [--json]");
 }
 

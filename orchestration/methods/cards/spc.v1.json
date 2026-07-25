@@ -1,0 +1,39 @@
+{
+  "schema": "code-intel-method-card.v1",
+  "id": "spc",
+  "version": "1.0.0",
+  "name": "Statistical process control",
+  "problemSignals": [
+    { "id": "process-variation", "description": "A repeated process exhibits variation whose common or special causes are unclear." },
+    { "id": "unstable-quality", "description": "Quality measures change over time despite nominally similar inputs." }
+  ],
+  "requiredEvidence": [
+    { "id": "time-ordered-measurements", "description": "Sequential measurements with timestamps, subgroup rules, and missing-data markers." },
+    { "id": "measurement-system-definition", "description": "Operational measure, sampling plan, resolution, and known measurement error." }
+  ],
+  "assumptions": ["Sampling order is preserved", "The selected chart matches data type, subgrouping, and distributional conditions"],
+  "deterministicSteps": [
+    { "id": "qualify-measurements", "action": "Validate measure definition, ordering, subgrouping, missingness, and chart preconditions.", "requires": ["evidence:time-ordered-measurements", "evidence:measurement-system-definition"], "produces": ["qualified-series"] },
+    { "id": "calculate-control-chart", "action": "Calculate center line and control limits from the declared baseline and chart formula.", "requires": ["step:qualify-measurements"], "produces": ["control-chart"] },
+    { "id": "classify-signals", "action": "Apply declared special-cause rules without treating control limits as specification limits.", "requires": ["step:calculate-control-chart"], "produces": ["variation-assessment"] }
+  ],
+  "outputs": [
+    { "id": "qualified-series", "description": "Validated ordered sample and chart-selection rationale." },
+    { "id": "control-chart", "description": "Reproducible center line, limits, and plotted sequence." },
+    { "id": "variation-assessment", "description": "Common/special-cause signals and violated assumptions." }
+  ],
+  "confidenceRules": [
+    { "level": "high", "whenAll": ["Measurement system and subgrouping are adequate", "Baseline is stable", "Chart assumptions hold"] },
+    { "level": "medium", "whenAll": ["Ordering is reliable", "Limited baseline size or measurement uncertainty remains"] },
+    { "level": "unknown", "whenAll": ["Samples are not time ordered", "Chart type or measurement system cannot be justified"] }
+  ],
+  "cost": { "relative": "medium", "drivers": ["Sampling cadence", "Measurement-system analysis", "Baseline length"] },
+  "contraindications": ["Data are one-off rather than a repeated process", "Specification conformance is being inferred solely from control limits"],
+  "implementationPorts": [
+    { "id": "control-chart-engine", "kind": "statistical_engine", "contract": ["Require explicit chart and subgroup rules", "Emit formulas, limits, and triggered rules"] }
+  ],
+  "source": { "title": "Shewhart statistical process control", "version": "catalog interpretation 1.0", "reference": "Established SPC practice" },
+  "applicabilityBoundary": { "inScope": ["Repeated-process stability", "Time-ordered variation signals"], "outOfScope": ["One-time project estimates", "Specification acceptance without capability analysis"] },
+  "relatedMethodIds": ["pdca"],
+  "executionPolicy": "catalog_only_no_selection_or_execution"
+}

@@ -14,6 +14,36 @@ $providerLog = Join-Path $scratch "provider.log"
 $oldPath = $env:PATH
 $oldProviderLog = $env:CIP_TEST_PROVIDER_LOG
 
+$authorityError = $null
+try {
+    & $script -RepoPath $repo -ScopePaths @("included") | Out-Null
+}
+catch {
+    $authorityError = $_
+}
+if ($null -eq $authorityError -or $authorityError.Exception.Message -notmatch "explicit -AllowShadowWorktreeMutation authority") {
+    throw "Scoped Repowise did not fail closed before unapproved Git mutation"
+}
+
+$modelPinError = $null
+try {
+    & $script `
+        -RepoPath $repo `
+        -Provider anthropic `
+        -ConsumptionConsent granted `
+        -ExternalDataConsent granted `
+        -PaidSpendConsent granted `
+        -CostScope metered_api `
+        -AllowShadowWorktreeMutation `
+        -Docs | Out-Null
+}
+catch {
+    $modelPinError = $_
+}
+if ($null -eq $modelPinError -or $modelPinError.Exception.Message -notmatch "explicitly pinned model") {
+    throw "Provider-backed docs accepted an implicit environment/provider model"
+}
+
 function Assert-RejectedScope {
     param(
         [string[]]$ScopePaths = @(),
@@ -31,6 +61,7 @@ function Assert-RejectedScope {
             -ScopePaths $ScopePaths `
             -RootFiles $RootFiles `
             -Provider mock `
+            -AllowShadowWorktreeMutation `
             -TimeoutSeconds 30 | Out-Null
     }
     catch {
@@ -94,6 +125,7 @@ exit /b 0
         -Platform windows `
         -ScopePaths @("included") `
         -Provider mock `
+        -AllowShadowWorktreeMutation `
         -TimeoutSeconds 30 | Out-Null
 
     $shadow = Join-Path $shadowRoot "repo-included"
@@ -138,6 +170,7 @@ exit /b 0
         -Platform windows `
         -ScopePaths @("included") `
         -Provider mock `
+        -AllowShadowWorktreeMutation `
         -IncludeWorkingTree `
         -TimeoutSeconds 30 | Out-Null
 

@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://code-intel.local/schemas/code-intel-understanding-quadrant.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "snapshotIdentity", "sourceOrientation", "classificationPolicy", "items", "visibleUnknowns", "counts"],
+  "properties": {
+    "schema": {"const": "code-intel-understanding-quadrant.v1"},
+    "snapshotIdentity": {"$ref": "#/definitions/sha256"},
+    "sourceOrientation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactSchema", "artifactType", "sha256"],
+      "properties": {
+        "artifactSchema": {"const": "code-intel-project-orientation.v1"},
+        "artifactType": {"const": "project.orientation"},
+        "sha256": {"$ref": "#/definitions/sha256"}
+      }
+    },
+    "classificationPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "scoreRange", "systemCriticalityThreshold", "evidenceConfidenceThreshold", "thresholdRule", "unknownCriticalityRule", "methodConsumerPolicy"],
+      "properties": {
+        "schema": {"const": "code-intel-understanding-quadrant-policy.v1"},
+        "scoreRange": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minimum", "maximum"],
+          "properties": {"minimum": {"const": 0}, "maximum": {"const": 100}}
+        },
+        "systemCriticalityThreshold": {"const": 50},
+        "evidenceConfidenceThreshold": {"const": 50},
+        "thresholdRule": {"const": "greater_than_or_equal_is_upper_band"},
+        "unknownCriticalityRule": {"const": "critical_by_default_except_declared_supporting_context"},
+        "methodConsumerPolicy": {"const": "C01_cards_and_C02_selection_may_consume_but_cannot_rewrite"}
+      }
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/definitions/item"}
+    },
+    "visibleUnknowns": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Known Core", "Critical Unknown", "Supporting Context", "Deferred Unknown"],
+      "properties": {
+        "Known Core": {"type": "integer", "minimum": 0},
+        "Critical Unknown": {"type": "integer", "minimum": 0},
+        "Supporting Context": {"type": "integer", "minimum": 0},
+        "Deferred Unknown": {"type": "integer", "minimum": 0}
+      }
+    }
+  },
+  "definitions": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "band"],
+      "properties": {
+        "score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "band": {"type": "string"}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactType", "artifactSha256", "jsonPointer"],
+      "properties": {
+        "artifactType": {"type": "string", "minLength": 1},
+        "artifactSha256": {"$ref": "#/definitions/sha256"},
+        "jsonPointer": {"type": "string", "pattern": "^/"}
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "subject", "sourceState", "systemCriticality", "evidenceConfidence", "quadrant", "statement", "provenance"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "subject": {"type": "string", "minLength": 1},
+        "sourceState": {"enum": ["known", "unknown"]},
+        "systemCriticality": {
+          "allOf": [
+            {"$ref": "#/definitions/score"},
+            {"properties": {"band": {"enum": ["critical", "supporting"]}}}
+          ]
+        },
+        "evidenceConfidence": {
+          "allOf": [
+            {"$ref": "#/definitions/score"},
+            {"properties": {"band": {"enum": ["high", "low"]}}}
+          ]
+        },
+        "quadrant": {"enum": ["Known Core", "Critical Unknown", "Supporting Context", "Deferred Unknown"]},
+        "statement": {"type": "string", "minLength": 1},
+        "provenance": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/definitions/provenance"}}
+      }
+    }
+  }
+}

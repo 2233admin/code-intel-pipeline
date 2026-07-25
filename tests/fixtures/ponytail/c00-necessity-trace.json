@@ -1,0 +1,116 @@
+{
+  "schema": "code-intel-ponytail-gate-request.v1",
+  "mode": "enforce",
+  "evaluatedAt": 2000,
+  "knownEvidenceIds": ["c00-plan", "c00-contract"],
+  "consumedAuthorityEventIds": [],
+  "changes": [
+    {
+      "id": "governance.ponytail-gate",
+      "kind": "abstraction",
+      "operation": "add",
+      "valueSource": { "kind": "committed_engineering_plan_deliverable", "id": "C00", "evidenceIds": ["c00-plan"] },
+      "requiredEvidenceIds": ["c00-contract"],
+      "firstSufficientRung": "smallest_local_implementation",
+      "lowerRungs": [
+        { "rung": "do_nothing", "reason": "C00 requires executable admission rather than terminology alone", "evidenceIds": ["c00-plan"] },
+        { "rung": "repository_reuse", "reason": "existing policy modules do not validate Necessity Traces", "evidenceIds": ["c00-plan"] },
+        { "rung": "standard_library", "reason": "collections alone do not define the C00 domain rules", "evidenceIds": ["c00-plan"] },
+        { "rung": "platform_native", "reason": "shell and CI cannot provide the shared in-process gate API", "evidenceIds": ["c00-plan"] },
+        { "rung": "installed_dependency", "reason": "no installed dependency owns the Pipeline governance semantics", "evidenceIds": ["c00-plan"] },
+        { "rung": "one_liner", "reason": "value, ladder, protection, and authority replay rules require explicit typed branches", "evidenceIds": ["c00-plan"] }
+      ],
+      "removedProtections": []
+    },
+    {
+      "id": "reuse-a05-authority-validator",
+      "kind": "abstraction",
+      "operation": "reuse",
+      "valueSource": { "kind": "required_contract_or_gate", "id": "C00-bypass", "evidenceIds": ["c00-contract"] },
+      "requiredEvidenceIds": ["c00-contract"],
+      "firstSufficientRung": "repository_reuse",
+      "lowerRungs": [{ "rung": "do_nothing", "reason": "bypass must validate an A05 authority record", "evidenceIds": ["c00-contract"] }],
+      "removedProtections": []
+    },
+    {
+      "id": "ponytail-gate-schema",
+      "kind": "artifact",
+      "operation": "add",
+      "valueSource": { "kind": "required_contract_or_gate", "id": "C00-schema", "evidenceIds": ["c00-contract"] },
+      "requiredEvidenceIds": ["c00-contract"],
+      "firstSufficientRung": "repository_reuse",
+      "lowerRungs": [{ "rung": "do_nothing", "reason": "closed machine input and result contracts are required", "evidenceIds": ["c00-contract"] }],
+      "removedProtections": []
+    },
+    {
+      "id": "ponytail-gate-rule-table",
+      "kind": "artifact",
+      "operation": "add",
+      "valueSource": { "kind": "required_contract_or_gate", "id": "C00-policy", "evidenceIds": ["c00-contract"] },
+      "requiredEvidenceIds": ["c00-contract"],
+      "firstSufficientRung": "repository_reuse",
+      "lowerRungs": [{ "rung": "do_nothing", "reason": "runtime and checked policy drift must be detectable", "evidenceIds": ["c00-contract"] }],
+      "removedProtections": []
+    },
+    {
+      "id": "ponytail-gate-targeted-tests",
+      "kind": "test",
+      "operation": "add",
+      "valueSource": { "kind": "verified_defect_or_risk", "id": "C00-fail-closed-risk", "evidenceIds": ["c00-plan"] },
+      "requiredEvidenceIds": ["c00-contract"],
+      "firstSufficientRung": "repository_reuse",
+      "lowerRungs": [{ "rung": "do_nothing", "reason": "the frozen plan requires deterministic boundary cases", "evidenceIds": ["c00-plan"] }],
+      "removedProtections": []
+    },
+    {
+      "id": "ponytail-gate-ci-contract",
+      "kind": "process",
+      "operation": "add",
+      "valueSource": { "kind": "required_contract_or_gate", "id": "C00-CI", "evidenceIds": ["c00-contract"] },
+      "requiredEvidenceIds": ["c00-contract"],
+      "firstSufficientRung": "repository_reuse",
+      "lowerRungs": [{ "rung": "do_nothing", "reason": "CI needs one stable command for the contract suite", "evidenceIds": ["c00-contract"] }],
+      "removedProtections": []
+    },
+    {
+      "id": "ponytail-gate-documentation",
+      "kind": "documentation",
+      "operation": "add",
+      "valueSource": { "kind": "committed_engineering_plan_deliverable", "id": "C00-handoff", "evidenceIds": ["c00-plan"] },
+      "requiredEvidenceIds": ["c00-contract"],
+      "firstSufficientRung": "repository_reuse",
+      "lowerRungs": [{ "rung": "do_nothing", "reason": "report-only, enforce, and bypass semantics require a durable handoff", "evidenceIds": ["c00-plan"] }],
+      "removedProtections": []
+    },
+    {
+      "id": "c00-self-necessity-trace",
+      "kind": "artifact",
+      "operation": "add",
+      "valueSource": { "kind": "required_contract_or_gate", "id": "C00-self-application", "evidenceIds": ["c00-contract"] },
+      "requiredEvidenceIds": ["c00-contract"],
+      "firstSufficientRung": "repository_reuse",
+      "lowerRungs": [{ "rung": "do_nothing", "reason": "C00 implementation artifacts must satisfy their own admission contract", "evidenceIds": ["c00-contract"] }],
+      "removedProtections": []
+    },
+    {
+      "id": "ponytail-gate-production-cli",
+      "kind": "artifact",
+      "operation": "add",
+      "valueSource": { "kind": "required_contract_or_gate", "id": "C00-production-seam", "evidenceIds": ["c00-contract"] },
+      "requiredEvidenceIds": ["c00-contract"],
+      "firstSufficientRung": "repository_reuse",
+      "lowerRungs": [{ "rung": "do_nothing", "reason": "C00 requires a real consumer seam rather than a test-only source inclusion", "evidenceIds": ["c00-contract"] }],
+      "removedProtections": []
+    },
+    {
+      "id": "ponytail-gate-production-registry",
+      "kind": "process",
+      "operation": "add",
+      "valueSource": { "kind": "required_contract_or_gate", "id": "C00-production-registration", "evidenceIds": ["c00-contract"] },
+      "requiredEvidenceIds": ["c00-contract"],
+      "firstSufficientRung": "repository_reuse",
+      "lowerRungs": [{ "rung": "do_nothing", "reason": "production orchestration validates only explicitly registered capabilities", "evidenceIds": ["c00-contract"] }],
+      "removedProtections": []
+    }
+  ]
+}

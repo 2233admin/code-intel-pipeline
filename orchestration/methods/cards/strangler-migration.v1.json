@@ -1,0 +1,39 @@
+{
+  "schema": "code-intel-method-card.v1",
+  "id": "strangler-migration",
+  "version": "1.0.0",
+  "name": "Strangler migration",
+  "problemSignals": [
+    { "id": "high-risk-rewrite", "description": "A wholesale replacement would combine behavior discovery, migration, and cutover risk." },
+    { "id": "replaceable-seams", "description": "Traffic or responsibilities can be routed through explicit bounded seams." }
+  ],
+  "requiredEvidence": [
+    { "id": "legacy-behavior-contracts", "description": "Observed legacy inputs, outputs, side effects, and failure semantics at candidate seams." },
+    { "id": "routing-and-rollback-controls", "description": "Traffic allocation, observability, fallback, and state-consistency mechanisms." }
+  ],
+  "assumptions": ["A migration seam can be isolated", "Old and new paths can coexist under explicit routing and data-consistency rules"],
+  "deterministicSteps": [
+    { "id": "select-seam", "action": "Bound one responsibility and document its legacy behavior, dependencies, and rollback route.", "requires": ["evidence:legacy-behavior-contracts"], "produces": ["migration-seam"] },
+    { "id": "define-increment", "action": "Define new-path contracts, routing fraction, state handling, observability, and rollback thresholds.", "requires": ["evidence:routing-and-rollback-controls", "step:select-seam"], "produces": ["increment-plan"] },
+    { "id": "evaluate-retirement", "action": "Compare both paths under the declared contract and produce retirement evidence or an unresolved gap list.", "requires": ["step:define-increment"], "produces": ["retirement-evidence"] }
+  ],
+  "outputs": [
+    { "id": "migration-seam", "description": "Bounded legacy responsibility and interface contract." },
+    { "id": "increment-plan", "description": "Reversible routing and coexistence plan." },
+    { "id": "retirement-evidence", "description": "Parity, rollback, and dependency-removal evidence; not an adoption decision." }
+  ],
+  "confidenceRules": [
+    { "level": "high", "whenAll": ["Legacy behavior is covered by contracts", "Routing and rollback are proven", "State consistency is verified"] },
+    { "level": "medium", "whenAll": ["Seam and rollback are explicit", "Long-tail behavior or state migration remains partially observed"] },
+    { "level": "unknown", "whenAll": ["No isolatable seam exists", "Rollback or dual-run consistency cannot be established"] }
+  ],
+  "cost": { "relative": "high", "drivers": ["Coexistence duration", "State migration", "Contract and routing instrumentation"] },
+  "contraindications": ["There is no isolatable routing or responsibility seam", "Dual operation creates unacceptable safety or consistency risk"],
+  "implementationPorts": [
+    { "id": "migration-router", "kind": "deterministic_tool", "contract": ["Apply explicit routing policy", "Preserve rollback and per-path observations without automatic cutover"] }
+  ],
+  "source": { "title": "Strangler Fig application migration pattern", "version": "catalog interpretation 1.0", "reference": "Incremental legacy-system replacement practice" },
+  "applicabilityBoundary": { "inScope": ["Incremental system replacement", "Contract-bounded traffic migration"], "outOfScope": ["Automatic production cutover", "Systems with inseparable state and behavior"] },
+  "relatedMethodIds": ["contract-testing"],
+  "executionPolicy": "catalog_only_no_selection_or_execution"
+}

@@ -1,0 +1,40 @@
+{
+  "schema": "code-intel-authority-transition-policy.v1",
+  "artifactKinds": [
+    "observed_evidence",
+    "engineering_fact",
+    "derived_engineering_model",
+    "proposal",
+    "adoption_decision",
+    "committed_engineering_plan"
+  ],
+  "actorKinds": [
+    "deterministic_pipeline",
+    "human",
+    "llm",
+    "provider",
+    "recommender"
+  ],
+  "edges": [
+    { "from": "observed_evidence", "to": "engineering_fact", "authorityEventRequired": false },
+    { "from": "observed_evidence", "to": "proposal", "authorityEventRequired": false },
+    { "from": "engineering_fact", "to": "derived_engineering_model", "authorityEventRequired": false },
+    { "from": "derived_engineering_model", "to": "proposal", "authorityEventRequired": false },
+    { "from": "proposal", "to": "adoption_decision", "authorityEventRequired": true },
+    { "from": "adoption_decision", "to": "committed_engineering_plan", "authorityEventRequired": true },
+    { "from": "proposal", "to": "committed_engineering_plan", "authorityEventRequired": true }
+  ],
+  "restrictedActors": {
+    "llm": ["observed_evidence", "proposal"],
+    "provider": ["observed_evidence", "proposal"],
+    "recommender": ["observed_evidence", "proposal"]
+  },
+  "trustedApprovers": [
+    { "id": "code-intel-maintainers", "role": "repository_governance" }
+  ],
+  "attestation": {
+    "scheme": "repository-governed-sha256-v1",
+    "meaning": "content-bound repository sign-off, not cryptographic identity authentication"
+  },
+  "rule": "protected transitions are owned by an explicit approved authority event; source output alone has no commitment authority"
+}

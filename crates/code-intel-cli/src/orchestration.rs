@@ -73,6 +73,11 @@ pub(crate) fn run(options: &Options<'_>) -> Result<()> {
         }
     }
 
+    let registry_audit = reconcile_production_registry(&root, &manifest, &integration_ids);
+    if registry_audit.enforce {
+        errors.extend(registry_audit.findings.iter().cloned());
+    }
+
     let mut selected = integrations
         .iter()
         .filter(|integration| integration_matches_capability(integration, options.capability))
@@ -103,6 +108,7 @@ pub(crate) fn run(options: &Options<'_>) -> Result<()> {
         "manifest": manifest_path,
         "policy": manifest.get("policy").cloned().unwrap_or(Value::Null),
         "errors": errors,
+        "registryAudit": registry_audit.output(),
         "stages": sorted_stages,
         "integrations": if action == "Validate" { Vec::<Value>::new() } else { plan.clone() },
         "plan": if action == "Plan" { plan.clone() } else { Vec::<Value>::new() }
@@ -186,8 +192,473 @@ fn normalize_action(value: &str) -> Result<String> {
         "validate" => Ok("Validate".to_string()),
         "list" => Ok("List".to_string()),
         "plan" => Ok("Plan".to_string()),
+        "audit" => Ok("Audit".to_string()),
         other => Err(format!("unsupported orchestration action: {other}").into()),
     }
+}
+
+struct RegistryAudit {
+    configured: bool,
+    enforce: bool,
+    findings: Vec<String>,
+    participants: Vec<Value>,
+}
+
+impl RegistryAudit {
+    fn output(&self) -> Value {
+        serde_json::json!({
+            "configured": self.configured,
+            "mode": if self.enforce { "enforce" } else { "report" },
+            "ok": self.findings.is_empty(),
+            "findings": self.findings,
+            "participants": self.participants,
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ProductionParticipant {
+    capability_id: &'static str,
+    source: &'static str,
+    marker: &'static str,
+}
+
+const PRODUCTION_PARTICIPANTS: [ProductionParticipant; 12] = [
+    ProductionParticipant {
+        capability_id: "doctor",
+        source: "invoke-code-intel.ps1",
+        marker: "$doctor = Join-Path $root \"check-code-intel-tools.ps1\"",
+    },
+    ProductionParticipant {
+        capability_id: "diagnosis.hospital",
+        source: "run-code-intel.ps1",
+        marker: "$hospitalReport = New-CodeIntelHospitalReport",
+    },
+    ProductionParticipant {
+        capability_id: "pack.repomix",
+        source: "run-code-intel.ps1",
+        marker: "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"",
+    },
+    ProductionParticipant {
+        capability_id: "evidence.native-code",
+        source: "run-code-intel.ps1",
+        marker: "$codeEvidence = New-CodeEvidenceLayer -RepoPath",
+    },
+    ProductionParticipant {
+        capability_id: "evidence.cocoindex-code",
+        source: "run-code-intel.ps1",
+        marker: "$adapterConfig = Get-JsonProperty $adapters \"cocoindex-code\" $null",
+    },
+    ProductionParticipant {
+        capability_id: "research.github-solution",
+        source: "run-code-intel.ps1",
+        marker:
+            "$githubResearchScript = Join-Path $PSScriptRoot \"Invoke-GitHubSolutionResearch.ps1\"",
+    },
+    ProductionParticipant {
+        capability_id: "memory.repowise",
+        source: "run-code-intel.ps1",
+        marker: "$scopedRepowiseScript = Join-Path $PSScriptRoot \"Invoke-ScopedRepowise.ps1\"",
+    },
+    ProductionParticipant {
+        capability_id: "graph.code-intel-understand",
+        source: "run-code-intel.ps1",
+        marker: "$knowledgeGraph = Join-Path $understandDir \"knowledge-graph.json\"",
+    },
+    ProductionParticipant {
+        capability_id: "structure.sentrux",
+        source: "run-code-intel.ps1",
+        marker: "$sentruxAgentTool = Join-Path $PSScriptRoot \"Invoke-SentruxAgentTool.ps1\"",
+    },
+    ProductionParticipant {
+        capability_id: "localization.codenexus-lite",
+        source: "run-code-intel.ps1",
+        marker: "$codeNexusLiteTool = Join-Path $PSScriptRoot \"Invoke-CodeNexusLite.ps1\"",
+    },
+    ProductionParticipant {
+        capability_id: "run.commit",
+        source: "run-code-intel.ps1",
+        marker: "& $rustCli run commit",
+    },
+    ProductionParticipant {
+        capability_id: "artifact.index-committed-only",
+        source: "invoke-code-intel.ps1",
+        marker: "$indexer = Join-Path $root \"update-code-intel-index.ps1\"",
+    },
+];
+
+fn reconcile_production_registry(
+    root: &Path,
+    manifest: &Value,
+    integration_ids: &HashSet<String>,
+) -> RegistryAudit {
+    let Some(config) = manifest.get("productionRegistry") else {
+        return empty_registry_audit();
+    };
+
+    let configured_mode = string_field(config, "mode").unwrap_or_default();
+    let enforce = configured_mode != "report";
+    let production_files = string_array_field(config, "productionFiles");
+    let declarations = array_values(config, "participants");
+    let mut findings = Vec::new();
+    validate_registry_mode(&configured_mode, &mut findings);
+    let sources = load_production_sources(root, &production_files, &mut findings);
+    let declarations_by_id = index_participant_declarations(&declarations, &mut findings);
+    let participant_output = PRODUCTION_PARTICIPANTS
+        .into_iter()
+        .filter_map(|participant| {
+            audit_production_participant(
+                participant,
+                &production_files,
+                &sources,
+                &declarations_by_id,
+                integration_ids,
+                &mut findings,
+            )
+        })
+        .collect();
+    audit_unknown_declarations(&declarations, &mut findings);
+
+    RegistryAudit {
+        configured: true,
+        enforce,
+        findings,
+        participants: participant_output,
+    }
+}
+
+fn empty_registry_audit() -> RegistryAudit {
+    RegistryAudit {
+        configured: false,
+        enforce: false,
+        findings: Vec::new(),
+        participants: Vec::new(),
+    }
+}
+
+fn validate_registry_mode(configured_mode: &str, findings: &mut Vec<String>) {
+    if !matches!(configured_mode, "report" | "enforce") {
+        findings.push(format!(
+            "production registry has unsupported mode: {configured_mode}"
+        ));
+    }
+}
+
+fn load_production_sources(
+    root: &Path,
+    production_files: &[String],
+    findings: &mut Vec<String>,
+) -> HashMap<String, String> {
+    let mut sources = HashMap::new();
+    for relative in production_files {
+        match fs::read_to_string(root.join(relative)) {
+            Ok(text) => record_production_source(&mut sources, relative, text, findings),
+            Err(error) => findings.push(format!(
+                "production registry source missing or unreadable: {relative}: {error}"
+            )),
+        }
+    }
+    sources
+}
+
+fn record_production_source(
+    sources: &mut HashMap<String, String>,
+    relative: &str,
+    text: String,
+    findings: &mut Vec<String>,
+) {
+    if sources.insert(relative.to_string(), text).is_some() {
+        findings.push(format!(
+            "production registry lists source more than once: {relative}"
+        ));
+    }
+}
+
+fn index_participant_declarations<'a>(
+    declarations: &'a [Value],
+    findings: &mut Vec<String>,
+) -> HashMap<String, &'a Value> {
+    let mut declarations_by_id = HashMap::new();
+    for declaration in declarations {
+        let id = string_field(declaration, "capabilityId").unwrap_or_default();
+        if id.trim().is_empty() {
+            findings.push("production participant declaration has empty capabilityId".to_string());
+        } else if declarations_by_id.insert(id.clone(), declaration).is_some() {
+            findings.push(format!(
+                "duplicate production participant declaration: {id}"
+            ));
+        }
+    }
+    declarations_by_id
+}
+
+fn audit_production_participant(
+    participant: ProductionParticipant,
+    production_files: &[String],
+    sources: &HashMap<String, String>,
+    declarations_by_id: &HashMap<String, &Value>,
+    integration_ids: &HashSet<String>,
+    findings: &mut Vec<String>,
+) -> Option<Value> {
+    audit_participant_source(participant, production_files, findings);
+    let hits = sources
+        .get(participant.source)
+        .map(|text| production_call_sites(participant.source, text, participant.marker))
+        .unwrap_or_default();
+    let Some(declaration) = declarations_by_id.get(participant.capability_id) else {
+        audit_missing_declaration(participant, &hits, findings);
+        return None;
+    };
+    let status = string_field(declaration, "status").unwrap_or_default();
+    audit_participant_lifecycle(
+        declaration,
+        participant,
+        &status,
+        &hits,
+        integration_ids,
+        findings,
+    );
+    Some(participant_audit_output(participant, status, hits))
+}
+
+fn audit_participant_source(
+    participant: ProductionParticipant,
+    production_files: &[String],
+    findings: &mut Vec<String>,
+) {
+    if !production_files
+        .iter()
+        .any(|path| path == participant.source)
+    {
+        findings.push(format!(
+            "production participant {} source is not audited: {}",
+            participant.capability_id, participant.source
+        ));
+    }
+}
+
+fn audit_missing_declaration(
+    participant: ProductionParticipant,
+    hits: &[String],
+    findings: &mut Vec<String>,
+) {
+    if hits.is_empty() {
+        findings.push(format!(
+            "required production participant has no declaration: {}",
+            participant.capability_id
+        ));
+    } else {
+        findings.push(format!(
+            "undeclared production invocation: {} marker '{}'",
+            participant.capability_id, participant.marker
+        ));
+    }
+}
+
+fn audit_participant_lifecycle(
+    declaration: &Value,
+    participant: ProductionParticipant,
+    status: &str,
+    hits: &[String],
+    integration_ids: &HashSet<String>,
+    findings: &mut Vec<String>,
+) {
+    match status {
+        "deleted" => {
+            audit_deleted_participant(declaration, participant, hits, integration_ids, findings)
+        }
+        "declared" => {
+            audit_declared_participant(declaration, participant, hits, integration_ids, findings)
+        }
+        _ => findings.push(format!(
+            "production participant {} has unsupported status: {status}",
+            participant.capability_id
+        )),
+    }
+}
+
+fn audit_deleted_participant(
+    declaration: &Value,
+    participant: ProductionParticipant,
+    hits: &[String],
+    integration_ids: &HashSet<String>,
+    findings: &mut Vec<String>,
+) {
+    let capability_id = participant.capability_id;
+    let deletion = declaration.get("reviewedDeletion").unwrap_or(&Value::Null);
+    for field in ["reviewer", "reviewedAt", "evidence"] {
+        if string_field(deletion, field).is_none_or(|value| value.trim().is_empty()) {
+            findings.push(format!(
+                "reviewed deletion for {capability_id} is missing {field}"
+            ));
+        }
+    }
+    if !hits.is_empty() {
+        findings.push(format!(
+            "deleted production participant is still invoked: {capability_id}"
+        ));
+    }
+    if integration_ids.contains(capability_id) {
+        findings.push(format!(
+            "deleted production participant remains in integrations registry: {capability_id}"
+        ));
+    }
+    require_call_site_declaration(declaration, participant, findings);
+}
+
+fn audit_declared_participant(
+    declaration: &Value,
+    participant: ProductionParticipant,
+    hits: &[String],
+    integration_ids: &HashSet<String>,
+    findings: &mut Vec<String>,
+) {
+    let capability_id = participant.capability_id;
+    if !integration_ids.contains(capability_id) {
+        findings.push(format!(
+            "production participant is not in integrations registry: {capability_id}"
+        ));
+    }
+    audit_declared_scalar_metadata(declaration, capability_id, findings);
+    audit_declared_array_metadata(declaration, capability_id, findings);
+    audit_declared_dependencies(declaration, capability_id, integration_ids, findings);
+    audit_declared_artifacts(declaration, capability_id, findings);
+    audit_declared_call_sites(participant, hits, findings);
+    require_call_site_declaration(declaration, participant, findings);
+}
+
+fn audit_declared_scalar_metadata(
+    declaration: &Value,
+    capability_id: &str,
+    findings: &mut Vec<String>,
+) {
+    for field in ["envelope", "owner"] {
+        if string_field(declaration, field).is_none_or(|value| value.trim().is_empty()) {
+            findings.push(format!(
+                "production participant {capability_id} is missing {field} metadata"
+            ));
+        }
+    }
+}
+
+fn audit_declared_array_metadata(
+    declaration: &Value,
+    capability_id: &str,
+    findings: &mut Vec<String>,
+) {
+    for field in ["dependencies", "effects", "artifacts"] {
+        if !is_string_array(declaration, field) {
+            findings.push(format!(
+                "production participant {capability_id} is missing {field} metadata"
+            ));
+        }
+    }
+}
+
+fn audit_declared_dependencies(
+    declaration: &Value,
+    capability_id: &str,
+    integration_ids: &HashSet<String>,
+    findings: &mut Vec<String>,
+) {
+    for dependency in string_array_field(declaration, "dependencies") {
+        if !integration_ids.contains(&dependency) {
+            findings.push(format!(
+                "production participant {capability_id} references unknown dependency: {dependency}"
+            ));
+        }
+    }
+}
+
+fn audit_declared_artifacts(declaration: &Value, capability_id: &str, findings: &mut Vec<String>) {
+    if string_array_field(declaration, "artifacts").is_empty() {
+        findings.push(format!(
+            "production participant {capability_id} has empty artifacts metadata"
+        ));
+    }
+}
+
+fn audit_declared_call_sites(
+    participant: ProductionParticipant,
+    hits: &[String],
+    findings: &mut Vec<String>,
+) {
+    if hits.is_empty() {
+        findings.push(format!(
+            "orphan production declaration: {} marker '{}' not found",
+            participant.capability_id, participant.marker
+        ));
+    } else if hits.len() != 1 {
+        findings.push(format!(
+            "production participant {} must have exactly one call site, found {}",
+            participant.capability_id,
+            hits.len()
+        ));
+    }
+}
+
+fn participant_audit_output(
+    participant: ProductionParticipant,
+    status: String,
+    hits: Vec<String>,
+) -> Value {
+    serde_json::json!({
+        "capabilityId": participant.capability_id,
+        "status": status,
+        "source": participant.source,
+        "marker": participant.marker,
+        "callSites": hits,
+    })
+}
+
+fn audit_unknown_declarations(declarations: &[Value], findings: &mut Vec<String>) {
+    for declaration in declarations {
+        let id = string_field(declaration, "capabilityId").unwrap_or_default();
+        if !PRODUCTION_PARTICIPANTS
+            .iter()
+            .any(|participant| participant.capability_id == id)
+        {
+            findings.push(format!(
+                "orphan production declaration: unknown capability {id}"
+            ));
+        }
+    }
+}
+
+fn production_call_sites(source: &str, text: &str, marker: &str) -> Vec<String> {
+    text.lines()
+        .enumerate()
+        .filter(|(_, line)| line.contains(marker))
+        .map(|(index, _)| format!("{source}:{}", index + 1))
+        .collect()
+}
+
+fn require_call_site_declaration(
+    declaration: &Value,
+    participant: ProductionParticipant,
+    findings: &mut Vec<String>,
+) {
+    let capability_id = participant.capability_id;
+    let Some(call_site) = declaration.get("callSite") else {
+        findings.push(format!(
+            "production participant {capability_id} is missing callSite metadata"
+        ));
+        return;
+    };
+    let declared_source = string_field(call_site, "source").unwrap_or_default();
+    let declared_anchor = string_field(call_site, "anchor").unwrap_or_default();
+    if declared_source != participant.source || declared_anchor != participant.marker {
+        findings.push(format!(
+            "production participant {capability_id} callSite contract drift"
+        ));
+    }
+}
+
+fn is_string_array(value: &Value, key: &str) -> bool {
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .is_some_and(|items| items.iter().all(Value::is_string))
 }
 
 fn normalize_mode(value: &str) -> Result<String> {
@@ -457,5 +928,256 @@ mod tests {
 
         let err = run(&options).expect_err("missing entrypoint should fail");
         assert!(err.to_string().contains("orchestration validation failed"));
+    }
+
+    #[test]
+    fn registry_audit_rejects_undeclared_repomix_invocation() {
+        let dir = orchestration_fixture_dir("registry-undeclared-repomix");
+        touch(
+            &dir.join("run-code-intel.ps1"),
+            "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"\n",
+        );
+        let manifest = json!({
+            "productionRegistry": {
+                "mode": "enforce",
+                "productionFiles": ["run-code-intel.ps1"],
+                "participants": []
+            }
+        });
+
+        let audit = reconcile_production_registry(&dir, &manifest, &HashSet::new());
+
+        assert!(audit
+            .findings
+            .iter()
+            .any(|finding| finding.contains("undeclared production invocation: pack.repomix")));
+    }
+
+    #[test]
+    fn registry_audit_rejects_registered_participant_without_dependency_or_effect_metadata() {
+        let dir = orchestration_fixture_dir("registry-incomplete-repomix");
+        touch(
+            &dir.join("run-code-intel.ps1"),
+            "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"\n",
+        );
+        let manifest = json!({
+            "productionRegistry": {
+                "mode": "enforce",
+                "productionFiles": ["run-code-intel.ps1"],
+                "participants": [{
+                    "capabilityId": "pack.repomix",
+                    "status": "declared",
+                    "callSite": {
+                        "source": "run-code-intel.ps1",
+                        "anchor": "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\""
+                    },
+                    "envelope": "code-intel-capability-envelope.v1",
+                    "owner": "code-intel-pipeline",
+                    "artifacts": ["repomix-output.*"]
+                }]
+            }
+        });
+        let ids = HashSet::from(["pack.repomix".to_string()]);
+
+        let audit = reconcile_production_registry(&dir, &manifest, &ids);
+
+        assert!(audit
+            .findings
+            .iter()
+            .any(|finding| finding.contains("pack.repomix is missing dependencies metadata")));
+        assert!(audit
+            .findings
+            .iter()
+            .any(|finding| finding.contains("pack.repomix is missing effects metadata")));
+    }
+
+    #[test]
+    fn registry_audit_rejects_duplicate_call_site_and_contract_anchor_drift() {
+        let dir = orchestration_fixture_dir("registry-call-site-drift");
+        let anchor = "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"";
+        touch(
+            &dir.join("run-code-intel.ps1"),
+            &format!("{anchor}\n{anchor}\n"),
+        );
+        let manifest = json!({
+            "productionRegistry": {
+                "mode": "enforce",
+                "productionFiles": ["run-code-intel.ps1"],
+                "participants": [{
+                    "capabilityId": "pack.repomix",
+                    "status": "declared",
+                    "callSite": {"source": "run-code-intel.ps1", "anchor": "wrong"},
+                    "envelope": "code-intel-capability-envelope.v1",
+                    "owner": "code-intel-pipeline",
+                    "dependencies": [],
+                    "effects": [],
+                    "artifacts": ["repomix-summary.json"]
+                }]
+            }
+        });
+        let ids = HashSet::from(["pack.repomix".to_string()]);
+
+        let audit = reconcile_production_registry(&dir, &manifest, &ids);
+
+        assert!(audit.findings.iter().any(|finding| {
+            finding.contains("pack.repomix must have exactly one call site, found 2")
+        }));
+        assert!(audit
+            .findings
+            .iter()
+            .any(|finding| finding.contains("pack.repomix callSite contract drift")));
+    }
+
+    #[test]
+    fn registry_audit_rejects_every_required_participant_metadata_field() {
+        let dir = orchestration_fixture_dir("registry-required-metadata");
+        let anchor = "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"";
+        touch(&dir.join("run-code-intel.ps1"), &format!("{anchor}\n"));
+        let ids = HashSet::from(["pack.repomix".to_string()]);
+
+        for field in [
+            "callSite",
+            "envelope",
+            "owner",
+            "dependencies",
+            "effects",
+            "artifacts",
+        ] {
+            let mut declaration = json!({
+                "capabilityId": "pack.repomix",
+                "status": "declared",
+                "callSite": {"source": "run-code-intel.ps1", "anchor": anchor},
+                "envelope": "code-intel-capability-envelope.v1",
+                "owner": "code-intel-pipeline",
+                "dependencies": [],
+                "effects": [],
+                "artifacts": ["repomix-summary.json"]
+            });
+            declaration.as_object_mut().unwrap().remove(field);
+            let manifest = json!({
+                "productionRegistry": {
+                    "mode": "enforce",
+                    "productionFiles": ["run-code-intel.ps1"],
+                    "participants": [declaration]
+                }
+            });
+
+            let audit = reconcile_production_registry(&dir, &manifest, &ids);
+
+            assert!(
+                audit
+                    .findings
+                    .iter()
+                    .any(|finding| { finding.contains("pack.repomix") && finding.contains(field) }),
+                "missing {field} must fail closed: {:?}",
+                audit.findings
+            );
+        }
+    }
+
+    #[test]
+    fn registry_audit_report_and_enforce_modes_are_explicit() {
+        let dir = orchestration_fixture_dir("registry-modes");
+        touch(&dir.join("run-code-intel.ps1"), "# no production calls\n");
+        let mut manifest = json!({
+            "productionRegistry": {
+                "mode": "report",
+                "productionFiles": ["run-code-intel.ps1"],
+                "participants": []
+            }
+        });
+
+        let report = reconcile_production_registry(&dir, &manifest, &HashSet::new());
+        assert!(!report.enforce);
+        assert!(!report.findings.is_empty());
+
+        manifest["productionRegistry"]["mode"] = Value::String("enforce".to_string());
+        let enforce = reconcile_production_registry(&dir, &manifest, &HashSet::new());
+        assert!(enforce.enforce);
+        assert_eq!(report.findings, enforce.findings);
+    }
+
+    #[test]
+    fn registry_audit_rejects_unknown_orphan_declaration() {
+        let dir = orchestration_fixture_dir("registry-orphan");
+        touch(&dir.join("run-code-intel.ps1"), "# no production calls\n");
+        let manifest = json!({
+            "productionRegistry": {
+                "mode": "enforce",
+                "productionFiles": ["run-code-intel.ps1"],
+                "participants": [{"capabilityId": "unknown.future-tool", "status": "declared"}]
+            }
+        });
+
+        let audit = reconcile_production_registry(&dir, &manifest, &HashSet::new());
+
+        assert!(audit.findings.iter().any(|finding| {
+            finding
+                .contains("orphan production declaration: unknown capability unknown.future-tool")
+        }));
+    }
+
+    #[test]
+    fn registry_audit_accepts_reviewed_deletion_only_after_call_site_is_removed() {
+        let dir = orchestration_fixture_dir("registry-reviewed-deletion");
+        touch(&dir.join("run-code-intel.ps1"), "# call site removed\n");
+        let anchor = "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"";
+        let manifest = json!({
+            "productionRegistry": {
+                "mode": "enforce",
+                "productionFiles": ["run-code-intel.ps1"],
+                "participants": [{
+                    "capabilityId": "pack.repomix",
+                    "status": "deleted",
+                    "callSite": {"source": "run-code-intel.ps1", "anchor": anchor},
+                    "reviewedDeletion": {
+                        "reviewer": "verifier",
+                        "reviewedAt": "2026-07-13T00:00:00Z",
+                        "evidence": "fixture:call-site-removed"
+                    }
+                }]
+            }
+        });
+
+        let audit = reconcile_production_registry(&dir, &manifest, &HashSet::new());
+
+        assert!(
+            audit
+                .findings
+                .iter()
+                .all(|finding| !finding.contains("pack.repomix")),
+            "reviewed deletion should close the participant exactly: {:?}",
+            audit.findings
+        );
+    }
+
+    #[test]
+    fn checked_in_production_registry_reconciles_eleven_calls_and_one_reviewed_deletion() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest = read_json(&root.join("orchestration/integrations.json")).unwrap();
+        let ids = array_values(&manifest, "integrations")
+            .iter()
+            .filter_map(|integration| string_field(integration, "id"))
+            .collect::<HashSet<_>>();
+
+        let audit = reconcile_production_registry(&root, &manifest, &ids);
+
+        assert!(audit.configured);
+        assert!(audit.enforce);
+        assert!(audit.findings.is_empty(), "{:?}", audit.findings);
+        assert_eq!(audit.participants.len(), 12);
+        for participant in audit.participants {
+            let expected = if participant["status"] == "deleted" {
+                0
+            } else {
+                1
+            };
+            assert_eq!(
+                participant["callSites"].as_array().unwrap().len(),
+                expected,
+                "{} must reconcile to its declared lifecycle",
+                participant["capabilityId"]
+            );
+        }
     }
 }

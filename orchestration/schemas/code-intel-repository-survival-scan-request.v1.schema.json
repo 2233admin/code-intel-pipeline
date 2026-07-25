@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://code-intel.local/schemas/code-intel-repository-survival-scan-request.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "snapshotIdentity", "inputs", "codenexusAdapter"],
+  "properties": {
+    "schema": { "const": "code-intel-repository-survival-scan-request.v1" },
+    "snapshotIdentity": { "$ref": "#/definitions/sha256" },
+    "inputs": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "$ref": "#/definitions/artifactRef" }
+    },
+    "codenexusAdapter": {
+      "$ref": "code-intel-codenexus-route-result.v1.schema.json#/properties/adapter/oneOf/1"
+    }
+  },
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "artifactSchema", "type", "path", "sha256", "consumedSnapshotIdentity"],
+      "properties": {
+        "schema": { "const": "code-intel-artifact-ref.v1" },
+        "artifactSchema": { "enum": ["code-intel-repository-snapshot.v1", "code-intel-file-inventory.v1"] },
+        "type": { "enum": ["repository.snapshot", "inventory.files"] },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/definitions/sha256" },
+        "consumedSnapshotIdentity": { "$ref": "#/definitions/sha256" }
+      }
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "case": "dirty",
+  "provenance": {
+    "producer": "run-code-intel.ps1",
+    "snapshotIdentity": "working-tree:dirty-fixture",
+    "tools": ["git", "rg", "sentrux"]
+  },
+  "missingEvidence": [],
+  "artifacts": {
+    "report": {
+      "repo": "parity-dirty",
+      "mode": "normal",
+      "artifactDir": "{{TEMP_ROOT}}/artifacts/parity-dirty/20260713-010203",
+      "paths": { "repo": "{{TEMP_ROOT}}/repos/parity-dirty" },
+      "tools": { "git": true, "rg": true, "repowise": false, "sentrux": true },
+      "steps": [
+        { "name": "git status", "startedAt": "{{TIME}}", "finishedAt": "{{TIME}}", "status": "passed", "exitCode": 0, "output": "## feature\n M src/app.rs\n?? notes.txt", "error": "" },
+        { "name": "rg file inventory", "startedAt": "{{TIME}}", "finishedAt": "{{TIME}}", "status": "passed", "exitCode": 0, "output": "files=14", "error": "" }
+      ],
+      "summary": {
+        "failed": 0,
+        "effectiveFailed": 0,
+        "manualRequired": 0,
+        "passed": 7,
+        "skipped": 1,
+        "failureCategories": { "providerQuota": 0, "localToolError": 0, "graphMissing": 0, "sentruxFail": 0 },
+        "effectiveFailureCategories": { "providerQuota": 0, "localToolError": 0, "graphMissing": 0, "sentruxFail": 0 },
+        "blockingSentruxDebt": 0,
+        "knownSentruxDebt": 0
+      },
+      "understanding": "{{TEMP_ROOT}}/artifacts/parity-dirty/20260713-010203/understanding.md"
+    },
+    "hospital": {
+      "schema": "code-intel-hospital.v1",
+      "generatedAt": "{{TIME}}",
+      "repo": "parity-dirty",
+      "artifacts": { "report": "{{TEMP_ROOT}}/artifacts/parity-dirty/20260713-010203/report.json" },
+      "triage": { "status": "amber", "disposition": "observe", "primary_diagnosis": "dirty working tree", "next_protocol": "working_tree_review", "research_status": "not_applicable", "research_required": false },
+      "state_machine": { "current_state": "observe" },
+      "modalities": [
+        { "name": "xray", "status": "passed", "artifact": "{{TEMP_ROOT}}/artifacts/parity-dirty/20260713-010203/files.txt" },
+        { "name": "governance", "status": "passed", "artifact": "{{TEMP_ROOT}}/artifacts/parity-dirty/20260713-010203/sentrux-failures.json" }
+      ]
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "status": "partial",
+  "authoritativeRules": [
+    { "kind": "max_cc", "status": "evaluated", "verdict": "fail", "failure": { "kind": "none" } },
+    { "kind": "max_cycles", "status": "not_evaluated", "verdict": "unknown", "failure": { "kind": "domain_unknown", "message": "provider did not emit cycle evaluation" } }
+  ],
+  "nativeFailure": { "kind": "none" }
+}

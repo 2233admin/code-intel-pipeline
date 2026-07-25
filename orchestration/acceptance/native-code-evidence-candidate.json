@@ -1,0 +1,83 @@
+{
+  "schema": "code-intel-language-adapter-acceptance.v1",
+  "adapter": {
+    "id": "evidence.native-code",
+    "version": "compat-1.0.0",
+    "claimLevel": "structural",
+    "requestedStage": "candidate",
+    "languages": ["powershell", "python", "javascript", "typescript", "rust", "go", "java"]
+  },
+  "contract": {
+    "artifactSchemas": [
+      "code-evidence-files.v1",
+      "code-evidence-symbols.v1",
+      "code-evidence-chunks.v1",
+      "code-evidence-symbol-chunks.v1",
+      "code-evidence-imports.v1",
+      "code-evidence-coverage.v1"
+    ],
+    "schemaValidated": true,
+    "backwardCompatible": true
+  },
+  "claims": {
+    "inventory": true,
+    "structural": true,
+    "semantic": false,
+    "behavioral": false
+  },
+  "corpus": {
+    "labeledSamples": 12,
+    "precision": 0.75,
+    "recall": 0.75,
+    "declaredCoverage": 0.833333,
+    "unsupportedExplicit": true,
+    "fabricatedFactsForUnsupported": 0
+  },
+  "oracles": {
+    "semanticCases": 0,
+    "behavioralCases": 0
+  },
+  "determinism": {
+    "replays": 10,
+    "stable": true
+  },
+  "compatibility": {
+    "parityArtifacts": 6,
+    "passed": true
+  },
+  "effects": {
+    "declared": ["repo_read", "local_write"],
+    "observed": ["repo_read", "local_write"],
+    "networkUsed": false,
+    "repoMutationUsed": false
+  },
+  "provenance": {
+    "sourceRevisionPinned": true,
+    "implementationLicense": "PROJECT-LICENSE-PIPELINE-OWNED",
+    "sourcePath": "crates/code-intel-cli/src/native_code_evidence.rs",
+    "sourceDigest": "44f89f430ebf776b35e705d482807dd58a2803723268b4e162c9a753fadf8390",
+    "conformancePath": "crates/code-intel-cli/tests/native_code_evidence.rs",
+    "conformanceDigest": "08c5d7f3bc9b5cc65fa8dcb9ebbc9eb9d7359b56c070ad9e4516254d09bd7dcb"
+  },
+  "rollback": {
+    "documented": true,
+    "tested": true
+  },
+  "verification": {
+    "independent": false,
+    "reviewer": ""
+  },
+  "evidence": [
+    "local:r06:labeled-corpus-samples-12",
+    "local:r06:precision-0.75",
+    "local:r06:recall-0.75",
+    "local:r06:supported-coverage-0.833333",
+    "local:b08:normalized-parity-artifacts-6",
+    "local:pon-multilanguage:seven-supported-languages"
+  ],
+  "gaps": [
+    "semantic oracle not implemented",
+    "behavioral differential oracle not implemented",
+    "independent production verification pending"
+  ]
+}

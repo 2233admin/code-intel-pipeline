@@ -1,0 +1,16 @@
+{
+  "schema": "code-intel-method-catalog.v1",
+  "catalogVersion": "1.0.0",
+  "selectionPolicy": "none_catalog_only",
+  "cards": [
+    { "id": "contract-testing", "path": "cards/contract-testing.v1.json" },
+    { "id": "critical-path-pert", "path": "cards/critical-path-pert.v1.json" },
+    { "id": "fault-tree-analysis", "path": "cards/fault-tree-analysis.v1.json" },
+    { "id": "fmea", "path": "cards/fmea.v1.json" },
+    { "id": "pdca", "path": "cards/pdca.v1.json" },
+    { "id": "root-cause-analysis", "path": "cards/root-cause-analysis.v1.json" },
+    { "id": "spc", "path": "cards/spc.v1.json" },
+    { "id": "strangler-migration", "path": "cards/strangler-migration.v1.json" },
+    { "id": "value-stream-queue-delay", "path": "cards/value-stream-queue-delay.v1.json" }
+  ]
+}

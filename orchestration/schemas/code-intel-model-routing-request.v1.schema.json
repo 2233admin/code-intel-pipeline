@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-model-routing-request.v1.schema.json",
+  "title": "Code Intel model routing request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "inventory", "policy", "workload"],
+  "properties": {
+    "schema": { "const": "code-intel-model-routing-request.v1" },
+    "inventory": { "$ref": "code-intel-model-channel-inventory-result.v1.schema.json" },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["consumptionAuthorization", "externalData", "paidSpend", "selection"],
+      "properties": {
+        "consumptionAuthorization": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "scopes"],
+          "properties": {
+            "status": { "$ref": "#/$defs/consent" },
+            "scopes": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/costScope" } }
+          }
+        },
+        "externalData": { "$ref": "#/$defs/status" },
+        "paidSpend": { "$ref": "#/$defs/status" },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pinnedAdapter", "fallbackPolicy"],
+          "properties": {
+            "pinnedAdapter": { "type": ["string", "null"], "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+            "fallbackPolicy": { "enum": ["denied", "allowed"] }
+          }
+        }
+      }
+    },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requiresExternalData"],
+      "properties": { "requiresExternalData": { "type": "boolean" } }
+    }
+  },
+  "$defs": {
+    "consent": { "enum": ["unanswered", "granted", "denied"] },
+    "costScope": { "enum": ["local_compute", "subscription_cli", "free_or_internal_quota", "metered_api"] },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": { "status": { "$ref": "#/$defs/consent" } }
+    }
+  }
+}

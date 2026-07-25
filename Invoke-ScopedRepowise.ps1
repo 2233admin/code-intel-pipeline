@@ -14,12 +14,32 @@ param(
     [string]$Provider = "mock",
     [string]$Model = "",
     [string]$Reasoning = "auto",
+    [ValidateSet("unanswered", "granted", "denied")]
+    [string]$ConsumptionConsent = "unanswered",
+    [ValidateSet("unanswered", "granted", "denied")]
+    [string]$ExternalDataConsent = "unanswered",
+    [ValidateSet("unanswered", "granted", "denied")]
+    [string]$PaidSpendConsent = "unanswered",
+    [ValidateSet("local_compute", "subscription_cli", "free_or_internal_quota", "metered_api")]
+    [string]$CostScope = "metered_api",
+    [switch]$AllowShadowWorktreeMutation,
     [switch]$IncludeWorkingTree,
     [switch]$Docs
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+if (-not $AllowShadowWorktreeMutation) {
+    throw "Scoped Repowise requires explicit -AllowShadowWorktreeMutation authority because it creates and resets an adapter-owned Git worktree."
+}
+if ($Docs) {
+    if ($ConsumptionConsent -ne "granted") { throw "Provider-backed docs require explicit consumption consent." }
+    if ($CostScope -ne "local_compute" -and $ExternalDataConsent -ne "granted") { throw "Non-local provider-backed docs require explicit external-data consent." }
+    if ($CostScope -eq "metered_api" -and $PaidSpendConsent -ne "granted") { throw "Metered provider-backed docs require explicit paid-spend consent." }
+    if ([string]::IsNullOrWhiteSpace($Provider) -or $Provider -ieq "mock") { throw "Provider-backed docs require an explicitly pinned non-mock provider route." }
+    if ([string]::IsNullOrWhiteSpace($Model)) { throw "Provider-backed docs require an explicitly pinned model." }
+}
 
 $platformModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-intel-platform.psm1"
 Import-Module $platformModule -Force
@@ -216,18 +236,6 @@ function Get-EffectiveEgressProvider {
     )
 
     $effective = $RequestedProvider
-    if ($DocsEnabled) {
-        $configured = Get-CodeIntelEnvValue "CODE_INTEL_PROVIDER"
-        if (-not [string]::IsNullOrWhiteSpace($configured)) {
-            $effective = $configured
-        }
-        elseif ($effective -ieq "mock" -or [string]::IsNullOrWhiteSpace($effective)) {
-            $effective = Get-CodeIntelEnvValue "REPOWISE_PROVIDER"
-            if ([string]::IsNullOrWhiteSpace($effective)) {
-                $effective = "anthropic"
-            }
-        }
-    }
     if ($effective -ieq "ccw") { return "codex_cli" }
     return $effective.ToLowerInvariant()
 }
@@ -318,10 +326,9 @@ function Write-ScopedConfig {
         [string]$Reasoning
     )
 
-    $provider = Get-CodeIntelEnvValue "CODE_INTEL_PROVIDER"
-    if ([string]::IsNullOrWhiteSpace($provider)) { $provider = "anthropic" }
-    $model = Get-CodeIntelEnvValue "CODE_INTEL_MODEL"
-    if ([string]::IsNullOrWhiteSpace($model) -and $provider -eq "anthropic") { $model = "MiniMax-M2.7" }
+    $provider = $Provider
+    if ([string]::IsNullOrWhiteSpace($provider)) { $provider = "mock" }
+    $model = $Model
 
     $configDir = Join-Path $ShadowPath ".repowise"
     New-Item -ItemType Directory -Force -Path $configDir | Out-Null
@@ -332,7 +339,7 @@ function Write-ScopedConfig {
         $lines.Add("model: $model")
     }
     $lines.Add("embedder: mock")
-    $lines.Add("reasoning: auto")
+    $lines.Add("reasoning: $Reasoning")
     $lines.Add("commit_limit: $CommitLimit")
     $lines.Add("editor_files:")
     $lines.Add("  claude_md: false")
@@ -616,10 +623,8 @@ $Provider = if ($Provider -ieq "ccw") { "codex_cli" } else { $Provider }
 $providerArgs = @("--provider", $Provider)
 if (-not [string]::IsNullOrWhiteSpace($Model)) { $providerArgs += @("--model", $Model) }
 if (-not [string]::IsNullOrWhiteSpace($Reasoning)) { $providerArgs += @("--reasoning", $Reasoning) }
-# Docs must never silently run the "mock" default (index-only legs use mock on
-# purpose; mock docs would emit junk pages). When -Provider was not explicitly
-# set past the default, omit --provider so Run-ScopedRepowiseDocs.py resolves
-# the real provider from CODE_INTEL_PROVIDER (default anthropic).
+# Docs use only the explicitly pinned provider/model route. Environment values
+# may supply credentials for that route but may not select a different route.
 $docsProviderArgs = @()
 if (-not [string]::IsNullOrWhiteSpace($Provider) -and $Provider -ine "mock") { $docsProviderArgs += @("--provider", $Provider) }
 if (-not [string]::IsNullOrWhiteSpace($Model)) { $docsProviderArgs += @("--model", $Model) }

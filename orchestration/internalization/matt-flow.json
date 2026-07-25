@@ -1,0 +1,22 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.matt-flow-record",
+  "projectId": "code-intel-pipeline",
+  "subject": { "name": "matt-flow absorbed advisory concept", "kind": "design_reference", "source": { "uri": "https://github.com/mattpocock/skills", "revision": "unverified-upstream; local-doc-sha256:02d4b04482a1bdb3650a4bd27e500a79ec675dc86ecbacb4780a9de54a710d2a" }, "license": { "id": "UNKNOWN-RESEARCH-ONLY", "obligations": ["do not distribute, vendor, invoke, or production-enable until exact upstream revision and license text are verified", "retain attribution for the locally documented idea-to-ship concept trace"] } },
+  "adoption": {
+    "rung": "reimplement",
+    "ownedBoundary": ["pipeline-owned idea-to-ship advisory concept and repository-signal rules", "no mattpocock/skills runtime dependency", "no issue creation, implementation, commit, or external-write authority"],
+    "necessityEvidence": { "evidenceIds": ["local:docs:matt-flow-source-trace", "gap:matt-flow:upstream-revision", "gap:matt-flow:license"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "compatibilityEvidence": { "evidenceIds": ["local:b06:proposal-effects-empty", "local:b06:no-external-write-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "conformanceEvidence": { "evidenceIds": ["local:atom:one-matt-flow-branch", "local:b06:a01-envelope-parity"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+  },
+  "economics": { "benefit": { "metric": "matt-flow candidate branches traced in the advisory atom", "value": 1, "unit": "branches" }, "cost": { "metric": "pipeline-owned matt-flow lifecycle records", "value": 1, "unit": "records" }, "benefitEvidence": { "evidenceIds": ["local:atom:one-matt-flow-branch"], "checkedAt": 1783900800, "expiresAt": 1791676800 }, "costEvidence": { "evidenceIds": ["local:record:matt-flow"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "assurance": { "maintenanceEvidence": { "evidenceIds": ["gap:matt-flow:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 }, "securityEvidence": { "evidenceIds": ["gap:matt-flow:security-review"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "update": { "policy": "Before 2026-10-11, verify source revision, license, current skill semantics, and retained concept trace", "nextCheckAt": 1791676800, "evidence": { "evidenceIds": ["gap:matt-flow:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "ownedModifications": [ { "path": "OpenSpec-Detector.ps1", "description": "Pipeline-owned matt-flow candidate behavior derived from local repository signals", "evidenceIds": ["local:atom:one-matt-flow-branch", "local:b06:no-external-write-boundary"] } ],
+  "rollback": { "strategy": "remove matt-flow candidate data while preserving the stable advisory schema and other alternatives", "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "exit": { "strategy": "replace the concept source with a pinned licensed reference or retire the source coupling", "replacementCriteria": ["source-to-internal-concept trace remains behaviorally tested", "replacement passes measurement and zero-external-effect checks"], "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "retirement": { "status": "candidate", "triggers": ["concept trace cannot be tied to a verified source", "candidate behavior duplicates another measured alternative", "maintenance or security review remains missing"], "evidence": { "evidenceIds": ["local:record:matt-flow"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "lifecycle": { "previousStatus": null, "status": "research", "effectiveAt": 1783900800, "replacementRecordId": null, "evidenceIds": ["local:record:matt-flow", "gap:matt-flow:upstream-revision", "gap:matt-flow:license"], "authorityEvent": null },
+  "provenance": { "recordedAt": 1783900800, "recordedBy": "dependency-expert" }
+}

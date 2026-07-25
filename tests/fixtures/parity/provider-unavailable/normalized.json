@@ -1,0 +1,101 @@
+{
+  "artifacts": {
+    "hospital": {
+      "artifacts": {
+        "report": "<TEMP_ROOT>/artifacts/parity-provider-unavailable/20260713-010203/report.json"
+      },
+      "generatedAt": "<TIME>",
+      "modalities": [
+        {
+          "artifact": "<TEMP_ROOT>/artifacts/parity-provider-unavailable/20260713-010203/repowise-summary.json",
+          "limit": "semantic_memory.repowise.docs missing",
+          "name": "chart",
+          "status": "partial"
+        }
+      ],
+      "repo": "parity-provider-unavailable",
+      "schema": "code-intel-hospital.v1",
+      "state_machine": {
+        "current_state": "github_solution_research"
+      },
+      "triage": {
+        "disposition": "admit",
+        "next_protocol": "github_solution_research",
+        "primary_diagnosis": "provider quota unavailable",
+        "research_required": true,
+        "research_status": "manual_required",
+        "status": "red"
+      }
+    },
+    "report": {
+      "artifactDir": "<TEMP_ROOT>/artifacts/parity-provider-unavailable/20260713-010203",
+      "mode": "normal",
+      "paths": {
+        "repo": "<TEMP_ROOT>/repos/parity-provider-unavailable"
+      },
+      "repo": "parity-provider-unavailable",
+      "steps": [
+        {
+          "error": "provider_quota",
+          "exitCode": 1,
+          "finishedAt": "<TIME>",
+          "name": "repowise provider preflight",
+          "output": "provider unavailable",
+          "startedAt": "<TIME>",
+          "status": "failed"
+        },
+        {
+          "error": "",
+          "exitCode": 0,
+          "finishedAt": "<TIME>",
+          "name": "repowise index",
+          "output": "index-only",
+          "startedAt": "<TIME>",
+          "status": "passed"
+        }
+      ],
+      "summary": {
+        "blockingSentruxDebt": 0,
+        "effectiveFailed": 1,
+        "effectiveFailureCategories": {
+          "graphMissing": 0,
+          "localToolError": 0,
+          "providerQuota": 1,
+          "sentruxFail": 0
+        },
+        "failed": 1,
+        "failureCategories": {
+          "graphMissing": 0,
+          "localToolError": 0,
+          "providerQuota": 1,
+          "sentruxFail": 0
+        },
+        "knownSentruxDebt": 0,
+        "manualRequired": 0,
+        "passed": 6,
+        "skipped": 1
+      },
+      "tools": {
+        "git": true,
+        "repowise": true,
+        "rg": true,
+        "sentrux": true
+      },
+      "understanding": "<TEMP_ROOT>/artifacts/parity-provider-unavailable/20260713-010203/understanding.md"
+    }
+  },
+  "case": "provider-unavailable",
+  "missingEvidence": [
+    "semantic_memory.repowise.docs"
+  ],
+  "provenance": {
+    "producer": "run-code-intel.ps1",
+    "provider": "anthropic-compatible",
+    "snapshotIdentity": "git:provider-fixture-head",
+    "tools": [
+      "git",
+      "rg",
+      "repowise"
+    ]
+  }
+}

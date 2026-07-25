@@ -82,13 +82,16 @@ finally {
 $fakeBin = Join-Path $base "fake-gh"
 New-Item -ItemType Directory -Force -Path $fakeBin | Out-Null
 $fakeGh = Join-Path $fakeBin "gh.cmd"
+$ghLog = Join-Path $base "gh-args.log"
 @'
 @echo off
-echo [{"title":"Known blocker","fullName":"owner/repo","path":"src/fix.rs","url":"https://github.com/owner/repo/issues/1","state":"OPEN","stargazersCount":42,"language":"PowerShell","updatedAt":"2026-01-01T00:00:00Z","repository":{"fullName":"owner/repo"}}]
+echo %*>>"%CODE_INTEL_GH_TEST_LOG%"
+echo [{"title":"Known blocker","fullName":"owner/repo","path":"src/fix.rs","url":"https://github.com/owner/repo/issues/1","sha":"0123456789abcdef","state":"OPEN","stargazersCount":42,"language":"PowerShell","updatedAt":"2026-01-01T00:00:00Z","repository":{"fullName":"owner/repo"}}]
 '@ | Set-Content -LiteralPath $fakeGh -Encoding ASCII
 
 $oldPath = $env:PATH
 try {
+    $env:CODE_INTEL_GH_TEST_LOG = $ghLog
     $env:PATH = $fakeBin + [IO.Path]::PathSeparator + $oldPath
     $fakeGhDir = Join-Path $base "fake-gh-run"
     $fakeGhResult = & $helper -RepoPath $RepoPath -ArtifactDir $fakeGhDir -FailedSteps $failedSteps -FailureClassifications $classifications
@@ -102,9 +105,47 @@ try {
     if ([string]$artifact.schema -ne "github-solution-research.v1") {
         throw "GitHub research artifact schema mismatch."
     }
+    if (@($artifact.invocations).Count -eq 0 -or [string]$artifact.invocations[0].argv[0] -ne "search") {
+        throw "GitHub research artifact must bind actual argv and exit codes."
+    }
+    if ([string]$artifact.candidates[0].sourceRevision -ne "0123456789abcdef") {
+        throw "GitHub research artifact must bind returned source revisions."
+    }
+    $invocations = @(Get-Content -LiteralPath $ghLog)
+    if ($invocations.Count -eq 0 -or @($invocations | Where-Object { $_ -notmatch '^search ' }).Count -ne 0) {
+        throw "GitHub research must invoke only read-only gh search commands."
+    }
+}
+finally {
+    Remove-Item Env:CODE_INTEL_GH_TEST_LOG -ErrorAction SilentlyContinue
+    $env:PATH = $oldPath
+}
+
+$fakeToken = "ghp_" + "supersecret123456789"
+@"
+@echo off
+echo HTTP 429 API rate limit token=$fakeToken 1>&2
+exit /b 1
+"@ | Set-Content -LiteralPath $fakeGh -Encoding ASCII
+$oldPath = $env:PATH
+try {
+    $env:PATH = $fakeBin + [IO.Path]::PathSeparator + $oldPath
+    $rateDir = Join-Path $base "rate-limited"
+    $rateResult = & $helper -RepoPath $RepoPath -ArtifactDir $rateDir -FailedSteps $failedSteps -FailureClassifications $classifications
+    if ([string]$rateResult.status -ne "manual_required" -or [string]$rateResult.reason -notmatch "429|rate limit") {
+        throw "Rate-limited gh should fail closed to manual_required."
+    }
+    $rateText = Get-Content -LiteralPath $rateResult.path -Raw
+    if ($rateText -match "ghp_supersecret") {
+        throw "Credential-like token leaked into the research artifact."
+    }
+    if ($rateText -notmatch "REDACTED") {
+        throw "Credential-like token was not visibly redacted."
+    }
 }
 finally {
     $env:PATH = $oldPath
 }
 
 Write-Host "GitHub solution research tests passed: $base"
+$global:LASTEXITCODE = 0

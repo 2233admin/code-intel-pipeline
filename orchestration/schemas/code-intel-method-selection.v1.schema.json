@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-method-selection.v1",
+  "title": "Code Intel deterministic Method Card selection",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/result" },
+    { "$ref": "#/$defs/rules" }
+  ],
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "strings": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "snapshotIdentity", "evaluatedAt", "maxEvidenceAgeSeconds", "admissions", "facts", "evidenceGaps"],
+      "properties": {
+        "schema": { "const": "code-intel-method-selection-request.v1" },
+        "snapshotIdentity": { "$ref": "#/$defs/digest" },
+        "evaluatedAt": { "type": "integer", "minimum": 0 },
+        "maxEvidenceAgeSeconds": { "type": "integer", "minimum": 1 },
+        "admissions": { "type": "array", "items": { "$ref": "#/$defs/admission" } },
+        "facts": { "type": "array", "items": { "$ref": "#/$defs/fact" } },
+        "evidenceGaps": { "$ref": "#/$defs/strings" }
+      }
+    },
+    "admission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request", "result"],
+      "properties": {
+        "request": { "$ref": "code-intel-evidence-provider-port.v1.schema.json#/$defs/request" },
+        "result": { "$ref": "code-intel-evidence-admissibility-result.v1.schema.json" }
+      }
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "signalIds", "evidenceKinds", "admissionIds"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "signalIds": { "$ref": "#/$defs/nonemptyStrings" },
+        "evidenceKinds": { "$ref": "#/$defs/nonemptyStrings" },
+        "admissionIds": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/digest" }, "uniqueItems": true }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "outcome", "tie", "matches", "sourceAdmissionIds", "executionPolicy"],
+      "properties": {
+        "schema": { "const": "code-intel-method-selection-result.v1" },
+        "outcome": { "enum": ["proposal", "unknown", "none"] },
+        "tie": { "type": "boolean" },
+        "matches": { "type": "array", "items": { "$ref": "#/$defs/match" } },
+        "sourceAdmissionIds": { "type": "array", "items": { "$ref": "#/$defs/digest" }, "uniqueItems": true },
+        "executionPolicy": { "const": "advisory_proposal_only_no_execution_or_decision" }
+      }
+    },
+    "match": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["methodId", "outcome", "matchedSignals", "missingEvidence", "cost", "triggeredContraindications", "declaredContraindications", "confidenceRules", "selectionConfidence", "matchScore"],
+      "properties": {
+        "methodId": { "type": "string", "minLength": 1 },
+        "outcome": { "enum": ["proposal", "unknown", "none"] },
+        "matchedSignals": { "$ref": "#/$defs/nonemptyStrings" },
+        "missingEvidence": { "$ref": "#/$defs/strings" },
+        "cost": { "$ref": "#/$defs/cost" },
+        "triggeredContraindications": { "$ref": "#/$defs/strings" },
+        "declaredContraindications": { "$ref": "#/$defs/nonemptyStrings" },
+        "confidenceRules": {
+          "type": "array", "minItems": 1,
+          "items": { "$ref": "#/$defs/confidenceRule" }
+        },
+        "selectionConfidence": { "enum": ["unknown", "medium", "high"] },
+        "matchScore": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "rules"],
+      "properties": {
+        "schema": { "const": "code-intel-method-selection-rules.v1" },
+        "rules": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["methodId", "signalIds", "contraindications"],
+            "properties": {
+              "methodId": { "type": "string", "minLength": 1 },
+              "signalIds": { "$ref": "#/$defs/nonemptyStrings" },
+              "contraindications": {
+                "type": "array",
+                "items": {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["signalId", "cardText"],
+                  "properties": { "signalId": { "type": "string", "minLength": 1 }, "cardText": { "type": "string", "minLength": 1 } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "cost": {
+      "type": "object", "additionalProperties": false,
+      "required": ["relative", "drivers"],
+      "properties": {
+        "relative": { "enum": ["low", "medium", "high"] },
+        "drivers": { "$ref": "#/$defs/nonemptyStrings" }
+      }
+    },
+    "confidenceRule": {
+      "type": "object", "additionalProperties": false,
+      "required": ["level", "whenAll"],
+      "properties": {
+        "level": { "enum": ["unknown", "low", "medium", "high"] },
+        "whenAll": { "$ref": "#/$defs/nonemptyStrings" }
+      }
+    },
+    "nonemptyStrings": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+  }
+}

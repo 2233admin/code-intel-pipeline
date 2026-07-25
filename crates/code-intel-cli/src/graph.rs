@@ -1,9 +1,11 @@
-use crate::Result;
 use serde_json::{json, Value};
 use std::collections::HashSet;
+use std::error::Error;
 use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 pub struct Options<'a> {
     pub repo: &'a Path,
@@ -480,7 +482,13 @@ fn truncate(value: &str, max: usize) -> String {
     if value.len() <= max {
         return value.to_string();
     }
-    format!("{}...", &value[..max])
+    let end = value
+        .char_indices()
+        .map(|(index, _)| index)
+        .take_while(|index| *index <= max)
+        .last()
+        .unwrap_or(0);
+    format!("{}...", &value[..end])
 }
 
 fn normalize_path(path: impl AsRef<Path>) -> String {
@@ -516,6 +524,15 @@ mod tests {
         assert!(graph["summary"]["symbols"].as_u64().unwrap_or(0) >= 2);
 
         fs::remove_dir_all(repo).unwrap();
+    }
+
+    #[test]
+    fn truncates_unicode_on_a_character_boundary() {
+        let value = "交易账户与行情连接是两个独立概念";
+
+        let truncated = truncate(value, 10);
+
+        assert_eq!(truncated, "交易账...");
     }
 
     fn unique_temp_dir() -> std::path::PathBuf {

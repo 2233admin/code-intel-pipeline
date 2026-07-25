@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-file-boundary-document.v1.schema.json",
+  "title": "Code Intel file boundary document v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "snapshotIdentity", "observedAt", "source", "entries", "unsupportedConstructs"],
+  "properties": {
+    "schema": { "const": "code-intel-file-boundary-document.v1" },
+    "snapshotIdentity": { "$ref": "#/$defs/digest" },
+    "observedAt": { "type": "integer", "minimum": 0 },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "sha256"],
+      "properties": {
+        "kind": { "const": "local_boundary_document" },
+        "path": { "$ref": "#/$defs/path" },
+        "sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "role", "forbid", "gotcha", "checks"],
+        "properties": {
+          "path": { "$ref": "#/$defs/path" },
+          "role": { "type": ["string", "null"], "minLength": 1, "maxLength": 1024 },
+          "forbid": { "type": "array", "items": { "$ref": "#/$defs/rule" } },
+          "gotcha": { "type": "array", "items": { "$ref": "#/$defs/rule" } },
+          "checks": { "type": "array", "items": { "$ref": "#/$defs/check" } }
+        }
+      }
+    },
+    "unsupportedConstructs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "ruleId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$" },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary"],
+      "properties": {
+        "id": { "$ref": "#/$defs/ruleId" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "command"],
+      "properties": {
+        "id": { "$ref": "#/$defs/ruleId" },
+        "command": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      }
+    }
+  }
+}

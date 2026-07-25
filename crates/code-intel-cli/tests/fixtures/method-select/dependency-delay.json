@@ -1,0 +1,15 @@
+{
+  "facts": [
+    {
+      "id": "dependency-fact",
+      "signalIds": ["dependency-congestion"],
+      "evidenceKinds": ["activity-duration-estimates", "activity-network"]
+    },
+    {
+      "id": "queue-fact",
+      "signalIds": ["handoff-wait"],
+      "evidenceKinds": ["item-state-timestamps", "work-demand-and-capacity"]
+    }
+  ],
+  "evidenceGaps": []
+}

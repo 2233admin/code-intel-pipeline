@@ -19,7 +19,7 @@ Skill Development Benchmark is the quality bar for Code Intel skills.
 
 Do not make `yao-meta-skill` a runtime dependency of Code Intel Pipeline.
 
-This benchmark guides how we develop `skill/SKILL.md` and future Code Intel skills. It does not produce artifact runs, does not change scanner output, and does not replace Agent Goal Intake or Harness Factory Reference.
+This benchmark guides how we develop `skills/code-intel-pipeline/SKILL.md` and future Code Intel skills. It does not produce artifact runs, does not change scanner output, and does not replace Agent Goal Intake or Harness Factory Reference.
 
 ## Code Intel Application
 
@@ -36,7 +36,7 @@ Use this benchmark before promoting a local skill into a shared or published pac
 
 ## Local Check
 
-Run the lightweight benchmark contract check before changing or publishing `skill/SKILL.md`:
+Run the lightweight benchmark contract check before changing or publishing `skills/code-intel-pipeline/SKILL.md`:
 
 ```powershell
 .\test-skill-development-benchmark.ps1 -RepoPath .

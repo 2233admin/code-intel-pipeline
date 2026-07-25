@@ -1,0 +1,82 @@
+{
+  "schema": "code-intel-clean-machine-verifier-attestation.v1",
+  "version": 1,
+  "verifiedAt": "2026-07-13T18:49:59Z",
+  "capability": "project.orientation-benchmark",
+  "source": {
+    "path": "crates/code-intel-cli/src/project_orientation_benchmark.rs",
+    "sha256": "9af2a8cf863dab62f7372ca454c6b5efddae60f71223e64064076fe00977833d"
+  },
+  "environment": {
+    "cleanMachine": true,
+    "basis": "fresh disposable container, source-only copy, zero host mounts or caches, and no injected environment variables",
+    "image": "rust:1.96-bookworm",
+    "imageDigest": "sha256:a339861ae23e9abb272cea45dfafde21760d2ce6577a70f8a926153677902663",
+    "os": "Debian GNU/Linux 12 (bookworm)",
+    "architecture": "x86_64",
+    "toolchain": {
+      "rustc": "1.96.1 (31fca3adb 2026-06-26)",
+      "cargo": "1.96.1 (356927216 2026-06-26)",
+      "powershell": "7.6.3"
+    },
+    "mountCount": 0,
+    "bindsPresent": false,
+    "taskVolumesPresent": false,
+    "privileged": false,
+    "deviceCount": 0,
+    "hostTargetCacheCopied": false,
+    "injectedEnvironmentVariableKeys": [],
+    "imageEnvironmentVariableKeys": ["PATH", "RUSTUP_HOME", "CARGO_HOME", "RUST_VERSION"],
+    "sourceCopyExclusions": [".git", "target", ".Codex", ".omx", "artifacts", "work"]
+  },
+  "commands": [
+    {
+      "command": "cargo test -p code-intel --test project_orientation_benchmark -- --nocapture",
+      "exitCode": 0,
+      "elapsedMs": 11239,
+      "result": "1 passed; 0 failed"
+    },
+    {
+      "command": "target/debug/code-intel benchmark orientation --out /tmp/d02-benchmark --repetitions 3",
+      "exitCode": 0,
+      "elapsedMs": 898,
+      "result": "pass"
+    }
+  ],
+  "benchmark": {
+    "fixtureCount": 9,
+    "sampleCount": 54,
+    "repetitionsPerTemperature": 3,
+    "sizes": ["small", "medium", "large"],
+    "conditions": ["clean", "dirty", "provider_missing"],
+    "temperatures": ["cold", "warm"],
+    "typicalP50WallTimeMs": 6,
+    "typicalP95WallTimeMs": 10,
+    "coldP50WallTimeMs": 8,
+    "coldP95WallTimeMs": 30,
+    "warmP50WallTimeMs": 6,
+    "warmP95WallTimeMs": 17,
+    "fieldCorrectness": 1.0,
+    "unknownPrecision": 1.0,
+    "provenanceCompleteness": 1.0,
+    "verdict": "pass"
+  },
+  "compatibilityAttempt": {
+    "image": "rust:1.88-bookworm",
+    "imageDigest": "sha256:af306cfa71d987911a781c37b59d7d67d934f49684058f96cf72079c3626bfe0",
+    "exitCode": 101,
+    "result": "compile blocked because std::fs::File::lock is unstable on Rust 1.88",
+    "includedInBenchmark": false
+  },
+  "productionReport": {
+    "cleanMachine": false,
+    "externalVerificationComplete": false,
+    "statement": "This historical clean-machine attestation is bound to an earlier benchmark source digest. The current benchmark implementation passes local representative-corpus verification but requires a fresh independent clean-machine rerun before external verification can be complete."
+  },
+  "cleanup": {
+    "containerDestroyed": true,
+    "containerRemaining": false,
+    "taskVolumesRemaining": false
+  },
+  "authority": "verifier_attestation_only_no_runtime_or_release_authority"
+}

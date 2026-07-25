@@ -1,9 +1,9 @@
 [package]
 name = "code-intel"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Local Code Intel Pipeline CLI for artifact resume and contract checks"
-license = "Apache-2.0"
+license = "MIT"
 repository = "https://github.com/2233admin/code-intel-pipeline"
 
 [dependencies]

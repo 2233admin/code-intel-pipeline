@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-authority-transition.v1",
+  "oneOf": [
+    { "$ref": "#/$defs/batch" },
+    { "$ref": "#/$defs/event" },
+    { "$ref": "#/$defs/result" }
+  ],
+  "$defs": {
+    "id": { "type": "string", "minLength": 1 },
+    "kind": { "enum": ["observed_evidence", "engineering_fact", "derived_engineering_model", "proposal", "adoption_decision", "committed_engineering_plan"] },
+    "event": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "id", "decision", "approver", "evidenceIds", "issuedAt", "expiresAt"],
+      "properties": {
+        "schema": { "const": "code-intel-authority-event.v1" },
+        "id": { "$ref": "#/$defs/id" },
+        "decision": { "const": "approved" },
+        "approver": {
+          "type": "object", "additionalProperties": false, "required": ["id", "role"],
+          "properties": { "id": { "$ref": "#/$defs/id" }, "role": { "$ref": "#/$defs/id" } }
+        },
+        "evidenceIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "issuedAt": { "type": "integer", "minimum": 0 },
+        "expiresAt": { "type": "integer", "minimum": 0 },
+        "attestation": { "$ref": "#/$defs/attestation" }
+      }
+    },
+    "attestation": {
+      "type": "object", "additionalProperties": false, "required": ["scheme", "digest"],
+      "properties": {
+        "scheme": { "const": "repository-governed-sha256-v1" },
+        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "batch": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "evaluatedAt", "knownEvidenceIds", "consumedAuthorityEventIds", "branches"],
+      "properties": {
+        "schema": { "const": "code-intel-authority-transition-batch.v1" },
+        "evaluatedAt": { "type": "integer", "minimum": 0 },
+        "knownEvidenceIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "consumedAuthorityEventIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "branches": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/branch" } }
+      }
+    },
+    "branch": {
+      "type": "object", "additionalProperties": false,
+      "required": ["branchId", "source", "current", "transition"],
+      "properties": {
+        "branchId": { "$ref": "#/$defs/id" },
+        "source": {
+          "type": "object", "additionalProperties": false, "required": ["kind", "id"],
+          "properties": { "kind": { "enum": ["deterministic_pipeline", "human", "llm", "provider", "recommender"] }, "id": { "$ref": "#/$defs/id" } }
+        },
+        "current": {
+          "type": "object", "additionalProperties": false, "required": ["kind", "id"],
+          "properties": { "kind": { "$ref": "#/$defs/kind" }, "id": { "$ref": "#/$defs/id" } }
+        },
+        "transition": {
+          "type": "object", "additionalProperties": false, "required": ["to", "outputId", "evidenceIds"],
+          "properties": {
+            "to": { "$ref": "#/$defs/kind" },
+            "outputId": { "$ref": "#/$defs/id" },
+            "evidenceIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+            "authorityEvent": { "$ref": "#/$defs/event" }
+          }
+        }
+      }
+    },
+    "result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "status", "summary", "consumedAuthorityEventIds", "branches"],
+      "properties": {
+        "schema": { "const": "code-intel-authority-transition-result.v1" },
+        "status": { "const": "completed" },
+        "summary": {
+          "type": "object", "additionalProperties": false, "required": ["accepted", "rejected"],
+          "properties": { "accepted": { "type": "integer", "minimum": 0 }, "rejected": { "type": "integer", "minimum": 0 } }
+        },
+        "consumedAuthorityEventIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "branches": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["branchId", "status", "from", "to", "outputId", "authorityEventId", "authorityEvent", "effectiveAuthority", "diagnostics"],
+            "properties": {
+              "branchId": { "$ref": "#/$defs/id" }, "status": { "enum": ["accepted", "rejected"] },
+              "from": { "type": "string" }, "to": { "type": "string" },
+              "outputId": { "type": ["string", "null"] }, "authorityEventId": { "type": ["string", "null"] },
+              "authorityEvent": { "oneOf": [{ "$ref": "#/$defs/event" }, { "type": "null" }] },
+              "effectiveAuthority": { "type": ["string", "null"], "enum": ["deterministic_policy", "authority_event", null] },
+              "diagnostics": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    }
+  }
+}

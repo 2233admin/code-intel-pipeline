@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-run-timing-events.v1.schema.json",
+  "title": "Committed Run Timing Events",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "measurementSnapshotIdentity", "telemetry", "baseline", "current"],
+  "properties": {
+    "schema": { "const": "code-intel-run-timing-events.v1" },
+    "measurementSnapshotIdentity": { "$ref": "#/$defs/digest" },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "clock", "externalPlatform"],
+      "properties": {
+        "mode": { "const": "local_opt_in" },
+        "clock": { "const": "monotonic_elapsed_ms" },
+        "externalPlatform": { "const": false }
+      }
+    },
+    "baseline": { "$ref": "#/$defs/trace" },
+    "current": { "$ref": "#/$defs/trace" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "stableId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z0-9._-]+$" },
+    "commitRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "artifactSchema", "type", "path", "sha256", "consumedSnapshotIdentity"],
+      "properties": {
+        "schema": { "const": "code-intel-artifact-ref.v1" },
+        "artifactSchema": { "const": "code-intel-run-commit.v1" },
+        "type": { "const": "run.commit" },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "consumedSnapshotIdentity": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "subject", "startedAtMs", "completedAtMs", "mandatory", "coordinationNeed", "predecessors"],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" },
+        "kind": { "enum": ["technical_work", "test", "verification", "queue", "handoff", "understanding", "rework", "coordination"] },
+        "subject": { "type": "string", "minLength": 1 },
+        "startedAtMs": { "type": "integer", "minimum": 0 },
+        "completedAtMs": { "type": "integer", "minimum": 1 },
+        "mandatory": { "type": "boolean" },
+        "coordinationNeed": { "type": ["string", "null"], "enum": ["required", "unnecessary", null] },
+        "predecessors": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/stableId" } }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commitRef", "events"],
+      "properties": {
+        "commitRef": { "$ref": "#/$defs/commitRef" },
+        "events": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/event" } }
+      }
+    }
+  }
+}

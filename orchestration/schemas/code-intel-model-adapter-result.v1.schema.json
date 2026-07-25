@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-model-adapter-result.v1.schema.json",
+  "title": "Code Intel model adapter result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "adapter", "category", "responseArtifact", "reasons", "attempt"],
+  "properties": {
+    "schema": { "const": "code-intel-model-adapter-result.v1" },
+    "status": { "enum": ["completed", "consent_required", "unavailable", "failed"] },
+    "adapter": { "$ref": "#/$defs/adapter" },
+    "category": {
+      "type": ["string", "null"],
+      "enum": [null, "consent_required", "model_unavailable", "provider_unavailable", "provider_quota", "config_error", "local_tool_error", "adapter_protocol_error", "external_data_forbidden", "paid_usage_forbidden"]
+    },
+    "responseArtifact": { "type": ["string", "null"], "minLength": 1 },
+    "reasons": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invoked", "timedOut", "exitCode"],
+      "properties": {
+        "invoked": { "type": "boolean" },
+        "timedOut": { "type": "boolean" },
+        "exitCode": { "type": ["integer", "null"], "minimum": 0, "maximum": 599 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "completed" } }, "required": ["status"] },
+      "then": {
+        "properties": {
+          "category": { "type": "null" },
+          "responseArtifact": { "type": "string", "minLength": 1 },
+          "reasons": { "type": "array", "maxItems": 0 },
+          "attempt": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["invoked", "timedOut", "exitCode"],
+            "properties": {
+              "invoked": { "const": true },
+              "timedOut": { "const": false },
+              "exitCode": { "const": 0 }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "category": { "$ref": "#/$defs/failureCategory" },
+          "responseArtifact": { "type": "null" },
+          "reasons": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "adapter": { "enum": ["claude_cli", "opencode_cli", "codex_cli", "ollama", "local_compatible"] },
+    "failureCategory": { "enum": ["consent_required", "model_unavailable", "provider_unavailable", "provider_quota", "config_error", "local_tool_error", "adapter_protocol_error", "external_data_forbidden", "paid_usage_forbidden"] }
+  }
+}

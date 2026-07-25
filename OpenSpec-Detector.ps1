@@ -1,15 +1,16 @@
-# 三栈工作流推荐器 (Workflow Stack Recommender) - standalone script
-# 按项目特征分层推荐: matt-flow (idea->ship) / gstack (delivery/quality) / spec-driven (openspec-opsx | spec-kit)
-# NOTE: this logic is duplicated in run-code-intel.ps1 (inline, ~line 86+). Keep both copies in sync when editing.
+# Advisory workflow recommendation atom.
+# Candidates are recommendations only; this atom never adopts, initializes, or executes them.
 
 param(
     [string]$RepoPath,
     [switch]$Auto,        # 自动模式，不询问用户（本检测器不做交互提示，保留兼容旧参数）
+    [switch]$Quiet,
     [switch]$Verbose
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+if ($Quiet) { $InformationPreference = "SilentlyContinue" }
 
 # ============ 特征检测 ============
 
@@ -507,20 +508,42 @@ foreach ($wf in $workflows) {
 }
 Write-Host ""
 
-# 返回结果用于管道 (向后兼容: 顶层字段沿用旧 openSpec 结果形状 = spec-driven 层)
-$result = [ordered]@{
-    workflows = $workflows
-    specDriven = $specDriven
-    mattFlow = $mattFlow
-    gstack = $gstack
-    # legacy top-level aliases (spec-driven layer)
-    stack = $specDriven.stack
-    tool = $specDriven.tool
-    verdict = $specDriven.verdict
-    score = $specDriven.score
-    reasons = $specDriven.reasons
-entrySkills = $specDriven.entrySkills
-recommendationBrief = $specDriven.recommendationBrief
-}
+$confidence = [string]$specDriven.recommendationBrief.confidence
+$evidence = @(
+    [ordered]@{ kind = "repository-metrics"; value = "files=$($metrics.files);lines=$($metrics.lines);repoAgeDays=$($collaboration.repoAgeDays)" },
+    [ordered]@{ kind = "governance"; value = "openSpec=$($governance.hasOpenSpec);specKit=$($governance.hasSpecKit);tests=$hasTests;cicdScore=$cicdScore" }
+)
+$alternatives = @($workflows | ForEach-Object {
+    [ordered]@{
+        candidate = if ($_.ContainsKey("tool") -and $_.tool) { [string]$_.tool } else { [string]$_.stack }
+        stack = [string]$_.stack
+        verdict = [string]$_.verdict
+        score = if ($_.ContainsKey("score")) { [int]$_.score } else { 0 }
+        reasons = @($_.reasons)
+        entrySkills = @($_.entrySkills)
+    }
+})
 
-return $result
+return [ordered]@{
+    schema = "code-intel-advisory-workflow-recommendation.v1"
+    kind = "proposal"
+    recommendation = [ordered]@{
+        candidate = [string]$specDriven.tool
+        stack = [string]$specDriven.stack
+        verdict = [string]$specDriven.verdict
+        score = [int]$specDriven.score
+        reasons = @($specDriven.reasons)
+        entrySkills = @($specDriven.entrySkills)
+        brief = $specDriven.recommendationBrief
+    }
+    evidence = $evidence
+    confidence = $confidence
+    alternatives = $alternatives
+    provenance = [ordered]@{
+        capabilityId = "advisory.workflow-recommend"
+        implementation = "OpenSpec-Detector.ps1"
+        repository = $RepoPath
+        compatibilityOptions = [ordered]@{ auto = [bool]$Auto }
+    }
+    effects = @()
+}

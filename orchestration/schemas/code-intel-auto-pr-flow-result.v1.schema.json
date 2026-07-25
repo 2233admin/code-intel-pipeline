@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-auto-pr-flow-result.v1.schema.json",
+  "title": "Code Intel automatic pull request flow result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "reason", "artifactDirectory", "execution", "observedEffects"],
+  "properties": {
+    "schema": { "const": "code-intel-auto-pr-flow-result.v1" },
+    "status": { "enum": ["pending", "declined", "approved_pending_execution", "created", "execution_indeterminate", "failed"] },
+    "reason": { "type": "string", "minLength": 1 },
+    "artifactDirectory": { "type": "string" },
+    "execution": { "type": ["object", "null"] },
+    "observedEffects": { "type": "array", "uniqueItems": true, "items": { "enum": ["repo_mutation", "network"] } }
+  }
+}

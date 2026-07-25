@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-auto-pr-execution-result.v1.schema.json",
+  "title": "Code Intel automatic pull request execution result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "status", "reason", "authorizationId", "draft", "url", "receipt",
+    "declaredEffects", "observedEffects"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-auto-pr-execution-result.v1" },
+    "status": { "enum": ["created", "not_authorized", "execution_indeterminate"] },
+    "reason": { "type": "string", "minLength": 1 },
+    "authorizationId": { "type": "string" },
+    "draft": { "const": true },
+    "url": { "type": "string" },
+    "receipt": { "type": "string" },
+    "declaredEffects": { "const": ["repo_mutation", "network"] },
+    "observedEffects": {
+      "oneOf": [
+        { "const": [] },
+        { "const": ["repo_mutation", "network"] }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "created" } } },
+      "then": {
+        "properties": {
+          "authorizationId": { "minLength": 1 },
+          "url": { "pattern": "^https://github\\.com/.+/pull/[0-9]+/?$" },
+          "receipt": { "minLength": 1 },
+          "observedEffects": { "const": ["repo_mutation", "network"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "not_authorized" } } },
+      "then": {
+        "properties": {
+          "url": { "maxLength": 0 },
+          "receipt": { "maxLength": 0 },
+          "observedEffects": { "const": [] }
+        }
+      }
+    }
+  ]
+}

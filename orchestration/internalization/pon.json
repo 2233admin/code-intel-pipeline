@@ -1,0 +1,94 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.pon-conformance-ratchet-record",
+  "projectId": "code-intel-pipeline",
+  "subject": {
+    "name": "pon conformance-ratchet design reference",
+    "kind": "design_reference",
+    "source": {
+      "uri": "https://github.com/can1357/pon",
+      "revision": "ab9067dbd2899c64c4d67a4bc27b8ad49472b126; local-doc-sha256:4183b6cbee2eaf7d6ad7b2c7eaeef326c6ba6d8e8572080ec961df3dec256846; local-checker-sha256:da5725e5383f80f7d5280b2d9700fae5e813028bb8e993bf8297b636fe68f118; local-floor-sha256:0c228b9641d643d13a648879f0a3d84e3b56d6668ca913d067e47c138818d8f6"
+    },
+    "license": {
+      "id": "UNKNOWN-RESEARCH-ONLY",
+      "obligations": [
+        "do not copy, vendor, distribute, or execute pon implementation code or fixtures until a license is declared and verified",
+        "retain source and revision attribution for the independently reimplemented method semantics"
+      ]
+    }
+  },
+  "adoption": {
+    "rung": "reimplement",
+    "ownedBoundary": [
+      "Pipeline-owned monotonic set-and-count floor over existing parity fixtures with explicit review for promotion",
+      "no pon runtime dependency, compiler code, CPython corpus, divergence waiver, performance claim, or automatic baseline mutation"
+    ],
+    "necessityEvidence": {
+      "evidenceIds": ["local:pon-ratchet:five-existing-parity-cases", "local:pon-ratchet:corpus-level-gap", "gap:pon-ratchet:representative-regression-capture"],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    },
+    "compatibilityEvidence": {
+      "evidenceIds": ["local:pon-ratchet:existing-oracle-unchanged", "local:pon-ratchet:no-runtime-dependency", "local:pon-ratchet:rollback-independent"],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    },
+    "conformanceEvidence": {
+      "evidenceIds": ["local:pon-ratchet:five-floor-cases-pass", "local:pon-ratchet:missing-case-rejected", "local:pon-ratchet:empty-review-rejected", "gap:pon-ratchet:independent-verifier"],
+      "checkedAt": 1784073600,
+      "expiresAt": 1791849600
+    }
+  },
+  "economics": {
+    "benefit": { "metric": "existing parity cases protected by corpus floor", "value": 5, "unit": "cases" },
+    "cost": { "metric": "new runtime dependencies", "value": 0, "unit": "dependencies" },
+    "benefitEvidence": { "evidenceIds": ["local:pon-ratchet:five-floor-cases-pass", "gap:pon-ratchet:representative-regression-capture"], "checkedAt": 1784073600, "expiresAt": 1791849600 },
+    "costEvidence": { "evidenceIds": ["local:pon-ratchet:no-runtime-dependency"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "assurance": {
+    "maintenanceEvidence": { "evidenceIds": ["local:pon-ratchet:source-revision-pinned", "gap:pon-ratchet:update-review"], "checkedAt": 1784073600, "expiresAt": 1791849600 },
+    "securityEvidence": { "evidenceIds": ["local:pon-ratchet:no-runtime-dependency", "gap:pon-ratchet:upstream-license", "gap:pon-ratchet:independent-security-review"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "update": {
+    "policy": "Before 2026-10-13, recheck upstream license and revision, collect a real corpus-level regression or progress event, and obtain independent review before production enablement",
+    "nextCheckAt": 1791849600,
+    "evidence": { "evidenceIds": ["gap:pon-ratchet:update-review", "gap:pon-ratchet:upstream-license", "gap:pon-ratchet:representative-regression-capture"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "ownedModifications": [
+    { "path": "docs/plans/pon-parity-floor-idea.md", "description": "Idea file and acceptance boundary for the selective internalization", "evidenceIds": ["local:pon-ratchet:corpus-level-gap", "local:pon-ratchet:no-runtime-dependency"] },
+    { "path": "docs/pon-conformance-ratchet.md", "description": "Pipeline-owned semantic mapping, exclusions, provenance, and exit criteria", "evidenceIds": ["local:pon-ratchet:source-revision-pinned", "local:pon-ratchet:existing-oracle-unchanged"] },
+    { "path": "test-parity-floor.ps1", "description": "Monotonic floor checker and explicitly reviewed updater over the existing oracle", "evidenceIds": ["local:pon-ratchet:five-floor-cases-pass", "local:pon-ratchet:missing-case-rejected", "local:pon-ratchet:empty-review-rejected"] },
+    { "path": "tests/fixtures/parity/parity-floor.json", "description": "Initial five-case committed parity floor", "evidenceIds": ["local:pon-ratchet:five-existing-parity-cases", "local:pon-ratchet:five-floor-cases-pass"] }
+  ],
+  "rollback": {
+    "strategy": "delete the floor checker, floor file, semantic note, idea file, and this record; the existing per-case parity oracle and fixtures remain unchanged",
+    "evidence": { "evidenceIds": ["local:pon-ratchet:existing-oracle-unchanged", "local:pon-ratchet:rollback-independent"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "exit": {
+    "strategy": "retire the source reference after independent local specification or remove the wrapper if it produces no corpus-level signal beyond per-case tests",
+    "replacementCriteria": [
+      "the passing fixture set and minimum count remain machine-readable",
+      "updates cannot remove old passing cases or lower the count",
+      "promotion continues to require explicit review evidence"
+    ],
+    "evidence": { "evidenceIds": ["local:pon-ratchet:rollback-independent", "gap:pon-ratchet:representative-regression-capture"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "retirement": {
+    "status": "candidate",
+    "triggers": [
+      "no corpus-level regression or progress signal is observed during the review window",
+      "the wrapper duplicates a future native floor contract",
+      "upstream provenance or license cannot be maintained"
+    ],
+    "evidence": { "evidenceIds": ["local:record:pon-conformance-ratchet", "gap:pon-ratchet:representative-regression-capture"], "checkedAt": 1784073600, "expiresAt": 1791849600 }
+  },
+  "lifecycle": {
+    "previousStatus": null,
+    "status": "research",
+    "effectiveAt": 1784073600,
+    "replacementRecordId": null,
+    "evidenceIds": ["local:record:pon-conformance-ratchet", "local:pon-ratchet:source-revision-pinned", "gap:pon-ratchet:upstream-license", "gap:pon-ratchet:representative-regression-capture", "gap:pon-ratchet:independent-verifier", "gap:pon-ratchet:update-review", "gap:pon-ratchet:independent-security-review"],
+    "authorityEvent": null
+  },
+  "provenance": { "recordedAt": 1784073600, "recordedBy": "codex-pon-review" }
+}

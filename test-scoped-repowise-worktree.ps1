@@ -42,6 +42,7 @@ exit /b 0
         -Platform windows `
         -ScopePaths @("included") `
         -Provider mock `
+        -AllowShadowWorktreeMutation `
         -TimeoutSeconds 30 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Invoke-ScopedRepowise.ps1 exited $LASTEXITCODE" }
 

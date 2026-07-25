@@ -17,15 +17,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
 
       - name: Setup Rust
         shell: pwsh
         run: rustup default stable
+
+      - name: Install ripgrep
+        shell: pwsh
+        run: choco install ripgrep -y --no-progress
 
       - name: Rust format
         shell: pwsh
@@ -35,9 +41,13 @@ jobs:
         shell: pwsh
         run: cargo check
 
-      - name: Rust tests
+      - name: Rust tests and core cross-contract gate
         shell: pwsh
         run: cargo test -p code-intel
+
+      - name: Representative project orientation benchmark
+        shell: pwsh
+        run: cargo test -p code-intel --test project_orientation_benchmark -- --nocapture
 
       - name: Build Rust CLI
         shell: pwsh
@@ -47,19 +57,30 @@ jobs:
         shell: pwsh
         run: |
           $files = @(
+            "invoke-code-intel.ps1",
             "run-code-intel.ps1",
             "Invoke-ScopedRepowise.ps1",
             "Find-CodeIntelProjects.ps1",
             "Invoke-GitHubSolutionResearch.ps1",
             "test-code-intel-pipeline.ps1",
+            "test-stable-wrapper-e2e.ps1",
             "test-github-solution-research.ps1",
             "test-hospital-trust-contract.ps1",
             "test-atomic-capability-contract.ps1",
             "test-project-discovery.ps1",
             "test-project-management-support.ps1",
+            "Test-CodeIntelProjectConformance.ps1",
+            "test-code-intel-project-conformance.ps1",
+            "Invoke-MultiAgentMergeQueue.ps1",
+            "test-multi-agent-merge-queue.ps1",
+            "test-integration-orchestration.ps1",
+            "Test-Python314PonCompatibility.ps1",
+            "test-python314-pon-compatibility.ps1",
             "test-scoped-repowise-security.ps1",
             "test-scoped-repowise-worktree.ps1",
-            "test-skill-development-benchmark.ps1"
+            "test-skill-development-benchmark.ps1",
+            "tools/New-BetaPackage.ps1",
+            "tools/Test-BetaPackage.ps1"
           )
           foreach ($file in $files) {
             $tokens = $null
@@ -97,20 +118,6 @@ jobs:
           if ($hits.Count -gt 0) {
             $hits | ForEach-Object { Write-Host $_ }
             throw "Secret-like patterns found."
-          }
-
-      - name: Install ripgrep
-        shell: pwsh
-        run: |
-          if ($IsWindows) {
-            choco install ripgrep -y --no-progress
-          }
-          elseif ($IsMacOS) {
-            brew install ripgrep
-          }
-          else {
-            sudo apt-get update
-            sudo apt-get install -y ripgrep
           }
 
       - name: Install portable pipeline
@@ -162,31 +169,37 @@ jobs:
         shell: pwsh
         run: .\test-regression-fixes.ps1
 
+      - name: Python 3.14 and project conformance
+        shell: pwsh
+        run: |
+          .\test-python314-pon-compatibility.ps1
+          .\test-integration-orchestration.ps1
+          .\test-code-intel-project-conformance.ps1
+
       - name: Pipeline smoke
         shell: pwsh
         run: .\test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -SkipGitHubResearch -Mode normal
 
+      - name: Stable wrapper authoritative outcome E2E
+        shell: pwsh
+        run: .\test-stable-wrapper-e2e.ps1
+
       - name: Package
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist\code-intel-pipeline\bin | Out-Null
-          $files = git ls-files
-          foreach ($file in $files) {
-            if ($file -match "^\.gitignore$") {
-              continue
-            }
-            $target = Join-Path "dist\code-intel-pipeline" $file
-            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
-            Copy-Item -LiteralPath $file -Destination $target -Force
-          }
-          Copy-Item -LiteralPath target\release\code-intel.exe -Destination dist\code-intel-pipeline\bin\code-intel.exe -Force
-          Compress-Archive -Path dist\code-intel-pipeline -DestinationPath dist\code-intel-pipeline-windows.zip -Force
+        run: ./tools/New-BetaPackage.ps1 -ExecutablePath ./target/release/code-intel.exe -OutputDirectory ./dist -PackageName code-intel-pipeline-windows-beta
+
+      - name: Verify beta package
+        shell: pwsh
+        run: ./tools/Test-BetaPackage.ps1 -ZipPath ./dist/code-intel-pipeline-windows-beta.zip -Json
 
       - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
           name: code-intel-pipeline-windows
-          path: dist/code-intel-pipeline-windows.zip
+          path: |
+            dist/code-intel-pipeline-windows-beta.zip
+            dist/code-intel-pipeline-windows-beta.zip.sha256
+            dist/code-intel-pipeline-windows-beta.release-manifest.json
 
   cross-platform-smoke:
     permissions:
@@ -205,15 +218,31 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
 
       - name: Setup Rust
         shell: pwsh
         run: rustup default stable
+
+      - name: Install ripgrep
+        shell: pwsh
+        run: |
+          if ($IsWindows) {
+            choco install ripgrep -y --no-progress
+          }
+          elseif ($IsMacOS) {
+            brew install ripgrep
+          }
+          else {
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+          }
 
       - name: Rust format
         shell: pwsh
@@ -223,7 +252,7 @@ jobs:
         shell: pwsh
         run: cargo check
 
-      - name: Rust tests
+      - name: Rust tests and core cross-contract gate
         shell: pwsh
         run: cargo test -p code-intel
 
@@ -235,19 +264,30 @@ jobs:
         shell: pwsh
         run: |
           $files = @(
+            "invoke-code-intel.ps1",
             "run-code-intel.ps1",
             "Invoke-ScopedRepowise.ps1",
             "Find-CodeIntelProjects.ps1",
             "Invoke-GitHubSolutionResearch.ps1",
             "test-code-intel-pipeline.ps1",
+            "test-stable-wrapper-e2e.ps1",
             "test-github-solution-research.ps1",
             "test-hospital-trust-contract.ps1",
             "test-atomic-capability-contract.ps1",
             "test-project-discovery.ps1",
             "test-project-management-support.ps1",
+            "Test-CodeIntelProjectConformance.ps1",
+            "test-code-intel-project-conformance.ps1",
+            "Invoke-MultiAgentMergeQueue.ps1",
+            "test-multi-agent-merge-queue.ps1",
+            "test-integration-orchestration.ps1",
+            "Test-Python314PonCompatibility.ps1",
+            "test-python314-pon-compatibility.ps1",
             "test-scoped-repowise-security.ps1",
             "test-scoped-repowise-worktree.ps1",
-            "test-skill-development-benchmark.ps1"
+            "test-skill-development-benchmark.ps1",
+            "tools/New-BetaPackage.ps1",
+            "tools/Test-BetaPackage.ps1"
           )
           foreach ($file in $files) {
             $tokens = $null
@@ -287,20 +327,6 @@ jobs:
             throw "Secret-like patterns found."
           }
 
-      - name: Install ripgrep
-        shell: pwsh
-        run: |
-          if ($IsWindows) {
-            choco install ripgrep -y --no-progress
-          }
-          elseif ($IsMacOS) {
-            brew install ripgrep
-          }
-          else {
-            sudo apt-get update
-            sudo apt-get install -y ripgrep
-          }
-
       - name: Install portable pipeline
         shell: pwsh
         run: |
@@ -321,6 +347,14 @@ jobs:
 
       - name: Scoped Repowise manifest validator tests
         run: python ./test-scoped-repowise-validator.py
+
+      - name: Python 3.14 compatibility lane
+        shell: pwsh
+        run: ./test-python314-pon-compatibility.ps1
+
+      - name: Multi-agent merge queue contract
+        shell: pwsh
+        run: ./test-multi-agent-merge-queue.ps1
 
       - name: Pipeline smoke
         shell: pwsh

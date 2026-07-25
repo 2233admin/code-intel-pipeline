@@ -1,0 +1,13 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"code-intel-run-commit.v1.schema.json",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schema","runIdentity","snapshotIdentity","manifest"],
+  "properties":{
+    "schema":{"const":"code-intel-run-commit.v1"},
+    "runIdentity":{"type":"string","pattern":"^dag-v1:([a-f0-9]{2})+$"},
+    "snapshotIdentity":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "manifest":{"type":"object","additionalProperties":false,"required":["path","sha256"],"properties":{"path":{"type":"string","pattern":"^objects/sha256/[a-f0-9]{64}$"},"sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"}}}
+  }
+}

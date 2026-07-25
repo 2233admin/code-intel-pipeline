@@ -1,0 +1,149 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://code-intel.local/schemas/code-intel-project-orientation.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "snapshotIdentity", "identity", "purpose", "languages", "boundaries", "entryPoints", "commands", "activeChange", "evidenceAvailability", "risks", "unknowns", "confidence"],
+  "properties": {
+    "schema": {"const": "code-intel-project-orientation.v1"},
+    "snapshotIdentity": {"$ref": "#/definitions/sha256"},
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "repositoryIdentity", "repositoryKind", "revision", "provenance"],
+      "properties": {
+        "status": {"const": "known"},
+        "repositoryIdentity": {"type": "string", "pattern": "^(git-lineage-v1|content-v1):[a-f0-9]{64}$"},
+        "repositoryKind": {"enum": ["git", "git_unborn", "unversioned"]},
+        "revision": {"type": "string", "minLength": 1},
+        "provenance": {"$ref": "#/definitions/provenanceList"}
+      }
+    },
+    "purpose": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "evidence", "reason", "provenance"],
+      "properties": {
+        "status": {"enum": ["known", "unknown"]},
+        "evidence": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "reason": {"type": "string", "minLength": 1},
+        "provenance": {"$ref": "#/definitions/provenanceList"}
+      }
+    },
+    "languages": {
+      "type": "array", "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["name", "fileCount", "provenance"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "fileCount": {"type": "integer", "minimum": 1},
+          "provenance": {"$ref": "#/definitions/provenanceList"}
+        }
+      }
+    },
+    "boundaries": {
+      "type": "array", "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "kind", "provenance"],
+        "properties": {
+          "path": {"$ref": "#/definitions/path"},
+          "kind": {"const": "top_level_directory"},
+          "provenance": {"$ref": "#/definitions/provenanceList"}
+        }
+      }
+    },
+    "entryPoints": {
+      "type": "array", "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "classification", "provenance"],
+        "properties": {
+          "path": {"$ref": "#/definitions/path"},
+          "classification": {"const": "heuristic"},
+          "provenance": {"$ref": "#/definitions/provenanceList"}
+        }
+      }
+    },
+    "commands": {
+      "type": "array", "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "kind", "provenance"],
+        "properties": {
+          "path": {"$ref": "#/definitions/path"},
+          "kind": {"const": "script_path"},
+          "provenance": {"$ref": "#/definitions/provenanceList"}
+        }
+      }
+    },
+    "activeChange": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "paths", "provenance"],
+      "properties": {
+        "status": {"enum": ["clean", "dirty"]},
+        "paths": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/definitions/path"}},
+        "provenance": {"$ref": "#/definitions/provenanceList"}
+      }
+    },
+    "evidenceAvailability": {
+      "type": "array", "minItems": 3, "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["evidence", "status", "provenance"],
+        "properties": {
+          "evidence": {"enum": ["survival_scan", "native_files", "native_structure"]},
+          "status": {"enum": ["available", "reduced", "heuristic", "unknown"]},
+          "provenance": {"$ref": "#/definitions/provenanceList"}
+        }
+      }
+    },
+    "risks": {"$ref": "#/definitions/claims"},
+    "unknowns": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["field", "reason", "provenance"],
+        "properties": {
+          "field": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1},
+          "provenance": {"$ref": "#/definitions/provenanceList"}
+        }
+      }
+    },
+    "confidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["level", "basis", "provenance"],
+      "properties": {
+        "level": {"enum": ["low", "medium", "high"]},
+        "basis": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "provenance": {"$ref": "#/definitions/provenanceList"}
+      }
+    }
+  },
+  "definitions": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"},
+    "provenance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifactType", "artifactSha256", "jsonPointer"],
+      "properties": {
+        "artifactType": {"type": "string", "minLength": 1},
+        "artifactSha256": {"$ref": "#/definitions/sha256"},
+        "jsonPointer": {"type": "string", "pattern": "^/"}
+      }
+    },
+    "provenanceList": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/definitions/provenance"}},
+    "claims": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["code", "statement", "provenance"],
+        "properties": {
+          "code": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "statement": {"type": "string", "minLength": 1},
+          "provenance": {"$ref": "#/definitions/provenanceList"}
+        }
+      }
+    }
+  }
+}

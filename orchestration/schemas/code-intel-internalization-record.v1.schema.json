@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-internalization-record.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "projectId", "subject", "adoption", "economics", "assurance", "update", "ownedModifications", "rollback", "exit", "retirement", "lifecycle", "provenance"],
+  "properties": {
+    "schema": { "const": "code-intel-internalization-record.v1" },
+    "id": { "$ref": "#/$defs/id" },
+    "projectId": { "$ref": "#/$defs/id" },
+    "subject": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "kind", "source", "license"],
+      "properties": {
+        "name": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["design_reference", "evidence_provider", "method_implementation", "adapted_capability", "selectively_owned_implementation"] },
+        "source": {
+          "type": "object", "additionalProperties": false, "required": ["uri", "revision"],
+          "properties": { "uri": { "$ref": "#/$defs/id" }, "revision": { "$ref": "#/$defs/id" } }
+        },
+        "license": { "$ref": "#/$defs/license" }
+      }
+    },
+    "adoption": {
+      "type": "object", "additionalProperties": false,
+      "required": ["rung", "ownedBoundary", "necessityEvidence", "compatibilityEvidence", "conformanceEvidence"],
+      "properties": {
+        "rung": { "enum": ["invoke", "adapt", "depend", "vendor", "fork", "port", "reimplement"] },
+        "ownedBoundary": { "$ref": "#/$defs/nonemptyStrings" },
+        "necessityEvidence": { "$ref": "#/$defs/evidence" },
+        "compatibilityEvidence": { "$ref": "#/$defs/evidence" },
+        "conformanceEvidence": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "authorityRequirements": {
+      "type": "object", "additionalProperties": false,
+      "required": ["repositoryGovernedAttestation"],
+      "properties": { "repositoryGovernedAttestation": { "type": "boolean" } }
+    },
+    "operationTrace": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/operationTraceEntry" }
+    },
+    "economics": {
+      "type": "object", "additionalProperties": false,
+      "required": ["benefit", "cost", "benefitEvidence", "costEvidence"],
+      "properties": {
+        "benefit": { "$ref": "#/$defs/measurement" }, "cost": { "$ref": "#/$defs/measurement" },
+        "benefitEvidence": { "$ref": "#/$defs/evidence" }, "costEvidence": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "assurance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["maintenanceEvidence", "securityEvidence"],
+      "properties": { "maintenanceEvidence": { "$ref": "#/$defs/evidence" }, "securityEvidence": { "$ref": "#/$defs/evidence" } }
+    },
+    "update": { "$ref": "#/$defs/update" },
+    "ownedModifications": { "type": "array", "items": { "$ref": "#/$defs/modification" } },
+    "rollback": { "$ref": "#/$defs/rollback" },
+    "exit": { "$ref": "#/$defs/exit" },
+    "retirement": { "$ref": "#/$defs/retirement" },
+    "lifecycle": {
+      "type": "object", "additionalProperties": false,
+      "required": ["previousStatus", "status", "effectiveAt", "replacementRecordId", "evidenceIds", "authorityEvent"],
+      "properties": {
+        "previousStatus": { "oneOf": [{ "$ref": "#/$defs/lifecycleStatus" }, { "type": "null" }] },
+        "status": { "$ref": "#/$defs/lifecycleStatus" },
+        "effectiveAt": { "$ref": "#/$defs/time" },
+        "replacementRecordId": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+        "evidenceIds": { "$ref": "#/$defs/evidenceIds" },
+        "authorityEvent": { "oneOf": [{ "$ref": "#/$defs/authorityEvent" }, { "type": "null" }] }
+      }
+    },
+    "provenance": {
+      "type": "object", "additionalProperties": false, "required": ["recordedAt", "recordedBy"],
+      "properties": { "recordedAt": { "$ref": "#/$defs/time" }, "recordedBy": { "$ref": "#/$defs/id" } }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1 },
+    "time": { "type": "integer", "minimum": 0 },
+    "evidenceIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+    "nonemptyStrings": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+    "license": {
+      "type": "object", "additionalProperties": false, "required": ["id", "obligations"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "obligations": { "$ref": "#/$defs/nonemptyStrings" } }
+    },
+    "measurement": {
+      "type": "object", "additionalProperties": false, "required": ["metric", "value", "unit"],
+      "properties": { "metric": { "$ref": "#/$defs/id" }, "value": { "type": "number", "minimum": 0 }, "unit": { "$ref": "#/$defs/id" } }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false, "required": ["evidenceIds", "checkedAt", "expiresAt"],
+      "properties": { "evidenceIds": { "$ref": "#/$defs/evidenceIds" }, "checkedAt": { "$ref": "#/$defs/time" }, "expiresAt": { "$ref": "#/$defs/time" } }
+    },
+    "update": {
+      "type": "object", "additionalProperties": false, "required": ["policy", "nextCheckAt", "evidence"],
+      "properties": { "policy": { "$ref": "#/$defs/id" }, "nextCheckAt": { "$ref": "#/$defs/time" }, "evidence": { "$ref": "#/$defs/evidence" } }
+    },
+    "modification": {
+      "type": "object", "additionalProperties": false, "required": ["path", "description", "evidenceIds"],
+      "properties": { "path": { "$ref": "#/$defs/id" }, "description": { "$ref": "#/$defs/id" }, "evidenceIds": { "$ref": "#/$defs/evidenceIds" } }
+    },
+    "operationTraceEntry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["integrationId", "operation", "command", "implementationIdentity", "source", "conformance"],
+      "properties": {
+        "integrationId": { "$ref": "#/$defs/id" },
+        "operation": { "$ref": "#/$defs/id" },
+        "command": { "$ref": "#/$defs/id" },
+        "implementationIdentity": {
+          "type": "object", "additionalProperties": false,
+          "required": ["providerId", "implementationId", "activation"],
+          "properties": {
+            "providerId": { "$ref": "#/$defs/id" },
+            "implementationId": { "$ref": "#/$defs/id" },
+            "activation": { "$ref": "#/$defs/id" }
+          }
+        },
+        "source": { "$ref": "#/$defs/traceSource" },
+        "conformance": { "$ref": "#/$defs/traceConformance" }
+      }
+    },
+    "traceSource": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": { "path": { "$ref": "#/$defs/id" }, "sha256": { "$ref": "#/$defs/sha256" } }
+    },
+    "traceConformance": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256", "testName"],
+      "properties": { "path": { "$ref": "#/$defs/id" }, "sha256": { "$ref": "#/$defs/sha256" }, "testName": { "$ref": "#/$defs/id" } }
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "rollback": {
+      "type": "object", "additionalProperties": false, "required": ["strategy", "evidence"],
+      "properties": { "strategy": { "$ref": "#/$defs/id" }, "evidence": { "$ref": "#/$defs/evidence" } }
+    },
+    "exit": {
+      "type": "object", "additionalProperties": false, "required": ["strategy", "replacementCriteria", "evidence"],
+      "properties": { "strategy": { "$ref": "#/$defs/id" }, "replacementCriteria": { "$ref": "#/$defs/nonemptyStrings" }, "evidence": { "$ref": "#/$defs/evidence" } }
+    },
+    "retirement": {
+      "type": "object", "additionalProperties": false, "required": ["status", "triggers", "evidence"],
+      "properties": {
+        "status": { "enum": ["active", "candidate", "approved", "completed", "out_of_scope"] },
+        "triggers": { "$ref": "#/$defs/nonemptyStrings" }, "evidence": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "lifecycleStatus": { "enum": ["research", "production_enabled", "rollback", "replaced", "retired", "out_of_scope"] },
+    "authorityEvent": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "id", "decision", "approver", "evidenceIds", "issuedAt", "expiresAt"],
+      "properties": {
+        "schema": { "const": "code-intel-authority-event.v1" }, "id": { "$ref": "#/$defs/id" }, "decision": { "const": "approved" },
+        "approver": {
+          "type": "object", "additionalProperties": false, "required": ["id", "role"],
+          "properties": { "id": { "$ref": "#/$defs/id" }, "role": { "$ref": "#/$defs/id" } }
+        },
+        "evidenceIds": { "$ref": "#/$defs/nonemptyStrings" }, "issuedAt": { "$ref": "#/$defs/time" }, "expiresAt": { "$ref": "#/$defs/time" },
+        "attestation": { "$ref": "#/$defs/attestation" }
+      }
+    },
+    "attestation": {
+      "type": "object", "additionalProperties": false, "required": ["scheme", "digest"],
+      "properties": { "scheme": { "const": "repository-governed-sha256-v1" }, "digest": { "$ref": "#/$defs/sha256" } }
+    }
+  }
+}

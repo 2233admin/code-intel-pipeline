@@ -1,0 +1,11 @@
+# Run Commit
+
+`run.commit` is the sole transaction boundary between A06 staging and a published run. It does not generate artifacts, execute DAG nodes, diagnose results, or update A08 indexes.
+
+The production CLI is `code-intel run commit --source-root <A09-artifact-root> --authority-root <publication-root> --manifest-ref <artifact-ref.json> --final-name <name>`. It revalidates the source A09 manifest and refs, copies the already-authorized bytes through a fresh A06 owned staging set, rewrites the terminal manifest to the resulting content-addressed Artifact Refs, and then invokes the publication transaction. The PowerShell facade exposes the same route through `-RunCommitSourceRoot`, `-RunCommitAuthorityRoot`, `-RunCommitManifestRef`, and `-RunCommitFinalName`.
+
+Before promotion it reopens and validates the A09 terminal run manifest, every referenced A06 artifact, registered schema/type, SHA-256 digest, and consumed snapshot identity. The staged directory is promoted with same-authority, atomic no-replace rename semantics and its parent directory is synchronized. `run-complete.json` is created only after promotion and directory synchronization, published with a second atomic no-replace rename, synchronized, then reread. The marker binds the run identity, repository snapshot, manifest path, and manifest digest.
+
+Failures before promotion leave A06 ownership cleanup intact. Failures after promotion leave an uncommitted, recoverable directory; `recover` repeats full validation and synchronizes the promoted directory entry before publishing a marker. A post-marker verification failure removes a marker only when both its stable file identity and bytes still match the file published by that attempt. Existing destination directories and competing marker files are never replaced or recursively deleted.
+
+Directories without a valid marker, including legacy timestamp runs and the facade's prior `{generatedAt,report,reportSha256}` marker shape, classify as `legacy-uncommitted`; they remain directly readable but are not committed authority. The existing A08 PowerShell index still consumes only that old marker shape and therefore deliberately ignores new A07 publications until A08 is implemented; A07 never calls it.

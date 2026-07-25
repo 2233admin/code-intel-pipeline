@@ -1,0 +1,26 @@
+{
+  "schema": "code-intel-alternate-vcs-snapshot-port.v1",
+  "providerNeutralInput": {
+    "repositoryRoot": "<absolute-path>",
+    "workingTreePolicy": "head_only|explicit_overlay",
+    "scope": ["<normalized-relative-path>"]
+  },
+  "requiredOutput": {
+    "schema": "code-intel-repository-snapshot.v1",
+    "identity": "sha256:<portable-content-digest>",
+    "inputDigest": "<sha256>",
+    "head": "<provider-revision-or-unversioned>",
+    "provider": "<provider-id>",
+    "scope": ["<normalized-relative-path>"]
+  },
+  "mismatch": {
+    "condition": "provider output does not reproduce portable identity, scope, policy, or input digest",
+    "exitCode": 65,
+    "publishesArtifacts": false
+  },
+  "rollback": {
+    "routes": ["git", "unversioned-explicit-overlay"],
+    "authorityChange": false,
+    "networkOrMutationAdded": false
+  }
+}

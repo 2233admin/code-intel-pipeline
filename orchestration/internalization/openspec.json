@@ -1,0 +1,32 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.openspec-record",
+  "projectId": "code-intel-pipeline",
+  "subject": { "name": "OpenSpec OPSX advisory candidate", "kind": "design_reference", "source": { "uri": "https://github.com/Fission-AI/OpenSpec", "revision": "unverified-upstream; local-atom-sha256:03d9cbed70d83c59f7d9540fccc606ce0b2723135efd2c5e32943d367008a199" }, "license": { "id": "UNKNOWN-RESEARCH-ONLY", "obligations": ["do not distribute, vendor, invoke, or production-enable until the exact upstream revision and license text are verified", "retain this provenance and gap notice while the candidate remains in research"] } },
+  "adoption": {
+    "rung": "reimplement",
+    "ownedBoundary": ["pipeline-owned advisory candidate data and recommendation rules only", "no OpenSpec runtime dependency", "no openspec init, filesystem initialization, commitment, or adoption authority"],
+    "necessityEvidence": { "evidenceIds": ["local:reference-capability-map:openspec-row", "gap:openspec:upstream-revision", "gap:openspec:license"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "compatibilityEvidence": { "evidenceIds": ["local:b06:proposal-effects-empty", "local:b06:no-auto-init-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "conformanceEvidence": { "evidenceIds": ["local:atom:openspec-opsx-five-occurrences", "local:b06:a01-envelope-parity"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+  },
+  "economics": {
+    "benefit": { "metric": "OpenSpec OPSX token occurrences traced in the current advisory atom", "value": 5, "unit": "occurrences" },
+    "cost": { "metric": "pipeline-owned OpenSpec lifecycle records", "value": 1, "unit": "records" },
+    "benefitEvidence": { "evidenceIds": ["local:atom:openspec-opsx-five-occurrences"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "costEvidence": { "evidenceIds": ["local:record:openspec"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+  },
+  "assurance": {
+    "maintenanceEvidence": { "evidenceIds": ["gap:openspec:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "securityEvidence": { "evidenceIds": ["gap:openspec:security-review"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+  },
+  "update": { "policy": "Before 2026-10-11, verify the upstream commit, LICENSE, release status, and candidate semantics; keep research-only until all checks are admitted", "nextCheckAt": 1791676800, "evidence": { "evidenceIds": ["gap:openspec:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "ownedModifications": [
+    { "path": "OpenSpec-Detector.ps1", "description": "Pipeline-owned OpenSpec candidate detection and advisory rendering; does not contain or invoke the upstream runtime", "evidenceIds": ["local:atom:openspec-opsx-five-occurrences", "local:b06:no-auto-init-boundary"] }
+  ],
+  "rollback": { "strategy": "delete this candidate record and remove the OpenSpec alternative from candidate data without changing the advisory schema or authority boundary", "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "exit": { "strategy": "replace the reference with a pinned, licensed candidate record or retire it while retaining audit provenance", "replacementCriteria": ["replacement has exact upstream revision and verified license obligations", "replacement passes proposal conformance and no-auto-init tests"], "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "retirement": { "status": "candidate", "triggers": ["upstream provenance or license remains unverifiable at next check", "candidate no longer contributes unique measured advisory value", "security or maintenance evidence cannot be admitted"], "evidence": { "evidenceIds": ["local:record:openspec"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "lifecycle": { "previousStatus": null, "status": "research", "effectiveAt": 1783900800, "replacementRecordId": null, "evidenceIds": ["local:record:openspec", "gap:openspec:upstream-revision", "gap:openspec:license"], "authorityEvent": null },
+  "provenance": { "recordedAt": 1783900800, "recordedBy": "dependency-expert" }
+}

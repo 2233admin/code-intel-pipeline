@@ -52,7 +52,8 @@ function New-ManualResult {
 [object[]]$FailedSteps,
 [object[]]$FailureClassifications,
 [object]$SentruxFailures = $null,
-[string[]]$EvidenceLinks = @()
+[string[]]$EvidenceLinks = @(),
+[object[]]$Invocations = @()
     )
 
     return [ordered]@{
@@ -65,6 +66,7 @@ function New-ManualResult {
         queries = $Queries
         candidates = @()
         evidenceLinks = $EvidenceLinks
+        invocations = $Invocations
 failedSteps = $FailedSteps
 failureClassifications = $FailureClassifications
 sentruxFailures = $SentruxFailures
@@ -99,11 +101,22 @@ function Invoke-GhJson {
     }
 }
 
+function Protect-GitHubResearchText {
+    param([string]$Text)
+
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    $redacted = [regex]::Replace($Text, '(?i)gh[pousr]_[a-z0-9_]{8,}', '[REDACTED_GITHUB_TOKEN]')
+    $redacted = [regex]::Replace($redacted, '(?i)(authorization\s*:\s*(?:bearer|token)\s+)[^\s"'']+', '$1[REDACTED]')
+    $redacted = [regex]::Replace($redacted, '(?i)(token\s*[=:]\s*)[^\s,;"'']+', '$1[REDACTED]')
+    return $redacted
+}
+
 New-Item -ItemType Directory -Force -Path $ArtifactDir | Out-Null
 $jsonPath = Join-Path $ArtifactDir "github-solution-research.json"
 $markdownPath = Join-Path $ArtifactDir "github-solution-research.md"
 
 $queries = [System.Collections.Generic.List[object]]::new()
+$invocations = [System.Collections.Generic.List[object]]::new()
 if ($null -ne $SentruxFailures -and $null -ne $SentruxFailures.primary) {
     $primary = $SentruxFailures.primary
     $targetText = if ($null -ne $primary.target -and [string]$primary.target.status -eq "resolved") {
@@ -170,6 +183,12 @@ $result = New-ManualResult -Reason "GitHub research skipped by -SkipGitHubResear
             }
 
             $search = Invoke-GhJson $args
+            $invocations.Add([ordered]@{
+                query = $query
+                surface = $surface
+                argv = @($args)
+                exitCode = [int]$search.exitCode
+            })
             if ($search.exitCode -ne 0) {
                 $failureReason = $search.text
                 if ($failureReason -match "(?i)403|429|rate.?limit|api rate limit|authentication|not logged in") {
@@ -208,6 +227,7 @@ $result = New-ManualResult -Reason "GitHub research skipped by -SkipGitHubResear
                 $itemLanguage = Get-JsonProperty $item "language"
                 $itemUpdatedAt = Get-JsonProperty $item "updatedAt"
                 $itemPushedAt = Get-JsonProperty $item "pushedAt"
+                $itemRevision = Get-JsonProperty $item "sha"
                 $candidates.Add([ordered]@{
                     surface = $surface
                     query = $query
@@ -218,6 +238,7 @@ $result = New-ManualResult -Reason "GitHub research skipped by -SkipGitHubResear
                     stars = if ($null -ne $itemStars) { [int]$itemStars } else { $null }
                     language = if ($null -ne $itemLanguage) { [string]$itemLanguage } else { "" }
                     updatedAt = if ($null -ne $itemUpdatedAt) { [string]$itemUpdatedAt } elseif ($null -ne $itemPushedAt) { [string]$itemPushedAt } else { "" }
+                    sourceRevision = if ($null -ne $itemRevision) { [string]$itemRevision } else { "" }
                 })
 }
         }
@@ -229,7 +250,7 @@ $result = New-ManualResult -Reason "GitHub research skipped by -SkipGitHubResear
 
     if ($candidates.Count -eq 0) {
         $reason = if ([string]::IsNullOrWhiteSpace($failureReason)) { "No strong GitHub evidence returned for the generated blocker queries." } else { $failureReason }
-        $result = New-ManualResult -Reason $reason -Queries @($queries) -FailedSteps $FailedSteps -FailureClassifications $FailureClassifications -SentruxFailures $SentruxFailures
+        $result = New-ManualResult -Reason $reason -Queries @($queries) -FailedSteps $FailedSteps -FailureClassifications $FailureClassifications -SentruxFailures $SentruxFailures -Invocations @($invocations)
     } else {
         $result = [ordered]@{
             schema = "github-solution-research.v1"
@@ -241,6 +262,7 @@ $result = New-ManualResult -Reason "GitHub research skipped by -SkipGitHubResear
             queries = @($queries)
             candidates = @($candidates)
             evidenceLinks = @($evidenceLinks)
+            invocations = @($invocations)
             failedSteps = $FailedSteps
             failureClassifications = $FailureClassifications
             sentruxFailures = $SentruxFailures
@@ -253,7 +275,9 @@ $result = New-ManualResult -Reason "GitHub research skipped by -SkipGitHubResear
     }
 }
 
-$result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+$sanitizedJson = Protect-GitHubResearchText ($result | ConvertTo-Json -Depth 8)
+$result = $sanitizedJson | ConvertFrom-Json
+$sanitizedJson | Set-Content -LiteralPath $jsonPath -Encoding UTF8
 
 $candidateLines = @()
 foreach ($candidate in @($result.candidates | Select-Object -First 10)) {

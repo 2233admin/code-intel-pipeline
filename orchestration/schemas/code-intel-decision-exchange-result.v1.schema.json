@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-decision-exchange-result.v1.schema.json",
+  "title": "Code Intel Decision Exchange Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "correlationId",
+    "gapId",
+    "acceptedAnswer",
+    "authorityProvenance",
+    "branches",
+    "effects",
+    "diagnostics"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-decision-exchange-result.v1" },
+    "status": { "enum": ["pending", "resolved", "cancelled", "timeout", "rejected"] },
+    "correlationId": { "type": ["string", "null"], "minLength": 1 },
+    "gapId": { "type": ["string", "null"], "minLength": 1 },
+    "acceptedAnswer": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "optionId"],
+          "properties": {
+            "kind": { "const": "choice" },
+            "optionId": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "text"],
+          "properties": {
+            "kind": { "const": "free-form" },
+            "text": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "authorityProvenance": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["actorId", "authorityKind", "source"],
+          "properties": {
+            "actorId": { "type": "string", "minLength": 1 },
+            "authorityKind": { "type": "string", "minLength": 1 },
+            "source": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "branches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["branchId", "status"],
+        "properties": {
+          "branchId": { "type": "string", "minLength": 1 },
+          "status": {
+            "enum": ["continues", "ready", "blocked_pending_response", "blocked_timeout", "blocked_cancelled"]
+          }
+        }
+      }
+    },
+    "effects": { "const": [] },
+    "diagnostics": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "resolved" } } },
+      "then": {
+        "properties": {
+          "correlationId": { "type": "string" },
+          "gapId": { "type": "string" },
+          "acceptedAnswer": { "type": "object" },
+          "authorityProvenance": { "type": "object" },
+          "diagnostics": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "enum": ["pending", "timeout"] } } },
+      "then": {
+        "properties": {
+          "correlationId": { "type": "string" },
+          "gapId": { "type": "string" },
+          "acceptedAnswer": { "type": "null" },
+          "authorityProvenance": { "type": "null" },
+          "diagnostics": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "cancelled" } } },
+      "then": {
+        "properties": {
+          "correlationId": { "type": "string" },
+          "gapId": { "type": "string" },
+          "acceptedAnswer": { "type": "null" },
+          "authorityProvenance": { "type": "object" },
+          "diagnostics": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "rejected" } } },
+      "then": {
+        "properties": {
+          "acceptedAnswer": { "type": "null" },
+          "authorityProvenance": { "type": "null" },
+          "branches": { "maxItems": 0 },
+          "diagnostics": { "minItems": 1 }
+        }
+      }
+    }
+  ]
+}

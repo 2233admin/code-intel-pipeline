@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://code-intel.local/schemas/code-intel-project-orientation-benchmark-observations.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "snapshotIdentity", "method", "environment", "fixtures"],
+  "properties": {
+    "schema": {"const": "code-intel-project-orientation-benchmark-observations.v1"},
+    "snapshotIdentity": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "method": {
+      "type": "object",
+      "required": ["clock", "execution", "concurrency", "repetitionsPerTemperature", "coldDefinition", "warmDefinition", "percentile", "llm"],
+      "properties": {
+        "clock": {"const": "std::time::Instant"},
+        "execution": {"const": "sequential_child_process"},
+        "concurrency": {"const": 1},
+        "repetitionsPerTemperature": {"type": "integer", "minimum": 2, "maximum": 10},
+        "coldDefinition": {"type": "string", "minLength": 1},
+        "warmDefinition": {"type": "string", "minLength": 1},
+        "percentile": {"const": "nearest_rank"},
+        "llm": {"const": "disabled"}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": ["os", "arch", "processor", "cleanMachine"],
+      "properties": {
+        "os": {"type": "string", "minLength": 1},
+        "arch": {"type": "string", "minLength": 1},
+        "processor": {"type": "string", "minLength": 1},
+        "cleanMachine": {"const": false}
+      }
+    },
+    "fixtures": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": {
+        "type": "object",
+        "required": ["expected"],
+        "properties": {
+          "expected": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["activeChange", "fileCount", "providerStatus", "unknownFields", "unsupportedFiles"],
+            "properties": {
+              "activeChange": {"enum": ["clean", "dirty"]},
+              "fileCount": {"type": "integer", "minimum": 1},
+              "providerStatus": {"enum": ["available", "unavailable"]},
+              "unknownFields": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+              "unsupportedFiles": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+            }
+          }
+        }
+      }
+    }
+  }
+}

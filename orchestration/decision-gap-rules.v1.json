@@ -1,0 +1,13 @@
+{
+  "schema": "code-intel-decision-gap-rules.v1",
+  "choiceKinds": [
+    "intent",
+    "priority",
+    "resource_allocation",
+    "risk_acceptance",
+    "tradeoff"
+  ],
+  "factKinds": [
+    "missing_fact"
+  ]
+}
