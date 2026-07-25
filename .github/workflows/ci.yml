@@ -58,6 +58,17 @@ jobs:
         shell: pwsh
         run: cargo build -p code-intel --release
 
+      - name: Authoritative self-scan (release gate parity)
+        shell: pwsh
+        run: |
+          $staging = Join-Path $env:RUNNER_TEMP "code-intel-self-scan"
+          $authority = Join-Path $env:RUNNER_TEMP "code-intel-self-authority"
+          New-Item -ItemType Directory -Force $authority | Out-Null
+          ./target/release/code-intel.exe run execute --repo . --out $staging --authority-root $authority --final-name ci-self-scan --manifest orchestration/integrations.json --doctor-require-repowise false
+          if ($LASTEXITCODE -ne 0) {
+            throw "self-scan failed with exit code ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure; read the run manifest failures block"
+          }
+
       - name: PowerShell parser checks
         shell: pwsh
         run: |
@@ -271,6 +282,19 @@ jobs:
       - name: Build Rust CLI
         shell: pwsh
         run: cargo build -p code-intel --release
+
+      - name: Authoritative self-scan (release gate parity)
+        shell: pwsh
+        run: |
+          $binary = if ($IsWindows) { "./target/release/code-intel.exe" } else { "./target/release/code-intel" }
+          $staging = Join-Path ([IO.Path]::GetTempPath()) "code-intel-self-scan"
+          $authority = Join-Path ([IO.Path]::GetTempPath()) "code-intel-self-authority"
+          if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
+          New-Item -ItemType Directory -Force $authority | Out-Null
+          & $binary run execute --repo . --out $staging --authority-root $authority --final-name ci-self-scan --manifest orchestration/integrations.json --doctor-require-repowise false
+          if ($LASTEXITCODE -ne 0) {
+            throw "self-scan failed with exit code ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure; read the run manifest failures block"
+          }
 
       - name: PowerShell parser checks
         shell: pwsh
