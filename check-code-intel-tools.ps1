@@ -238,13 +238,20 @@ elseif (-not [string]::IsNullOrWhiteSpace([string]$repoPath)) {
     }
 }
 
+# The structural gate engine ships inside the code-intel binary; an external
+# sentrux on PATH is an optional overlay, not a bootstrap requirement.
+$builtinSentrux = ($null -ne (Get-Command "code-intel" -ErrorAction SilentlyContinue)) -or
+    (Test-Path -LiteralPath (Join-Path $pipelineRoot "target/release/code-intel.exe") -PathType Leaf) -or
+    (Test-Path -LiteralPath (Join-Path $pipelineRoot "target/release/code-intel") -PathType Leaf) -or
+    (Test-Path -LiteralPath (Join-Path $pipelineRoot "target/debug/code-intel.exe") -PathType Leaf) -or
+    (Test-Path -LiteralPath (Join-Path $pipelineRoot "target/debug/code-intel") -PathType Leaf)
 $tools = @(
     Test-Tool "rg" $true
     Test-Tool "git" $true
     Test-Tool "python" $true
     Test-Tool "repowise" ([bool]$RequireRepowise)
     Test-Tool "repomix" $false
-    Test-Tool "sentrux" $true
+    Test-Tool "sentrux" (-not $builtinSentrux)
 )
 $sentruxCore = Test-CommandOutput "sentrux-core" { sentrux check --help } "Enforce architectural rules"
 $sentruxPro = Test-CommandOutput "sentrux-pro" { sentrux pro status } "Tier:\s+pro"
@@ -264,6 +271,7 @@ $checks = [ordered]@{
     sentrux = [ordered]@{
         core = $sentruxCore
         pro = $sentruxPro
+        builtin = [ordered]@{ found = $builtinSentrux }
     }
     understandAnything = [ordered]@{
         skillFound = [bool]$understandSkill
@@ -294,8 +302,8 @@ if ($checks.config.found -and -not $checks.config.parsed) { $missing.Add("pipeli
 foreach ($tool in $tools) {
     if ($tool.required -and -not $tool.found) { $missing.Add($tool.name) }
 }
-if (-not $sentruxCore.found) { $missing.Add("sentrux core") }
-if (-not $sentruxPro.found) { $missing.Add("sentrux pro auto-activation") }
+if (-not $sentruxCore.found -and -not $builtinSentrux) { $missing.Add("sentrux core") }
+if (-not $sentruxPro.found -and -not $builtinSentrux) { $missing.Add("sentrux pro auto-activation") }
 if ($RequireUnderstand -and -not $checks.graphProvider.sourceFound) { $missing.Add("internal graph provider source") }
 if ($RequireUnderstand -and -not $checks.graphProvider.cargoFound) { $missing.Add("code-intel Rust runtime") }
 if ($repoState -and -not $repoState.exists) { $missing.Add("repo path") }
@@ -340,8 +348,8 @@ else {
         $mark = if ($tool.found) { "OK" } else { "MISSING" }
         Write-Host "$mark $($tool.name) $($tool.source)"
     }
-    $coreMark = if ($sentruxCore.found) { "OK" } else { "MISSING" }
-    $proMark = if ($sentruxPro.found) { "OK" } else { "MISSING" }
+    $coreMark = if ($sentruxCore.found -or $builtinSentrux) { "OK" } else { "MISSING" }
+    $proMark = if ($sentruxPro.found -or $builtinSentrux) { "OK" } else { "MISSING" }
     Write-Host "$coreMark sentrux-core $($sentruxCore.output)"
     Write-Host "$proMark sentrux-pro $($sentruxPro.output)"
     $uaMark = if ($checks.understandAnything.skillFound -and $checks.understandAnything.pluginFound) { "OK" } else { "MISSING" }

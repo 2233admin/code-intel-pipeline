@@ -1,75 +1,68 @@
 use crate::sentrux_analysis;
+use crate::sentrux_gate;
 use crate::Result;
 use std::path::Path;
-use std::process::{Command, Stdio};
 
 pub struct Options<'a> {
     pub operation: Option<&'a str>,
     pub repo: Option<&'a Path>,
 }
 
+/// Structural operations served by the built-in engine. The PATH-resolved
+/// `sentrux` binary is no longer consulted here: the gate verdict must be a
+/// function of the snapshot and this binary. External Sentrux implementations
+/// remain reachable through the provider `toolPathPrefix` seam.
 pub fn run(options: &Options<'_>) -> Result<()> {
     let operation = options.operation.ok_or("sentrux requires an operation")?;
     let repo = options.repo.ok_or("sentrux requires a repo/path")?;
     let repo = repo.canonicalize()?;
-    if operation == "dsm" {
-        let snapshot = sentrux_analysis::analyze(&repo)?;
-        println!("{}", serde_json::to_string(&snapshot)?);
-        return Ok(());
-    }
-    let repo_cli = cli_path(&repo);
-
-    let mut args = Vec::new();
     match operation {
-        "scan" | "health" | "check" | "gate" => args.push(operation.to_string()),
-        "check_rules" => args.push("check".to_string()),
-        "gate_save" | "save_baseline" => {
-            args.push("gate".to_string());
-            args.push("--save".to_string());
+        "dsm" => {
+            let snapshot = sentrux_analysis::analyze(&repo)?;
+            println!("{}", serde_json::to_string(&snapshot)?);
+            Ok(())
         }
-        other => {
-            return Err(format!("sentrux operation not yet implemented in Rust: {other}").into())
+        "scan" => {
+            let metrics = sentrux_gate::scan_json(&repo)?;
+            println!("{}", serde_json::to_string_pretty(&metrics)?);
+            Ok(())
         }
+        "health" => {
+            let metrics = sentrux_gate::scan_json(&repo)?;
+            let god_files = metrics["god_file_count"].as_i64().unwrap_or(0);
+            let complex = metrics["complex_fn_count"].as_i64().unwrap_or(0);
+            let coupling = metrics["coupling_score"].as_f64().unwrap_or(0.0);
+            let bottleneck = if god_files > 0 {
+                "god_files"
+            } else if complex > 0 {
+                "complexity"
+            } else if coupling > 20.0 {
+                "coupling"
+            } else {
+                "none"
+            };
+            let health = serde_json::json!({
+                "status": "ok",
+                "tool": sentrux_gate::ENGINE_ID,
+                "quality_signal": metrics["quality_signal"],
+                "files": metrics["files"],
+                "bottleneck": bottleneck,
+            });
+            println!("{}", serde_json::to_string_pretty(&health)?);
+            Ok(())
+        }
+        "check" | "check_rules" => finish(sentrux_gate::run_check(&repo)?, "check"),
+        "gate" => finish(sentrux_gate::run_gate(&repo, false)?, "gate"),
+        "gate_save" | "save_baseline" => finish(sentrux_gate::run_gate(&repo, true)?, "gate"),
+        other => Err(format!("sentrux operation not yet implemented in Rust: {other}").into()),
     }
-    args.push(repo_cli.clone());
-
-    let binary = if cfg!(windows) {
-        "sentrux.cmd"
-    } else {
-        "sentrux"
-    };
-
-    let output = Command::new(binary)
-        .args(&args)
-        .current_dir(&repo_cli)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if !stdout.is_empty() {
-        print!("{stdout}");
-    }
-    if !stderr.is_empty() {
-        eprint!("{stderr}");
-    }
-
-    if !output.status.success() {
-        return Err(format!(
-            "sentrux {operation} failed with exit code {}",
-            output.status.code().unwrap_or(-1)
-        )
-        .into());
-    }
-
-    Ok(())
 }
 
-fn cli_path(path: &Path) -> String {
-    let text = path.to_string_lossy();
-    if let Some(stripped) = text.strip_prefix(r"\\?\") {
-        return stripped.to_string();
+fn finish(run: sentrux_gate::EngineRun, operation: &str) -> Result<()> {
+    print!("{}", run.stdout);
+    if run.success {
+        Ok(())
+    } else {
+        Err(format!("sentrux {operation} reported a failing verdict").into())
     }
-    text.to_string()
 }

@@ -71,6 +71,17 @@ jobs:
         shell: pwsh
         run: cargo build -p code-intel --release
 
+      - name: Authoritative self-scan (release blocking)
+        shell: pwsh
+        run: |
+          $staging = Join-Path $env:RUNNER_TEMP "code-intel-release-self-scan"
+          $authority = Join-Path $env:RUNNER_TEMP "code-intel-release-self-authority"
+          New-Item -ItemType Directory -Force $authority | Out-Null
+          ./target/release/code-intel.exe run execute --repo . --out $staging --authority-root $authority --final-name release-self-scan --manifest orchestration/integrations.json --doctor-require-repowise false
+          if ($LASTEXITCODE -ne 0) {
+            throw "release candidate failed its own scan (exit ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure). A failing self-scan must never publish."
+          }
+
       - name: Install portable pipeline
         shell: pwsh
         run: .\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -Json
@@ -109,18 +120,26 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}"
+          # Package from `git archive HEAD`, not the working tree: earlier
+          # steps (install, smoke) must never be able to mutate what ships.
           New-Item -ItemType Directory -Force dist\code-intel-pipeline\bin | Out-Null
-          $files = git ls-files
-          foreach ($file in $files) {
-            if ($file -match "^\.gitignore$") {
-              continue
-            }
-            $target = Join-Path "dist\code-intel-pipeline" $file
-            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
-            Copy-Item -LiteralPath $file -Destination $target -Force
-          }
+          git archive --format=zip -o dist\payload.zip HEAD
+          if ($LASTEXITCODE -ne 0) { throw "git archive failed" }
+          Expand-Archive -LiteralPath dist\payload.zip -DestinationPath dist\code-intel-pipeline -Force
+          Remove-Item dist\payload.zip
           Copy-Item -LiteralPath target\release\code-intel.exe -Destination dist\code-intel-pipeline\bin\code-intel.exe -Force
-          Compress-Archive -Path dist\code-intel-pipeline -DestinationPath "dist\code-intel-pipeline-$version-windows.zip" -Force
+          $zip = "dist\code-intel-pipeline-$version-windows.zip"
+          Compress-Archive -Path dist\code-intel-pipeline -DestinationPath $zip -Force
+          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          "$hash *$(Split-Path -Leaf $zip)" | Set-Content -Encoding ascii "$zip.sha256"
+          $manifest = [ordered]@{
+            schema = "code-intel-release-manifest.v1"
+            tag = $version
+            commit = (git rev-parse HEAD).Trim()
+            zipSha256 = $hash
+            builtAt = (Get-Date).ToUniversalTime().ToString("o")
+          }
+          $manifest | ConvertTo-Json | Set-Content -Encoding ascii "$zip.release-manifest.json"
 
       - name: Validate packaged Skill bootstrap
         shell: pwsh
@@ -144,6 +163,14 @@ jobs:
             }
           }
           python (Join-Path $payload "skills\code-intel-pipeline\scripts\bootstrap.py") --help
+          # The packaged binary must pass its own structural gates against the
+          # packaged payload: release green, self-scan green, and published
+          # artifact green must refer to the same snapshot content.
+          $packagedBinary = Join-Path $payload "bin\code-intel.exe"
+          & $packagedBinary sentrux --operation check --repo $payload
+          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own structural check" }
+          & $packagedBinary sentrux --operation gate --repo $payload
+          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own no-degradation gate" }
 
       - name: Create GitHub Release
         shell: pwsh
@@ -152,9 +179,10 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           $asset = "dist\code-intel-pipeline-$tag-windows.zip"
+          $assets = @($asset, "$asset.sha256", "$asset.release-manifest.json")
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $asset --clobber
+            gh release upload $tag @assets --clobber
           }
           else {
             $notes = "Code Intel Pipeline $tag."
@@ -171,5 +199,5 @@ jobs:
             if ($tag.Contains("-")) {
               $releaseArgs += "--prerelease"
             }
-            gh release create $tag $asset @releaseArgs
+            gh release create $tag @assets @releaseArgs
           }

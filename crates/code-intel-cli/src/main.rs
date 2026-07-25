@@ -35,10 +35,13 @@ mod ponytail_gate;
 mod project_orientation_benchmark;
 mod providers;
 mod routes;
+mod run_cli;
 mod run_commit;
+mod run_error;
 mod runtime_ci_evidence;
 mod sentrux;
 mod sentrux_analysis;
+mod sentrux_gate;
 mod session_evidence;
 mod snapshot;
 mod stable_artifact;
@@ -338,25 +341,24 @@ fn run_primary(raw: &[String]) -> i32 {
     }
 }
 
-fn execute_primary(args: &PrimaryArgs) -> std::result::Result<i32, execution_kernel::RunError> {
+fn execute_primary(args: &PrimaryArgs) -> std::result::Result<i32, run_error::RunError> {
     let artifact_root = artifacts::resolve_artifact_root(args.artifact_root.as_deref())
-        .map_err(|error| execution_kernel::RunError::io(error.to_string()))?;
-    fs::create_dir_all(&artifact_root).map_err(|error| {
-        execution_kernel::RunError::io(format!("create artifact root: {error}"))
-    })?;
+        .map_err(|error| run_error::RunError::io(error.to_string()))?;
+    fs::create_dir_all(&artifact_root)
+        .map_err(|error| run_error::RunError::io(format!("create artifact root: {error}")))?;
     let repo_name = args
         .repo
         .file_name()
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
-        .ok_or_else(|| execution_kernel::RunError::contract("repository has no usable name"))?;
+        .ok_or_else(|| run_error::RunError::contract("repository has no usable name"))?;
     let authority_root = artifact_root.join(repo_name);
     fs::create_dir_all(&authority_root).map_err(|error| {
-        execution_kernel::RunError::io(format!("create repository authority root: {error}"))
+        run_error::RunError::io(format!("create repository authority root: {error}"))
     })?;
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|error| execution_kernel::RunError::io(error.to_string()))?
+        .map_err(|error| run_error::RunError::io(error.to_string()))?
         .as_millis();
     let final_name = format!("{nonce}-{}-core", process::id());
     let staging_root = env::temp_dir().join(format!("code-intel-a09-{final_name}"));
@@ -378,15 +380,13 @@ fn execute_primary(args: &PrimaryArgs) -> std::result::Result<i32, execution_ker
     })?;
     if staging_root.is_dir() {
         fs::remove_dir_all(&staging_root).map_err(|error| {
-            execution_kernel::RunError::io(format!("remove committed staging directory: {error}"))
+            run_error::RunError::io(format!("remove committed staging directory: {error}"))
         })?;
     }
-    let index = artifact_index::rebuild(&artifact_root).map_err(|error| {
-        execution_kernel::RunError::io(format!("rebuild artifact index: {error}"))
-    })?;
-    artifact_index::write_index(&artifact_root.join("index.json"), &index).map_err(|error| {
-        execution_kernel::RunError::io(format!("publish artifact index: {error}"))
-    })?;
+    let index = artifact_index::rebuild(&artifact_root)
+        .map_err(|error| run_error::RunError::io(format!("rebuild artifact index: {error}")))?;
+    artifact_index::write_index(&artifact_root.join("index.json"), &index)
+        .map_err(|error| run_error::RunError::io(format!("publish artifact index: {error}")))?;
     let output = primary_result(&args, &result);
     if args.json {
         println!(
@@ -442,6 +442,7 @@ fn primary_result(args: &PrimaryArgs, result: &execution_kernel::ExecutionResult
         },
         "failureNode": failure_node,
         "diagnostic": diagnostic,
+        "failures": execution_kernel::failures(&result.manifest),
     })
 }
 
@@ -488,6 +489,28 @@ fn print_primary_summary(output: &Value) {
             } else {
                 format!(" - {diagnostic}")
             }
+        );
+    }
+    for entry in output["failures"]["process"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        println!(
+            "  Process failure: {} - {}",
+            entry["node"].as_str().unwrap_or(""),
+            entry["diagnostic"].as_str().unwrap_or("")
+        );
+    }
+    for entry in output["failures"]["domain"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        println!(
+            "  Domain failure: {} (verdict: {})",
+            entry["node"].as_str().unwrap_or(""),
+            entry["verdict"].as_str().unwrap_or("fail")
         );
     }
 }
@@ -632,7 +655,7 @@ const RAW_ROUTES: &[RawRoute] = &[
         command: "run",
         subcommand: None,
         argument_offset: 1,
-        runner: dag_run::run_raw,
+        runner: run_cli::run_raw,
     },
     RawRoute {
         command: "governance",

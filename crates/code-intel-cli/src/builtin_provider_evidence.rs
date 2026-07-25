@@ -19,6 +19,10 @@ mod graph;
 mod graph_adapter;
 #[path = "sentrux_adapter.rs"]
 mod sentrux_adapter;
+#[path = "sentrux_gate.rs"]
+mod sentrux_gate;
+
+use sentrux_gate::Violation;
 const MAX_AGE_SECONDS: u64 = 300;
 const MAX_COMMAND_EVIDENCE_BYTES: usize = 1024 * 1024;
 
@@ -126,25 +130,40 @@ pub(super) fn sentrux_admission(
         AdapterError::Internal(format!("serialize Sentrux command observation: {error}"))
     })?;
     let rules = json!([
-        command_rule("sentrux_gate", gate.status.success()),
-        command_rule("sentrux_check", check.status.success())
+        command_rule("sentrux_gate", &gate),
+        command_rule("sentrux_check", &check)
     ]);
-    let native = json!({
-        "schema":"code-intel-sentrux-provider-native.v1",
-        "status":"complete",
-        "implementation":{
+    let implementation = if tool_path_prefix.is_some() {
+        json!({
             "id":"sentrux.command-adapter",
             "version":"1.0.0",
             "digest":sha256_hex(include_bytes!("builtin_provider_evidence.rs"))
-        },
+        })
+    } else {
+        json!({
+            "id":sentrux_gate::ENGINE_ID,
+            "version":sentrux_gate::ENGINE_VERSION,
+            "digest":sha256_hex(include_bytes!("sentrux_gate.rs"))
+        })
+    };
+    // The built-in engine analyzes in-process; only the external path spawns.
+    let effects: &[&str] = if tool_path_prefix.is_some() {
+        &["local_write", "process_spawn", "repo_read"]
+    } else {
+        &["local_write", "repo_read"]
+    };
+    let native = json!({
+        "schema":"code-intel-sentrux-provider-native.v1",
+        "status":"complete",
+        "implementation":implementation,
         "rollbackIdentity":"sentrux gate/check",
         "sourceRevision":source_revision(request),
         "expectedSnapshotIdentity":identity,
         "sourceSnapshotIdentity":identity,
         "collectedAt":collected_at,
         "observedAt":observed_at,
-        "declaredEffects":["local_write","process_spawn","repo_read"],
-        "observedEffects":["local_write","process_spawn","repo_read"],
+        "declaredEffects":effects,
+        "observedEffects":effects,
         "authoritativeRules":rules,
         "nativeFailure":{"kind":"none"},
         "payload":{
@@ -193,7 +212,7 @@ pub(super) fn sentrux_admission(
         out,
         "sentrux-admission.json",
         admission.result().clone(),
-        &["repo_read", "local_write", "process_spawn"],
+        effects,
     )?;
     output.artifacts.extend([
         AdapterArtifact {
@@ -267,48 +286,131 @@ fn sentrux_provider_options<'a>(
     Ok((repo, tool_path_prefix))
 }
 
+struct SentruxCommand {
+    argv: Vec<String>,
+    exit_code: Option<i32>,
+    success: bool,
+    stdout: String,
+    stderr: String,
+    violations: Vec<Violation>,
+}
+
+impl SentruxCommand {
+    fn from_native(run: sentrux_gate::EngineRun, subcommand: &str) -> Self {
+        Self {
+            argv: vec![
+                "code-intel".into(),
+                "sentrux".into(),
+                subcommand.into(),
+                ".".into(),
+            ],
+            exit_code: Some(if run.success { 0 } else { 1 }),
+            success: run.success,
+            stdout: run.stdout,
+            stderr: String::new(),
+            violations: run.violations,
+        }
+    }
+
+    fn from_external(output: Output, subcommand: &str) -> Self {
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        // External engines only expose text; keep the per-line failure
+        // messages so downstream diagnosis is never target-blind. Bounded at
+        // the producer: an over-verbose external engine must degrade the
+        // details, never turn the domain verdict into a contract failure.
+        const MAX_EXTERNAL_VIOLATIONS: usize = 32;
+        const MAX_EXTERNAL_MESSAGE: usize = 1024;
+        let violations = if output.status.success() {
+            Vec::new()
+        } else {
+            stdout
+                .lines()
+                .filter_map(|line| line.strip_prefix("- "))
+                .map(str::trim)
+                .filter(|message| !message.is_empty())
+                .take(MAX_EXTERNAL_VIOLATIONS)
+                .map(|message| {
+                    let mut bounded = String::new();
+                    for character in message.chars() {
+                        if bounded.len() + character.len_utf8() > MAX_EXTERNAL_MESSAGE {
+                            break;
+                        }
+                        bounded.push(character);
+                    }
+                    Violation {
+                        rule: format!("sentrux_{subcommand}"),
+                        message: bounded,
+                        targets: Vec::new(),
+                    }
+                })
+                .collect()
+        };
+        Self {
+            argv: vec!["sentrux".into(), subcommand.into(), ".".into()],
+            exit_code: output.status.code(),
+            success: output.status.success(),
+            stdout,
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            violations,
+        }
+    }
+}
+
 fn run_sentrux(
     repo: &Path,
     tool_path_prefix: Option<&Path>,
     subcommand: &str,
-) -> Result<Output, AdapterError> {
-    let explicit = match tool_path_prefix {
-        Some(prefix) => Some(resolve_sentrux(prefix)?),
-        None => resolve_sentrux_from_path(),
-    };
-    let mut command = match explicit.as_deref() {
-        #[cfg(windows)]
-        Some(path)
-            if path
-                .extension()
-                .and_then(|value| value.to_str())
-                .is_some_and(|extension| {
-                    matches!(extension.to_ascii_lowercase().as_str(), "cmd" | "bat")
-                }) =>
-        {
-            let mut command = Command::new("cmd.exe");
-            command.args(["/d", "/c"]).arg(path);
-            command
+) -> Result<SentruxCommand, AdapterError> {
+    let command = match tool_path_prefix {
+        Some(prefix) => {
+            let resolved = resolve_sentrux(prefix)?;
+            let mut command = external_command(&resolved);
+            let output = command
+                .arg(subcommand)
+                .arg(".")
+                .current_dir(repo)
+                .output()
+                .map_err(|error| {
+                    AdapterError::Unavailable(format!("start Sentrux {subcommand}: {error}"))
+                })?;
+            SentruxCommand::from_external(output, subcommand)
         }
-        Some(path) => Command::new(path),
-        None => Command::new("sentrux"),
+        None => {
+            let run = match subcommand {
+                "gate" => sentrux_gate::run_gate(repo, false),
+                "check" => sentrux_gate::run_check(repo),
+                other => {
+                    return Err(AdapterError::Internal(format!(
+                        "unsupported built-in Sentrux subcommand: {other}"
+                    )))
+                }
+            }
+            .map_err(AdapterError::Internal)?;
+            SentruxCommand::from_native(run, subcommand)
+        }
     };
-    let output = command
-        .arg(subcommand)
-        .arg(".")
-        .current_dir(repo)
-        .output()
-        .map_err(|error| {
-            AdapterError::Unavailable(format!("start Sentrux {subcommand}: {error}"))
-        })?;
-    if output.stdout.len() > MAX_COMMAND_EVIDENCE_BYTES
-        || output.stderr.len() > MAX_COMMAND_EVIDENCE_BYTES
+    if command.stdout.len() > MAX_COMMAND_EVIDENCE_BYTES
+        || command.stderr.len() > MAX_COMMAND_EVIDENCE_BYTES
     {
         return Err(AdapterError::Contract(format!(
             "Sentrux {subcommand} output exceeds the bounded evidence limit"
         )));
     }
-    Ok(output)
+    Ok(command)
+}
+
+fn external_command(path: &Path) -> Command {
+    #[cfg(windows)]
+    if path
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|extension| matches!(extension.to_ascii_lowercase().as_str(), "cmd" | "bat"))
+    {
+        let mut command = Command::new("cmd.exe");
+        command.args(["/d", "/c"]).arg(path);
+        return command;
+    }
+    Command::new(path)
 }
 
 fn resolve_sentrux(prefix: &Path) -> Result<PathBuf, AdapterError> {
@@ -324,29 +426,6 @@ fn resolve_sentrux(prefix: &Path) -> Result<PathBuf, AdapterError> {
         })
 }
 
-#[cfg(windows)]
-fn resolve_sentrux_from_path() -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    resolve_sentrux_in_directories(std::env::split_paths(&path))
-}
-
-#[cfg(not(windows))]
-fn resolve_sentrux_from_path() -> Option<PathBuf> {
-    None
-}
-
-#[cfg(windows)]
-fn resolve_sentrux_in_directories(
-    directories: impl IntoIterator<Item = PathBuf>,
-) -> Option<PathBuf> {
-    directories.into_iter().find_map(|directory| {
-        sentrux_names()
-            .iter()
-            .map(|name| directory.join(name))
-            .find(|path| path.is_file())
-    })
-}
-
 fn sentrux_names() -> &'static [&'static str] {
     if cfg!(windows) {
         &["sentrux.exe", "sentrux.cmd", "sentrux.bat", "sentrux"]
@@ -355,48 +434,34 @@ fn sentrux_names() -> &'static [&'static str] {
     }
 }
 
-#[cfg(all(test, windows))]
-mod tests {
-    use super::resolve_sentrux_in_directories;
-    use std::{fs, process, time::SystemTime};
-
-    #[test]
-    fn path_resolution_includes_windows_command_shims() {
-        let nonce = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("test clock is after the Unix epoch")
-            .as_nanos();
-        let root =
-            std::env::temp_dir().join(format!("code-intel-sentrux-path-{}-{nonce}", process::id()));
-        fs::create_dir_all(&root).expect("create Sentrux PATH fixture");
-        let shim = root.join("sentrux.cmd");
-        fs::write(&shim, b"@echo off\r\nexit /b 0\r\n").expect("write Sentrux command shim");
-
-        let resolved = resolve_sentrux_in_directories([root.clone()]);
-        assert_eq!(resolved.as_deref(), Some(shim.as_path()));
-
-        fs::remove_dir_all(root).expect("remove Sentrux PATH fixture");
-    }
-}
-
-fn command_evidence(subcommand: &str, output: &Output) -> Value {
+fn command_evidence(subcommand: &str, command: &SentruxCommand) -> Value {
     json!({
         "id":subcommand,
-        "argv":["sentrux",subcommand,"."],
-        "exitCode":output.status.code(),
-        "success":output.status.success(),
-        "stdout":String::from_utf8_lossy(&output.stdout),
-        "stderr":String::from_utf8_lossy(&output.stderr)
+        "argv":command.argv,
+        "exitCode":command.exit_code,
+        "success":command.success,
+        "stdout":command.stdout,
+        "stderr":command.stderr
     })
 }
 
-fn command_rule(kind: &str, pass: bool) -> Value {
-    json!({
+fn command_rule(kind: &str, command: &SentruxCommand) -> Value {
+    let mut rule = json!({
         "kind":kind,
         "status":"evaluated",
-        "verdict":if pass { "pass" } else { "fail" },
+        "verdict":if command.success { "pass" } else { "fail" },
         "failure":{"kind":"none"}
-    })
+    });
+    if !command.success && !command.violations.is_empty() {
+        rule["details"] = json!({
+            "violations":command
+                .violations
+                .iter()
+                .map(Violation::to_json)
+                .collect::<Vec<_>>()
+        });
+    }
+    rule
 }
 
 fn provider_repo<'a>(
