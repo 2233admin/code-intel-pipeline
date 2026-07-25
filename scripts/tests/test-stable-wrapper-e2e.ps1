@@ -40,9 +40,12 @@ max_cc = 100
 no_god_files = false
 "@ -Encoding utf8NoBOM
     [System.IO.File]::WriteAllBytes((Join-Path $repo "assets/logo.png"), [byte[]](0x89, 0x50, 0x4e, 0x47, 0xff))
-    & sentrux gate --save $repo | Out-Host
+    # Provision the fixture baseline with the same built-in engine that the
+    # authoritative run gates with; a PATH-resolved external Sentrux would
+    # write a foreign baseline identity and trip the engine-mismatch check.
+    & $rustCli sentrux --operation save_baseline --repo $repo | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "fixture Sentrux baseline creation failed" }
-    & sentrux check $repo | Out-Host
+    & $rustCli sentrux --operation check --repo $repo | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "fixture Sentrux rules did not pass" }
     & git -C $repo init --quiet
     & git -C $repo add .
