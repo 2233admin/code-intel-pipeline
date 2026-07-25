@@ -29,19 +29,16 @@ fn fixture_value() -> Value {
 /// against this registry must therefore report `security` as `assessed`
 /// or `not_assessed` (never `disabled`) and the other two as `disabled`;
 /// see `registry_loads_and_validates_the_real_departments_file` and
-/// `validates_a_minimal_report_with_security_not_assessed_against_the_real_registry`.
+/// `validates_a_minimal_all_not_assessed_report_against_the_real_registry`.
 fn real_registry() -> DepartmentRegistry {
     DepartmentRegistry::load(&repo_root()).unwrap()
 }
 
-/// A synthetic registry, independent of the real
-/// `orchestration/audit/departments.v1.json` (which now has only
-/// `security` `enabled: true`), that marks `security`, `ai-safety`, and
-/// `supply-chain` all `enabled: true`. The example fixture reports
-/// `security` as `assessed` and the other two as `not_assessed` (see FIX
-/// 2's enabled-consistency rule (d): `not_assessed` requires `enabled:
-/// true`), so every test below that validates the fixture — or a report
-/// shaped like it — needs this all-enabled registry, not the real one.
+/// A synthetic all-enabled registry, independent of the real
+/// `orchestration/audit/departments.v1.json` on disk. The real registry
+/// currently matches it, but keeping the tests on a fixed in-memory
+/// registry means a future department landing on disk cannot silently
+/// change what these rule-level tests assert.
 fn registry() -> DepartmentRegistry {
     let value = json!({
         "schema": "code-intel-audit-departments.v1",
@@ -166,15 +163,12 @@ fn rejects_assessed_status_when_the_registry_entry_is_disabled() {
 }
 
 #[test]
-fn validates_a_minimal_report_with_security_not_assessed_against_the_real_registry() {
-    // The real orchestration/audit/departments.v1.json now registers
-    // `security` with `enabled: true` (T2: its prompt landed) while
-    // `ai-safety` and `supply-chain` stay `enabled: false` pending their
-    // own department tickets. A report that honestly reflects that —
-    // `security` `not_assessed` (rule (d) forbids `disabled` once a
-    // department is enabled), `ai-safety`/`supply-chain` `disabled`, every
-    // score null, every coverage row `not_assessed`, `overall` null — must
-    // validate cleanly against it.
+fn validates_a_minimal_all_not_assessed_report_against_the_real_registry() {
+    // The real orchestration/audit/departments.v1.json registers all three
+    // departments with `enabled: true` (each has a prompt). A report that
+    // ran none of them — every department `not_assessed` (rule (d) forbids
+    // `disabled` for an enabled department), every score null, every
+    // coverage row `not_assessed`, `overall` null — must validate cleanly.
     let value = json!({
         "schema": "code-intel-audit-report.v1",
         "generatedAt": null,
@@ -188,28 +182,28 @@ fn validates_a_minimal_report_with_security_not_assessed_against_the_real_regist
             },
             {
                 "id": "ai-safety",
-                "status": "disabled",
-                "applicability": {"applicable": "unknown", "reason": "ai-safety is disabled in the registry for this run."}
+                "status": "not_assessed",
+                "applicability": {"applicable": "unknown", "reason": "This minimal fixture does not run the ai-safety department; no evidence was gathered."}
             },
             {
                 "id": "supply-chain",
-                "status": "disabled",
-                "applicability": {"applicable": "unknown", "reason": "supply-chain is disabled in the registry for this run."}
+                "status": "not_assessed",
+                "applicability": {"applicable": "unknown", "reason": "This minimal fixture does not run the supply-chain department; no evidence was gathered."}
             }
         ],
         "findings": [],
         "score_dashboard": {
             "entries": [
                 {"department": "security", "score": null, "justification": "Not assessed by this minimal fixture."},
-                {"department": "ai-safety", "score": null, "justification": "Disabled in the registry for this run."},
-                {"department": "supply-chain", "score": null, "justification": "Disabled in the registry for this run."}
+                {"department": "ai-safety", "score": null, "justification": "Not assessed by this minimal fixture."},
+                {"department": "supply-chain", "score": null, "justification": "Not assessed by this minimal fixture."}
             ],
             "overall": null
         },
         "coverage_matrix": [
             {"department": "security", "coverage": "not_assessed", "inspected_evidence": [], "exclusions": ["security was not run by this minimal fixture."]},
-            {"department": "ai-safety", "coverage": "not_assessed", "inspected_evidence": [], "exclusions": ["ai-safety is disabled in the registry for this run."]},
-            {"department": "supply-chain", "coverage": "not_assessed", "inspected_evidence": [], "exclusions": ["supply-chain is disabled in the registry for this run."]}
+            {"department": "ai-safety", "coverage": "not_assessed", "inspected_evidence": [], "exclusions": ["ai-safety was not run by this minimal fixture."]},
+            {"department": "supply-chain", "coverage": "not_assessed", "inspected_evidence": [], "exclusions": ["supply-chain was not run by this minimal fixture."]}
         ]
     });
     let report = AuditReport::parse(&serde_json::to_vec(&value).unwrap()).unwrap();

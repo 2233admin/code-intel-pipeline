@@ -152,16 +152,15 @@ fn registry_file_has_unique_department_ids_and_existing_rubric_and_finding_contr
         root.join(finding_contract).is_file(),
         "findingContract file must exist on disk: {finding_contract}"
     );
-    // T1 registers exactly these three departments. T2 flips `security` to
-    // `enabled: true` once its prompt lands; `ai-safety` and `supply-chain`
-    // stay `enabled: false` pending their own department tickets (see
+    // T1 registers exactly these three departments; T2 through T4 landed a
+    // prompt for each, so all three are now `enabled: true` (see
     // docs/audit-report.md and CHANGELOG.md). Check each required slot by
     // id rather than the full list, so a future PR can add more departments
     // without this test needing to change.
     for (id, expected_enabled) in [
         ("security", true),
-        ("ai-safety", false),
-        ("supply-chain", false),
+        ("ai-safety", true),
+        ("supply-chain", true),
     ] {
         let department = registry["departments"]
             .as_array()

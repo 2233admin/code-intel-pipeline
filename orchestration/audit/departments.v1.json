@@ -22,7 +22,7 @@
     {
       "id": "ai-safety",
       "title": "AI Safety",
-      "enabled": false,
+      "enabled": true,
       "prompt": "orchestration/audit/prompts/ai-safety.md",
       "consumes": ["xray", "anatomy", "governance"],
       "applicabilityCheck": "ai-surface",
@@ -31,7 +31,7 @@
     {
       "id": "supply-chain",
       "title": "Supply Chain",
-      "enabled": false,
+      "enabled": true,
       "prompt": "orchestration/audit/prompts/supply-chain.md",
       "consumes": ["xray", "governance"],
       "applicabilityCheck": "manifests-present",

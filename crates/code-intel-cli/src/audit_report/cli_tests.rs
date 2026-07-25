@@ -22,11 +22,11 @@ fn fixture_value() -> Value {
     serde_json::from_slice(&fixture_bytes()).unwrap()
 }
 
-/// Mirrors `audit_report::validate_tests::registry()`: independent of the
-/// real, on-disk registry, marks all three departments `enabled: true` so
-/// the unmodified example fixture (security assessed, the other two
-/// not_assessed) validates without touching disk or requiring ai-safety/
-/// supply-chain prompt files that do not exist yet.
+/// Mirrors `audit_report::validate_tests::registry()`: a fixed in-memory
+/// registry with all three departments `enabled: true`, so the tests that
+/// exercise the report-shape rules stay independent of whatever the on-disk
+/// registry grows next. The disk-backed path is covered separately by
+/// `validate_accepts_the_unmodified_fixture_against_the_real_registry`.
 fn synthetic_enabled_registry() -> DepartmentRegistry {
     let value = json!({
         "schema": "code-intel-audit-departments.v1",
@@ -105,23 +105,13 @@ fn validate_report_accepts_the_example_fixture_against_a_synthetic_enabled_regis
 }
 
 #[test]
-fn validate_accepts_a_report_with_security_assessed_against_the_real_registry() {
-    // The on-disk registry now has `security` enabled; adjust a copy of the
-    // fixture so ai-safety/supply-chain are `disabled` (matching their
-    // still-disabled registry entries) and run the full disk-backed
-    // validate pipeline (load + registry.validate + report.validate)
-    // against the REAL repository registry.
-    let mut value = fixture_value();
-    for department in value["departments"].as_array_mut().unwrap() {
-        if matches!(
-            department["id"].as_str(),
-            Some("ai-safety" | "supply-chain")
-        ) {
-            department["status"] = json!("disabled");
-        }
-    }
-    let temp = TempReport::write(&value);
-    let summary = validate(&repo_root(), &temp.0).unwrap();
+fn validate_accepts_the_unmodified_fixture_against_the_real_registry() {
+    // All three departments are now enabled on disk, and the fixture reports
+    // `security` assessed with the other two `not_assessed` — the shape rule
+    // (d) requires of an enabled department that did not run. Exercise the
+    // full disk-backed pipeline (load + registry.validate + report.validate)
+    // against the REAL repository registry, no adjustment needed.
+    let summary = validate(&repo_root(), &fixture_path()).unwrap();
     assert_eq!(summary["ok"], true);
     assert_eq!(summary["findings_total"], 1);
     assert_eq!(summary["overall"], 7.0);
@@ -129,23 +119,32 @@ fn validate_accepts_a_report_with_security_assessed_against_the_real_registry() 
 }
 
 #[test]
-fn validate_rejects_the_unmodified_fixture_against_the_real_registry() {
-    // ai-safety/supply-chain are `not_assessed` in the fixture but the real
-    // registry still has them `enabled: false` (requiring `disabled`) —
-    // rule (d) rejects the mismatch.
-    let error = validate(&repo_root(), &fixture_path()).unwrap_err();
-    assert!(error.contains("disabled in the registry"), "{error}");
+fn validate_rejects_a_disabled_run_status_against_the_real_registry() {
+    // Every registry entry is enabled, so rule (d) rejects a report that
+    // reports any department as `disabled`.
+    let mut value = fixture_value();
+    for department in value["departments"].as_array_mut().unwrap() {
+        if department["id"] == "ai-safety" {
+            department["status"] = json!("disabled");
+        }
+    }
+    let temp = TempReport::write(&value);
+    let error = validate(&repo_root(), &temp.0).unwrap_err();
+    assert!(error.contains("run status is \"disabled\""), "{error}");
 }
 
 #[test]
 fn run_raw_exits_nonzero_on_a_failing_validate() {
+    let mut value = fixture_value();
+    value["score_dashboard"]["overall"] = json!(1.0);
+    let temp = TempReport::write(&value);
     let raw = vec![
         "--operation".to_string(),
         "validate".to_string(),
         "--repo".to_string(),
         repo_root().to_string_lossy().into_owned(),
         "--report".to_string(),
-        fixture_path().to_string_lossy().into_owned(),
+        temp.0.to_string_lossy().into_owned(),
     ];
     assert_eq!(run_raw(&raw), 65);
 }
