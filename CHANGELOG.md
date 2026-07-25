@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Pinned the Rust toolchain in `rust-toolchain.toml` (1.95.0, `rustfmt`,
+  minimal profile). CI and release jobs now install from that file instead of
+  running `rustup default stable`, and the release manifest records the
+  resolved `rustc --version`. Released binaries were previously built by
+  whatever `stable` happened to be current, so the shipped `.sha256` proved
+  transport integrity but nobody could rebuild a tag's bytes to check them.
+
 ### Added
 
 - Audit kernel (T1): a shared contract for audit departments that run as
