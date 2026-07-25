@@ -53,6 +53,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Audit report HTML rendering and incremental (diff-scoped) audits.
+  `code-intel audit --operation render --report <path> --format html` prints
+  one self-contained HTML document — inline styles only, no external CSS/JS/
+  fonts/images or other network reference, generated directly from the
+  parsed, validated `AuditReport` model so there is no placeholder-
+  substitution failure mode for a separate linter to catch; `--format
+  markdown` stays the default and existing invocations are unchanged.
+  Separately, the report contract gains an optional top-level `scope` block
+  (`{"kind": "full" | "diff", "since", "files"}`); a new fail-closed rule in
+  `validate()` requires a `"diff"` scope's `since`/`files` to be present and
+  bounds every finding's file evidence to a path in `scope.files` (normalising
+  `\`/`/` before comparing) — a finding outside the declared diff is a
+  contract violation. `code-intel audit --operation scope --repo <root>
+  --since <git-ref>` computes that file set (`git diff --name-only
+  <since>...HEAD`, filtered to files still on disk) and prints a
+  ready-to-embed scope block. See `docs/audit-report.md`.
 - Audit departments `ai-safety` (T3) and `supply-chain` (T4): prompts under
   `orchestration/audit/prompts/`, adapted from
   [Fuck_My_Shit_Mountain](https://github.com/XiNian-dada/Fuck_My_Shit_Mountain)

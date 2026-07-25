@@ -21,7 +21,8 @@
     "coverage_matrix": {
       "type": "array",
       "items": { "$ref": "#/$defs/coverageRow" }
-    }
+    },
+    "scope": { "$ref": "#/$defs/scope" }
   },
   "$defs": {
     "departmentRun": {
@@ -121,6 +122,19 @@
           "items": { "type": "string", "minLength": 1 }
         },
         "exclusions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["full", "diff"] },
+        "since": { "type": ["string", "null"] },
+        "files": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
         }

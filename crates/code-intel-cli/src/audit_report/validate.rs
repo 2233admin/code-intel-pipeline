@@ -1,7 +1,7 @@
-use std::{fs, path::Path};
+use std::{collections::BTreeSet, fs, path::Path};
 
 use super::{
-    enums::{Coverage, DepartmentRunStatus, EvidenceKind, FindingStatus},
+    enums::{Coverage, DepartmentRunStatus, EvidenceKind, FindingStatus, ScopeKind},
     model::AuditReport,
     registry::{repo_relative_path, DepartmentRegistry},
 };
@@ -20,6 +20,13 @@ fn nullable_f64_eq(left: Option<f64>, right: Option<f64>) -> bool {
 
 fn is_perfect_score(score: f64) -> bool {
     (score - 10.0).abs() < 1e-9
+}
+
+/// Path comparison for rule (j) must be robust to separator style (a scope
+/// block built on Windows vs. evidence authored assuming `/`) and nothing
+/// else: no case-folding, no `.`/`..` resolution, no drive-letter handling.
+fn normalize_path_separators(path: &str) -> String {
+    path.replace('\\', "/")
 }
 
 impl AuditReport {
@@ -50,7 +57,16 @@ impl AuditReport {
     ///     at most one `score_dashboard` entry;
     /// (i) an `assessed` department actually moves the health score: it has
     ///     a non-null `score_dashboard` entry and its coverage row is not
-    ///     `not_assessed`.
+    ///     `not_assessed`;
+    /// (j) an incremental (`scope.kind: "diff"`) report is bounded to its
+    ///     declared diff: `scope.since` must be present and non-empty,
+    ///     `scope.files` must be non-empty, and every finding's `file`-kind
+    ///     evidence entry that carries a `path` must name a path present in
+    ///     `scope.files` (compared after normalising `\` to `/` on both
+    ///     sides). A `full` scope, or no `scope` block at all, carries no
+    ///     such restriction. A finding outside the declared diff scope is a
+    ///     contract violation — that is the whole guarantee an incremental
+    ///     audit makes.
     pub(crate) fn validate(&self, registry: &DepartmentRegistry) -> Result<(), String> {
         // (a) every finding has evidence (structural, enforced at parse time
         // via minItems); a confirmed finding also needs a file+path entry.
@@ -310,6 +326,49 @@ impl AuditReport {
             }
         }
 
+        // (j) an incremental (`scope.kind: "diff"`) report is bounded to its
+        // declared diff. `full`/absent scope: no restriction.
+        if let Some(scope) = &self.scope {
+            if scope.kind == ScopeKind::Diff {
+                let since_present = scope
+                    .since
+                    .as_deref()
+                    .is_some_and(|value| !value.is_empty());
+                if !since_present {
+                    return Err(
+                        "scope.since must be present and non-empty when scope.kind is \"diff\""
+                            .to_string(),
+                    );
+                }
+                if scope.files.is_empty() {
+                    return Err(
+                        "scope.files must be non-empty when scope.kind is \"diff\"".to_string()
+                    );
+                }
+                let scoped_files = scope
+                    .files
+                    .iter()
+                    .map(|file| normalize_path_separators(file))
+                    .collect::<BTreeSet<_>>();
+                for finding in &self.findings {
+                    for entry in &finding.evidence {
+                        if entry.kind != EvidenceKind::File {
+                            continue;
+                        }
+                        let Some(path) = &entry.path else {
+                            continue;
+                        };
+                        if !scoped_files.contains(&normalize_path_separators(path)) {
+                            return Err(format!(
+                                "finding \"{}\" evidence path \"{path}\" is outside the declared diff scope (scope.files)",
+                                finding.id
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -364,3 +423,7 @@ impl AuditReport {
 #[cfg(test)]
 #[path = "validate_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "validate_scope_tests.rs"]
+mod scope_tests;

@@ -54,6 +54,14 @@ pub(crate) enum Confidence {
 }
 
 impl Confidence {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::High => "high",
+            Self::Medium => "medium",
+            Self::Low => "low",
+        }
+    }
+
     pub(super) fn parse(value: &str) -> Option<Self> {
         match value {
             "high" => Some(Self::High),
@@ -115,6 +123,13 @@ pub(crate) enum FindingStatus {
 }
 
 impl FindingStatus {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Confirmed => "confirmed",
+            Self::Suspected => "suspected",
+        }
+    }
+
     pub(super) fn parse(value: &str) -> Option<Self> {
         match value {
             "confirmed" => Some(Self::Confirmed),
@@ -132,6 +147,14 @@ pub(crate) enum EstimatedEffort {
 }
 
 impl EstimatedEffort {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Minutes => "minutes",
+            Self::Hours => "hours",
+            Self::Days => "days",
+        }
+    }
+
     pub(super) fn parse(value: &str) -> Option<Self> {
         match value {
             "minutes" => Some(Self::Minutes),
@@ -151,6 +174,15 @@ pub(crate) enum EvidenceKind {
 }
 
 impl EvidenceKind {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::File => "file",
+            Self::ModalitySignal => "modality_signal",
+            Self::Command => "command",
+            Self::ManualRead => "manual_read",
+        }
+    }
+
     pub(super) fn parse(value: &str) -> Option<Self> {
         match value {
             "file" => Some(Self::File),
@@ -174,6 +206,18 @@ pub(crate) enum Modality {
 }
 
 impl Modality {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Xray => "xray",
+            Self::Anatomy => "anatomy",
+            Self::Ct => "ct",
+            Self::Mri => "mri",
+            Self::Pet => "pet",
+            Self::Chart => "chart",
+            Self::Governance => "governance",
+        }
+    }
+
     pub(super) fn parse(value: &str) -> Option<Self> {
         match value {
             "xray" => Some(Self::Xray),
@@ -212,6 +256,33 @@ impl Coverage {
             "medium" => Some(Self::Medium),
             "low" => Some(Self::Low),
             "not_assessed" => Some(Self::NotAssessed),
+            _ => None,
+        }
+    }
+}
+
+/// The `scope.kind` discriminator (see `docs/audit-report.md`'s incremental
+/// audits section): `full` sweeps the whole tree with no path restriction;
+/// `diff` is bounded to `scope.files`, enforced by `AuditReport::validate()`
+/// rule (j).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScopeKind {
+    Full,
+    Diff,
+}
+
+impl ScopeKind {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Diff => "diff",
+        }
+    }
+
+    pub(super) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "full" => Some(Self::Full),
+            "diff" => Some(Self::Diff),
             _ => None,
         }
     }

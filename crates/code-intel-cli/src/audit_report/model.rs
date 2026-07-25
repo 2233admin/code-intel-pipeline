@@ -3,12 +3,12 @@ use serde_json::Value;
 use super::{
     enums::{
         Applicable, Confidence, Coverage, DepartmentRunStatus, EstimatedEffort, EvidenceKind,
-        FindingStatus, Modality, Severity,
+        FindingStatus, Modality, ScopeKind, Severity,
     },
     json_helpers::{
-        closed_object, optional_nullable_enum, optional_nullable_uint_min, optional_str,
-        optional_string_array, required_bool, required_enum, required_nullable_number,
-        required_nullable_string, required_str, required_string_array,
+        closed_object, optional_nullable_enum, optional_nullable_uint_min, optional_object,
+        optional_str, optional_string_array, required_bool, required_enum,
+        required_nullable_number, required_nullable_string, required_str, required_string_array,
     },
 };
 
@@ -288,6 +288,30 @@ impl CoverageRow {
     }
 }
 
+/// The optional incremental-audit scope block (`docs/audit-report.md`'s
+/// incremental audits section). `since`/`files` are plain optional keys, not
+/// required-nullable like `generatedAt`: a `full` scope (or an absent one)
+/// legitimately never carries them. `AuditReport::validate()` rule (j) is
+/// what actually requires them to be present and non-empty when
+/// `kind == diff` — the schema only requires `kind`.
+#[derive(Debug)]
+pub(crate) struct Scope {
+    pub(crate) kind: ScopeKind,
+    pub(crate) since: Option<String>,
+    pub(crate) files: Vec<String>,
+}
+
+impl Scope {
+    fn from_value(value: &Value) -> Result<Self, String> {
+        let object = closed_object(value, &["kind"], &["since", "files"], "scope")?;
+        Ok(Self {
+            kind: required_enum(object, "kind", "scope", ScopeKind::parse)?,
+            since: optional_str(object, "since")?,
+            files: optional_string_array(object, "files", "scope")?,
+        })
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct AuditReport {
     pub(crate) generated_at: Option<String>,
@@ -296,6 +320,7 @@ pub(crate) struct AuditReport {
     pub(crate) findings: Vec<Finding>,
     pub(crate) score_dashboard: ScoreDashboard,
     pub(crate) coverage_matrix: Vec<CoverageRow>,
+    pub(crate) scope: Option<Scope>,
 }
 
 impl AuditReport {
@@ -321,7 +346,7 @@ impl AuditReport {
                 "score_dashboard",
                 "coverage_matrix",
             ],
-            &[],
+            &["scope"],
             "audit report",
         )?;
         let schema = required_str(object, "schema", "audit report")?;
@@ -359,6 +384,9 @@ impl AuditReport {
             .iter()
             .map(CoverageRow::from_value)
             .collect::<Result<Vec<_>, _>>()?;
+        let scope = optional_object(object, "scope")?
+            .map(Scope::from_value)
+            .transpose()?;
         Ok(Self {
             generated_at: required_nullable_string(object, "generatedAt", "audit report")?,
             repo: required_str(object, "repo", "audit report")?,
@@ -366,6 +394,7 @@ impl AuditReport {
             findings,
             score_dashboard,
             coverage_matrix,
+            scope,
         })
     }
 }

@@ -57,6 +57,20 @@ pub(super) fn optional_str(
     }
 }
 
+/// An optional nested object: `None` when the key is absent or JSON `null`,
+/// otherwise the raw `Value` for the caller to parse further (e.g. via
+/// another `*_from_value` constructor, which enforces its own shape with
+/// `closed_object`).
+pub(super) fn optional_object<'a>(
+    object: &'a Map<String, Value>,
+    key: &str,
+) -> Result<Option<&'a Value>, String> {
+    match object.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => Ok(Some(value)),
+    }
+}
+
 pub(super) fn required_nullable_string(
     object: &Map<String, Value>,
     key: &str,

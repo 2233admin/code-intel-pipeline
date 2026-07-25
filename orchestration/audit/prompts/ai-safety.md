@@ -53,6 +53,16 @@ Do not spend output on:
 - Injection findings where no untrusted content can reach the prompt.
 - Speculative jailbreak scenarios with no path in this codebase.
 
+## Incremental runs
+
+When this run is scoped to a diff, get the scope block first — do not hand-roll the changed-file list:
+
+```bash
+code-intel audit --operation scope --repo <target-root> --since <git-ref>
+```
+
+Embed the printed block verbatim as the report's top-level `scope` field. Restrict every finding to evidence within `scope.files` — the kernel fails closed on a finding outside the declared diff. Name the diff limitation in every coverage row's `exclusions` (e.g. "incremental run scoped to N changed files; the rest of the tree was not swept this pass").
+
 ## Output contract
 
 Produce one `code-intel-audit-report.v1` JSON document. `departments` must list **every** registered department (kernel rule: exact registry membership); report departments whose registry entry is `enabled: false` as `disabled`. Finding ids are `ai-safety-001`, `ai-safety-002`, … Every listed department needs a coverage row; an `assessed` department also needs a non-null score and non-`not_assessed` coverage.
