@@ -292,3 +292,50 @@ fn rejects_duplicate_score_entry_for_a_department() {
         "{error}"
     );
 }
+
+#[test]
+fn rejects_assessed_department_with_a_missing_score_entry() {
+    let mut value = fixture_value();
+    let entries = value["score_dashboard"]["entries"].as_array_mut().unwrap();
+    entries.retain(|entry| entry["department"] != "security");
+    value["score_dashboard"]["overall"] = json!(null);
+    let report = AuditReport::parse(&serde_json::to_vec(&value).unwrap()).unwrap();
+    let error = report.validate(&registry()).unwrap_err();
+    assert!(
+        error.contains("assessed but has no non-null score entry"),
+        "{error}"
+    );
+}
+
+#[test]
+fn rejects_assessed_department_with_a_null_score() {
+    let mut value = fixture_value();
+    for entry in value["score_dashboard"]["entries"].as_array_mut().unwrap() {
+        if entry["department"] == "security" {
+            entry["score"] = json!(null);
+        }
+    }
+    value["score_dashboard"]["overall"] = json!(null);
+    let report = AuditReport::parse(&serde_json::to_vec(&value).unwrap()).unwrap();
+    let error = report.validate(&registry()).unwrap_err();
+    assert!(
+        error.contains("assessed but has no non-null score entry"),
+        "{error}"
+    );
+}
+
+#[test]
+fn rejects_assessed_department_with_a_not_assessed_coverage_row() {
+    let mut value = fixture_value();
+    for row in value["coverage_matrix"].as_array_mut().unwrap() {
+        if row["department"] == "security" {
+            row["coverage"] = json!("not_assessed");
+        }
+    }
+    let report = AuditReport::parse(&serde_json::to_vec(&value).unwrap()).unwrap();
+    let error = report.validate(&registry()).unwrap_err();
+    assert!(
+        error.contains("assessed but its coverage row is \"not_assessed\""),
+        "{error}"
+    );
+}

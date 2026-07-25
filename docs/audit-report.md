@@ -48,6 +48,7 @@ Findings must never write secret material in plaintext. A finding about a leaked
 6. `score_dashboard.overall` is the mean of the non-null entry scores, rounded to 1 decimal place, or `null` when nothing scored; `validate()` recomputes it and rejects a mismatch.
 7. A department that scores `10.0` with zero findings must have `coverage: high` — see `orchestration/audit/rubrics/scoring.md`.
 8. Every department listed in the report has exactly one `coverage_matrix` row and at most one `score_dashboard` entry.
+9. A department whose `status` is `assessed` actually moves the health score: it has a non-null `score_dashboard` entry, and its `coverage_matrix` row is not `not_assessed`.
 
 The registry itself (`orchestration/audit/departments.v1.json`) has its own invariants, checked by `DepartmentRegistry::validate()`: department ids are unique, every rubric file it points at exists on disk, and every `enabled: true` department's prompt file exists on disk. A disabled department may point at a prompt file that does not exist yet — that file is the department ticket's job, not the kernel's.
 
@@ -55,7 +56,7 @@ The registry itself (`orchestration/audit/departments.v1.json`) has its own inva
 
 Adding a department never requires a kernel change:
 
-1. Add an entry to `orchestration/audit/departments.v1.json`: `id`, `title`, `prompt` (path to the department's prompt file), `consumes` (which modalities it reads), `applicabilityCheck`, and `trackingIssue`. Leave `enabled: false` until the prompt is ready.
+1. Add an entry to `orchestration/audit/departments.v1.json`: `id`, `title`, `prompt` (path to the department's prompt file), `consumes` (which modalities it reads; each value must be a valid modality wire value — `xray`, `anatomy`, `ct`, `mri`, `pet`, `chart`, `governance`), `applicabilityCheck`, and `trackingIssue`. Leave `enabled: false` until the prompt is ready.
 2. Write the prompt file at the path the entry declares.
 3. Flip `enabled: true` once the prompt is ready to run. `DepartmentRegistry::validate()` will fail closed if the prompt file is still missing.
 

@@ -45,7 +45,10 @@ impl AuditReport {
     /// (g) a department that scores a perfect `10.0` with zero findings has
     ///     `coverage: high`;
     /// (h) every report department has exactly one `coverage_matrix` row and
-    ///     at most one `score_dashboard` entry.
+    ///     at most one `score_dashboard` entry;
+    /// (i) an `assessed` department actually moves the health score: it has
+    ///     a non-null `score_dashboard` entry and its coverage row is not
+    ///     `not_assessed`.
     pub(crate) fn validate(&self, registry: &DepartmentRegistry) -> Result<(), String> {
         // (a) every finding has evidence (structural, enforced at parse time
         // via minItems); a confirmed finding also needs a file+path entry.
@@ -268,6 +271,40 @@ impl AuditReport {
                     "department \"{}\" has {score_count} score entries, expected at most 1",
                     department.id
                 ));
+            }
+        }
+
+        // (i) an assessed department must actually contribute to the health
+        // score: a missing or null score entry would silently drop it from
+        // the recomputed overall (rule (f)), and a not_assessed coverage row
+        // would contradict the assessed status. Coverage-row existence
+        // itself is rule (h)'s job.
+        for department in &self.departments {
+            if department.status != DepartmentRunStatus::Assessed {
+                continue;
+            }
+            let has_score = self
+                .score_dashboard
+                .entries
+                .iter()
+                .any(|entry| entry.department == department.id && entry.score.is_some());
+            if !has_score {
+                return Err(format!(
+                    "department \"{}\" is assessed but has no non-null score entry",
+                    department.id
+                ));
+            }
+            if let Some(row) = self
+                .coverage_matrix
+                .iter()
+                .find(|row| row.department == department.id)
+            {
+                if row.coverage == Coverage::NotAssessed {
+                    return Err(format!(
+                        "department \"{}\" is assessed but its coverage row is \"not_assessed\"",
+                        department.id
+                    ));
+                }
             }
         }
 

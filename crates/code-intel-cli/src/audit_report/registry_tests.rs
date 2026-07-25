@@ -102,3 +102,14 @@ fn registry_allows_a_disabled_department_with_a_missing_prompt_file() {
     let registry = DepartmentRegistry::from_value(&value).unwrap();
     registry.validate(&repo_root()).unwrap();
 }
+
+#[test]
+fn registry_rejects_an_unknown_consumed_modality() {
+    let mut value: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(repo_root().join("orchestration/audit/departments.v1.json")).unwrap(),
+    )
+    .unwrap();
+    value["departments"][0]["consumes"] = json!(["xray", "holograph"]);
+    let error = DepartmentRegistry::from_value(&value).err().unwrap();
+    assert!(error.contains("unknown modality \"holograph\""), "{error}");
+}

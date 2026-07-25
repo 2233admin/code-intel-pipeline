@@ -2,6 +2,7 @@ use std::{collections::BTreeSet, fs, path::Path};
 
 use serde_json::Value;
 
+use super::enums::Modality;
 use super::json_helpers::{closed_object, required_bool, required_str, required_string_array};
 
 // ---------------------------------------------------------------------
@@ -70,12 +71,21 @@ impl DepartmentEntry {
             &[],
             "department entry",
         )?;
+        let id = required_str(object, "id", "department entry")?;
+        let consumes = required_string_array(object, "consumes", "department entry")?;
+        for modality in &consumes {
+            if Modality::parse(modality).is_none() {
+                return Err(format!(
+                    "department \"{id}\" consumes unknown modality \"{modality}\""
+                ));
+            }
+        }
         Ok(Self {
-            id: required_str(object, "id", "department entry")?,
+            id,
             title: required_str(object, "title", "department entry")?,
             enabled: required_bool(object, "enabled", "department entry")?,
             prompt: required_str(object, "prompt", "department entry")?,
-            consumes: required_string_array(object, "consumes", "department entry")?,
+            consumes,
             applicability_check: required_str(object, "applicabilityCheck", "department entry")?,
             tracking_issue: required_str(object, "trackingIssue", "department entry")?,
         })
