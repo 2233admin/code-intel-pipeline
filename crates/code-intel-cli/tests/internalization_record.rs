@@ -850,9 +850,20 @@ fn ticket_r03_sentrux_record_blocks_shim_retirement_on_windows_and_plugin_gaps()
     assert!(owned
         .iter()
         .any(|entry| { entry["path"] == "crates/code-intel-cli/src/sentrux_analysis.rs" }));
-    assert!(owned
-        .iter()
-        .any(|entry| { entry["path"] == "crates/code-intel-cli/src/sentrux_gate.rs" }));
+    let gate_digest = recompute_sha("crates/code-intel-cli/src/sentrux_gate.rs");
+    assert!(
+        owned.iter().any(|entry| {
+            entry["path"] == "crates/code-intel-cli/src/sentrux_gate.rs"
+                && entry["evidenceIds"].as_array().is_some_and(|ids| {
+                    ids.iter().any(|id| {
+                        id.as_str().is_some_and(|id| {
+                            id == format!("local:b03:native-gate-source-sha256:{gate_digest}")
+                        })
+                    })
+                })
+        }),
+        "native gate source digest is not bound into the record"
+    );
 }
 
 #[test]

@@ -6,8 +6,18 @@
 # regressions; tightening them back toward the original intent (max_cc 70,
 # no god files, coupling grade B) is tracked modernization debt
 # (issue #14, "Remaining tracked debt").
-# Monotonic non-worsening of quality/coupling/cycles/god files is enforced
-# separately by the no-degradation gate against .sentrux/baseline.json.
+#
+# Measured ratchet evidence (sentrux-native 2.0.0, 2026-07-25, PR #15 tree,
+# recorded together with .sentrux/baseline.json in the same commit):
+#   max_complexity 162 (scripts/tests/test-code-intel-pipeline.ps1),
+#   god_file_count 29, coupling_score 44.78, cycle_count 0.
+# The previous B / 70 / no-god thresholds were never green under any engine:
+# the first honest self-scan of v0.5.0 already failed all three, so restoring
+# them would guarantee a permanently red release gate, not protection.
+#
+# no_god_files stays false here because the god-file count is enforced as
+# monotonic non-increase (29 -> never higher) by the no-degradation gate
+# against .sentrux/baseline.json, together with quality/coupling/cycles.
 #
 # max_cycles stays absolute and zero: resolved Rust module import cycles are
 # real defects (dag_run <-> execution_kernel and artifact_ref <-> capability
