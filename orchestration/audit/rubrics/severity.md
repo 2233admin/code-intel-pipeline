@@ -4,6 +4,8 @@ Adapted from [Fuck_My_Shit_Mountain](https://github.com/XiNian-dada/Fuck_My_Shit
 
 Severity describes the engineering impact of a finding if it is left unaddressed. It is independent of confidence (how sure the department is) and of coverage (how much of the dimension was inspected). Use exactly these five levels: `Critical`, `High`, `Medium`, `Low`, `Info`.
 
+Wire values: `critical` / `high` / `medium` / `low` / `info`.
+
 A department assigns severity from what the admitted modality evidence (`xray`, `anatomy`, `ct`, `mri`, `pet`, `chart`, `governance`) and any targeted follow-up reads actually show — not from how alarming the finding sounds.
 
 ## Critical

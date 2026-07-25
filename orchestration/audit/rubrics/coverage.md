@@ -4,6 +4,8 @@ Adapted from [Fuck_My_Shit_Mountain](https://github.com/XiNian-dada/Fuck_My_Shit
 
 Coverage describes how completely a department inspected its dimension for this run. It is separate from finding confidence: a single finding can carry High confidence even when the department's overall coverage is Medium. Use exactly these four levels: `High`, `Medium`, `Low`, `Not assessed`.
 
+Wire values: `high` / `medium` / `low` / `not_assessed`.
+
 ## Levels
 
 ### High

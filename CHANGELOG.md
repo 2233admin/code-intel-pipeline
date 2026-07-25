@@ -15,7 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (severity, confidence, evidence, coverage, scoring — adapted from
   [Fuck_My_Shit_Mountain](https://github.com/XiNian-dada/Fuck_My_Shit_Mountain),
   MIT), and `crates/code-intel-cli/src/audit_report.rs` with a fail-closed
-  `validate()` and a `departments.v1.json` registry loader. `hospital-report.json`
+  `validate()` and a `departments.v1.json` registry loader. `validate()` is
+  registry-authoritative: a report's `departments` must exactly match the
+  registered department ids, and each department run's `status` must agree
+  with the registry's `enabled` flag. `hospital-report.json`
   gains an optional `audit` summary block and `hospital.md` gains an optional
   `## Audit` section; both are additive and render nothing when no audit ran.
   See `docs/audit-report.md`.

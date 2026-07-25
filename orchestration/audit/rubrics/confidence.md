@@ -4,6 +4,8 @@ Adapted from [Fuck_My_Shit_Mountain](https://github.com/XiNian-dada/Fuck_My_Shit
 
 Confidence describes how sure a department is that a finding is real, independent of how severe it would be. Use exactly these three levels: `High`, `Medium`, `Low`. Confidence tracks the `status` field on the same finding (`Confirmed` / `Suspected`) but is not identical to it — a `Suspected` finding can still carry Medium confidence.
 
+Wire values: confidence `high` / `medium` / `low`; status `confirmed` / `suspected`.
+
 ## High
 
 - The finding is directly shown by admitted modality evidence: an `xray` file hit, a `ct`/`anatomy` structural rule result, a `governance` gate/check result, or a targeted read that quotes the exact lines.

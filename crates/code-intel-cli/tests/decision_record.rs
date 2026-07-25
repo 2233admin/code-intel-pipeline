@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 mod adapter_contract;
 #[path = "../src/artifact_ref.rs"]
 mod artifact_ref;
-#[path = "../src/audit_report.rs"]
+#[path = "../src/audit_report/mod.rs"]
 mod audit_report;
 #[path = "../src/authority.rs"]
 mod authority;

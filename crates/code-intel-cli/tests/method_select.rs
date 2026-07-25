@@ -4,7 +4,7 @@ mod adapter_contract;
 mod admissibility;
 #[path = "../src/artifact_ref.rs"]
 mod artifact_ref;
-#[path = "../src/audit_report.rs"]
+#[path = "../src/audit_report/mod.rs"]
 mod audit_report;
 #[path = "../src/capability.rs"]
 mod capability;
