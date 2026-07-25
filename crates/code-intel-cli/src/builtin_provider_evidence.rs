@@ -146,6 +146,12 @@ pub(super) fn sentrux_admission(
             "digest":sha256_hex(include_bytes!("sentrux_gate.rs"))
         })
     };
+    // The built-in engine analyzes in-process; only the external path spawns.
+    let effects: &[&str] = if tool_path_prefix.is_some() {
+        &["local_write", "process_spawn", "repo_read"]
+    } else {
+        &["local_write", "repo_read"]
+    };
     let native = json!({
         "schema":"code-intel-sentrux-provider-native.v1",
         "status":"complete",
@@ -156,8 +162,8 @@ pub(super) fn sentrux_admission(
         "sourceSnapshotIdentity":identity,
         "collectedAt":collected_at,
         "observedAt":observed_at,
-        "declaredEffects":["local_write","process_spawn","repo_read"],
-        "observedEffects":["local_write","process_spawn","repo_read"],
+        "declaredEffects":effects,
+        "observedEffects":effects,
         "authoritativeRules":rules,
         "nativeFailure":{"kind":"none"},
         "payload":{
@@ -206,7 +212,7 @@ pub(super) fn sentrux_admission(
         out,
         "sentrux-admission.json",
         admission.result().clone(),
-        &["repo_read", "local_write", "process_spawn"],
+        effects,
     )?;
     output.artifacts.extend([
         AdapterArtifact {
@@ -309,17 +315,33 @@ impl SentruxCommand {
     fn from_external(output: Output, subcommand: &str) -> Self {
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
         // External engines only expose text; keep the per-line failure
-        // messages so downstream diagnosis is never target-blind.
+        // messages so downstream diagnosis is never target-blind. Bounded at
+        // the producer: an over-verbose external engine must degrade the
+        // details, never turn the domain verdict into a contract failure.
+        const MAX_EXTERNAL_VIOLATIONS: usize = 32;
+        const MAX_EXTERNAL_MESSAGE: usize = 1024;
         let violations = if output.status.success() {
             Vec::new()
         } else {
             stdout
                 .lines()
                 .filter_map(|line| line.strip_prefix("- "))
-                .map(|message| Violation {
-                    rule: format!("sentrux_{subcommand}"),
-                    message: message.trim().to_string(),
-                    targets: Vec::new(),
+                .map(str::trim)
+                .filter(|message| !message.is_empty())
+                .take(MAX_EXTERNAL_VIOLATIONS)
+                .map(|message| {
+                    let mut bounded = String::new();
+                    for character in message.chars() {
+                        if bounded.len() + character.len_utf8() > MAX_EXTERNAL_MESSAGE {
+                            break;
+                        }
+                        bounded.push(character);
+                    }
+                    Violation {
+                        rule: format!("sentrux_{subcommand}"),
+                        message: bounded,
+                        targets: Vec::new(),
+                    }
                 })
                 .collect()
         };

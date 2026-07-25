@@ -153,15 +153,14 @@ fn validate_snapshot_input(
 }
 
 fn run_bootstrap(options: &Options) -> Result<Value, AdapterError> {
-    // The PowerShell bootstrap stays authoritative when it is present and
-    // conforming; a kernel run must not process-fail just because wrapper
-    // side-files or pwsh are absent (bare `run execute`, extracted release
-    // package). The native observation covers those environments.
+    // The PowerShell bootstrap stays authoritative when it is present; a
+    // kernel run must not process-fail just because the script or pwsh is
+    // absent (bare `run execute`, extracted release package). Contract
+    // failures do NOT fall back: a script that ran and produced a
+    // nonconforming observation is an integrity signal, not an absence.
     match run_script_bootstrap(options) {
         Ok(value) => Ok(value),
-        Err(AdapterError::Unavailable(_) | AdapterError::Contract(_)) => {
-            Ok(native_bootstrap(options))
-        }
+        Err(AdapterError::Unavailable(_)) => Ok(native_bootstrap(options)),
         Err(error) => Err(error),
     }
 }

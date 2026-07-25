@@ -63,6 +63,6 @@ fn finish(run: sentrux_gate::EngineRun, operation: &str) -> Result<()> {
     if run.success {
         Ok(())
     } else {
-        Err(format!("sentrux {operation} failed with exit code 1").into())
+        Err(format!("sentrux {operation} reported a failing verdict").into())
     }
 }

@@ -346,8 +346,8 @@ else {
         $mark = if ($tool.found) { "OK" } else { "MISSING" }
         Write-Host "$mark $($tool.name) $($tool.source)"
     }
-    $coreMark = if ($sentruxCore.found) { "OK" } else { "MISSING" }
-    $proMark = if ($sentruxPro.found) { "OK" } else { "MISSING" }
+    $coreMark = if ($sentruxCore.found -or $builtinSentrux) { "OK" } else { "MISSING" }
+    $proMark = if ($sentruxPro.found -or $builtinSentrux) { "OK" } else { "MISSING" }
     Write-Host "$coreMark sentrux-core $($sentruxCore.output)"
     Write-Host "$proMark sentrux-pro $($sentruxPro.output)"
     $uaMark = if ($checks.understandAnything.skillFound -and $checks.understandAnything.pluginFound) { "OK" } else { "MISSING" }

@@ -846,10 +846,13 @@ fn ticket_r03_sentrux_record_blocks_shim_retirement_on_windows_and_plugin_gaps()
     assert!(retirement.contains("gap:sentrux:upstream-windows-conformance"));
     assert!(retirement.contains("gap:sentrux:upstream-plugin-conformance"));
     let owned = record["ownedModifications"].as_array().unwrap();
-    assert_eq!(owned.len(), 3);
+    assert_eq!(owned.len(), 4);
     assert!(owned
         .iter()
         .any(|entry| { entry["path"] == "crates/code-intel-cli/src/sentrux_analysis.rs" }));
+    assert!(owned
+        .iter()
+        .any(|entry| { entry["path"] == "crates/code-intel-cli/src/sentrux_gate.rs" }));
 }
 
 #[test]

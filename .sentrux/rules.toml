@@ -4,7 +4,8 @@
 # The absolute thresholds below are a ratchet snapshotted from the measured
 # state of this tree under sentrux-native 2.0.0 (2026-07-25). They stop new
 # regressions; tightening them back toward the original intent (max_cc 70,
-# no god files, coupling grade B) is tracked modernization debt.
+# no god files, coupling grade B) is tracked modernization debt
+# (issue #14, "Remaining tracked debt").
 # Monotonic non-worsening of quality/coupling/cycles/god files is enforced
 # separately by the no-degradation gate against .sentrux/baseline.json.
 #

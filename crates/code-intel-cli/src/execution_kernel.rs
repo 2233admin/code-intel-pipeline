@@ -77,6 +77,16 @@ pub(crate) fn failures(manifest: &Value) -> Value {
                     "node": node,
                     "verdict": state["verdict"].as_str().unwrap_or("fail"),
                 })),
+                // An unknown domain verdict is a reportable failure (run
+                // outcome domain_unknown, exit 20) — never an empty report.
+                Some("domain_unknown") => domain.push(json!({
+                    "node": node,
+                    "verdict": "unknown",
+                })),
+                Some("succeeded") if state["verdict"] == "unknown" => domain.push(json!({
+                    "node": node,
+                    "verdict": "unknown",
+                })),
                 _ => {}
             }
         }

@@ -25,12 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Execution results expose a `failures` block that separates process failures
   from domain failures so a tooling error can no longer visually swallow an
   architecture-gate verdict.
-- CI and the release workflow run a release-blocking authoritative self-scan
-  (`run execute` on the exact candidate tree, no skip flags).
+- CI and the release workflow gain a release-blocking authoritative self-scan
+  (`run execute` on the exact candidate tree, no skip flags), landed in the
+  companion `ci(release)` workflow commit on this branch.
 - Stable release zips are packaged from `git archive HEAD`, ship with a
   `.sha256` and a `release-manifest.json` (tag, commit, zip digest), and the
   packaged binary must pass its own `check` and `gate` against the packaged
-  payload before publication.
+  payload before publication (same companion workflow commit).
 
 ### Fixed
 
