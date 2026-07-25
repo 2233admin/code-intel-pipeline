@@ -77,6 +77,14 @@ PowerShell 合同测试已迁到 `scripts/tests/`。其余根目录兼容 facade
 
 缺少这些增强工具时，流水线必须明确记录 skipped、manual-required 或 provider failure，不能把它们冒充成功，也不能因此阻断只依赖核心路径的 public beta。详细支持矩阵和已知边界见 [Public beta guide](docs/public-beta.md)。
 
+0.5.1 beta 还提供可重放的工具效果基线评分器。它不会把工具“能运行”误当成“对 Agent 有帮助”；只有冻结任务、配对条件和外部证明完整时才记录基线：
+
+```powershell
+code-intel benchmark tools --corpus <corpus.json> --runs <runs.json> --artifact-root <authority-root> --out <new-directory>
+```
+
+实验边界和当前可证明结论见 [Tool Effectiveness Baseline](docs/tool-effectiveness-baseline.md)。
+
 ## 这是什么
 
 `Code Intel Pipeline` 是一套本地仓库理解工具链。
