@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Git no longer runs inside a scanned repository with that repository's own
+  program-executing config keys live. `core.fsmonitor` names a program Git
+  executes on ordinary read commands like `git status`, so a repository that
+  arrived with its `.git` intact (an archive, a backup, a copied directory)
+  got command execution before any gate looked at it. New
+  `crates/code-intel-cli/src/hardened_git.rs` pins `core.fsmonitor`,
+  `core.hooksPath`, `core.sshCommand`, `diff.external`, and `core.pager` empty
+  via `-c` and sets `GIT_CONFIG_NOSYSTEM`; all five production call sites and
+  both `run-code-intel.ps1` invocations route through it. The pipeline already
+  stripped `RIPGREP_CONFIG_PATH` at every ripgrep call site — this applies the
+  same standard to the tool that can start a process.
+- Audit evidence is now grounded in the tree it cites.
+  `AuditReport::validate()` is filesystem-free, so a `confirmed` finding's
+  evidence `path` was only checked for being non-empty — a department is an
+  agent, so a fabricated or drifted citation validated green. New
+  `validate_evidence_grounding(repo_root)`, run by `audit --operation validate
+  --repo <root>`, resolves every `file` evidence entry under the repository,
+  requires it to exist, and requires any line range to be ordered and within
+  that file.
+- The department registry no longer accepts path strings that escape the
+  repository. It is read from `--repo` — a scanned repository's own file — but
+  its rubric and prompt paths were joined onto the repo root and only
+  existence-checked, so an absolute path replaced the base and `..` escaped
+  it, letting a target repo satisfy the kernel's fail-closed existence
+  invariant with host files and redirect a department's `prompt` (the
+  instruction source an audit agent reads). Both path classes now parse under
+  the portable repo-relative contract `artifact_ref.rs` already enforces.
+- `Invoke-WorkflowRecommendation.ps1 -Json` pins stdout to UTF-8 on Windows.
+  pwsh encodes redirected stdout with the system codepage, so on a zh-CN host
+  the proposal arrived as GBK bytes and the capability adapter's parse failed
+  with `invalid unicode code point`; CI runners are UTF-8, so the suite only
+  failed on real zh hosts.
+
 ### Changed
 
 - Pinned the Rust toolchain in `rust-toolchain.toml` (1.95.0, `rustfmt`,
