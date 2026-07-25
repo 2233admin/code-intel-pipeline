@@ -9,6 +9,34 @@ use super::json_helpers::{closed_object, required_bool, required_str, required_s
 // orchestration/audit/departments.v1.json registry
 // ---------------------------------------------------------------------
 
+/// Registry path strings name files *inside* the repository under audit, and
+/// the registry itself is read from `--repo` — a target repo's own file. A
+/// path that escapes the checkout would let a scanned repository satisfy the
+/// kernel's "these files exist" invariant with files anywhere on the host, and
+/// point a department's `prompt` — the instruction source an audit agent reads
+/// — outside the tree the operator pointed at. Same portable-relative contract
+/// `artifact_ref.rs` already enforces for artifact paths.
+pub(crate) fn repo_relative_path(value: &str, label: &str) -> Result<String, String> {
+    if value.is_empty()
+        || value.contains('\0')
+        || value.contains('\\')
+        || value.starts_with('/')
+        || value.contains(':')
+    {
+        return Err(format!(
+            "{label} path is not portable repo-relative syntax: {value}"
+        ));
+    }
+    for component in value.split('/') {
+        if component.is_empty() || component == "." || component == ".." {
+            return Err(format!(
+                "{label} path is not portable repo-relative syntax: {value}"
+            ));
+        }
+    }
+    Ok(value.to_string())
+}
+
 pub(crate) struct RubricPaths {
     pub(crate) severity: String,
     pub(crate) confidence: String,
@@ -26,11 +54,26 @@ impl RubricPaths {
             "rubrics",
         )?;
         Ok(Self {
-            severity: required_str(object, "severity", "rubrics")?,
-            confidence: required_str(object, "confidence", "rubrics")?,
-            evidence: required_str(object, "evidence", "rubrics")?,
-            coverage: required_str(object, "coverage", "rubrics")?,
-            scoring: required_str(object, "scoring", "rubrics")?,
+            severity: repo_relative_path(
+                &required_str(object, "severity", "rubrics")?,
+                "rubrics.severity",
+            )?,
+            confidence: repo_relative_path(
+                &required_str(object, "confidence", "rubrics")?,
+                "rubrics.confidence",
+            )?,
+            evidence: repo_relative_path(
+                &required_str(object, "evidence", "rubrics")?,
+                "rubrics.evidence",
+            )?,
+            coverage: repo_relative_path(
+                &required_str(object, "coverage", "rubrics")?,
+                "rubrics.coverage",
+            )?,
+            scoring: repo_relative_path(
+                &required_str(object, "scoring", "rubrics")?,
+                "rubrics.scoring",
+            )?,
         })
     }
 
@@ -84,7 +127,10 @@ impl DepartmentEntry {
             id,
             title: required_str(object, "title", "department entry")?,
             enabled: required_bool(object, "enabled", "department entry")?,
-            prompt: required_str(object, "prompt", "department entry")?,
+            prompt: repo_relative_path(
+                &required_str(object, "prompt", "department entry")?,
+                "department prompt",
+            )?,
             consumes,
             applicability_check: required_str(object, "applicabilityCheck", "department entry")?,
             tracking_issue: required_str(object, "trackingIssue", "department entry")?,

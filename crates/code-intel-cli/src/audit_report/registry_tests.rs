@@ -37,6 +37,60 @@ fn registry_rejects_duplicate_department_ids() {
     assert!(error.contains("duplicate department id"), "{error}");
 }
 
+/// The registry is read from `--repo` — a scanned repository's own file — so
+/// a path that leaves the checkout must not load at all.
+#[test]
+fn registry_rejects_rubric_path_escaping_the_repository() {
+    let value = json!({
+        "schema": "code-intel-audit-departments.v1",
+        "catalogVersion": "1.0.0",
+        "rubrics": {
+            "severity": "../../../etc/passwd",
+            "confidence": "orchestration/audit/rubrics/confidence.md",
+            "evidence": "orchestration/audit/rubrics/evidence.md",
+            "coverage": "orchestration/audit/rubrics/coverage.md",
+            "scoring": "orchestration/audit/rubrics/scoring.md"
+        },
+        "findingContract": "docs/audit-report.md",
+        "departments": []
+    });
+    let error = match DepartmentRegistry::from_value(&value) {
+        Ok(_) => panic!("registry loaded a path that escapes the repository root"),
+        Err(error) => error,
+    };
+    assert!(
+        error.contains("not portable repo-relative syntax"),
+        "{error}"
+    );
+}
+
+#[test]
+fn registry_rejects_absolute_department_prompt_path() {
+    let value = json!({
+        "schema": "code-intel-audit-departments.v1",
+        "catalogVersion": "1.0.0",
+        "rubrics": {
+            "severity": "orchestration/audit/rubrics/severity.md",
+            "confidence": "orchestration/audit/rubrics/confidence.md",
+            "evidence": "orchestration/audit/rubrics/evidence.md",
+            "coverage": "orchestration/audit/rubrics/coverage.md",
+            "scoring": "orchestration/audit/rubrics/scoring.md"
+        },
+        "findingContract": "docs/audit-report.md",
+        "departments": [
+            {"id":"security","title":"Security","enabled":true,"prompt":"/etc/attacker-prompt.md","consumes":[],"applicabilityCheck":"always","trackingIssue":"t"}
+        ]
+    });
+    let error = match DepartmentRegistry::from_value(&value) {
+        Ok(_) => panic!("registry loaded a path that escapes the repository root"),
+        Err(error) => error,
+    };
+    assert!(
+        error.contains("not portable repo-relative syntax"),
+        "{error}"
+    );
+}
+
 #[test]
 fn registry_rejects_missing_rubric_file() {
     let value = json!({

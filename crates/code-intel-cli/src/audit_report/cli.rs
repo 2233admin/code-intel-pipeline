@@ -86,12 +86,15 @@ fn set_once(slot: &mut Option<String>, value: &str, flag: &str) -> Result<(), St
 
 /// The full validate pipeline the CLI runs against a real repository: read
 /// the report file, parse it structurally, load and self-validate the
-/// on-disk department registry, then check the report against it.
+/// on-disk department registry, check the report against it, and — because
+/// this path has the repository the report cites — ground every file evidence
+/// entry in that tree.
 fn validate(repo: &Path, report_path: &Path) -> Result<Value, String> {
     let bytes = read_report(report_path)?;
     let report = AuditReport::parse(&bytes)?;
     let registry = DepartmentRegistry::load(repo)?;
     registry.validate(repo)?;
+    report.validate_evidence_grounding(repo)?;
     validate_report(&report, &registry)
 }
 
