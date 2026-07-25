@@ -7,8 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1-beta.1] — 2026-07-25
+
 ### Added
 
+- A deterministic paired tool-effectiveness scorer for frozen `C0`, `C1`, and
+  `Cfull` Agent runs, with externally attested outcomes, exact experiment
+  profile matching, and atomic benchmark reports.
+- ADRs that freeze canonical EntityRef identity and the first real-world
+  dogfood evaluation baseline before expanding provider-specific ablations.
 - Built-in `sentrux-native` structural gate engine (`code-intel sentrux --operation
   scan|health|check|gate|save_baseline`): deterministic metrics, structured
   violations with target files, and real resolved-import cycle detection for

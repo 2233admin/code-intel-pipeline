@@ -842,6 +842,13 @@ fn sync_directory(path: &Path) -> Result<(), CommitError> {
 fn rename_directory_no_replace(source: &Path, destination: &Path) -> Result<(), CommitError> {
     rename_windows_no_replace(source, destination, "promote staged run")
 }
+
+pub(crate) fn publish_directory_no_replace(
+    source: &Path,
+    destination: &Path,
+) -> Result<(), String> {
+    rename_directory_no_replace(source, destination).map_err(|error| error.to_string())
+}
 #[cfg(windows)]
 fn rename_file_no_replace(source: &Path, destination: &Path) -> Result<(), CommitError> {
     rename_windows_no_replace(source, destination, "publish completion marker")

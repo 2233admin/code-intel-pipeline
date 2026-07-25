@@ -47,11 +47,23 @@ mod snapshot;
 mod stable_artifact;
 mod staged_artifact;
 mod survival_scan;
+mod tool_effectiveness_benchmark;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 fn run_capability(raw: &[String]) -> i32 {
     capability::run_raw(raw, capability_inventory::execute)
+}
+
+fn run_benchmark(raw: &[String]) -> i32 {
+    match raw.first().map(String::as_str) {
+        Some("orientation") => project_orientation_benchmark::run_raw(raw),
+        Some("tools") => tool_effectiveness_benchmark::run_raw(raw),
+        _ => {
+            eprintln!("usage: benchmark <orientation|tools> [benchmark-specific options]");
+            64
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -631,7 +643,7 @@ const RAW_ROUTES: &[RawRoute] = &[
         command: "benchmark",
         subcommand: None,
         argument_offset: 1,
-        runner: project_orientation_benchmark::run_raw,
+        runner: run_benchmark,
     },
     RawRoute {
         command: "snapshot",
@@ -1745,6 +1757,8 @@ Commands:
   run execute --repo <repo-root> --out <run-staging-directory> --authority-root <publication-root> --final-name <name> [--profile default|strict|offline] [--manifest <integrations.json>] [--max-concurrency <n>] [--session-evidence <session-evidence.json>]
   run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--manifest <integrations.json>] [--max-concurrency <n>] [--session-evidence <session-evidence.json>]
   run commit --source-root <A09-artifact-root> --authority-root <publication-root> --manifest-ref <artifact-ref.json> --final-name <name>
+  benchmark orientation --out <directory> [--repetitions <2..10>]
+  benchmark tools --corpus <corpus.json> --runs <runs.json> --artifact-root <directory> --out <directory>
   governance ponytail-gate --request <request.json|->
   orchestrate [--action Validate|List|Plan] [--repo <path>] [--mode lite|normal|full] [--capability <name>] [--manifest <path>] [--json]"#;
 
