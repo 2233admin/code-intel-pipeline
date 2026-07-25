@@ -13,7 +13,7 @@
     {
       "id": "security",
       "title": "Security",
-      "enabled": false,
+      "enabled": true,
       "prompt": "orchestration/audit/prompts/security.md",
       "consumes": ["xray", "ct", "anatomy", "chart"],
       "applicabilityCheck": "always",

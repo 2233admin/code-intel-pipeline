@@ -593,6 +593,12 @@ const RAW_ROUTES: &[RawRoute] = &[
         runner: survival_scan::run_raw,
     },
     RawRoute {
+        command: "audit",
+        subcommand: None,
+        argument_offset: 1,
+        runner: audit_report::run_raw,
+    },
+    RawRoute {
         command: "artifact",
         subcommand: Some("index"),
         argument_offset: 1,

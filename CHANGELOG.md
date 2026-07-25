@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gains an optional `audit` summary block and `hospital.md` gains an optional
   `## Audit` section; both are additive and render nothing when no audit ran.
   See `docs/audit-report.md`.
+- Security audit department (T2): `orchestration/audit/prompts/security.md`
+  (adapted from
+  [Fuck_My_Shit_Mountain](https://github.com/XiNian-dada/Fuck_My_Shit_Mountain),
+  MIT) and `orchestration/audit/departments.v1.json`'s `security` entry flips
+  to `enabled: true`; `ai-safety` and `supply-chain` stay pending. New
+  `code-intel audit --operation validate|render` CLI parses a report,
+  validates it against the department registry (`--operation validate
+  --repo <root> --report <path>`), or prints its `## Audit` markdown section
+  (`--operation render --report <path>`, no registry needed). The audit
+  report is now a first-class artifact
+  (`code-intel-audit-report.v1` / `diagnosis.audit`) in `artifact_ref.rs`.
 
 ## [0.5.1-beta.1] — 2026-07-25
 

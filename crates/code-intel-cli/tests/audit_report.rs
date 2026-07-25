@@ -152,11 +152,17 @@ fn registry_file_has_unique_department_ids_and_existing_rubric_and_finding_contr
         root.join(finding_contract).is_file(),
         "findingContract file must exist on disk: {finding_contract}"
     );
-    // T1 registers exactly these three departments and does not yet run any
-    // of them (see docs/audit-report.md and CHANGELOG.md). Check each
-    // required slot by id rather than the full list, so a future PR can add
-    // more departments without this test needing to change.
-    for id in ["security", "ai-safety", "supply-chain"] {
+    // T1 registers exactly these three departments. T2 flips `security` to
+    // `enabled: true` once its prompt lands; `ai-safety` and `supply-chain`
+    // stay `enabled: false` pending their own department tickets (see
+    // docs/audit-report.md and CHANGELOG.md). Check each required slot by
+    // id rather than the full list, so a future PR can add more departments
+    // without this test needing to change.
+    for (id, expected_enabled) in [
+        ("security", true),
+        ("ai-safety", false),
+        ("supply-chain", false),
+    ] {
         let department = registry["departments"]
             .as_array()
             .unwrap()
@@ -165,8 +171,8 @@ fn registry_file_has_unique_department_ids_and_existing_rubric_and_finding_contr
             .unwrap_or_else(|| panic!("registry must contain a department with id \"{id}\""));
         assert_eq!(
             department["enabled"],
-            json!(false),
-            "department \"{id}\" must currently be enabled: false"
+            json!(expected_enabled),
+            "department \"{id}\" enabled flag does not match the expected registration state"
         );
     }
 }
