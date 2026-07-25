@@ -45,7 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (adapted from
   [Fuck_My_Shit_Mountain](https://github.com/XiNian-dada/Fuck_My_Shit_Mountain),
   MIT) and `orchestration/audit/departments.v1.json`'s `security` entry flips
-  to `enabled: true`; `ai-safety` and `supply-chain` stay pending. New
+  to `enabled: true`; `ai-safety` and `supply-chain` landed after it as T3/T4
+  (see the entry above). New
   `code-intel audit --operation validate|render` CLI parses a report,
   validates it against the department registry (`--operation validate
   --repo <root> --report <path>`), or prints its `## Audit` markdown section

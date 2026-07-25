@@ -21,7 +21,7 @@ Record what you find as the department's `applicability.surface_evidence`.
 ## Inputs
 
 - The target repository checkout.
-- Pipeline evidence when available: `xray` (locate provider imports, prompt assets, tool schemas), `anatomy` (paths from untrusted input to model call sites and from model output to effectful code), `governance` (existing Sentrux rules constraining tool boundaries), `chart` (project background).
+- Pipeline evidence when available: `xray` (locate provider imports, prompt assets, tool schemas), `anatomy` (paths from untrusted input to model call sites and from model output to effectful code), `governance` (existing Sentrux rules constraining tool boundaries).
 - Missing modality: proceed and record the gap in `exclusions`.
 
 ## Audit areas
