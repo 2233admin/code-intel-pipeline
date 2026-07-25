@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Audit departments `ai-safety` (T3) and `supply-chain` (T4): prompts under
+  `orchestration/audit/prompts/`, adapted from
+  [Fuck_My_Shit_Mountain](https://github.com/XiNian-dada/Fuck_My_Shit_Mountain)
+  (MIT) and rewritten to run on pipeline modality evidence. `ai-safety` gates
+  on an AI/LLM surface being present and reports `not_assessed` with evidence
+  when there is none; `supply-chain` parses manifests, lockfiles, and CI
+  workflow permissions as structured facts before judging. Both are flipped to
+  `enabled: true` in `orchestration/audit/departments.v1.json`; the kernel and
+  the `code-intel audit` CLI needed no change.
+
 - Audit kernel (T1): a shared contract for audit departments that run as
   hospital departments over existing modality evidence. Adds the
   `code-intel-audit-report.v1` schema, `orchestration/audit/rubrics/`
