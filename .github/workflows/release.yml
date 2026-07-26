@@ -84,6 +84,36 @@ jobs:
             throw "release candidate failed its own scan (exit ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure). A failing self-scan must never publish."
           }
 
+      - name: Validate any produced audit report (ai-safety-003)
+        shell: pwsh
+        run: |
+          # The audit kernel's fail-closed validator (`audit --operation
+          # validate`) previously ran on no automated path -- see issue #34
+          # ai-safety-003. Departments are agent-run, not part of `run
+          # execute`, so no audit-report.json is expected from this job
+          # today; this step is the structural guarantee that if one ever
+          # shows up here (repo root, orchestration/, or the self-scan
+          # artifact directory), a release can never publish it unvalidated.
+          $staging = Join-Path $env:RUNNER_TEMP "code-intel-release-self-scan"
+          $searchRoots = @("orchestration", $staging) | Where-Object { Test-Path $_ }
+          $reports = @()
+          if (Test-Path "audit-report.json") { $reports += (Resolve-Path "audit-report.json").Path }
+          foreach ($root in $searchRoots) {
+            $reports += Get-ChildItem -LiteralPath $root -Recurse -Filter "audit-report.json" -File -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty FullName
+          }
+          $reports = $reports | Select-Object -Unique
+          if (-not $reports) {
+            Write-Host "No audit-report.json produced by this run; nothing to validate."
+          }
+          foreach ($report in $reports) {
+            Write-Host "Validating audit report: $report"
+            ./target/release/code-intel.exe audit --operation validate --repo . --report $report
+            if ($LASTEXITCODE -ne 0) {
+              throw "audit report failed --operation validate (exit ${LASTEXITCODE}): $report -- a release candidate must never publish an unvalidated audit report"
+            }
+          }
+
       - name: Install portable pipeline
         shell: pwsh
         run: .\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -Json
@@ -174,6 +204,21 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own structural check" }
           & $packagedBinary sentrux --operation gate --repo $payload
           if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own no-degradation gate" }
+
+          # ai-safety-003 (issue #34): if the packaged snapshot carries an
+          # audit report, it must pass the same fail-closed validate
+          # pipeline against the packaged payload, using the packaged
+          # binary -- release green, self-scan green, and published
+          # artifact green must all refer to the same snapshot, and an
+          # unvalidated audit report must never ride along as if it were
+          # authoritative.
+          $packagedReports = Get-ChildItem -LiteralPath $payload -Recurse -Filter "audit-report.json" -File -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty FullName
+          foreach ($report in $packagedReports) {
+            Write-Host "Validating packaged audit report: $report"
+            & $packagedBinary audit --operation validate --repo $payload --report $report
+            if ($LASTEXITCODE -ne 0) { throw "packaged audit report failed --operation validate: $report" }
+          }
 
       - name: Create GitHub Release
         shell: pwsh

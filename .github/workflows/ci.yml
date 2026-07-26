@@ -88,6 +88,37 @@ jobs:
             throw "self-scan failed with exit code ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure; read the run manifest failures block"
           }
 
+      - name: Validate any produced audit report (ai-safety-003)
+        shell: pwsh
+        run: |
+          # The audit kernel's fail-closed validator (`audit --operation
+          # validate`) previously ran on no automated path — see issue #34
+          # ai-safety-003. Departments are agent-run, not part of `run
+          # execute`, so no audit-report.json is expected from this job
+          # today; this step is the structural guarantee that if one ever
+          # shows up here (repo root, orchestration/, or the self-scan
+          # artifact directory), it is validated before anything downstream
+          # can treat it as authoritative.
+          $staging = Join-Path $env:RUNNER_TEMP "code-intel-self-scan"
+          $searchRoots = @("orchestration", $staging) | Where-Object { Test-Path $_ }
+          $reports = @()
+          if (Test-Path "audit-report.json") { $reports += (Resolve-Path "audit-report.json").Path }
+          foreach ($root in $searchRoots) {
+            $reports += Get-ChildItem -LiteralPath $root -Recurse -Filter "audit-report.json" -File -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty FullName
+          }
+          $reports = $reports | Select-Object -Unique
+          if (-not $reports) {
+            Write-Host "No audit-report.json produced by this run; nothing to validate."
+          }
+          foreach ($report in $reports) {
+            Write-Host "Validating audit report: $report"
+            ./target/release/code-intel.exe audit --operation validate --repo . --report $report
+            if ($LASTEXITCODE -ne 0) {
+              throw "audit report failed --operation validate (exit ${LASTEXITCODE}): $report -- an unvalidated audit report must never be treated as authoritative"
+            }
+          }
+
       - name: PowerShell parser checks
         shell: pwsh
         run: |
@@ -344,6 +375,34 @@ jobs:
           & $binary run execute --repo . --out $staging --authority-root $authority --final-name ci-self-scan --manifest orchestration/integrations.json --doctor-require-repowise false
           if ($LASTEXITCODE -ne 0) {
             throw "self-scan failed with exit code ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure; read the run manifest failures block"
+          }
+
+      - name: Validate any produced audit report (ai-safety-003)
+        shell: pwsh
+        run: |
+          # See the matching step in the windows-build-test-package job:
+          # departments are agent-run, not part of `run execute`, so this is
+          # a structural guarantee for whenever an audit-report.json does
+          # show up, not an expectation that one exists today.
+          $binary = if ($IsWindows) { "./target/release/code-intel.exe" } else { "./target/release/code-intel" }
+          $staging = Join-Path ([IO.Path]::GetTempPath()) "code-intel-self-scan"
+          $searchRoots = @("orchestration", $staging) | Where-Object { Test-Path $_ }
+          $reports = @()
+          if (Test-Path "audit-report.json") { $reports += (Resolve-Path "audit-report.json").Path }
+          foreach ($root in $searchRoots) {
+            $reports += Get-ChildItem -LiteralPath $root -Recurse -Filter "audit-report.json" -File -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty FullName
+          }
+          $reports = $reports | Select-Object -Unique
+          if (-not $reports) {
+            Write-Host "No audit-report.json produced by this run; nothing to validate."
+          }
+          foreach ($report in $reports) {
+            Write-Host "Validating audit report: $report"
+            & $binary audit --operation validate --repo . --report $report
+            if ($LASTEXITCODE -ne 0) {
+              throw "audit report failed --operation validate (exit ${LASTEXITCODE}): $report -- an unvalidated audit report must never be treated as authoritative"
+            }
           }
 
       - name: PowerShell parser checks
