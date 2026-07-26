@@ -8,6 +8,8 @@ use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
     "43ced9ef578e6484423468e059c93ef0bc5eeeb35d23271451b2d8f1a16f9bb6";
+const STRUCTURED_EDIT_DIGEST: &str =
+    "58d3687e7e5ac8b3df9ece44bc613f4927fc328c02dddcdaeee72ed3103a04c8";
 static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -327,6 +329,55 @@ fn inventory_rg_ignores_repository_ignored_workspace_churn() {
     assert!(files.lines().any(|path| path == ".gitignore"));
     assert!(files.lines().any(|path| path == "kept.txt"));
     assert!(!files.contains("generated-"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn inventory_rg_excludes_linked_worktree_git_pointer() {
+    let root = temp_dir("linked-worktree-git-pointer");
+    let repo = root.join("repo");
+    let linked = root.join("linked");
+    fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "--quiet"]);
+    git(&repo, &["config", "user.name", "Inventory Test"]);
+    git(
+        &repo,
+        &["config", "user.email", "inventory@example.invalid"],
+    );
+    fs::write(repo.join("kept.py"), "print('kept')\n").unwrap();
+    git(&repo, &["add", "kept.py"]);
+    git(&repo, &["commit", "--quiet", "-m", "baseline"]);
+
+    let added = Command::new("git")
+        .args(["worktree", "add", "--quiet", "--detach"])
+        .arg(&linked)
+        .arg("HEAD")
+        .current_dir(&repo)
+        .output()
+        .expect("create linked worktree");
+    assert!(
+        added.status.success(),
+        "{}",
+        String::from_utf8_lossy(&added.stderr)
+    );
+    assert!(linked.join(".git").is_file());
+
+    let out = root.join("out");
+    let output = run_with_request_file(
+        &request(&linked, "inventory.rg"),
+        &root.join("request.json"),
+        &out,
+        "inventory.rg",
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let files = fs::read_to_string(out.join("files.txt")).unwrap();
+    assert!(files.lines().any(|path| path == "kept.py"));
+    assert!(!files.lines().any(|path| path == ".git"));
     let _ = fs::remove_dir_all(root);
 }
 
@@ -1210,6 +1261,59 @@ fn populated_gitlink_is_literal_excluded_and_oid_bound_for_both_policies() {
 }
 
 #[test]
+fn nested_linked_worktree_is_excluded_from_inventory() {
+    let root = temp_dir("nested-linked-worktree");
+    let repo = root.join("repo");
+    fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "--quiet"]);
+    git(&repo, &["config", "user.name", "Inventory Test"]);
+    git(
+        &repo,
+        &["config", "user.email", "inventory@example.invalid"],
+    );
+    fs::write(repo.join("root.txt"), "root\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "--quiet", "-m", "root"]);
+
+    let nested = repo.join(".claude/worktrees/agent-test");
+    git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "--detach",
+            nested.to_str().unwrap(),
+            "HEAD",
+        ],
+    );
+
+    for policy in ["head_only", "explicit_overlay"] {
+        let request = request_with_policy_scopes(&repo, "inventory.rg", policy, &["."]);
+        let out = root.join(format!("{policy}-out"));
+        let output = run_with_request_file(
+            &request,
+            &root.join(format!("{policy}-request.json")),
+            &out,
+            "inventory.rg",
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{policy}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let files = fs::read_to_string(out.join("files.txt")).unwrap();
+        assert!(files.lines().any(|path| path == "root.txt"));
+        assert!(!files
+            .lines()
+            .any(|path| path.starts_with(".claude/worktrees/agent-test/")));
+    }
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn inventory_exclude_uses_ripgrep_glob_semantics_for_basename_brace_class_and_segment() {
     let root = temp_dir("ripgrep-glob-semantics");
     let repo = root.join("repo");
@@ -1708,6 +1812,79 @@ fn declaration_determinism_is_used_for_post_declaration_failures() {
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["determinism"], "external_nondeterministic");
     assert_eq!(result["exitCode"], 64);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn structured_edit_plan_is_scope_bound_and_preview_only() {
+    let root = temp_dir("structured-edit");
+    let repo = root.join("repo");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(repo.join("src/example.py"), "print(\"hello\")\n").unwrap();
+
+    let mut value = request(&repo, "edit.ast-grep-plan");
+    value["implementation"] = json!({
+        "id":"edit.ast-grep-plan.compat",
+        "version":"1.0.0",
+        "toolchainDigests":[STRUCTURED_EDIT_DIGEST]
+    });
+    value["options"] = json!({
+        "repoPath":repo,
+        "language":"python",
+        "pattern":"print($A)",
+        "rewrite":"logger.info($A)",
+        "paths":["../outside.py"]
+    });
+    value["effectPolicy"]["allowedEffects"] = json!(["repo_read", "local_write", "process_spawn"]);
+    let rejected = run_with_request_file(
+        &value,
+        &root.join("rejected-request.json"),
+        &root.join("rejected-out"),
+        "edit.ast-grep-plan",
+    );
+    assert_eq!(rejected.status.code(), Some(64));
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("escapes repository"));
+
+    let ast_grep_available = Command::new("ast-grep")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success());
+    if !ast_grep_available {
+        let _ = fs::remove_dir_all(root);
+        return;
+    }
+
+    value["options"]["paths"] = json!(["src"]);
+    let out = root.join("out");
+    let output = run_with_request_file(
+        &value,
+        &root.join("request.json"),
+        &out,
+        "edit.ast-grep-plan",
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr={} stdout={}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["capability"], "edit.ast-grep-plan");
+    assert_eq!(
+        result["observedEffects"],
+        json!(["repo_read", "local_write", "process_spawn"])
+    );
+    let plan: Value =
+        serde_json::from_slice(&fs::read(out.join("structured-edit-plan.json")).unwrap()).unwrap();
+    assert_eq!(plan["summary"]["matches"], 1);
+    assert_eq!(plan["matches"][0]["file"], "src/example.py");
+    assert_eq!(plan["matches"][0]["replacement"], "logger.info(\"hello\")");
+    assert_eq!(plan["authority"]["repositoryMutation"], false);
+    assert_eq!(
+        fs::read_to_string(repo.join("src/example.py")).unwrap(),
+        "print(\"hello\")\n"
+    );
     let _ = fs::remove_dir_all(root);
 }
 
