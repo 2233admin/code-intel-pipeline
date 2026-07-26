@@ -347,6 +347,7 @@ pub(crate) struct SnapshotLease {
     policy: Policy,
     scopes: Vec<String>,
     manifest: InputManifest,
+    inventory_excluded_paths: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -463,11 +464,20 @@ pub(crate) fn begin_consumption(repo: &Path, expected: &Value) -> Result<Snapsho
     }
     let manifest =
         input_manifest(repo, policy, &scopes).map_err(|error| error.message().to_string())?;
+    let inventory_excluded_paths = if git_context(repo)
+        .map_err(|error| error.message().to_string())?
+        .is_some()
+    {
+        untracked_directory_paths(repo, &scopes).map_err(|error| error.message().to_string())?
+    } else {
+        Vec::new()
+    };
     Ok(SnapshotLease {
         expected: expected.clone(),
         policy,
         scopes,
         manifest,
+        inventory_excluded_paths,
     })
 }
 
@@ -487,12 +497,13 @@ impl SnapshotLease {
         paths
     }
 
-    pub(crate) fn inventory_gitlink_paths(&self) -> Vec<String> {
+    pub(crate) fn inventory_excluded_paths(&self) -> Vec<String> {
         self.manifest
             .entries
             .iter()
             .filter(|entry| entry.kind == "gitlink")
             .map(|entry| entry.path.clone())
+            .chain(self.inventory_excluded_paths.iter().cloned())
             .collect()
     }
 
@@ -1066,7 +1077,7 @@ fn effective_file_mode(index_mode: &str, metadata: &fs::Metadata) -> String {
     }
 }
 
-fn untracked_paths(repo: &Path, scopes: &[String]) -> Result<Vec<String>, SnapshotError> {
+fn untracked_entries(repo: &Path, scopes: &[String]) -> Result<Vec<String>, SnapshotError> {
     let mut args = vec![
         "ls-files",
         "--others",
@@ -1080,6 +1091,20 @@ fn untracked_paths(repo: &Path, scopes: &[String]) -> Result<Vec<String>, Snapsh
         &args,
         "enumerate untracked snapshot inputs",
     )?)
+}
+
+fn untracked_paths(repo: &Path, scopes: &[String]) -> Result<Vec<String>, SnapshotError> {
+    Ok(untracked_entries(repo, scopes)?
+        .into_iter()
+        .filter(|path| !path.ends_with('/'))
+        .collect())
+}
+
+fn untracked_directory_paths(repo: &Path, scopes: &[String]) -> Result<Vec<String>, SnapshotError> {
+    Ok(untracked_entries(repo, scopes)?
+        .into_iter()
+        .filter_map(|path| path.strip_suffix('/').map(str::to_string))
+        .collect())
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

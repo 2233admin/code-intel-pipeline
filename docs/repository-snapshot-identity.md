@@ -27,6 +27,7 @@ Scope is reduced to its smallest prefix set: `src` absorbs `src/nested`, and `.`
 `head_only` resolves HEAD once and reads its immutable tree by object id. Sorted records retain mode, kind, object id, and relative path. Executable mode, symlink blobs, Gitlinks/submodules, and LFS pointer blobs are therefore checkout-independent.
 
 `explicit_overlay` uses the Git index plus non-ignored untracked paths. Sorted length-prefixed records contain domain, kind, Git mode, relative path, byte length, and raw bytes. Deleted tracked files emit tombstones. Intent-to-add (`git add -N`, porcelain ` A`) is a modified overlay member. Gitlinks emit the indexed commit and do not recursively consume the submodule worktree. Symlinks emit their target text and are never followed. LFS worktree files are the bytes actually consumed. Ignored files are excluded and output declares `ignoredPolicy=excluded_by_git_ignore`.
+Untracked nested repositories and linked worktrees that Git reports as opaque directory entries ending in `/` are excluded from the outer repository snapshot and inventory rather than recursively consumed.
 
 The report separates `trackedModified`, `trackedDeleted`, `untracked`, `renamed`, `typeChanged`, and `staged`; a boolean alone is not the dirty-tree contract.
 Porcelain v1 XY states are table-driven: ignored (`!!`) is excluded, intent-to-add is retained, and every unmerged state (`DD`, `AU`, `UD`, `UA`, `DU`, `AA`, `UU`) fails closed instead of producing a partial identity.

@@ -318,7 +318,7 @@ fn inventory(request: &Value, out: &Path) -> Result<AdapterOutput, AdapterError>
         .collect::<Vec<_>>();
     baseline_globs.extend(
         lease
-            .inventory_gitlink_paths()
+            .inventory_excluded_paths()
             .iter()
             .map(|path| gitlink_exclude_glob(path)),
     );

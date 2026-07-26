@@ -1261,6 +1261,59 @@ fn populated_gitlink_is_literal_excluded_and_oid_bound_for_both_policies() {
 }
 
 #[test]
+fn nested_linked_worktree_is_excluded_from_inventory() {
+    let root = temp_dir("nested-linked-worktree");
+    let repo = root.join("repo");
+    fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "--quiet"]);
+    git(&repo, &["config", "user.name", "Inventory Test"]);
+    git(
+        &repo,
+        &["config", "user.email", "inventory@example.invalid"],
+    );
+    fs::write(repo.join("root.txt"), "root\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "--quiet", "-m", "root"]);
+
+    let nested = repo.join(".claude/worktrees/agent-test");
+    git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "--detach",
+            nested.to_str().unwrap(),
+            "HEAD",
+        ],
+    );
+
+    for policy in ["head_only", "explicit_overlay"] {
+        let request = request_with_policy_scopes(&repo, "inventory.rg", policy, &["."]);
+        let out = root.join(format!("{policy}-out"));
+        let output = run_with_request_file(
+            &request,
+            &root.join(format!("{policy}-request.json")),
+            &out,
+            "inventory.rg",
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{policy}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let files = fs::read_to_string(out.join("files.txt")).unwrap();
+        assert!(files.lines().any(|path| path == "root.txt"));
+        assert!(!files
+            .lines()
+            .any(|path| path.starts_with(".claude/worktrees/agent-test/")));
+    }
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn inventory_exclude_uses_ripgrep_glob_semantics_for_basename_brace_class_and_segment() {
     let root = temp_dir("ripgrep-glob-semantics");
     let repo = root.join("repo");
