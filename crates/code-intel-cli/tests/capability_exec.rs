@@ -331,6 +331,55 @@ fn inventory_rg_ignores_repository_ignored_workspace_churn() {
 }
 
 #[test]
+fn inventory_rg_excludes_linked_worktree_git_pointer() {
+    let root = temp_dir("linked-worktree-git-pointer");
+    let repo = root.join("repo");
+    let linked = root.join("linked");
+    fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "--quiet"]);
+    git(&repo, &["config", "user.name", "Inventory Test"]);
+    git(
+        &repo,
+        &["config", "user.email", "inventory@example.invalid"],
+    );
+    fs::write(repo.join("kept.py"), "print('kept')\n").unwrap();
+    git(&repo, &["add", "kept.py"]);
+    git(&repo, &["commit", "--quiet", "-m", "baseline"]);
+
+    let added = Command::new("git")
+        .args(["worktree", "add", "--quiet", "--detach"])
+        .arg(&linked)
+        .arg("HEAD")
+        .current_dir(&repo)
+        .output()
+        .expect("create linked worktree");
+    assert!(
+        added.status.success(),
+        "{}",
+        String::from_utf8_lossy(&added.stderr)
+    );
+    assert!(linked.join(".git").is_file());
+
+    let out = root.join("out");
+    let output = run_with_request_file(
+        &request(&linked, "inventory.rg"),
+        &root.join("request.json"),
+        &out,
+        "inventory.rg",
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let files = fs::read_to_string(out.join("files.txt")).unwrap();
+    assert!(files.lines().any(|path| path == "kept.py"));
+    assert!(!files.lines().any(|path| path == ".git"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn inventory_rejects_repository_changes_after_snapshot_and_honors_snapshot_scope() {
     let root = temp_dir("snapshot-lease");
     let repo = root.join("repo");
