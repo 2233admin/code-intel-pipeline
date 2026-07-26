@@ -5,11 +5,15 @@ use serde_json::{json, Value};
 use super::{enums::DepartmentRunStatus, model::AuditReport, registry::DepartmentRegistry};
 
 /// `code-intel audit --operation validate --repo <root> --report <path>` or
-/// `code-intel audit --operation render --report <path>`. Mirrors the
-/// least-invasive `RAW_ROUTES` pattern already used by `change_impact`,
-/// `decision_record`, and friends: this module owns its own tiny argument
-/// parser and prints its own JSON, so `main.rs` only ever gains one table
-/// entry (see the `"audit"` route).
+/// `code-intel audit --operation render --repo <root> --report <path>`.
+/// Rendering requires `--repo` and runs the same fail-closed validate
+/// pipeline before producing output (ai-safety-003, issue #34): a report
+/// that does not pass registry/evidence/shape validation must never be
+/// turned into human-facing markdown or HTML. Mirrors the least-invasive
+/// `RAW_ROUTES` pattern already used by `change_impact`, `decision_record`,
+/// and friends: this module owns its own tiny argument parser and prints
+/// its own JSON, so `main.rs` only ever gains one table entry (see the
+/// `"audit"` route).
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
     match parse(raw) {
         Ok(Operation::Validate { repo, report }) => match validate(&repo, &report) {
@@ -19,7 +23,11 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
             }
             Err(message) => fail(&message),
         },
-        Ok(Operation::Render { report, format }) => match render(&report, format) {
+        Ok(Operation::Render {
+            repo,
+            report,
+            format,
+        }) => match render(&repo, &report, format) {
             Ok(text) => {
                 println!("{text}");
                 0
@@ -49,6 +57,7 @@ enum Operation {
         report: PathBuf,
     },
     Render {
+        repo: PathBuf,
         report: PathBuf,
         format: RenderFormat,
     },
@@ -116,6 +125,9 @@ fn parse(raw: &[String]) -> Result<Operation, String> {
             };
             Ok(Operation::Render {
                 report: report.map(PathBuf::from).ok_or("--report is required")?,
+                repo: repo
+                    .map(PathBuf::from)
+                    .ok_or("--operation render requires --repo")?,
                 format,
             })
         }
@@ -144,14 +156,23 @@ fn set_once(slot: &mut Option<String>, value: &str, flag: &str) -> Result<(), St
 /// the report file, parse it structurally, load and self-validate the
 /// on-disk department registry, check the report against it, and — because
 /// this path has the repository the report cites — ground every file evidence
-/// entry in that tree.
-fn validate(repo: &Path, report_path: &Path) -> Result<Value, String> {
+/// entry in that tree. Shared with `render` (ai-safety-003, issue #34): the
+/// two operations must run the identical pipeline so a report can never
+/// reach human-facing output by a path that skipped a check `--operation
+/// validate` would have caught.
+fn validate_and_parse(repo: &Path, report_path: &Path) -> Result<(AuditReport, Value), String> {
     let bytes = read_report(report_path)?;
     let report = AuditReport::parse(&bytes)?;
     let registry = DepartmentRegistry::load(repo)?;
     registry.validate(repo)?;
     report.validate_evidence_grounding(repo)?;
-    validate_report(&report, &registry)
+    let summary = validate_report(&report, &registry)?;
+    Ok((report, summary))
+}
+
+fn validate(repo: &Path, report_path: &Path) -> Result<Value, String> {
+    let (_report, summary) = validate_and_parse(repo, report_path)?;
+    Ok(summary)
 }
 
 /// The registry-agnostic half of `validate`: runs the fail-closed report
@@ -175,11 +196,14 @@ fn count_assessed(report: &AuditReport) -> usize {
         .count()
 }
 
-/// Registry-independent: both renderers only read the parsed report, so
-/// rendering never needs `--repo`.
-fn render(report_path: &Path, format: RenderFormat) -> Result<String, String> {
-    let bytes = read_report(report_path)?;
-    let report = AuditReport::parse(&bytes)?;
+/// `--repo` is mandatory (ai-safety-003, issue #34): rendering runs the
+/// exact same fail-closed pipeline `--operation validate` runs — registry
+/// load and self-check, evidence grounding, report-shape rules — before
+/// producing output. A report that fails validation returns `Err` here too,
+/// so `render` can never turn an unvalidated or invalid report into
+/// human-facing markdown or HTML.
+fn render(repo: &Path, report_path: &Path, format: RenderFormat) -> Result<String, String> {
+    let (report, _summary) = validate_and_parse(repo, report_path)?;
     Ok(match format {
         RenderFormat::Markdown => super::render_markdown_section(&report),
         RenderFormat::Html => super::render_html_document(&report),
