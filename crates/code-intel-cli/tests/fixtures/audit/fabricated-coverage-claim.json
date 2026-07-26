@@ -1,0 +1,79 @@
+{
+  "schema": "code-intel-audit-report.v1",
+  "generatedAt": null,
+  "repo": "code-intel-pipeline",
+  "rubric_version": "v1",
+  "departments": [
+    {
+      "id": "security",
+      "status": "not_assessed",
+      "applicability": {
+        "applicable": "unknown",
+        "reason": "Adversarial regression fixture (ai-safety-006): this department never ran this pass, but the coverage_matrix row below fabricates a \"high\" coverage claim for it anyway — the same self-reported clean-bill-of-health pattern described in docs/audit-report.md's Untrusted Content Boundary. code-intel audit --operation validate must reject a not_assessed department carrying non-\"not_assessed\" coverage."
+      }
+    },
+    {
+      "id": "ai-safety",
+      "status": "not_assessed",
+      "applicability": {
+        "applicable": "unknown",
+        "reason": "Adversarial regression fixture (ai-safety-006): same fabricated-coverage pattern as the security row."
+      }
+    },
+    {
+      "id": "supply-chain",
+      "status": "not_assessed",
+      "applicability": {
+        "applicable": "unknown",
+        "reason": "Adversarial regression fixture (ai-safety-006): same fabricated-coverage pattern as the security row."
+      }
+    }
+  ],
+  "findings": [],
+  "score_dashboard": {
+    "entries": [
+      {
+        "department": "security",
+        "score": null,
+        "justification": "Not assessed by this fixture; see coverage_matrix for the fabricated claim under test."
+      },
+      {
+        "department": "ai-safety",
+        "score": null,
+        "justification": "Not assessed by this fixture; see coverage_matrix for the fabricated claim under test."
+      },
+      {
+        "department": "supply-chain",
+        "score": null,
+        "justification": "Not assessed by this fixture; see coverage_matrix for the fabricated claim under test."
+      }
+    ],
+    "overall": null
+  },
+  "coverage_matrix": [
+    {
+      "department": "security",
+      "coverage": "high",
+      "inspected_evidence": [],
+      "exclusions": [
+        "Fabricated: this department did not run. \"high\" is a false self-reported claim that code-intel audit --operation validate must reject (a not_assessed department cannot carry non-not_assessed coverage)."
+      ]
+    },
+    {
+      "department": "ai-safety",
+      "coverage": "high",
+      "inspected_evidence": [],
+      "exclusions": [
+        "Fabricated: this department did not run. \"high\" is a false self-reported claim that code-intel audit --operation validate must reject (a not_assessed department cannot carry non-not_assessed coverage)."
+      ]
+    },
+    {
+      "department": "supply-chain",
+      "coverage": "high",
+      "inspected_evidence": [],
+      "exclusions": [
+        "Fabricated: this department did not run. \"high\" is a false self-reported claim that code-intel audit --operation validate must reject (a not_assessed department cannot carry non-not_assessed coverage)."
+      ]
+    }
+  ]
+}

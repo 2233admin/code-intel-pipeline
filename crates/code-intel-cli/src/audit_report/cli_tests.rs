@@ -14,6 +14,14 @@ fn fixture_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/audit/audit-report.v1.example.json")
 }
 
+/// Adversarial regression corpus for ai-safety-006: named fixture files under
+/// `tests/fixtures/audit/`, each a full `code-intel-audit-report.v1` document
+/// with exactly one deliberate defect. See the three `run_raw_rejects_*`
+/// tests below.
+fn adversarial_fixture_path(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/fixtures/audit/{name}"))
+}
+
 fn fixture_bytes() -> Vec<u8> {
     fs::read(fixture_path()).unwrap()
 }
@@ -263,6 +271,61 @@ fn run_raw_exits_nonzero_on_a_bogus_scope_ref() {
         repo_root().to_string_lossy().into_owned(),
         "--since".to_string(),
         "not-a-real-ref-xyz".to_string(),
+    ];
+    assert_eq!(run_raw(&raw), 65);
+}
+
+// ai-safety-006: adversarial fixture corpus for the audit validate pipeline.
+// Each test below runs the exact `code-intel audit --operation validate`
+// entry point (`run_raw`) against a fixture that looks superficially like a
+// valid report but carries one fabricated or internally inconsistent claim —
+// the failure mode a compromised or careless department-agent run would need
+// to slip past to report a false clean bill of health (see ai-safety-002 and
+// docs/audit-report.md's Untrusted Content Boundary). Before this corpus
+// existed, nothing in the test suite exercised fabrication/inconsistency
+// resistance for `--operation validate`.
+
+#[test]
+fn run_raw_rejects_a_report_citing_a_nonexistent_evidence_file() {
+    let raw = vec![
+        "--operation".to_string(),
+        "validate".to_string(),
+        "--repo".to_string(),
+        repo_root().to_string_lossy().into_owned(),
+        "--report".to_string(),
+        adversarial_fixture_path("invalid-evidence-path.json")
+            .to_string_lossy()
+            .into_owned(),
+    ];
+    assert_eq!(run_raw(&raw), 65);
+}
+
+#[test]
+fn run_raw_rejects_a_report_with_a_reversed_line_range() {
+    let raw = vec![
+        "--operation".to_string(),
+        "validate".to_string(),
+        "--repo".to_string(),
+        repo_root().to_string_lossy().into_owned(),
+        "--report".to_string(),
+        adversarial_fixture_path("invalid-line-range.json")
+            .to_string_lossy()
+            .into_owned(),
+    ];
+    assert_eq!(run_raw(&raw), 65);
+}
+
+#[test]
+fn run_raw_rejects_a_report_fabricating_high_coverage_for_unassessed_departments() {
+    let raw = vec![
+        "--operation".to_string(),
+        "validate".to_string(),
+        "--repo".to_string(),
+        repo_root().to_string_lossy().into_owned(),
+        "--report".to_string(),
+        adversarial_fixture_path("fabricated-coverage-claim.json")
+            .to_string_lossy()
+            .into_owned(),
     ];
     assert_eq!(run_raw(&raw), 65);
 }
