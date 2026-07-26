@@ -7,6 +7,119 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-26
+
+This release adds the **audit layer**: audit dimensions run as hospital
+departments over the modality evidence the pipeline already gathers, and emit
+findings under one fail-closed contract. Three departments ship enabled
+(`security`, `ai-safety`, `supply-chain`), reports render as Markdown or as a
+self-contained HTML document, and an audit can be scoped to a git diff for
+pull-request review.
+
+The layer was pointed at this repository before shipping. It found the
+unpinned toolchain and the mutable CI action tags fixed below; the git config
+hardening came out of the same pass. Methodology adapted from
+[Fuck_My_Shit_Mountain](https://github.com/XiNian-dada/Fuck_My_Shit_Mountain)
+(MIT).
+
+### Fixed
+
+- Git no longer runs inside a scanned repository with that repository's own
+  program-executing config keys live. `core.fsmonitor` names a program Git
+  executes on ordinary read commands like `git status`, so a repository that
+  arrived with its `.git` intact (an archive, a backup, a copied directory)
+  got command execution before any gate looked at it. New
+  `crates/code-intel-cli/src/hardened_git.rs` pins `core.fsmonitor`,
+  `core.hooksPath`, `core.sshCommand`, `diff.external`, and `core.pager` empty
+  via `-c` and sets `GIT_CONFIG_NOSYSTEM`; all five production call sites and
+  both `run-code-intel.ps1` invocations route through it. The pipeline already
+  stripped `RIPGREP_CONFIG_PATH` at every ripgrep call site — this applies the
+  same standard to the tool that can start a process.
+- Audit evidence is now grounded in the tree it cites.
+  `AuditReport::validate()` is filesystem-free, so a `confirmed` finding's
+  evidence `path` was only checked for being non-empty — a department is an
+  agent, so a fabricated or drifted citation validated green. New
+  `validate_evidence_grounding(repo_root)`, run by `audit --operation validate
+  --repo <root>`, resolves every `file` evidence entry under the repository,
+  requires it to exist, and requires any line range to be ordered and within
+  that file.
+- The department registry no longer accepts path strings that escape the
+  repository. It is read from `--repo` — a scanned repository's own file — but
+  its rubric and prompt paths were joined onto the repo root and only
+  existence-checked, so an absolute path replaced the base and `..` escaped
+  it, letting a target repo satisfy the kernel's fail-closed existence
+  invariant with host files and redirect a department's `prompt` (the
+  instruction source an audit agent reads). Both path classes now parse under
+  the portable repo-relative contract `artifact_ref.rs` already enforces.
+- `Invoke-WorkflowRecommendation.ps1 -Json` pins stdout to UTF-8 on Windows.
+  pwsh encodes redirected stdout with the system codepage, so on a zh-CN host
+  the proposal arrived as GBK bytes and the capability adapter's parse failed
+  with `invalid unicode code point`; CI runners are UTF-8, so the suite only
+  failed on real zh hosts.
+
+### Changed
+
+- Pinned the Rust toolchain in `rust-toolchain.toml` (1.95.0, `rustfmt`,
+  minimal profile). CI and release jobs now install from that file instead of
+  running `rustup default stable`, and the release manifest records the
+  resolved `rustc --version`. Released binaries were previously built by
+  whatever `stable` happened to be current, so the shipped `.sha256` proved
+  transport integrity but nobody could rebuild a tag's bytes to check them.
+
+### Added
+
+- Audit report HTML rendering and incremental (diff-scoped) audits.
+  `code-intel audit --operation render --report <path> --format html` prints
+  one self-contained HTML document — inline styles only, no external CSS/JS/
+  fonts/images or other network reference, generated directly from the
+  parsed, validated `AuditReport` model so there is no placeholder-
+  substitution failure mode for a separate linter to catch; `--format
+  markdown` stays the default and existing invocations are unchanged.
+  Separately, the report contract gains an optional top-level `scope` block
+  (`{"kind": "full" | "diff", "since", "files"}`); a new fail-closed rule in
+  `validate()` requires a `"diff"` scope's `since`/`files` to be present and
+  bounds every finding's file evidence to a path in `scope.files` (normalising
+  `\`/`/` before comparing) — a finding outside the declared diff is a
+  contract violation. `code-intel audit --operation scope --repo <root>
+  --since <git-ref>` computes that file set (`git diff --name-only
+  <since>...HEAD`, filtered to files still on disk) and prints a
+  ready-to-embed scope block. See `docs/audit-report.md`.
+- Audit departments `ai-safety` (T3) and `supply-chain` (T4): prompts under
+  `orchestration/audit/prompts/`, adapted from
+  [Fuck_My_Shit_Mountain](https://github.com/XiNian-dada/Fuck_My_Shit_Mountain)
+  (MIT) and rewritten to run on pipeline modality evidence. `ai-safety` gates
+  on an AI/LLM surface being present and reports `not_assessed` with evidence
+  when there is none; `supply-chain` parses manifests, lockfiles, and CI
+  workflow permissions as structured facts before judging. Both are flipped to
+  `enabled: true` in `orchestration/audit/departments.v1.json`; the kernel and
+  the `code-intel audit` CLI needed no change.
+
+- Audit kernel (T1): a shared contract for audit departments that run as
+  hospital departments over existing modality evidence. Adds the
+  `code-intel-audit-report.v1` schema, `orchestration/audit/rubrics/`
+  (severity, confidence, evidence, coverage, scoring — adapted from
+  [Fuck_My_Shit_Mountain](https://github.com/XiNian-dada/Fuck_My_Shit_Mountain),
+  MIT), and `crates/code-intel-cli/src/audit_report.rs` with a fail-closed
+  `validate()` and a `departments.v1.json` registry loader. `validate()` is
+  registry-authoritative: a report's `departments` must exactly match the
+  registered department ids, and each department run's `status` must agree
+  with the registry's `enabled` flag. `hospital-report.json`
+  gains an optional `audit` summary block and `hospital.md` gains an optional
+  `## Audit` section; both are additive and render nothing when no audit ran.
+  See `docs/audit-report.md`.
+- Security audit department (T2): `orchestration/audit/prompts/security.md`
+  (adapted from
+  [Fuck_My_Shit_Mountain](https://github.com/XiNian-dada/Fuck_My_Shit_Mountain),
+  MIT) and `orchestration/audit/departments.v1.json`'s `security` entry flips
+  to `enabled: true`; `ai-safety` and `supply-chain` landed after it as T3/T4
+  (see the entry above). New
+  `code-intel audit --operation validate|render` CLI parses a report,
+  validates it against the department registry (`--operation validate
+  --repo <root> --report <path>`), or prints its `## Audit` markdown section
+  (`--operation render --report <path>`, no registry needed). The audit
+  report is now a first-class artifact
+  (`code-intel-audit-report.v1` / `diagnosis.audit`) in `artifact_ref.rs`.
+
 ## [0.5.1-beta.1] — 2026-07-25
 
 ### Added

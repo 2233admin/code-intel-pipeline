@@ -6,6 +6,9 @@ use std::process::{Command, Stdio};
 
 use serde_json::{json, Value};
 
+#[path = "hardened_git.rs"]
+mod hardened_git;
+
 use crate::capability::sha256_hex;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1361,9 +1364,8 @@ fn stable_unversioned_snapshot(
 }
 
 fn git_output(repo: &Path, args: &[&str]) -> Result<std::process::Output, SnapshotError> {
-    Command::new("git")
+    hardened_git::command(repo)
         .args(args)
-        .current_dir(repo)
         .output()
         .map_err(|error| SnapshotError::Unavailable(format!("cannot launch Git: {error}")))
 }

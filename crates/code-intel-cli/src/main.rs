@@ -12,6 +12,7 @@ mod admissibility;
 mod artifact_index;
 mod artifact_ref;
 mod artifacts;
+mod audit_report;
 mod authority;
 mod capability;
 mod capability_inventory;
@@ -28,6 +29,7 @@ mod execution_kernel;
 mod execution_policy;
 mod file_boundary;
 mod graph;
+mod hardened_git;
 mod method_catalog;
 mod model_channels;
 mod orchestration;
@@ -590,6 +592,12 @@ const RAW_ROUTES: &[RawRoute] = &[
         subcommand: Some("survival-scan"),
         argument_offset: 2,
         runner: survival_scan::run_raw,
+    },
+    RawRoute {
+        command: "audit",
+        subcommand: None,
+        argument_offset: 1,
+        runner: audit_report::run_raw,
     },
     RawRoute {
         command: "artifact",

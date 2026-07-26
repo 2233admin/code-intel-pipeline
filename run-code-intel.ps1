@@ -283,11 +283,24 @@ function Test-CommandAvailable {
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+# Git config keys that name a program Git will execute, pinned empty so a
+# scanned repository's own .git/config cannot supply one. `core.fsmonitor`
+# runs on ordinary read commands like `git status`, before any gate in this
+# pipeline has looked at the repository. Mirrors
+# crates/code-intel-cli/src/hardened_git.rs.
+$script:GitHardening = @(
+    "-c", "core.fsmonitor=",
+    "-c", "core.hooksPath=",
+    "-c", "core.sshCommand=",
+    "-c", "diff.external=",
+    "-c", "core.pager="
+)
+
 function Test-GitRepository {
 param([string]$Path)
 
 if (-not (Test-CommandAvailable "git")) { return $false }
-$output = & git -C $Path rev-parse --is-inside-work-tree 2>$null
+$output = & git @script:GitHardening -C $Path rev-parse --is-inside-work-tree 2>$null
 return ($LASTEXITCODE -eq 0 -and [string]$output -eq "true")
 }
 
@@ -3527,7 +3540,7 @@ elseif (-not (Test-GitRepository $repoPath)) {
 }
 else {
     $steps.Add((Invoke-LoggedStep "git status" {
-        git -C $repoPath status --short --branch
+        git @script:GitHardening -C $repoPath status --short --branch
     }))
 }
 

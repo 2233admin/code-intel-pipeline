@@ -15,6 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+
+#[path = "hardened_git.rs"]
+mod hardened_git;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -930,9 +933,8 @@ fn rule_value(rules: &str, name: &str) -> Option<String> {
 }
 
 fn git_head(repo: &Path) -> String {
-    Command::new("git")
+    hardened_git::command(repo)
         .args(["rev-parse", "HEAD"])
-        .current_dir(repo)
         .output()
         .ok()
         .filter(|output| output.status.success())

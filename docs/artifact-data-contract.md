@@ -29,7 +29,8 @@ Machine-authoritative files:
 - `repomix-summary.json`: Repomix package metadata for the single-file AI context pack.
 - `sentrux-failures.json`: normalized Sentrux check/gate failures. `sentrux check` and `sentrux gate` stdout are authoritative; hotspots and file-details are enrichment only.
 - `sentrux-debt-register.json`: Sentrux failure disposition layer. It classifies normalized failures as `known_debt`, `new_debt`, `worsened_debt`, or `informational`; only `new_debt` and `worsened_debt` are blocking.
-- `hospital-report.json`: diagnosis, disposition, state machine, next protocol, discharge criteria, and report-quality dimensions.
+- `hospital-report.json`: diagnosis, disposition, state machine, next protocol, discharge criteria, and report-quality dimensions. Its optional `audit` block points at `audit-report.json` when an audit ran.
+- `audit-report.json`: audit department findings, score dashboard, and coverage matrix (schema `code-intel-audit-report.v1`). See `docs/audit-report.md`.
 - `surgery-plan.json`: first bounded repair target, operating plan, verification commands, and discharge criteria.
 - `github-solution-research.json`: GitHub evidence candidates when external solution research is required.
 - `greenfield-manifest.json`: optional Greenfield behavioral spec extraction state, generated prompt, workspace paths, and expected output locations.

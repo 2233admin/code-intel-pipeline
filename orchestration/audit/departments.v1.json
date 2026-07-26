@@ -1,0 +1,41 @@
+{
+  "schema": "code-intel-audit-departments.v1",
+  "catalogVersion": "1.0.0",
+  "rubrics": {
+    "severity": "orchestration/audit/rubrics/severity.md",
+    "confidence": "orchestration/audit/rubrics/confidence.md",
+    "evidence": "orchestration/audit/rubrics/evidence.md",
+    "coverage": "orchestration/audit/rubrics/coverage.md",
+    "scoring": "orchestration/audit/rubrics/scoring.md"
+  },
+  "findingContract": "docs/audit-report.md",
+  "departments": [
+    {
+      "id": "security",
+      "title": "Security",
+      "enabled": true,
+      "prompt": "orchestration/audit/prompts/security.md",
+      "consumes": ["xray", "ct", "anatomy", "chart"],
+      "applicabilityCheck": "always",
+      "trackingIssue": "https://github.com/2233admin/code-intel-pipeline/issues/19"
+    },
+    {
+      "id": "ai-safety",
+      "title": "AI Safety",
+      "enabled": true,
+      "prompt": "orchestration/audit/prompts/ai-safety.md",
+      "consumes": ["xray", "anatomy", "governance"],
+      "applicabilityCheck": "ai-surface",
+      "trackingIssue": "https://github.com/2233admin/code-intel-pipeline/issues/20"
+    },
+    {
+      "id": "supply-chain",
+      "title": "Supply Chain",
+      "enabled": true,
+      "prompt": "orchestration/audit/prompts/supply-chain.md",
+      "consumes": ["xray", "governance"],
+      "applicabilityCheck": "manifests-present",
+      "trackingIssue": "https://github.com/2233admin/code-intel-pipeline/issues/21"
+    }
+  ]
+}

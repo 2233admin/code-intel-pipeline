@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-audit-report.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "generatedAt", "repo", "rubric_version", "departments", "findings", "score_dashboard", "coverage_matrix"],
+  "properties": {
+    "schema": { "const": "code-intel-audit-report.v1" },
+    "generatedAt": { "type": ["string", "null"] },
+    "repo": { "type": "string", "minLength": 1 },
+    "rubric_version": { "const": "v1" },
+    "departments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/departmentRun" }
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "score_dashboard": { "$ref": "#/$defs/scoreDashboard" },
+    "coverage_matrix": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/coverageRow" }
+    },
+    "scope": { "$ref": "#/$defs/scope" }
+  },
+  "$defs": {
+    "departmentRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "applicability"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["assessed", "not_assessed", "disabled"] },
+        "applicability": { "$ref": "#/$defs/applicability" }
+      }
+    },
+    "applicability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applicable", "reason"],
+      "properties": {
+        "applicable": { "enum": ["yes", "no", "unknown"] },
+        "reason": { "type": "string", "minLength": 1 },
+        "surface_evidence": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "department", "title", "severity", "confidence", "status", "evidence", "problem", "failure_scenario", "minimal_fix", "regression_test", "estimated_effort", "redacted"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]+-[0-9]{3}$" },
+        "department": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["critical", "high", "medium", "low", "info"] },
+        "confidence": { "enum": ["high", "medium", "low"] },
+        "status": { "enum": ["confirmed", "suspected"] },
+        "affected_area": { "type": "string" },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidenceRef" }
+        },
+        "problem": { "type": "string", "minLength": 1 },
+        "failure_scenario": { "type": "string", "minLength": 1 },
+        "minimal_fix": { "type": "string", "minLength": 1 },
+        "long_term_fix": { "type": "string" },
+        "regression_test": { "type": "string", "minLength": 1 },
+        "estimated_effort": { "enum": ["minutes", "hours", "days"] },
+        "redacted": { "type": "boolean" }
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "source"],
+      "properties": {
+        "kind": { "enum": ["file", "modality_signal", "command", "manual_read"] },
+        "source": { "type": "string", "minLength": 1 },
+        "path": { "type": "string" },
+        "line_start": { "type": ["integer", "null"], "minimum": 1 },
+        "line_end": { "type": ["integer", "null"], "minimum": 1 },
+        "modality": { "enum": ["xray", "anatomy", "ct", "mri", "pet", "chart", "governance", null] },
+        "note": { "type": "string" }
+      }
+    },
+    "scoreDashboard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entries", "overall"],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/scoreEntry" }
+        },
+        "overall": { "type": ["number", "null"], "minimum": 0, "maximum": 10 }
+      }
+    },
+    "scoreEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["department", "score", "justification"],
+      "properties": {
+        "department": { "type": "string", "minLength": 1 },
+        "score": { "type": ["number", "null"], "minimum": 0, "maximum": 10 },
+        "justification": { "type": "string", "minLength": 1 }
+      }
+    },
+    "coverageRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["department", "coverage", "inspected_evidence", "exclusions"],
+      "properties": {
+        "department": { "type": "string", "minLength": 1 },
+        "coverage": { "enum": ["high", "medium", "low", "not_assessed"] },
+        "inspected_evidence": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "exclusions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["full", "diff"] },
+        "since": { "type": ["string", "null"] },
+        "files": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

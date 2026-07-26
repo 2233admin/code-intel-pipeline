@@ -5,6 +5,9 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[path = "hardened_git.rs"]
+mod hardened_git;
+
 const SOURCE_EXTENSIONS: [&str; 14] = [
     ".ps1", ".psm1", ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".rs", ".go", ".java",
     ".cs", ".v",
@@ -196,8 +199,8 @@ fn governed_visible_files(target: &Path) -> Option<BTreeSet<String>> {
         .map(normalize_path)
         .collect::<BTreeSet<_>>();
 
-    if let Ok(output) = Command::new("git")
-        .args(["-C", &target.to_string_lossy(), "ls-files", "-z"])
+    if let Ok(output) = hardened_git::command(target)
+        .args(["ls-files", "-z"])
         .output()
     {
         if output.status.success() {
@@ -368,9 +371,7 @@ fn untracked_signal() -> GitSignal {
 }
 
 fn git_ok(target: &Path, args: &[&str]) -> bool {
-    Command::new("git")
-        .arg("-C")
-        .arg(target)
+    hardened_git::command(target)
         .args(args)
         .output()
         .map(|output| output.status.success())
@@ -378,9 +379,7 @@ fn git_ok(target: &Path, args: &[&str]) -> bool {
 }
 
 fn git_lines(target: &Path, command: &str, extra: &[&str], files: &[String]) -> Vec<String> {
-    let Ok(output) = Command::new("git")
-        .arg("-C")
-        .arg(target)
+    let Ok(output) = hardened_git::command(target)
         .arg(command)
         .args(extra)
         .arg("--")
@@ -400,9 +399,7 @@ fn git_lines(target: &Path, command: &str, extra: &[&str], files: &[String]) -> 
 }
 
 fn apply_git_log(target: &Path, files: &[String], signals: &mut BTreeMap<String, GitSignal>) {
-    let Ok(output) = Command::new("git")
-        .arg("-C")
-        .arg(target)
+    let Ok(output) = hardened_git::command(target)
         .args(["log", "--format=__SENTRUX_COMMIT__%ct", "--name-only", "--"])
         .args(files)
         .output()
