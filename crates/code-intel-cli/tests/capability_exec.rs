@@ -8,6 +8,8 @@ use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
     "43ced9ef578e6484423468e059c93ef0bc5eeeb35d23271451b2d8f1a16f9bb6";
+const STRUCTURED_EDIT_DIGEST: &str =
+    "58d3687e7e5ac8b3df9ece44bc613f4927fc328c02dddcdaeee72ed3103a04c8";
 static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -1757,6 +1759,79 @@ fn declaration_determinism_is_used_for_post_declaration_failures() {
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["determinism"], "external_nondeterministic");
     assert_eq!(result["exitCode"], 64);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn structured_edit_plan_is_scope_bound_and_preview_only() {
+    let root = temp_dir("structured-edit");
+    let repo = root.join("repo");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(repo.join("src/example.py"), "print(\"hello\")\n").unwrap();
+
+    let mut value = request(&repo, "edit.ast-grep-plan");
+    value["implementation"] = json!({
+        "id":"edit.ast-grep-plan.compat",
+        "version":"1.0.0",
+        "toolchainDigests":[STRUCTURED_EDIT_DIGEST]
+    });
+    value["options"] = json!({
+        "repoPath":repo,
+        "language":"python",
+        "pattern":"print($A)",
+        "rewrite":"logger.info($A)",
+        "paths":["../outside.py"]
+    });
+    value["effectPolicy"]["allowedEffects"] = json!(["repo_read", "local_write", "process_spawn"]);
+    let rejected = run_with_request_file(
+        &value,
+        &root.join("rejected-request.json"),
+        &root.join("rejected-out"),
+        "edit.ast-grep-plan",
+    );
+    assert_eq!(rejected.status.code(), Some(64));
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("escapes repository"));
+
+    let ast_grep_available = Command::new("ast-grep")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success());
+    if !ast_grep_available {
+        let _ = fs::remove_dir_all(root);
+        return;
+    }
+
+    value["options"]["paths"] = json!(["src"]);
+    let out = root.join("out");
+    let output = run_with_request_file(
+        &value,
+        &root.join("request.json"),
+        &out,
+        "edit.ast-grep-plan",
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr={} stdout={}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["capability"], "edit.ast-grep-plan");
+    assert_eq!(
+        result["observedEffects"],
+        json!(["repo_read", "local_write", "process_spawn"])
+    );
+    let plan: Value =
+        serde_json::from_slice(&fs::read(out.join("structured-edit-plan.json")).unwrap()).unwrap();
+    assert_eq!(plan["summary"]["matches"], 1);
+    assert_eq!(plan["matches"][0]["file"], "src/example.py");
+    assert_eq!(plan["matches"][0]["replacement"], "logger.info(\"hello\")");
+    assert_eq!(plan["authority"]["repositoryMutation"], false);
+    assert_eq!(
+        fs::read_to_string(repo.join("src/example.py")).unwrap(),
+        "print(\"hello\")\n"
+    );
     let _ = fs::remove_dir_all(root);
 }
 

@@ -1230,6 +1230,47 @@
       "extensionPoint": "Built-in deterministic baseline only. Parser coverage is heuristic and relationship/call-graph precision remains explicit unknown; external cocoindex and specialized semantic graphs stay separate adapters."
     },
     {
+      "id": "edit.ast-grep-plan",
+      "stage": "localization",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-adapter",
+      "required": false,
+      "entrypoint": "target/debug/code-intel.exe",
+      "capabilities": [
+        "structural_search",
+        "rewrite_preview",
+        "bounded_parallel_scan",
+        "snapshot_bound"
+      ],
+      "commands": {
+        "capabilityExec": "target/debug/code-intel.exe capability exec edit.ast-grep-plan --request <request.json|-> --out <staging-dir>"
+      },
+      "capabilityDeclaration": {
+        "schema": "code-intel-capability-declaration.v1",
+        "id": "edit.ast-grep-plan",
+        "contractVersion": 1,
+        "implementation": {
+          "id": "edit.ast-grep-plan.compat",
+          "version": "1.0.0",
+          "toolchainDigests": [
+            "58d3687e7e5ac8b3df9ece44bc613f4927fc328c02dddcdaeee72ed3103a04c8"
+          ]
+        },
+        "determinism": "external_nondeterministic",
+        "allowedEffects": ["repo_read", "local_write", "process_spawn"],
+        "dependencies": ["repo.snapshot"]
+      },
+      "runtimeAdapter": "edit.ast-grep-plan.compat",
+      "toolchainDigestEvidence": {
+        "algorithm": "sha256",
+        "inputs": ["crates/code-intel-cli/src/structured_edit.rs"]
+      },
+      "artifactContract": [
+        "structured-edit-plan.json"
+      ],
+      "extensionPoint": "Preview-only structural search and rewrite planning through ast-grep. Repository mutation is deliberately excluded and requires a separate explicitly authorized capability."
+    },
+    {
       "id": "memory.repowise",
       "stage": "semantic_memory",
       "owner": "code-intel-pipeline",
