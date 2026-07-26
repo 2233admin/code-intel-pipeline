@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- ai-safety-003 (issue #34): the audit kernel's fail-closed validator ran on
+  no automated path. `--operation render` now requires `--repo` and runs the
+  identical validate pipeline (registry load and self-check, evidence
+  grounding, report-shape rules) before printing anything, so a report that
+  fails validation can no longer reach human-facing markdown or HTML. `ci.yml`
+  and `release.yml` each gained an additive step that looks for any
+  `audit-report.json` a run produced (repo root, `orchestration/`, and the
+  self-scan artifact directory) and runs `code-intel audit --operation
+  validate` against it, failing the job on any validation error; the release
+  workflow also checks the packaged payload after extraction, alongside the
+  existing packaged-binary `sentrux check`/`gate` calls, so an audit report
+  riding along in a release can never skip the same gate.
+- Verified (not re-fixed here — see PR for evidence) that the v0.5.1
+  self-dogfood slice from issue #14 landed correctly in #15 and held through
+  #38/#42: the `dag_run <-> execution_kernel` cycle stays at zero under the
+  absolute `max_cycles = 0` rule in `.sentrux/rules.toml`, `ci.yml` and
+  `release.yml` both run the real compiled binary's self-scan against the
+  actual checkout before anything is packaged, and `release.yml` packages
+  from `git archive HEAD` and re-checks the packaged binary against the
+  packaged payload so release/self-scan/published-artifact stay one
+  snapshot. Added `sentrux_gate::this_repository_has_no_resolved_import_cycles`,
+  a fast `cargo test` that runs the same cycle-detection engine against this
+  repository so a reintroduced cycle fails before a full self-scan build is
+  needed.
+
 ## [0.6.0] — 2026-07-26
 
 This release adds the **audit layer**: audit dimensions run as hospital
