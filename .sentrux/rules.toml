@@ -7,14 +7,13 @@
 # no god files, coupling grade B) is tracked modernization debt
 # (issue #14, "Remaining tracked debt").
 #
-# Measured ratchet evidence (sentrux-native 2.0.0, 2026-07-26, PR #39 tree
-# merged with v0.6.0 main, recorded together with .sentrux/baseline.json in
-# the same commit):
+# Measured ratchet evidence (sentrux-native 2.0.0, 2026-07-26, issue #40/#41
+# tree, recorded together with .sentrux/baseline.json in the same commit):
 #   max_complexity 162 (scripts/tests/test-code-intel-pipeline.ps1),
-#   god_file_count 29, coupling_score 45.07, cycle_count 0.
-# The 44.78 -> 45.07 coupling and 3971 -> 3969 quality movement is the cost
-# of the v0.6.0 audit layer plus the edit.ast-grep-plan adapter module; god
-# files and cycles did not move.
+#   god_file_count 29, coupling_score 45.13, cycle_count 0.
+# The 45.07 -> 45.13 coupling and 3969 -> 3968 quality movement is the cost
+# of the ast-grep internalization conformance test suite; god files and
+# cycles did not move.
 # The previous B / 70 / no-god thresholds were never green under any engine:
 # the first honest self-scan of v0.5.0 already failed all three, so restoring
 # them would guarantee a permanently red release gate, not protection.
