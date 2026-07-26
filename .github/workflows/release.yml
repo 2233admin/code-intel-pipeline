@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -14,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -37,7 +39,7 @@ jobs:
           }
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11"
 
@@ -55,7 +57,7 @@ jobs:
 
       - name: Install ripgrep
         shell: pwsh
-        run: choco install ripgrep -y --no-progress
+        run: choco install ripgrep --version 14.1.0 -y --no-progress
 
       - name: Rust format
         shell: pwsh
@@ -63,15 +65,15 @@ jobs:
 
       - name: Rust check
         shell: pwsh
-        run: cargo check
+        run: cargo check --locked
 
       - name: Rust tests
         shell: pwsh
-        run: cargo test -p code-intel
+        run: cargo test -p code-intel --locked
 
       - name: Build Rust CLI
         shell: pwsh
-        run: cargo build -p code-intel --release
+        run: cargo build -p code-intel --release --locked
 
       - name: Authoritative self-scan (release blocking)
         shell: pwsh
@@ -175,6 +177,11 @@ jobs:
           & $packagedBinary sentrux --operation gate --repo $payload
           if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own no-degradation gate" }
 
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: "dist/code-intel-pipeline-*-windows.zip"
+
       - name: Create GitHub Release
         shell: pwsh
         env:
@@ -185,7 +192,11 @@ jobs:
           $assets = @($asset, "$asset.sha256", "$asset.release-manifest.json")
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag @assets --clobber
+            # No --clobber: a leaked contents:write token must not be able to
+            # silently replace already-published release assets with no CI
+            # trail. If a re-run genuinely needs to replace assets for this
+            # tag, delete them deliberately (gh release delete-asset) first.
+            gh release upload $tag @assets
           }
           else {
             $notes = "Code Intel Pipeline $tag."

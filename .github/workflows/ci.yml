@@ -16,12 +16,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.14"
 
@@ -63,19 +63,19 @@ jobs:
 
       - name: Rust check
         shell: pwsh
-        run: cargo check
+        run: cargo check --locked
 
       - name: Rust tests and core cross-contract gate
         shell: pwsh
-        run: cargo test -p code-intel
+        run: cargo test -p code-intel --locked
 
       - name: Representative project orientation benchmark
         shell: pwsh
-        run: cargo test -p code-intel --test project_orientation_benchmark -- --nocapture
+        run: cargo test -p code-intel --locked --test project_orientation_benchmark -- --nocapture
 
       - name: Build Rust CLI
         shell: pwsh
-        run: cargo build -p code-intel --release
+        run: cargo build -p code-intel --release --locked
 
       - name: Authoritative self-scan (release gate parity)
         shell: pwsh
@@ -230,7 +230,7 @@ jobs:
         run: ./tools/Test-BetaPackage.ps1 -ZipPath ./dist/code-intel-pipeline-windows-beta.zip -Json
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: code-intel-pipeline-windows
           path: |
@@ -254,12 +254,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.14"
 
@@ -323,15 +323,15 @@ jobs:
 
       - name: Rust check
         shell: pwsh
-        run: cargo check
+        run: cargo check --locked
 
       - name: Rust tests and core cross-contract gate
         shell: pwsh
-        run: cargo test -p code-intel
+        run: cargo test -p code-intel --locked
 
       - name: Build Rust CLI
         shell: pwsh
-        run: cargo build -p code-intel --release
+        run: cargo build -p code-intel --release --locked
 
       - name: Authoritative self-scan (release gate parity)
         shell: pwsh
