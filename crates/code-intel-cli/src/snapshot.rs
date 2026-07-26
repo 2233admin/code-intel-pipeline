@@ -8,6 +8,8 @@ use serde_json::{json, Value};
 
 #[path = "hardened_git.rs"]
 mod hardened_git;
+#[path = "tool_path.rs"]
+mod tool_path;
 
 use crate::capability::sha256_hex;
 
@@ -407,8 +409,8 @@ fn filesystem_ignore_controls(
     repo: &Path,
     scopes: &[String],
 ) -> Result<Vec<String>, SnapshotError> {
-    let rg = if cfg!(windows) { "rg.exe" } else { "rg" };
-    let output = Command::new(rg)
+    let rg = tool_path::resolve("rg");
+    let output = Command::new(&rg)
         .args([
             "--files",
             "--hidden",
@@ -426,7 +428,9 @@ fn filesystem_ignore_controls(
         .env_remove("RIPGREP_CONFIG_PATH")
         .current_dir(repo)
         .output()
-        .map_err(|error| SnapshotError::Unavailable(format!("cannot launch {rg}: {error}")))?;
+        .map_err(|error| {
+            SnapshotError::Unavailable(format!("cannot launch {}: {error}", rg.display()))
+        })?;
     if !output.status.success() && output.status.code() != Some(1) {
         return Err(SnapshotError::Unavailable(format!(
             "ignore-control inventory failed: {}",
@@ -1278,8 +1282,8 @@ fn decode_paths(bytes: &[u8]) -> Result<Vec<String>, SnapshotError> {
 }
 
 fn inventory_unversioned(repo: &Path, scopes: &[String]) -> Result<Vec<String>, SnapshotError> {
-    let rg = if cfg!(windows) { "rg.exe" } else { "rg" };
-    let output = Command::new(rg)
+    let rg = tool_path::resolve("rg");
+    let output = Command::new(&rg)
         .args([
             "--files",
             "--hidden",
@@ -1295,7 +1299,9 @@ fn inventory_unversioned(repo: &Path, scopes: &[String]) -> Result<Vec<String>, 
         .env_remove("RIPGREP_CONFIG_PATH")
         .current_dir(repo)
         .output()
-        .map_err(|error| SnapshotError::Unavailable(format!("cannot launch {rg}: {error}")))?;
+        .map_err(|error| {
+            SnapshotError::Unavailable(format!("cannot launch {}: {error}", rg.display()))
+        })?;
     if !output.status.success() && output.status.code() != Some(1) {
         return Err(SnapshotError::Unavailable(format!(
             "unversioned inventory failed: {}",

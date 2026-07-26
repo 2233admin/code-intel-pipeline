@@ -7,6 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[path = "hardened_git.rs"]
 mod hardened_git;
+#[path = "tool_path.rs"]
+mod tool_path;
 
 const SOURCE_EXTENSIONS: [&str; 14] = [
     ".ps1", ".psm1", ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".rs", ".go", ".java",
@@ -178,7 +180,7 @@ fn source_inventory(target: &Path) -> Result<Inventory, String> {
 }
 
 fn governed_visible_files(target: &Path) -> Option<BTreeSet<String>> {
-    let output = Command::new("rg")
+    let output = Command::new(tool_path::resolve("rg"))
         .arg("--files")
         .args([
             "--hidden",

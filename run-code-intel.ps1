@@ -3462,8 +3462,8 @@ if (-not $SkipOpenSpec) {
             id = "advisory.workflow-recommend.compat"
             version = "1.0.0"
             toolchainDigests = @(
-                "03d9cbed70d83c59f7d9540fccc606ce0b2723135efd2c5e32943d367008a199",
-                "748c8b087c9d1a68f9aa5711cda200204ac0d05845058a1ee50058b161582de9"
+                "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
+                "72a0c09c40f9707679bcb8365ceb48a3ed842b2b24953c28d02aca91ec483317"
             )
         }
         snapshot = $workflowSnapshot.snapshot

@@ -10,6 +10,9 @@ use crate::adapter_contract::AdapterDomainVerdict;
 use crate::artifact_ref::VerifiedArtifact;
 use crate::capability::sha256_hex;
 
+#[path = "tool_path.rs"]
+mod tool_path;
+
 pub(crate) fn execute(
     request: &Value,
     verified_inputs: &[VerifiedArtifact],
@@ -204,32 +207,10 @@ fn native_bootstrap(options: &Options) -> Value {
 }
 
 fn tool_available(name: &str, prefix: Option<&Path>) -> bool {
-    let candidates: &[String] = &if cfg!(windows) {
-        vec![
-            format!("{name}.exe"),
-            format!("{name}.cmd"),
-            format!("{name}.bat"),
-            name.to_string(),
-        ]
-    } else {
-        vec![name.to_string()]
-    };
-    if let Some(prefix) = prefix {
-        if candidates
-            .iter()
-            .any(|candidate| prefix.join(candidate).is_file())
-        {
-            return true;
-        }
-    }
-    let Some(path) = std::env::var_os("PATH") else {
-        return false;
-    };
-    std::env::split_paths(&path).any(|directory| {
-        candidates
-            .iter()
-            .any(|candidate| directory.join(candidate).is_file())
-    })
+    // Delegates to the same candidate-name/PATH search `tool_path::resolve`
+    // uses to pick an absolute path for `Command::new`, so presence-checking
+    // here and path-resolution at the actual launch site never drift apart.
+    tool_path::locate(name, prefix).is_some()
 }
 
 fn run_script_bootstrap(options: &Options) -> Result<Value, AdapterError> {
