@@ -40,6 +40,23 @@ jobs:
         shell: pwsh
         run: choco install ripgrep -y --no-progress
 
+      - name: Install ast-grep (pinned)
+        shell: pwsh
+        run: |
+          $version = '0.42.3'
+          $asset = 'app-x86_64-pc-windows-msvc.zip'
+          $expected = '98acb57edae7a9f9e68657c2cc03ce25b7144bae69621fe7cf2d0492807cb623'
+          $dir = Join-Path $env:RUNNER_TEMP 'ast-grep'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $zip = Join-Path $dir $asset
+          Invoke-WebRequest -Uri "https://github.com/ast-grep/ast-grep/releases/download/$version/$asset" -OutFile $zip
+          $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "ast-grep artifact digest mismatch: $actual" }
+          Expand-Archive -LiteralPath $zip -DestinationPath $dir -Force
+          Add-Content -Path $env:GITHUB_PATH -Value $dir
+          $reported = & (Join-Path $dir 'ast-grep.exe') --version
+          if ("$reported" -ne "ast-grep $version") { throw "ast-grep version mismatch: $reported" }
+
       - name: Rust format
         shell: pwsh
         run: cargo fmt -p code-intel -- --check
@@ -270,6 +287,35 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y ripgrep
           }
+
+      - name: Install ast-grep (pinned)
+        shell: pwsh
+        run: |
+          $version = '0.42.3'
+          if ($IsWindows) {
+            $asset = 'app-x86_64-pc-windows-msvc.zip'
+            $expected = '98acb57edae7a9f9e68657c2cc03ce25b7144bae69621fe7cf2d0492807cb623'
+          }
+          elseif ($IsMacOS) {
+            $asset = 'app-aarch64-apple-darwin.zip'
+            $expected = '12a870c414c90208f338649b0b53d9659b724b680edaf9da9c151275dad3e41a'
+          }
+          else {
+            $asset = 'app-x86_64-unknown-linux-gnu.zip'
+            $expected = '4191ac4247d183c502778e740a68b7cf45fe477b6423c43b8b8d6e732ba3b333'
+          }
+          $dir = Join-Path $env:RUNNER_TEMP 'ast-grep'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $zip = Join-Path $dir $asset
+          Invoke-WebRequest -Uri "https://github.com/ast-grep/ast-grep/releases/download/$version/$asset" -OutFile $zip
+          $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "ast-grep artifact digest mismatch: $actual" }
+          Expand-Archive -LiteralPath $zip -DestinationPath $dir -Force
+          $binary = if ($IsWindows) { 'ast-grep.exe' } else { 'ast-grep' }
+          if (-not $IsWindows) { chmod +x (Join-Path $dir $binary) }
+          Add-Content -Path $env:GITHUB_PATH -Value $dir
+          $reported = & (Join-Path $dir $binary) --version
+          if ("$reported" -ne "ast-grep $version") { throw "ast-grep version mismatch: $reported" }
 
       - name: Rust format
         shell: pwsh
