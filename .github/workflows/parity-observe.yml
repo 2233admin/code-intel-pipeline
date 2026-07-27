@@ -41,6 +41,10 @@ jobs:
           rustup toolchain install
           rustup show active-toolchain
 
+      - name: Install ripgrep
+        shell: pwsh
+        run: choco install ripgrep -y --no-progress
+
       - name: Run PS1-vs-Rust parity harness
         id: parity
         shell: pwsh
