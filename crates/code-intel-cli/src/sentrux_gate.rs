@@ -988,6 +988,33 @@ mod tests {
     }
 
     #[test]
+    fn this_repository_has_no_resolved_import_cycles() {
+        // Regression guard for the `dag_run <-> execution_kernel` cycle (and
+        // the `artifact_ref <-> capability` cycle found alongside it)
+        // removed to reach the absolute `max_cycles = 0` rule recorded in
+        // `.sentrux/rules.toml`. This calls the exact engine
+        // `code-intel sentrux --operation check` and the CI/release
+        // self-scan both run, directly against this crate's own repository
+        // — the same mechanism, not a new one — so a reintroduced cycle
+        // between any two source files fails a plain `cargo test` in
+        // seconds instead of only surfacing later in a full self-scan
+        // build.
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let run = run_check(&repo).expect("sentrux check should run against this repository");
+        let cycle_violations: Vec<&Violation> = run
+            .violations
+            .iter()
+            .filter(|violation| {
+                violation.rule == "max_cycles" || violation.rule == "cycles_increased"
+            })
+            .collect();
+        assert!(
+            cycle_violations.is_empty(),
+            "resolved Rust import cycle(s) detected: {cycle_violations:?}"
+        );
+    }
+
+    #[test]
     fn rule_parsing_reads_integer_boolean_and_grade_values() {
         let rules = "[constraints]\nmax_cycles = 0\nmax_coupling = \"B\"\nmax_cc = 70 # comment\nno_god_files = true\n";
         assert_eq!(integer_rule(rules, "max_cycles"), Some(0));

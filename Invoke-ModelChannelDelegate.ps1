@@ -12,6 +12,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# Byte budget for a single local-process delegate's stdout (see
+# Read-BoundedProcessOutput below). A runaway or looping model stream must be
+# caught here, mid-read, well under the artifact-publish size ceiling
+# enforced later in the pipeline (docs/artifact-data-contract.md) — that
+# later check cannot help because it only runs after the bytes are already
+# buffered in full and written to disk.
+$maxDelegateOutputBytes = 4MB
+
 function Get-RequiredProperty {
     param([object]$Object, [string]$Name)
     $property = $Object.PSObject.Properties[$Name]
@@ -38,6 +46,60 @@ function Get-FailureCategory {
     if ($Text -match '(?i)model.?not.?found|provider.?unavailable|service.?unavailable|\b404\b|\b503\b') { return "provider_unavailable" }
     if ($Text -match '(?i)unauthori[sz]ed|forbidden|invalid.?api.?key|authentication|\b401\b|\b403\b') { return "config_error" }
     return "local_tool_error"
+}
+
+# The HTTP status code is authoritative when it is present: it comes from the
+# transport, not from text a provider chose to put in a response body. A 500
+# whose body happens to mention "quota" must not be reclassified as
+# provider_quota by the regex-over-body path below — that would treat a hard
+# failure as retry-eligible transient one. Every non-success HTTP status maps
+# to exactly one category here, so the HTTP call site never needs to fall
+# through to Get-FailureCategory (that regex path stays reserved for the
+# local-process exit-code path, which has no status code to consult).
+function Get-HttpFailureCategory {
+    param([int]$StatusCode)
+    if ($StatusCode -eq 429) { return "provider_quota" }
+    if ($StatusCode -eq 401 -or $StatusCode -eq 403) { return "config_error" }
+    if ($StatusCode -eq 404 -or $StatusCode -eq 503) { return "provider_unavailable" }
+    return "local_tool_error"
+}
+
+function Read-BoundedProcessOutput {
+    # Reads $Reader in chunks instead of ReadToEndAsync, so a looping or
+    # runaway model process cannot force this delegate to buffer an unbounded
+    # amount of output in memory (and later on disk) before anything notices.
+    # Stops at the first of: end of stream, $MaxBytes exceeded, or $Deadline
+    # reached. The byte budget is approximated via the reader's own
+    # CurrentEncoding so this introduces no decoding-behavior change versus
+    # the ReadToEndAsync it replaces. Never kills the process itself — the
+    # caller owns that decision so it can also fold in the local-process
+    # ExitCode/WaitForExit sequence the rest of this script already uses.
+    param(
+        [IO.StreamReader]$Reader,
+        [long]$MaxBytes,
+        [datetime]$Deadline
+    )
+    $buffer = [char[]]::new(16384)
+    $text = [Text.StringBuilder]::new()
+    $byteCount = 0L
+    $truncated = $false
+    $timedOut = $false
+    while ($true) {
+        $remaining = $Deadline - [DateTime]::UtcNow
+        if ($remaining -le [TimeSpan]::Zero) { $timedOut = $true; break }
+        $readTask = $Reader.ReadAsync($buffer, 0, $buffer.Length)
+        if (-not $readTask.Wait($remaining)) { $timedOut = $true; break }
+        $charsRead = $readTask.GetAwaiter().GetResult()
+        if ($charsRead -le 0) { break }
+        [void]$text.Append($buffer, 0, $charsRead)
+        $byteCount += $Reader.CurrentEncoding.GetByteCount($buffer, 0, $charsRead)
+        if ($byteCount -gt $MaxBytes) { $truncated = $true; break }
+    }
+    [PSCustomObject]@{
+        Text      = $text.ToString()
+        Truncated = $truncated
+        TimedOut  = $timedOut
+    }
 }
 
 function Test-StructuredOutput {
@@ -238,9 +300,12 @@ if ($isHttpAdapter) {
         }
     }
     $prompt = [IO.File]::ReadAllText($promptPath)
+    # Every protocol sends an explicit output-token bound so a looping or
+    # runaway completion cannot grow unbounded on the provider side before it
+    # ever reaches this process's own stdout/response byte budget below.
     $body = switch ($protocol) {
-        "ollama" { [ordered]@{ model = $model; prompt = $prompt; stream = $false } }
-        "openai" { [ordered]@{ model = $model; messages = @([ordered]@{ role = "user"; content = $prompt }); stream = $false } }
+        "ollama" { [ordered]@{ model = $model; prompt = $prompt; stream = $false; options = [ordered]@{ num_predict = 4096 } } }
+        "openai" { [ordered]@{ model = $model; messages = @([ordered]@{ role = "user"; content = $prompt }); stream = $false; max_tokens = 4096 } }
         "anthropic" { [ordered]@{ model = $model; max_tokens = 4096; messages = @([ordered]@{ role = "user"; content = $prompt }) } }
     }
     $handler = [Net.Http.HttpClientHandler]::new()
@@ -264,7 +329,9 @@ if ($isHttpAdapter) {
         }
         $responseText = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
         if (-not $response.IsSuccessStatusCode) {
-            $failureCategory = Get-FailureCategory ("HTTP {0} {1}" -f [int]$response.StatusCode, $responseText)
+            # Status-code-first: the body text is never part of the classifier
+            # input here, so it can never outvote an authoritative status code.
+            $failureCategory = Get-HttpFailureCategory ([int]$response.StatusCode)
             Write-Result ([ordered]@{ schema="code-intel-model-adapter-result.v1";status="failed";adapter=$adapter;category=$failureCategory;responseArtifact=$null;reasons=@("model endpoint returned a non-success status");attempt=[ordered]@{invoked=$true;timedOut=$false;exitCode=[int]$response.StatusCode} }) $resultPath
             exit $(if ($failureCategory -in @("provider_quota", "provider_unavailable")) { 75 } else { 69 })
         }
@@ -316,14 +383,28 @@ try {
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $start
     if (-not $process.Start()) { throw "delegate process did not start" }
-    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
+    # Every adapter invoked below (claude_cli -p, codex_cli exec -, opencode_cli
+    # run --pure) is a one-shot batch CLI that consumes the full prompt before
+    # emitting output, so writing/closing stdin fully before this delegate
+    # starts draining stdout does not risk a pipe deadlock for these adapters.
     $prompt = [IO.File]::ReadAllText($promptPath)
     $process.StandardInput.Write($prompt)
     $process.StandardInput.Close()
-    $timedOut = -not $process.WaitForExit($timeoutSeconds * 1000)
-    if ($timedOut) { $process.Kill($true); $process.WaitForExit() }
-    $outText = $stdoutTask.GetAwaiter().GetResult()
+    $deadline = [DateTime]::UtcNow.AddSeconds($timeoutSeconds)
+    $bounded = Read-BoundedProcessOutput -Reader $process.StandardOutput -MaxBytes $maxDelegateOutputBytes -Deadline $deadline
+    $timedOut = $bounded.TimedOut
+    $outputTruncated = $bounded.Truncated
+    if ($timedOut -or $outputTruncated) {
+        $process.Kill($true)
+        $process.WaitForExit()
+    }
+    elseif (-not $process.WaitForExit([Math]::Max(0, [int][Math]::Ceiling(($deadline - [DateTime]::UtcNow).TotalMilliseconds)))) {
+        $timedOut = $true
+        $process.Kill($true)
+        $process.WaitForExit()
+    }
+    $outText = $bounded.Text
     $errText = $stderrTask.GetAwaiter().GetResult()
     [IO.File]::WriteAllText($stdout, $outText, [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText($stderr, $errText, [Text.UTF8Encoding]::new($false))
@@ -334,6 +415,14 @@ try {
             attempt = [ordered]@{ invoked = $true; timedOut = $true; exitCode = $null }
         }) $resultPath
         exit 75
+    }
+    if ($outputTruncated) {
+        Write-Result ([ordered]@{
+            schema = "code-intel-model-adapter-result.v1"; status = "failed"; adapter = $adapter
+            category = "adapter_protocol_error"; responseArtifact = $null; reasons = @("delegate stdout exceeded the output byte budget")
+            attempt = [ordered]@{ invoked = $true; timedOut = $false; exitCode = $null }
+        }) $resultPath
+        exit 65
     }
     if ($process.ExitCode -ne 0) {
         $failureCategory = Get-FailureCategory $errText

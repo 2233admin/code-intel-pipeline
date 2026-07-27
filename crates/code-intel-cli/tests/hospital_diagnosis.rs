@@ -547,6 +547,88 @@ fn precedence_matrix_matches_the_legacy_stable_diagnoses_and_fails_closed() {
 }
 
 #[test]
+fn architecture_gate_failure_names_the_rule_targets_and_smallest_rerun_command() {
+    // Acceptance criterion from issue #14 (v0.5.1 self-dogfood slice): a
+    // Hospital failure must name the first failed rule, its evidence
+    // (message), the target file(s), and the smallest rerun command -- not
+    // a bare "architecture gate failure" string. `structural()` above only
+    // ever seeds `failure:{"kind":"none"}`, so no existing test exercises
+    // the rendered text for a real violation; seed one directly, shaped
+    // exactly like the max_cycles violation sentrux_gate.rs produces for
+    // the dag_run.rs/execution_kernel.rs cycle this PR verified is gone.
+    let temp = Temp::new();
+    let cycle_rule = json!({
+        "kind": "max_cycles",
+        "status": "evaluated",
+        "verdict": "fail",
+        "details": {
+            "violations": [{
+                "rule": "max_cycles",
+                "message": "cycles exceeded: 1 > 0",
+                "targets": [
+                    "crates/code-intel-cli/src/dag_run.rs",
+                    "crates/code-intel-cli/src/execution_kernel.rs"
+                ]
+            }]
+        }
+    });
+    let structural_fail = admission(
+        &temp.0,
+        "structural-cycle-fail",
+        "structural-evidence.sentrux",
+        "observed",
+        "none",
+        json!({"structuralEvidence":{
+            "schema":"code-intel-structural-evidence-payload.v1",
+            "snapshotIdentity":SNAPSHOT,
+            "completeness":"complete",
+            "rules":[cycle_rule]
+        }}),
+    );
+    let (exit, _, out, stderr) = run(
+        &temp.0,
+        vec![graph(&temp.0, true), structural_fail],
+        "cycle-gate-failure",
+    );
+    assert_eq!(exit, 10, "{stderr}");
+    let machine: Value =
+        serde_json::from_slice(&fs::read(out.join("hospital-report.json")).unwrap()).unwrap();
+    assert_eq!(
+        machine["triage"]["primary_diagnosis"],
+        "architecture gate failure"
+    );
+    assert_eq!(machine["triage"]["next_protocol"], "govern");
+
+    let markdown = fs::read_to_string(out.join("hospital.md")).unwrap();
+    assert!(
+        markdown.contains(
+            "Failing rule max_cycles: cycles exceeded: 1 > 0 (targets: \
+             crates/code-intel-cli/src/dag_run.rs, crates/code-intel-cli/src/execution_kernel.rs)."
+        ),
+        "hospital.md did not name the failing rule and its targets:\n{markdown}"
+    );
+    assert!(
+        markdown.contains(
+            "Rerun the smallest gate: code-intel sentrux --operation check --repo <repo-root>."
+        ),
+        "hospital.md did not name the smallest rerun command:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("## Failing rules")
+            && markdown.contains(
+                "- max_cycles: cycles exceeded: 1 > 0 (targets: crates/code-intel-cli/src/dag_run.rs, crates/code-intel-cli/src/execution_kernel.rs)"
+            ),
+        "hospital.md did not render a dedicated failing-rules section:\n{markdown}"
+    );
+
+    let surgery_markdown = fs::read_to_string(out.join("surgery-plan.md")).unwrap();
+    assert!(
+        !surgery_markdown.trim().is_empty(),
+        "a governed architecture-gate failure should plan a surgery"
+    );
+}
+
+#[test]
 fn missing_or_non_admitted_authority_is_rejected_and_enrichment_never_overrides_it() {
     let temp = Temp::new();
     let (exit, diagnosis_text, protocol, _) = diagnosis(

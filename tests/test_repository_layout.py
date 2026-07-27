@@ -49,7 +49,7 @@ class RepositoryLayoutTests(unittest.TestCase):
                 text = (ROOT / ".github" / "workflows" / name).read_text(
                     encoding="utf-8"
                 )
-                checkout_count = text.count("uses: actions/checkout@v4")
+                checkout_count = text.count("uses: actions/checkout@")
                 self.assertGreater(checkout_count, 0)
                 self.assertEqual(text.count("fetch-depth: 0"), checkout_count)
 
