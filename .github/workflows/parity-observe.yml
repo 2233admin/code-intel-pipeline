@@ -1,0 +1,68 @@
+name: code-intel-parity-observe
+
+# Non-blocking PS1-vs-Rust parity observation (issue #46 / campaign #55, T1).
+#
+# This workflow is deliberately NOT wired into ci.yml. It exists to WATCH the
+# gap between the legacy run-code-intel.ps1 pipeline and the Rust
+# `code-intel run execute` path while T2-T5 port the PS1 monolith piece by
+# piece, without ever being able to block a PR on a divergence that is
+# currently expected. continue-on-error is set at both the job and the
+# harness step: job-level so this workflow's conclusion can never fail a
+# required check, step-level so the artifact-upload step still runs after a
+# non-zero harness exit (a divergence report, exit 1, is a normal outcome
+# here, not a workflow malfunction).
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - run-code-intel.ps1
+      - Invoke-SentruxAgentTool.ps1
+      - scripts/tests/test-ps1-rust-parity.ps1
+      - crates/**
+
+permissions:
+  contents: read
+
+jobs:
+  parity-observe:
+    runs-on: windows-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust
+        shell: pwsh
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+
+      - name: Install ripgrep
+        shell: pwsh
+        run: choco install ripgrep -y --no-progress
+
+      - name: Run PS1-vs-Rust parity harness
+        id: parity
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $verdictPath = Join-Path $env:RUNNER_TEMP "parity-verdict.json"
+          ./scripts/tests/test-ps1-rust-parity.ps1 -RepoPath . -VerdictPath $verdictPath
+          $harnessExitCode = $LASTEXITCODE
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "verdict-path=$verdictPath"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "harness-exit-code=$harnessExitCode"
+          if ($harnessExitCode -ne 0) {
+            Write-Host "::warning::Parity harness reported divergence (exit $harnessExitCode). This is expected during the T1-T5 migration and is observational only -- see the uploaded parity-verdict artifact."
+          }
+
+      - name: Upload parity verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-verdict
+          path: ${{ steps.parity.outputs.verdict-path }}
+          if-no-files-found: warn
