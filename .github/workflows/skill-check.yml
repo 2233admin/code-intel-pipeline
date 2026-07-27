@@ -10,22 +10,28 @@ on:
       - "install-code-intel-pipeline.ps1"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   # Run darwin-skill 8-dim scoring on every new/modified SKILL.md
   score-skills:
     name: Darwin score (8-dim)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
       - name: Detect changed SKILL.md files
         id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ]; then
             # PR — diff against base
-            git diff --name-only origin/${{ github.base_ref }}...HEAD \
+            git diff --name-only "origin/$BASE_REF"...HEAD \
               | grep -E '(^|/)SKILL\.md$' > /tmp/changed_skills || true
           else
             # workflow_dispatch — scan all
@@ -39,10 +45,10 @@ jobs:
           cat /tmp/changed_skills >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Setup Python + Anthropic SDK
+      - name: Setup Python + pinned deps
         run: |
           python -m pip install --upgrade pip
-          python -m pip install anthropic pyyaml
+          python -m pip install --require-hashes -r requirements-ci.txt
 
       - name: Run darwin-skill 8-dim scoring
         env:
@@ -130,7 +136,7 @@ jobs:
     name: Link integrity check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Check all .md files in /crates/code-nexus-lite/ have no broken links
         run: |
@@ -151,11 +157,11 @@ jobs:
     name: Frontmatter YAML validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Validate all SKILL.md frontmatter
         run: |
-          python -m pip install pyyaml
+          python -m pip install --require-hashes -r requirements-ci.txt
           python <<'PYEOF'
           import sys, yaml, subprocess
           from pathlib import Path
