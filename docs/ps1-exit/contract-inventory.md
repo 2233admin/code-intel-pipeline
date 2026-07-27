@@ -61,8 +61,10 @@ classification).
 | `-Language` | `:15` | none found | port? | Only observed use is composing the advisory `$understandCommand` string (`:3611`); low-risk, `?` because I did not trace every consumer exhaustively. |
 | `-ArtifactRoot` | `:17` | widely covered | port | Defaults via `Get-CodeIntelArtifactRoot` (`tools/code-intel-platform.psm1:98`, reads `CODE_INTEL_ARTIFACT_ROOT`) when empty — see §1.4. |
 | `-SentruxPath` | `:18` | `test-code-intel-pipeline.ps1` | port | Scoping path for the sentrux stage; defaults to repo root via `Resolve-ChildPath`. |
-| `-RepowiseWorkspaceRoot`, `-RepowiseShadowRoot`, `-RepowiseScopePaths`, `-RepowiseRootFiles` | `:19-22` | none found | port | Repowise scoped-worktree wiring; feeds `Invoke-ScopedRepowise.ps1` (a separate, out-of-scope launcher). |
-| `-RepowiseTimeoutSeconds`, `-RepowiseProvider`, `-RepowiseModel`, `-RepowiseReasoning` | `:23-26` | `test-code-intel-provider.ps1`, `test-repowise-adapter-contract.ps1`, `test-repowise-provider-probe-classification.ps1` | port | `RepowiseProvider`/`Model`/`Reasoning` are also resolvable from env vars — see §1.4. |
+| `-RepowiseScopePaths`, `-RepowiseRootFiles` | `:21-22` | `test-repo-config-resolution.ps1` (via the camelCase `repo.json` config keys `repowiseScopePaths`/`repowiseRootFiles`, `:39-40` — config-resolution path, not a direct `-Flag` CLI invocation) | port | |
+| `-RepowiseWorkspaceRoot` | `:19` | weak: `test-code-evidence-layer.ps1:53` sets `repowiseWorkspaceRoot = ""` in a fixture object but does not assert on it — a hollow match, treated as effectively uncovered | port | |
+| `-RepowiseShadowRoot` | `:20` | none found | port | |
+| `-RepowiseTimeoutSeconds`, `-RepowiseProvider`, `-RepowiseModel`, `-RepowiseReasoning` | `:23-26` | **none found** — corrected. An earlier pass of this doc claimed `test-code-intel-provider.ps1`/`test-repowise-adapter-contract.ps1`/`test-repowise-provider-probe-classification.ps1` covered these; verified false: `test-code-intel-provider.ps1` tests the unrelated `Invoke-RepowiseProviderProbe.ps1` script (confirmed by reading it — its only Repowise-shaped match is the string `"Repowise provider probe is missing"`), and neither of the other two files references `-RepowiseProvider`/`-RepowiseModel`/`-RepowiseReasoning` as literal flags either. The original grep matched substrings of unrelated function names (`Get-RepowiseProviderArgs`, `Normalize-RepowiseProvider`). Left in as an explicit self-correction rather than silently fixed, since a wrong "covered" claim is exactly the failure mode this ticket's verification discipline exists to catch. | port | `RepowiseProvider`/`Model`/`Reasoning` are also resolvable from env vars — see §1.3. |
 | `-SkipRepowise` (switch) | `:71`, gate at `:3646` | 6 files (`test-code-evidence-layer.ps1`, `test-code-intel-pipeline.ps1`, `test-primary-launchers.ps1`, `test-runtime-ci-hospital-pet.ps1`, `test-stable-wrapper-e2e.ps1`, `test-transactional-publication.ps1`) | port | Skips the entire Repowise stage. |
 | `-RepowiseDocs` (switch) | `:72`, effect at `:3174,3396-3423,3502,3674,3743` | `test-code-intel-pipeline.ps1` | port | Selects `anthropic` vs `mock` provider (`:3174`); auto-disabled under several routing conditions (`:3404,3423,3512`) — real decision logic, not a thin flag. |
 | `-AllowRepowiseShadowMutation` (switch) | `:73`, gate at `:3660` | none found | port | |
@@ -73,7 +75,8 @@ classification).
 | `-GraphAdapterRequest`/`ArtifactRoot`/`EvaluatedAt`/`MaxAgeSeconds` | `:47-50` | **none found** | shim | Early-exit facade (§1.8, block 4): `& $rustCli provider graph-adapt ...` (`:169-185`). Untested gap — see §6. |
 | `-SentruxAdapterRequest`/`ArtifactRoot`/`EvaluatedAt`/`MaxAgeSeconds` | `:51-54` | **none found** | shim | Early-exit facade (§1.8, block 5): `& $rustCli provider sentrux-adapt ...` (`:187-197`). Not to be confused with the separately-tested `-SkipSentruxGate`/check flow — this is a distinct facade. Untested gap. |
 | `-CodeNexusAdapterRequest`/`ArtifactRoot`/`EvaluatedAt`/`MaxAgeSeconds` | `:55-58` | `test-codenexus-adapter-contract.ps1` (request + `ArtifactRoot`; not independently confirmed for `EvaluatedAt`/`MaxAgeSeconds`) | shim | Early-exit facade (§1.8, block 6): `:199-215`. |
-| `-SurvivalScanRequest`, `-SurvivalScanArtifactRoot` | `:59-60` | **none found** | shim | Early-exit facade (§1.8, block 7): `& $rustCli repository survival-scan ...` (`:217-229`). Untested gap. |
+| `-SurvivalScanRequest` | `:59` | **none found** | shim | Early-exit facade (§1.8, block 7): `& $rustCli repository survival-scan ...` (`:217-229`). Untested gap — `scripts/tests/test-survival-scan-contract.ps1` exists and covers `-SurvivalScanArtifactRoot`, but not `-SurvivalScanRequest` (likely tests the Rust `repository survival-scan` subcommand directly rather than this PS1 facade — see §4.2). |
+| `-SurvivalScanArtifactRoot` | `:60` | `test-survival-scan-contract.ps1` | shim | Same facade as above; only this one companion param is exercised. |
 | `-RunCommitSourceRoot`/`AuthorityRoot`/`ManifestRef`/`FinalName` | `:61-64` | `test-run-commit-contract.ps1` | shim | Early-exit facade (§1.8, block 8): `& $rustCli run commit ...` (`:231-247`). |
 | `-InventoryExclude` (string[]) | `:65` | **none found** | port | Merged with `$defaultInventoryExclude` (`:3239`); feeds `rg` file inventory. |
 | `-DagCoordinate` (switch) | `:67`, facade at `:3258-3270` | `test-dag-facade.ps1` | shim | `& $rustCli` (DAG coordinate path), `throw`s on non-zero exit rather than propagating — see §1.5. |
@@ -87,7 +90,8 @@ classification).
 | `-WorkspaceAdd` (switch) | `:83`, gate at `:3755` | **none found** | port | |
 | `-SkipOpenSpec` (switch) | `:84`, gate at `:3449` | `test-runtime-ci-hospital-pet.ps1`, `test-transactional-publication.ps1` | port | **No graceful degradation**: when not skipped, `:3450-3453` hardcodes `$rustCli = $defaultRustCli` (`target/debug/<exe>`) and `throw`s if that debug binary is absent — the only one of the `$defaultRustCli` call sites with no fallback. Load-bearing for the parity harness's flag choice (see harness comments). |
 | `-AutoOpenSpec` (switch) | `:85`, effect at `:3470` | **none found** | port | |
-| `-ProactiveSkillSuggestions` (`auto`\|`enabled`\|`disabled`), `-AutomaticPullRequests` (`auto`\|`ask`\|`enabled`\|`disabled`), `-BugSkill` | `:86-90`, resolved together at `:3253-3256` via `Resolve-CodeIntelFollowUpSettings` | **none found** | port | Feed `Write-CodeIntelFollowUpPrompt` (`:4714`) and the hospital report's follow-up automation block. |
+| `-ProactiveSkillSuggestions` (`auto`\|`enabled`\|`disabled`), `-AutomaticPullRequests` (`auto`\|`ask`\|`enabled`\|`disabled`) | `:86-89`, resolved together at `:3253-3256` via `Resolve-CodeIntelFollowUpSettings` | `tests/test-follow-up-automation.ps1` — **note the directory**: this is `tests/`, a sibling of `scripts/tests/` that this inventory's primary sweep initially missed (caught by the supplementary automated cross-reference pass, §4). `tests/` holds 5 more PS1 test files: `test-automatic-pull-request-flow.ps1`, `test-automatic-pull-request.ps1`, `test-follow-up-automation.ps1`, `test-model-channel-degraded-pipeline.ps1`, `test-model-channel-delegate.ps1` — none of these were named in the ticket, all are in-scope for §4's cross-reference and now included. | port | Feed `Write-CodeIntelFollowUpPrompt` (`:4714`) and the hospital report's follow-up automation block. |
+| `-BugSkill` | `:90` | none found (`tests/test-follow-up-automation.ps1` covers the other two params in this trio but not this one — confirmed by direct read) | port | |
 
 #### 1.1.1 Full flat parameter list (for exhaustiveness)
 
@@ -141,7 +145,23 @@ Rust CLI's `code-intel run execute` distinguishes exit code `10`
 (architecture/domain gate failure) from `70` (process failure) — documented
 in `.github/workflows/ci.yml`'s self-scan step comment. `run-code-intel.ps1`
 has no equivalent split; every failure surfaces as exit `1`. This is a real,
-already-observable contract divergence, not a hypothetical one.
+already-observable contract divergence, not a hypothetical one. Note this
+is distinct from — and not contradicted by — the fact that codes `10`/`70`
+(and the fuller `0,10,20,64,65,69,70,74` outcome matrix) **are** tested
+elsewhere: `scripts/tests/test-atomic-capability-contract.ps1` validates
+that vocabulary at the schema/contract level against
+`docs/adr/0009-atomic-capability-execution-model.md`, for the Rust side's
+own atomic-capability model. No test anywhere asserts a **live**
+`run-code-intel.ps1` process actually exiting `10` or `70`, because it
+never does — confirmed by this section's own line-cited evidence that its
+only exit statements are `exit 1`/`exit 0` (`:4721,4723`) and the
+propagated-`$LASTEXITCODE` facades (`:140` etc., which forward whatever
+the invoked Rust subcommand returned verbatim — whether those specific
+subcommands, `provider repowise-adapt` etc., actually use the same
+`10`/`70` vocabulary as `run execute` was not independently confirmed
+this session, `?`). Either way, a propagated code is Rust's exit code
+passing through unmodified, not run-code-intel.ps1's own main-flow
+contract, which stays binary.
 
 ### 1.5 Artifacts written
 
@@ -227,18 +247,35 @@ Full block: `Invoke-SentruxAgentTool.ps1:3-16`.
 `$normalizedTool = if ($Tool.StartsWith("sentrux_")) {...}` (`:3107`)
 before the `switch` at `:3108-3123`.
 
+**Coverage-detection gotcha, caught by the supplementary automated
+cross-reference (§4) and independently re-verified here**: `-Tool`/`-Path`
+are `[Parameter(Position=0/1)]`-bound (`:4,8`), so real call sites invoke
+this script positionally — `& $sentruxAgentTool dsm $targetPath`
+(`run-code-intel.ps1:3995` is a real example of this exact shape) — and
+**never** write a literal `-Tool "dsm"` string. A naive grep for quoted
+tool-value strings (`'dsm'`, `'health'`, ...) finds nothing even where
+real coverage exists, because the value appears as a bare unquoted
+positional token. Precise coverage below was re-derived by reading actual
+call sites, not by trusting either the naive grep or the cross-reference
+pass blindly.
+
 | operation | evidence | rust equivalent? | existing test coverage | classification | notes/gap |
-|---|---|---|---|---|---|---|
-| `scan` (+ `sentrux_scan` alias, `rescan`) | `:3109,3113`, fn `Invoke-ScanTool:434-467` | unknown — not independently verified | see §2.1 | port | |
-| `health` (+ `sentrux_health`) | `:3110`, fn `:468-491` | unknown | see §2.1 | port | |
-| `session_start` | `:3111`, fn `:492-514` | n/a (session bookkeeping) | see §2.1 | port | Writes `.sentrux/agent-sessions/*.start.json` inside the **scanned repo**, not an artifact root — see §2.4. |
-| `session_end` | `:3112`, fn `:515-583` | n/a | see §2.1 | port | |
-| `check_rules` | `:3114`, fn `:584-615` | unknown | see §2.1 | port | |
-| `dsm` (+ `sentrux_dsm`) | `:3116-3119`, fn `Invoke-DsmTool:2292-2334` | **yes, partially** — `run-code-intel.ps1:3952` prefers `$rustCli sentrux dsm` and falls back to this PS1 tool only when the rust binary is absent or `CODE_INTEL_SENTRUX_DSM_PROVIDER=powershell` | see §2.1 | port? | Marked `?`: this is simultaneously "the fallback implementation for an already-ported operation" and "900+ lines of real, non-thin logic" — whether T2-T5 should delete it (once the rust path is trusted) or keep porting parity into it is a product decision, not something this inventory can resolve. |
-| `git_stats` (+ `sentrux_git_stats`) | `:3120`, fn `Invoke-GitStatsTool:2398-2518` | unknown | see §2.1 | port | |
-| `test_gaps` (+ `sentrux_test_gaps`) | `:3121`, fn `Invoke-TestGapsTool:2347-2397` | unknown | see §2.1 | port | |
-| `what_if` | `:3122`, fn `Invoke-WhatIfTool:2897-3058` | **no** — confirmed: `run-code-intel.ps1:4128` calls `& $sentruxAgentTool what_if` unconditionally, with no rust-preference branch analogous to the `dsm` one | see §2.1 | port | Concrete, evidenced gap: this operation has no rust counterpart today. |
-| `evolution` | `:3115` (top dispatch) / `:4109` (called from run-code-intel.ps1) | **no** — same unconditional-call evidence as `what_if` (`run-code-intel.ps1:4109`) | see §2.1 | port | |
+|---|---|---|---|---|---|
+| `dsm` (+ `sentrux_dsm`) | `:3116-3119`, fn `Invoke-DsmTool:2292-2334` | **yes, partially** — `run-code-intel.ps1:3952` prefers `$rustCli sentrux dsm` and falls back to this PS1 tool only when the rust binary is absent or `CODE_INTEL_SENTRUX_DSM_PROVIDER=powershell` | `test-code-intel-pipeline.ps1:389`, `test-regression-fixes.ps1:250` (positional invocation + `Assert-Equal "dsm" $dsm.tool`) | port? | Marked `?`: this is simultaneously "the fallback implementation for an already-ported operation" and "900+ lines of real, non-thin logic" — whether T2-T5 should delete it (once the rust path is trusted) or keep porting parity into it is a product decision, not something this inventory can resolve. |
+| `health` (+ `sentrux_health`) | `:3110`, fn `:468-491` | unknown — not independently verified | `test-code-intel-pipeline.ps1:385` (positional) | port | |
+| `git_stats` (+ `sentrux_git_stats`) | `:3120`, fn `Invoke-GitStatsTool:2398-2518` | unknown | `test-code-intel-pipeline.ps1:396` (positional, as `sentrux_git_stats`) | port | |
+| `scan` (+ `sentrux_scan` alias, `rescan`) | `:3109,3113`, fn `Invoke-ScanTool:434-467` | unknown | **none found** | port | |
+| `session_start` | `:3111`, fn `:492-514` | n/a (session bookkeeping) | **none found** | port | Writes `.sentrux/agent-sessions/*.start.json` inside the **scanned repo**, not an artifact root — see §2.4. |
+| `session_end` | `:3112`, fn `:515-583` | n/a | **none found** | port | |
+| `check_rules` | `:3114`, fn `:584-615` | unknown | **none found** | port | |
+| `test_gaps` (+ `sentrux_test_gaps`) | `:3121`, fn `Invoke-TestGapsTool:2347-2397` | unknown | **none found** | port | |
+| `what_if` | `:3122`, fn `Invoke-WhatIfTool:2897-3058` | **no** — confirmed: `run-code-intel.ps1:4128` calls `& $sentruxAgentTool what_if` unconditionally, with no rust-preference branch analogous to the `dsm` one | **none found** | port | Concrete, evidenced gap: this operation has no rust counterpart today, and no test isolates it. |
+| `evolution` | `:3115` (top dispatch) / `:4109` (called from run-code-intel.ps1) | **no** — same unconditional-call evidence as `what_if` (`run-code-intel.ps1:4109`) | **none found** | port | |
+
+Net: **3 of 11 operations** (`dsm`, `health`, `git_stats`) have direct
+per-operation test coverage; the remaining 8 have none isolated (the file
+is still exercised as a whole by the 3 files noted in §2.1, just not per
+`-Tool` value).
 
 ### 2.3 Environment variables / exit codes
 
@@ -273,41 +310,46 @@ inventory).
 | `sentrux pro` subcommand: `Show-ProStatus`, `Write-License`, `Deactivate-Pro`, `Show-ProHelp`, `Get-LicensePath`, `Get-AutoDisabledPath`, `Clear-AutoDisabled`, `Ensure-AutoActivation` | `sentrux-shim.ps1:23-165,285-` (dispatch on `$RemainingArgs[0] -eq "pro"`, `:285`) | as above | port | Pro license lifecycle — not exercised by this ticket's parity harness (no `sentrux pro` invocation in the T1 scope). |
 | `sentrux-lite-core.ps1` (567 lines) | not individually read this session beyond confirming its role as `Invoke-Core`'s fallback (`sentrux-shim.ps1:276-280`) | `test-regression-fixes.ps1` (per name reference) | port? | Flagged `?` — genuinely out of budget for this pass; a dedicated light-pass ticket on `tools/sentrux-shim/*` would be reasonable follow-up scope, not assumed here. |
 
-## 4. Test coverage cross-reference (`scripts/tests/*.ps1`, 51 files)
+## 4. Test coverage cross-reference (`scripts/tests/*.ps1` [51 files] + `tests/*.ps1` [5 files])
 
 Methodology: literal grep of each behavior identifier (parameter name,
-tool-operation name, env var name) across `scripts/tests/*.ps1`, run this
-session (see evidence cells above, which cite the covering file(s)
-per-behavior rather than repeating a separate master table). This section
-summarizes the **aggregate** picture; per-behavior detail is in §1/§2/§3's
-`existing test coverage` columns, which are the authoritative source.
+tool-operation name, env var name), run this session, **in two passes**:
+a manual sweep (scoped to `scripts/tests/*.ps1`, matching the ticket's own
+"`scripts/tests/*.ps1` 50+ 套" framing) plus a supplementary automated
+cross-reference sub-agent that additionally searched a sibling `tests/`
+directory (5 more PS1 files, not mentioned in the ticket, holding real
+coverage the manual pass would otherwise have missed and mis-reported as
+gaps — `tests/test-follow-up-automation.ps1` in particular). The two
+passes disagreed on several rows; every disagreement was re-verified
+directly against the actual test file content (not just trusted from
+either pass) before being written into §1-§3. One disagreement traced to
+a genuine error in the manual pass's own grep (a substring false-positive
+on `-RepowiseProvider` matching unrelated function names
+`Get-RepowiseProviderArgs`/`Normalize-RepowiseProvider`) — corrected in
+§1.1 rather than silently smoothed over, per the same verification
+discipline this whole document is built on. See evidence cells above,
+which cite the covering file(s) per-behavior rather than repeating a
+separate master table here.
 
 ### 4.1 Coverage summary
 
-- **run-code-intel.ps1**: of the 72 params, the grouped-behavior table in
-  §1.1 has **34 rows** (counted programmatically from the table itself,
-  not estimated — see the same self-verification note as §6). Of those:
-  **21 rows have coverage for every constituent param, 12 rows have zero
-  coverage for any constituent param** (`-Language`; the Repowise
-  workspace/shadow/scope/root-files quartet; `-AllowRepowiseShadowMutation`;
-  the Graph-adapter facade quartet; the Sentrux-adapter facade quartet;
-  `-SurvivalScanRequest`/`ArtifactRoot`; `-InventoryExclude`; the
-  `-SaveSentruxBaseline`/`-AutoSaveMissingSentruxBaseline` pair;
-  `-RequireUnderstandGraph`; `-WorkspaceAdd`; `-AutoOpenSpec`; the
-  `-ProactiveSkillSuggestions`/`-AutomaticPullRequests`/`-BugSkill` trio),
-  and **1 row is partially covered** (`-SkipRepomix`/`-RepomixCompress`
-  are exercised, `-RepomixStyle` is not — see §4.2 for the exhaustive gap
-  list, which is the authoritative per-parameter detail; this summary is
-  counted at the grouped-row level).
-- **Invoke-SentruxAgentTool.ps1**: all 6 params and all 11 tool operations
-  are exercised at the *file* level (3 test files mention the script by
-  name), but **no test file isolates a specific `-Tool` value** the way
-  e.g. `test-dag-facade.ps1` isolates `-DagCoordinate` — coverage exists,
-  granularity is coarse. `-PollutionExclusions` has no coverage at any
-  granularity.
-- **tools/sentrux-shim/*.ps1**: referenced by name in one file
-  (`test-regression-fixes.ps1`); `sentrux pro` subcommand behavior has no
-  evidenced coverage.
+Counted programmatically from the tables in §1-§3 after the corrections
+above (not estimated):
+
+| | rows | fully covered | zero coverage | partial |
+|---|---|---|---|---|
+| `run-code-intel.ps1` (§1.1-1.6) | 62 | 43 | 15 | 4 |
+| `Invoke-SentruxAgentTool.ps1` (§2.1-2.4) | 21 | 13 | 8 | 0 |
+| `tools/sentrux-shim/*.ps1` (§3) | 4 | 4 (see `?`-hedged caveats inline) | 0 | 0 |
+| **Total** | **87** | **60** | **23** | **4** |
+
+For `Invoke-SentruxAgentTool.ps1` specifically: of its 11 `-Tool`
+operations, only **3** (`dsm`, `health`, `git_stats`) have per-operation
+coverage — found only after discovering the operations are invoked
+**positionally**, not as `-Tool "value"` flags, which is why a naive
+grep for quoted tool-value strings found nothing (§2.2 documents this
+explicitly). The other 8 operations, and `-PollutionExclusions`, have no
+coverage at any granularity.
 
 ### 4.2 Gaps (zero test coverage found) and a proposed minimal test each
 
@@ -319,17 +361,19 @@ into a docs+harness PR).
 |---|---|
 | `-GraphAdapterRequest`/`ArtifactRoot`/`EvaluatedAt`/`MaxAgeSeconds` facade (`:169-185`) | New `test-graph-adapter-contract.ps1` mirroring `test-repowise-adapter-contract.ps1`'s shape: invoke with a minimal valid request JSON, assert `exit $LASTEXITCODE` matches the underlying `code-intel provider graph-adapt` call. |
 | `-SentruxAdapterRequest`/`ArtifactRoot`/`EvaluatedAt`/`MaxAgeSeconds` facade (`:187-197`) | Same pattern, `test-sentrux-adapter-contract.ps1`. |
-| `-SurvivalScanRequest`/`ArtifactRoot` facade (`:217-229`) | Same pattern; note `scripts/tests/test-survival-scan-contract.ps1` already exists but does **not** reference `SurvivalScanRequest` — it likely tests the Rust `repository survival-scan` subcommand directly rather than this PS1 facade. Worth confirming before writing a new file (possible near-duplicate). |
+| `-SurvivalScanRequest` facade (`:217-229`, companion `-SurvivalScanArtifactRoot` IS covered) | `scripts/tests/test-survival-scan-contract.ps1` already exists and covers the companion param — extend it with a `-SurvivalScanRequest` case rather than write a new file. |
 | `-RequireUnderstandGraph` (`:3633-3640`) | Extend `test-code-intel-pipeline.ps1` (or a new small file) with two cases: knowledge-graph missing + flag set → assert `exit 1`; missing + flag unset → assert `exit 0` and `manual_required` in the report. |
 | `-SaveSentruxBaseline` / `-AutoSaveMissingSentruxBaseline` (`:3836-3852`) | New small test asserting `.sentrux/baseline.prev.json` is written before overwrite when a prior baseline exists. |
 | `-WorkspaceAdd` (`:3755`) | Needs a scoped-Repowise fixture; out of budget to design here — flagged only. |
 | `-AutoOpenSpec` (`:3470`) | Small test asserting the `options.auto` boolean in the OpenSpec request payload reflects the switch. |
 | `-InventoryExclude` (`:3239`) | Small test asserting excluded globs are absent from `inventory.rg/files.txt`-equivalent output. |
-| `-ProactiveSkillSuggestions` / `-AutomaticPullRequests` / `-BugSkill` (`:3253-3256`) | Small test around `Resolve-CodeIntelFollowUpSettings` asserting the three resolved values land correctly in the hospital report's follow-up block. |
+| `-BugSkill` (`:90,3253-3256`) — `-ProactiveSkillSuggestions`/`-AutomaticPullRequests` are covered by `tests/test-follow-up-automation.ps1`, this one is not | Extend that same file with a `-BugSkill` case asserting it lands in the hospital report's follow-up block. |
+| `-RepowiseShadowRoot` (`:20`) — its siblings `-RepowiseScopePaths`/`-RepowiseRootFiles` are covered via config-resolution, `-RepowiseWorkspaceRoot` is weakly represented | Small test extending `test-repo-config-resolution.ps1`'s pattern with a `repowiseShadowRoot` config key. |
+| `-RepowiseProvider` / `-RepowiseModel` / `-RepowiseReasoning` (`:24-26`) — corrected gap, see §1.1's self-correction note | New test invoking `run-code-intel.ps1` with each flag set and a mock/no-op provider, asserting the resolved provider/model/reasoning appear in the run's Repowise stage output. The env-var override path (`CODE_INTEL_REPOWISE_PROVIDER` etc., §1.3) is an equally-uncovered adjacent gap worth folding into the same test. |
 | `-RepomixStyle` (as distinct from the already-covered `-SkipRepomix`/`-RepomixCompress`) | Small test asserting the `--style` arg passed to the external `repomix` tool matches the parameter. |
 | `-Language` | Low priority (advisory-string-only effect per §1.1) — a test would mostly assert string composition, low value. |
 | Invoke-SentruxAgentTool.ps1 `-PollutionExclusions` | Small test asserting a pattern in this list suppresses the corresponding `Get-PollutionSignals` finding. |
-| Invoke-SentruxAgentTool.ps1 per-`-Tool`-value isolation (currently only file-level coverage) | Would mean splitting or parameterizing existing tests — a T2-T5-scale effort, not a "minimal test", flagged only. |
+| Invoke-SentruxAgentTool.ps1 8 of 11 `-Tool` operations (`scan`, `session_start`, `session_end`, `check_rules`, `test_gaps`, `what_if`, `evolution`, and the `sentrux_scan`/`sentrux_health`/`rescan` aliases) — `dsm`, `health`, `git_stats` are covered (§2.2) | Would mean adding positional invocations (`& $tool <operation> $path`, matching the real call shape — see §2.2's coverage-detection gotcha) to an existing suite or a new one. `what_if`/`evolution` are the highest-value pair to close first since they're also the two operations confirmed to have no Rust equivalent yet. |
 | `tools/sentrux-shim/sentrux-shim.ps1`'s `sentrux pro` subcommand | New `test-sentrux-pro-activation.ps1`: exercise `Show-ProStatus`/`Write-License`/`Deactivate-Pro` against a temp `HOME`-scoped license path. |
 
 ## 5. Current parity status (harness run, this session)
@@ -421,15 +465,19 @@ landing):
 
 | classification | count | includes |
 |---|---|---|
-| `port` | 61 | Core pipeline orchestration logic in both files: hospital/report construction, sentrux stage glue, repowise stage glue, follow-up automation, code-evidence layer, most DSM/evolution/what-if/git-stats/test-gaps/scan/health/session tool operations, sentrux-shim pro-activation lifecycle, most individual params in the §1.1 flat grouping. |
-| `shim` | 17 | The 8 early-exit facades in run-code-intel.ps1 (§1.8) plus their env-var/model-channel counterparts, the Sentrux-DSM rust/powershell provider switch, console-encoding env writes (both files), sentrux-shim's core-binary resolution + thin-forwarder guard. |
+| `port` | 64 | Core pipeline orchestration logic in both files: hospital/report construction, sentrux stage glue, repowise stage glue, follow-up automation, code-evidence layer, most DSM/evolution/what-if/git-stats/test-gaps/scan/health/session tool operations, sentrux-shim pro-activation lifecycle, most individual params in the §1.1 flat grouping. |
+| `shim` | 18 | The 8 early-exit facades in run-code-intel.ps1 (§1.8) plus their env-var/model-channel counterparts, the Sentrux-DSM rust/powershell provider switch, console-encoding env writes (both files), sentrux-shim's core-binary resolution + thin-forwarder guard. |
 | `kill-candidate` | 1 | The `-SkipGitHubResearch` row — which documents **two** independently-dead symbols (the param itself, and `Test-GitHubSolutionResearchRequired`, a function with zero call sites) as one classified behavior, since both die together for the same reason. |
 | `port?` / `shim?` (uncertain, reasoning given inline) | 4 | `-Language` effect scope (port?), repomix shim-vs-port framing (shim?), the `dsm` tool operation's port-vs-delete framing (port?), `sentrux-lite-core.ps1`'s own classification (port?). |
 
-83 rows carry a classification value in total. This underscores the §1.8
-finding: `shim` (17) is not a small residual category — a meaningful slice
-of `run-code-intel.ps1`'s parameter surface is already-thin forwarding,
-and the campaign's retirement work for that slice is routing-away, not
+87 rows carry a classification value in total (row count grew from an
+earlier 83 after §4's coverage corrections split a few grouped rows —
+e.g. the Repowise workspace/scope/root-files/shadow quartet — into
+per-param rows once their coverage turned out to differ per param, not
+uniformly across the group). This underscores the §1.8 finding: `shim`
+(18) is not a small residual category — a meaningful slice of
+`run-code-intel.ps1`'s parameter surface is already-thin forwarding, and
+the campaign's retirement work for that slice is routing-away, not
 porting.
 
 ## 7. Gaps and known issues
