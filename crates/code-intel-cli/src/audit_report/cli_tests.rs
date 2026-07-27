@@ -80,7 +80,9 @@ impl Drop for TempReport {
 }
 
 #[test]
-fn parse_requires_repo_for_validate_but_not_for_render() {
+fn parse_requires_repo_for_validate_and_for_render() {
+    // ai-safety-003 (issue #34): rendering now runs the same fail-closed
+    // validate pipeline, so it needs a repository just like `validate` does.
     let validate_without_repo = vec![
         "--operation".to_string(),
         "validate".to_string(),
@@ -96,8 +98,19 @@ fn parse_requires_repo_for_validate_but_not_for_render() {
         "--report".to_string(),
         "report.json".to_string(),
     ];
+    let error = parse(&render_without_repo).unwrap_err();
+    assert!(error.contains("requires --repo"), "{error}");
+
+    let render_with_repo = vec![
+        "--operation".to_string(),
+        "render".to_string(),
+        "--repo".to_string(),
+        ".".to_string(),
+        "--report".to_string(),
+        "report.json".to_string(),
+    ];
     assert!(matches!(
-        parse(&render_without_repo),
+        parse(&render_with_repo),
         Ok(Operation::Render { .. })
     ));
 }
@@ -159,16 +172,35 @@ fn run_raw_exits_nonzero_on_a_failing_validate() {
 
 #[test]
 fn render_prints_the_audit_markdown_section() {
-    let markdown = render(&fixture_path(), RenderFormat::Markdown).unwrap();
+    // Same fixture `validate_accepts_the_unmodified_fixture_against_the_real_registry`
+    // already proves passes the full disk-backed pipeline against the real
+    // registry, so `render` (which now runs that same pipeline) can reuse it.
+    let markdown = render(&repo_root(), &fixture_path(), RenderFormat::Markdown).unwrap();
     assert!(markdown.contains("## Audit"));
     assert!(markdown.contains("| security |"));
 }
 
 #[test]
 fn render_with_html_format_produces_a_self_contained_document() {
-    let html = render(&fixture_path(), RenderFormat::Html).unwrap();
+    let html = render(&repo_root(), &fixture_path(), RenderFormat::Html).unwrap();
     assert!(html.starts_with("<!doctype html>"), "{html}");
     assert!(html.contains("code-intel-pipeline"), "{html}");
+}
+
+#[test]
+fn render_rejects_a_report_that_fails_validation() {
+    // ai-safety-003 (issue #34): render must fail closed exactly like
+    // validate does, never printing output for a report that would not
+    // pass `--operation validate`.
+    let mut value = fixture_value();
+    for department in value["departments"].as_array_mut().unwrap() {
+        if department["id"] == "ai-safety" {
+            department["status"] = json!("disabled");
+        }
+    }
+    let temp = TempReport::write(&value);
+    let error = render(&repo_root(), &temp.0, RenderFormat::Markdown).unwrap_err();
+    assert!(error.contains("run status is \"disabled\""), "{error}");
 }
 
 #[test]
@@ -176,6 +208,8 @@ fn parse_format_defaults_to_markdown_and_accepts_html() {
     let without_format = vec![
         "--operation".to_string(),
         "render".to_string(),
+        "--repo".to_string(),
+        ".".to_string(),
         "--report".to_string(),
         "report.json".to_string(),
     ];
@@ -190,6 +224,8 @@ fn parse_format_defaults_to_markdown_and_accepts_html() {
     let with_html = vec![
         "--operation".to_string(),
         "render".to_string(),
+        "--repo".to_string(),
+        ".".to_string(),
         "--report".to_string(),
         "report.json".to_string(),
         "--format".to_string(),
