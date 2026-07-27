@@ -1,0 +1,113 @@
+{
+  "schema": "code-intel-audit-report.v1",
+  "generatedAt": null,
+  "repo": "code-intel-pipeline",
+  "rubric_version": "v1",
+  "departments": [
+    {
+      "id": "security",
+      "status": "assessed",
+      "applicability": {
+        "applicable": "yes",
+        "reason": "The repository ships capability adapters that shell out to external processes and admit evidence from providers, so the security dimension is in scope.",
+        "surface_evidence": [
+          "crates/code-intel-cli/src/capability_inventory.rs"
+        ]
+      }
+    },
+    {
+      "id": "ai-safety",
+      "status": "not_assessed",
+      "applicability": {
+        "applicable": "no",
+        "reason": "This snapshot has no AI-facing surface (no prompt construction or model I/O boundary) for the ai-safety department to inspect."
+      }
+    },
+    {
+      "id": "supply-chain",
+      "status": "not_assessed",
+      "applicability": {
+        "applicable": "unknown",
+        "reason": "The supply-chain department is disabled in orchestration/audit/departments.v1.json for this run; applicability was not evaluated."
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "security-001",
+      "department": "security",
+      "title": "Regression fixture (ai-safety-006): finding cites an evidence path that does not exist in the repository",
+      "severity": "medium",
+      "confidence": "high",
+      "status": "confirmed",
+      "affected_area": "crates/code-intel-cli/src/capability_inventory.rs",
+      "evidence": [
+        {
+          "kind": "file",
+          "source": "adversarial regression fixture for ai-safety-006",
+          "path": "crates/code-intel-cli/src/audit_report/does-not-exist-ai-safety-006.rs",
+          "line_start": 156,
+          "line_end": 165,
+          "modality": "xray",
+          "note": "This path is deliberately fabricated. code-intel audit --operation validate must reject it: validate_evidence_grounding() has to resolve every file-kind evidence path under the repository root, and a department is an agent, so a drifted or fabricated citation is the expected failure mode this fixture exercises."
+        }
+      ],
+      "problem": "This finding's only evidence entry cites a source file that does not exist in the repository. A fail-closed validator must not accept a citation it cannot resolve.",
+      "failure_scenario": "A department agent hallucinates or mistypes a file path when writing a finding. Without evidence grounding, the report would validate as structurally correct while citing a source that was never actually read, letting an unverifiable claim stand as evidence.",
+      "minimal_fix": "Not applicable: this is a regression fixture for the audit validate pipeline, not a real finding about this repository.",
+      "regression_test": "crates/code-intel-cli/src/audit_report/cli_tests.rs::run_raw_rejects_a_report_citing_a_nonexistent_evidence_file",
+      "estimated_effort": "minutes",
+      "redacted": false
+    }
+  ],
+  "score_dashboard": {
+    "entries": [
+      {
+        "department": "security",
+        "score": 7.0,
+        "justification": "One confirmed medium-severity finding in the advisory workflow-recommendation path; xray and ct evidence were both inspected and no high-or-critical issue was found."
+      },
+      {
+        "department": "ai-safety",
+        "score": null,
+        "justification": "Not assessed: the applicability check found no AI-facing surface in this snapshot."
+      },
+      {
+        "department": "supply-chain",
+        "score": null,
+        "justification": "Not assessed: the supply-chain department is disabled in the registry for this run."
+      }
+    ],
+    "overall": 7.0
+  },
+  "coverage_matrix": [
+    {
+      "department": "security",
+      "coverage": "high",
+      "inspected_evidence": [
+        "xray file inventory",
+        "ct structural evidence",
+        "manual read of capability_inventory.rs"
+      ],
+      "exclusions": [
+        "mri (CodeNexus-lite) context was not inspected this run"
+      ]
+    },
+    {
+      "department": "ai-safety",
+      "coverage": "not_assessed",
+      "inspected_evidence": [],
+      "exclusions": [
+        "ai-safety applicability check returned no; department is out of scope for this snapshot"
+      ]
+    },
+    {
+      "department": "supply-chain",
+      "coverage": "not_assessed",
+      "inspected_evidence": [],
+      "exclusions": [
+        "supply-chain department is disabled in orchestration/audit/departments.v1.json"
+      ]
+    }
+  ]
+}
