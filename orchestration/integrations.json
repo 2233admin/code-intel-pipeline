@@ -285,8 +285,8 @@
           "id": "doctor.envelope.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "8e260c477db93e0651f37b979e521f90f6830a41b3ad5d81c70461f5d01bf68a",
-            "43e8a67a9d24ea1b6b642c376c81d41a3fcdf92df5daa6c266894fd6af6e97e4"
+            "93abc817f553ab61d83dcb73c10629d8962c80ca2587eca0d97ae75ffef504de",
+            "72a0c09c40f9707679bcb8365ceb48a3ed842b2b24953c28d02aca91ec483317"
           ]
         },
         "determinism": "external_nondeterministic",
@@ -294,6 +294,13 @@
         "dependencies": ["repo.snapshot"]
       },
       "runtimeAdapter": "doctor.envelope.compat",
+      "toolchainDigestEvidence": {
+        "algorithm": "sha256",
+        "inputs": [
+          "crates/code-intel-cli/src/doctor_adapter.rs",
+          "crates/code-intel-cli/src/capability_inventory.rs"
+        ]
+      },
       "artifactContract": [
         "orchestration/schemas/code-intel-doctor-observation.v1.schema.json",
         "doctor-observation.json",
@@ -412,7 +419,7 @@
           "id": "repository.snapshot.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "b6d8eca4c8ce6da2787b63fdc1101ec76ea1c52e0ecdd6f83fe7dc263c7f0dc8"
+            "151c5d9f4c6f1267899ce8c785e4d33194226b665d871a98ceafc6e5ade6df1d"
           ]
         },
         "determinism": "deterministic",
@@ -420,6 +427,10 @@
         "dependencies": []
       },
       "runtimeAdapter": "repository.snapshot.compat",
+      "toolchainDigestEvidence": {
+        "algorithm": "sha256",
+        "inputs": ["crates/code-intel-cli/src/snapshot.rs"]
+      },
       "artifactContract": [
         "orchestration/schemas/code-intel-repository-snapshot.v1.schema.json",
         "snapshot.json"
@@ -732,7 +743,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "713daf121490de0eb9e3a94139318da47b46d4368fce5ef09c5719b8d546f403",
-            "43e8a67a9d24ea1b6b642c376c81d41a3fcdf92df5daa6c266894fd6af6e97e4"
+            "72a0c09c40f9707679bcb8365ceb48a3ed842b2b24953c28d02aca91ec483317"
           ]
         },
         "determinism": "deterministic",
@@ -823,7 +834,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "3ba256f4ca0bf62aca08f688f7ecf31800dd10e68371054e2f1605eff197ea81",
-            "43e8a67a9d24ea1b6b642c376c81d41a3fcdf92df5daa6c266894fd6af6e97e4",
+            "72a0c09c40f9707679bcb8365ceb48a3ed842b2b24953c28d02aca91ec483317",
             "687d30408f14b31117771b126b1400483d3b73a25011b83ee6f5fa39c7af3522",
             "b118ba78ff3ef4a189525c642184cbd320a268d2885681ab153544db554c5965",
             "e3072b6b01a4f692c2ac75c7c4995747f9a0fd1ce4f32e1ab1599f348661f570",
@@ -886,7 +897,7 @@
           "toolchainDigests": [
             "13968a5e5da8923b00ab8495b5b848e0f41514e7c004c183ae2311d35d5ff2a3",
             "687d30408f14b31117771b126b1400483d3b73a25011b83ee6f5fa39c7af3522",
-            "43e8a67a9d24ea1b6b642c376c81d41a3fcdf92df5daa6c266894fd6af6e97e4"
+            "72a0c09c40f9707679bcb8365ceb48a3ed842b2b24953c28d02aca91ec483317"
           ]
         },
         "determinism": "deterministic",
@@ -937,7 +948,7 @@
           "toolchainDigests": [
             "a6da84444e815dd94c15887190c7d6bd48c7bca5975fb5d493eb77ab39f27d80",
             "687d30408f14b31117771b126b1400483d3b73a25011b83ee6f5fa39c7af3522",
-            "43e8a67a9d24ea1b6b642c376c81d41a3fcdf92df5daa6c266894fd6af6e97e4"
+            "72a0c09c40f9707679bcb8365ceb48a3ed842b2b24953c28d02aca91ec483317"
           ]
         },
         "determinism": "deterministic",
@@ -1011,8 +1022,8 @@
           "id": "advisory.workflow-recommend.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "03d9cbed70d83c59f7d9540fccc606ce0b2723135efd2c5e32943d367008a199",
-            "748c8b087c9d1a68f9aa5711cda200204ac0d05845058a1ee50058b161582de9"
+            "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
+            "72a0c09c40f9707679bcb8365ceb48a3ed842b2b24953c28d02aca91ec483317"
           ]
         },
         "determinism": "deterministic",
@@ -1020,6 +1031,13 @@
         "dependencies": ["repo.snapshot"]
       },
       "runtimeAdapter": "advisory.workflow-recommend.compat",
+      "toolchainDigestEvidence": {
+        "algorithm": "sha256",
+        "inputs": [
+          "Invoke-WorkflowRecommendation.ps1",
+          "crates/code-intel-cli/src/capability_inventory.rs"
+        ]
+      },
       "artifactContract": [
         "orchestration/schemas/code-intel-capability-envelope.v1.schema.json",
         "orchestration/schemas/code-intel-advisory-workflow-recommendation.v1.schema.json",
@@ -1171,7 +1189,7 @@
           "id": "inventory.rg.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "43ced9ef578e6484423468e059c93ef0bc5eeeb35d23271451b2d8f1a16f9bb6"
+            "72a0c09c40f9707679bcb8365ceb48a3ed842b2b24953c28d02aca91ec483317"
           ]
         },
         "determinism": "deterministic",
@@ -1179,6 +1197,10 @@
         "dependencies": []
       },
       "runtimeAdapter": "inventory.rg.compat",
+      "toolchainDigestEvidence": {
+        "algorithm": "sha256",
+        "inputs": ["crates/code-intel-cli/src/capability_inventory.rs"]
+      },
       "artifactContract": [
         "files.txt",
         "report.json.steps[rg file inventory]"

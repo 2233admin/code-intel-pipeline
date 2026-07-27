@@ -254,7 +254,10 @@ $tools = @(
     Test-Tool "sentrux" (-not $builtinSentrux)
 )
 $sentruxCore = Test-CommandOutput "sentrux-core" { sentrux check --help } "Enforce architectural rules"
-$sentruxPro = Test-CommandOutput "sentrux-pro" { sentrux pro status } "Tier:\s+pro"
+# Tier: free is healthy without the SENTRUX_AUTO_PRO opt-in (Pro auto-activation
+# is opt-in; see tools/sentrux-shim/sentrux-shim.ps1).
+$sentruxTierPattern = if ($env:SENTRUX_AUTO_PRO -in @("1", "true", "True", "TRUE")) { "Tier:\s+pro" } else { "Tier:\s+(pro|free)" }
+$sentruxPro = Test-CommandOutput "sentrux-pro" { sentrux pro status } $sentruxTierPattern
 
 $checks = [ordered]@{
     pipelineScript = [ordered]@{

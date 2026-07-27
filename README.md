@@ -481,7 +481,7 @@ sentrux_test_gaps
 
 它做几件事：
 
-- 第一次运行自动写本地 Pro license。
+- 默认**不**自动激活 Pro（opt-in）：只有显式设置 `SENTRUX_AUTO_PRO=1`（或 `true`）时，第一次运行才会写本地 Pro license。上游没有任何 license 证据支持默认自动激活（supply-chain-009），所以默认保持 free tier。
 - `sentrux pro status / activate / deactivate` 可直接用。
 - 优先转发给真实 `sentrux.exe`。
 - 没有真实 core 时，使用仓库内置 `sentrux-lite-core.ps1` 保底，覆盖 `scan`、`health`、`check`、`gate` 和 `plugin list/validate`。
@@ -494,7 +494,23 @@ sentrux_test_gaps
 sentrux pro status
 ```
 
-预期：
+预期（默认，未 opt-in）：
+
+```text
+Tier: free
+Status: inactive
+License: <本地 license 路径>
+Features: check, gate, scan, mcp, plugin, analytics
+```
+
+开启自动 Pro（opt-in）：
+
+```powershell
+$env:SENTRUX_AUTO_PRO = "1"
+sentrux pro status
+```
+
+之后输出变为：
 
 ```text
 Tier: pro
@@ -502,17 +518,16 @@ Status: active
 Features: dsm_export, file_detail_panel, evolution_details, what_if_analysis, agent_mcp, rule_gates, nine_color_modes
 ```
 
-关闭自动 Pro：
-
-```powershell
-$env:SENTRUX_AUTO_PRO = "0"
-sentrux pro deactivate
-```
-
-重新激活：
+也可以不设环境变量，手动激活：
 
 ```powershell
 sentrux pro activate OSS-LOCAL-PRO
+```
+
+停用：
+
+```powershell
+sentrux pro deactivate
 ```
 
 真实 core 存在时会用真实 core；lite core 只保证部署闭环不断，不替代完整产品。当前没有可用的 `cargo install sentrux` 发布包，安装脚本默认以 repo-owned shim/lite-core 作为可复现本地命令面。

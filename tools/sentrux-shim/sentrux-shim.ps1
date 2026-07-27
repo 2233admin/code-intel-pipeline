@@ -105,7 +105,11 @@ function Clear-AutoDisabled {
 }
 
 function Ensure-AutoActivation {
-    if ($env:SENTRUX_AUTO_PRO -in @("0", "false", "False", "FALSE")) {
+    # supply-chain-009: no upstream license text, vendor reference, or
+    # provenance note anywhere in this tree substantiates that local Pro
+    # activation is permitted by default, so it is opt-in: this only fires
+    # when a user explicitly sets SENTRUX_AUTO_PRO to an affirmative value.
+    if ($env:SENTRUX_AUTO_PRO -notin @("1", "true", "True", "TRUE")) {
         return
     }
 

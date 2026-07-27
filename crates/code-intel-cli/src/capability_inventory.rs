@@ -31,6 +31,8 @@ mod project_orientation;
 mod project_orientation_benchmark;
 #[path = "structured_edit.rs"]
 mod structured_edit;
+#[path = "tool_path.rs"]
+mod tool_path;
 #[path = "understanding_quadrant.rs"]
 mod understanding_quadrant;
 
@@ -311,7 +313,11 @@ fn inventory(request: &Value, out: &Path) -> Result<AdapterOutput, AdapterError>
     }
     let lease =
         snapshot::begin_consumption(repo, &request["snapshot"]).map_err(snapshot_adapter_error)?;
-    let rg = if cfg!(windows) { "rg.exe" } else { "rg" };
+    // Resolved to an absolute path (never a bare name) because `rg` below
+    // launches with its working directory set to `repo`, the repository
+    // under analysis; see `tool_path` for why that matters.
+    let rg = tool_path::resolve("rg");
+    let rg = rg.to_string_lossy().into_owned();
     let mut baseline_globs = EXCLUDES
         .iter()
         .map(|value| value.to_string())
@@ -345,7 +351,7 @@ fn inventory(request: &Value, out: &Path) -> Result<AdapterOutput, AdapterError>
         }
     }
     let mut actual_baseline = run_rg_files(
-        rg,
+        &rg,
         repo,
         lease.scopes(),
         &baseline_globs,
@@ -356,7 +362,7 @@ fn inventory(request: &Value, out: &Path) -> Result<AdapterOutput, AdapterError>
         actual_baseline.insert(normalize_inventory_path(&extra));
     }
     let (expected_baseline, filtered) = mirror_path_sets(
-        rg,
+        &rg,
         lease.scopes(),
         &baseline_globs,
         &glob_patterns,

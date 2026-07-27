@@ -13,8 +13,17 @@
 //! The pipeline already applies this standard to ripgrep (`RIPGREP_CONFIG_PATH`
 //! is stripped at every call site); this is the same rule for the tool that can
 //! start a process rather than merely change a file list.
+//!
+//! `git` is also launched by absolute path rather than by bare name
+//! (`tool_path::resolve`): `repo` below is the same repository under
+//! analysis, and a bare `Command::new("git")` leaves the OS free to resolve
+//! that name using rules that can consult the current directory before
+//! `PATH`. See `tool_path` for the full rationale.
 
 use std::{path::Path, process::Command};
+
+#[path = "tool_path.rs"]
+mod tool_path;
 
 /// Config keys that make Git execute a program, each pinned to an empty value
 /// so a repository-supplied setting cannot take effect. `-c` beats every
@@ -35,7 +44,7 @@ const DISARMED_KEYS: [&str; 5] = [
 /// disarmed. Callers add their own subcommand and arguments; `repo` is where
 /// the command runs.
 pub(crate) fn command(repo: &Path) -> Command {
-    let mut command = Command::new("git");
+    let mut command = Command::new(tool_path::resolve("git"));
     for key in DISARMED_KEYS {
         command.arg("-c").arg(format!("{key}="));
     }
