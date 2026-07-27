@@ -386,6 +386,23 @@ two runs' JSON verdicts are **byte-for-byte identical** (`diff` reported
 no differences), confirming the harness is deterministic in its verdict
 after volatile-field normalization.
 
+**A third, independent confirmation came for free from CI itself.** The
+first real run of `.github/workflows/parity-observe.yml` on this PR (a
+genuinely fresh `windows-latest` runner, not this dev box) had no `rg` on
+PATH — a real environment difference this local session could not have
+produced. Both paths failed early (`rustExitCode: 65` — "cannot launch
+rg.exe: program not found"; `ps1ExitCode: 1` — `run-code-intel.ps1:3499`,
+`throw "Missing required tool: rg"`). The harness **did not crash**: it
+produced a coherent, correctly-degenerate verdict
+(`rustArtifactsFound`/`ps1ArtifactsFound` all `false`, `compared: 6`,
+`matched: 5`, one real divergence for the two null-shaped hospital-verdict
+objects), wrote it, and the workflow uploaded it — validating the
+tolerant-of-missing-artifacts design worked exactly as intended under a
+real failure this session's own local runs never exercised. Root cause
+was a genuine gap in `parity-observe.yml` (missing the same "Install
+ripgrep" step `ci.yml` already has for its own jobs) — fixed in a
+follow-up commit; not a harness bug.
+
 ```json
 {
   "schema": "code-intel-ps1-rust-parity-verdict.v1",
