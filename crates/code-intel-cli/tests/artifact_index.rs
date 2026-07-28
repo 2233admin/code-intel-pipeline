@@ -331,6 +331,23 @@ fn incremental_rejects_every_invalid_nested_existing_index_shape() {
 }
 
 #[test]
+fn write_index_replaces_an_existing_index_and_leaves_no_backup_behind() {
+    let tree = Temp::new("rewrite");
+    committed_repo(&tree.0, "repo-a", "run-001", "dag-v1:aabb");
+    let output = tree.0.join("index.json");
+    let index = artifact_index::rebuild(&tree.0).unwrap();
+    artifact_index::write_index(&output, &index).unwrap();
+    artifact_index::write_index(&output, &index).unwrap();
+
+    let written: Value = serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
+    assert_eq!(written, index);
+    assert!(
+        !tree.0.join("index.json.bak").exists(),
+        "publish must remove the transient .bak once the new index is in place"
+    );
+}
+
+#[test]
 fn production_cli_writes_the_registered_committed_only_schema() {
     let tree = Temp::new("cli");
     committed_repo(&tree.0, "repo-a", "run-001", "dag-v1:aabb");

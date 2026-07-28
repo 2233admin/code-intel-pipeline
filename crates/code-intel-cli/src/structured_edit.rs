@@ -5,7 +5,9 @@ use std::process::Command;
 
 use serde_json::{json, Value};
 
-use super::{publish_named, snapshot_adapter_error, AdapterArtifact, AdapterError, AdapterOutput};
+use super::{
+    publish_named, snapshot_adapter_error, tool_path, AdapterArtifact, AdapterError, AdapterOutput,
+};
 use crate::adapter_contract::AdapterDomainVerdict;
 use crate::artifact_ref::VerifiedArtifact;
 use crate::snapshot;
@@ -89,7 +91,7 @@ pub(crate) fn execute(
     let lease =
         snapshot::begin_consumption(repo, &request["snapshot"]).map_err(snapshot_adapter_error)?;
     let version = ast_grep_version()?;
-    let mut command = Command::new("ast-grep");
+    let mut command = ast_grep_command();
     command
         .args(["run", "--pattern"])
         .arg(pattern)
@@ -307,8 +309,29 @@ fn normalize_match_file(
     normalize_relative(&relative.to_string_lossy(), true)
 }
 
+/// A command that launches `ast-grep` by absolute path, resolved through
+/// `tool_path` like every `rg`/`git` call site: `execute` runs the child in
+/// the scanned repository, so a bare name must never reach `Command::new`.
+/// npm-style installs ship a `.cmd` shim on Windows, which `CreateProcess`
+/// cannot start directly, so those are wrapped in `cmd.exe` the same way
+/// `builtin_provider_evidence::external_command` wraps them.
+fn ast_grep_command() -> Command {
+    let path = tool_path::resolve("ast-grep");
+    #[cfg(windows)]
+    if path
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|extension| matches!(extension.to_ascii_lowercase().as_str(), "cmd" | "bat"))
+    {
+        let mut command = Command::new("cmd.exe");
+        command.args(["/d", "/c"]).arg(path);
+        return command;
+    }
+    Command::new(path)
+}
+
 fn ast_grep_version() -> Result<String, AdapterError> {
-    let output = Command::new("ast-grep")
+    let output = ast_grep_command()
         .arg("--version")
         .output()
         .map_err(|error| AdapterError::Unavailable(format!("start ast-grep: {error}")))?;

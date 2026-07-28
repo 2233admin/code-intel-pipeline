@@ -487,10 +487,24 @@ pub(crate) fn write_index(path: &Path, value: &Value) -> Result<(), IndexError> 
     let temp = parent.join(format!(".artifact-index.tmp.{}", std::process::id()));
     fs::write(&temp, &bytes)
         .map_err(|error| IndexError::HostIo(format!("write artifact index temp: {error}")))?;
-    if path.exists() {
-        fs::remove_file(path)
+    // Park the current index at <output>.bak before publishing so a crash at
+    // any instant leaves either the index or its .bak on disk, never neither.
+    // Once the publish rename lands the .bak is only a stale copy, so its
+    // removal is best-effort.
+    let backup = {
+        let mut name = path.as_os_str().to_os_string();
+        name.push(".bak");
+        PathBuf::from(name)
+    };
+    let parked = path.exists();
+    if parked {
+        fs::rename(path, &backup)
             .map_err(|error| IndexError::HostIo(format!("replace artifact index: {error}")))?;
     }
     fs::rename(&temp, path)
-        .map_err(|error| IndexError::HostIo(format!("publish artifact index: {error}")))
+        .map_err(|error| IndexError::HostIo(format!("publish artifact index: {error}")))?;
+    if parked {
+        let _ = fs::remove_file(&backup);
+    }
+    Ok(())
 }
