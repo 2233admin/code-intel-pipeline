@@ -257,11 +257,17 @@ jobs:
       - name: Model channel and automation regression suites
         shell: pwsh
         run: |
-          .\tests/test-model-channel-delegate.ps1
-          .\tests/test-model-channel-degraded-pipeline.ps1
-          .\tests/test-automatic-pull-request.ps1
-          .\tests/test-automatic-pull-request-flow.ps1
-          .\tests/test-follow-up-automation.ps1
+          $tests = @(
+            ".\tests/test-model-channel-delegate.ps1"
+            ".\tests/test-model-channel-degraded-pipeline.ps1"
+            ".\tests/test-automatic-pull-request.ps1"
+            ".\tests/test-automatic-pull-request-flow.ps1"
+            ".\tests/test-follow-up-automation.ps1"
+          )
+          foreach ($test in $tests) {
+            & pwsh -NoProfile -File $test
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
       - name: Primary launcher contract tests
         shell: pwsh
