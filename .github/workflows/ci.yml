@@ -274,14 +274,8 @@ jobs:
           .\scripts/tests/test-codenexus-adapter-contract.ps1
           .\scripts/tests/test-transactional-publication.ps1
 
-      - name: Run commit contract tests (known-failing, non-blocking)
+      - name: Run commit contract tests
         shell: pwsh
-        # continue-on-error: this suite fails at HEAD -- the run-commit
-        # facade publishes an incoherent A07 marker
-        # (test-run-commit-contract.ps1:73). Wired in non-blocking so the
-        # failure stays visible instead of the suite running in no workflow
-        # at all; drop continue-on-error once the facade is fixed.
-        continue-on-error: true
         run: .\scripts/tests/test-run-commit-contract.ps1
 
       - name: Package

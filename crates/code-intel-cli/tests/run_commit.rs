@@ -284,3 +284,77 @@ fn production_run_commit_cli_restages_a09_refs_through_a06_and_publishes() {
         "committed"
     );
 }
+
+#[test]
+fn cli_publication_preserves_the_callers_manifest_bytes_and_digest() {
+    let tree = Temp::new("cli-verbatim");
+    let source_root = tree.0.join("source");
+    let publication_authority = tree.0.join("publication-authority");
+    let objects = source_root.join("objects").join("sha256");
+    fs::create_dir_all(&objects).unwrap();
+    fs::create_dir(&publication_authority).unwrap();
+    let inventory = b"portable evidence\n";
+    let inventory_digest = capability::sha256_hex(inventory);
+    fs::write(objects.join(&inventory_digest), inventory).unwrap();
+    // Key order mirrors the PowerShell producer; serde re-serialization would
+    // reorder it, so byte preservation is observable through the digest.
+    let manifest_text = format!(
+        concat!(
+            "{{\"schema\":\"code-intel-run-manifest.v1\",\"runIdentity\":\"dag-v1:aabb\",",
+            "\"snapshotIdentity\":\"{snap}\",\"outcome\":\"completed\",\"nodes\":{{\"inventory\":",
+            "{{\"status\":\"succeeded\",\"verdict\":\"pass\",\"artifacts\":[{{",
+            "\"schema\":\"code-intel-artifact-ref.v1\",",
+            "\"artifactSchema\":\"code-intel-file-inventory.v1\",\"type\":\"inventory.files\",",
+            "\"path\":\"objects/sha256/{inv}\",\"sha256\":\"{inv}\",",
+            "\"consumedSnapshotIdentity\":\"{snap}\"}}]}}}}}}"
+        ),
+        snap = SNAPSHOT,
+        inv = inventory_digest
+    );
+    let reparsed: Value = serde_json::from_str(&manifest_text).unwrap();
+    assert_ne!(
+        serde_json::to_vec(&reparsed).unwrap(),
+        manifest_text.as_bytes(),
+        "fixture must be non-canonical for byte preservation to be observable"
+    );
+    let manifest_digest = capability::sha256_hex(manifest_text.as_bytes());
+    fs::write(objects.join(&manifest_digest), manifest_text.as_bytes()).unwrap();
+    let manifest_ref = json!({
+        "schema":"code-intel-artifact-ref.v1",
+        "artifactSchema":"code-intel-run-manifest.v1",
+        "type":"run.manifest",
+        "path":format!("objects/sha256/{manifest_digest}"),
+        "sha256":manifest_digest,
+        "consumedSnapshotIdentity":SNAPSHOT
+    });
+    let manifest_ref_path = tree.0.join("manifest-ref.json");
+    fs::write(
+        &manifest_ref_path,
+        serde_json::to_vec(&manifest_ref).unwrap(),
+    )
+    .unwrap();
+    let raw = vec![
+        "commit".to_string(),
+        "--source-root".to_string(),
+        source_root.display().to_string(),
+        "--authority-root".to_string(),
+        publication_authority.display().to_string(),
+        "--manifest-ref".to_string(),
+        manifest_ref_path.display().to_string(),
+        "--final-name".to_string(),
+        "published".to_string(),
+    ];
+    assert_eq!(run_commit::run_raw(&raw), 0);
+    let published = publication_authority.join("published");
+    let marker: Value =
+        serde_json::from_slice(&fs::read(published.join("run-complete.json")).unwrap()).unwrap();
+    assert_eq!(marker["manifest"]["sha256"], json!(manifest_digest));
+    let committed = fs::read(
+        published
+            .join("objects")
+            .join("sha256")
+            .join(&manifest_digest),
+    )
+    .unwrap();
+    assert_eq!(committed, manifest_text.as_bytes());
+}
