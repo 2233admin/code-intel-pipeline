@@ -503,7 +503,14 @@ fn relocated_repositories_emit_identical_inventory_bytes_and_digest() {
     let _ = fs::remove_dir_all(root);
 }
 
+// Drives the `CODE_INTEL_TEST_RG_EXTRA_PATH` hook in `capability_inventory.rs`,
+// which is `#[cfg(debug_assertions)]` so the shipped binary carries no inventory
+// fault injection. `cargo test --release` builds that binary without the hook,
+// so this test only has something to assert against in a debug build. The
+// contract it guards (`verify_inventory_path_sets` refusing to publish on a set
+// mismatch) is compiled into every profile — only the simulation is debug-only.
 #[test]
+#[cfg(debug_assertions)]
 fn inventory_rejects_simulated_rg_extra_path_without_publication() {
     let root = temp_dir("rg-extra-path");
     let repo = root.join("repo");
