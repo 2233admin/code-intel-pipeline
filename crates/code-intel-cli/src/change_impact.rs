@@ -22,28 +22,36 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum Staleness {
+    Current,
+    Advisory,
+}
+
 struct Cli {
     artifact_root: PathBuf,
     repo: String,
     repo_path: PathBuf,
     changed: Vec<String>,
+    staleness: Staleness,
 }
 
 impl Cli {
     fn parse(raw: &[String]) -> Result<Self, ImpactError> {
         if raw.first().map(String::as_str) != Some("impact") {
-            return Err(ImpactError::Contract("usage: change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]...".into()));
+            return Err(ImpactError::Contract("usage: change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--staleness current|advisory]".into()));
         }
         let mut artifact_root = None;
         let mut repo = None;
         let mut repo_path = None;
         let mut changed = Vec::new();
+        let mut staleness = None;
         let mut index = 1;
         while index < raw.len() {
             let flag = raw[index].as_str();
             if !matches!(
                 flag,
-                "--artifact-root" | "--repo" | "--repo-path" | "--changed"
+                "--artifact-root" | "--repo" | "--repo-path" | "--changed" | "--staleness"
             ) {
                 return Err(ImpactError::Contract(format!(
                     "unknown change impact argument: {flag}"
@@ -60,6 +68,18 @@ impl Cli {
                 "--repo" => set_once(&mut repo, value.clone(), "--repo")?,
                 "--repo-path" => set_once(&mut repo_path, PathBuf::from(value), "--repo-path")?,
                 "--changed" => changed.push(normalize_relative(value)?),
+                "--staleness" => {
+                    let mode = match value.as_str() {
+                        "current" => Staleness::Current,
+                        "advisory" => Staleness::Advisory,
+                        other => {
+                            return Err(ImpactError::Contract(format!(
+                                "--staleness must be current or advisory: {other}"
+                            )))
+                        }
+                    };
+                    set_once(&mut staleness, mode, "--staleness")?
+                }
                 _ => unreachable!(),
             }
             index += 2;
@@ -85,6 +105,7 @@ impl Cli {
             repo: repo.ok_or_else(|| ImpactError::Contract("--repo is required".into()))?,
             repo_path,
             changed,
+            staleness: staleness.unwrap_or(Staleness::Current),
         })
     }
 }
@@ -107,16 +128,25 @@ fn execute(cli: Cli) -> Result<Value, ImpactError> {
             "change impact requires a completed authoritative run; latest committed run outcome is {run_outcome}"
         )));
     }
-    let freshness = evidence
+    let mut freshness = evidence
         .freshness(Some(&cli.repo_path))
         .map_err(map_evidence)?;
     if freshness["status"] != "current" {
-        return Err(ImpactError::Contract(format!(
-            "change impact requires the committed snapshot to be current; recorded={} current={}",
-            freshness["recordedIdentity"].as_str().unwrap_or("unknown"),
-            freshness["currentIdentity"].as_str().unwrap_or("unknown")
-        )));
+        if cli.staleness == Staleness::Current {
+            return Err(ImpactError::Contract(format!(
+                "change impact requires the committed snapshot to be current; recorded={} current={}",
+                freshness["recordedIdentity"].as_str().unwrap_or("unknown"),
+                freshness["currentIdentity"].as_str().unwrap_or("unknown")
+            )));
+        }
+        freshness["status"] = json!("stale-advisory");
     }
+    let stale_identities = (freshness["status"] == "stale-advisory").then(|| {
+        (
+            freshness["recordedIdentity"].clone(),
+            freshness["currentIdentity"].clone(),
+        )
+    });
     let (files_ref, files_artifact) = evidence
         .artifact("code_evidence.files")
         .ok_or_else(|| ImpactError::Contract("committed run lacks code_evidence.files".into()))?;
@@ -162,7 +192,7 @@ fn execute(cli: Cli) -> Result<Value, ImpactError> {
             })
         })
         .collect::<Vec<_>>();
-    Ok(json!({
+    let mut result = json!({
         "schema":"code-intel-change-impact.v1",
         "repo":cli.repo,
         "run":evidence.entry["run"],
@@ -189,7 +219,16 @@ fn execute(cli: Cli) -> Result<Value, ImpactError> {
             "Dynamic imports, generated code, reflection, build-system edges, and external packages may be unresolved.",
             "Test commands are candidates only and are never executed by this command."
         ]
-    }))
+    });
+    if let Some((recorded, current)) = stale_identities {
+        result["recordedSnapshotIdentity"] = recorded;
+        result["currentSnapshotIdentity"] = current;
+        result["limitations"]
+            .as_array_mut()
+            .expect("constructed limitations array")
+            .push(json!("Freshness is stale-advisory: impact derives from the committed snapshot, not the current working tree, and must never gate."));
+    }
+    Ok(result)
 }
 
 #[derive(Clone)]

@@ -1,6 +1,6 @@
 ---
 name: code-intel-pipeline
-description: Install, validate, and run Code Intel Pipeline for local repository understanding, architecture analysis, structural regression gates, code indexing, hotspot diagnosis, and artifact-based handoff. Use when Codex needs to bootstrap Code Intel from a GitHub Release, check its dependencies, analyze a repository with rg/repowise/Understand/Sentrux providers, inspect pipeline health, or interpret Code Intel reports.
+description: Install, validate, and run Code Intel Pipeline for local repository understanding, architecture analysis, structural regression gates, code indexing, hotspot diagnosis, and artifact-based handoff. Use when Codex needs to bootstrap Code Intel from a GitHub Release, check its dependencies, analyze a repository with rg/repowise/Understand/Sentrux providers, inspect pipeline health, or interpret Code Intel reports. Also use before implementing, refactoring, or fixing code in an analyzed repository, when a mid-edit question is what breaks if these files change or which tests should run, and when planning mechanical structural rewrites with a preview-only edit plan.
 ---
 
 # Code Intel Pipeline
@@ -94,6 +94,42 @@ Use the Sentrux session wrapper for an Agent coding session:
 
 Keep `.sentrux/rules.toml` separate from `.sentrux/baseline.json`. Rules define architecture
 boundaries; baselines detect change. Never save a new baseline to hide a regression.
+
+## While writing code
+
+Run this loop whenever implementing, refactoring, or fixing code in an analyzed repository:
+
+1. Start the regression baseline before the first edit:
+
+```powershell
+& "$env:CODE_INTEL_HOME/Invoke-SentruxAgentTool.ps1" session_start "<scope-path>"
+```
+
+2. Query blast radius and test candidates mid-edit:
+
+```powershell
+code-intel change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> --staleness advisory
+```
+
+`--staleness advisory` answers from the last committed run and never gates; use it for impacted
+files and test selection while the working tree is dirty.
+
+3. Preview a structural edit plan before any mechanical rewrite:
+
+```powershell
+code-intel capability exec edit.ast-grep-plan --request <request.json> --out <staging-dir>
+```
+
+The plan is preview-only (`repositoryMutation=false`); it never rewrites files.
+
+4. Edit, run the selected tests, then close the gate:
+
+```powershell
+& "$env:CODE_INTEL_HOME/Invoke-SentruxAgentTool.ps1" session_end "<scope-path>"
+```
+
+`session_end` fails on structural regression. Verify it passes before reporting the change
+complete.
 
 ## Load detailed contracts only when needed
 

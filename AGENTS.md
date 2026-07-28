@@ -13,3 +13,7 @@
 - Rust changes require focused `cargo test` coverage plus the relevant integration-contract checks.
 - MoonBit experiments require `moon test` and parity fixtures against the current artifact contract before promotion.
 - New documentation and command examples should lead with the compiled `code-intel` CLI. Mention PowerShell only when documenting an existing compatibility path.
+
+## While writing code
+
+Wrap every coding session in the pipeline gate: `Invoke-SentruxAgentTool.ps1 session_start` before the first edit, `session_end` after the last (`session_end` fails on structural regression). Mid-edit, query `code-intel change impact --changed <paths> --staleness advisory` for impacted files and test candidates — advisory answers come from the last committed run and never gate. Preview mechanical rewrites with `capability exec edit.ast-grep-plan` (preview-only, `repositoryMutation=false`) before applying them.

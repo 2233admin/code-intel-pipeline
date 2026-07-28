@@ -332,6 +332,28 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     );
     assert_eq!(impact["testSelection"]["commands"], json!(["cargo test"]));
 
+    let advisory_fresh = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["change", "impact", "--artifact-root"])
+        .arg(&artifact_root)
+        .args(["--repo", "fixture-repo", "--repo-path"])
+        .arg(&repo)
+        .args(["--changed", "src/lib.rs", "--staleness", "advisory"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        advisory_fresh.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&advisory_fresh.stdout),
+        String::from_utf8_lossy(&advisory_fresh.stderr)
+    );
+    let advisory_fresh: Value = serde_json::from_slice(&advisory_fresh.stdout).unwrap();
+    assert_eq!(advisory_fresh["freshness"]["status"], "current");
+    assert_eq!(
+        advisory_fresh, impact,
+        "advisory staleness must not change a current-snapshot answer"
+    );
+
     fs::write(repo.join("src/lib.rs"), "pub fn changed() {}\n").unwrap();
     let stale = Command::new(env!("CARGO_BIN_EXE_code-intel"))
         .args(["artifact", "query", "--artifact-root"])
@@ -345,6 +367,85 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     let stale: Value = serde_json::from_slice(&stale.stdout).unwrap();
     assert_eq!(stale["freshness"]["status"], "stale");
     assert_eq!(stale["confidence"], "limited");
+
+    let stale_impact = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["change", "impact", "--artifact-root"])
+        .arg(&artifact_root)
+        .args(["--repo", "fixture-repo", "--repo-path"])
+        .arg(&repo)
+        .args(["--changed", "src/lib.rs"])
+        .output()
+        .unwrap();
+    assert_eq!(stale_impact.status.code(), Some(65));
+    assert!(String::from_utf8_lossy(&stale_impact.stderr)
+        .contains("change impact requires the committed snapshot to be current"));
+
+    let stale_explicit = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["change", "impact", "--artifact-root"])
+        .arg(&artifact_root)
+        .args(["--repo", "fixture-repo", "--repo-path"])
+        .arg(&repo)
+        .args(["--changed", "src/lib.rs", "--staleness", "current"])
+        .output()
+        .unwrap();
+    assert_eq!(stale_explicit.status.code(), Some(65));
+    assert!(String::from_utf8_lossy(&stale_explicit.stderr)
+        .contains("change impact requires the committed snapshot to be current"));
+
+    let stale_advisory = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["change", "impact", "--artifact-root"])
+        .arg(&artifact_root)
+        .args(["--repo", "fixture-repo", "--repo-path"])
+        .arg(&repo)
+        .args(["--changed", "src/lib.rs", "--staleness", "advisory"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        stale_advisory.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&stale_advisory.stdout),
+        String::from_utf8_lossy(&stale_advisory.stderr)
+    );
+    let stale_advisory: Value = serde_json::from_slice(&stale_advisory.stdout).unwrap();
+    assert_eq!(stale_advisory["freshness"]["status"], "stale-advisory");
+    assert!(stale_advisory["recordedSnapshotIdentity"].is_string());
+    assert!(stale_advisory["currentSnapshotIdentity"].is_string());
+    assert_eq!(
+        stale_advisory["recordedSnapshotIdentity"],
+        stale_advisory["freshness"]["recordedIdentity"]
+    );
+    assert_eq!(
+        stale_advisory["currentSnapshotIdentity"],
+        stale_advisory["freshness"]["currentIdentity"]
+    );
+    assert_ne!(
+        stale_advisory["recordedSnapshotIdentity"],
+        stale_advisory["currentSnapshotIdentity"]
+    );
+    assert_eq!(
+        stale_advisory["testSelection"]["files"],
+        json!(["tests/lib_test.rs"])
+    );
+    assert!(stale_advisory["limitations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item
+            .as_str()
+            .is_some_and(|text| text.contains("stale-advisory"))));
+
+    let staleness_rejected = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["change", "impact", "--artifact-root"])
+        .arg(&artifact_root)
+        .args(["--repo", "fixture-repo", "--repo-path"])
+        .arg(&repo)
+        .args(["--changed", "src/lib.rs", "--staleness", "eventual"])
+        .output()
+        .unwrap();
+    assert_eq!(staleness_rejected.status.code(), Some(65));
+    assert!(String::from_utf8_lossy(&staleness_rejected.stderr)
+        .contains("--staleness must be current or advisory"));
 
     let _ = fs::remove_dir_all(root);
 }
