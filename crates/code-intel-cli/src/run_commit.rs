@@ -206,8 +206,17 @@ pub(crate) fn publish_existing(
     }
     let mut published_manifest = manifest;
     replace_manifest_artifact_refs(&mut published_manifest, &published_refs)?;
-    let manifest_bytes = serde_json::to_vec(&published_manifest)
-        .map_err(|error| CommitError::Contract(format!("serialize published manifest: {error}")))?;
+    // When publication changed no Artifact Ref (the canonical content-addressed
+    // case), commit the caller's manifest bytes verbatim: the published marker
+    // must bind the same digest the caller's manifest Artifact Ref vouches for.
+    // Re-serialization is reserved for runs whose refs were genuinely rewritten.
+    let manifest_bytes = if published_refs == source_refs {
+        read_manifest_stable(source_root, &source_manifest_ref)?.1
+    } else {
+        serde_json::to_vec(&published_manifest).map_err(|error| {
+            CommitError::Contract(format!("serialize published manifest: {error}"))
+        })?
+    };
     let staged_manifest_ref = writer
         .stage(
             &manifest_bytes,
@@ -410,6 +419,13 @@ fn prevalidate_refs(
 }
 
 fn read_manifest(root: &Path, manifest_ref: &Value) -> Result<Value, CommitError> {
+    Ok(read_manifest_stable(root, manifest_ref)?.0)
+}
+
+fn read_manifest_stable(
+    root: &Path,
+    manifest_ref: &Value,
+) -> Result<(Value, Vec<u8>), CommitError> {
     validate_artifact_ref_shape(manifest_ref).map_err(CommitError::Contract)?;
     let path = manifest_ref["path"]
         .as_str()
@@ -424,8 +440,9 @@ fn read_manifest(root: &Path, manifest_ref: &Value) -> Result<Value, CommitError
         ));
     }
     validate_run_manifest_bytes(&stable.bytes).map_err(CommitError::Contract)?;
-    serde_json::from_slice(&stable.bytes)
-        .map_err(|_| CommitError::Contract("run manifest is invalid JSON".to_string()))
+    let manifest = serde_json::from_slice(&stable.bytes)
+        .map_err(|_| CommitError::Contract("run manifest is invalid JSON".to_string()))?;
+    Ok((manifest, stable.bytes))
 }
 
 fn validate_run_manifest(value: &Value) -> Result<(), String> {
