@@ -3171,6 +3171,12 @@ if ([string]::IsNullOrWhiteSpace($RepowiseShadowRoot)) {
     }
 }
 
+# The -ModelRoutingResult intake below may adopt the routed provider and model.
+# Only an explicit operator -RepowiseProvider/-RepowiseModel overrides that
+# routed selection, so record explicitness before defaults, config, and env
+# fill the values in.
+$repowiseProviderExplicit = -not [string]::IsNullOrWhiteSpace($RepowiseProvider)
+$repowiseModelExplicit = -not [string]::IsNullOrWhiteSpace($RepowiseModel)
 $defaultRepowiseProvider = if ($RepowiseDocs) { "anthropic" } else { "mock" }
 $RepowiseProvider = Normalize-RepowiseProvider (Resolve-ConfigString `
     -Value $RepowiseProvider `
@@ -3186,7 +3192,11 @@ $RepowiseModel = Resolve-ConfigString `
     -ConfigData $configData `
     -Name "repowiseModel" `
     -EnvNames @("CODE_INTEL_REPOWISE_MODEL", "REPOWISE_MODEL") `
-    -Default $defaultRepowiseModel
+    -Default ""
+# Track whether the model came from the operator, config, or env (versus the
+# provider-paired default) so routed-provider adoption can re-derive it.
+$repowiseModelConfigured = -not [string]::IsNullOrWhiteSpace($RepowiseModel)
+if (-not $repowiseModelConfigured) { $RepowiseModel = $defaultRepowiseModel }
 $RepowiseReasoning = Resolve-ConfigString `
     -Value $RepowiseReasoning `
     -RepoConfig $repoConfig `
@@ -3385,8 +3395,17 @@ if (-not [string]::IsNullOrWhiteSpace($ModelRoutingResult)) {
         $modelChannel.selectedModel = if ($null -eq $selected.model) { $null } else { [string]$selected.model }
         $modelCostScope = [string]$selected.costScope
         Assert-ModelEnum $modelCostScope $allowedScopes "selected cost scope"
-        if ($null -ne $selected.provider -and [string]::IsNullOrWhiteSpace($RepowiseProvider)) { $RepowiseProvider = [string]$selected.provider }
-        if ($null -ne $selected.model -and [string]::IsNullOrWhiteSpace($RepowiseModel)) { $RepowiseModel = [string]$selected.model }
+        # Adopt the routed provider/model unless the operator explicitly passed
+        # -RepowiseProvider/-RepowiseModel; the earlier defaulting always fills
+        # these in, so emptiness can no longer signal "unset" here.
+        if ($null -ne $selected.provider -and -not $repowiseProviderExplicit) {
+            $RepowiseProvider = Normalize-RepowiseProvider ([string]$selected.provider)
+            if ($null -eq $selected.model -and -not $repowiseModelConfigured) {
+                $RepowiseModel = if ($RepowiseProvider -ieq "anthropic") { "MiniMax-M2.7" } else { "" }
+            }
+        }
+        if ($null -ne $selected.model -and -not $repowiseModelExplicit) { $RepowiseModel = [string]$selected.model }
+        $repowiseProviderArgs = Get-RepowiseProviderArgs -Provider $RepowiseProvider -Model $RepowiseModel -Reasoning $RepowiseReasoning
     }
     if ($routeStatus -eq "ready" -and $null -eq $selected) { throw "ready model route requires selected" }
     if ($routeStatus -ne "ready" -and $null -ne $selected) { throw "non-ready model route must not select a candidate" }
@@ -3463,7 +3482,7 @@ if (-not $SkipOpenSpec) {
             version = "1.0.0"
             toolchainDigests = @(
                 "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-                "72a0c09c40f9707679bcb8365ceb48a3ed842b2b24953c28d02aca91ec483317"
+                "35b76523b9e6bf98046349b3b88e42076909e8c024077412cf8aa45294611285"
             )
         }
         snapshot = $workflowSnapshot.snapshot

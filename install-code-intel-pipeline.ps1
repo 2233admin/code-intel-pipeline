@@ -244,7 +244,8 @@ function Invoke-RipgrepInstall {
 
 function Invoke-PipInstall {
     param(
-        [string]$PackageName
+        [string]$PackageName,
+        [string]$Version = ""
     )
 
     $python = Get-CodeIntelPythonCommand
@@ -253,7 +254,12 @@ function Invoke-PipInstall {
     }
     $pythonCommand = if (-not [string]::IsNullOrWhiteSpace($python.Source)) { $python.Source } else { $python.Name }
 
-    & $pythonCommand -m pip install --user --upgrade $PackageName
+    if ([string]::IsNullOrWhiteSpace($Version)) {
+        & $pythonCommand -m pip install --user --upgrade $PackageName
+    }
+    else {
+        & $pythonCommand -m pip install --user "$PackageName==$Version"
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "pip install failed for $PackageName with exit code $LASTEXITCODE"
     }
@@ -813,6 +819,10 @@ if ([string]::IsNullOrWhiteSpace($Config)) {
     $Config = Join-Path $root "pipeline.config.json"
 }
 
+# repowise comes from PyPI; pin the exact version so `--upgrade` cannot pull a
+# newer, unreviewed release onto the machine (supply-chain-003).
+$script:RepowisePinnedVersion = "0.36.0"
+
 function Add-ToolInstallPlan {
     param(
         [string]$Name,
@@ -843,7 +853,7 @@ switch ($script:EffectivePlatform) {
         Add-ToolInstallPlan "python" "apt/dnf/pacman install python3" "Runs provider preflight and scoped repowise docs helper." "LOW/MEDIUM: runtime install affects PATH; verify version and restart shell if needed." "Use an already managed Python 3.11+ runtime."
     }
 }
-Add-InstallPlan $installPlan "repowise" "pip" "python/python3 -m pip install --user --upgrade repowise" "Semantic index and wiki/docs memory." "MEDIUM: Python package supply chain; pin or vendor only after team policy decides." "Skip repowise with -SkipRepowise for exact-search-only runs." "pip" $false
+Add-InstallPlan $installPlan "repowise" "pip" "python/python3 -m pip install --user repowise==$script:RepowisePinnedVersion" "Semantic index and wiki/docs memory." "MEDIUM: Python package supply chain; installed version is pinned to repowise==$script:RepowisePinnedVersion." "Skip repowise with -SkipRepowise for exact-search-only runs." "pip" $false
 Add-InstallPlan $installPlan "code-intel" "repo-local release binary" "copy bin/code-intel or target/release/code-intel into CODE_INTEL_BIN; build with cargo when no binary is present" "Manifest-bound DAG, evidence query, impact analysis, and atomic publication." "LOW: Pipeline-owned binary; installed digest is reported and --help is executed before success." "Use code-intel.ps1 only when the compiled command needs recovery." "repo-local" $false
 $sentruxBinaryName = if ($script:EffectivePlatform -eq "windows") { "sentrux.exe" } else { "sentrux" }
 Add-InstallPlan $installPlan "sentrux" "repo-local shim or preinstalled binary" "install tools/sentrux-shim first; optionally place a real $sentruxBinaryName on PATH" "Structural quality and regression gate." "LOW for repo-owned shim; MEDIUM for any separately supplied $sentruxBinaryName." "The repo-owned sentrux-lite core keeps scan/check/gate/plugin usable until the real binary is installed." "repo-local" $false
@@ -853,7 +863,7 @@ Add-InstallPlan $installPlan "sentrux-vlang-overlay" "repo-local" "copy overlays
 Install-MissingTool $installActions "rg" { Invoke-RipgrepInstall } "Install ripgrep with winget (`winget install --id BurntSushi.ripgrep.MSVC -e`) or ensure rg is on PATH."
 Install-MissingTool $installActions "git" { Invoke-ToolPackageInstall "git" } "Install git with the platform package manager or ensure git is on PATH."
 Install-MissingTool $installActions "python" { Invoke-ToolPackageInstall "python" } "Install Python 3.11+ with the platform package manager or ensure python is on PATH."
-Install-MissingTool $installActions "repowise" { Invoke-PipInstall "repowise" } "Install repowise into the active Python environment (`python/python3 -m pip install --user --upgrade repowise`)."
+Install-MissingTool $installActions "repowise" { Invoke-PipInstall "repowise" -Version $script:RepowisePinnedVersion } "Install repowise into the active Python environment (`python/python3 -m pip install --user repowise==$script:RepowisePinnedVersion`)."
 Install-CodeIntelBinary $installActions $root
 Install-SentruxShim $installActions $root
 Install-MissingTool $installActions "sentrux" { Invoke-SentruxInstall } "Install the repo-owned shim or ensure sentrux.exe is on PATH."

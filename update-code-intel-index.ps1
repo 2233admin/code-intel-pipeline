@@ -27,9 +27,26 @@ if ([string]::IsNullOrWhiteSpace($OutputPath)) {
 
 if (-not $LegacyCompatibilityMode) {
     New-Item -ItemType Directory -Force -Path $ArtifactRoot | Out-Null
-    $rustCli = Join-Path $PSScriptRoot "target\debug\code-intel.exe"
-    if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
-        throw "Artifact index binary is missing: $rustCli"
+    # Resolve the Rust CLI the way run-code-intel.ps1 does: an explicit
+    # CODE_INTEL_RUST_CLI override wins, then local builds (release before
+    # debug), then an installed code-intel on PATH. Installed machines only
+    # ever have release or PATH binaries, so debug must not be mandatory.
+    $exeName = if ($effectivePlatform -eq "windows") { "code-intel.exe" } else { "code-intel" }
+    $rustCliCandidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_RUST_CLI)) {
+        $rustCliCandidates += [IO.Path]::GetFullPath($env:CODE_INTEL_RUST_CLI)
+    }
+    $rustCliCandidates += Join-Path $PSScriptRoot "target/release/$exeName"
+    $rustCliCandidates += Join-Path $PSScriptRoot "target/debug/$exeName"
+    $rustCli = $rustCliCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if ($null -eq $rustCli) {
+        $pathCommand = Get-Command "code-intel" -ErrorAction SilentlyContinue
+        if ($null -ne $pathCommand -and -not [string]::IsNullOrWhiteSpace([string]$pathCommand.Source)) {
+            $rustCli = $pathCommand.Source
+        }
+    }
+    if ($null -eq $rustCli) {
+        throw "Artifact index binary is missing; tried: $($rustCliCandidates -join ', '), and 'code-intel' on PATH"
     }
     $jsonPath = [System.IO.Path]::ChangeExtension($OutputPath, ".json")
     $arguments = @(

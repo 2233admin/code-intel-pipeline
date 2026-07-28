@@ -259,6 +259,21 @@ $sentruxCore = Test-CommandOutput "sentrux-core" { sentrux check --help } "Enfor
 $sentruxTierPattern = if ($env:SENTRUX_AUTO_PRO -in @("1", "true", "True", "TRUE")) { "Tier:\s+pro" } else { "Tier:\s+(pro|free)" }
 $sentruxPro = Test-CommandOutput "sentrux-pro" { sentrux pro status } $sentruxTierPattern
 
+# CODE_INTEL_HOME must be compared against the default derivation (what
+# Get-CodeIntelHome returns with the variable unset: the pipeline root), not
+# against Get-CodeIntelHome's own env-derived output — that comparison passed
+# for any set value, even a deleted directory.
+$codeIntelHomeDefault = Resolve-CodeIntelPath $pipelineRoot
+$codeIntelHomeSet = -not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_HOME)
+$codeIntelHomeResolved = if ($codeIntelHomeSet) { Resolve-CodeIntelPath $env:CODE_INTEL_HOME } else { "" }
+$codeIntelHomeExists = $codeIntelHomeSet -and (Test-Path -LiteralPath $codeIntelHomeResolved -PathType Container)
+$codeIntelHomeMatchesDefault = $codeIntelHomeSet -and $codeIntelHomeResolved -eq $codeIntelHomeDefault
+# Warning only outside -Json: a child pwsh renders warnings on stdout, which
+# would corrupt the JSON payload; matchesDefault/ok carry the signal there.
+if (-not $Json -and $codeIntelHomeExists -and -not $codeIntelHomeMatchesDefault) {
+    Write-Warning "CODE_INTEL_HOME resolves to $codeIntelHomeResolved but the default derivation is $codeIntelHomeDefault"
+}
+
 $checks = [ordered]@{
     pipelineScript = [ordered]@{
         path = $pipelineScript
@@ -291,9 +306,12 @@ $checks = [ordered]@{
     repo = $repoState
     env = [ordered]@{
         codeIntelHome = [ordered]@{
-            expected = $paths.codeIntelHome
-            value = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_HOME)) { "" } else { $env:CODE_INTEL_HOME }
-            ok = (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_HOME) -and (Resolve-CodeIntelPath $env:CODE_INTEL_HOME) -eq $paths.codeIntelHome)
+            expected = $codeIntelHomeDefault
+            value = if ($codeIntelHomeSet) { $env:CODE_INTEL_HOME } else { "" }
+            resolved = $codeIntelHomeResolved
+            exists = $codeIntelHomeExists
+            matchesDefault = $codeIntelHomeMatchesDefault
+            ok = ($codeIntelHomeExists -and $codeIntelHomeMatchesDefault)
         }
     }
 }
@@ -310,6 +328,7 @@ if (-not $sentruxPro.found -and -not $builtinSentrux) { $missing.Add("sentrux pr
 if ($RequireUnderstand -and -not $checks.graphProvider.sourceFound) { $missing.Add("internal graph provider source") }
 if ($RequireUnderstand -and -not $checks.graphProvider.cargoFound) { $missing.Add("code-intel Rust runtime") }
 if ($repoState -and -not $repoState.exists) { $missing.Add("repo path") }
+if ($codeIntelHomeSet -and -not $codeIntelHomeExists) { $missing.Add("CODE_INTEL_HOME: directory does not exist ($codeIntelHomeResolved)") }
 
 $result = [ordered]@{
     schema = "code-intel-doctor-bootstrap-observation.v1"
