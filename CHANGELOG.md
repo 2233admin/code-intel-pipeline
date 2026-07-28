@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `cargo test --release` no longer fails on the inventory fault-injection
+  contract test. The `CODE_INTEL_TEST_RG_EXTRA_PATH` hook it drives is
+  deliberately `#[cfg(debug_assertions)]`, so the shipped binary carries no
+  inventory fault injection; the test is now gated on the same cfg. CI only ran
+  the debug profile, so the failure had never surfaced there.
+- The `repowise-thinking-patch` overlay distinguishes "obsolete" from "broken".
+  Upstream repowise 0.32.0 walks `response.content` and skips non-text blocks
+  itself, so a healthy machine reported `install_failed` on every install run.
+  The installer now reports `not_needed` for the upstream-fixed shape and keeps
+  `install_failed` for a genuinely unrecognised layout.
+
 ## [0.7.0-beta.1] — 2026-07-28
 
 This release moves Code Intel into the write path and makes the official

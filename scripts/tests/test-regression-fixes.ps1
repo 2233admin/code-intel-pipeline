@@ -1068,6 +1068,93 @@ Test-Case "installer: Install-IntegrationsManifest reports install_failed when t
 }
 
 # ---------------------------------------------------------------------------
+# The repowise ThinkingBlock overlay must tell "obsolete" apart from "broken".
+# Upstream repowise 0.32.0 walks response.content itself, so the vulnerable
+# pattern is gone from a healthy install — which used to be reported as
+# install_failed on every single run and trained us to ignore the signal.
+# ---------------------------------------------------------------------------
+. (Get-ScriptFunctionsSource -Path (Join-Path $root "install-code-intel-pipeline.ps1") -Only @(
+    "Repair-RepowiseThinkingBlockPatch"
+))
+
+function Invoke-ThinkingPatchAgainst {
+    # Points the function's APPDATA-derived lookup at a scratch tree seeded with
+    # $Source, and returns the install actions it recorded. Builds the provider
+    # path with the same Join-Path expression the function uses, so the fixture
+    # lands where the function looks on every platform.
+    param([string]$Dir, [string]$Source)
+
+    $providerPath = Join-Path $Dir "uv\tools\repowise\Lib\site-packages\repowise\core\providers\llm\anthropic.py"
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $providerPath) | Out-Null
+    Set-Content -LiteralPath $providerPath -Value $Source -Encoding UTF8
+
+    $savedAppData = $env:APPDATA
+    try {
+        $env:APPDATA = $Dir
+        $actions = New-Object System.Collections.Generic.List[object]
+        Repair-RepowiseThinkingBlockPatch $actions
+        return [pscustomobject]@{ Actions = $actions; ProviderPath = $providerPath }
+    }
+    finally {
+        $env:APPDATA = $savedAppData
+    }
+}
+
+Test-Case "installer: repowise thinking patch reports not_needed when upstream already skips non-text blocks" {
+    $dir = New-ScratchDir "thinking-upstream"
+    try {
+        $upstream = @'
+        text_content = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                text_content = block.text
+                break
+
+        result = GeneratedResponse(
+            content=text_content,
+        )
+'@
+        $run = Invoke-ThinkingPatchAgainst $dir $upstream
+        Assert-Equal 1 $run.Actions.Count "the upstream-fixed case must record exactly one action"
+        Assert-Equal "not_needed" $run.Actions[0].status "an install carrying the upstream fix is obsolete for this overlay, not failed"
+        Assert-True ((Get-Content -LiteralPath $run.ProviderPath -Raw).Contains("text_content = block.text")) "a not_needed verdict must leave upstream source untouched"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case "installer: repowise thinking patch still rewrites the vulnerable single-block read" {
+    $dir = New-ScratchDir "thinking-vulnerable"
+    try {
+        $vulnerable = @'
+        result = GeneratedResponse(
+            content=response.content[0].text,
+        )
+'@
+        $run = Invoke-ThinkingPatchAgainst $dir $vulnerable
+        Assert-Equal "installed" $run.Actions[0].status "the pre-0.32.0 shape must still be patched"
+        $patched = Get-Content -LiteralPath $run.ProviderPath -Raw
+        Assert-True ($patched.Contains('getattr(block, "type", "") == "text"')) "the patched source must iterate blocks and keep only text ones"
+        Assert-False ($patched.Contains("content=response.content[0].text,")) "the vulnerable single-block read must be gone after patching"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case "installer: repowise thinking patch reports install_failed on an unrecognised upstream layout" {
+    $dir = New-ScratchDir "thinking-unknown"
+    try {
+        $run = Invoke-ThinkingPatchAgainst $dir "content = something_else_entirely(response)"
+        Assert-Equal "install_failed" $run.Actions[0].status "a layout matching neither the vulnerable nor the fixed shape must stay loud"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Issue #59 proposal 4: the doctor's graph-provider check must build its paths
 # with chained Join-Path (single literal 'a\b\c' segments never exist on
 # mac/linux), use the platform binary name, and accept target/release builds in

@@ -621,11 +621,16 @@ function Repair-RepowiseThinkingBlockPatch {
         [System.Collections.Generic.List[object]]$Actions
     )
 
-    # repowise's anthropic provider reads response.content[0].text; reasoning
-    # models behind Anthropic-compatible endpoints (e.g. MiniMax-M2.x) return
-    # a ThinkingBlock first, so docs generation fails on every page. Patch the
-    # installed uv tool venv idempotently: uv tool upgrade wipes the patch and
-    # rerunning this installer restores it. See overlays\repowise\README.md.
+    # repowise's anthropic provider used to read response.content[0].text;
+    # reasoning models behind Anthropic-compatible endpoints (e.g. MiniMax-M2.x)
+    # return a ThinkingBlock first, so docs generation failed on every page.
+    # Patch the installed uv tool venv idempotently: uv tool upgrade wipes the
+    # patch and rerunning this installer restores it.
+    #
+    # Upstream fixed this in repowise 0.32.0 by iterating response.content and
+    # taking the first block that has .text. When we see that shape the overlay
+    # is obsolete, not broken — report not_needed so a healthy install does not
+    # look like a failed one. See overlays\repowise\README.md.
     if ([string]::IsNullOrWhiteSpace($env:APPDATA)) { return }
     $providerPath = Join-Path $env:APPDATA "uv\tools\repowise\Lib\site-packages\repowise\core\providers\llm\anthropic.py"
     if (-not (Test-Path -LiteralPath $providerPath -PathType Leaf)) {
@@ -641,6 +646,11 @@ function Repair-RepowiseThinkingBlockPatch {
             return
         }
         if (-not $content.Contains($vulnerable)) {
+            $upstreamFixed = $content.Contains("for block in response.content") -and $content.Contains('hasattr(block, "text")')
+            if ($upstreamFixed) {
+                Add-InstallAction $Actions "repowise-thinking-patch" "not_needed" "upstream repowise already skips non-text blocks in $providerPath" "None. Drop this overlay once every supported repowise install carries the upstream fix."
+                return
+            }
             Add-InstallAction $Actions "repowise-thinking-patch" "install_failed" "expected pattern not found in $providerPath; upstream layout changed" "Review overlays\repowise\README.md; patch manually or drop the overlay if upstream fixed it."
             return
         }
