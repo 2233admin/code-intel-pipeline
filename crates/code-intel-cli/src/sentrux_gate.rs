@@ -14,7 +14,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 #[path = "hardened_git.rs"]
 mod hardened_git;

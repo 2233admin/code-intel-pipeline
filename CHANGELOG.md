@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deliberately `#[cfg(debug_assertions)]`, so the shipped binary carries no
   inventory fault injection; the test is now gated on the same cfg. CI only ran
   the debug profile, so the failure had never surfaced there.
+- Removed a stale duplicate of the `resume` contract left in `main.rs` when that
+  logic moved to `artifacts.rs`: the `ResumeSummary` struct, four JSON helpers,
+  `next_read`, and a verbatim copy of two contract tests that
+  `artifacts_tests.rs` already owns. `cmd_resume` has delegated to
+  `artifacts::resume` throughout, so nothing was serving the dead copy.
+- Dropped three unused imports and moved `MAX_JSON_DEPTH` to the only test that
+  uses it, instead of re-exporting it crate-wide.
 - `skill:codex` and `skill:claude` verify whose skill occupies the path instead
   of only that some `SKILL.md` exists there. Agent hosts share those directories
   with other skill managers, so an unrelated manager's junction served a stale

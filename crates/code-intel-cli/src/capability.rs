@@ -5,7 +5,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 use crate::adapter_contract::{AdapterError, AdapterOutput};
 use crate::artifact_ref::{self, VerifiedArtifact};
@@ -14,7 +14,7 @@ use crate::artifact_ref::{self, VerifiedArtifact};
 mod content_contract;
 pub(crate) use content_contract::{
     is_digest, reject_duplicate_json_keys, require_exact_keys, sha256_hex,
-    validate_artifact_ref_shape, MAX_JSON_BYTES, MAX_JSON_DEPTH,
+    validate_artifact_ref_shape, MAX_JSON_BYTES,
 };
 
 const ZERO_DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -929,6 +929,10 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Only the depth-limit test needs this constant, so it is imported here
+    // rather than re-exported crate-wide from an unused `pub(crate) use`.
+    use super::content_contract::MAX_JSON_DEPTH;
+
     #[test]
     fn sha256_vector() {
         assert_eq!(
