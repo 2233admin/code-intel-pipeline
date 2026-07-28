@@ -2310,7 +2310,9 @@ fn validate_native_array_artifact(
     {
         return Err(format!("{expected_schema} artifact shape is invalid"));
     }
-    let elements = value[payload].as_array().expect("shape check validated array");
+    let elements = value[payload]
+        .as_array()
+        .expect("shape check validated array");
     if elements.iter().any(|element| {
         element_string_fields
             .iter()

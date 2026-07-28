@@ -134,9 +134,7 @@ fn execute(cli: Cli) -> Result<Value, ImpactError> {
         .iter()
         .map(|file| {
             file["path"].as_str().map(str::to_string).ok_or_else(|| {
-                ImpactError::Contract(
-                    "code_evidence.files entries must carry a string path".into(),
-                )
+                ImpactError::Contract("code_evidence.files entries must carry a string path".into())
             })
         })
         .collect::<Result<BTreeSet<_>, _>>()?;

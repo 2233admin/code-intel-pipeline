@@ -112,10 +112,7 @@ mod tests {
         assert!(relative.join(&names[0]).is_file());
         // ...yet the search must skip the relative entry outright: it would
         // exec against the child's working directory, not this one.
-        assert_eq!(
-            find_first(&names, std::iter::once(relative.clone())),
-            None
-        );
+        assert_eq!(find_first(&names, std::iter::once(relative.clone())), None);
         // The same directory offered as an absolute entry is searched.
         assert!(find_first(&names, std::iter::once(absolute.clone()))
             .is_some_and(|found| found.is_absolute()));
