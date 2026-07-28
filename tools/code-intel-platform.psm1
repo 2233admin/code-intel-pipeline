@@ -142,6 +142,75 @@ function Get-CodeIntelPaths {
     }
 }
 
+function Get-CodeIntelPosixProfileInstruction {
+    # Pure: the single copy-paste line that makes new POSIX shells pick up
+    # ~/.config/code-intel/env.sh. macOS defaults to zsh, Linux to bash.
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("macos", "linux")]
+        [string]$Platform
+    )
+
+    $shellProfile = if ($Platform -eq "macos") { "~/.zshrc" } else { "~/.bashrc" }
+    return "echo 'source ~/.config/code-intel/env.sh' >> $shellProfile"
+}
+
+function ConvertTo-CodeIntelPosixEnvLine {
+    # Pure: renders one POSIX sh export line with the value double-quoted and
+    # sh metacharacters escaped. -AsPathPrefix renders the PATH prefix form
+    # (export PATH="<dir>:$PATH") with the trailing $PATH left expandable.
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Value,
+        [switch]$AsPathPrefix
+    )
+
+    $escaped = $Value.Replace('\', '\\').Replace('"', '\"').Replace('$', '\$').Replace('`', '\`')
+    if ($AsPathPrefix) {
+        return ('export {0}="{1}:$PATH"' -f $Name, $escaped)
+    }
+    return ('export {0}="{1}"' -f $Name, $escaped)
+}
+
+function Update-CodeIntelPosixEnvContent {
+    # Pure: idempotent line-set update. Drops any exact duplicate of $Line and
+    # any line matching $MatchPattern (a previous export of the same variable),
+    # then appends the canonical $Line once.
+    param(
+        [string[]]$Lines = @(),
+        [string]$MatchPattern = "",
+        [Parameter(Mandatory = $true)][string]$Line
+    )
+
+    $kept = @($Lines | Where-Object {
+        if ($_ -ceq $Line) { return $false }
+        if (-not [string]::IsNullOrEmpty($MatchPattern) -and $_ -match $MatchPattern) { return $false }
+        return $true
+    })
+    return @($kept + $Line)
+}
+
+function Update-CodeIntelPosixEnvFile {
+    # Rewrites ~/.config/code-intel/env.sh idempotently with the given line and
+    # returns the file path. Sourced from the user's shell profile so fresh
+    # bash/zsh sessions keep PATH and CODE_INTEL_* across installs.
+    param(
+        [string]$MatchPattern = "",
+        [Parameter(Mandatory = $true)][string]$Line
+    )
+
+    $configDir = Join-Path (Join-Path (Get-CodeIntelHomeDirectory) ".config") "code-intel"
+    New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+    $envFile = Join-Path $configDir "env.sh"
+    $existing = @()
+    if (Test-Path -LiteralPath $envFile -PathType Leaf) {
+        $existing = @(Get-Content -LiteralPath $envFile)
+    }
+    $updated = Update-CodeIntelPosixEnvContent -Lines $existing -MatchPattern $MatchPattern -Line $Line
+    Set-Content -LiteralPath $envFile -Value $updated -Encoding UTF8
+    return $envFile
+}
+
 function Set-CodeIntelUserEnv {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -161,11 +230,19 @@ function Set-CodeIntelUserEnv {
     New-Item -ItemType Directory -Force -Path $configDir | Out-Null
     $envFile = Join-Path $configDir "env.ps1"
     $escaped = $Value.Replace("'", "''")
-    "`$env:$Name = '$escaped'" | Add-Content -LiteralPath $envFile -Encoding UTF8
+    $pwshLines = @()
+    if (Test-Path -LiteralPath $envFile -PathType Leaf) {
+        $pwshLines = @(Get-Content -LiteralPath $envFile)
+    }
+    $pwshPattern = '^\s*\$env:' + [regex]::Escape($Name) + '\s*='
+    $pwshUpdated = Update-CodeIntelPosixEnvContent -Lines $pwshLines -MatchPattern $pwshPattern -Line "`$env:$Name = '$escaped'"
+    Set-Content -LiteralPath $envFile -Value $pwshUpdated -Encoding UTF8
+    $shPattern = '^\s*export\s+' + [regex]::Escape($Name) + '='
+    $shFile = Update-CodeIntelPosixEnvFile -MatchPattern $shPattern -Line (ConvertTo-CodeIntelPosixEnvLine -Name $Name -Value $Value)
     return [pscustomobject][ordered]@{
         name = $Name
         persisted = $false
-        detail = "process environment set; dot-source $envFile from your pwsh profile to persist"
+        detail = "process environment set; $shFile updated; run once: $(Get-CodeIntelPosixProfileInstruction -Platform $os)"
     }
 }
 
@@ -198,10 +275,11 @@ function Add-UserPathPrefix {
         return [pscustomobject][ordered]@{ path = $resolved; persisted = $true; detail = "user PATH" }
     }
 
+    $shFile = Update-CodeIntelPosixEnvFile -Line (ConvertTo-CodeIntelPosixEnvLine -Name "PATH" -Value $resolved -AsPathPrefix)
     return [pscustomobject][ordered]@{
         path = $resolved
         persisted = $false
-        detail = "process PATH only; add this directory to your shell profile"
+        detail = "process PATH updated; $shFile updated; run once: $(Get-CodeIntelPosixProfileInstruction -Platform $os)"
     }
 }
 
@@ -278,6 +356,10 @@ Export-ModuleMember -Function @(
     "Get-CodeIntelArtifactRoot",
     "Get-CodeIntelShadowRoot",
     "Get-CodeIntelPaths",
+    "Get-CodeIntelPosixProfileInstruction",
+    "ConvertTo-CodeIntelPosixEnvLine",
+    "Update-CodeIntelPosixEnvContent",
+    "Update-CodeIntelPosixEnvFile",
     "Set-CodeIntelUserEnv",
     "Add-UserPathPrefix",
     "New-CodeIntelLink",

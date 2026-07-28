@@ -24,6 +24,8 @@ Follow-up automation can proactively propose `/investigate` for actionable scan 
 
 ## 30 秒开始
 
+> **macOS / Linux 用户**：当前只支持源码构建安装——没有非 Windows 的 Release ZIP，`bootstrap.py` 也不支持非 Windows。请直接看 [macOS / Linux 快速开始](#macos--linux-快速开始)；本节以下命令默认 Windows。
+
 在要分析的仓库目录中运行稳定入口；不传参数时默认分析当前目录：
 
 ```powershell
@@ -37,6 +39,58 @@ code-intel C:\path\to\your\repo
 ```
 
 首次安装、Skill 安装和依赖说明见[完整上手](#安装与完整上手)。
+
+## macOS / Linux 快速开始
+
+**支持等级**：macOS / Linux 目前只支持源码构建安装。Release ZIP 和 `bootstrap.py` 引导只覆盖 Windows（同 [Public beta guide](docs/public-beta.md)）。所有入口脚本都要求 PowerShell 7.2+（`pwsh`），README 里其余 `.ps1` 命令在 macOS / Linux 上同样用 `pwsh` 运行。
+
+前置依赖（macOS，Homebrew）：
+
+```bash
+brew install --cask powershell
+brew install ripgrep git rustup
+rustup-init -y
+```
+
+前置依赖（Debian / Ubuntu）：
+
+```bash
+# PowerShell：Microsoft 官方仓库（或 sudo snap install powershell --classic）
+wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+sudo dpkg -i packages-microsoft-prod.deb
+sudo apt-get update && sudo apt-get install -y powershell ripgrep git
+# Rust toolchain（安装器不会代装 rustup/cargo）
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+注意：`-InstallMissing` 只会通过 brew/apt/dnf/pacman 补装 `rg`、`git`、`python`；`rustup`/`cargo` 必须自己先装好——macOS / Linux 没有预编译二进制，安装器要现场 `cargo build`。
+
+安装：
+
+```bash
+git clone https://github.com/2233admin/code-intel-pipeline.git
+cd code-intel-pipeline
+pwsh ./install-code-intel-pipeline.ps1 -RepoPath ~/src/your-repo -InstallMissing
+```
+
+安装器把编译好的 `code-intel` 复制到平台 bin 目录：
+
+```text
+macOS: ~/Library/Application Support/code-intel/bin
+Linux: ~/.local/share/code-intel/bin   （设置了 XDG_DATA_HOME 时优先用它）
+```
+
+并写出 POSIX 环境文件 `~/.config/code-intel/env.sh`。按安装摘要末尾打印的那一行，把 `source` 追加进 shell 配置（zsh 用 `~/.zshrc`，bash 用 `~/.bashrc`），或手动把上面的 bin 目录加进 `PATH`：
+
+```bash
+echo 'source "$HOME/.config/code-intel/env.sh"' >> ~/.zshrc
+```
+
+重开 shell 后第一次运行：
+
+```bash
+code-intel ~/src/your-repo
+```
 
 ## 仓库入口
 
@@ -145,7 +199,7 @@ https://github.com/2233admin/code-intel-pipeline/tree/main/skills/code-intel-pip
 
 Skill 默认只解析稳定版，校验 GitHub Release 提供的 SHA-256 后才解压。预发布版本和第三方依赖安装都需要显式选择。
 
-人工用户从 GitHub Release 下载并解压安装包；Agent 用户通过 Skill 安装。源码安装仍可使用：
+人工用户从 GitHub Release 下载并解压安装包；Agent 用户通过 Skill 安装。macOS / Linux 没有 Release ZIP，走[macOS / Linux 快速开始](#macos--linux-快速开始)的源码构建路径。Windows 源码安装仍可使用：
 
 ```powershell
 git clone https://github.com/2233admin/code-intel-pipeline.git

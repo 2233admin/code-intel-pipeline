@@ -906,6 +906,246 @@ Test-Case "check-code-intel-tools.ps1 fails CODE_INTEL_HOME pointing at a missin
 }
 
 # ---------------------------------------------------------------------------
+# Issue #59 proposal 3a: on macOS/Linux the platform module additionally
+# maintains a POSIX env file (~/.config/code-intel/env.sh) so fresh bash/zsh
+# sessions keep PATH and CODE_INTEL_HOME. The POSIX logic lives in small pure
+# helpers plus -Platform-parameterized branches, so everything below runs on
+# Windows. The *Windows* persistence branches of Set-CodeIntelUserEnv /
+# Add-UserPathPrefix write the real user registry and are intentionally NOT
+# invoked here.
+# ---------------------------------------------------------------------------
+. (Get-ScriptFunctionsSource -Path (Join-Path $root "tools\code-intel-platform.psm1") -Only @(
+    "Get-CodeIntelPlatform",
+    "Get-CodeIntelPosixProfileInstruction",
+    "ConvertTo-CodeIntelPosixEnvLine",
+    "Update-CodeIntelPosixEnvContent",
+    "Update-CodeIntelPosixEnvFile",
+    "Set-CodeIntelUserEnv",
+    "Add-UserPathPrefix"
+))
+
+Test-Case "posix env: profile instruction is the single copy-paste source line per platform" {
+    Assert-Equal "echo 'source ~/.config/code-intel/env.sh' >> ~/.zshrc" (Get-CodeIntelPosixProfileInstruction -Platform macos) "macos instruction must target ~/.zshrc"
+    Assert-Equal "echo 'source ~/.config/code-intel/env.sh' >> ~/.bashrc" (Get-CodeIntelPosixProfileInstruction -Platform linux) "linux instruction must target ~/.bashrc"
+}
+
+Test-Case "posix env: export lines render the PATH prefix form and escape sh metacharacters" {
+    Assert-Equal 'export PATH="/opt/code-intel/bin:$PATH"' (ConvertTo-CodeIntelPosixEnvLine -Name "PATH" -Value "/opt/code-intel/bin" -AsPathPrefix) "PATH prefix line must keep the trailing `$PATH expandable"
+    Assert-Equal 'export CODE_INTEL_HOME="/home/user/code-intel"' (ConvertTo-CodeIntelPosixEnvLine -Name "CODE_INTEL_HOME" -Value "/home/user/code-intel") "plain export line"
+    Assert-Equal 'export X="a\$b\"c\\d"' (ConvertTo-CodeIntelPosixEnvLine -Name "X" -Value 'a$b"c\d') "dollar, quote, and backslash must be escaped inside the double quotes"
+}
+
+Test-Case "posix env: content updates are idempotent and replace same-variable exports" {
+    $pathLine = ConvertTo-CodeIntelPosixEnvLine -Name "PATH" -Value "/opt/code-intel/bin" -AsPathPrefix
+    $once = Update-CodeIntelPosixEnvContent -Lines @() -Line $pathLine
+    $twice = Update-CodeIntelPosixEnvContent -Lines $once -Line $pathLine
+    Assert-Equal ($once -join "`n") ($twice -join "`n") "re-adding the same PATH line must not duplicate it"
+    Assert-Equal 1 @($twice).Count "exactly one PATH line after two identical updates"
+
+    $otherPathLine = ConvertTo-CodeIntelPosixEnvLine -Name "PATH" -Value "/opt/other/bin" -AsPathPrefix
+    $withOther = Update-CodeIntelPosixEnvContent -Lines $twice -Line $otherPathLine
+    Assert-Equal 2 @($withOther).Count "a different directory must keep its own PATH line"
+
+    $homePattern = '^\s*export\s+CODE_INTEL_HOME='
+    $v1 = Update-CodeIntelPosixEnvContent -Lines $withOther -MatchPattern $homePattern -Line (ConvertTo-CodeIntelPosixEnvLine -Name "CODE_INTEL_HOME" -Value "/old/home")
+    $v2 = Update-CodeIntelPosixEnvContent -Lines $v1 -MatchPattern $homePattern -Line (ConvertTo-CodeIntelPosixEnvLine -Name "CODE_INTEL_HOME" -Value "/new/home")
+    Assert-Equal 3 @($v2).Count "a same-variable export must be replaced, not appended"
+    Assert-True (($v2 -join "`n").Contains('/new/home')) "replacement must keep the newest value"
+    Assert-False (($v2 -join "`n").Contains('/old/home')) "the stale value must be dropped"
+}
+
+Test-Case "posix env: Add-UserPathPrefix (linux branch) maintains env.sh and returns the copy-paste instruction" {
+    $dir = New-ScratchDir "posix-pathprefix"
+    $savedPath = $env:PATH
+    try {
+        $script:PosixTestHome = Join-Path $dir "home"
+        New-Item -ItemType Directory -Force -Path $script:PosixTestHome | Out-Null
+        function Get-CodeIntelHomeDirectory { return $script:PosixTestHome }
+
+        $binDir = Join-Path $dir "bin"
+        $result = Add-UserPathPrefix -PathToAdd $binDir -Platform linux
+        Assert-False $result.persisted "non-Windows PATH persistence stays opt-in (persisted=false)"
+        Assert-True ($result.detail.Contains("echo 'source ~/.config/code-intel/env.sh' >> ~/.bashrc")) "detail must carry the single copy-paste line (issue #59 proposal 3a)"
+
+        $envSh = Join-Path (Join-Path (Join-Path $script:PosixTestHome ".config") "code-intel") "env.sh"
+        Assert-True (Test-Path -LiteralPath $envSh -PathType Leaf) "env.sh must be written under ~/.config/code-intel"
+        $expectedLine = ConvertTo-CodeIntelPosixEnvLine -Name "PATH" -Value $result.path -AsPathPrefix
+        $lines = @(Get-Content -LiteralPath $envSh)
+        Assert-Equal 1 @($lines | Where-Object { $_ -ceq $expectedLine }).Count "env.sh must contain exactly one PATH export for the directory"
+
+        Add-UserPathPrefix -PathToAdd $binDir -Platform linux | Out-Null
+        $lines = @(Get-Content -LiteralPath $envSh)
+        Assert-Equal 1 @($lines | Where-Object { $_ -ceq $expectedLine }).Count "a reinstall must not duplicate the PATH export"
+
+        $firstEntry = @($env:PATH -split [regex]::Escape([string][System.IO.Path]::PathSeparator))[0]
+        Assert-Equal $result.path $firstEntry "the process PATH must still be prefixed"
+    }
+    finally {
+        $env:PATH = $savedPath
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case "posix env: Set-CodeIntelUserEnv (linux branch) rewrites env.ps1 + env.sh idempotently" {
+    $dir = New-ScratchDir "posix-setenv"
+    $savedValue = $env:CIP_TEST_POSIX_ENV
+    try {
+        $script:PosixTestHome = $dir
+        function Get-CodeIntelHomeDirectory { return $script:PosixTestHome }
+
+        Set-CodeIntelUserEnv -Name "CIP_TEST_POSIX_ENV" -Value "/repo/v1" -Platform linux | Out-Null
+        $result = Set-CodeIntelUserEnv -Name "CIP_TEST_POSIX_ENV" -Value "/repo/v2" -Platform linux
+        Assert-Equal "/repo/v2" $env:CIP_TEST_POSIX_ENV "the process environment must carry the newest value"
+        Assert-False $result.persisted "non-Windows env persistence stays opt-in (persisted=false)"
+        Assert-True ($result.detail.Contains("echo 'source ~/.config/code-intel/env.sh' >> ~/.bashrc")) "detail must carry the single copy-paste line"
+
+        $configDir = Join-Path (Join-Path $dir ".config") "code-intel"
+        $shLines = @(Get-Content -LiteralPath (Join-Path $configDir "env.sh"))
+        Assert-Equal 1 @($shLines).Count "env.sh must hold a single export for the variable after two writes"
+        Assert-Equal 'export CIP_TEST_POSIX_ENV="/repo/v2"' $shLines[0] "the env.sh export must be replaced with the newest value"
+
+        $psLines = @(Get-Content -LiteralPath (Join-Path $configDir "env.ps1"))
+        Assert-Equal 1 @($psLines).Count "env.ps1 must be rewritten idempotently, not appended (old behavior accumulated duplicates)"
+        Assert-Equal "`$env:CIP_TEST_POSIX_ENV = '/repo/v2'" $psLines[0] "the env.ps1 line must carry the newest value"
+    }
+    finally {
+        if ($null -ne $savedValue) { $env:CIP_TEST_POSIX_ENV = $savedValue } else { Remove-Item Env:CIP_TEST_POSIX_ENV -ErrorAction SilentlyContinue }
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Issue #59 proposal 3b: the installer copies orchestration/integrations.json
+# next to the installed binary (<bin>/orchestration/) — the first candidate of
+# discover_manifest's exe-ancestor walk in crates/code-intel-cli/src/capability.rs
+# — so the installed code-intel works outside a repo checkout.
+# ---------------------------------------------------------------------------
+. (Get-ScriptFunctionsSource -Path (Join-Path $root "install-code-intel-pipeline.ps1") -Only @(
+    "Add-InstallAction",
+    "Install-IntegrationsManifest"
+))
+
+Test-Case "installer: Install-IntegrationsManifest copies the manifest beside the binary and overwrites on reinstall" {
+    $dir = New-ScratchDir "manifest-copy"
+    try {
+        $repoRoot = Join-Path $dir "repo"
+        $binDir = Join-Path $dir "bin"
+        New-Item -ItemType Directory -Force -Path (Join-Path $repoRoot "orchestration"), $binDir | Out-Null
+        $sourceManifest = Join-Path (Join-Path $repoRoot "orchestration") "integrations.json"
+        Set-Content -LiteralPath $sourceManifest -Value '{"integrations":[]}' -Encoding UTF8
+
+        $actions = New-Object System.Collections.Generic.List[object]
+        Install-IntegrationsManifest $actions $repoRoot $binDir
+        $destination = Join-Path (Join-Path $binDir "orchestration") "integrations.json"
+        Assert-True (Test-Path -LiteralPath $destination -PathType Leaf) "manifest must land at <bin>/orchestration/integrations.json (first candidate of the discover_manifest ancestor walk)"
+        Assert-Equal "installed" $actions[0].status "the copy must be reported as installed in the install actions"
+        Assert-Equal $destination $actions[0].detail "the reported detail must be the installed manifest path"
+
+        Set-Content -LiteralPath $sourceManifest -Value '{"integrations":[{"id":"x"}]}' -Encoding UTF8
+        Install-IntegrationsManifest $actions $repoRoot $binDir
+        Assert-True ((Get-Content -LiteralPath $destination -Raw).Contains('"id"')) "a reinstall must overwrite the previously copied manifest"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case "installer: Install-IntegrationsManifest reports install_failed when the repo manifest is missing" {
+    $dir = New-ScratchDir "manifest-missing"
+    try {
+        $repoRoot = Join-Path $dir "repo"
+        $binDir = Join-Path $dir "bin"
+        New-Item -ItemType Directory -Force -Path $repoRoot, $binDir | Out-Null
+
+        $actions = New-Object System.Collections.Generic.List[object]
+        Install-IntegrationsManifest $actions $repoRoot $binDir
+        Assert-Equal "install_failed" $actions[0].status "a missing repo manifest must be reported, not silently skipped"
+        Assert-False (Test-Path -LiteralPath (Join-Path (Join-Path $binDir "orchestration") "integrations.json")) "no manifest file may be fabricated"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Issue #59 proposal 4: the doctor's graph-provider check must build its paths
+# with chained Join-Path (single literal 'a\b\c' segments never exist on
+# mac/linux), use the platform binary name, and accept target/release builds in
+# addition to target/debug. Exercised black-box against a scratch pipeline root
+# so binary/source presence is controlled exactly.
+# ---------------------------------------------------------------------------
+function New-DoctorScratchRoot {
+    param([string]$Dir)
+
+    Copy-Item -LiteralPath (Join-Path $root "check-code-intel-tools.ps1") -Destination (Join-Path $Dir "check-code-intel-tools.ps1")
+    New-Item -ItemType Directory -Force -Path (Join-Path $Dir "tools") | Out-Null
+    Copy-Item -LiteralPath (Join-Path $root "tools\code-intel-platform.psm1") -Destination (Join-Path $Dir "tools\code-intel-platform.psm1")
+
+    $crateDir = Join-Path (Join-Path $Dir "crates") "code-intel-cli"
+    New-Item -ItemType Directory -Force -Path (Join-Path $crateDir "src") | Out-Null
+    Set-Content -LiteralPath (Join-Path $crateDir "Cargo.toml") -Value "[package]" -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path (Join-Path $crateDir "src") "graph.rs") -Value "// graph provider" -Encoding UTF8
+}
+
+function Invoke-DoctorScratch {
+    param(
+        [string]$Dir,
+        [string[]]$ExtraArgs = @()
+    )
+
+    $raw = @(& pwsh -NoLogo -NoProfile -File (Join-Path $Dir "check-code-intel-tools.ps1") -Json @ExtraArgs 2>&1)
+    return ($raw -join "`n") | ConvertFrom-Json
+}
+
+Test-Case "doctor graph provider: a target/release platform binary satisfies the binary check" {
+    $dir = New-ScratchDir "doctor-graph-release"
+    try {
+        New-DoctorScratchRoot $dir
+        $binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
+        $releaseBinary = Join-Path (Join-Path (Join-Path $dir "target") "release") $binaryName
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $releaseBinary) | Out-Null
+        Set-Content -LiteralPath $releaseBinary -Value "fake binary" -Encoding UTF8
+
+        $json = Invoke-DoctorScratch $dir @("-RequireUnderstand")
+        Assert-True $json.checks.graphProvider.sourceFound "chained Join-Path must find crates/code-intel-cli/src/graph.rs"
+        Assert-True $json.checks.graphProvider.cargoFound "chained Join-Path must find crates/code-intel-cli/Cargo.toml"
+        Assert-True $json.checks.graphProvider.binaryFound "a target/release build must satisfy the binary check (regression: only target\debug\code-intel.exe was probed)"
+        Assert-Equal $releaseBinary $json.checks.graphProvider.binaryPath "binaryPath must report the discovered release binary"
+        Assert-True ($json.checks.graphProvider.command.Contains($releaseBinary)) "the command hint must reference the discovered release binary"
+        Assert-False ([bool](@($json.missing) -contains "internal graph provider source")) "-RequireUnderstand must not report a false MISSING graph provider source"
+        Assert-False ([bool](@($json.missing) -contains "code-intel Rust runtime")) "-RequireUnderstand must not report a false MISSING Rust runtime"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case "doctor graph provider: debug fallback still detected; absent binary reports a platform-correct hint" {
+    $dir = New-ScratchDir "doctor-graph-debug"
+    try {
+        New-DoctorScratchRoot $dir
+        $binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
+        $debugBinary = Join-Path (Join-Path (Join-Path $dir "target") "debug") $binaryName
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $debugBinary) | Out-Null
+        Set-Content -LiteralPath $debugBinary -Value "fake binary" -Encoding UTF8
+
+        $json = Invoke-DoctorScratch $dir
+        Assert-True $json.checks.graphProvider.binaryFound "a target/debug build must still satisfy the binary check"
+        Assert-Equal $debugBinary $json.checks.graphProvider.binaryPath "binaryPath must report the debug binary when no release build exists"
+
+        Remove-Item -LiteralPath $debugBinary -Force
+        $json = Invoke-DoctorScratch $dir
+        Assert-False $json.checks.graphProvider.binaryFound "no built binary must report binaryFound=false"
+        Assert-Equal "" ([string]$json.checks.graphProvider.binaryPath) "binaryPath must be empty when nothing is built"
+        $expectedHint = Join-Path (Join-Path (Join-Path $dir "target") "release") $binaryName
+        Assert-True ($json.checks.graphProvider.command.Contains($expectedHint)) "the command hint must fall back to the platform-correct release candidate path"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Fail-open lint: scan all tracked .ps1 files in the repo for catch blocks
 # that return/emit a permissive boolean ($true) directly, which is the exact
 # anti-pattern all 7 fixes above were closing. A whitelist mechanism exists
