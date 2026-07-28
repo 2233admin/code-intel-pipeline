@@ -461,6 +461,22 @@ Agent 改完代码后：
 
 如果结构质量下降，`session_end` 会失败，并返回前后分数。
 
+Agent 改代码过程中，不必等整轮 pipeline，直接问增量问题：
+
+```powershell
+code-intel change impact --artifact-root <root> --repo <name> --repo-path C:\path\to\repo --changed src\module\file.rs --staleness advisory
+```
+
+它从最近一次已提交的 run 回答“改这些文件会波及谁、该先跑哪些测试”。`--staleness advisory` 表示答案只作建议、永不门禁，working tree 脏了也能问。
+
+机械化批量改写先出预览计划：
+
+```powershell
+code-intel capability exec edit.ast-grep-plan --request <request.json> --out <staging-dir>
+```
+
+计划只预览（`repositoryMutation=false`），不会改文件。确认后再动手改，改完 `session_end` 收门禁。
+
 可用工具：
 
 ```text
@@ -861,7 +877,7 @@ code-intel C:\path\to\repo\backend --mode normal
 
 ## 给 Agent 的一句话
 
-先跑安装器，再跑 doctor，再跑 `code-intel .`。整轮 outcome 看命令行汇总，失败看 `run-manifest.json` 里的失败节点，导航用 `evidence.native-code/code-evidence/merged/agent/index.md`，治理看 `diagnosis.hospital/hospital.md`，行动计划看 `diagnosis.hospital/surgery-plan.md`。不要跳过 Sentrux baseline 和 rules，不然 Agent 只是换了个速度更快的方式堆债。
+先跑安装器，再跑 doctor，再跑 `code-intel .`。改代码前先读证据：整轮 outcome 看命令行汇总，失败看 `run-manifest.json` 里的失败节点，导航用 `evidence.native-code/code-evidence/merged/agent/index.md`，治理看 `diagnosis.hospital/hospital.md`，行动计划看 `diagnosis.hospital/surgery-plan.md`。改代码时继续问管线：`session_start` 起基线，`change impact --staleness advisory` 查波及面和该跑的测试，机械改写先 `capability exec edit.ast-grep-plan` 出预览计划，改完 `session_end` 收门禁。不要跳过 Sentrux baseline 和 rules，不然 Agent 只是换了个速度更快的方式堆债。
 
 ## License
 

@@ -12,7 +12,20 @@
     "runIdentity": { "type": "string", "pattern": "^dag-v1:([a-f0-9]{2})+$" },
     "runOutcome": { "const": "completed" },
     "snapshotIdentity": { "$ref": "#/$defs/digest" },
-    "freshness": { "$ref": "code-intel-evidence-query.v1.schema.json#/properties/freshness" },
+    "freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "recordedIdentity", "currentIdentity", "workingTreePolicy", "scope"],
+      "properties": {
+        "status": { "enum": ["current", "stale", "stale-advisory", "unknown"] },
+        "recordedIdentity": { "$ref": "#/$defs/digest" },
+        "currentIdentity": { "oneOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] },
+        "workingTreePolicy": { "oneOf": [{ "enum": ["head_only", "explicit_overlay"] }, { "type": "null" }] },
+        "scope": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "recordedSnapshotIdentity": { "$ref": "#/$defs/digest" },
+    "currentSnapshotIdentity": { "$ref": "#/$defs/digest" },
     "changed": {
       "type": "array",
       "minItems": 1,
