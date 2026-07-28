@@ -149,10 +149,16 @@ try {
     $resultSchema = Join-Path $repoRoot "orchestration\schemas\code-intel-model-adapter-result.v1.schema.json"
     $requestFiles = @($deniedRequest, $successRequest, $cliEgressRequest, $localCliEgressRequest, $quotaRequest, $localRequest, $badRequest, $slowRequest)
     $resultFiles = @($deniedArtifacts, $successArtifacts, $cliEgressArtifacts, $localCliEgressArtifacts, $quotaArtifacts, $localArtifacts, $badArtifacts, $slowArtifacts) | ForEach-Object { Join-Path $_ "model-channel-result.json" }
-    & python -c "import json,sys,jsonschema; s=json.load(open(sys.argv[1],encoding='utf-8')); v=jsonschema.Draft202012Validator(s); [v.validate(json.load(open(p,encoding='utf-8-sig'))) for p in sys.argv[2:]]" $requestSchema @requestFiles
-    if ($LASTEXITCODE -ne 0) { throw "adapter request fixture failed its closed schema" }
-    & python -c "import json,sys,jsonschema; s=json.load(open(sys.argv[1],encoding='utf-8')); v=jsonschema.Draft202012Validator(s); [v.validate(json.load(open(p,encoding='utf-8-sig'))) for p in sys.argv[2:]]" $resultSchema @resultFiles
-    if ($LASTEXITCODE -ne 0) { throw "adapter result fixture failed its closed schema" }
+    foreach ($requestFile in $requestFiles) {
+        if (-not (Get-Content -LiteralPath $requestFile -Raw | Test-Json -SchemaFile $requestSchema -ErrorAction Stop)) {
+            throw "adapter request fixture failed its closed schema"
+        }
+    }
+    foreach ($resultFile in $resultFiles) {
+        if (-not (Get-Content -LiteralPath $resultFile -Raw | Test-Json -SchemaFile $resultSchema -ErrorAction Stop)) {
+            throw "adapter result fixture failed its closed schema"
+        }
+    }
 
     $facadeArtifacts = Join-Path $root "pipeline-facade"
     & pwsh -NoProfile -File (Join-Path $repoRoot "run-code-intel.ps1") -ModelAdapterRequest $deniedRequest -ModelAdapterArtifactRoot $facadeArtifacts 2>&1 | Out-Null
