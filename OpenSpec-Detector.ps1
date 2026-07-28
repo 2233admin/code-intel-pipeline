@@ -12,6 +12,20 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 if ($Quiet) { $InformationPreference = "SilentlyContinue" }
 
+# Git config keys that name a program Git will execute, pinned empty so a
+# scanned repository's own .git/config cannot supply one. Mirrors
+# crates/code-intel-cli/src/hardened_git.rs and run-code-intel.ps1.
+$script:GitHardening = @(
+    "-c", "core.fsmonitor=",
+    "-c", "core.hooksPath=",
+    "-c", "core.sshCommand=",
+    "-c", "diff.external=",
+    "-c", "core.pager="
+)
+# Ignore the system-wide config as well: it can silently reintroduce a
+# substitution the list above disarms.
+$env:GIT_CONFIG_NOSYSTEM = "1"
+
 # ============ 特征检测 ============
 
 function Get-CodeMetrics {
@@ -65,9 +79,9 @@ function Get-CollaborationMetrics {
     param([string]$Path)
 
     try {
-        $contributors = @(& git -C $Path log --format=%ae 2>$null | Sort-Object -Unique)
-        $lastCommit = & git -C $Path log -1 --format=%ci 2>$null
-        $firstCommit = & git -C $Path log --reverse --format=%ci 2>$null | Select-Object -First 1
+        $contributors = @(& git @script:GitHardening -C $Path log --format=%ae 2>$null | Sort-Object -Unique)
+        $lastCommit = & git @script:GitHardening -C $Path log -1 --format=%ci 2>$null
+        $firstCommit = & git @script:GitHardening -C $Path log --reverse --format=%ci 2>$null | Select-Object -First 1
         # repoAgeDays = age since FIRST commit (brownfield detection);
         # lastCommitAgeDays = staleness since LAST commit (activity detection).
         # Using last-commit age for both would judge every active old repo "greenfield".

@@ -24,6 +24,20 @@ $env:PYTHONIOENCODING = "utf-8"
 $env:PYTHONUTF8 = "1"
 $env:NO_COLOR = "1"
 
+# Git config keys that name a program Git will execute, pinned empty so the
+# scanned repository's own .git/config cannot supply one. `core.fsmonitor`
+# runs on ordinary read commands like `git ls-files`, before any gate in this
+# tool has looked at the repository. Mirrors run-code-intel.ps1 and
+# crates/code-intel-cli/src/hardened_git.rs.
+$script:GitHardening = @(
+    "-c", "core.fsmonitor=",
+    "-c", "core.hooksPath=",
+    "-c", "core.sshCommand=",
+    "-c", "diff.external=",
+    "-c", "core.pager="
+)
+$env:GIT_CONFIG_NOSYSTEM = "1"
+
 function Resolve-Directory {
     param([string]$InputPath)
 
@@ -1022,7 +1036,7 @@ function Invoke-GitLsFilesForKnownFiles {
     for ($i = 0; $i -lt $known.Count; $i += $BatchSize) {
         $take = [math]::Min($BatchSize, $known.Count - $i)
         $batch = @($known[$i..($i + $take - 1)])
-        $args = @("-C", $TargetPath, "ls-files") + $ExtraArgs + @("--") + $batch
+        $args = $script:GitHardening + @("-C", $TargetPath, "ls-files") + $ExtraArgs + @("--") + $batch
         $native = Invoke-Native "git" $args
         if ($native.exitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($native.output)) {
             $result += @($native.output -split "\r?\n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
@@ -1043,7 +1057,7 @@ function Invoke-GitLogForKnownFiles {
     for ($i = 0; $i -lt $known.Count; $i += $BatchSize) {
         $take = [math]::Min($BatchSize, $known.Count - $i)
         $batch = @($known[$i..($i + $take - 1)])
-        $args = @("-C", $TargetPath, "log", "--format=__SENTRUX_COMMIT__%ct", "--name-only", "--") + $batch
+        $args = $script:GitHardening + @("-C", $TargetPath, "log", "--format=__SENTRUX_COMMIT__%ct", "--name-only", "--") + $batch
         $native = Invoke-Native "git" $args
         if ($native.exitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($native.output)) {
             $result += @($native.output -split "\r?\n")
@@ -1064,7 +1078,7 @@ function Invoke-GitAuthorLogForKnownFiles {
     for ($i = 0; $i -lt $known.Count; $i += $BatchSize) {
         $take = [math]::Min($BatchSize, $known.Count - $i)
         $batch = @($known[$i..($i + $take - 1)])
-        $args = @("-C", $TargetPath, "log", "--format=__SENTRUX_COMMIT__%ct`t%an <%ae>", "--name-only", "--") + $batch
+        $args = $script:GitHardening + @("-C", $TargetPath, "log", "--format=__SENTRUX_COMMIT__%ct`t%an <%ae>", "--name-only", "--") + $batch
         $native = Invoke-Native "git" $args
         if ($native.exitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($native.output)) {
             $result += @($native.output -split "\r?\n")
@@ -1094,7 +1108,7 @@ function Get-GitFileSignals {
     if ($signals.Count -eq 0) { return $signals }
 
     $prefix = ""
-    $prefixNative = Invoke-Native "git" @("-C", $TargetPath, "rev-parse", "--show-prefix")
+    $prefixNative = Invoke-Native "git" ($script:GitHardening + @("-C", $TargetPath, "rev-parse", "--show-prefix"))
     if ($prefixNative.exitCode -eq 0) {
         $prefix = $prefixNative.output.Trim()
     }
@@ -1180,7 +1194,7 @@ function Get-GitAuthorSignals {
     if ($signals.Count -eq 0) { return $signals }
 
     $prefix = ""
-    $prefixNative = Invoke-Native "git" @("-C", $TargetPath, "rev-parse", "--show-prefix")
+    $prefixNative = Invoke-Native "git" ($script:GitHardening + @("-C", $TargetPath, "rev-parse", "--show-prefix"))
     if ($prefixNative.exitCode -eq 0) {
         $prefix = $prefixNative.output.Trim()
     }
