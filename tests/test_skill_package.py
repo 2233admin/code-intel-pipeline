@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import shutil
+import stat
 import tempfile
 import unittest
 import zipfile
@@ -97,6 +98,103 @@ class SkillPackageTests(unittest.TestCase):
 
         with self.assertRaises(bootstrap.BootstrapError):
             bootstrap.select_release_asset(release, "windows")
+
+    def test_maps_sys_platform_to_release_platform_names(self) -> None:
+        bootstrap = load_bootstrap_module()
+        self.assertEqual(bootstrap.resolve_platform_name("win32"), "windows")
+        self.assertEqual(bootstrap.resolve_platform_name("darwin"), "macos")
+        self.assertEqual(bootstrap.resolve_platform_name("linux"), "linux")
+        with self.assertRaises(bootstrap.BootstrapError):
+            bootstrap.resolve_platform_name("freebsd14")
+
+    def test_release_binary_name_is_platform_specific(self) -> None:
+        bootstrap = load_bootstrap_module()
+        self.assertEqual(bootstrap.release_binary_name("windows"), "code-intel.exe")
+        self.assertEqual(bootstrap.release_binary_name("macos"), "code-intel")
+        self.assertEqual(bootstrap.release_binary_name("linux"), "code-intel")
+
+    def test_selects_release_asset_for_each_platform(self) -> None:
+        bootstrap = load_bootstrap_module()
+        release = {
+            "tag_name": "v1.2.3",
+            "assets": [
+                {
+                    "name": f"code-intel-pipeline-v1.2.3-{platform_name}.zip",
+                    "browser_download_url": (
+                        "https://github.com/2233admin/code-intel-pipeline/"
+                        f"releases/download/v1.2.3/{platform_name}.zip"
+                    ),
+                    "digest": "sha256:" + ("a" * 64),
+                }
+                for platform_name in ("windows", "macos", "linux")
+            ],
+        }
+        for platform_name in ("windows", "macos", "linux"):
+            with self.subTest(platform=platform_name):
+                selected = bootstrap.select_release_asset(release, platform_name)
+                self.assertEqual(
+                    selected["name"],
+                    f"code-intel-pipeline-v1.2.3-{platform_name}.zip",
+                )
+
+    def test_member_unix_mode_honors_external_attributes(self) -> None:
+        bootstrap = load_bootstrap_module()
+        posix_member = zipfile.ZipInfo("code-intel-pipeline/bin/code-intel")
+        posix_member.external_attr = (stat.S_IFREG | 0o755) << 16
+        self.assertEqual(bootstrap.member_unix_mode(posix_member), 0o755)
+
+        windows_member = zipfile.ZipInfo("code-intel-pipeline/bin/code-intel.exe")
+        self.assertIsNone(bootstrap.member_unix_mode(windows_member))
+
+        with tempfile.TemporaryDirectory() as temp:
+            archive = Path(temp) / "release.zip"
+            with zipfile.ZipFile(archive, "w") as handle:
+                handle.writestr(posix_member, "binary")
+            with zipfile.ZipFile(archive) as handle:
+                reloaded = handle.infolist()[0]
+                self.assertEqual(bootstrap.member_unix_mode(reloaded), 0o755)
+
+    def test_restore_member_mode_applies_posix_modes(self) -> None:
+        bootstrap = load_bootstrap_module()
+        member = zipfile.ZipInfo("code-intel-pipeline/bin/code-intel")
+        member.external_attr = (stat.S_IFREG | 0o755) << 16
+        target = mock.Mock()
+        with mock.patch.object(bootstrap.os, "name", "posix"):
+            bootstrap.restore_member_mode(member, target)
+        target.chmod.assert_called_once_with(0o755)
+
+        modeless_member = zipfile.ZipInfo("code-intel-pipeline/readme.txt")
+        untouched = mock.Mock()
+        with mock.patch.object(bootstrap.os, "name", "posix"):
+            bootstrap.restore_member_mode(modeless_member, untouched)
+        untouched.chmod.assert_not_called()
+
+    def test_ensure_release_binary_executable_fails_closed(self) -> None:
+        bootstrap = load_bootstrap_module()
+        with tempfile.TemporaryDirectory() as temp:
+            release_root = Path(temp) / "v1.2.3"
+            (release_root / "bin").mkdir(parents=True)
+
+            bootstrap.ensure_release_binary_executable(release_root, "windows")
+
+            with self.assertRaises(bootstrap.BootstrapError):
+                bootstrap.ensure_release_binary_executable(release_root, "linux")
+
+            binary = release_root / "bin" / "code-intel"
+            binary.write_bytes(b"binary")
+            with mock.patch.object(
+                bootstrap.os, "access", return_value=False
+            ), mock.patch.object(
+                bootstrap.Path, "chmod", autospec=True
+            ) as chmod:
+                with self.assertRaises(bootstrap.BootstrapError):
+                    bootstrap.ensure_release_binary_executable(
+                        release_root, "linux"
+                    )
+            chmod.assert_called_once_with(binary, 0o755)
+
+            with mock.patch.object(bootstrap.os, "access", return_value=True):
+                bootstrap.ensure_release_binary_executable(release_root, "linux")
 
     def test_fetch_release_enforces_requested_channel_and_publication(self) -> None:
         bootstrap = load_bootstrap_module()

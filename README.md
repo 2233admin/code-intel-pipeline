@@ -42,7 +42,7 @@ code-intel C:\path\to\your\repo
 
 ## macOS / Linux 快速开始
 
-**支持等级**：macOS / Linux 目前只支持源码构建安装。Release ZIP 和 `bootstrap.py` 引导只覆盖 Windows（同 [Public beta guide](docs/public-beta.md)）。所有入口脚本都要求 PowerShell 7.2+（`pwsh`），README 里其余 `.ps1` 命令在 macOS / Linux 上同样用 `pwsh` 运行。
+**支持等级**：对已发布的版本（v0.6.0 及更早），macOS / Linux 只支持源码构建安装——这些版本的 Release ZIP 和 `bootstrap.py` 引导只覆盖 Windows。从下一个 release 起，每个版本会同时发布 windows / macos / linux 三个 Release ZIP，`bootstrap.py` 引导在 macOS / Linux 上同样可用（详见 [Public beta guide](docs/public-beta.md)）。所有入口脚本都要求 PowerShell 7.2+（`pwsh`），README 里其余 `.ps1` 命令在 macOS / Linux 上同样用 `pwsh` 运行。
 
 前置依赖（macOS，Homebrew）：
 
