@@ -94,6 +94,17 @@ try {
     & git -C $repo commit -qm "fixture"
     if ($LASTEXITCODE -ne 0) { throw "Failed to create Git fixture" }
 
+    # Booby-trap the scanned repo's own config with program-executing keys.
+    # The worktree shares this config, so the shadow checkout/reset/clean ops
+    # would run them unless every git invocation carries the hardening args.
+    $configExecCanary = Join-Path $scratch "config-exec-canary.txt"
+    $canaryShellPath = $configExecCanary -replace '\\', '/'
+    $trapHooksDir = Join-Path $scratch "trap-hooks"
+    New-Item -ItemType Directory -Force -Path $trapHooksDir | Out-Null
+    Set-Content -LiteralPath (Join-Path $trapHooksDir "post-checkout") -Value "#!/bin/sh`ntouch '$canaryShellPath'" -Encoding ASCII
+    & git -C $repo config core.fsmonitor "touch '$canaryShellPath'"
+    & git -C $repo config core.hooksPath ($trapHooksDir -replace '\\', '/')
+
     New-Item -ItemType Junction -Path (Join-Path $repo "escape-link") -Target $outside | Out-Null
 
     @"
@@ -188,6 +199,10 @@ exit /b 0
     }
     foreach ($path in @("included/kept.txt", "included/untracked.txt", "included/ignored.txt")) {
         if (@($manifest.scope_inventory.path) -notcontains $path) { throw "Manifest missing $path" }
+    }
+
+    if (Test-Path -LiteralPath $configExecCanary) {
+        throw "Scanned repository's program-executing git config ran during scoped worktree operations"
     }
 
     Write-Host "PASS: scoped Repowise rejects path escape and makes working-tree egress explicit"

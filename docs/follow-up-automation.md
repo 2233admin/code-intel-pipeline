@@ -1,6 +1,6 @@
 # Follow-up automation
 
-The Pipeline emits `follow-up-automation.json` after normalized failure and Sentrux debt classification. This is a zero-effect advisory artifact, not proof that a skill ran or a pull request was created.
+The legacy compatibility runner (`run-code-intel.ps1`) emits `follow-up-automation.json` after normalized failure and Sentrux debt classification. This is a zero-effect advisory artifact, not proof that a skill ran or a pull request was created. The compiled primary entry (`code-intel`) does not emit this artifact; primary-entry support is future work.
 
 ## Proactive skill suggestions
 
@@ -19,8 +19,10 @@ Disable or change the suggestion in `pipeline.config.json`:
 }
 ```
 
-The primary entry currently reads this policy from `pipeline.config.json`; it
-does not expose a separate CLI override.
+Only the legacy runner reads this policy from `pipeline.config.json`; the
+compiled primary entry neither reads `followUpAutomation` nor accepts its
+flags (`invoke-code-intel.ps1` rejects them as unsupported compatibility
+options). Primary-entry support is future work.
 
 ## Automatic pull requests
 

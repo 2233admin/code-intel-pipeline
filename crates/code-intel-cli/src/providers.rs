@@ -11,6 +11,8 @@ mod graph_adapter;
 mod repowise_adapter;
 #[path = "sentrux_adapter.rs"]
 mod sentrux_adapter;
+#[path = "tool_path.rs"]
+mod tool_path;
 
 pub struct Options<'a> {
     pub action: &'a str,
@@ -1386,9 +1388,30 @@ fn invoke_repowise_index(repo: &Path) -> Result<Value> {
     }
 }
 
+/// A command that launches `repowise` by absolute path, resolved through
+/// `tool_path` like every `rg`/`git` call site: `invoke_repowise` runs the
+/// child in the scanned repository, so a bare name must never reach
+/// `Command::new`. npm-style installs ship a `.cmd` shim on Windows, which
+/// `CreateProcess` cannot start directly, so those are wrapped in `cmd.exe`
+/// the same way `builtin_provider_evidence::external_command` wraps them.
+fn repowise_command() -> Command {
+    let path = tool_path::resolve("repowise");
+    #[cfg(windows)]
+    if path
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|extension| matches!(extension.to_ascii_lowercase().as_str(), "cmd" | "bat"))
+    {
+        let mut command = Command::new("cmd.exe");
+        command.args(["/d", "/c"]).arg(path);
+        return command;
+    }
+    Command::new(path)
+}
+
 fn invoke_repowise(repo: &Path, subcommand: &str, args: &[&str]) -> Result<Value> {
     let repo_cli = cli_path(repo);
-    let mut child = Command::new("repowise")
+    let mut child = repowise_command()
         .arg(subcommand)
         .args(args)
         .arg(&repo_cli)

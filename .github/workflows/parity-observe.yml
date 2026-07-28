@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -43,7 +43,19 @@ jobs:
 
       - name: Install ripgrep
         shell: pwsh
-        run: choco install ripgrep -y --no-progress
+        run: choco install ripgrep --version 14.1.0 -y --no-progress
+
+      # The PS1 side's `sentrux check` step is the harness's only evidenced
+      # comparison point; without the installed pipeline tools on PATH the
+      # PS1 run can never produce it and the diff is vacuous. Same recipe as
+      # ci.yml's "Install portable pipeline" / "Add pipeline tools PATH".
+      - name: Install portable pipeline
+        shell: pwsh
+        run: .\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -RequireRepowise:$false -Json
+
+      - name: Add pipeline tools PATH
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_PATH -Value "$env:LOCALAPPDATA\code-intel\bin"
 
       - name: Run PS1-vs-Rust parity harness
         id: parity
@@ -61,7 +73,7 @@ jobs:
 
       - name: Upload parity verdict
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: parity-verdict
           path: ${{ steps.parity.outputs.verdict-path }}

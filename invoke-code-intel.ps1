@@ -31,7 +31,9 @@ $ErrorActionPreference = "Stop"
 $launcher = Join-Path $PSScriptRoot "code-intel.ps1"
 
 $supported = @("Repo", "RepoPath", "Config", "Mode", "ValidateInstallation")
-$unsupported = @($PSBoundParameters.Keys | Where-Object { $_ -notin $supported })
+$commonParameters = @([System.Management.Automation.PSCmdlet]::CommonParameters) +
+    @([System.Management.Automation.PSCmdlet]::OptionalCommonParameters)
+$unsupported = @($PSBoundParameters.Keys | Where-Object { $_ -notin $supported -and $_ -notin $commonParameters })
 if ($unsupported.Count -gt 0) {
     [Console]::Error.WriteLine("Code Intel error: unsupported compatibility option: -$($unsupported[0])")
     exit 64
@@ -42,18 +44,25 @@ if ($ValidateInstallation) {
 }
 
 $configData = $null
-$configPath = $null
-if ($PSBoundParameters.ContainsKey("Config") -or
-    ([string]::IsNullOrWhiteSpace($RepoPath) -and -not [string]::IsNullOrWhiteSpace($Repo))) {
-    $configPath = if ([string]::IsNullOrWhiteSpace($Config)) {
-        Join-Path $PSScriptRoot "pipeline.config.json"
-    } else {
-        $Config
-    }
-    if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+$configPath = if ([string]::IsNullOrWhiteSpace($Config)) {
+    Join-Path $PSScriptRoot "pipeline.config.json"
+} else {
+    $Config
+}
+# The legacy entry loads the default pipeline.config.json for every shape, so
+# artifactRoot forwarding must also apply to plain -RepoPath runs. The file is
+# only mandatory when it was explicitly requested (-Config) or when an alias
+# lookup (-Repo without -RepoPath) cannot proceed without it.
+$configRequired = $PSBoundParameters.ContainsKey("Config") -or
+    ([string]::IsNullOrWhiteSpace($RepoPath) -and -not [string]::IsNullOrWhiteSpace($Repo))
+if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+    if ($configRequired) {
         [Console]::Error.WriteLine("Code Intel error: config file does not exist: $configPath")
         exit 64
     }
+    $configPath = $null
+}
+if ($null -ne $configPath) {
     try {
         $configData = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
     }
@@ -61,8 +70,9 @@ if ($PSBoundParameters.ContainsKey("Config") -or
         [Console]::Error.WriteLine("Code Intel error: config file is not valid JSON: $configPath")
         exit 64
     }
-    if ($null -eq $configData -or
-        $null -eq $configData.PSObject.Properties["artifactRoot"]) {
+    if ($configRequired -and
+        ($null -eq $configData -or
+        $null -eq $configData.PSObject.Properties["artifactRoot"])) {
         [Console]::Error.WriteLine("Code Intel error: config is missing artifactRoot: $configPath")
         exit 64
     }
@@ -85,7 +95,8 @@ $arguments = @{
     RepoPath = $RepoPath
     Mode = $Mode
 }
-if ($null -ne $configData) {
+if ($null -ne $configData -and
+    $null -ne $configData.PSObject.Properties["artifactRoot"]) {
     $configuredRoot = [string]$configData.artifactRoot
     if (-not [string]::IsNullOrWhiteSpace($configuredRoot)) {
         $arguments.Remaining = @("--artifact-root", $configuredRoot)

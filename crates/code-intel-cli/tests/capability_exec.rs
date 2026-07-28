@@ -7,9 +7,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
-    "72a0c09c40f9707679bcb8365ceb48a3ed842b2b24953c28d02aca91ec483317";
+    "35b76523b9e6bf98046349b3b88e42076909e8c024077412cf8aa45294611285";
 const STRUCTURED_EDIT_DIGEST: &str =
-    "58d3687e7e5ac8b3df9ece44bc613f4927fc328c02dddcdaeee72ed3103a04c8";
+    "6f481d582dc0301fb438bcd18b9ab5704fc72f81b7044635140d4b99c4fae0ac";
 static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -1632,7 +1632,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
         "version":"1.0.0",
         "toolchainDigests":[
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-            "72a0c09c40f9707679bcb8365ceb48a3ed842b2b24953c28d02aca91ec483317"
+            "35b76523b9e6bf98046349b3b88e42076909e8c024077412cf8aa45294611285"
         ]
     });
     value["options"] = json!({"repoPath":repo,"auto":true});

@@ -320,48 +320,68 @@ fn run_raw_exits_nonzero_on_a_bogus_scope_ref() {
 // docs/audit-report.md's Untrusted Content Boundary). Before this corpus
 // existed, nothing in the test suite exercised fabrication/inconsistency
 // resistance for `--operation validate`.
+//
+// `fail()` maps every validate failure to exit code 65, so each test also
+// runs the underlying `validate` directly and pins the rejection reason to
+// the one deliberate defect its fixture carries — otherwise an incidental
+// earlier rejection (a fixture drifting out of shape, say) would still pass.
 
 #[test]
 fn run_raw_rejects_a_report_citing_a_nonexistent_evidence_file() {
+    let report = adversarial_fixture_path("invalid-evidence-path.json");
+    let error = validate(&repo_root(), &report).unwrap_err();
+    assert!(
+        error.contains(
+            "cites evidence that does not resolve under the repository: \
+             crates/code-intel-cli/src/audit_report/does-not-exist-ai-safety-006.rs"
+        ),
+        "{error}"
+    );
     let raw = vec![
         "--operation".to_string(),
         "validate".to_string(),
         "--repo".to_string(),
         repo_root().to_string_lossy().into_owned(),
         "--report".to_string(),
-        adversarial_fixture_path("invalid-evidence-path.json")
-            .to_string_lossy()
-            .into_owned(),
+        report.to_string_lossy().into_owned(),
     ];
     assert_eq!(run_raw(&raw), 65);
 }
 
 #[test]
 fn run_raw_rejects_a_report_with_a_reversed_line_range() {
+    let report = adversarial_fixture_path("invalid-line-range.json");
+    let error = validate(&repo_root(), &report).unwrap_err();
+    assert!(
+        error.contains("with line_end 10 before line_start 50"),
+        "{error}"
+    );
     let raw = vec![
         "--operation".to_string(),
         "validate".to_string(),
         "--repo".to_string(),
         repo_root().to_string_lossy().into_owned(),
         "--report".to_string(),
-        adversarial_fixture_path("invalid-line-range.json")
-            .to_string_lossy()
-            .into_owned(),
+        report.to_string_lossy().into_owned(),
     ];
     assert_eq!(run_raw(&raw), 65);
 }
 
 #[test]
 fn run_raw_rejects_a_report_fabricating_high_coverage_for_unassessed_departments() {
+    let report = adversarial_fixture_path("fabricated-coverage-claim.json");
+    let error = validate(&repo_root(), &report).unwrap_err();
+    assert!(
+        error.contains("is not_assessed but its coverage row is \"high\""),
+        "{error}"
+    );
     let raw = vec![
         "--operation".to_string(),
         "validate".to_string(),
         "--repo".to_string(),
         repo_root().to_string_lossy().into_owned(),
         "--report".to_string(),
-        adversarial_fixture_path("fabricated-coverage-claim.json")
-            .to_string_lossy()
-            .into_owned(),
+        report.to_string_lossy().into_owned(),
     ];
     assert_eq!(run_raw(&raw), 65);
 }

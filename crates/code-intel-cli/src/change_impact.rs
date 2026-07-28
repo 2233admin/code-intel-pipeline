@@ -132,12 +132,16 @@ fn execute(cli: Cli) -> Result<Value, ImpactError> {
         .expect("registered native files artifact");
     let file_paths = files
         .iter()
-        .map(|file| file["path"].as_str().unwrap().to_string())
-        .collect::<BTreeSet<_>>();
+        .map(|file| {
+            file["path"].as_str().map(str::to_string).ok_or_else(|| {
+                ImpactError::Contract("code_evidence.files entries must carry a string path".into())
+            })
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?;
     let imports = imports_json["imports"]
         .as_array()
         .expect("registered native imports artifact");
-    let (reverse, resolved_edges, unresolved_edges) = reverse_import_graph(imports, &file_paths);
+    let (reverse, resolved_edges, unresolved_edges) = reverse_import_graph(imports, &file_paths)?;
     let impacted = impacted_files(&cli.changed, &file_paths, &reverse);
     let test_files = select_tests(&impacted, &cli.changed, &file_paths);
     let commands = test_commands(&test_files);
@@ -197,13 +201,17 @@ struct ReverseEdge {
 fn reverse_import_graph(
     imports: &[Value],
     files: &BTreeSet<String>,
-) -> (BTreeMap<String, Vec<ReverseEdge>>, usize, usize) {
+) -> Result<(BTreeMap<String, Vec<ReverseEdge>>, usize, usize), ImpactError> {
     let mut reverse: BTreeMap<String, Vec<ReverseEdge>> = BTreeMap::new();
     let mut resolved = 0;
     let mut unresolved = 0;
     for import in imports {
-        let importer = import["file"].as_str().unwrap();
-        let target = import["target"].as_str().unwrap();
+        let (Some(importer), Some(target)) = (import["file"].as_str(), import["target"].as_str())
+        else {
+            return Err(ImpactError::Contract(
+                "code_evidence.imports entries must carry string file and target fields".into(),
+            ));
+        };
         if let Some((target, confidence)) = resolve_import(importer, target, files) {
             reverse.entry(target).or_default().push(ReverseEdge {
                 importer: importer.to_string(),
@@ -218,7 +226,7 @@ fn reverse_import_graph(
         edges.sort_by(|left, right| left.importer.cmp(&right.importer));
         edges.dedup_by(|left, right| left.importer == right.importer);
     }
-    (reverse, resolved, unresolved)
+    Ok((reverse, resolved, unresolved))
 }
 
 fn resolve_import(

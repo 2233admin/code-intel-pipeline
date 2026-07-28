@@ -53,7 +53,7 @@ Artifact ownership and reader/writer boundaries are defined in `docs/artifact-da
 
 These exist because some repos are too dirty or too nested for raw `repowise init` at the root.
 `Invoke-SentruxAgentTool.ps1` exists for a different reason: agents need a narrow JSON contract for structure governance, not raw terminal prose.
-`tools/sentrux-shim` makes Sentrux Pro activation reproducible on new machines: the installer puts the shim in a PATH-prepended Code Intel bin directory, the shim auto-activates local open-source Pro features, and normal Sentrux commands still forward to the real binary when one exists. If the real binary is missing, `sentrux-lite-core.ps1` provides deterministic `scan`, `health`, `check`, `gate`, and `plugin list/validate` so a new machine still has a closed feedback loop.
+`tools/sentrux-shim` makes Sentrux Pro activation reproducible on new machines: the installer puts the shim in a PATH-prepended Code Intel bin directory, the shim activates local open-source Pro features only when `SENTRUX_AUTO_PRO=1` is explicitly set (opt-in since supply-chain-009; the default stays free tier), and normal Sentrux commands still forward to the real binary when one exists. If the real binary is missing, `sentrux-lite-core.ps1` provides deterministic `scan`, `health`, `check`, `gate`, and `plugin list/validate` so a new machine still has a closed feedback loop.
 
 ## Why The Wrapper Exists
 

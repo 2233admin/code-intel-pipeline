@@ -36,7 +36,8 @@ fn candidates(name: &str) -> Vec<String> {
 
 /// Search an optional prefix directory, then every directory on `PATH`, for
 /// the first candidate that exists as a file. Never consults the current
-/// directory: only `prefix` and `PATH` are searched.
+/// directory: only `prefix` and `PATH` are searched, and relative `PATH`
+/// entries are skipped outright by `find_first` below.
 pub(crate) fn locate(name: &str, prefix: Option<&Path>) -> Option<PathBuf> {
     let names = candidates(name);
     if let Some(prefix) = prefix {
@@ -49,7 +50,17 @@ pub(crate) fn locate(name: &str, prefix: Option<&Path>) -> Option<PathBuf> {
         }
     }
     let path = env::var_os("PATH")?;
-    env::split_paths(&path).find_map(|dir| {
+    find_first(&names, env::split_paths(&path))
+}
+
+/// The directory scan behind `locate`'s `PATH` search. A relative `PATH`
+/// entry (`.`, an empty segment) is never searched: `is_file` would probe it
+/// against this process's working directory, but the returned relative path
+/// would later execute against the child's — the scanned repository this
+/// module exists to keep out of tool resolution — so only absolute
+/// directories are consulted and only absolute paths are ever returned.
+fn find_first(names: &[String], dirs: impl Iterator<Item = PathBuf>) -> Option<PathBuf> {
+    dirs.filter(|dir| dir.is_absolute()).find_map(|dir| {
         names
             .iter()
             .map(|candidate| dir.join(candidate))
@@ -81,6 +92,32 @@ pub(crate) fn resolve(name: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    #[test]
+    fn path_search_skips_relative_entries() {
+        let names = candidates("__code_intel_relative_probe__");
+        // One planted directory per included copy of this module: the file
+        // is compiled under several parents and their tests run in parallel
+        // inside the same process.
+        let unique = module_path!().replace("::", "-");
+        let relative = Path::new("../../target").join(format!("tool-path-{unique}"));
+        let absolute = env::current_dir().expect("cwd").join(&relative);
+        fs::create_dir_all(&absolute).expect("create probe dir");
+        for name in &names {
+            fs::write(absolute.join(name), b"").expect("plant probe tool");
+        }
+        // The planted candidate is visible through the relative entry from
+        // this process's working directory...
+        assert!(relative.join(&names[0]).is_file());
+        // ...yet the search must skip the relative entry outright: it would
+        // exec against the child's working directory, not this one.
+        assert_eq!(find_first(&names, std::iter::once(relative.clone())), None);
+        // The same directory offered as an absolute entry is searched.
+        assert!(find_first(&names, std::iter::once(absolute.clone()))
+            .is_some_and(|found| found.is_absolute()));
+        fs::remove_dir_all(&absolute).ok();
+    }
 
     #[test]
     fn locate_never_returns_a_relative_path() {

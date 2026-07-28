@@ -38,7 +38,7 @@ jobs:
 
       - name: Install ripgrep
         shell: pwsh
-        run: choco install ripgrep -y --no-progress
+        run: choco install ripgrep --version 14.1.0 -y --no-progress
 
       - name: Install ast-grep (pinned)
         shell: pwsh
@@ -129,6 +129,8 @@ jobs:
             "Invoke-ScopedRepowise.ps1",
             "Find-CodeIntelProjects.ps1",
             "Invoke-GitHubSolutionResearch.ps1",
+            "Invoke-ModelChannelDelegate.ps1",
+            "Invoke-SentruxAgentTool.ps1",
             "scripts/tests/test-code-intel-pipeline.ps1",
             "scripts/tests/test-stable-wrapper-e2e.ps1",
             "scripts/tests/test-primary-launchers.ps1",
@@ -252,6 +254,36 @@ jobs:
         shell: pwsh
         run: .\scripts/tests/test-stable-wrapper-e2e.ps1
 
+      - name: Model channel and automation regression suites
+        shell: pwsh
+        run: |
+          .\tests/test-model-channel-delegate.ps1
+          .\tests/test-model-channel-degraded-pipeline.ps1
+          .\tests/test-automatic-pull-request.ps1
+          .\tests/test-automatic-pull-request-flow.ps1
+          .\tests/test-follow-up-automation.ps1
+
+      - name: Primary launcher contract tests
+        shell: pwsh
+        run: .\scripts/tests/test-primary-launchers.ps1
+
+      - name: Conformance evidence suites
+        shell: pwsh
+        run: |
+          .\scripts/tests/test-sentrux-failure-normalization.ps1
+          .\scripts/tests/test-codenexus-adapter-contract.ps1
+          .\scripts/tests/test-transactional-publication.ps1
+
+      - name: Run commit contract tests (known-failing, non-blocking)
+        shell: pwsh
+        # continue-on-error: this suite fails at HEAD -- the run-commit
+        # facade publishes an incoherent A07 marker
+        # (test-run-commit-contract.ps1:73). Wired in non-blocking so the
+        # failure stays visible instead of the suite running in no workflow
+        # at all; drop continue-on-error once the facade is fixed.
+        continue-on-error: true
+        run: .\scripts/tests/test-run-commit-contract.ps1
+
       - name: Package
         shell: pwsh
         run: ./tools/New-BetaPackage.ps1 -ExecutablePath ./target/release/code-intel.exe -OutputDirectory ./dist -PackageName code-intel-pipeline-windows-beta
@@ -309,7 +341,7 @@ jobs:
         shell: pwsh
         run: |
           if ($IsWindows) {
-            choco install ripgrep -y --no-progress
+            choco install ripgrep --version 14.1.0 -y --no-progress
           }
           elseif ($IsMacOS) {
             brew install ripgrep
@@ -415,6 +447,8 @@ jobs:
             "Invoke-ScopedRepowise.ps1",
             "Find-CodeIntelProjects.ps1",
             "Invoke-GitHubSolutionResearch.ps1",
+            "Invoke-ModelChannelDelegate.ps1",
+            "Invoke-SentruxAgentTool.ps1",
             "scripts/tests/test-code-intel-pipeline.ps1",
             "scripts/tests/test-stable-wrapper-e2e.ps1",
             "scripts/tests/test-primary-launchers.ps1",

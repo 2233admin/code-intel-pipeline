@@ -25,6 +25,20 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# Git config keys that name a program Git will execute, pinned empty so a
+# scanned repository's own .git/config cannot supply one. Mirrors
+# crates/code-intel-cli/src/hardened_git.rs and run-code-intel.ps1.
+$script:GitHardening = @(
+    "-c", "core.fsmonitor=",
+    "-c", "core.hooksPath=",
+    "-c", "core.sshCommand=",
+    "-c", "diff.external=",
+    "-c", "core.pager="
+)
+# Ignore the system-wide config as well: it can silently reintroduce a
+# substitution the list above disarms.
+$env:GIT_CONFIG_NOSYSTEM = "1"
+
 function Resolve-Directory {
     param([string]$Path)
 
@@ -191,7 +205,7 @@ function Get-RecentCommits {
     )
 
     if ($Limit -le 0) { return ,@() }
-    $lines = Invoke-TextCommand { git -C $RepoPath --no-pager log --oneline --max-count=$Limit -- $RelativePath }
+    $lines = Invoke-TextCommand { git @script:GitHardening -C $RepoPath --no-pager log --oneline --max-count=$Limit -- $RelativePath }
     return ,@($lines)
 }
 

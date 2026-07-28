@@ -2254,27 +2254,33 @@ fn native_code_contract(
 }
 
 fn validate_native_files(bytes: &[u8]) -> Result<(), String> {
-    validate_native_array_artifact(bytes, "code-evidence-files.v1", "files", 2)
+    validate_native_array_artifact(bytes, "code-evidence-files.v1", "files", 2, &["path"])
 }
 
 fn validate_native_symbols(bytes: &[u8]) -> Result<(), String> {
-    validate_native_array_artifact(bytes, "code-evidence-symbols.v1", "symbols", 2)
+    validate_native_array_artifact(bytes, "code-evidence-symbols.v1", "symbols", 2, &[])
 }
 
 fn validate_native_chunks(bytes: &[u8]) -> Result<(), String> {
-    validate_native_array_artifact(bytes, "code-evidence-chunks.v1", "chunks", 2)
+    validate_native_array_artifact(bytes, "code-evidence-chunks.v1", "chunks", 2, &[])
 }
 
 fn validate_native_symbol_chunks(bytes: &[u8]) -> Result<(), String> {
-    validate_native_array_artifact(bytes, "code-evidence-symbol-chunks.v1", "mappings", 2)
+    validate_native_array_artifact(bytes, "code-evidence-symbol-chunks.v1", "mappings", 2, &[])
 }
 
 fn validate_native_imports(bytes: &[u8]) -> Result<(), String> {
-    validate_native_array_artifact(bytes, "code-evidence-imports.v1", "imports", 2)
+    validate_native_array_artifact(
+        bytes,
+        "code-evidence-imports.v1",
+        "imports",
+        2,
+        &["file", "target"],
+    )
 }
 
 fn validate_native_ranking(bytes: &[u8]) -> Result<(), String> {
-    validate_native_array_artifact(bytes, "agent-code-slice-ranking.v1", "files", 3)
+    validate_native_array_artifact(bytes, "agent-code-slice-ranking.v1", "files", 3, &[])
 }
 
 fn parse_native_object(bytes: &[u8]) -> Result<Value, String> {
@@ -2294,6 +2300,7 @@ fn validate_native_array_artifact(
     expected_schema: &str,
     payload: &str,
     expected_fields: usize,
+    element_string_fields: &[&str],
 ) -> Result<(), String> {
     let value = parse_native_object(bytes)?;
     let object = value.as_object().expect("parse validated object");
@@ -2301,6 +2308,16 @@ fn validate_native_array_artifact(
         || object.len() != expected_fields
         || !value[payload].is_array()
     {
+        return Err(format!("{expected_schema} artifact shape is invalid"));
+    }
+    let elements = value[payload]
+        .as_array()
+        .expect("shape check validated array");
+    if elements.iter().any(|element| {
+        element_string_fields
+            .iter()
+            .any(|field| !element[*field].is_string())
+    }) {
         return Err(format!("{expected_schema} artifact shape is invalid"));
     }
     Ok(())
@@ -3204,6 +3221,50 @@ mod tests {
         let files_contract = registered_contract(&files_ref).unwrap();
         let symbols_payload = br#"{"schema":"code-evidence-symbols.v1","symbols":[]}"#;
         assert!((files_contract.validate_payload)(symbols_payload).is_err());
+    }
+
+    #[test]
+    fn native_files_and_imports_contracts_reject_malformed_elements() {
+        let files_ref = json!({
+            "artifactSchema":"code-evidence-files.v1",
+            "type":"code_evidence.files"
+        });
+        let files_contract = registered_contract(&files_ref).unwrap();
+        let files_ok = json!({"schema":"code-evidence-files.v1","files":[{"path":"src/lib.rs"}]});
+        (files_contract.validate_payload)(&serde_json::to_vec(&files_ok).unwrap())
+            .expect("files elements with a string path must pass");
+        for files_bad in [
+            json!({"schema":"code-evidence-files.v1","files":[{"path":1}]}),
+            json!({"schema":"code-evidence-files.v1","files":["src/lib.rs"]}),
+        ] {
+            assert!(
+                (files_contract.validate_payload)(&serde_json::to_vec(&files_bad).unwrap())
+                    .is_err(),
+                "files payload without a string path passed: {files_bad}"
+            );
+        }
+
+        let imports_ref = json!({
+            "artifactSchema":"code-evidence-imports.v1",
+            "type":"code_evidence.imports"
+        });
+        let imports_contract = registered_contract(&imports_ref).unwrap();
+        let imports_ok = json!({
+            "schema":"code-evidence-imports.v1",
+            "imports":[{"file":"src/lib.rs","target":"./util"}]
+        });
+        (imports_contract.validate_payload)(&serde_json::to_vec(&imports_ok).unwrap())
+            .expect("imports elements with string file and target must pass");
+        for imports_bad in [
+            json!({"schema":"code-evidence-imports.v1","imports":[{"file":"src/lib.rs"}]}),
+            json!({"schema":"code-evidence-imports.v1","imports":[{"file":"src/lib.rs","target":7}]}),
+        ] {
+            assert!(
+                (imports_contract.validate_payload)(&serde_json::to_vec(&imports_bad).unwrap())
+                    .is_err(),
+                "imports payload without string file/target passed: {imports_bad}"
+            );
+        }
     }
 
     fn deletion_file(path: &str, base: &str, result: &str, added: Vec<&str>) -> Value {

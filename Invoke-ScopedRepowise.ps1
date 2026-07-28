@@ -45,6 +45,22 @@ $platformModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-intel-platfo
 Import-Module $platformModule -Force
 $effectivePlatform = Get-CodeIntelPlatform -Platform $Platform
 
+# Git config keys that name a program Git will execute, pinned empty so a
+# scanned repository's own .git/config cannot supply one. The worktree-mutating
+# commands below (checkout, reset, clean, sparse-checkout) fire hooks and
+# fsmonitor, so every git invocation carries these args. Mirrors
+# crates/code-intel-cli/src/hardened_git.rs and run-code-intel.ps1.
+$script:GitHardening = @(
+    "-c", "core.fsmonitor=",
+    "-c", "core.hooksPath=",
+    "-c", "core.sshCommand=",
+    "-c", "diff.external=",
+    "-c", "core.pager="
+)
+# Ignore the system-wide config as well: it can silently reintroduce a
+# substitution the list above disarms.
+$env:GIT_CONFIG_NOSYSTEM = "1"
+
 function Resolve-Dir {
     param([string]$Path)
     $item = Get-Item -LiteralPath $Path -ErrorAction Stop
@@ -560,7 +576,7 @@ if ($scopeSlug.Length -gt 80) {
 }
 $shadowPath = Join-Path $ShadowRoot "$repoName-$scopeSlug"
 
-$head = (git -C $repoPath rev-parse HEAD).Trim()
+$head = (git @script:GitHardening -C $repoPath rev-parse HEAD).Trim()
 $patterns = New-Object System.Collections.Generic.List[string]
 foreach ($dir in $scopeDirs) {
     $patterns.Add("/$($dir.Trim('/'))/")
@@ -571,7 +587,7 @@ foreach ($file in $scopeFiles) {
 
 if (-not (Test-Path -LiteralPath $shadowPath -PathType Container)) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $shadowPath) | Out-Null
-    [void](Invoke-NativeCommand -Description "git worktree add" -Script { git -C $repoPath worktree add --no-checkout --detach $shadowPath $head })
+    [void](Invoke-NativeCommand -Description "git worktree add" -Script { git @script:GitHardening -C $repoPath worktree add --no-checkout --detach $shadowPath $head })
 }
 else {
     $shadowGit = Join-Path $shadowPath ".git"
@@ -582,12 +598,12 @@ else {
 
 Push-Location $shadowPath
 try {
-    [void](Invoke-NativeCommand -Description "git clean shadow" -Script { git -c core.longpaths=true -C $shadowPath clean -fdx -e .repowise })
-    [void](Invoke-NativeCommand -Description "git sparse-checkout init" -Script { git -C $shadowPath sparse-checkout init --no-cone })
+    [void](Invoke-NativeCommand -Description "git clean shadow" -Script { git @script:GitHardening -c core.longpaths=true -C $shadowPath clean -fdx -e .repowise })
+    [void](Invoke-NativeCommand -Description "git sparse-checkout init" -Script { git @script:GitHardening -C $shadowPath sparse-checkout init --no-cone })
     $previousErrorActionPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = "Continue"
-        $patterns | git sparse-checkout set --stdin 2>&1 | Out-Null
+        $patterns | git @script:GitHardening sparse-checkout set --stdin 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
             throw "git sparse-checkout set failed with exit $LASTEXITCODE"
         }
@@ -595,8 +611,8 @@ try {
     finally {
         $ErrorActionPreference = $previousErrorActionPreference
     }
-    [void](Invoke-NativeCommand -Description "git checkout shadow" -Script { git -C $shadowPath checkout --detach --force $head })
-    [void](Invoke-NativeCommand -Description "git reset shadow" -Script { git -C $shadowPath reset --hard $head })
+    [void](Invoke-NativeCommand -Description "git checkout shadow" -Script { git @script:GitHardening -C $shadowPath checkout --detach --force $head })
+    [void](Invoke-NativeCommand -Description "git reset shadow" -Script { git @script:GitHardening -C $shadowPath reset --hard $head })
 }
 finally {
     Pop-Location

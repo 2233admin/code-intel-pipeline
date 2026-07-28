@@ -802,6 +802,110 @@ Test-Case "baseline backup: first-ever save (no prior baseline.json) must not fa
 }
 
 # ---------------------------------------------------------------------------
+# Facade resolution fixes (post-da46886): update-code-intel-index.ps1 must
+# resolve the Rust CLI via CODE_INTEL_RUST_CLI / release / debug / PATH instead
+# of hardcoding target/debug; invoke-code-intel.ps1 must load the default
+# pipeline.config.json for the plain -RepoPath shape and must not reject
+# PowerShell common parameters; check-code-intel-tools.ps1 must not accept a
+# CODE_INTEL_HOME that points at a missing directory.
+# ---------------------------------------------------------------------------
+Test-Case "update-code-intel-index.ps1 honors CODE_INTEL_RUST_CLI instead of requiring target/debug" {
+    $dir = New-ScratchDir "index-rustcli-override"
+    $previousRustCli = $env:CODE_INTEL_RUST_CLI
+    try {
+        $stub = Join-Path $dir "stub-code-intel.ps1"
+        Set-Content -LiteralPath $stub -Value "'{`"schema`":`"stub.v1`",`"entries`":[],`"diagnostics`":[]}'`nexit 0" -Encoding UTF8
+        $env:CODE_INTEL_RUST_CLI = $stub
+
+        $indexScript = Join-Path $root "update-code-intel-index.ps1"
+        $raw = & $indexScript -ArtifactRoot (Join-Path $dir "artifacts") 2>&1
+        Assert-Equal 0 $LASTEXITCODE "index facade must exit 0 when CODE_INTEL_RUST_CLI points at a working CLI"
+        $json = $raw | ConvertFrom-Json
+        Assert-Equal "stub.v1" $json.schema "CODE_INTEL_RUST_CLI must select the binary actually invoked (regression: hardcoded target/debug path threw on installed machines)"
+    }
+    finally {
+        $env:CODE_INTEL_RUST_CLI = $previousRustCli
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case "invoke-code-intel.ps1 accepts common parameters and forwards default-config artifactRoot for -RepoPath" {
+    $dir = New-ScratchDir "invoke-default-config"
+    try {
+        # -Verbose must not trip the unsupported-option gate: with a bogus explicit
+        # -Config the run must reach the config existence check (child pwsh so the
+        # [Console]::Error output is capturable).
+        $legacy = Join-Path $root "invoke-code-intel.ps1"
+        $missingConfig = Join-Path $dir "no-such-config.json"
+        $raw = @(& pwsh -NoLogo -NoProfile -File $legacy -RepoPath $dir -Config $missingConfig -Verbose 2>&1)
+        Assert-Equal 64 $LASTEXITCODE "missing explicit config must still exit 64"
+        Assert-False (($raw -join "`n") -match "unsupported compatibility option") "-Verbose must not be rejected as an unsupported compatibility option"
+        Assert-True (($raw -join "`n") -match "config file does not exist:") "the config existence check must be reached when -Verbose is bound"
+
+        # Plain -RepoPath shape must load $PSScriptRoot/pipeline.config.json and
+        # forward its artifactRoot (regression: config was only loaded for the
+        # -Config/-Repo shapes). Copy the facade next to a stub launcher so the
+        # forwarded arguments are observable without running the real pipeline.
+        Copy-Item -LiteralPath $legacy -Destination (Join-Path $dir "invoke-code-intel.ps1")
+        $stubLauncher = @'
+param(
+    [string]$RepoPath = "",
+    [string]$Mode = "normal",
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$Remaining = @()
+)
+[pscustomobject]@{ repoPath = $RepoPath; mode = $Mode; remaining = @($Remaining) } | ConvertTo-Json -Compress
+exit 0
+'@
+        Set-Content -LiteralPath (Join-Path $dir "code-intel.ps1") -Value $stubLauncher -Encoding UTF8
+        $configuredRoot = Join-Path $dir "artifact-root"
+        @{ artifactRoot = $configuredRoot; repos = @{} } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dir "pipeline.config.json") -Encoding UTF8
+
+        $forwarded = @(& (Join-Path $dir "invoke-code-intel.ps1") -RepoPath $dir 2>&1)
+        Assert-Equal 0 $LASTEXITCODE "stubbed launcher run must exit 0"
+        $json = ($forwarded -join "`n") | ConvertFrom-Json
+        Assert-Equal $dir $json.repoPath "RepoPath must be forwarded unchanged"
+        Assert-Equal "--artifact-root $configuredRoot" (@($json.remaining) -join " ") "plain -RepoPath shape must forward --artifact-root from the default pipeline.config.json"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case "check-code-intel-tools.ps1 fails CODE_INTEL_HOME pointing at a missing directory, flags a non-default one" {
+    $dir = New-ScratchDir "doctor-home-env"
+    $previousHome = $env:CODE_INTEL_HOME
+    try {
+        $doctor = Join-Path $root "check-code-intel-tools.ps1"
+
+        # A set-but-deleted CODE_INTEL_HOME must fail the env check and the doctor
+        # (regression: comparing against Get-CodeIntelHome's own env-derived output
+        # made any set value pass, even a deleted directory).
+        $env:CODE_INTEL_HOME = Join-Path $dir "deleted-home"
+        $raw = & $doctor -Json 2>&1
+        $json = $raw | ConvertFrom-Json
+        Assert-False $json.checks.env.codeIntelHome.ok "a CODE_INTEL_HOME without an existing directory must not pass the env check"
+        Assert-False $json.checks.env.codeIntelHome.exists "exists must report the missing directory"
+        Assert-True ([bool](@($json.missing) -match "CODE_INTEL_HOME")) "the missing directory must be reported in the doctor's missing list"
+        Assert-False $json.ok "the doctor must not report ok overall with a broken CODE_INTEL_HOME"
+
+        # An existing directory that differs from the default derivation is a
+        # mismatch (ok=false, matchesDefault=false) but not a hard failure.
+        $env:CODE_INTEL_HOME = $dir
+        $raw = & $doctor -Json 2>&1
+        $json = $raw | ConvertFrom-Json
+        Assert-True $json.checks.env.codeIntelHome.exists "an existing override directory must report exists=true"
+        Assert-False $json.checks.env.codeIntelHome.matchesDefault "an override away from the pipeline root must report matchesDefault=false"
+        Assert-False $json.checks.env.codeIntelHome.ok "a mismatched CODE_INTEL_HOME must not pass the env check"
+        Assert-False ([bool](@($json.missing) -match "CODE_INTEL_HOME")) "a mismatch alone must not land in the missing list"
+    }
+    finally {
+        $env:CODE_INTEL_HOME = $previousHome
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Fail-open lint: scan all tracked .ps1 files in the repo for catch blocks
 # that return/emit a permissive boolean ($true) directly, which is the exact
 # anti-pattern all 7 fixes above were closing. A whitelist mechanism exists

@@ -1747,8 +1747,10 @@ Commands:
   provider graph-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
   provider sentrux-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
   provider session-adapt --repo <repo> --trace <mindwalk-trace.json> [--hotspots <sentrux-hotspots-or-dsm.json>] [--out <session-evidence.json>] [--working-tree-policy head_only|explicit_overlay]
+  provider codenexus-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
   provider file-boundary --request <request.json> --out <result.json>
   provider runtime-ci-evidence --artifact-root <directory> --request <request.json> --out <summary.json>
+  compatibility retirement-ticket lint --ticket <ticket.json> --evaluated-at <unix-seconds>
   route [--action List|Plan|Validate] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--json]
   sentrux <dsm|scan|health|check|gate|check_rules|gate_save> <path>
   capability exec <id> --request <request.json|-> --out <staging-dir> [--artifact-root <directory>] [--manifest <integrations.json>]
@@ -1756,6 +1758,9 @@ Commands:
   model route --request <routing-request.json> [--out <routing-result.json>]
   snapshot identity --repo <root> --working-tree-policy <head_only|explicit_overlay> [--scope <relative-path>]...
   evidence validate --request <request.json> --artifact-root <directory>
+  repository survival-scan --request <request.json|-> --artifact-root <directory>
+  audit --operation validate|render --repo <root> --report <report.json> [--format markdown|html]
+  audit --operation scope --repo <root> --since <git-ref>
   artifact index --artifact-root <root> [--output <index.json>] [--operation rebuild|incremental] [--existing <index.json>]
   artifact query --artifact-root <root> --repo <name> [--repo-path <path>] [--artifact-schema <schema>] [--type <artifact-type>] [--contains <text>] [--limit <1..100>]
   change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]...
@@ -1801,6 +1806,20 @@ mod tests {
         assert!(HELP_TEXT.contains("code-intel --help --all"));
         assert!(!HELP_TEXT.contains("provider graph-adapt"));
         assert!(FULL_HELP_TEXT.contains("provider graph-adapt"));
+    }
+
+    #[test]
+    fn full_help_documents_every_registered_raw_route() {
+        for route in RAW_ROUTES {
+            let command = match route.subcommand {
+                Some(subcommand) => format!("{} {subcommand}", route.command),
+                None => route.command.to_string(),
+            };
+            assert!(
+                FULL_HELP_TEXT.contains(&command),
+                "FULL_HELP_TEXT is missing raw route: {command}"
+            );
+        }
     }
 
     #[test]

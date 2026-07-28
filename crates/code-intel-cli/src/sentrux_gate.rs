@@ -26,6 +26,16 @@ pub(crate) const ENGINE_ID: &str = "sentrux-native";
 pub(crate) const ENGINE_VERSION: &str = "2.0.0";
 pub(crate) const BASELINE_SCHEMA: &str = "code-intel-sentrux-baseline.v2";
 
+// Metric keys the gate comparisons in `run_gate` read from the baseline.
+// `number()` defaults an absent key to 0.0, so a baseline missing any of
+// these would silently disable its comparison instead of failing closed.
+const GATED_METRIC_KEYS: [&str; 4] = [
+    "quality_signal",
+    "coupling_score",
+    "cycle_count",
+    "god_file_count",
+];
+
 const CODE_EXTENSIONS: &[&str] = &[
     "ps1", "psm1", "py", "rs", "go", "ts", "tsx", "js", "jsx", "mjs", "cjs", "java", "cs", "cpp",
     "c", "h", "hpp", "v",
@@ -202,10 +212,14 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
     if baseline["schema"] != BASELINE_SCHEMA
         || baseline["engine"]["id"] != ENGINE_ID
         || baseline["metrics"].as_object().is_none()
+        || GATED_METRIC_KEYS
+            .iter()
+            .any(|key| baseline["metrics"][*key].as_f64().is_none())
     {
         let message = format!(
-            "baseline engine mismatch: {} requires schema {BASELINE_SCHEMA} with engine {ENGINE_ID}; found schema {} engine {}",
+            "baseline engine mismatch: {} requires schema {BASELINE_SCHEMA} with engine {ENGINE_ID} and numeric {} metrics; found schema {} engine {}",
             baseline_path.display(),
+            GATED_METRIC_KEYS.join("/"),
             baseline["schema"].as_str().unwrap_or("unknown"),
             baseline["engine"]["id"].as_str().unwrap_or("unknown"),
         );
@@ -1043,6 +1057,38 @@ mod tests {
         let run = run_gate(&root, false).expect("gate runs");
         assert!(!run.success);
         assert_eq!(run.violations[0].rule, "baseline_engine_mismatch");
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn gate_rejects_current_schema_baseline_missing_a_gated_metric() {
+        let root = std::env::temp_dir().join(format!(
+            "sentrux-native-metrics-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock after epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join(".sentrux")).expect("create fixture");
+        fs::write(root.join("lib.rs"), "pub fn fixture() {}\n").expect("write fixture source");
+        // Correct schema and engine but no quality_signal: `number()` would
+        // read the absent key as 0.0 and silently disable the quality gate.
+        fs::write(
+            root.join(".sentrux/baseline.json"),
+            format!(
+                "{{\"schema\":\"{BASELINE_SCHEMA}\",\"engine\":{{\"id\":\"{ENGINE_ID}\",\"version\":\"{ENGINE_VERSION}\"}},\"metrics\":{{\"coupling_score\":0.0,\"cycle_count\":0,\"god_file_count\":0}}}}"
+            ),
+        )
+        .expect("write baseline");
+        let run = run_gate(&root, false).expect("gate runs");
+        assert!(!run.success);
+        assert_eq!(run.violations[0].rule, "baseline_engine_mismatch");
+        assert!(
+            run.violations[0].message.contains("quality_signal"),
+            "{}",
+            run.violations[0].message
+        );
         fs::remove_dir_all(&root).expect("remove fixture");
     }
 

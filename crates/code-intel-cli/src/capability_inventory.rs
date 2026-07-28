@@ -149,9 +149,7 @@ fn workflow_recommendation(
             AdapterError::InvalidOptions("options.auto must be boolean when present".into())
         })?,
     };
-    let script = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("Invoke-WorkflowRecommendation.ps1");
+    let script = pipeline_root().join("Invoke-WorkflowRecommendation.ps1");
     if !script.is_file() {
         return Err(AdapterError::Unavailable(format!(
             "workflow recommendation facade is unavailable: {}",
@@ -241,6 +239,16 @@ fn validate_workflow_proposal(value: &Value) -> Result<(), AdapterError> {
         ));
     }
     Ok(())
+}
+
+// Mirrors `doctor_adapter::pipeline_root`: resolve the installed pipeline
+// root through the discovered integrations manifest so a relocated or
+// CI-built binary still finds the facade script; the compile-time
+// `CARGO_MANIFEST_DIR` layout is only a development fallback.
+fn pipeline_root() -> PathBuf {
+    crate::capability::discover_manifest(None)
+        .and_then(|manifest| manifest.parent()?.parent().map(Path::to_path_buf))
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(".."))
 }
 
 fn repository_snapshot(
@@ -1129,6 +1137,16 @@ mod tests {
     #[test]
     fn nul_serialization_preserves_embedded_newlines() {
         assert_eq!(join_records(&[b"a\nb".to_vec()], 0), b"a\nb\0");
+    }
+
+    #[test]
+    fn workflow_recommendation_script_resolves_from_the_pipeline_root() {
+        assert!(
+            pipeline_root()
+                .join("Invoke-WorkflowRecommendation.ps1")
+                .is_file(),
+            "workflow facade must resolve through the discovered pipeline root"
+        );
     }
 
     #[test]
