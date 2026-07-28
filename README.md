@@ -47,7 +47,7 @@ code-intel C:\path\to\your\repo
 - `code-intel`: 人工和 Agent 的正式主入口。
 - `code-intel.ps1`: PowerShell 7.2+ 恢复启动器；健康安装只转发，`-Update` 才显式更新。
 - `invoke-code-intel.ps1`: v0.x 兼容转发器，不再推荐新调用。
-- `run-code-intel.ps1`: 兼容 facade；默认 normal 路径调用 Rust DAG、原子提交和 committed-only 索引，旧扫描器分支必须显式启用。
+- `run-code-intel.ps1`: 兼容 facade；不传开关时默认走旧扫描器分支，只有显式传 `-DagCoordinate` 才调用 Rust DAG 协调。
 - `check-code-intel-tools.ps1`: 环境 doctor。
 - `install-code-intel-pipeline.ps1`: 安装和修复入口。
 - `Find-CodeIntelProjects.ps1`: 项目发现入口。
@@ -283,27 +283,35 @@ cargo build -p code-intel
 
 ## 输出在哪里
 
-每次运行会创建一个带时间戳的目录：
+每次运行会在 artifact 根目录下创建一个已提交的运行目录：
 
 ```text
-<platform code-intel data root>/artifacts/<repo-name>/<timestamp>/
+<platform code-intel data root>/artifacts/<repo-name>/<run-id>/
 ```
 
-核心报告：
+主入口（`code-intel .`）走 DAG 执行内核，产物按节点分目录落盘：
 
 ```text
 run-complete.json
-summary.md
-report.json
-understanding.md
-hospital.md
-hospital-report.json
-surgery-plan.md
-surgery-plan.json
+run-manifest.json
+run-manifest-ref.json
+repo.snapshot/snapshot.json
+doctor/doctor-observation.json
+inventory.rg/files.txt
+evidence.native-code/code-evidence/
+evidence.graph/graph-payload.json
+evidence.sentrux/sentrux-payload.json
+diagnosis.hospital/hospital-report.json
+diagnosis.hospital/hospital.md
+diagnosis.hospital/surgery-plan.json
+diagnosis.hospital/surgery-plan.md
 ```
 
-`run-complete.json` 是最后写入的事务提交标记；索引只接受标记存在且
-`reportSha256` 与已发布 `report.json` 一致的运行目录。
+每个节点另有 `<node>.request.json` / `<node>.result.json` 请求与结果信封；`evidence.graph`、`evidence.sentrux` 只在对应 provider 启用时出现（`--mode lite` 不生成）。artifact 根目录的 `index.json` 在每次提交后重建。
+
+`run-complete.json` 是最后写入的事务提交标记；主入口的标记绑定
+`run-manifest.json` 的 sha256，索引只接受标记存在且校验一致的运行目录。
+旧兼容 runner 的标记绑定的是 `report.json` 的 `reportSha256`。
 
 Artifact ownership and stable routing fields are defined in
 [`docs/artifact-data-contract.md`](docs/artifact-data-contract.md).
@@ -326,9 +334,12 @@ Measured minimalism impact lives in
 Project management intake, Linear, and Obsidian/LLM wiki boundaries live in
 [`docs/project-management-support.md`](docs/project-management-support.md).
 
-结构产物：
+下列报告与结构产物目前只由旧兼容 runner（`run-code-intel.ps1` / `scripts/tests/test-code-intel-pipeline.ps1`）生成，主入口不产出：
 
 ```text
+summary.md
+report.json
+understanding.md
 sentrux-dsm.json
 sentrux-file-details.json
 sentrux-hotspots.json
@@ -343,14 +354,19 @@ greenfield-manifest.json
 greenfield-plan.md
 ```
 
-读报告顺序：
+读报告顺序（主入口 `code-intel .`）：
+
+1. 先看命令行汇总（或 `--json` 输出）确认整轮 outcome；失败细节看 `run-manifest.json` 里的失败节点。
+2. 用 `evidence.native-code/code-evidence/merged/agent/index.md` 做 ranked 文件 / 符号导航。
+3. 做治理判断看 `diagnosis.hospital/hospital.md`，机器读 `hospital-report.json`。
+4. 要开工修结构看 `diagnosis.hospital/surgery-plan.md`。
+
+读报告顺序（旧兼容 runner）：
 
 1. Repomix 成功时先看 `repomix-output.*`，它是给人和 Agent 快速理解陌生仓库的整仓包。
 2. 再看 `summary.md`，它是整轮运行状态、失败分类、关键 artifact 的入口页。
-3. 用 `code-evidence/merged/agent/index.md` 做 ranked 文件 / 符号导航。
-4. 交接给人或 Agent 前看 `understanding.md`。
-5. 做治理判断看 `hospital.md`。
-6. 要开工修结构看 `surgery-plan.md`。
+3. 交接给人或 Agent 前看 `understanding.md`。
+4. 治理与行动计划同主入口：`hospital.md`、`surgery-plan.md`。
 
 ## Portable Snapshot Identity
 
@@ -416,6 +432,18 @@ surgery-plan.json
 ```text
 docs/hospital-mode.md
 ```
+
+## Audit 层
+
+0.6.0 起，audit 维度作为 hospital 科室跑在流水线已有的 modality 证据上。`security`、`ai-safety`、`supply-chain` 三个科室默认启用，报告遵循 fail-closed 的 `code-intel-audit-report.v1` 契约：
+
+```powershell
+code-intel audit --operation validate --repo C:\path\to\repo --report C:\path\to\audit-report.json
+code-intel audit --operation render --repo C:\path\to\repo --report C:\path\to\audit-report.json --format html
+code-intel audit --operation scope --repo C:\path\to\repo --since <git-ref>
+```
+
+`validate` 做结构、注册表和证据落地校验；`render` 先跑同一套校验，成功后才输出 Markdown 或自包含 HTML；`scope` 计算 diff 范围的 scope 块，用于 PR 级增量 audit。有 audit 时 `hospital-report.json` 增加可选 `audit` 块，`hospital.md` 增加 `## Audit` 段。完整契约见 [docs/audit-report.md](docs/audit-report.md)。
 
 ## Agent 工作流
 
@@ -780,13 +808,14 @@ CI 使用 Sentrux lite core 保底，所以 runner 没装真实 `sentrux` 时也
 
 ### `sentrux pro status` 不是 Pro
 
-重新运行安装器：
+这是默认行为：自动 Pro 是 opt-in（supply-chain-009），不会因为跑了安装器就激活。要开启，显式设置环境变量：
 
 ```powershell
-.\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\repo
+$env:SENTRUX_AUTO_PRO = "1"
+sentrux pro status
 ```
 
-然后开一个新 PowerShell。
+或手动激活：`sentrux pro activate OSS-LOCAL-PRO`。详见上文「Sentrux 自动 Pro」一节。
 
 ### `Understand graph missing`
 
@@ -832,7 +861,7 @@ code-intel C:\path\to\repo\backend --mode normal
 
 ## 给 Agent 的一句话
 
-先跑安装器，再跑 doctor，再跑 normal。读 `summary.md`，失败看 `report.json`，交接看 `understanding.md`，治理看 `hospital.md`，行动计划看 `surgery-plan.md`。不要跳过 Sentrux baseline 和 rules，不然 Agent 只是换了个速度更快的方式堆债。
+先跑安装器，再跑 doctor，再跑 `code-intel .`。整轮 outcome 看命令行汇总，失败看 `run-manifest.json` 里的失败节点，导航用 `evidence.native-code/code-evidence/merged/agent/index.md`，治理看 `diagnosis.hospital/hospital.md`，行动计划看 `diagnosis.hospital/surgery-plan.md`。不要跳过 Sentrux baseline 和 rules，不然 Agent 只是换了个速度更快的方式堆债。
 
 ## License
 

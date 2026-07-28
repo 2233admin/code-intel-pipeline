@@ -34,8 +34,17 @@ surface is the optional compatibility adapter and its artifact contract.
 
 1. Download the release ZIP and its `.sha256` file.
 2. Verify the checksum with `Get-FileHash -Algorithm SHA256`.
-3. Extract the ZIP to a writable directory.
-4. Run:
+3. Verify the build provenance attestation (requires `gh` 2.49+):
+
+```powershell
+gh attestation verify .\code-intel-pipeline-<tag>-windows.zip --repo 2233admin/code-intel-pipeline
+```
+
+   The release workflow signs every ZIP with GitHub Artifact Attestations
+   (`actions/attest-build-provenance`); a failed verification means the asset
+   was not produced by this repository's release workflow and must not be run.
+4. Extract the ZIP to a writable directory.
+5. Run:
 
 ```powershell
 .\bin\code-intel.exe C:\path\to\repo
