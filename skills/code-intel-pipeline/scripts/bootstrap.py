@@ -39,6 +39,11 @@ WINDOWS_RESERVED_NAMES = {
     *(f"com{index}" for index in ("¹", "²", "³")),
     *(f"lpt{index}" for index in ("¹", "²", "³")),
 }
+PLATFORM_NAMES = {
+    "win32": "windows",
+    "darwin": "macos",
+    "linux": "linux",
+}
 MAX_ARCHIVE_MEMBERS = 10_000
 MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
 MAX_MEMBER_BYTES = 256 * 1024 * 1024
@@ -49,6 +54,25 @@ RELEASE_MARKER = ".code-intel-release.json"
 
 class BootstrapError(RuntimeError):
     """Raised when the release cannot be installed safely."""
+
+
+def resolve_platform_name(platform: str) -> str:
+    """Map a ``sys.platform`` value onto a release asset platform name."""
+    platform_name = PLATFORM_NAMES.get(platform)
+    if platform_name is None:
+        supported = ", ".join(
+            f"{key} ({value})" for key, value in sorted(PLATFORM_NAMES.items())
+        )
+        raise BootstrapError(
+            f"Unsupported platform for the published Skill bootstrap: {platform!r}. "
+            f"Supported platforms: {supported}."
+        )
+    return platform_name
+
+
+def release_binary_name(platform_name: str) -> str:
+    """Packaged CLI binary file name for a release platform."""
+    return "code-intel.exe" if platform_name == "windows" else "code-intel"
 
 
 def request_json(url: str) -> Any:
@@ -282,6 +306,27 @@ def validated_archive_members(
     return validated
 
 
+def member_unix_mode(member: zipfile.ZipInfo) -> int | None:
+    """POSIX permission bits stored in a zip member, or None when absent.
+
+    ``zipfile`` does not restore modes on extraction, so archives built on a
+    POSIX host record them in the high 16 bits of ``external_attr`` and we
+    re-apply them ourselves. Archives built on Windows leave those bits zero.
+    """
+    permissions = stat.S_IMODE(member.external_attr >> 16)
+    if permissions == 0:
+        return None
+    return permissions
+
+
+def restore_member_mode(member: zipfile.ZipInfo, target: Path) -> None:
+    if os.name == "nt":
+        return
+    mode = member_unix_mode(member)
+    if mode is not None:
+        target.chmod(mode)
+
+
 def safe_extract_zip(archive: Path, destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     destination_root = destination.resolve()
@@ -312,6 +357,7 @@ def safe_extract_zip(archive: Path, destination: Path) -> None:
                 raise BootstrapError(
                     f"Release archive member size mismatch: {member.filename!r}"
                 )
+            restore_member_mode(member, target)
 
 
 def find_payload_root(extracted_root: Path) -> Path:
@@ -370,11 +416,27 @@ def manifest_digest(manifest: dict[str, dict[str, Any]]) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
-def default_install_root() -> Path:
+def default_data_root() -> Path:
+    override = os.environ.get("CODE_INTEL_DATA_ROOT")
+    if override:
+        return Path(override).expanduser()
+    platform_name = PLATFORM_NAMES.get(sys.platform)
+    if platform_name == "macos":
+        return Path.home() / "Library" / "Application Support" / "code-intel"
+    if platform_name == "linux":
+        xdg_data_home = os.environ.get("XDG_DATA_HOME")
+        base = Path(xdg_data_home).expanduser() if xdg_data_home else (
+            Path.home() / ".local" / "share"
+        )
+        return base / "code-intel"
     local_app_data = os.environ.get("LOCALAPPDATA")
     if not local_app_data:
         local_app_data = str(Path.home() / "AppData" / "Local")
-    return Path(local_app_data) / "code-intel" / "releases"
+    return Path(local_app_data) / "code-intel"
+
+
+def default_install_root() -> Path:
+    return default_data_root() / "releases"
 
 
 def find_pwsh() -> str:
@@ -382,8 +444,30 @@ def find_pwsh() -> str:
     if executable:
         return executable
     raise BootstrapError(
-        "PowerShell 7.2+ (pwsh) is required by the published Windows installer."
+        "PowerShell 7.2+ (pwsh) is required on every platform because the "
+        "published installer is implemented in PowerShell."
     )
+
+
+def ensure_release_binary_executable(release_root: Path, platform_name: str) -> None:
+    """Fail closed unless the packaged CLI binary is runnable on this platform.
+
+    Windows does not use POSIX execute bits, so the check only applies to the
+    macos/linux payloads, which always ship ``bin/code-intel``.
+    """
+    if platform_name == "windows":
+        return
+    binary = release_root / "bin" / release_binary_name(platform_name)
+    if not binary.is_file():
+        raise BootstrapError(
+            f"Release payload is missing the packaged binary: {binary}"
+        )
+    if not os.access(binary, os.X_OK):
+        binary.chmod(0o755)
+    if not os.access(binary, os.X_OK):
+        raise BootstrapError(
+            f"Packaged binary is not executable after restoring permissions: {binary}"
+        )
 
 
 def command_result(
@@ -530,22 +614,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
-    if sys.platform != "win32":
-        raise BootstrapError(
-            "The published Skill bootstrap currently supports Windows releases only."
-        )
+    platform_name = resolve_platform_name(sys.platform)
     repo_path = args.repo_path.expanduser().resolve()
     if not repo_path.is_dir():
         raise BootstrapError(f"Repository path does not exist: {repo_path}")
     install_root = args.install_root.expanduser().resolve()
     requested_version = resolve_version(args.version, args.channel)
     release = fetch_release(requested_version, args.channel)
-    asset = select_release_asset(release, "windows")
+    asset = select_release_asset(release, platform_name)
     actual_channel = "prerelease" if release.get("prerelease") else "stable"
     plan: dict[str, Any] = {
         "schema": "code-intel-skill-bootstrap.v1",
         "status": "planned" if args.dry_run else "installing",
         "channel": actual_channel,
+        "platform": platform_name,
         "tag": asset["tag"],
         "version_source": (
             "explicit"
@@ -564,6 +646,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         return plan
 
     release_root, install_status = install_release(asset, install_root)
+    ensure_release_binary_executable(release_root, platform_name)
     pwsh = find_pwsh()
     installer = release_root / "install-code-intel-pipeline.ps1"
     install_command = [
@@ -586,7 +669,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     environment = os.environ.copy()
     environment["CODE_INTEL_HOME"] = str(release_root)
-    data_root = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "code-intel"
+    data_root = default_data_root()
     environment["PATH"] = (
         str(data_root / "bin") + os.pathsep + environment.get("PATH", "")
     )

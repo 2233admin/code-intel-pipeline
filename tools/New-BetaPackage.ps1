@@ -7,6 +7,7 @@ param(
     [string]$OutputDirectory,
     [string]$PackageName = "code-intel-pipeline-windows-beta",
     [string]$ExpectedVersion,
+    [string]$BinaryName = "code-intel.exe",
     [switch]$AllowDirty,
     [switch]$DevelopmentOnlyAllowUnresolvedLicense
 )
@@ -31,9 +32,13 @@ function Get-RelativeSlashPath {
     return [System.IO.Path]::GetRelativePath($BasePath, $Path).Replace([System.IO.Path]::DirectorySeparatorChar, '/')
 }
 
+if ($BinaryName -notmatch '^[A-Za-z0-9._-]+$') {
+    throw "BinaryName must be a bare file name, got '$BinaryName'."
+}
+
 $script:RepoRoot = (Resolve-Path -LiteralPath $RepoPath).Path
 if (-not $ExecutablePath) {
-    $ExecutablePath = Join-Path $script:RepoRoot "target/release/code-intel.exe"
+    $ExecutablePath = Join-Path $script:RepoRoot "target/release/$BinaryName"
 }
 if (-not $OutputDirectory) {
     $OutputDirectory = Join-Path $script:RepoRoot "dist"
@@ -133,7 +138,7 @@ foreach ($relativePath in $sourceFiles) {
     }
     Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force
 }
-Copy-Item -LiteralPath $resolvedExecutable -Destination (Join-Path $packageRoot "bin/code-intel.exe") -Force
+Copy-Item -LiteralPath $resolvedExecutable -Destination (Join-Path $packageRoot "bin/$BinaryName") -Force
 
 $inventory = @(Get-ChildItem -LiteralPath $packageRoot -File -Recurse | Sort-Object FullName | ForEach-Object {
     [ordered]@{
@@ -143,7 +148,7 @@ $inventory = @(Get-ChildItem -LiteralPath $packageRoot -File -Recurse | Sort-Obj
     }
 })
 $lockPath = Join-Path $script:RepoRoot "Cargo.lock"
-$binaryHash = (Get-FileHash -LiteralPath (Join-Path $packageRoot "bin/code-intel.exe") -Algorithm SHA256).Hash.ToLowerInvariant()
+$binaryHash = (Get-FileHash -LiteralPath (Join-Path $packageRoot "bin/$BinaryName") -Algorithm SHA256).Hash.ToLowerInvariant()
 $generatedAt = [DateTimeOffset]::UtcNow.ToString('o')
 $releaseManifest = [ordered]@{
     schema = "code-intel-beta-release-manifest.v1"

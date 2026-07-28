@@ -6,6 +6,7 @@ param(
     [string]$ZipPath,
     [string]$ChecksumPath = "$ZipPath.sha256",
     [string]$ManifestPath,
+    [string]$BinaryName = "code-intel.exe",
     [switch]$AllowDirty,
     [switch]$DevelopmentOnlyAllowUnresolvedLicense,
     [switch]$Json
@@ -18,6 +19,10 @@ $PSNativeCommandUseErrorActionPreference = $false
 function Assert-Condition {
     param([bool]$Condition, [string]$Message)
     if (-not $Condition) { throw $Message }
+}
+
+if ($BinaryName -notmatch '^[A-Za-z0-9._-]+$') {
+    throw "BinaryName must be a bare file name, got '$BinaryName'."
 }
 
 $resolvedZip = (Resolve-Path -LiteralPath $ZipPath).Path
@@ -121,10 +126,10 @@ try {
     }
     Assert-Condition ($parserErrors.Count -eq 0) "Packaged PowerShell scripts contain parser errors."
 
-    $executable = Join-Path $packageRoot "bin/code-intel.exe"
-    Assert-Condition (Test-Path -LiteralPath $executable -PathType Leaf) "Package is missing bin/code-intel.exe."
+    $executable = Join-Path $packageRoot "bin/$BinaryName"
+    Assert-Condition (Test-Path -LiteralPath $executable -PathType Leaf) "Package is missing bin/$BinaryName."
     $helpText = (& $executable --help 2>&1) -join "`n"
-    Assert-Condition ($LASTEXITCODE -eq 0) "Packaged code-intel.exe --help failed."
+    Assert-Condition ($LASTEXITCODE -eq 0) "Packaged $BinaryName --help failed."
     Assert-Condition ($helpText -match 'code-intel') "Packaged CLI help output is unexpected."
 
     $invokeWrapper = Join-Path $packageRoot "code-intel.ps1"

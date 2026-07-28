@@ -2,10 +2,17 @@
 
 ## Supported surface
 
-The public beta ships as a Windows ZIP. The stable entrypoint is the packaged
-`bin/code-intel.exe`; `code-intel.ps1` is the PowerShell 7.2+ recovery launcher
-and `invoke-code-intel.ps1` is a v0.x compatibility forwarder. A release package must not require Cargo, a source-tree
-`target/` directory, or a local Rust installation.
+Existing public beta releases (v0.6.0 and earlier) ship a Windows ZIP only.
+From the next tag onward, every release ships three ZIPs:
+`code-intel-pipeline-<tag>-windows.zip`, `code-intel-pipeline-<tag>-macos.zip`,
+and `code-intel-pipeline-<tag>-linux.zip`. The stable entrypoint is the
+packaged `bin/code-intel.exe` on Windows and `bin/code-intel` on macOS/Linux;
+`code-intel.ps1` is the PowerShell recovery launcher and
+`invoke-code-intel.ps1` is a v0.x compatibility forwarder. PowerShell 7.2+
+(`pwsh`) is required on every platform, including macOS and Linux, because the
+installer and launchers are implemented in PowerShell. A release package must
+not require Cargo, a source-tree `target/` directory, or a local Rust
+installation.
 
 The beta core covers repository inventory, Sentrux structural evidence,
 transactional artifact publication, failure classification, and the
@@ -32,22 +39,32 @@ surface is the optional compatibility adapter and its artifact contract.
 
 ## Install and verify
 
-1. Download the release ZIP and its `.sha256` file.
+1. Download the release ZIP for your platform (`windows`, `macos`, or `linux`)
+   and its `.sha256` file.
 2. Verify the checksum with `Get-FileHash -Algorithm SHA256`.
-3. Verify the build provenance attestation (requires `gh` 2.49+):
+3. Verify the build provenance attestation (requires `gh` 2.49+). The same
+   check applies to all three platform ZIPs:
 
 ```powershell
-gh attestation verify .\code-intel-pipeline-<tag>-windows.zip --repo 2233admin/code-intel-pipeline
+gh attestation verify .\code-intel-pipeline-<tag>-<platform>.zip --repo 2233admin/code-intel-pipeline
 ```
 
    The release workflow signs every ZIP with GitHub Artifact Attestations
    (`actions/attest-build-provenance`); a failed verification means the asset
    was not produced by this repository's release workflow and must not be run.
 4. Extract the ZIP to a writable directory.
-5. Run:
+5. Run (Windows):
 
 ```powershell
 .\bin\code-intel.exe C:\path\to\repo
+```
+
+   On macOS/Linux (`chmod` is only needed if your unzip tool did not preserve
+   the execute bit; `bootstrap.py` restores it automatically):
+
+```bash
+chmod +x ./bin/code-intel
+./bin/code-intel ~/path/to/repo
 ```
 
 Use `--mode lite` or `--mode full` only when the default `normal` profile is
@@ -56,7 +73,10 @@ used when available.
 
 ## Known limits
 
-- The beta release package is Windows-only.
+- Release packages published up to and including v0.6.0 are Windows-only;
+  installing them on macOS/Linux is not supported. Releases from the next tag
+  onward ship windows/macos/linux ZIPs, and macOS/Linux still require
+  PowerShell 7.2+ (`pwsh`) for the installer and launchers.
 - External providers can be unavailable, rate-limited, or unconfigured. Their
   outcomes are reported rather than rewritten as local success.
 - Understand Anything graph generation still depends on its host integration.

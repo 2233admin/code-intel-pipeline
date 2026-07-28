@@ -5,13 +5,19 @@ on:
     tags:
       - "v*"
 
+# Build jobs only need to read the repository. The write-capable scopes
+# (contents for release creation, id-token/attestations for provenance)
+# are granted only to the publish job below, so no build or validation
+# step ever holds a token that could publish or mutate a release.
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
 
 jobs:
-  release:
+  release-windows:
+    # Authoritative full release gate. Tag/version validation, Skill and
+    # Rust test suites, the authoritative self-scan, packaging, and
+    # packaged-payload validation all run here; publishing happens only in
+    # the publish job after every platform's package has passed its gates.
     runs-on: windows-latest
 
     steps:
@@ -222,19 +228,237 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "packaged audit report failed --operation validate: $report" }
           }
 
+      - name: Upload release dist artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-dist-windows
+          path: |
+            dist/code-intel-pipeline-*-windows.zip
+            dist/code-intel-pipeline-*-windows.zip.sha256
+            dist/code-intel-pipeline-*-windows.zip.release-manifest.json
+          if-no-files-found: error
+
+  package-unix:
+    # Platform build + package lane. The windows job above stays the
+    # authoritative full gate; this lane still refuses to hand a package to
+    # publish unless the candidate passes its own self-scan and the packaged
+    # payload passes the same structural gates as the windows package.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: macos
+          - os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Setup Rust
+        shell: pwsh
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+
+      - name: Install ripgrep
+        shell: pwsh
+        # Same recipe as ci.yml cross-platform-smoke. Homebrew has no
+        # supported way to pin a formula version, so the macOS install is
+        # unpinned; apt installs the distribution-pinned ripgrep.
+        run: |
+          if ($IsMacOS) {
+            brew install ripgrep
+          }
+          else {
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+          }
+
+      - name: Build Rust CLI
+        shell: pwsh
+        run: cargo build -p code-intel --release --locked
+
+      - name: Authoritative self-scan (release blocking)
+        shell: pwsh
+        run: |
+          $staging = Join-Path $env:RUNNER_TEMP "code-intel-release-self-scan"
+          $authority = Join-Path $env:RUNNER_TEMP "code-intel-release-self-authority"
+          New-Item -ItemType Directory -Force $authority | Out-Null
+          ./target/release/code-intel run execute --repo . --out $staging --authority-root $authority --final-name release-self-scan --manifest orchestration/integrations.json --doctor-require-repowise false
+          if ($LASTEXITCODE -ne 0) {
+            throw "release candidate failed its own scan (exit ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure). A failing self-scan must never publish."
+          }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          $platform = "${{ matrix.platform }}"
+          # Package from `git archive HEAD`, not the working tree: earlier
+          # steps must never be able to mutate what ships.
+          New-Item -ItemType Directory -Force dist/code-intel-pipeline/bin | Out-Null
+          git archive --format=zip -o dist/payload.zip HEAD
+          if ($LASTEXITCODE -ne 0) { throw "git archive failed" }
+          Expand-Archive -LiteralPath dist/payload.zip -DestinationPath dist/code-intel-pipeline -Force
+          Remove-Item dist/payload.zip
+          Copy-Item -LiteralPath target/release/code-intel -Destination dist/code-intel-pipeline/bin/code-intel -Force
+          chmod 755 dist/code-intel-pipeline/bin/code-intel
+          if ($LASTEXITCODE -ne 0) { throw "chmod failed with exit code ${LASTEXITCODE}" }
+          # Compress-Archive does not store POSIX file modes; the system zip
+          # binary records the executable bit in each entry's external
+          # attributes so the packaged binary stays runnable after unzip.
+          $zipLeaf = "code-intel-pipeline-$version-$platform.zip"
+          Push-Location dist
+          try {
+            zip -r $zipLeaf code-intel-pipeline
+            if ($LASTEXITCODE -ne 0) { throw "zip failed with exit code ${LASTEXITCODE}" }
+          }
+          finally {
+            Pop-Location
+          }
+          $zip = "dist/$zipLeaf"
+          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          "$hash *$(Split-Path -Leaf $zip)" | Set-Content -Encoding ascii "$zip.sha256"
+          $manifest = [ordered]@{
+            schema = "code-intel-release-manifest.v1"
+            tag = $version
+            commit = (git rev-parse HEAD).Trim()
+            zipSha256 = $hash
+            toolchain = (rustc --version).Trim()
+            builtAt = (Get-Date).ToUniversalTime().ToString("o")
+          }
+          $manifest | ConvertTo-Json | Set-Content -Encoding ascii "$zip.release-manifest.json"
+
+      - name: Validate packaged Skill bootstrap
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $platform = "${{ matrix.platform }}"
+          $asset = "dist/code-intel-pipeline-$tag-$platform.zip"
+          $expanded = Join-Path $env:RUNNER_TEMP "code-intel-release-layout"
+          # Extract with the system unzip so POSIX modes are restored from
+          # the archive; running the packaged binary below then proves the
+          # executable bit survived the zip round trip.
+          unzip -q $asset -d $expanded
+          if ($LASTEXITCODE -ne 0) { throw "unzip failed with exit code ${LASTEXITCODE}" }
+          $payload = Join-Path $expanded "code-intel-pipeline"
+          $required = @(
+            (Join-Path $payload "install-code-intel-pipeline.ps1"),
+            (Join-Path $payload "code-intel.ps1"),
+            (Join-Path $payload "skills/code-intel-pipeline/SKILL.md"),
+            (Join-Path $payload "skills/code-intel-pipeline/agents/openai.yaml"),
+            (Join-Path $payload "skills/code-intel-pipeline/scripts/bootstrap.py"),
+            (Join-Path $payload "bin/code-intel")
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Release package is missing required file: $path"
+            }
+          }
+          python (Join-Path $payload "skills/code-intel-pipeline/scripts/bootstrap.py") --help
+          $packagedBinary = Join-Path $payload "bin/code-intel"
+          bash -c "test -x '$packagedBinary'"
+          if ($LASTEXITCODE -ne 0) { throw "packaged binary lost its executable bit in the zip round trip: $packagedBinary" }
+          # The packaged binary must pass its own structural gates against the
+          # packaged payload: release green, self-scan green, and published
+          # artifact green must refer to the same snapshot content.
+          & $packagedBinary sentrux --operation check --repo $payload
+          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own structural check" }
+          & $packagedBinary sentrux --operation gate --repo $payload
+          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own no-degradation gate" }
+
+          # ai-safety-003 (issue #34): if the packaged snapshot carries an
+          # audit report, it must pass the same fail-closed validate
+          # pipeline against the packaged payload, using the packaged
+          # binary -- same guarantee as the windows package validation.
+          $packagedReports = Get-ChildItem -LiteralPath $payload -Recurse -Filter "audit-report.json" -File -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty FullName
+          foreach ($report in $packagedReports) {
+            Write-Host "Validating packaged audit report: $report"
+            & $packagedBinary audit --operation validate --repo $payload --report $report
+            if ($LASTEXITCODE -ne 0) { throw "packaged audit report failed --operation validate: $report" }
+          }
+
+      - name: Upload release dist artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-dist-${{ matrix.platform }}
+          path: |
+            dist/code-intel-pipeline-*-${{ matrix.platform }}.zip
+            dist/code-intel-pipeline-*-${{ matrix.platform }}.zip.sha256
+            dist/code-intel-pipeline-*-${{ matrix.platform }}.zip.release-manifest.json
+          if-no-files-found: error
+
+  publish:
+    # Single release creator: every platform package must already have
+    # passed its build, self-scan, and packaged-payload gates before this
+    # job runs, and only this job holds a write-capable token.
+    runs-on: ubuntu-latest
+    needs:
+      - release-windows
+      - package-unix
+
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Download release dist artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: "release-dist-*"
+          path: dist
+          merge-multiple: true
+
+      - name: Verify release inventory
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          foreach ($platform in @("windows", "macos", "linux")) {
+            $zip = "dist/code-intel-pipeline-$tag-$platform.zip"
+            foreach ($path in @($zip, "$zip.sha256", "$zip.release-manifest.json")) {
+              if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+                throw "Release asset is missing: $path -- a partial release must never publish."
+              }
+            }
+            $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+            $sidecar = (Get-Content -Raw -LiteralPath "$zip.sha256").Trim()
+            $expected = "$hash *$(Split-Path -Leaf $zip)"
+            if ($sidecar -cne $expected) {
+              throw "Checksum sidecar mismatch for ${zip}: expected '$expected', found '$sidecar'."
+            }
+          }
+
       - name: Attest build provenance
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
-          subject-path: "dist/code-intel-pipeline-*-windows.zip"
+          subject-path: "dist/code-intel-pipeline-*.zip"
 
       - name: Create GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          # No checkout in this job; gh must be told the target repository.
+          GH_REPO: ${{ github.repository }}
         run: |
           $tag = "${{ github.ref_name }}"
-          $asset = "dist\code-intel-pipeline-$tag-windows.zip"
-          $assets = @($asset, "$asset.sha256", "$asset.release-manifest.json")
+          $assets = @()
+          foreach ($platform in @("windows", "macos", "linux")) {
+            $asset = "dist/code-intel-pipeline-$tag-$platform.zip"
+            $assets += @($asset, "$asset.sha256", "$asset.release-manifest.json")
+          }
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             # No --clobber: a leaked contents:write token must not be able to
