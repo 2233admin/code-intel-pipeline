@@ -66,7 +66,7 @@ function New-ScratchDir {
     param([string]$Prefix)
     $dir = Join-Path $env:TEMP ("cip-test-{0}-{1}" -f $Prefix, [guid]::NewGuid().ToString("N").Substring(0, 8))
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
-    return $dir
+    return (Get-Item -LiteralPath $dir).FullName
 }
 
 # Extracts only the function definitions from a script (via AST), WITHOUT running
