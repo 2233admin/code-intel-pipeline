@@ -1078,10 +1078,10 @@ Test-Case "installer: Install-IntegrationsManifest reports install_failed when t
 ))
 
 function Invoke-ThinkingPatchAgainst {
-    # Points the function's APPDATA-derived lookup at a scratch tree seeded with
-    # $Source, and returns the install actions it recorded. Builds the provider
-    # path with the same Join-Path expression the function uses, so the fixture
-    # lands where the function looks on every platform.
+    # Points the lookup the function derives from $env:APPDATA at a scratch tree
+    # seeded with $Source, and returns the install actions it recorded. Builds the
+    # provider path with the same Join-Path expression the function uses, so the
+    # fixture lands where the function looks on every platform.
     param([string]$Dir, [string]$Source)
 
     $providerPath = Join-Path $Dir "uv\tools\repowise\Lib\site-packages\repowise\core\providers\llm\anthropic.py"

@@ -31,6 +31,12 @@ Consequences:
 ## Verification
 
 - Rust changes require focused `cargo test` coverage plus the relevant integration-contract checks.
+- Run `tools/check-hardcoded-paths.ps1` before pushing. It scans tracked
+  `.ps1`/`.psm1`/`.md`/`.yml` for machine-specific paths, and it strips
+  `$env:VAR` references before matching. So naming one of the scanned Windows
+  user-directory variables bare — in **prose or a comment**, not just in code —
+  fails the scan, while the `$env:`-prefixed form passes. Always write the
+  `$env:` form, including in comments and documentation.
 - Editing a file pinned by `orchestration/**/*.json` (`toolchainDigests`, or a
   `{path, sha256}` pair) makes its contract test fail with a stale-digest
   assertion. Re-sync those pins **once, after every other edit**, by literal
