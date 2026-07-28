@@ -402,6 +402,17 @@ function Add-UserPathPrefix {
     return (code-intel-platform\Add-UserPathPrefix -PathToAdd $PathToAdd -Platform $script:EffectivePlatform)
 }
 
+function Get-PathRefreshFix {
+    param([string]$CommandName)
+
+    if ($script:EffectivePlatform -eq "windows") {
+        return "Open a new terminal if this shell cannot find $CommandName from PATH."
+    }
+    # A new terminal does NOT pick up process-only PATH changes on macOS/Linux;
+    # the one-time profile line is what makes fresh shells source env.sh.
+    return "If a new shell cannot find $CommandName, run once: $(Get-CodeIntelPosixProfileInstruction -Platform $script:EffectivePlatform)"
+}
+
 function New-ThinForwarderPs1 {
     param(
         [string]$RepoRoot,
@@ -504,7 +515,7 @@ function Install-SentruxShim {
             return
         }
 
-        Add-InstallAction $Actions "sentrux-shim" "installed" "$shimDir (thin forwarder -> $Root) path=$($pathResult.detail)" "Open a new terminal if this shell cannot find sentrux from PATH." "repo-local" $false
+        Add-InstallAction $Actions "sentrux-shim" "installed" "$shimDir (thin forwarder -> $Root) path=$($pathResult.detail)" (Get-PathRefreshFix "sentrux") "repo-local" $false
     }
     catch {
         Add-InstallAction $Actions "sentrux-shim" "install_failed" $_.Exception.Message "Check write permission for the code-intel bin directory." "repo-local" $false
@@ -565,10 +576,43 @@ function Install-CodeIntelBinary {
             throw "installed binary failed --help: $($help -join [Environment]::NewLine)"
         }
         $digest = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
-        Add-InstallAction $Actions "code-intel" "installed" "$destination sha256=$digest path=$($pathResult.detail)" "Open a new terminal if this shell cannot resolve code-intel from PATH." "repo-local" $false
+        Add-InstallAction $Actions "code-intel" "installed" "$destination sha256=$digest path=$($pathResult.detail)" (Get-PathRefreshFix "code-intel") "repo-local" $false
+        Install-IntegrationsManifest $Actions $Root $binDir
     }
     catch {
         Add-InstallAction $Actions "code-intel" "install_failed" $_.Exception.Message "Check write permission for the code-intel bin directory and close any process locking the old binary." "repo-local" $false
+    }
+}
+
+function Install-IntegrationsManifest {
+    param(
+        [System.Collections.Generic.List[object]]$Actions,
+        [string]$Root,
+        [string]$BinDir
+    )
+
+    # The installed binary resolves orchestration/integrations.json by walking
+    # up from its own directory (discover_manifest in
+    # crates/code-intel-cli/src/capability.rs probes each ancestor of the exe
+    # dir for orchestration/integrations.json). Copy the repo manifest to the
+    # first candidate of that walk, <bin>/orchestration/integrations.json, so
+    # the installed binary works without a repo checkout. Overwrites on
+    # reinstall to keep the copy current.
+    $manifestSource = Join-Path (Join-Path $Root "orchestration") "integrations.json"
+    if (-not (Test-Path -LiteralPath $manifestSource -PathType Leaf)) {
+        Add-InstallAction $Actions "integrations-manifest" "install_failed" "missing $manifestSource" "Restore orchestration/integrations.json from the repository." "repo-local" $false
+        return
+    }
+
+    try {
+        $manifestDir = Join-Path $BinDir "orchestration"
+        New-Item -ItemType Directory -Force -Path $manifestDir | Out-Null
+        $destination = Join-Path $manifestDir "integrations.json"
+        Copy-Item -LiteralPath $manifestSource -Destination $destination -Force
+        Add-InstallAction $Actions "integrations-manifest" "installed" $destination "" "repo-local" $false
+    }
+    catch {
+        Add-InstallAction $Actions "integrations-manifest" "install_failed" $_.Exception.Message "Check write permission for the code-intel bin directory." "repo-local" $false
     }
 }
 
@@ -855,6 +899,7 @@ switch ($script:EffectivePlatform) {
 }
 Add-InstallPlan $installPlan "repowise" "pip" "python/python3 -m pip install --user repowise==$script:RepowisePinnedVersion" "Semantic index and wiki/docs memory." "MEDIUM: Python package supply chain; installed version is pinned to repowise==$script:RepowisePinnedVersion." "Skip repowise with -SkipRepowise for exact-search-only runs." "pip" $false
 Add-InstallPlan $installPlan "code-intel" "repo-local release binary" "copy bin/code-intel or target/release/code-intel into CODE_INTEL_BIN; build with cargo when no binary is present" "Manifest-bound DAG, evidence query, impact analysis, and atomic publication." "LOW: Pipeline-owned binary; installed digest is reported and --help is executed before success." "Use code-intel.ps1 only when the compiled command needs recovery." "repo-local" $false
+Add-InstallPlan $installPlan "integrations-manifest" "repo-local" "copy orchestration/integrations.json into CODE_INTEL_BIN/orchestration so the installed binary resolves capabilities outside a repo checkout" "Capability registry for the installed code-intel binary; overwritten on every reinstall." "LOW: repo-owned JSON manifest copied verbatim." "Set CODE_INTEL_INTEGRATIONS_MANIFEST to point at a custom manifest instead." "repo-local" $false
 $sentruxBinaryName = if ($script:EffectivePlatform -eq "windows") { "sentrux.exe" } else { "sentrux" }
 Add-InstallPlan $installPlan "sentrux" "repo-local shim or preinstalled binary" "install tools/sentrux-shim first; optionally place a real $sentruxBinaryName on PATH" "Structural quality and regression gate." "LOW for repo-owned shim; MEDIUM for any separately supplied $sentruxBinaryName." "The repo-owned sentrux-lite core keeps scan/check/gate/plugin usable until the real binary is installed." "repo-local" $false
 Add-InstallPlan $installPlan "sentrux-shim" "repo-local" "copy tools/sentrux-shim launcher to CODE_INTEL_BIN and prepend PATH" "Opt-in local Pro activation, stable forwarding to real sentrux, and deterministic lite-core fallback." "LOW: repo-owned PowerShell/CMD/sh shim; review tools/sentrux-shim before install." "Pro auto-activation is off by default; set SENTRUX_AUTO_PRO=1 to opt in." "repo-local" $false

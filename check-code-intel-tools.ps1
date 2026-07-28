@@ -181,9 +181,16 @@ if (Test-Path -LiteralPath $Config -PathType Leaf) {
 
 $pipelineRoot = Split-Path -Parent $PSCommandPath
 $pipelineScript = Join-Path $pipelineRoot "run-code-intel.ps1"
-$codeIntelCargo = Join-Path $pipelineRoot "crates\code-intel-cli\Cargo.toml"
-$codeIntelGraphSource = Join-Path $pipelineRoot "crates\code-intel-cli\src\graph.rs"
-$codeIntelGraphBinary = Join-Path $pipelineRoot "target\debug\code-intel.exe"
+$codeIntelCliRoot = Join-Path (Join-Path $pipelineRoot "crates") "code-intel-cli"
+$codeIntelCargo = Join-Path $codeIntelCliRoot "Cargo.toml"
+$codeIntelGraphSource = Join-Path (Join-Path $codeIntelCliRoot "src") "graph.rs"
+$codeIntelGraphBinaryName = if ($effectivePlatform -eq "windows") { "code-intel.exe" } else { "code-intel" }
+$codeIntelGraphBinaryCandidates = @(
+    (Join-Path (Join-Path (Join-Path $pipelineRoot "target") "release") $codeIntelGraphBinaryName),
+    (Join-Path (Join-Path (Join-Path $pipelineRoot "target") "debug") $codeIntelGraphBinaryName)
+)
+$codeIntelGraphBinary = @($codeIntelGraphBinaryCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }) | Select-Object -First 1
+$codeIntelGraphCommandBinary = if ($null -ne $codeIntelGraphBinary) { $codeIntelGraphBinary } else { $codeIntelGraphBinaryCandidates[0] }
 $repoConfig = Resolve-RepoConfig $Repo $configData
 $repoInput = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) { $RepoPath } else { $Repo }
 $repoPath = if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
@@ -300,8 +307,9 @@ $checks = [ordered]@{
     graphProvider = [ordered]@{
         sourceFound = (Test-Path -LiteralPath $codeIntelGraphSource -PathType Leaf)
         cargoFound = (Test-Path -LiteralPath $codeIntelCargo -PathType Leaf)
-        binaryFound = (Test-Path -LiteralPath $codeIntelGraphBinary -PathType Leaf)
-        command = "$codeIntelGraphBinary graph --repo <repo-path> --language zh --write --json"
+        binaryFound = ($null -ne $codeIntelGraphBinary)
+        binaryPath = if ($null -ne $codeIntelGraphBinary) { $codeIntelGraphBinary } else { "" }
+        command = "$codeIntelGraphCommandBinary graph --repo <repo-path> --language zh --write --json"
     }
     repo = $repoState
     env = [ordered]@{
