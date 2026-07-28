@@ -51,8 +51,6 @@ jobs:
           python -m pip install --require-hashes -r requirements-ci.txt
 
       - name: Run darwin-skill 8-dim scoring
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           python <<'PYEOF'
           import os, sys, yaml
@@ -96,7 +94,7 @@ jobs:
                       name = Path(f).parent.name
                       desc = "(no frontmatter)"
 
-                  # Heuristic scoring (replace with LLM-based scoring in production)
+                  # Heuristic keyword scoring -- this is what CI runs, not an LLM judgment
                   score = 0
                   if name and desc and "no description" not in desc:
                       score += rubric["frontmatter_quality"]
@@ -105,6 +103,8 @@ jobs:
                       score += rubric["workflow_clarity"]
                   if "edge case" in content.lower() or "fallback" in content.lower() or "反模式" in content:
                       score += rubric["boundary_coverage"]
+                  if "checkpoint" in content.lower() or "verify" in content.lower() or "验证" in content:
+                      score += rubric["checkpoint_design"]
                   if "trigger" in content.lower() or "when" in content.lower():
                       score += rubric["instruction_specificity"]
                   if "skill" in content.lower() or "see also" in content.lower():
@@ -140,17 +140,38 @@ jobs:
 
       - name: Check all .md files in /crates/code-nexus-lite/ have no broken links
         run: |
+          set -euo pipefail
           cd crates/code-nexus-lite
-          for f in $(find . -name "*.md" -not -path "./target/*"); do
+          status=0
+          links_file=$(mktemp)
+          # No grep|while pipeline: the subshell would swallow status=1.
+          # Links go through a temp file so the loop runs in this shell.
+          while IFS= read -r f; do
             echo "Checking $f..."
-            grep -oE '\[([^]]+)\]\(([^)]+)\)' "$f" | while read -r link; do
-              url=$(echo "$link" | sed -E 's/.*\(([^)]+)\)$/\1/')
+            grep -oE '\[[^]]+\]\([^)]+\)' "$f" | sed -E 's/.*\(([^)]+)\)$/\1/' > "$links_file" || true
+            while IFS= read -r url; do
+              [ -n "$url" ] || continue
               if [[ "$url" =~ ^https?:// ]]; then
-                echo "  → $url"
+                echo "  → $url (external, not checked)"
+                continue
               fi
-            done
-          done
-          echo "Link check passed (manual review for offline links)"
+              case "$url" in
+                "#"*) continue ;;      # in-page anchor
+                mailto:*) continue ;;
+              esac
+              target="${url%%#*}"      # drop any #anchor suffix
+              [ -n "$target" ] || continue
+              if [ ! -e "$(dirname "$f")/$target" ]; then
+                echo "::error::broken relative link in crates/code-nexus-lite/${f#./}: $url"
+                status=1
+              fi
+            done < "$links_file"
+          done < <(find . -name "*.md" -not -path "./target/*")
+          if [ "$status" -ne 0 ]; then
+            echo "Broken relative links found."
+            exit 1
+          fi
+          echo "relative links verified; external URLs not checked"
 
   # Validate SKILL.md frontmatter (YAML)
   frontmatter-check:
