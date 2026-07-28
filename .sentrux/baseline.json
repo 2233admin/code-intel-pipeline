@@ -5,18 +5,18 @@
   },
   "metrics": {
     "complex_fn_count": 12,
-    "coupling_score": 45.33,
-    "cross_module_edges": 1038,
+    "coupling_score": 45.26,
+    "cross_module_edges": 1041,
     "cycle_count": 0,
-    "files": 229,
-    "functions": 3069,
-    "god_file_count": 29,
+    "files": 230,
+    "functions": 3117,
+    "god_file_count": 32,
     "max_complexity": 162,
-    "quality_signal": 3967,
-    "total_import_edges": 1038
+    "quality_signal": 3607,
+    "total_import_edges": 1041
   },
-  "savedAt": 1785172507,
+  "savedAt": 1785242084,
   "schema": "code-intel-sentrux-baseline.v2",
   "scope": ".",
-  "sourceCommit": "5d0fe9885f641280c923e8911771d8908a223747"
+  "sourceCommit": "1512c9d5777cf683daa6c95c4c8415164af93cf3"
 }

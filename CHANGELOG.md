@@ -7,32 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0-beta.1] — 2026-07-28
+
+This release moves Code Intel into the write path and makes the official
+release installable on Windows, macOS, and Linux. It also closes the security,
+audit, and release-gate findings discovered by the repository's own audit and
+adversarial verification passes.
+
+### Added
+
+- Write-time workflow support: the Skill now triggers for implementation,
+  refactoring, and fixes; `change impact --staleness advisory` provides
+  explicitly non-gating guidance while a working tree is changing.
+- Deterministic, non-mutating `edit.ast-grep-plan` previews, backed by an
+  internalized and CI-pinned ast-grep toolchain.
+- Official Windows, macOS, and Linux ZIP assets with matching SHA-256
+  sidecars, manifests, provenance attestations, and platform-aware Skill
+  bootstrap installation.
+- A PowerShell-versus-Rust parity observation harness and a fast structural
+  cycle regression test for the self-dogfood release gate.
+
+### Changed
+
+- macOS/Linux installs now persist `PATH` and `CODE_INTEL_HOME` through a
+  generated POSIX environment file, install the integrations manifest beside
+  the binary, and report platform-correct doctor guidance.
+- Release publishing is split from unprivileged platform build jobs. Only the
+  final publisher receives release and attestation permissions, and it
+  validates the complete nine-asset inventory before publishing.
+- Audit rendering, CI, release self-scan, and packaged-payload validation now
+  share the same fail-closed audit validation path.
+
 ### Fixed
 
-- ai-safety-003 (issue #34): the audit kernel's fail-closed validator ran on
-  no automated path. `--operation render` now requires `--repo` and runs the
-  identical validate pipeline (registry load and self-check, evidence
-  grounding, report-shape rules) before printing anything, so a report that
-  fails validation can no longer reach human-facing markdown or HTML. `ci.yml`
-  and `release.yml` each gained an additive step that looks for any
-  `audit-report.json` a run produced (repo root, `orchestration/`, and the
-  self-scan artifact directory) and runs `code-intel audit --operation
-  validate` against it, failing the job on any validation error; the release
-  workflow also checks the packaged payload after extraction, alongside the
-  existing packaged-binary `sentrux check`/`gate` calls, so an audit report
-  riding along in a release can never skip the same gate.
-- Verified (not re-fixed here — see PR for evidence) that the v0.5.1
-  self-dogfood slice from issue #14 landed correctly in #15 and held through
-  #38/#42: the `dag_run <-> execution_kernel` cycle stays at zero under the
-  absolute `max_cycles = 0` rule in `.sentrux/rules.toml`, `ci.yml` and
-  `release.yml` both run the real compiled binary's self-scan against the
-  actual checkout before anything is packaged, and `release.yml` packages
-  from `git archive HEAD` and re-checks the packaged binary against the
-  packaged payload so release/self-scan/published-artifact stay one
-  snapshot. Added `sentrux_gate::this_repository_has_no_resolved_import_cycles`,
-  a fast `cargo test` that runs the same cycle-detection engine against this
-  repository so a reintroduced cycle fails before a full self-scan build is
-  needed.
+- Repository snapshots and inventory exclude nested linked worktree markers
+  instead of treating them as ordinary files.
+- `run commit` preserves the caller's manifest bytes and digest when artifact
+  references do not change.
+- A 29-defect hardening pass repaired Git/path handling, CJK path support,
+  capability and routing dead paths, baseline metric validation, index
+  replacement safety, CI gate coverage, and documentation drift.
+- Tool discovery now resolves executables absolutely, internalization evidence
+  binds the relevant digests, and the release/self-scan snapshot identity
+  checks remain enforced.
+
+### Security
+
+- Audit department prompts define an explicit untrusted-content boundary;
+  model-process output is bounded; adversarial audit fixtures cover fabricated
+  evidence, reversed ranges, and false coverage claims.
+- GitHub Actions expressions are removed from executable script bodies,
+  actions and package inputs are pinned, Cargo release commands use
+  `--locked`, and release assets can no longer be silently clobbered.
 
 ## [0.6.0] — 2026-07-26
 

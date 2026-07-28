@@ -45,8 +45,9 @@ try {
         throw "assistance dossier is incomplete"
     }
     $schemaPath = Join-Path $repoRoot "orchestration\schemas\code-intel-model-assistance-dossier.v1.schema.json"
-    & python -c "import json,sys,jsonschema; jsonschema.Draft202012Validator(json.load(open(sys.argv[1],encoding='utf-8'))).validate(json.load(open(sys.argv[2],encoding='utf-8-sig')))" $schemaPath $report.modelChannel.assistanceDossier
-    if ($LASTEXITCODE -ne 0) { throw "assistance dossier failed its closed JSON schema" }
+    if (-not (Get-Content -LiteralPath $report.modelChannel.assistanceDossier -Raw | Test-Json -SchemaFile $schemaPath -ErrorAction Stop)) {
+        throw "assistance dossier failed its closed JSON schema"
+    }
     if (@($report.steps | Where-Object status -eq "failed").Count -ne 0) { throw "model absence created a failed deterministic step" }
     "PASS test-model-channel-degraded-pipeline"
 }

@@ -257,34 +257,54 @@ jobs:
       - name: Model channel and automation regression suites
         shell: pwsh
         run: |
-          .\tests/test-model-channel-delegate.ps1
-          .\tests/test-model-channel-degraded-pipeline.ps1
-          .\tests/test-automatic-pull-request.ps1
-          .\tests/test-automatic-pull-request-flow.ps1
-          .\tests/test-follow-up-automation.ps1
+          $tests = @(
+            ".\tests/test-model-channel-delegate.ps1"
+            ".\tests/test-model-channel-degraded-pipeline.ps1"
+            ".\tests/test-automatic-pull-request.ps1"
+            ".\tests/test-automatic-pull-request-flow.ps1"
+            ".\tests/test-follow-up-automation.ps1"
+          )
+          foreach ($test in $tests) {
+            & pwsh -NoProfile -File $test
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
       - name: Primary launcher contract tests
         shell: pwsh
-        run: .\scripts/tests/test-primary-launchers.ps1
+        run: |
+          & pwsh -NoProfile -File .\scripts/tests/test-primary-launchers.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Conformance evidence suites
         shell: pwsh
         run: |
-          .\scripts/tests/test-sentrux-failure-normalization.ps1
-          .\scripts/tests/test-codenexus-adapter-contract.ps1
-          .\scripts/tests/test-transactional-publication.ps1
+          $tests = @(
+            ".\scripts/tests/test-sentrux-failure-normalization.ps1"
+            ".\scripts/tests/test-codenexus-adapter-contract.ps1"
+            ".\scripts/tests/test-transactional-publication.ps1"
+          )
+          foreach ($test in $tests) {
+            & pwsh -NoProfile -File $test
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
       - name: Run commit contract tests
         shell: pwsh
-        run: .\scripts/tests/test-run-commit-contract.ps1
+        run: |
+          & pwsh -NoProfile -File .\scripts/tests/test-run-commit-contract.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Package
         shell: pwsh
-        run: ./tools/New-BetaPackage.ps1 -ExecutablePath ./target/release/code-intel.exe -OutputDirectory ./dist -PackageName code-intel-pipeline-windows-beta
+        run: |
+          & pwsh -NoProfile -File ./tools/New-BetaPackage.ps1 -ExecutablePath ./target/release/code-intel.exe -OutputDirectory ./dist -PackageName code-intel-pipeline-windows-beta
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify beta package
         shell: pwsh
-        run: ./tools/Test-BetaPackage.ps1 -ZipPath ./dist/code-intel-pipeline-windows-beta.zip -Json
+        run: |
+          & pwsh -NoProfile -File ./tools/Test-BetaPackage.ps1 -ZipPath ./dist/code-intel-pipeline-windows-beta.zip -Json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload package artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
