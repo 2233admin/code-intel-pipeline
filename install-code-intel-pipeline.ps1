@@ -727,6 +727,58 @@ function Test-CommandOutput {
     }
 }
 
+function Test-SkillPathServesTarget {
+    param(
+        [string]$Path,
+        [string]$Target
+    )
+
+    # A SKILL.md existing at $Path proves nothing about whose skill it is. Agent
+    # hosts share these directories with other skill managers, and an unrelated
+    # manager's junction sitting at ~/.claude/skills/code-intel-pipeline will
+    # satisfy a mere existence check while serving a stale skill from its own
+    # store. Accept only two shapes: a link that resolves to $Target, or a plain
+    # copy whose SKILL.md bytes match it (macOS/Linux installs fall back to a
+    # copy when link creation is denied).
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return $false }
+    if (-not (Test-Path -LiteralPath $Target -PathType Container)) { return $false }
+
+    try {
+        $item = Get-Item -LiteralPath $Path -Force
+        if (-not [string]::IsNullOrWhiteSpace([string]$item.LinkTarget)) {
+            $resolvedLink = [System.IO.Path]::GetFullPath([string]$item.LinkTarget).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+            $resolvedTarget = [System.IO.Path]::GetFullPath($Target).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+            return $resolvedLink -eq $resolvedTarget
+        }
+    }
+    catch {
+        return $false
+    }
+
+    $pathSkill = Join-Path $Path "SKILL.md"
+    $targetSkill = Join-Path $Target "SKILL.md"
+    if (-not (Test-Path -LiteralPath $pathSkill -PathType Leaf)) { return $false }
+    if (-not (Test-Path -LiteralPath $targetSkill -PathType Leaf)) { return $false }
+    return (Get-FileHash -LiteralPath $pathSkill -Algorithm SHA256).Hash -eq (Get-FileHash -LiteralPath $targetSkill -Algorithm SHA256).Hash
+}
+
+function Move-OccupiedSkillPathAside {
+    param([string]$Path)
+
+    # Never destroy whatever occupied the path. A reparse point can just be
+    # unlinked — the store it pointed at keeps every byte. A real directory is
+    # renamed, so a foreign skill remains recoverable next to its old location.
+    $item = Get-Item -LiteralPath $Path -Force
+    if ($item.Attributes.HasFlag([System.IO.FileAttributes]::ReparsePoint)) {
+        [System.IO.Directory]::Delete($item.FullName, $false)
+        return "unlinked"
+    }
+
+    $backup = "$Path.replaced-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+    Move-Item -LiteralPath $Path -Destination $backup
+    return "moved aside to $backup"
+}
+
 function Ensure-SkillLink {
     param(
         [System.Collections.Generic.List[object]]$Checks,
@@ -737,17 +789,22 @@ function Ensure-SkillLink {
     )
 
     $skillFile = Join-Path $Path "SKILL.md"
-    $ok = Test-Path -LiteralPath $skillFile -PathType Leaf
-    $detail = if ($ok) { $Path } else { "missing: $Path" }
+    $present = Test-Path -LiteralPath $skillFile -PathType Leaf
+    $ok = $present -and (Test-SkillPathServesTarget -Path $Path -Target $Target)
+    $detail = if ($ok) { $Path } elseif ($present) { "occupied by a different skill store, not $Target`: $Path" } else { "missing: $Path" }
 
     if (-not $ok -and $Repair) {
         if (-not (Test-Path -LiteralPath $Target -PathType Container)) {
             $detail = "source skill missing: $Target"
         }
         else {
+            $displaced = ""
+            if (Test-Path -LiteralPath $Path) {
+                $displaced = " (previous occupant $(Move-OccupiedSkillPathAside $Path))"
+            }
             $link = New-CodeIntelLink -Path $Path -Target $Target -Platform $script:EffectivePlatform
-            $ok = Test-Path -LiteralPath $skillFile -PathType Leaf
-            $detail = if ($ok) { "repaired:$($link.mode): $Path" } else { "repair failed: $Path" }
+            $ok = Test-SkillPathServesTarget -Path $Path -Target $Target
+            $detail = if ($ok) { "repaired:$($link.mode): $Path$displaced" } else { "repair failed: $Path$displaced" }
         }
     }
 
@@ -762,6 +819,30 @@ function Ensure-SkillSource {
         [bool]$Repair
     )
 
+    function Test-BundledSkillPathIncluded {
+        param([string]$RelativePath)
+
+        # Interpreter caches must never reach an agent host's skill directory.
+        # They are gitignored build output, they differ per machine and Python
+        # version, and one stray bootstrap.cpython-313.pyc left by a local
+        # `bootstrap.py` run makes the byte-parity check below report the
+        # bundled skill "outdated" forever.
+        $segments = $RelativePath -split '[\\/]'
+        if ($segments -contains "__pycache__") { return $false }
+        return -not $RelativePath.EndsWith(".pyc")
+    }
+
+    function Get-BundledSkillRelativeFiles {
+        param([string]$Root)
+
+        return @(
+            Get-ChildItem -LiteralPath $Root -File -Recurse -Force |
+                ForEach-Object { [System.IO.Path]::GetRelativePath($Root, $_.FullName) } |
+                Where-Object { Test-BundledSkillPathIncluded $_ } |
+                Sort-Object
+        )
+    }
+
     function Test-BundledSkillCurrent {
         param(
             [string]$InstalledPath,
@@ -775,16 +856,8 @@ function Ensure-SkillSource {
         if (-not (Test-Path -LiteralPath $InstalledPath -PathType Container)) {
             return $false
         }
-        $sourceFiles = @(
-            Get-ChildItem -LiteralPath $SourcePath -File -Recurse -Force |
-                ForEach-Object { [System.IO.Path]::GetRelativePath($SourcePath, $_.FullName) } |
-                Sort-Object
-        )
-        $installedFiles = @(
-            Get-ChildItem -LiteralPath $InstalledPath -File -Recurse -Force |
-                ForEach-Object { [System.IO.Path]::GetRelativePath($InstalledPath, $_.FullName) } |
-                Sort-Object
-        )
+        $sourceFiles = Get-BundledSkillRelativeFiles $SourcePath
+        $installedFiles = Get-BundledSkillRelativeFiles $InstalledPath
         if ([string]::Join("`n", $sourceFiles) -cne [string]::Join("`n", $installedFiles)) {
             return $false
         }
@@ -818,14 +891,14 @@ function Ensure-SkillSource {
         $hadExisting = Test-Path -LiteralPath $InstalledPath
         try {
             New-Item -ItemType Directory -Path $staging | Out-Null
-            foreach ($item in @(Get-ChildItem -LiteralPath $SourcePath -Force)) {
-                $destination = Join-Path $staging $item.Name
-                if ($item.PSIsContainer) {
-                    Copy-Item -LiteralPath $item.FullName -Destination $destination -Recurse -Force
+            foreach ($relative in (Get-BundledSkillRelativeFiles $SourcePath)) {
+                $source = Join-Path $SourcePath $relative
+                $destination = Join-Path $staging $relative
+                $destinationParent = Split-Path -Parent $destination
+                if (-not [string]::IsNullOrWhiteSpace($destinationParent)) {
+                    New-Item -ItemType Directory -Force -Path $destinationParent | Out-Null
                 }
-                else {
-                    Copy-Item -LiteralPath $item.FullName -Destination $destination -Force
-                }
+                Copy-Item -LiteralPath $source -Destination $destination -Force
             }
             if ($hadExisting) {
                 Move-Item -LiteralPath $InstalledPath -Destination $backup

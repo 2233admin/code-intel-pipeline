@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deliberately `#[cfg(debug_assertions)]`, so the shipped binary carries no
   inventory fault injection; the test is now gated on the same cfg. CI only ran
   the debug profile, so the failure had never surfaced there.
+- `skill:codex` and `skill:claude` verify whose skill occupies the path instead
+  of only that some `SKILL.md` exists there. Agent hosts share those directories
+  with other skill managers, so an unrelated manager's junction served a stale
+  skill while the installer reported `OK skill:claude` on every run. A drifted
+  path is now reported, and `-RepairSkillLinks` moves the previous occupant
+  aside — unlinking a reparse point, renaming a real directory — rather than
+  deleting it.
+- Installing the bundled skill no longer copies `__pycache__` / `*.pyc` into an
+  agent host's skill directory. One stray `bootstrap.cpython-313.pyc` left by a
+  local `bootstrap.py` run made the byte-parity check report `skill:source`
+  outdated permanently.
 - The `repowise-thinking-patch` overlay distinguishes "obsolete" from "broken".
   Upstream repowise 0.32.0 walks `response.content` and skips non-text blocks
   itself, so a healthy machine reported `install_failed` on every install run.
