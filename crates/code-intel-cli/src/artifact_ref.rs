@@ -3321,7 +3321,12 @@ mod tests {
     fn retirement_deletion_patch_rejects_hidden_touched_path_even_with_valid_hashes() {
         let hidden = deletion_diff(
             vec![
-                deletion_file("archive/run-code-intel.ps1", "legacy\nkeep\n", "keep\n", vec![]),
+                deletion_file(
+                    "archive/run-code-intel.ps1",
+                    "legacy\nkeep\n",
+                    "keep\n",
+                    vec![],
+                ),
                 deletion_file("second-branch.ps1", "legacy\nkeep\n", "keep\n", vec![]),
             ],
             vec!["archive/run-code-intel.ps1"],

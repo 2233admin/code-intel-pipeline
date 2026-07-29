@@ -1035,7 +1035,10 @@ mod tests {
     fn registry_audit_rejects_every_required_participant_metadata_field() {
         let dir = orchestration_fixture_dir("registry-required-metadata");
         let anchor = "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"";
-        touch(&dir.join("archive/run-code-intel.ps1"), &format!("{anchor}\n"));
+        touch(
+            &dir.join("archive/run-code-intel.ps1"),
+            &format!("{anchor}\n"),
+        );
         let ids = HashSet::from(["pack.repomix".to_string()]);
 
         for field in [
@@ -1081,7 +1084,10 @@ mod tests {
     #[test]
     fn registry_audit_report_and_enforce_modes_are_explicit() {
         let dir = orchestration_fixture_dir("registry-modes");
-        touch(&dir.join("archive/run-code-intel.ps1"), "# no production calls\n");
+        touch(
+            &dir.join("archive/run-code-intel.ps1"),
+            "# no production calls\n",
+        );
         let mut manifest = json!({
             "productionRegistry": {
                 "mode": "report",
@@ -1103,7 +1109,10 @@ mod tests {
     #[test]
     fn registry_audit_rejects_unknown_orphan_declaration() {
         let dir = orchestration_fixture_dir("registry-orphan");
-        touch(&dir.join("archive/run-code-intel.ps1"), "# no production calls\n");
+        touch(
+            &dir.join("archive/run-code-intel.ps1"),
+            "# no production calls\n",
+        );
         let manifest = json!({
             "productionRegistry": {
                 "mode": "enforce",
@@ -1123,7 +1132,10 @@ mod tests {
     #[test]
     fn registry_audit_accepts_reviewed_deletion_only_after_call_site_is_removed() {
         let dir = orchestration_fixture_dir("registry-reviewed-deletion");
-        touch(&dir.join("archive/run-code-intel.ps1"), "# call site removed\n");
+        touch(
+            &dir.join("archive/run-code-intel.ps1"),
+            "# call site removed\n",
+        );
         let anchor = "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"";
         let manifest = json!({
             "productionRegistry": {

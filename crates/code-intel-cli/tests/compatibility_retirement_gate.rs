@@ -538,7 +538,10 @@ fn e01_ticket_is_content_bound_to_the_approved_e00_subject() {
         String::from_utf8_lossy(&forged.stderr)
     );
 
-    let hidden_deletion = deletion_diff(&temp.0, &["archive/run-code-intel.ps1", "second-branch.ps1"]);
+    let hidden_deletion = deletion_diff(
+        &temp.0,
+        &["archive/run-code-intel.ps1", "second-branch.ps1"],
+    );
     let hidden_deletion_ref = write_artifact(
         &temp.0,
         "hidden-deletion.json",

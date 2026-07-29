@@ -936,7 +936,10 @@ fn ticket_r04_codenexus_compat_command_executes_and_writes_context() {
     command.args([
         "-NoProfile",
         "-File",
-        root().join("archive/Invoke-CodeNexusLite.ps1").to_str().unwrap(),
+        root()
+            .join("archive/Invoke-CodeNexusLite.ps1")
+            .to_str()
+            .unwrap(),
         "-RepoPath",
         repo.to_str().unwrap(),
         "-Quiet",
