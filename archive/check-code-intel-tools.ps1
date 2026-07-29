@@ -167,7 +167,7 @@ function Test-CommandOutput {
 $configData = $null
 $configParseError = $null
 if ([string]::IsNullOrWhiteSpace($Config)) {
-    $Config = Join-Path $PSScriptRoot "pipeline.config.json"
+    $Config = Join-Path (Split-Path -Parent $PSScriptRoot) "pipeline.config.json"
 }
 if (Test-Path -LiteralPath $Config -PathType Leaf) {
     try {

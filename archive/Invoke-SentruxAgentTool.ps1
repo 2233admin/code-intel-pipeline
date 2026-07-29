@@ -599,7 +599,7 @@ function Invoke-CheckRulesTool {
     param([string]$TargetPath)
 
     $rulesPath = Join-Path (Join-Path $TargetPath ".sentrux") "rules.toml"
-    $templatePath = Join-Path (Join-Path $PSScriptRoot "templates") "sentrux-rules.example.toml"
+    $templatePath = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "templates") "sentrux-rules.example.toml"
     if (-not (Test-Path -LiteralPath $rulesPath -PathType Leaf)) {
         return [ordered]@{
             tool = "check_rules"

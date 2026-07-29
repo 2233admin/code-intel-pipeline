@@ -20,7 +20,7 @@ if ([string]::IsNullOrWhiteSpace($PluginRoot)) {
     $PluginRoot = Join-Path (Join-Path (Get-CodeIntelHomeDirectory) ".sentrux") "plugins"
 }
 
-$overlayRoot = Join-Path (Join-Path (Join-Path $PSScriptRoot "overlays") "sentrux") "vlang"
+$overlayRoot = Join-Path (Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "overlays") "sentrux") "vlang"
 $targetRoot = Join-Path $PluginRoot "vlang"
 $grammarName = switch ($effectivePlatform) {
     "windows" { "windows-x86_64.dll" }

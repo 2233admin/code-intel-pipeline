@@ -45,7 +45,7 @@ if ($ValidateInstallation) {
 
 $configData = $null
 $configPath = if ([string]::IsNullOrWhiteSpace($Config)) {
-    Join-Path $PSScriptRoot "pipeline.config.json"
+    Join-Path (Split-Path -Parent $PSScriptRoot) "pipeline.config.json"
 } else {
     $Config
 }

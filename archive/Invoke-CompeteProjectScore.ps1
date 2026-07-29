@@ -101,7 +101,7 @@ if ([string]::IsNullOrWhiteSpace($resolvedCompeteRoot)) { throw "-CompeteRoot or
 if ([string]::IsNullOrWhiteSpace($CompeteDataPath)) { throw "-CompeteDataPath is required for score" }
 $dataDirectory = (Resolve-Path -LiteralPath $CompeteDataPath -ErrorAction Stop).Path
 $competeScripts = Get-CompeteScriptRoot -Root $resolvedCompeteRoot
-$normalizer = Join-Path $PSScriptRoot "tools/normalize_compete_score.py"
+$normalizer = Join-Path (Split-Path -Parent $PSScriptRoot) "tools/normalize_compete_score.py"
 if (-not (Test-Path -LiteralPath $normalizer -PathType Leaf)) { throw "score normalizer is missing: $normalizer" }
 $outputPath = Join-Path $artifactDirectory "competitive-score.json"
 

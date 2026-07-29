@@ -8,7 +8,7 @@ param(
 
     [string]$QueueCommand = "",
 
-    [string]$Policy = (Join-Path $PSScriptRoot "orchestration\multi-agent-merge-queue-policy.v1.json"),
+    [string]$Policy = (Join-Path (Split-Path -Parent $PSScriptRoot) "orchestration\multi-agent-merge-queue-policy.v1.json"),
 
     [switch]$AllowRepositoryMutation,
 

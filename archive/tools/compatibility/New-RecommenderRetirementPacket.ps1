@@ -7,7 +7,7 @@ param(
     [long]$EvaluatedAt,
 
     [string]$RepoRoot = (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent),
-    [string]$CodeIntel = (Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) "target\debug\code-intel.exe")
+    [string]$CodeIntel = (Join-Path (Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent) "target\debug\code-intel.exe")
 )
 
 Set-StrictMode -Version Latest

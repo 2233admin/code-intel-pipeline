@@ -168,9 +168,9 @@ function Get-DevelopmentCandidates {
     $candidates = [System.Collections.Generic.List[string]]::new()
     foreach ($directory in @(
         $env:CODE_INTEL_BIN,
-        (Join-Path $PSScriptRoot "bin"),
-        (Join-Path $PSScriptRoot "target/release"),
-        (Join-Path $PSScriptRoot "target/debug")
+        (Join-Path (Split-Path -Parent $PSScriptRoot) "bin"),
+        (Join-Path (Split-Path -Parent $PSScriptRoot) "target/release"),
+        (Join-Path (Split-Path -Parent $PSScriptRoot) "target/debug")
     )) {
         if (-not [string]::IsNullOrWhiteSpace($directory)) {
             $candidates.Add((Join-Path $directory $binaryName))
@@ -185,7 +185,7 @@ function Repair-CodeIntel {
     param([Parameter(Mandatory)][string]$Repository)
 
     $python = Get-Command python, python3 -ErrorAction SilentlyContinue | Select-Object -First 1
-    $bootstrap = Join-Path $PSScriptRoot "skills/code-intel-pipeline/scripts/bootstrap.py"
+    $bootstrap = Join-Path (Split-Path -Parent $PSScriptRoot) "skills/code-intel-pipeline/scripts/bootstrap.py"
     if ($null -eq $python -or -not (Test-Path -LiteralPath $bootstrap -PathType Leaf)) {
         [Console]::Error.WriteLine("Code Intel recovery requires Python and the packaged Skill bootstrap.")
         return $null

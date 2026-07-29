@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][string]$OutDir,[Parameter(Mandatory=$true)][long]$EvaluatedAt,[string]$RepoRoot=(Split-Path (Split-Path $PSScriptRoot -Parent) -Parent),[string]$CodeIntel=(Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) "target\debug\code-intel.exe"))
+param([Parameter(Mandatory=$true)][string]$OutDir,[Parameter(Mandatory=$true)][long]$EvaluatedAt,[string]$RepoRoot=(Split-Path (Split-Path $PSScriptRoot -Parent) -Parent),[string]$CodeIntel=(Join-Path (Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent) "target\debug\code-intel.exe"))
 Set-StrictMode -Version Latest;$ErrorActionPreference="Stop"
 if($EvaluatedAt-le0){throw "EvaluatedAt must be positive"};if(Test-Path $OutDir){throw "packet output must be exclusive"};if(-not(Test-Path $CodeIntel -PathType Leaf)){throw "binary missing"}
 New-Item -ItemType Directory $OutDir|Out-Null;New-Item -ItemType Directory (Join-Path $OutDir evidence)|Out-Null

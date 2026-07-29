@@ -695,7 +695,7 @@ try {
         if (Test-Path -LiteralPath $dbPath -PathType Leaf) {
             Remove-Item -LiteralPath $dbPath -Force
         }
-        $scriptPath = Join-Path $PSScriptRoot "Run-ScopedRepowiseDocs.py"
+        $scriptPath = Join-Path (Split-Path -Parent $PSScriptRoot) "Run-ScopedRepowiseDocs.py"
         [void](Invoke-ProcessWithTimeout `
             -FilePath (Get-RepowisePython) `
             -Description "repowise scoped docs" `

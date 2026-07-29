@@ -36,8 +36,8 @@ if (-not $LegacyCompatibilityMode) {
     if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_RUST_CLI)) {
         $rustCliCandidates += [IO.Path]::GetFullPath($env:CODE_INTEL_RUST_CLI)
     }
-    $rustCliCandidates += Join-Path $PSScriptRoot "target/release/$exeName"
-    $rustCliCandidates += Join-Path $PSScriptRoot "target/debug/$exeName"
+    $rustCliCandidates += Join-Path (Split-Path -Parent $PSScriptRoot) "target/release/$exeName"
+    $rustCliCandidates += Join-Path (Split-Path -Parent $PSScriptRoot) "target/debug/$exeName"
     $rustCli = $rustCliCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
     if ($null -eq $rustCli) {
         $pathCommand = Get-Command "code-intel" -ErrorAction SilentlyContinue

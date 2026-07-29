@@ -6,7 +6,7 @@ param(
     [ValidateSet("mutation", "observation")]
     [string]$Intent = "mutation",
 
-    [string]$Policy = (Join-Path $PSScriptRoot "orchestration\multi-agent-workspace-policy.v1.json"),
+    [string]$Policy = (Join-Path (Split-Path -Parent $PSScriptRoot) "orchestration\multi-agent-workspace-policy.v1.json"),
 
     [switch]$Json
 )

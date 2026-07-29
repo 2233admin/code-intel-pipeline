@@ -98,9 +98,9 @@ Import-Module $platformModule -Force
 $followUpAutomationModule = Join-Path (Join-Path $PSScriptRoot "tools") "code-intel-follow-up-automation.psm1"
 Import-Module $followUpAutomationModule -Force
 $effectivePlatform = Get-CodeIntelPlatform -Platform $Platform
-$codeIntelPaths = Get-CodeIntelPaths -Platform $effectivePlatform -Root $PSScriptRoot
+$codeIntelPaths = Get-CodeIntelPaths -Platform $effectivePlatform -Root (Split-Path -Parent $PSScriptRoot)
 $rustExecutableName = if ($effectivePlatform -eq "windows") { "code-intel.exe" } else { "code-intel" }
-$defaultRustCli = Join-Path $PSScriptRoot (Join-Path "target/debug" $rustExecutableName)
+$defaultRustCli = Join-Path (Split-Path -Parent $PSScriptRoot) (Join-Path "target/debug" $rustExecutableName)
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
@@ -3105,7 +3105,7 @@ function Get-CodeIntelSentruxDebtSummary {
 
 $configData = $null
 if ([string]::IsNullOrWhiteSpace($Config)) {
-    $Config = Join-Path $PSScriptRoot "pipeline.config.json"
+    $Config = Join-Path (Split-Path -Parent $PSScriptRoot) "pipeline.config.json"
 }
 if (-not [string]::IsNullOrWhiteSpace($Config)) {
     $configPath = Resolve-Path -LiteralPath $Config -ErrorAction Stop

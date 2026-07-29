@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory = $true)][string]$OutDir,
     [Parameter(Mandatory = $true)][long]$EvaluatedAt,
     [string]$RepoRoot = (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent),
-    [string]$CodeIntel = (Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) "target\debug\code-intel.exe"),
+    [string]$CodeIntel = (Join-Path (Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent) "target\debug\code-intel.exe"),
     [string]$SourceRevision = "ca9334aa8eb8df3be7e10c5547069f03645cabe2"
 )
 Set-StrictMode -Version Latest

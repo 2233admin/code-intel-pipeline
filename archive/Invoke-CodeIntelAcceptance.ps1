@@ -9,7 +9,7 @@ param(
 
     [string]$SkipTargetedChecksReason = "",
 
-    [string]$Policy = (Join-Path $PSScriptRoot "orchestration\code-intel-acceptance-policy.v1.json"),
+    [string]$Policy = (Join-Path (Split-Path -Parent $PSScriptRoot) "orchestration\code-intel-acceptance-policy.v1.json"),
 
     [string]$ProjectConformanceScript = (Join-Path $PSScriptRoot "scripts/tests/Test-CodeIntelProjectConformance.ps1"),
 
@@ -18,7 +18,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-$root = [System.IO.Path]::GetFullPath($PSScriptRoot)
+$root = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $profile = if ($Stage -eq "promote") { "full" } else { "fast" }
 $checks = [System.Collections.Generic.List[object]]::new()
 $validatedTargets = [System.Collections.Generic.List[object]]::new()
