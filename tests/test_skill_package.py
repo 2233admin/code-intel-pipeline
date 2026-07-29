@@ -58,8 +58,10 @@ class SkillPackageTests(unittest.TestCase):
         installer = (ROOT / "archive/install-code-intel-pipeline.ps1").read_text(
             encoding="utf-8"
         )
+        # skills/ stayed at the repository root when the installer moved
+        # under archive/, so it is reached through $repoRoot rather than $root
         self.assertIn(
-            'Join-Path (Join-Path $root "skills") "code-intel-pipeline"',
+            'Join-Path (Join-Path $repoRoot "skills") "code-intel-pipeline"',
             installer,
         )
 
