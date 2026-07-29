@@ -940,11 +940,11 @@ $installActions = New-Object System.Collections.Generic.List[object]
 $installPlan = New-Object System.Collections.Generic.List[object]
 $root = Split-Path -Parent $PSCommandPath
 $repoRoot = Split-Path -Parent $root
-$paths = Get-CodeIntelPaths -Platform $script:EffectivePlatform -Root $root
+$paths = Get-CodeIntelPaths -Platform $script:EffectivePlatform -Root $repoRoot
 $homeEnv = Set-CodeIntelUserEnv -Name "CODE_INTEL_HOME" -Value $paths.codeIntelHome -Platform $script:EffectivePlatform
 Add-InstallAction $installActions "env:CODE_INTEL_HOME" "installed" $homeEnv.detail "" "env" $false
 if ([string]::IsNullOrWhiteSpace($Config)) {
-    $Config = Join-Path $root "pipeline.config.json"
+    $Config = Join-Path $repoRoot "pipeline.config.json"
 }
 
 # repowise comes from PyPI; pin the exact version so `--upgrade` cannot pull a
@@ -993,7 +993,7 @@ Install-MissingTool $installActions "rg" { Invoke-RipgrepInstall } "Install ripg
 Install-MissingTool $installActions "git" { Invoke-ToolPackageInstall "git" } "Install git with the platform package manager or ensure git is on PATH."
 Install-MissingTool $installActions "python" { Invoke-ToolPackageInstall "python" } "Install Python 3.11+ with the platform package manager or ensure python is on PATH."
 Install-MissingTool $installActions "repowise" { Invoke-PipInstall "repowise" -Version $script:RepowisePinnedVersion } "Install repowise into the active Python environment (`python/python3 -m pip install --user repowise==$script:RepowisePinnedVersion`)."
-Install-CodeIntelBinary $installActions $root
+Install-CodeIntelBinary $installActions $repoRoot
 Install-SentruxShim $installActions $root
 Install-MissingTool $installActions "sentrux" { Invoke-SentruxInstall } "Install the repo-owned shim or ensure sentrux.exe is on PATH."
 Repair-RepowiseThinkingBlockPatch $installActions
@@ -1027,7 +1027,7 @@ $shimLauncherName = if ($script:EffectivePlatform -eq "windows") { "sentrux.cmd"
 Test-File $checks "sentrux-shim:launcher" (Join-Path $shimSource $shimLauncherName) $true
 Test-File $checks "sentrux-shim:ps1" (Join-Path $shimSource "sentrux-shim.ps1") $true
 Test-File $checks "sentrux-shim:lite-core" (Join-Path $shimSource "sentrux-lite-core.ps1") $true
-$overlayRoot = Join-Path (Join-Path (Join-Path $root "overlays") "sentrux") "vlang"
+$overlayRoot = Join-Path (Join-Path (Join-Path $repoRoot "overlays") "sentrux") "vlang"
 Test-File $checks "sentrux-vlang-overlay:plugin" (Join-Path $overlayRoot "plugin.toml") $true
 Test-File $checks "sentrux-vlang-overlay:query" (Join-Path (Join-Path $overlayRoot "queries") "tags.scm") $true
 $grammarName = switch ($script:EffectivePlatform) {
@@ -1053,7 +1053,7 @@ $userProfile = Get-CodeIntelHomeDirectory
 $skillSource = Join-Path (Join-Path (Join-Path $userProfile ".agents") "skills") "code-intel-pipeline"
 $codexSkill = Join-Path (Join-Path (Join-Path $userProfile ".codex") "skills") "code-intel-pipeline"
 $claudeSkill = Join-Path (Join-Path (Join-Path $userProfile ".claude") "skills") "code-intel-pipeline"
-$bundledSkill = Join-Path (Join-Path $root "skills") "code-intel-pipeline"
+$bundledSkill = Join-Path (Join-Path $repoRoot "skills") "code-intel-pipeline"
 Ensure-SkillSource $checks $skillSource $bundledSkill $RepairSkillLinks
 Ensure-SkillLink $checks "codex" $codexSkill $skillSource $RepairSkillLinks
 Ensure-SkillLink $checks "claude" $claudeSkill $skillSource $RepairSkillLinks
@@ -1169,7 +1169,7 @@ $missingRequired = @($checks | Where-Object { $_.required -and -not $_.ok })
 $warnings = @($checks | Where-Object { -not $_.required -and -not $_.ok })
 $result = [ordered]@{
     ok = $missingRequired.Count -eq 0
-    root = $root
+    root = $repoRoot
     config = $Config
     platform = [ordered]@{
         os = $script:EffectivePlatform
@@ -1209,7 +1209,7 @@ else {
     else {
         Write-Host "Code intel install check: FAILED"
     }
-    Write-Host "Root: $root"
+    Write-Host "Root: $repoRoot"
     Write-Host "Config: $Config"
     if ($AuditInstallPlan) {
         foreach ($planItem in $installPlan) {

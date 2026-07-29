@@ -18,7 +18,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSCommandPath
 $repoRoot = Split-Path -Parent $root
 if ([string]::IsNullOrWhiteSpace($Manifest)) {
-    $Manifest = Join-Path $root "orchestration\integrations.json"
+    $Manifest = Join-Path $repoRoot "orchestration\integrations.json"
 }
 
 function Get-JsonProperty {
