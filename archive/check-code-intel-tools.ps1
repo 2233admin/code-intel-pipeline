@@ -179,8 +179,11 @@ if (Test-Path -LiteralPath $Config -PathType Leaf) {
     }
 }
 
-$pipelineRoot = Split-Path -Parent $PSCommandPath
-$pipelineScript = Join-Path $pipelineRoot "run-code-intel.ps1"
+# this script lives under archive/; crates/, target/ and the default
+# CODE_INTEL_HOME are all at the repository root above it
+$archiveRoot = Split-Path -Parent $PSCommandPath
+$pipelineRoot = Split-Path -Parent $archiveRoot
+$pipelineScript = Join-Path $archiveRoot "run-code-intel.ps1"
 $codeIntelCliRoot = Join-Path (Join-Path $pipelineRoot "crates") "code-intel-cli"
 $codeIntelCargo = Join-Path $codeIntelCliRoot "Cargo.toml"
 $codeIntelGraphSource = Join-Path (Join-Path $codeIntelCliRoot "src") "graph.rs"
@@ -204,7 +207,7 @@ if (-not [string]::IsNullOrWhiteSpace($RepoPath)) {
 }
 $sentruxScope = Resolve-SentruxScope $repoPath $repoConfig
 
-$pipelineRoot = Split-Path -Parent $PSCommandPath
+$pipelineRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 $paths = Get-CodeIntelPaths -Platform $effectivePlatform -Root $pipelineRoot
 $userProfile = Get-CodeIntelHomeDirectory
 $understandSkillCandidates = @(
