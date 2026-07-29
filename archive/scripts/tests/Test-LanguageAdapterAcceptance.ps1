@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Report,
 
-    [string]$Policy = (Join-Path ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))) "orchestration\language-adapter-acceptance-policy.v1.json"),
+    [string]$Policy = (Join-Path ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))) "orchestration\language-adapter-acceptance-policy.v1.json"),
 
     [switch]$Json
 )
@@ -31,8 +31,8 @@ function Resolve-RepoBoundFile {
     }
     $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
     $repoRoot = Split-Path -Parent $root
-    $prefix = [System.IO.Path]::TrimEndingDirectorySeparator($root) + [System.IO.Path]::DirectorySeparatorChar
-    $resolved = [System.IO.Path]::GetFullPath((Join-Path $root $RelativePath))
+    $prefix = [System.IO.Path]::TrimEndingDirectorySeparator($repoRoot) + [System.IO.Path]::DirectorySeparatorChar
+    $resolved = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $RelativePath))
     if (-not $resolved.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "provenance path escapes repository: $RelativePath"
     }

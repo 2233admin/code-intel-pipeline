@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 $archiveRoot = Split-Path -Parent $PSScriptRoot
 
 $repoRoot = Split-Path -Parent $archiveRoot
-$delegate = Join-Path $repoRoot "Invoke-ModelChannelDelegate.ps1"
+$delegate = Join-Path $repoRoot "archive/Invoke-ModelChannelDelegate.ps1"
 $root = Join-Path ([IO.Path]::GetTempPath()) ("code-intel-delegate-test-{0}" -f [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $root | Out-Null
 
@@ -163,7 +163,7 @@ try {
     }
 
     $facadeArtifacts = Join-Path $root "pipeline-facade"
-    & pwsh -NoProfile -File (Join-Path $repoRoot "run-code-intel.ps1") -ModelAdapterRequest $deniedRequest -ModelAdapterArtifactRoot $facadeArtifacts 2>&1 | Out-Null
+    & pwsh -NoProfile -File (Join-Path $repoRoot "archive/run-code-intel.ps1") -ModelAdapterRequest $deniedRequest -ModelAdapterArtifactRoot $facadeArtifacts 2>&1 | Out-Null
     Assert-Equal $LASTEXITCODE 65 "pipeline model-adapter facade must reject legacy raw executable requests"
     if (Test-Path -LiteralPath (Join-Path $facadeArtifacts "model-channel-result.json")) { throw "rejected legacy pipeline request must not create an invocation result" }
 

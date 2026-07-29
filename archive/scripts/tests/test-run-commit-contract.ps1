@@ -57,7 +57,7 @@ try {
     $manifestRefPath = Join-Path $temp "manifest-ref.json"
     [IO.File]::WriteAllText($manifestRefPath, ($manifestRef | ConvertTo-Json -Compress), [Text.UTF8Encoding]::new($false))
 
-    & (Join-Path $Root "run-code-intel.ps1") `
+    & (Join-Path $Root "archive/run-code-intel.ps1") `
         -RunCommitSourceRoot $source `
         -RunCommitAuthorityRoot $authority `
         -RunCommitManifestRef $manifestRefPath `
@@ -78,7 +78,7 @@ try {
     }
 
     $index = Join-Path $artifactRoot "index.md"
-    & (Join-Path $Root "update-code-intel-index.ps1") -ArtifactRoot $artifactRoot -OutputPath $index | Out-Null
+    & (Join-Path $Root "archive/update-code-intel-index.ps1") -ArtifactRoot $artifactRoot -OutputPath $index | Out-Null
     if (-not (Get-Content -LiteralPath $index -Raw).Contains("published")) {
         throw "A08 index did not admit a valid new A07 marker"
     }

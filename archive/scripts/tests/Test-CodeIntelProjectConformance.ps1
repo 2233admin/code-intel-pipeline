@@ -4,7 +4,7 @@ param(
     [ValidateSet("fast", "full")]
     [string]$Profile = "fast",
 
-    [string]$Policy = (Join-Path ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))) "orchestration\code-intel-project-conformance-policy.v1.json"),
+    [string]$Policy = (Join-Path ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))) "orchestration\code-intel-project-conformance-policy.v1.json"),
 
     [switch]$Json
 )
@@ -33,8 +33,10 @@ function Resolve-RepoPath {
     if ([string]::IsNullOrWhiteSpace($RelativePath) -or [System.IO.Path]::IsPathRooted($RelativePath)) {
         throw "path must be repository-relative: $RelativePath"
     }
-    $prefix = [System.IO.Path]::TrimEndingDirectorySeparator($root) + [System.IO.Path]::DirectorySeparatorChar
-    $resolved = [System.IO.Path]::GetFullPath((Join-Path $root $RelativePath))
+    # policy paths are repository-relative, and the repository is one level
+    # above this script's archive/ home
+    $prefix = [System.IO.Path]::TrimEndingDirectorySeparator($repoRoot) + [System.IO.Path]::DirectorySeparatorChar
+    $resolved = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $RelativePath))
     if (-not $resolved.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "path escapes repository: $RelativePath"
     }

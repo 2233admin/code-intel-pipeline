@@ -61,7 +61,7 @@ $exeName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
 $rustCli = Join-Path $repoRoot (Join-Path "target/release" $exeName)
 
 $manifestPath = Join-Path $repoRoot "orchestration/integrations.json"
-$ps1Script = Join-Path $repoRoot "run-code-intel.ps1"
+$ps1Script = Join-Path $repoRoot "archive/run-code-intel.ps1"
 
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
     throw "Cannot find orchestration manifest: $manifestPath"

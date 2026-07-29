@@ -4,7 +4,7 @@ param(
     [ValidateSet("development", "pon-candidate")]
     [string]$Profile = "development",
 
-    [string]$Policy = (Join-Path ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))) "orchestration\python314-pon-development-policy.v1.json"),
+    [string]$Policy = (Join-Path ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))) "orchestration\python314-pon-development-policy.v1.json"),
 
     [string]$CPythonCommand = "",
 
@@ -34,8 +34,8 @@ function Resolve-RepoFile {
     if ([string]::IsNullOrWhiteSpace($RelativePath) -or [System.IO.Path]::IsPathRooted($RelativePath)) {
         throw "path must be repository-relative: $RelativePath"
     }
-    $prefix = [System.IO.Path]::TrimEndingDirectorySeparator($root) + [System.IO.Path]::DirectorySeparatorChar
-    $resolved = [System.IO.Path]::GetFullPath((Join-Path $root $RelativePath))
+    $prefix = [System.IO.Path]::TrimEndingDirectorySeparator($repoRoot) + [System.IO.Path]::DirectorySeparatorChar
+    $resolved = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $RelativePath))
     if (-not $resolved.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "path escapes repository: $RelativePath"
     }

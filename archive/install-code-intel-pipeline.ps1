@@ -939,6 +939,7 @@ $checks = New-Object System.Collections.Generic.List[object]
 $installActions = New-Object System.Collections.Generic.List[object]
 $installPlan = New-Object System.Collections.Generic.List[object]
 $root = Split-Path -Parent $PSCommandPath
+$repoRoot = Split-Path -Parent $root
 $paths = Get-CodeIntelPaths -Platform $script:EffectivePlatform -Root $root
 $homeEnv = Set-CodeIntelUserEnv -Name "CODE_INTEL_HOME" -Value $paths.codeIntelHome -Platform $script:EffectivePlatform
 Add-InstallAction $installActions "env:CODE_INTEL_HOME" "installed" $homeEnv.detail "" "env" $false
@@ -1007,7 +1008,6 @@ $requiredFiles = @(
     "run-code-intel.ps1",
     "Invoke-SentruxAgentTool.ps1",
     "Invoke-ScopedRepowise.ps1",
-    "Run-ScopedRepowiseDocs.py",
     "Invoke-CodeNexusLite.ps1",
     "bootstrap-new-machine.ps1",
     "scripts/tests/test-code-intel-pipeline.ps1",
@@ -1019,6 +1019,8 @@ $requiredFiles = @(
 foreach ($file in $requiredFiles) {
     Test-File $checks "pipeline:$file" (Join-Path $root $file) $true
 }
+# stayed at the repository root when the PowerShell moved under archive/
+Test-File $checks "pipeline:Run-ScopedRepowiseDocs.py" (Join-Path $repoRoot "Run-ScopedRepowiseDocs.py") $true
 Test-File $checks "config" $Config $true
 $shimSource = Join-Path (Join-Path $root "tools") "sentrux-shim"
 $shimLauncherName = if ($script:EffectivePlatform -eq "windows") { "sentrux.cmd" } else { "sentrux" }

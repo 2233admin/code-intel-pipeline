@@ -16,6 +16,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSCommandPath
+$repoRoot = Split-Path -Parent $root
 if ([string]::IsNullOrWhiteSpace($Manifest)) {
     $Manifest = Join-Path $root "orchestration\integrations.json"
 }
@@ -102,7 +103,7 @@ foreach ($integration in $integrations) {
         $errors.Add("integration $id has no entrypoint")
     }
     elseif ($entrypoint -like "*.ps1" -or $entrypoint -like "*.py" -or $entrypoint -like "*.toml" -or $entrypoint -like "*.rs") {
-        $candidate = Join-Path $root $entrypoint
+        $candidate = Join-Path $repoRoot $entrypoint
         if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
             $errors.Add("integration $id entrypoint missing: $entrypoint")
         }

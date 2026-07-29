@@ -20,7 +20,7 @@ foreach ($relative in @(
     "orchestration\schemas\code-intel-repository-survival-scan-result.v1.schema.json",
     "docs\repository-survival-scan.md"
 )) {
-    if (-not (Test-Path -LiteralPath (Join-Path $root $relative) -PathType Leaf)) { throw "B05 contract file missing: $relative" }
+    if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $relative) -PathType Leaf)) { throw "B05 contract file missing: $relative" }
 }
 
 $facade = Get-Content -LiteralPath (Join-Path $root "run-code-intel.ps1") -Raw

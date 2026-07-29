@@ -4,7 +4,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $archiveRoot = Split-Path -Parent $PSScriptRoot
 $repoRoot = Split-Path -Parent $archiveRoot
-$pipeline = Join-Path $repoRoot "run-code-intel.ps1"
+$pipeline = Join-Path $repoRoot "archive/run-code-intel.ps1"
 $root = Join-Path ([IO.Path]::GetTempPath()) ("code-intel-model-degraded-{0}" -f [guid]::NewGuid().ToString("N"))
 
 try {
