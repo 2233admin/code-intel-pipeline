@@ -11,6 +11,8 @@ function Assert-True {
 }
 
 $root = (Resolve-Path -LiteralPath $RepoPath).Path
+
+$repoRoot = $root
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-a08-contract-" + [guid]::NewGuid().ToString("N"))
 try {
     New-Item -ItemType Directory -Force -Path $temp | Out-Null
@@ -18,7 +20,7 @@ try {
     Assert-True ($LASTEXITCODE -eq 0) "Rust CLI build failed"
 
     $output = Join-Path $temp "index.md"
-    $result = & (Join-Path $root "update-code-intel-index.ps1") -ArtifactRoot $temp -OutputPath $output | ConvertFrom-Json
+    $result = & (Join-Path $root "archive/update-code-intel-index.ps1") -ArtifactRoot $temp -OutputPath $output | ConvertFrom-Json
     Assert-True ($LASTEXITCODE -eq 0) "Committed-only facade failed"
     Assert-True ($result.schema -eq "code-intel-artifact-index.v1") "Facade did not route to the A08 Rust schema"
     Assert-True ($result.mode -eq "committed-only") "Normal facade mode is not committed-only"
@@ -26,11 +28,11 @@ try {
     Assert-True ($index.schema -eq "code-intel-artifact-index.v1") "Rust index JSON was not published"
 
     $legacyOutput = Join-Path $temp "legacy-index.md"
-    $legacy = & (Join-Path $root "update-code-intel-index.ps1") -ArtifactRoot $temp -OutputPath $legacyOutput -LegacyCompatibilityMode | ConvertFrom-Json
+    $legacy = & (Join-Path $root "archive/update-code-intel-index.ps1") -ArtifactRoot $temp -OutputPath $legacyOutput -LegacyCompatibilityMode | ConvertFrom-Json
     Assert-True ($LASTEXITCODE -eq 0) "Explicit legacy compatibility mode failed"
     Assert-True ($legacy.ok -eq $true) "Legacy compatibility result is invalid"
 
-    $script = Get-Content -LiteralPath (Join-Path $root "update-code-intel-index.ps1") -Raw
+    $script = Get-Content -LiteralPath (Join-Path $root "archive/update-code-intel-index.ps1") -Raw
     Assert-True ($script.Contains('"artifact", "index"')) "Facade lacks the production Rust route"
     Assert-True ($script.Contains("LegacyCompatibilityMode")) "Facade lacks explicit legacy compatibility mode"
 

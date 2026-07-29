@@ -95,7 +95,7 @@ try {
     # These fixtures exercise the pre-A07 marker/report contract. Keep that
     # compatibility surface explicit; the normal facade now admits only A07
     # code-intel-run-commit.v1 markers through the Rust engine.
-    & (Join-Path $root "update-code-intel-index.ps1") -ArtifactRoot $fixtureRoot -OutputPath $outputPath -LegacyCompatibilityMode | Out-Null
+    & (Join-Path $root "archive/update-code-intel-index.ps1") -ArtifactRoot $fixtureRoot -OutputPath $outputPath -LegacyCompatibilityMode | Out-Null
     $indexPath = [System.IO.Path]::ChangeExtension($outputPath, ".json")
     $rows = @(Get-Content -LiteralPath $indexPath -Raw | ConvertFrom-Json)
 
@@ -110,7 +110,7 @@ try {
     Assert-True (-not (@($rows.repo) -contains "staged-repo")) "Staging directories must never enter the authoritative index."
 
     $smokeRoot = Join-Path $fixtureRoot "smoke"
-    & (Join-Path $root "run-code-intel.ps1") -RepoPath $root -Mode lite -ArtifactRoot $smokeRoot -SkipRepowise -SkipRepomix -SkipSentrux -SkipGitHubResearch -SkipOpenSpec | Out-Null
+    & (Join-Path $root "archive/run-code-intel.ps1") -RepoPath $root -Mode lite -ArtifactRoot $smokeRoot -SkipRepowise -SkipRepomix -SkipSentrux -SkipGitHubResearch -SkipOpenSpec | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) "A real lite pipeline publication smoke run must succeed."
     $publishedRuns = @(Get-ChildItem -LiteralPath (Join-Path $smokeRoot (Split-Path -Leaf $root)) -Directory)
     Assert-True ($publishedRuns.Count -eq 1) "The smoke run must publish exactly one final directory."

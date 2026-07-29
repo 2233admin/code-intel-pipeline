@@ -24,6 +24,7 @@ function Assert-FileContains {
 
 $root = (Resolve-Path -LiteralPath $RepoPath).Path
 
+$repoRoot = $root
 $projectManagementPath = Join-Path $repoRoot "docs/project-management-support.md"
 $issueTrackerPath = Join-Path $repoRoot "docs/agents/issue-tracker.md"
 $triageLabelsPath = Join-Path $repoRoot "docs/agents/triage-labels.md"

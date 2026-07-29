@@ -39,9 +39,11 @@ function Get-MapValue {
 }
 
 $root = (Resolve-Path -LiteralPath $RepoPath).Path
-$detectorPath = Join-Path $root "OpenSpec-Detector.ps1"
+
+$repoRoot = $root
+$detectorPath = Join-Path $root "archive/OpenSpec-Detector.ps1"
 Assert-True (Test-Path -LiteralPath $detectorPath -PathType Leaf) "OpenSpec-Detector.ps1 must exist."
-$facadePath = Join-Path $root "Invoke-WorkflowRecommendation.ps1"
+$facadePath = Join-Path $root "archive/Invoke-WorkflowRecommendation.ps1"
 Assert-True (Test-Path -LiteralPath $facadePath -PathType Leaf) "Workflow recommendation facade must exist."
 $schemaPath = Join-Path $repoRoot "orchestration/schemas/code-intel-advisory-workflow-recommendation.v1.schema.json"
 $schema = Get-Content -LiteralPath $schemaPath -Raw | ConvertFrom-Json
@@ -54,7 +56,7 @@ Assert-True ($registration[0].capabilityDeclaration.id -eq "advisory.workflow-re
 Assert-True (@($registration[0].capabilityDeclaration.allowedEffects).Count -eq 0) "A01 declaration must allow no advisory effects."
 Assert-True ($registration[0].runtimeAdapter -eq "advisory.workflow-recommend.compat") "Registration must bind the executable runtime adapter."
 Assert-True (Test-Path -LiteralPath (Join-Path $repoRoot "docs/advisory-workflow-recommendation.md") -PathType Leaf) "Advisory boundary documentation must exist."
-$runnerSource = Get-Content -LiteralPath (Join-Path $root "run-code-intel.ps1") -Raw
+$runnerSource = Get-Content -LiteralPath (Join-Path $root "archive/run-code-intel.ps1") -Raw
 Assert-True ($runnerSource -notmatch "function Get-CodeMetrics") "Main runner must not retain duplicated recommender implementation."
 Assert-True ($runnerSource -match "capability exec advisory.workflow-recommend") "Main runner must invoke the recommendation through the A01 envelope."
 

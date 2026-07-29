@@ -5,6 +5,7 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+$repoRoot = Split-Path -Parent $root
 $atom = Join-Path $root "Invoke-CodeIntelAutomaticPullRequest.ps1"
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("code-intel-auto-pr-" + [guid]::NewGuid().ToString("N"))
 

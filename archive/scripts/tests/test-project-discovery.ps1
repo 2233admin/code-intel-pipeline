@@ -6,7 +6,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = (Resolve-Path -LiteralPath $RepoPath).Path
-$script = Join-Path $root "Find-CodeIntelProjects.ps1"
+$script = Join-Path $root "archive/Find-CodeIntelProjects.ps1"
 if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
     throw "Missing Find-CodeIntelProjects.ps1"
 }

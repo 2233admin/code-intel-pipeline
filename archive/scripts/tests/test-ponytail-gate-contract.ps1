@@ -8,6 +8,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = (Resolve-Path -LiteralPath $RepoPath).Path
+
+$repoRoot = $root
 $schemaPath = Join-Path $repoRoot "orchestration/schemas/code-intel-ponytail-gate.v1.schema.json"
 $policyPath = Join-Path $repoRoot "orchestration/ponytail-gate-policy.v1.json"
 $fixturePath = Join-Path $repoRoot "tests/fixtures/ponytail/c00-necessity-trace.json"

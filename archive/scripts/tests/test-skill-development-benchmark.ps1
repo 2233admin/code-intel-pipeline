@@ -34,6 +34,8 @@ function Assert-FrontMatterField {
 }
 
 $root = (Resolve-Path -LiteralPath $RepoPath).Path
+
+$repoRoot = $root
 $skillPath = Join-Path $repoRoot "skills/code-intel-pipeline/SKILL.md"
 $contextPath = Join-Path $repoRoot "CONTEXT.md"
 $skillBenchmarkPath = Join-Path $repoRoot "docs/skill-development-benchmark.md"
@@ -179,7 +181,7 @@ foreach ($check in $ponytailImpactScoreboardChecks) {
         -Message "Ponytail impact scoreboard must $($check[1])."
 }
 
-$installerPath = Join-Path $root "install-code-intel-pipeline.ps1"
+$installerPath = Join-Path $root "archive/install-code-intel-pipeline.ps1"
 $tokens = $null
 $parseErrors = $null
 $installerAst = [System.Management.Automation.Language.Parser]::ParseFile(

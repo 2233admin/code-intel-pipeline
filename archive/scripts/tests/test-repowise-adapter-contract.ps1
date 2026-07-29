@@ -5,8 +5,8 @@ param([string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path -LiteralPath $RepoPath).Path
-
-$facade = Get-Content -Raw -LiteralPath (Join-Path $root "run-code-intel.ps1")
+$repoRoot = $root
+$facade = Get-Content -Raw -LiteralPath (Join-Path $root "archive/run-code-intel.ps1")
 if ($facade.Contains('Join-Path $PSScriptRoot "scripts/tests/test-code-intel-provider.ps1"')) {
     throw "Production facade must not execute the test provider script"
 }
@@ -20,7 +20,7 @@ if (-not $facade.Contains("Index-only repowise will still run.")) {
     throw "Repowise docs health failure no longer preserves index-only execution"
 }
 
-$probe = Join-Path $root "Invoke-RepowiseProviderProbe.ps1"
+$probe = Join-Path $root "archive/Invoke-RepowiseProviderProbe.ps1"
 try {
     $env:CODE_INTEL_API_KEY = "sk-" + "contract-secret-123456"
     $raw = & $probe -Provider mock -Json
@@ -44,7 +44,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Repowise production route contract failed" }
 
     $fixtureRoot = Join-Path $repoRoot "tests/fixtures/repowise-adapter"
-    $facadeOutput = & pwsh -NoProfile -File (Join-Path $root "run-code-intel.ps1") `
+    $facadeOutput = & pwsh -NoProfile -File (Join-Path $root "archive/run-code-intel.ps1") `
         -RepowiseAdapterRequest (Join-Path $fixtureRoot "success.json") `
         -RepowiseAdapterArtifactRoot $fixtureRoot `
         -RepowiseAdapterEvaluatedAt 1700000100 `

@@ -3,6 +3,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+$repoRoot = Split-Path -Parent $root
 $flow = Join-Path $root "Invoke-CodeIntelAutomaticPullRequestFlow.ps1"
 $codeIntel = Join-Path $repoRoot "target\debug\code-intel.exe"
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("code-intel-auto-pr-flow-" + [guid]::NewGuid().ToString("N"))

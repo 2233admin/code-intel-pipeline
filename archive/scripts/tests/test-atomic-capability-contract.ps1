@@ -60,6 +60,8 @@ function Assert-EnvelopesCoherent {
 }
 
 $root = (Resolve-Path -LiteralPath $RepoPath).Path
+
+$repoRoot = $root
 $registryPath = Join-Path $repoRoot "orchestration\integrations.json"
 $contractPath = Join-Path $repoRoot "orchestration\capability-contract.v1.json"
 $schemaPath = Join-Path $repoRoot "orchestration\schemas\code-intel-capability-envelope.v1.schema.json"
