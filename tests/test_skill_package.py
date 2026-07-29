@@ -279,8 +279,10 @@ class SkillPackageTests(unittest.TestCase):
 
             bootstrap.safe_extract_zip(archive, destination)
 
+            # arbitrary member name -- this exercises safe_extract_zip, not the
+            # release layout, so it must match what the fixture zip wrote above
             extracted = (
-                destination / "code-intel-pipeline" / "archive/install-code-intel-pipeline.ps1"
+                destination / "code-intel-pipeline" / "install-code-intel-pipeline.ps1"
             )
             self.assertTrue(extracted.is_file())
             expected = hashlib.sha256(archive.read_bytes()).hexdigest()

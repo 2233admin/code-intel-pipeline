@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-POWERSHELL_TESTS = ROOT / "scripts" / "tests"
+POWERSHELL_TESTS = ROOT / "archive" / "scripts" / "tests"
 PUBLIC_ROOT_ENTRY_POINTS = {
     "archive/bootstrap-new-machine.ps1",
     "archive/check-code-intel-tools.ps1",
