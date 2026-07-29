@@ -358,6 +358,10 @@ fn inventory(request: &Value, out: &Path) -> Result<AdapterOutput, AdapterError>
             glob_patterns.push(p.to_string());
         }
     }
+    // The fault injection below is debug-only on purpose: a shipped binary must
+    // not carry an env-var hook that can widen the inventory baseline. Release
+    // builds therefore never mutate the set, which is why `mut` is unused there.
+    #[cfg_attr(not(debug_assertions), allow(unused_mut))]
     let mut actual_baseline = run_rg_files(
         &rg,
         repo,

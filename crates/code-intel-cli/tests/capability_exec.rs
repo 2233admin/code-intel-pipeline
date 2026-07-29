@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
-    "35b76523b9e6bf98046349b3b88e42076909e8c024077412cf8aa45294611285";
+    "68aa0d7db1f027f6e95a1be68410b7806d1eb445b9d93877898bf696c6995fbc";
 const STRUCTURED_EDIT_DIGEST: &str =
     "6f481d582dc0301fb438bcd18b9ab5704fc72f81b7044635140d4b99c4fae0ac";
 static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -503,7 +503,14 @@ fn relocated_repositories_emit_identical_inventory_bytes_and_digest() {
     let _ = fs::remove_dir_all(root);
 }
 
+// Drives the `CODE_INTEL_TEST_RG_EXTRA_PATH` hook in `capability_inventory.rs`,
+// which is `#[cfg(debug_assertions)]` so the shipped binary carries no inventory
+// fault injection. `cargo test --release` builds that binary without the hook,
+// so this test only has something to assert against in a debug build. The
+// contract it guards (`verify_inventory_path_sets` refusing to publish on a set
+// mismatch) is compiled into every profile — only the simulation is debug-only.
 #[test]
+#[cfg(debug_assertions)]
 fn inventory_rejects_simulated_rg_extra_path_without_publication() {
     let root = temp_dir("rg-extra-path");
     let repo = root.join("repo");
@@ -1632,7 +1639,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
         "version":"1.0.0",
         "toolchainDigests":[
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-            "35b76523b9e6bf98046349b3b88e42076909e8c024077412cf8aa45294611285"
+            "68aa0d7db1f027f6e95a1be68410b7806d1eb445b9d93877898bf696c6995fbc"
         ]
     });
     value["options"] = json!({"repoPath":repo,"auto":true});

@@ -1068,6 +1068,201 @@ Test-Case "installer: Install-IntegrationsManifest reports install_failed when t
 }
 
 # ---------------------------------------------------------------------------
+# The repowise ThinkingBlock overlay must tell "obsolete" apart from "broken".
+# Upstream repowise 0.32.0 walks response.content itself, so the vulnerable
+# pattern is gone from a healthy install — which used to be reported as
+# install_failed on every single run and trained us to ignore the signal.
+# ---------------------------------------------------------------------------
+. (Get-ScriptFunctionsSource -Path (Join-Path $root "install-code-intel-pipeline.ps1") -Only @(
+    "Repair-RepowiseThinkingBlockPatch"
+))
+
+function Invoke-ThinkingPatchAgainst {
+    # Points the lookup the function derives from $env:APPDATA at a scratch tree
+    # seeded with $Source, and returns the install actions it recorded. Builds the
+    # provider path with the same Join-Path expression the function uses, so the
+    # fixture lands where the function looks on every platform.
+    param([string]$Dir, [string]$Source)
+
+    $providerPath = Join-Path $Dir "uv\tools\repowise\Lib\site-packages\repowise\core\providers\llm\anthropic.py"
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $providerPath) | Out-Null
+    Set-Content -LiteralPath $providerPath -Value $Source -Encoding UTF8
+
+    $savedAppData = $env:APPDATA
+    try {
+        $env:APPDATA = $Dir
+        $actions = New-Object System.Collections.Generic.List[object]
+        Repair-RepowiseThinkingBlockPatch $actions
+        return [pscustomobject]@{ Actions = $actions; ProviderPath = $providerPath }
+    }
+    finally {
+        $env:APPDATA = $savedAppData
+    }
+}
+
+Test-Case "installer: repowise thinking patch reports not_needed when upstream already skips non-text blocks" {
+    $dir = New-ScratchDir "thinking-upstream"
+    try {
+        $upstream = @'
+        text_content = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                text_content = block.text
+                break
+
+        result = GeneratedResponse(
+            content=text_content,
+        )
+'@
+        $run = Invoke-ThinkingPatchAgainst $dir $upstream
+        Assert-Equal 1 $run.Actions.Count "the upstream-fixed case must record exactly one action"
+        Assert-Equal "not_needed" $run.Actions[0].status "an install carrying the upstream fix is obsolete for this overlay, not failed"
+        Assert-True ((Get-Content -LiteralPath $run.ProviderPath -Raw).Contains("text_content = block.text")) "a not_needed verdict must leave upstream source untouched"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case "installer: repowise thinking patch still rewrites the vulnerable single-block read" {
+    $dir = New-ScratchDir "thinking-vulnerable"
+    try {
+        $vulnerable = @'
+        result = GeneratedResponse(
+            content=response.content[0].text,
+        )
+'@
+        $run = Invoke-ThinkingPatchAgainst $dir $vulnerable
+        Assert-Equal "installed" $run.Actions[0].status "the pre-0.32.0 shape must still be patched"
+        $patched = Get-Content -LiteralPath $run.ProviderPath -Raw
+        Assert-True ($patched.Contains('getattr(block, "type", "") == "text"')) "the patched source must iterate blocks and keep only text ones"
+        Assert-False ($patched.Contains("content=response.content[0].text,")) "the vulnerable single-block read must be gone after patching"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case "installer: repowise thinking patch reports install_failed on an unrecognised upstream layout" {
+    $dir = New-ScratchDir "thinking-unknown"
+    try {
+        $run = Invoke-ThinkingPatchAgainst $dir "content = something_else_entirely(response)"
+        Assert-Equal "install_failed" $run.Actions[0].status "a layout matching neither the vulnerable nor the fixed shape must stay loud"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+# ---------------------------------------------------------------------------
+# skill:claude must verify WHOSE skill occupies the path, not just that some
+# SKILL.md is there. Agent hosts share these directories with other skill
+# managers: on the machine that surfaced this, ~/.claude/skills/code-intel-pipeline
+# was a junction into an unrelated ~/.skillz store holding a five-week-old
+# SKILL.md that pointed every canonical path at a legacy clone — and the
+# installer reported `OK skill:claude` on every run.
+# ---------------------------------------------------------------------------
+. (Get-ScriptFunctionsSource -Path (Join-Path $root "install-code-intel-pipeline.ps1") -Only @(
+    "Add-Check",
+    "Test-SkillPathServesTarget",
+    "Move-OccupiedSkillPathAside",
+    "Ensure-SkillLink",
+    "Ensure-SkillSource"
+))
+. (Get-ScriptFunctionsSource -Path (Join-Path $root "tools\code-intel-platform.psm1") -Only @(
+    "New-CodeIntelLink"
+))
+$script:EffectivePlatform = Get-CodeIntelPlatform -Platform "auto"
+
+function New-SkillFixture {
+    param([string]$Path, [string]$Body)
+
+    New-Item -ItemType Directory -Force -Path $Path | Out-Null
+    Set-Content -LiteralPath (Join-Path $Path "SKILL.md") -Value $Body -Encoding UTF8
+    return $Path
+}
+
+Test-Case "installer: a skill path occupied by a foreign store is not accepted as linked" {
+    $dir = New-ScratchDir "skill-foreign"
+    try {
+        $target = New-SkillFixture (Join-Path $dir "agents\code-intel-pipeline") "bundled skill"
+        $foreign = New-SkillFixture (Join-Path $dir "skillz\code-intel-pipeline") "someone else's stale skill"
+
+        Assert-False (Test-SkillPathServesTarget -Path $foreign -Target $target) "a directory whose SKILL.md differs from the bundle must not count as serving it"
+
+        $checks = New-Object System.Collections.Generic.List[object]
+        Ensure-SkillLink $checks "claude" $foreign $target $false
+        Assert-False $checks[0].ok "the check must fail rather than accept a foreign skill store"
+        Assert-True ($checks[0].detail.Contains("occupied by a different skill store")) "the detail must name the actual problem"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case "installer: a plain copy matching the bundle is accepted (link-less installs)" {
+    $dir = New-ScratchDir "skill-copy"
+    try {
+        $target = New-SkillFixture (Join-Path $dir "agents\code-intel-pipeline") "bundled skill"
+        $copy = New-SkillFixture (Join-Path $dir "claude\code-intel-pipeline") "bundled skill"
+
+        Assert-True (Test-SkillPathServesTarget -Path $copy -Target $target) "macOS/Linux installs fall back to copying, which must still pass"
+
+        $checks = New-Object System.Collections.Generic.List[object]
+        Ensure-SkillLink $checks "claude" $copy $target $false
+        Assert-True $checks[0].ok "a byte-identical copy is a healthy install, not drift"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case "installer: repairing an occupied skill path preserves the previous occupant" {
+    $dir = New-ScratchDir "skill-repair"
+    try {
+        $target = New-SkillFixture (Join-Path $dir "agents\code-intel-pipeline") "bundled skill"
+        $occupied = New-SkillFixture (Join-Path $dir "claude\code-intel-pipeline") "someone else's stale skill"
+
+        $checks = New-Object System.Collections.Generic.List[object]
+        Ensure-SkillLink $checks "claude" $occupied $target $true
+
+        Assert-True $checks[0].ok "repair must make the path serve the bundled skill"
+        Assert-True (Test-SkillPathServesTarget -Path $occupied -Target $target) "the repaired path must resolve to the bundle"
+        $preserved = @(Get-ChildItem -LiteralPath (Join-Path $dir "claude") -Directory -Force | Where-Object { $_.Name -like "code-intel-pipeline.replaced-*" })
+        Assert-Equal 1 $preserved.Count "a real directory occupant must be moved aside, never deleted"
+        Assert-Equal "someone else's stale skill" ((Get-Content -LiteralPath (Join-Path $preserved[0].FullName "SKILL.md") -Raw).Trim()) "the displaced skill must keep its content"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+Test-Case "installer: bundled skill parity ignores __pycache__ so a local bootstrap run cannot fake drift" {
+    $dir = New-ScratchDir "skill-pycache"
+    try {
+        $bundled = New-SkillFixture (Join-Path $dir "bundled") "bundled skill"
+        Set-Content -LiteralPath (Join-Path $bundled "bootstrap.py") -Value "print('hi')" -Encoding UTF8
+        $installed = Join-Path $dir "installed"
+
+        $checks = New-Object System.Collections.Generic.List[object]
+        Ensure-SkillSource $checks $installed $bundled $true
+        Assert-True $checks[0].ok "a fresh install must report current"
+
+        $cache = Join-Path $bundled "__pycache__"
+        New-Item -ItemType Directory -Force -Path $cache | Out-Null
+        Set-Content -LiteralPath (Join-Path $cache "bootstrap.cpython-313.pyc") -Value "machine-local bytecode" -Encoding UTF8
+
+        $checks = New-Object System.Collections.Generic.List[object]
+        Ensure-SkillSource $checks $installed $bundled $false
+        Assert-True $checks[0].ok "a gitignored interpreter cache must not make the installed skill look outdated"
+        Assert-False (Test-Path -LiteralPath (Join-Path $installed "__pycache__")) "the cache must never be copied into an agent host's skill directory"
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Issue #59 proposal 4: the doctor's graph-provider check must build its paths
 # with chained Join-Path (single literal 'a\b\c' segments never exist on
 # mac/linux), use the platform binary name, and accept target/release builds in
