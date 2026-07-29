@@ -33,10 +33,10 @@ def load_bootstrap_module():
 def write_release_archive(path: Path, *, installer: str = "Write-Output 'ok'\n") -> None:
     with zipfile.ZipFile(path, "w") as handle:
         for name, content in {
-            "install-code-intel-pipeline.ps1": installer,
-            "check-code-intel-tools.ps1": "Write-Output 'doctor'\n",
-            "code-intel.ps1": "Write-Output 'launch'\n",
-            "invoke-code-intel.ps1": "Write-Output 'invoke'\n",
+            "archive/install-code-intel-pipeline.ps1": installer,
+            "archive/check-code-intel-tools.ps1": "Write-Output 'doctor'\n",
+            "archive/code-intel.ps1": "Write-Output 'launch'\n",
+            "archive/invoke-code-intel.ps1": "Write-Output 'invoke'\n",
         }.items():
             handle.writestr(f"code-intel-pipeline/{name}", content)
 
@@ -55,7 +55,7 @@ class SkillPackageTests(unittest.TestCase):
         self.assertFalse((ROOT / "skill").exists())
 
     def test_installer_uses_canonical_skill_path(self) -> None:
-        installer = (ROOT / "install-code-intel-pipeline.ps1").read_text(
+        installer = (ROOT / "archive/install-code-intel-pipeline.ps1").read_text(
             encoding="utf-8"
         )
         self.assertIn(
@@ -280,7 +280,7 @@ class SkillPackageTests(unittest.TestCase):
             bootstrap.safe_extract_zip(archive, destination)
 
             extracted = (
-                destination / "code-intel-pipeline" / "install-code-intel-pipeline.ps1"
+                destination / "code-intel-pipeline" / "archive/install-code-intel-pipeline.ps1"
             )
             self.assertTrue(extracted.is_file())
             expected = hashlib.sha256(archive.read_bytes()).hexdigest()
@@ -350,7 +350,7 @@ class SkillPackageTests(unittest.TestCase):
                 )
                 self.assertEqual(repeated_status, "already_installed")
 
-                (destination / "install-code-intel-pipeline.ps1").write_text(
+                (destination / "archive/install-code-intel-pipeline.ps1").write_text(
                     "tampered\n", encoding="utf-8"
                 )
                 repaired_destination, repaired_status = bootstrap.install_release(
@@ -359,7 +359,7 @@ class SkillPackageTests(unittest.TestCase):
                 self.assertEqual(repaired_destination, destination)
                 self.assertEqual(repaired_status, "repaired")
                 self.assertNotEqual(
-                    (destination / "install-code-intel-pipeline.ps1").read_text(
+                    (destination / "archive/install-code-intel-pipeline.ps1").read_text(
                         encoding="utf-8"
                     ),
                     "tampered\n",
@@ -379,12 +379,12 @@ class SkillPackageTests(unittest.TestCase):
                     "0" * 64,
                 )
 
-                (destination / "code-intel.ps1").unlink()
+                (destination / "archive/code-intel.ps1").unlink()
                 _, missing_file_status = bootstrap.install_release(
                     asset, temp_path / "installs"
                 )
                 self.assertEqual(missing_file_status, "repaired")
-                self.assertTrue((destination / "code-intel.ps1").is_file())
+                self.assertTrue((destination / "archive/code-intel.ps1").is_file())
 
 
 if __name__ == "__main__":

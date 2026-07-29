@@ -4,7 +4,7 @@ Act 1 (grill) complete - plan locked with the user. MAX_ROUNDS=5.
 
 ## Round 1 - Codex
 
-Using read-only review evidence from `sentrux-failure-normalization-plan.md`, `run-code-intel.ps1`, `docs/artifact-data-contract.md`, local Sentrux shim.
+Using read-only review evidence from `sentrux-failure-normalization-plan.md`, `archive/run-code-intel.ps1`, `docs/artifact-data-contract.md`, local Sentrux shim.
 
 - New `sentrux-failures.json` not added artifact data contract or `report.json` artifact surface, so downstream consumers may never discover it. Fix: update `docs/artifact-data-contract.md`, `report.json`, `summary.md`, `understanding.md` publish normalized artifact path authority level.
 - Plan assumes `sentrux check` stdout can identify `file:symbol cc=311`, but local shim check output only emits aggregate `max_cc exceeded` values, not offender identity. Fix: define fallback resolves offender identity enrichment only metric matches, otherwise emits `primary_target.status unresolved`.

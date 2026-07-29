@@ -271,7 +271,7 @@ fn dsm_inventory_does_not_traverse_directory_symlinks() {
 
 #[test]
 fn production_pipeline_prefers_rust_dsm_with_explicit_powershell_rollback() {
-    let pipeline = include_str!("../../../run-code-intel.ps1");
+    let pipeline = include_str!("../../../archive/run-code-intel.ps1");
     assert!(pipeline.contains("CODE_INTEL_SENTRUX_DSM_PROVIDER"));
     assert!(pipeline.contains("CODE_INTEL_RUST_CLI"));
     assert!(pipeline.contains("& $sentruxDsmRustCli sentrux dsm $sentruxTargetPath"));

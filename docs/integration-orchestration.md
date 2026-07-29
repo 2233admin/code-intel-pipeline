@@ -16,7 +16,7 @@ target/debug/code-intel.exe route
 
 `spec.greenfield` is an optional `behavior_specification` provider-contract integration. The pipeline-owned adapter writes `greenfield-manifest.json` and `greenfield-plan.md`, then points Greenfield at a dedicated workspace whose useful handoff lives under `greenfield-workspace/output/` and `greenfield-workspace/provenance/`.
 
-Greenfield is currently a Claude Code plugin, so default Code Intel runs must not block on an interactive Claude session. Use `Invoke-GreenfieldSpecExtraction.ps1 -Analyze` only when the local machine has `claude` plus the Greenfield plugin installed and the operator intentionally wants the spec extraction pass.
+Greenfield is currently a Claude Code plugin, so default Code Intel runs must not block on an interactive Claude session. Use `archive/Invoke-GreenfieldSpecExtraction.ps1 -Analyze` only when the local machine has `claude` plus the Greenfield plugin installed and the operator intentionally wants the spec extraction pass.
 
 ## Rule
 
@@ -67,10 +67,10 @@ cargo build -p code-intel
 .\target\debug\code-intel.exe provider --action Validate
 .\target\debug\code-intel.exe route --action Validate
 .\target\debug\code-intel.exe orchestrate --action Plan --json
-.\scripts/tests/test-integration-orchestration.ps1
+.\archive/scripts/tests/test-integration-orchestration.ps1
 ```
 
-6. Only then wire the adapter into the Rust runtime or a compatibility script such as `run-code-intel.ps1`, `check-code-intel-tools.ps1`, or `install-code-intel-pipeline.ps1`.
+6. Only then wire the adapter into the Rust runtime or a compatibility script such as `archive/run-code-intel.ps1`, `archive/check-code-intel-tools.ps1`, or `archive/install-code-intel-pipeline.ps1`.
 
 ## Current Stages
 
@@ -104,7 +104,7 @@ Provider quota can disable model-backed docs. It must not disable index/status.
 
 `structure.sentrux` is internal-first.
 
-The repo-owned lite core is the normal-operation fallback. A real `sentrux.exe` can accelerate or enrich output, but agent workflows should depend on `Invoke-SentruxAgentTool.ps1` and the artifact contract, not on a global Sentrux install.
+The repo-owned lite core is the normal-operation fallback. A real `sentrux.exe` can accelerate or enrich output, but agent workflows should depend on `archive/Invoke-SentruxAgentTool.ps1` and the artifact contract, not on a global Sentrux install.
 
 Rust is the replacement target. The planned stable surface is `target\debug\code-intel.exe sentrux <scan|health|session_start|session_end|check_rules|test_gaps|what_if> <repo-path>`. Until that command is complete, the PS1 file is compatibility glue and known debt.
 
@@ -116,4 +116,4 @@ It emits `.understand-anything/knowledge-graph.json` through `target\debug\code-
 
 ## Runner Direction
 
-`run-code-intel.ps1` is also compatibility glue. The replacement target is `target\debug\code-intel.exe run --repo <repo-path> --mode <mode>`, with report writing, hospital diagnosis, graph generation, Repowise, and Sentrux orchestration moved behind Rust modules registered in this manifest.
+`archive/run-code-intel.ps1` is also compatibility glue. The replacement target is `target\debug\code-intel.exe run --repo <repo-path> --mode <mode>`, with report writing, hospital diagnosis, graph generation, Repowise, and Sentrux orchestration moved behind Rust modules registered in this manifest.

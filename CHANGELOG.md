@@ -116,7 +116,7 @@ hardening came out of the same pass. Methodology adapted from
   `crates/code-intel-cli/src/hardened_git.rs` pins `core.fsmonitor`,
   `core.hooksPath`, `core.sshCommand`, `diff.external`, and `core.pager` empty
   via `-c` and sets `GIT_CONFIG_NOSYSTEM`; all five production call sites and
-  both `run-code-intel.ps1` invocations route through it. The pipeline already
+  both `archive/run-code-intel.ps1` invocations route through it. The pipeline already
   stripped `RIPGREP_CONFIG_PATH` at every ripgrep call site — this applies the
   same standard to the tool that can start a process.
 - Audit evidence is now grounded in the tree it cites.
@@ -135,7 +135,7 @@ hardening came out of the same pass. Methodology adapted from
   invariant with host files and redirect a department's `prompt` (the
   instruction source an audit agent reads). Both path classes now parse under
   the portable repo-relative contract `artifact_ref.rs` already enforces.
-- `Invoke-WorkflowRecommendation.ps1 -Json` pins stdout to UTF-8 on Windows.
+- `archive/Invoke-WorkflowRecommendation.ps1 -Json` pins stdout to UTF-8 on Windows.
   pwsh encodes redirected stdout with the system codepage, so on a zh-CN host
   the proposal arrived as GBK bytes and the capability adapter's parse failed
   with `invalid unicode code point`; CI runners are UTF-8, so the suite only
@@ -383,7 +383,7 @@ recommendation telling you how to start working on the repo it just mapped.
   cases locking down the fail-open/false-green fixes, plus an AST-based lint
   that flags `catch { return $true }` patterns across all `.ps1` files
   (`# lint-allow: fail-open` marker supported).
-- **Self-healing repowise patch** — `install-code-intel-pipeline.ps1` now
+- **Self-healing repowise patch** — `archive/install-code-intel-pipeline.ps1` now
   idempotently re-applies the ThinkingBlock fix to the installed repowise
   venv on every run (reasoning models behind Anthropic-compatible endpoints
   return thinking blocks first; upstream reads `content[0].text`). Survives
@@ -431,7 +431,7 @@ HTTP API. Also adds a PR-time skill-check quality gate.
 
 ### Added
 
-- **`crates/code-nexus-lite/`** — Rust + iii worker binary, wraps Repowise + Sentrux for Agent-friendly code-understanding context. 5.2 MB stripped + LTO. Cross-platform replacement for the Windows-only `Invoke-CodeNexusLite.ps1`. Apache-2.0 license (matches iii SDK).
+- **`crates/code-nexus-lite/`** — Rust + iii worker binary, wraps Repowise + Sentrux for Agent-friendly code-understanding context. 5.2 MB stripped + LTO. Cross-platform replacement for the Windows-only `archive/Invoke-CodeNexusLite.ps1`. Apache-2.0 license (matches iii SDK).
   - 3 iii functions: `codenexus::scan` / `codenexus::lite` / `codenexus::doctor`
   - 3 HTTP triggers: `POST /scan` / `POST /lite` / `POST /doctor`
   - Depends on `iii-sdk = "0.11"` (crates.io, Apache-2.0) + `repowise` 0.10.0 (Python) + `sqlite3` CLI
@@ -445,7 +445,7 @@ HTTP API. Also adds a PR-time skill-check quality gate.
 
 ### Changed
 
-- `Invoke-SentruxAgentTool.ps1` — minor edits
+- `archive/Invoke-SentruxAgentTool.ps1` — minor edits
 - `templates/sentrux-rules.example.toml` — minor edits
 
 ### Verified

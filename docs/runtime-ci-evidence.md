@@ -16,7 +16,7 @@ Snapshot mismatch and stale evidence produce a rejected summary with `health: un
 
 The stable `facts` array contains only conservative deterministic claims. Hospital/PET can consume the summary without learning provider-specific JSON and without converting absence into success.
 
-`run-code-intel.ps1 -RuntimeCiEvidenceRequest <request.json> -RuntimeCiEvidenceArtifactRoot <root>` invokes the registered provider during a normal run. Hospital/PET cites the emitted `runtime-ci-summary.json`, reports health/freshness/completeness, and uses Sentrux evolution/what-if only as the fallback when no runtime/CI request was supplied.
+`archive/run-code-intel.ps1 -RuntimeCiEvidenceRequest <request.json> -RuntimeCiEvidenceArtifactRoot <root>` invokes the registered provider during a normal run. Hospital/PET cites the emitted `runtime-ci-summary.json`, reports health/freshness/completeness, and uses Sentrux evolution/what-if only as the fallback when no runtime/CI request was supplied.
 
 ## Deliberate limits
 

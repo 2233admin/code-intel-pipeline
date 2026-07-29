@@ -43,4 +43,4 @@ separate validation boundaries.
 - Add a thin root facade and a bounded implementation under `tools/`.
 - Resolve the packaged `bin/code-intel.exe` first and source-tree debug binary only as a development fallback.
 - Emit a machine-readable flow result and retain the proposal/request/response/record/replay artifacts.
-- Reuse `Invoke-CodeIntelAutomaticPullRequest.ps1` for all `gh` effects.
+- Reuse `archive/Invoke-CodeIntelAutomaticPullRequest.ps1` for all `gh` effects.

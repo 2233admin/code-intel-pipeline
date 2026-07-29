@@ -16,7 +16,7 @@ fn root_help_leads_with_the_compiled_primary_entry() {
     let stdout = String::from_utf8(output.stdout).expect("help is UTF-8");
     assert!(stdout.contains("code-intel ."));
     assert!(stdout.contains("code-intel <path> --mode lite|normal|full"));
-    assert!(!stdout.contains("invoke-code-intel.ps1"));
+    assert!(!stdout.contains("archive/invoke-code-intel.ps1"));
 }
 
 #[test]

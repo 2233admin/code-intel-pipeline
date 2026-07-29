@@ -7,14 +7,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 POWERSHELL_TESTS = ROOT / "scripts" / "tests"
 PUBLIC_ROOT_ENTRY_POINTS = {
-    "bootstrap-new-machine.ps1",
-    "check-code-intel-tools.ps1",
-    "Find-CodeIntelProjects.ps1",
-    "install-code-intel-pipeline.ps1",
-    "code-intel.ps1",
-    "invoke-code-intel.ps1",
-    "Invoke-SentruxAgentTool.ps1",
-    "run-code-intel.ps1",
+    "archive/bootstrap-new-machine.ps1",
+    "archive/check-code-intel-tools.ps1",
+    "archive/Find-CodeIntelProjects.ps1",
+    "archive/install-code-intel-pipeline.ps1",
+    "archive/code-intel.ps1",
+    "archive/invoke-code-intel.ps1",
+    "archive/Invoke-SentruxAgentTool.ps1",
+    "archive/run-code-intel.ps1",
 }
 
 

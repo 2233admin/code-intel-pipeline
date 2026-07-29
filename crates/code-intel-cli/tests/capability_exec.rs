@@ -1585,7 +1585,7 @@ fn normalized_inventory_matches_real_legacy_runner_with_custom_exclude() {
     let runner = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
-        .join("run-code-intel.ps1");
+        .join("archive/run-code-intel.ps1");
     let legacy = Command::new("pwsh")
         .args(["-NoProfile", "-File"])
         .arg(&runner)
@@ -1676,7 +1676,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
 
     let facade = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
-        .join("Invoke-WorkflowRecommendation.ps1");
+        .join("archive/Invoke-WorkflowRecommendation.ps1");
     let direct = Command::new("pwsh")
         .args(["-NoLogo", "-NoProfile", "-File"])
         .arg(facade)

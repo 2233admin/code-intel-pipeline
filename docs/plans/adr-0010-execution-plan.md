@@ -6,18 +6,18 @@ Rule: every ticket below delivers exactly one independently testable capability.
 
 ## Outcome and completion evidence
 
-This plan is complete only when the compatibility facade can produce a committed artifact run through versioned capability envelopes, provider evidence is validated before it becomes fact, recommendations cannot cross authority boundaries, CodeNexus is replaceable through a Pipeline-owned port, the promised method/reuse/decision/orientation capabilities have executable contracts and proving tests, and PowerShell retirement is supported by parity evidence. `run-code-intel.ps1` remains the public compatibility facade until the final retirement gate passes.
+This plan is complete only when the compatibility facade can produce a committed artifact run through versioned capability envelopes, provider evidence is validated before it becomes fact, recommendations cannot cross authority boundaries, CodeNexus is replaceable through a Pipeline-owned port, the promised method/reuse/decision/orientation capabilities have executable contracts and proving tests, and PowerShell retirement is supported by parity evidence. `archive/run-code-intel.ps1` remains the public compatibility facade until the final retirement gate passes.
 
 Fresh evidence inspected while writing this plan:
 
 - ADR 0009 originally states its accepted contract did not itself change runtime execution or publication; the current dirty worktree now contains partial, uncommitted implementation attempts that must be verified against this plan rather than treated as absent or complete.
 - ADR 0010 says convergence is future work and forbids a big-bang rewrite.
-- `run-code-intel.ps1` still contains the workflow recommender and directly invokes provider preflight and `Invoke-CodeNexusLite.ps1`.
-- `run-code-intel.ps1` currently creates a `.staging-<nonce>` directory, promotes it, rewrites staged path text, and writes `run-complete.json` last; `update-code-intel-index.ps1` rejects staging directories and missing/invalid completion markers. These are partial, dirty-worktree implementations, not yet proof of A06-A08 atomicity, interruption safety, portable identity, envelope coherence, or independent verification.
-- `scripts/tests/test-transactional-publication.ps1` currently exercises staging exclusion, marker shape, path rewriting, and index admission. It is useful draft regression evidence, but it is untracked and has not independently proven the complete publication contract or all interruption phases.
+- `archive/run-code-intel.ps1` still contains the workflow recommender and directly invokes provider preflight and `archive/Invoke-CodeNexusLite.ps1`.
+- `archive/run-code-intel.ps1` currently creates a `.staging-<nonce>` directory, promotes it, rewrites staged path text, and writes `run-complete.json` last; `archive/update-code-intel-index.ps1` rejects staging directories and missing/invalid completion markers. These are partial, dirty-worktree implementations, not yet proof of A06-A08 atomicity, interruption safety, portable identity, envelope coherence, or independent verification.
+- `archive/scripts/tests/test-transactional-publication.ps1` currently exercises staging exclusion, marker shape, path rewriting, and index admission. It is useful draft regression evidence, but it is untracked and has not independently proven the complete publication contract or all interruption phases.
 - `crates/code-intel-cli/src/providers.rs` and `orchestration/integrations.json` currently contain dirty-worktree provider/manifest reconciliation, including canonical `codenexus/lite`, manifest lookup/drift checks, registered `diagnosis.hospital`, and doctor/runtime entries. These are partial/unverified implementations: several routes remain compatibility commands and they do not yet constitute the A04 shared admissibility engine or B01-B04 conformance.
 - `docs/architecture/reference-capability-map.md` currently inventories 12 manifest integrations plus drift/reference entries and explicitly says it is not adoption approval or health proof. It is an untracked audit draft and becomes input to B07/R01-R26, not completion evidence for those tickets.
-- Current dirty/untracked tests and docs, including `scripts/tests/test-integration-orchestration.ps1`, `scripts/tests/test-skill-development-benchmark.ps1`, ADR 0010, and the files above, predate or run concurrently with this plan; this plan neither claims them verified nor rewrites them.
+- Current dirty/untracked tests and docs, including `archive/scripts/tests/test-integration-orchestration.ps1`, `archive/scripts/tests/test-skill-development-benchmark.ps1`, ADR 0010, and the files above, predate or run concurrently with this plan; this plan neither claims them verified nor rewrites them.
 
 ## Delivery rules
 
@@ -71,7 +71,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 - **Owner / boundary:** test-engineer; owns immutable golden inputs and normalized current-output fixtures, not production orchestration.
 - **Dependencies:** none.
-- **Affected files (initial):** `tests/fixtures/parity/**` (new), `scripts/tests/test-code-intel-pipeline.ps1`, `scripts/tests/test-integration-orchestration.ps1`.
+- **Affected files (initial):** `tests/fixtures/parity/**` (new), `archive/scripts/tests/test-code-intel-pipeline.ps1`, `archive/scripts/tests/test-integration-orchestration.ps1`.
 - **Acceptance criteria:** representative clean, dirty, provider-unavailable, domain-fail, and partial-evidence runs have path/time-normalized golden machine artifacts; fixture update requires an explicit review reason; no production behavior changes.
 - **Smallest proving test:** run one fixture twice and assert byte-identical normalized output plus a deliberate mismatch rejection.
 - **Compatibility / rollback:** additive test-only capability; rollback is deleting the fixture harness without touching runtime.
@@ -146,7 +146,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 - **Affected files (initial):** new Rust coordinator/DAG module, capability declarations in `orchestration/integrations.json`, run-state schema, orchestration parity tests, facade adapter.
 - **Acceptance criteria:** rejects missing and cyclic dependencies; runs independent ready nodes concurrently; passes only verified Artifact Refs; preserves domain fail versus process failure; skips only dependency-blocked descendants; resumes completed nodes by deterministic identity; emits a complete run manifest for A07.
 - **Smallest proving test:** run the real `repo.snapshot -> inventory.rg` two-node DAG through envelopes, assert ordered dependency execution and A00 parity, then add an independent node and prove it still completes when a sibling branch domain-fails.
-- **Compatibility / rollback:** `run-code-intel.ps1` remains the outer facade and may select legacy sequential orchestration; rollback switches the facade route without deleting coordinator state.
+- **Compatibility / rollback:** `archive/run-code-intel.ps1` remains the outer facade and may select legacy sequential orchestration; rollback switches the facade route without deleting coordinator state.
 - **Ponytail Necessity Trace:** a single coordinator is necessary to make the declared graph executable; no workflow engine, queue, or database is introduced.
 - **Economic implementation lane:** in-process Rust topological scheduler over the existing registry and filesystem run state.
 - **Independent verifier condition:** verifier tests cycle/missing-dependency rejection, concurrency, branch-local failure, resume, deterministic order, and manifest completeness.
@@ -179,7 +179,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 - **Owner / boundary:** executor; owns index admission, not run production.
 - **Dependencies:** A07.
-- **Affected files (initial):** index reader/writer in Rust, `update-code-intel-index.ps1` adapter, tests.
+- **Affected files (initial):** index reader/writer in Rust, `archive/update-code-intel-index.ps1` adapter, tests.
 - **Acceptance criteria:** only valid completion markers enter the index; incomplete/forged markers are ignored with diagnosis; index is rebuildable.
 - **Smallest proving test:** place complete and staged runs side by side and assert only the complete run is indexed.
 - **Compatibility / rollback:** legacy indexing available under explicit compatibility mode.
@@ -191,7 +191,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 - **Owner / boundary:** executor; owns Repowise-native health/index/docs translation into the Evidence Provider Port, not admissibility policy or Repowise internals.
 - **Dependencies:** A04.
-- **Affected files (initial):** `crates/code-intel-cli/src/providers.rs`, Repowise adapter, `scripts/tests/test-code-intel-provider.ps1`, conformance fixtures, facade route.
+- **Affected files (initial):** `crates/code-intel-cli/src/providers.rs`, Repowise adapter, `archive/scripts/tests/test-code-intel-provider.ps1`, conformance fixtures, facade route.
 - **Acceptance criteria:** health remains distinct from evidence; index and docs declare different completeness/freshness/effects; quota failure cannot disable index status; all output passes A04 before fact promotion; production no longer runs a test file as its validator.
 - **Smallest proving test:** translate success, quota, and index-only fixtures; assert A04 accepts the good fixture and preserves quota as provider-unavailable/partial rather than local failure.
 - **Compatibility / rollback:** current CLI/Python probe remains behind the adapter; rollback routes facade to legacy preflight/index-only behavior.
@@ -215,7 +215,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 - **Owner / boundary:** executor; owns Sentrux collection/normalization translation into structural evidence, not structural policy or diagnosis.
 - **Dependencies:** A04.
-- **Affected files (initial):** `Invoke-SentruxAgentTool.ps1`, Sentrux adapter/schema/fixtures, normalization tests, integration registry.
+- **Affected files (initial):** `archive/Invoke-SentruxAgentTool.ps1`, Sentrux adapter/schema/fixtures, normalization tests, integration registry.
 - **Acceptance criteria:** every authoritative rule kind has normalized status/verdict/failure semantics; effects are declared; partial normalization remains incomplete/unknown; provider output passes A04 before diagnosis.
 - **Smallest proving test:** an unrecognized authoritative rule kind yields incomplete/unknown rather than pass, while a complete fixture validates.
 - **Compatibility / rollback:** bundled shim and current script remain provider implementations; rollback selects them through the same adapter.
@@ -227,7 +227,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 - **Owner / boundary:** executor; Pipeline owns the port/adapter; CodeNexus owns indexing, storage, retrieval, and impact semantics.
 - **Dependencies:** A04.
-- **Affected files (initial):** `orchestration/integrations.json`, CodeNexus port fixtures/adapter, `Invoke-CodeNexusLite.ps1`, `crates/code-intel-cli/src/providers.rs`.
+- **Affected files (initial):** `orchestration/integrations.json`, CodeNexus port fixtures/adapter, `archive/Invoke-CodeNexusLite.ps1`, `crates/code-intel-cli/src/providers.rs`.
 - **Acceptance criteria:** full CodeNexus and lite compatibility output map to the same provenance-bearing port and pass A04; Pipeline neither imports CodeNexus internals nor shares its database; absence yields provider-unavailable, not fabricated empty facts.
 - **Smallest proving test:** swap full and lite fixtures behind the same request and validate equal port shape with distinct provenance and snapshot identity.
 - **Compatibility / rollback:** lite script remains fallback adapter; rollback selects it explicitly.
@@ -251,7 +251,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 - **Owner / boundary:** executor; owns tool-neutral recommendations with evidence/confidence/alternatives, never adoption or execution.
 - **Dependencies:** A05, A02, A03.
-- **Affected files (initial):** `OpenSpec-Detector.ps1`, new atom implementation/contract, `run-code-intel.ps1`, `scripts/tests/test-workflow-recommendation-brief.ps1`.
+- **Affected files (initial):** `archive/OpenSpec-Detector.ps1`, new atom implementation/contract, `archive/run-code-intel.ps1`, `archive/scripts/tests/test-workflow-recommendation-brief.ps1`.
 - **Acceptance criteria:** duplicated recommender logic is removed from the main runner; OpenSpec/spec-kit/gstack are candidates, not dependencies; output is a schema-valid Advisory Atom proposal; authority gate blocks automatic adoption/init.
 - **Smallest proving test:** same fixture through standalone atom and facade yields parity; direct promotion to Adoption Decision is rejected.
 - **Compatibility / rollback:** historical `-SkipOpenSpec/-AutoOpenSpec` flags map to adapter options; rollback invokes standalone script.
@@ -263,7 +263,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 - **Owner / boundary:** architect/executor; owns reconciliation between declared capability registry and actual production invocation, not provider behavior.
 - **Dependencies:** A09, B01, B02, B03, B04, B08.
-- **Affected files (initial):** `orchestration/integrations.json`, `run-code-intel.ps1`, `Invoke-CodeIntelOrchestrator.ps1`, registry audit test.
+- **Affected files (initial):** `orchestration/integrations.json`, `archive/run-code-intel.ps1`, `archive/Invoke-CodeIntelOrchestrator.ps1`, registry audit test.
 - **Acceptance criteria:** every production participant is either declared with capability id, envelope, dependencies, effects, artifacts, and owner or removed from production invocation; audit explicitly covers doctor, diagnosis.hospital, Repomix, Native Code Evidence, cocoindex, GitHub Solution Research, Repowise, graph, Sentrux, CodeNexus, publication, and index; orphan declarations and undeclared invocations fail CI.
 - **Smallest proving test:** insert an undeclared Repomix invocation fixture and assert audit failure, then register it and assert its dependency/effect metadata is required.
 - **Compatibility / rollback:** audit-only report precedes enforcement; deleting an unused participant is preferred to speculative registration; rollback returns enforcement to warning without restoring deleted dead code.
@@ -275,7 +275,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 - **Owner / boundary:** executor; owns extraction of the current built-in files/symbols/chunks/imports/scorecard/Agent Code Slice producer into one deterministic capability atom, not specialized semantic graph claims or external cocoindex behavior.
 - **Dependencies:** A01, A02, A03, A04, A09.
-- **Affected files (initial):** native code-evidence functions currently in `run-code-intel.ps1`, new atom module/adapter, Code Evidence schemas, A/B and contract tests, registry declaration.
+- **Affected files (initial):** native code-evidence functions currently in `archive/run-code-intel.ps1`, new atom module/adapter, Code Evidence schemas, A/B and contract tests, registry declaration.
 - **Acceptance criteria:** atom consumes a Snapshot Identity, emits verified Artifact Refs for stable v1 artifacts, declares heuristic/parser coverage and effects, preserves current normalized artifacts, and returns unknown for unsupported precision rather than fabricating call-graph facts; facade invocation passes through A01/A09.
 - **Smallest proving test:** run the representative native Code Evidence fixture through an envelope, assert A00 artifact parity and A03 refs, then feed an unsupported language construct and assert explicit coverage/unknown rather than false relationship evidence.
 - **Compatibility / rollback:** embedded functions remain a compatibility implementation until parity and E07 approval; cocoindex remains a separate optional adapter/candidate.
@@ -287,7 +287,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 - **Owner / boundary:** executor; owns pure deterministic diagnosis, disposition, next-protocol, treatment, and surgery-plan routing from admitted evidence, not evidence collection, Markdown authority, or execution of treatment.
 - **Dependencies:** A05, B01, B02, B03, B05, B08.
-- **Affected files (initial):** `New-Hospital*`/`Get-Hospital*` functions currently in `run-code-intel.ps1`, new diagnosis atom, hospital JSON schema/fixtures, rendering separation tests, registry declaration.
+- **Affected files (initial):** `New-Hospital*`/`Get-Hospital*` functions currently in `archive/run-code-intel.ps1`, new diagnosis atom, hospital JSON schema/fixtures, rendering separation tests, registry declaration.
 - **Acceptance criteria:** consumes only A04-admitted Artifact Refs; authoritative missing/untrusted modalities yield unknown/fail-closed; the same facts produce the same machine diagnosis; Markdown is a rebuildable view; enrichment cannot override an untrusted authoritative diagnosis; output executes through A01/A09.
 - **Smallest proving test:** execute a provider-quota plus missing-current-graph fixture through the envelope and assert deterministic fail-closed diagnosis/next protocol, then rebuild Markdown without changing the machine verdict.
 - **Compatibility / rollback:** embedded Hospital functions remain adapter implementation until parity and E08 approval; current stable JSON fields remain readable.
@@ -299,10 +299,10 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 - **Owner / boundary:** executor; owns extraction/adaptation of repository/tool/provider/manifest readiness probes into one envelope-emitting doctor capability, not provider admissibility or scan execution.
 - **Dependencies:** A01, A02, A03, B07.
-- **Affected files (initial):** `check-code-intel-tools.ps1`, stable wrapper doctor path, Rust `doctor` command/adapter, doctor schema/fixtures, registry/manifest tests.
+- **Affected files (initial):** `archive/check-code-intel-tools.ps1`, stable wrapper doctor path, Rust `doctor` command/adapter, doctor schema/fixtures, registry/manifest tests.
 - **Acceptance criteria:** doctor executes through A01, emits one schema-valid result plus Artifact Refs bound to the examined snapshot/environment policy, separates presence/readiness from conformance/admissibility, redacts secrets, validates the reconciled manifest, and preserves a shell-compatible bootstrap path.
 - **Smallest proving test:** run doctor through an envelope on a fixture with present-but-nonconforming provider and manifest drift; assert readiness observations without fact promotion, redacted output, and nonzero domain diagnosis while stdout remains one result document.
-- **Compatibility / rollback:** `check-code-intel-tools.ps1` remains the bootstrap adapter until E09 approval; rollback restores wrapper routing without changing the doctor contract.
+- **Compatibility / rollback:** `archive/check-code-intel-tools.ps1` remains the bootstrap adapter until E09 approval; rollback restores wrapper routing without changing the doctor contract.
 - **Ponytail Necessity Trace:** doctor is active-required and currently outside the runtime envelope, leaving the public run DAG incomplete.
 - **Economic implementation lane:** wrap/extract existing probes and Rust artifact-doctor code; no new health service.
 - **Independent verifier condition:** verifier tests missing/present/nonconforming tools, manifest drift, provider health separation, secret redaction, stdout purity, and bootstrap rollback.
@@ -637,7 +637,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 - **Dependencies:** C03.
 - **Affected files (initial):** yao record, benchmark semantic trace, measurement/update/retirement evidence.
 - **Acceptance criteria:** records revision/license, absorbed benchmark criteria, conformance and measured usefulness, update review, rollback, replacement, and retirement state; local doc test is not upstream execution proof.
-- **Smallest proving test:** reject a record citing only `scripts/tests/test-skill-development-benchmark.ps1` pass; require pinned source and semantic conformance.
+- **Smallest proving test:** reject a record citing only `archive/scripts/tests/test-skill-development-benchmark.ps1` pass; require pinned source and semantic conformance.
 - **Compatibility / rollback:** internal benchmark remains if reference is retired.
 - **Ponytail Necessity Trace:** map marks the source reference-internalized but current evidence is terminological.
 - **Economic implementation lane:** record existing absorbed criteria; no upstream runtime.
@@ -789,9 +789,9 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 ### E02 — `compatibility.retire-recommender-branch`
 
-- **Owner / boundary:** executor; owns deletion of the duplicated workflow-recommender branch in `run-code-intel.ps1`, not recommender behavior.
+- **Owner / boundary:** executor; owns deletion of the duplicated workflow-recommender branch in `archive/run-code-intel.ps1`, not recommender behavior.
 - **Dependencies:** E01, B06.
-- **Affected files (initial):** `run-code-intel.ps1`, `OpenSpec-Detector.ps1` adapter path, recommender parity tests, one retirement record.
+- **Affected files (initial):** `archive/run-code-intel.ps1`, `archive/OpenSpec-Detector.ps1` adapter path, recommender parity tests, one retirement record.
 - **Acceptance criteria:** main-runner duplicate is absent; legacy flags route to B06; A00 parity, effects, no-auto-init, rollback rehearsal, and E00 approval pass.
 - **Smallest proving test:** facade and B06 return normalized parity for all recommender fixtures after the duplicate block is deleted.
 - **Compatibility / rollback:** restore the prior adapter branch/tag during the bounded window without changing B06.
@@ -801,9 +801,9 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 ### E03 — `compatibility.retire-provider-preflight-branch`
 
-- **Owner / boundary:** executor; owns removal of direct production invocation of `scripts/tests/test-code-intel-provider.ps1`, not Repowise behavior.
+- **Owner / boundary:** executor; owns removal of direct production invocation of `archive/scripts/tests/test-code-intel-provider.ps1`, not Repowise behavior.
 - **Dependencies:** E01, B01.
-- **Affected files (initial):** `run-code-intel.ps1`, Repowise facade route, provider tests, one retirement record.
+- **Affected files (initial):** `archive/run-code-intel.ps1`, Repowise facade route, provider tests, one retirement record.
 - **Acceptance criteria:** production routes through B01/A04; the test script is test-only or renamed appropriately; quota/index-only parity, effects, rollback rehearsal, and E00 approval pass.
 - **Smallest proving test:** provider quota fixture preserves index-only behavior through B01 with no production call to a `test-*` file.
 - **Compatibility / rollback:** legacy probe remains callable diagnostically during the observation window.
@@ -815,7 +815,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 - **Owner / boundary:** executor; owns removal of direct CodeNexus-lite invocation from the facade, not CodeNexus/lite implementation.
 - **Dependencies:** E01, B04, B05.
-- **Affected files (initial):** `run-code-intel.ps1`, CodeNexus adapter route, localization/survival tests, one retirement record.
+- **Affected files (initial):** `archive/run-code-intel.ps1`, CodeNexus adapter route, localization/survival tests, one retirement record.
 - **Acceptance criteria:** facade invokes B04; unavailable provider selects B05 without structural overclaim; parity/effects/provider-swap/rollback evidence and E00 approval pass.
 - **Smallest proving test:** full, lite, and unavailable fixtures traverse the port with expected parity and no direct script call in facade.
 - **Compatibility / rollback:** legacy direct call remains tagged for bounded rollback only.
@@ -825,9 +825,9 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 ### E05 — `compatibility.retire-publication-branch`
 
-- **Owner / boundary:** executor; owns removal of the legacy staging/promotion/completion-marker branch from `run-code-intel.ps1`, not index traversal or artifact generation.
+- **Owner / boundary:** executor; owns removal of the legacy staging/promotion/completion-marker branch from `archive/run-code-intel.ps1`, not index traversal or artifact generation.
 - **Dependencies:** E01, A07, A09.
-- **Affected files (initial):** `run-code-intel.ps1`, publication facade adapter, transactional publication tests, one retirement record.
+- **Affected files (initial):** `archive/run-code-intel.ps1`, publication facade adapter, transactional publication tests, one retirement record.
 - **Acceptance criteria:** facade routes publication through A09→A07; the current partial dirty-worktree staging/marker code is removed only after interruption/effect/parity/rollback evidence and E00 approval; index implementation is untouched by this ticket.
 - **Smallest proving test:** inject failure at every A07 phase through the facade and assert no completed final run, then complete and assert marker-last publication with A00 parity.
 - **Compatibility / rollback:** explicit legacy publication route remains during the bounded window and is isolated from committed-only index authority.
@@ -839,7 +839,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 - **Owner / boundary:** executor; owns removal of embedded Native Code Evidence production functions/call path from the facade, not B08 behavior.
 - **Dependencies:** E01, B08, B07.
-- **Affected files (initial):** `run-code-intel.ps1`, B08 adapter route, code-evidence tests, one retirement record.
+- **Affected files (initial):** `archive/run-code-intel.ps1`, B08 adapter route, code-evidence tests, one retirement record.
 - **Acceptance criteria:** normal/full modes invoke B08 through A09; embedded production branch is absent; artifact/effect/parity/unsupported-language/rollback evidence and E00 approval pass.
 - **Smallest proving test:** public mode matrix produces normalized Code Evidence parity through B08 while static audit finds no embedded production invocation.
 - **Compatibility / rollback:** prior embedded adapter remains tagged for the observation window.
@@ -851,7 +851,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 - **Owner / boundary:** executor; owns removal of embedded Hospital diagnosis/rendering production call path, not B09 diagnosis semantics.
 - **Dependencies:** E01, B09, B07.
-- **Affected files (initial):** `run-code-intel.ps1`, B09 adapter route, hospital parity/precedence/rendering tests, one retirement record.
+- **Affected files (initial):** `archive/run-code-intel.ps1`, B09 adapter route, hospital parity/precedence/rendering tests, one retirement record.
 - **Acceptance criteria:** facade consumes B09 machine result and rebuildable view; embedded diagnosis branch is absent; fail-closed precedence/parity/effects/rollback evidence and E00 approval pass.
 - **Smallest proving test:** public fixture with untrusted authoritative evidence yields identical machine diagnosis through B09 and static audit finds no embedded decision path.
 - **Compatibility / rollback:** old Hospital adapter remains tagged for bounded rollback and cannot override B09 in normal mode.
@@ -863,7 +863,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 - **Owner / boundary:** executor; owns removal of the non-enveloped production doctor routing branch while retaining necessary bootstrap shell glue, not B10 probe semantics.
 - **Dependencies:** E01, B10, B07.
-- **Affected files (initial):** `invoke-code-intel.ps1`, `check-code-intel-tools.ps1`, Rust doctor adapter route, doctor tests, one retirement record.
+- **Affected files (initial):** `archive/invoke-code-intel.ps1`, `archive/check-code-intel-tools.ps1`, Rust doctor adapter route, doctor tests, one retirement record.
 - **Acceptance criteria:** public doctor/run preflight routes through B10 envelopes; any retained bootstrap branch is explicitly non-authoritative, registered, owned, and expiring; readiness/conformance separation, secret redaction, parity, rollback, and E00 approval pass.
 - **Smallest proving test:** run public preflight with manifest drift and present-but-nonconforming provider; assert one B10 result, no secret, correct readiness diagnosis, and no unowned direct production route.
 - **Compatibility / rollback:** minimal shell bootstrap remains if required for locating the binary; prior routing is tagged for bounded rollback.
@@ -873,9 +873,9 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 
 ### E10 — `compatibility.retire-index-branch`
 
-- **Owner / boundary:** executor; owns removal of the legacy `update-code-intel-index.ps1` production traversal/call path, not publication or A08 index semantics.
+- **Owner / boundary:** executor; owns removal of the legacy `archive/update-code-intel-index.ps1` production traversal/call path, not publication or A08 index semantics.
 - **Dependencies:** E01, A08, E05.
-- **Affected files (initial):** `update-code-intel-index.ps1`, public wrapper/index route, index tests, one retirement record.
+- **Affected files (initial):** `archive/update-code-intel-index.ps1`, public wrapper/index route, index tests, one retirement record.
 - **Acceptance criteria:** public index refresh routes through A08; current partial dirty-worktree staging/marker guard is retained as regression evidence until replaced; legacy production traversal is absent; rebuild/parity/forged-marker/rollback evidence and E00 approval pass.
 - **Smallest proving test:** rebuild an index containing staged, markerless, forged, and valid runs through A08 and assert only the valid run appears, then statically prove no public production call reaches the legacy traversal.
 - **Compatibility / rollback:** old script remains tagged/diagnostic during the bounded observation window and cannot write the authoritative index in normal mode.

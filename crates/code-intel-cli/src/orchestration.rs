@@ -231,53 +231,53 @@ const PRODUCTION_PARTICIPANTS: [ProductionParticipant; 12] = [
     },
     ProductionParticipant {
         capability_id: "diagnosis.hospital",
-        source: "run-code-intel.ps1",
+        source: "archive/run-code-intel.ps1",
         marker: "$hospitalReport = New-CodeIntelHospitalReport",
     },
     ProductionParticipant {
         capability_id: "pack.repomix",
-        source: "run-code-intel.ps1",
-        marker: "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"",
+        source: "archive/run-code-intel.ps1",
+        marker: "$repomixTool = Join-Path $PSScriptRoot \"archive/Invoke-RepomixCodePack.ps1\"",
     },
     ProductionParticipant {
         capability_id: "evidence.native-code",
-        source: "run-code-intel.ps1",
+        source: "archive/run-code-intel.ps1",
         marker: "$codeEvidence = New-CodeEvidenceLayer -RepoPath",
     },
     ProductionParticipant {
         capability_id: "evidence.cocoindex-code",
-        source: "run-code-intel.ps1",
+        source: "archive/run-code-intel.ps1",
         marker: "$adapterConfig = Get-JsonProperty $adapters \"cocoindex-code\" $null",
     },
     ProductionParticipant {
         capability_id: "research.github-solution",
-        source: "run-code-intel.ps1",
+        source: "archive/run-code-intel.ps1",
         marker:
-            "$githubResearchScript = Join-Path $PSScriptRoot \"Invoke-GitHubSolutionResearch.ps1\"",
+            "$githubResearchScript = Join-Path $PSScriptRoot \"archive/Invoke-GitHubSolutionResearch.ps1\"",
     },
     ProductionParticipant {
         capability_id: "memory.repowise",
-        source: "run-code-intel.ps1",
-        marker: "$scopedRepowiseScript = Join-Path $PSScriptRoot \"Invoke-ScopedRepowise.ps1\"",
+        source: "archive/run-code-intel.ps1",
+        marker: "$scopedRepowiseScript = Join-Path $PSScriptRoot \"archive/Invoke-ScopedRepowise.ps1\"",
     },
     ProductionParticipant {
         capability_id: "graph.code-intel-understand",
-        source: "run-code-intel.ps1",
+        source: "archive/run-code-intel.ps1",
         marker: "$knowledgeGraph = Join-Path $understandDir \"knowledge-graph.json\"",
     },
     ProductionParticipant {
         capability_id: "structure.sentrux",
-        source: "run-code-intel.ps1",
-        marker: "$sentruxAgentTool = Join-Path $PSScriptRoot \"Invoke-SentruxAgentTool.ps1\"",
+        source: "archive/run-code-intel.ps1",
+        marker: "$sentruxAgentTool = Join-Path $PSScriptRoot \"archive/Invoke-SentruxAgentTool.ps1\"",
     },
     ProductionParticipant {
         capability_id: "localization.codenexus-lite",
-        source: "run-code-intel.ps1",
-        marker: "$codeNexusLiteTool = Join-Path $PSScriptRoot \"Invoke-CodeNexusLite.ps1\"",
+        source: "archive/run-code-intel.ps1",
+        marker: "$codeNexusLiteTool = Join-Path $PSScriptRoot \"archive/Invoke-CodeNexusLite.ps1\"",
     },
     ProductionParticipant {
         capability_id: "run.commit",
-        source: "run-code-intel.ps1",
+        source: "archive/run-code-intel.ps1",
         marker: "& $rustCli run commit",
     },
     ProductionParticipant {
@@ -934,13 +934,13 @@ mod tests {
     fn registry_audit_rejects_undeclared_repomix_invocation() {
         let dir = orchestration_fixture_dir("registry-undeclared-repomix");
         touch(
-            &dir.join("run-code-intel.ps1"),
-            "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"\n",
+            &dir.join("archive/run-code-intel.ps1"),
+            "$repomixTool = Join-Path $PSScriptRoot \"archive/Invoke-RepomixCodePack.ps1\"\n",
         );
         let manifest = json!({
             "productionRegistry": {
                 "mode": "enforce",
-                "productionFiles": ["run-code-intel.ps1"],
+                "productionFiles": ["archive/run-code-intel.ps1"],
                 "participants": []
             }
         });
@@ -957,19 +957,19 @@ mod tests {
     fn registry_audit_rejects_registered_participant_without_dependency_or_effect_metadata() {
         let dir = orchestration_fixture_dir("registry-incomplete-repomix");
         touch(
-            &dir.join("run-code-intel.ps1"),
-            "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"\n",
+            &dir.join("archive/run-code-intel.ps1"),
+            "$repomixTool = Join-Path $PSScriptRoot \"archive/Invoke-RepomixCodePack.ps1\"\n",
         );
         let manifest = json!({
             "productionRegistry": {
                 "mode": "enforce",
-                "productionFiles": ["run-code-intel.ps1"],
+                "productionFiles": ["archive/run-code-intel.ps1"],
                 "participants": [{
                     "capabilityId": "pack.repomix",
                     "status": "declared",
                     "callSite": {
-                        "source": "run-code-intel.ps1",
-                        "anchor": "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\""
+                        "source": "archive/run-code-intel.ps1",
+                        "anchor": "$repomixTool = Join-Path $PSScriptRoot \"archive/Invoke-RepomixCodePack.ps1\""
                     },
                     "envelope": "code-intel-capability-envelope.v1",
                     "owner": "code-intel-pipeline",
@@ -994,19 +994,19 @@ mod tests {
     #[test]
     fn registry_audit_rejects_duplicate_call_site_and_contract_anchor_drift() {
         let dir = orchestration_fixture_dir("registry-call-site-drift");
-        let anchor = "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"";
+        let anchor = "$repomixTool = Join-Path $PSScriptRoot \"archive/Invoke-RepomixCodePack.ps1\"";
         touch(
-            &dir.join("run-code-intel.ps1"),
+            &dir.join("archive/run-code-intel.ps1"),
             &format!("{anchor}\n{anchor}\n"),
         );
         let manifest = json!({
             "productionRegistry": {
                 "mode": "enforce",
-                "productionFiles": ["run-code-intel.ps1"],
+                "productionFiles": ["archive/run-code-intel.ps1"],
                 "participants": [{
                     "capabilityId": "pack.repomix",
                     "status": "declared",
-                    "callSite": {"source": "run-code-intel.ps1", "anchor": "wrong"},
+                    "callSite": {"source": "archive/run-code-intel.ps1", "anchor": "wrong"},
                     "envelope": "code-intel-capability-envelope.v1",
                     "owner": "code-intel-pipeline",
                     "dependencies": [],
@@ -1031,8 +1031,8 @@ mod tests {
     #[test]
     fn registry_audit_rejects_every_required_participant_metadata_field() {
         let dir = orchestration_fixture_dir("registry-required-metadata");
-        let anchor = "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"";
-        touch(&dir.join("run-code-intel.ps1"), &format!("{anchor}\n"));
+        let anchor = "$repomixTool = Join-Path $PSScriptRoot \"archive/Invoke-RepomixCodePack.ps1\"";
+        touch(&dir.join("archive/run-code-intel.ps1"), &format!("{anchor}\n"));
         let ids = HashSet::from(["pack.repomix".to_string()]);
 
         for field in [
@@ -1046,7 +1046,7 @@ mod tests {
             let mut declaration = json!({
                 "capabilityId": "pack.repomix",
                 "status": "declared",
-                "callSite": {"source": "run-code-intel.ps1", "anchor": anchor},
+                "callSite": {"source": "archive/run-code-intel.ps1", "anchor": anchor},
                 "envelope": "code-intel-capability-envelope.v1",
                 "owner": "code-intel-pipeline",
                 "dependencies": [],
@@ -1057,7 +1057,7 @@ mod tests {
             let manifest = json!({
                 "productionRegistry": {
                     "mode": "enforce",
-                    "productionFiles": ["run-code-intel.ps1"],
+                    "productionFiles": ["archive/run-code-intel.ps1"],
                     "participants": [declaration]
                 }
             });
@@ -1078,11 +1078,11 @@ mod tests {
     #[test]
     fn registry_audit_report_and_enforce_modes_are_explicit() {
         let dir = orchestration_fixture_dir("registry-modes");
-        touch(&dir.join("run-code-intel.ps1"), "# no production calls\n");
+        touch(&dir.join("archive/run-code-intel.ps1"), "# no production calls\n");
         let mut manifest = json!({
             "productionRegistry": {
                 "mode": "report",
-                "productionFiles": ["run-code-intel.ps1"],
+                "productionFiles": ["archive/run-code-intel.ps1"],
                 "participants": []
             }
         });
@@ -1100,11 +1100,11 @@ mod tests {
     #[test]
     fn registry_audit_rejects_unknown_orphan_declaration() {
         let dir = orchestration_fixture_dir("registry-orphan");
-        touch(&dir.join("run-code-intel.ps1"), "# no production calls\n");
+        touch(&dir.join("archive/run-code-intel.ps1"), "# no production calls\n");
         let manifest = json!({
             "productionRegistry": {
                 "mode": "enforce",
-                "productionFiles": ["run-code-intel.ps1"],
+                "productionFiles": ["archive/run-code-intel.ps1"],
                 "participants": [{"capabilityId": "unknown.future-tool", "status": "declared"}]
             }
         });
@@ -1120,16 +1120,16 @@ mod tests {
     #[test]
     fn registry_audit_accepts_reviewed_deletion_only_after_call_site_is_removed() {
         let dir = orchestration_fixture_dir("registry-reviewed-deletion");
-        touch(&dir.join("run-code-intel.ps1"), "# call site removed\n");
-        let anchor = "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"";
+        touch(&dir.join("archive/run-code-intel.ps1"), "# call site removed\n");
+        let anchor = "$repomixTool = Join-Path $PSScriptRoot \"archive/Invoke-RepomixCodePack.ps1\"";
         let manifest = json!({
             "productionRegistry": {
                 "mode": "enforce",
-                "productionFiles": ["run-code-intel.ps1"],
+                "productionFiles": ["archive/run-code-intel.ps1"],
                 "participants": [{
                     "capabilityId": "pack.repomix",
                     "status": "deleted",
-                    "callSite": {"source": "run-code-intel.ps1", "anchor": anchor},
+                    "callSite": {"source": "archive/run-code-intel.ps1", "anchor": anchor},
                     "reviewedDeletion": {
                         "reviewer": "verifier",
                         "reviewedAt": "2026-07-13T00:00:00Z",

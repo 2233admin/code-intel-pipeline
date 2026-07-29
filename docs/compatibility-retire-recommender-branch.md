@@ -1,20 +1,20 @@
 # E02 recommender branch retirement
 
-E02 is limited to the duplicated inline workflow recommender in `run-code-intel.ps1` and its one
+E02 is limited to the duplicated inline workflow recommender in `archive/run-code-intel.ps1` and its one
 legacy invocation path. The replacement is `advisory.workflow-recommend`; provider preflight,
 publication, CodeNexus, and every other facade branch are outside this ticket.
 
 Generate a fresh, snapshot-bound packet only after building the Rust CLI:
 
 ```powershell
-pwsh -NoProfile -File tools/compatibility/New-RecommenderRetirementPacket.ps1 `
+pwsh -NoProfile -File archive/tools/compatibility/New-RecommenderRetirementPacket.ps1 `
   -OutDir orchestration/retirements/e02-recommender `
   -EvaluatedAt <unix-seconds>
 ```
 
 The generator runs the recommender golden/contract/effect/authority checks, executes rollback on an
 exclusive temporary copy, creates E00 evidence and an E01 draft ticket, and then runs E00. The E00
-approval subject binds `run-code-intel.ps1::run-code-intel.workflow-recommender.inline` and the
+approval subject binds `archive/run-code-intel.ps1::run-code-intel.workflow-recommender.inline` and the
 single affected file. The deletion evidence is a two-hunk `replayable-delete-only-v1` patch with
 base/result blob hashes and no added lines; its prose summary is non-authoritative. The generator
 passes that patch through E01 and requires E01 to reject specifically because E00 is still blocked.
@@ -28,7 +28,7 @@ Passing local parity tests or reducing line count cannot substitute for those ga
 Rollback rehearsal uses:
 
 ```powershell
-pwsh -NoProfile -File tools/compatibility/Restore-RecommenderLegacyBranch.ps1 `
+pwsh -NoProfile -File archive/tools/compatibility/Restore-RecommenderLegacyBranch.ps1 `
   -RehearsalRoot work/e02-recommender-rollback
 ```
 

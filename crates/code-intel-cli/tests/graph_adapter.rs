@@ -442,7 +442,7 @@ fn public_route_usage_registry_facade_and_schemas_are_real() {
         .unwrap()
         .contains("-GraphAdapterRequest"));
 
-    let facade = fs::read_to_string(root.join("run-code-intel.ps1")).unwrap();
+    let facade = fs::read_to_string(root.join("archive/run-code-intel.ps1")).unwrap();
     assert!(facade.contains("provider graph-adapt"));
     assert!(facade.contains("GraphAdapterMaxAgeSeconds"));
 

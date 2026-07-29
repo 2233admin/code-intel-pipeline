@@ -101,7 +101,7 @@ mod sentrux_contract_tests {
                 {
                     "name": "sentrux check",
                     "status": "failed",
-                    "output": "run-code-intel.ps1:Get-CodeEvidenceSymbols (cc=412)",
+                    "output": "archive/run-code-intel.ps1:Get-CodeEvidenceSymbols (cc=412)",
                     "error": ""
                 },
                 {
@@ -1318,7 +1318,7 @@ fn classify_sentrux_record(record: &Value) -> (&'static str, &'static str) {
     if source == "sentrux check"
         && kind == "max_cc"
         && target_status == "resolved"
-        && target_file == "run-code-intel.ps1"
+        && target_file == "archive/run-code-intel.ps1"
         && target_symbol == "Get-CodeEvidenceSymbols"
     {
         return (

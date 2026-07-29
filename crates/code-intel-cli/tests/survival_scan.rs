@@ -246,7 +246,7 @@ fn production_cli_registry_facade_schema_and_docs_are_closed() {
     let docs = fs::read_to_string(repo.join("docs/repository-survival-scan.md")).unwrap();
     assert!(docs.contains("reduced"));
     assert!(docs.contains("structuralVerdict = unknown"));
-    let facade = fs::read_to_string(repo.join("run-code-intel.ps1")).unwrap();
+    let facade = fs::read_to_string(repo.join("archive/run-code-intel.ps1")).unwrap();
     assert!(facade.contains("repository survival-scan"));
 }
 

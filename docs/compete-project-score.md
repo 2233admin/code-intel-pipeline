@@ -5,7 +5,7 @@ This adapter turns a completed [lbj96347/compete](https://github.com/lbj96347/co
 Prepare an Agent task:
 
 ```powershell
-& "$env:CODE_INTEL_HOME/Invoke-CompeteProjectScore.ps1" `
+& "$env:CODE_INTEL_HOME/archive/Invoke-CompeteProjectScore.ps1" `
   -Action prepare `
   -RepoPath <repo-path> `
   -ArtifactRoot <artifact-directory> `
@@ -17,7 +17,7 @@ The command writes `competitive-intelligence-request.json` and `competitive-inte
 After the Agent writes the normal `compete` datasets, normalize its existing six-axis scoring logic:
 
 ```powershell
-& "$env:CODE_INTEL_HOME/Invoke-CompeteProjectScore.ps1" `
+& "$env:CODE_INTEL_HOME/archive/Invoke-CompeteProjectScore.ps1" `
   -Action score `
   -RepoPath <repo-path> `
   -ArtifactRoot <artifact-directory> `

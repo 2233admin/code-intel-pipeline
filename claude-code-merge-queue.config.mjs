@@ -6,6 +6,6 @@ export default {
   disposableUntracked: [],
   symlinks: ["node_modules"],
   buildOutputDirs: ["target", "artifacts", "dist"],
-  checkCommand: "pwsh -NoProfile -File ./Invoke-CodeIntelAcceptance.ps1 -Stage land",
+  checkCommand: "pwsh -NoProfile -File ./archive/Invoke-CodeIntelAcceptance.ps1 -Stage land",
   checksRequired: true,
 };

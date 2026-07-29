@@ -22,13 +22,13 @@ Artifact ownership and reader/writer boundaries are defined in `docs/artifact-da
    - `crates/code-nexus-lite`: incubated source, not a Cargo workspace member and not shipped as a beta binary. The supported beta surface is the optional CodeNexus compatibility adapter and artifact contract.
 
 4. PowerShell compatibility
-   - `code-intel.ps1`: recovery/update launcher for official GitHub releases.
-   - `invoke-code-intel.ps1`: quiet v0.x compatibility forwarder.
+   - `archive/code-intel.ps1`: recovery/update launcher for official GitHub releases.
+   - `archive/invoke-code-intel.ps1`: quiet v0.x compatibility forwarder.
 
-5. `check-code-intel-tools.ps1`
+5. `archive/check-code-intel-tools.ps1`
    Environment doctor. Verifies local tools, Understand Anything presence, repo path, and Sentrux scope state.
 
-6. `run-code-intel.ps1`
+6. `archive/run-code-intel.ps1`
    Compatibility adapter host used by capabilities not yet internalized.
 
 7. Tool adapters
@@ -39,21 +39,21 @@ Artifact ownership and reader/writer boundaries are defined in `docs/artifact-da
    - `sentruxInsight`: parsed structural deltas and follow-up hints for agents
 
 8. Scoped helpers
-   - `Invoke-ScopedRepowise.ps1`
-   - `Invoke-RepowiseProviderProbe.ps1`
+   - `archive/Invoke-ScopedRepowise.ps1`
+   - `archive/Invoke-RepowiseProviderProbe.ps1`
    - `Run-ScopedRepowiseDocs.py`
-   - `Invoke-SentruxAgentTool.ps1`
+   - `archive/Invoke-SentruxAgentTool.ps1`
 
 9. Stable-ops helpers
-   - `install-code-intel-pipeline.ps1`
-   - `scripts/tests/test-code-intel-provider.ps1` (test wrapper only)
-   - `scripts/tests/test-code-intel-pipeline.ps1`
-   - `update-code-intel-index.ps1`
-   - `tools/sentrux-shim`
+   - `archive/install-code-intel-pipeline.ps1`
+   - `archive/scripts/tests/test-code-intel-provider.ps1` (test wrapper only)
+   - `archive/scripts/tests/test-code-intel-pipeline.ps1`
+   - `archive/update-code-intel-index.ps1`
+   - `archive/tools/sentrux-shim`
 
 These exist because some repos are too dirty or too nested for raw `repowise init` at the root.
-`Invoke-SentruxAgentTool.ps1` exists for a different reason: agents need a narrow JSON contract for structure governance, not raw terminal prose.
-`tools/sentrux-shim` makes Sentrux Pro activation reproducible on new machines: the installer puts the shim in a PATH-prepended Code Intel bin directory, the shim activates local open-source Pro features only when `SENTRUX_AUTO_PRO=1` is explicitly set (opt-in since supply-chain-009; the default stays free tier), and normal Sentrux commands still forward to the real binary when one exists. If the real binary is missing, `sentrux-lite-core.ps1` provides deterministic `scan`, `health`, `check`, `gate`, and `plugin list/validate` so a new machine still has a closed feedback loop.
+`archive/Invoke-SentruxAgentTool.ps1` exists for a different reason: agents need a narrow JSON contract for structure governance, not raw terminal prose.
+`archive/tools/sentrux-shim` makes Sentrux Pro activation reproducible on new machines: the installer puts the shim in a PATH-prepended Code Intel bin directory, the shim activates local open-source Pro features only when `SENTRUX_AUTO_PRO=1` is explicitly set (opt-in since supply-chain-009; the default stays free tier), and normal Sentrux commands still forward to the real binary when one exists. If the real binary is missing, `sentrux-lite-core.ps1` provides deterministic `scan`, `health`, `check`, `gate`, and `plugin list/validate` so a new machine still has a closed feedback loop.
 
 ## Why The Wrapper Exists
 
@@ -114,7 +114,7 @@ The human version is `hospital.md`. The machine version exposes `triage.disposit
 
 `surgery-plan.json` and `surgery-plan.md` are emitted beside the hospital report. They translate the first failing what-if scenario, Sentrux hotspot, and CodeNexus context into a surgical target, operating plan, and verification checklist.
 
-For live Agent sessions, `Invoke-SentruxAgentTool.ps1` exposes `scan`, `health`, `session_start`, `session_end`, `rescan`, `check_rules`, `evolution`, `dsm`, `test_gaps`, and `what_if`. `session_start` saves the chosen scope baseline; `session_end` compares the current structure against that baseline and returns `pass`, `signal_before`, `signal_after`, and a short summary. Root paths are valid inputs: the wrapper automatically excludes dependency, build-output, cache, and bundled static-asset code from governed source metrics, while reporting those exclusions under `scope.excluded_by_reason`. `dsm` is the visualization handoff and carries 9 color modes: `Size`, `Coupling`, `TestGap`, `Age`, `Churn`, `Risk`, `Git`, `ExecDepth`, and `BlastRadius`. It also carries file detail data for side panels, including per-function LOC, complexity, parameter count, async/public flags, and source line ranges. `evolution` adds trend, hotspots, coupling, and bus-factor details. `what_if` simulates stricter gates before the team encodes them as rules.
+For live Agent sessions, `archive/Invoke-SentruxAgentTool.ps1` exposes `scan`, `health`, `session_start`, `session_end`, `rescan`, `check_rules`, `evolution`, `dsm`, `test_gaps`, and `what_if`. `session_start` saves the chosen scope baseline; `session_end` compares the current structure against that baseline and returns `pass`, `signal_before`, `signal_after`, and a short summary. Root paths are valid inputs: the wrapper automatically excludes dependency, build-output, cache, and bundled static-asset code from governed source metrics, while reporting those exclusions under `scope.excluded_by_reason`. `dsm` is the visualization handoff and carries 9 color modes: `Size`, `Coupling`, `TestGap`, `Age`, `Churn`, `Risk`, `Git`, `ExecDepth`, and `BlastRadius`. It also carries file detail data for side panels, including per-function LOC, complexity, parameter count, async/public flags, and source line ranges. `evolution` adds trend, hotspots, coupling, and bus-factor details. `what_if` simulates stricter gates before the team encodes them as rules.
 
 The goal is not philosophical purity. The goal is that an operator can tell in ten seconds whether they should:
 
@@ -159,7 +159,7 @@ and retain legacy routes only as explicit compatibility surfaces.
 Install check:
 
 ```powershell
-& "$env:CODE_INTEL_HOME/install-code-intel-pipeline.ps1" -RepoPath <repo-path> -CheckProvider
+& "$env:CODE_INTEL_HOME/archive/install-code-intel-pipeline.ps1" -RepoPath <repo-path> -CheckProvider
 ```
 
 Integration registry:
@@ -172,7 +172,7 @@ Integration registry:
 Install or repair a teammate machine:
 
 ```powershell
-& "$env:CODE_INTEL_HOME/install-code-intel-pipeline.ps1" -RepoPath <repo-path> -CheckProvider -RepairSkillLinks -InstallMissing
+& "$env:CODE_INTEL_HOME/archive/install-code-intel-pipeline.ps1" -RepoPath <repo-path> -CheckProvider -RepairSkillLinks -InstallMissing
 ```
 
 `-InstallMissing` is explicit by design. The default installer is a doctor; the install mode attempts supported CLI installs and records every attempt in `installActions`.
@@ -195,13 +195,13 @@ code-intel <repo-path> --mode full
 Smoke test:
 
 ```powershell
-& "$env:CODE_INTEL_HOME/scripts/tests/test-code-intel-pipeline.ps1" -RepoPath <repo-path>
+& "$env:CODE_INTEL_HOME/archive/scripts/tests/test-code-intel-pipeline.ps1" -RepoPath <repo-path>
 ```
 
 Artifact index:
 
 ```powershell
-& "$env:CODE_INTEL_HOME/update-code-intel-index.ps1"
+& "$env:CODE_INTEL_HOME/archive/update-code-intel-index.ps1"
 ```
 
 ## Design Rule

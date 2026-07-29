@@ -396,7 +396,7 @@ fn production_cli_writes_the_registered_committed_only_schema() {
     assert!(route["commands"]["facade"]
         .as_str()
         .unwrap()
-        .contains("update-code-intel-index.ps1"));
+        .contains("archive/update-code-intel-index.ps1"));
     assert!(route["artifactContract"].as_array().unwrap().iter().any(
         |contract| contract == "orchestration/schemas/code-intel-artifact-index.v1.schema.json"
     ));

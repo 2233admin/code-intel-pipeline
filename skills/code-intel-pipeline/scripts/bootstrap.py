@@ -366,7 +366,7 @@ def find_payload_root(extracted_root: Path) -> Path:
         for path in extracted_root.glob("*/install-code-intel-pipeline.ps1")
         if path.is_file()
     ]
-    root_installer = extracted_root / "install-code-intel-pipeline.ps1"
+    root_installer = extracted_root / "archive/install-code-intel-pipeline.ps1"
     if root_installer.is_file():
         candidates.append(extracted_root)
     unique_candidates = list(dict.fromkeys(candidates))
@@ -376,10 +376,10 @@ def find_payload_root(extracted_root: Path) -> Path:
         )
     payload = unique_candidates[0]
     required = (
-        "install-code-intel-pipeline.ps1",
-        "check-code-intel-tools.ps1",
-        "code-intel.ps1",
-        "invoke-code-intel.ps1",
+        "archive/install-code-intel-pipeline.ps1",
+        "archive/check-code-intel-tools.ps1",
+        "archive/code-intel.ps1",
+        "archive/invoke-code-intel.ps1",
     )
     missing = [name for name in required if not (payload / name).is_file()]
     if missing:
@@ -648,7 +648,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     release_root, install_status = install_release(asset, install_root)
     ensure_release_binary_executable(release_root, platform_name)
     pwsh = find_pwsh()
-    installer = release_root / "install-code-intel-pipeline.ps1"
+    installer = release_root / "archive/install-code-intel-pipeline.ps1"
     install_command = [
         pwsh,
         "-NoProfile",
@@ -680,7 +680,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "-ExecutionPolicy",
             "Bypass",
             "-File",
-            str(release_root / "check-code-intel-tools.ps1"),
+            str(release_root / "archive/check-code-intel-tools.ps1"),
             "-RepoPath",
             str(repo_path),
             "-RequireRepowise:$false",

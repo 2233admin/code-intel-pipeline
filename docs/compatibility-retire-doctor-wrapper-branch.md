@@ -1,7 +1,7 @@
 # E09 direct doctor-wrapper retirement
 
-E09 owns only the three direct production-doctor route segments in `invoke-code-intel.ps1`: the
-`check-code-intel-tools.ps1` binding, the preflight invocation block, and its existence guard. It
+E09 owns only the three direct production-doctor route segments in `archive/invoke-code-intel.ps1`: the
+`archive/check-code-intel-tools.ps1` binding, the preflight invocation block, and its existence guard. It
 does not own the retained fresh-machine bootstrap script, B10's Rust adapter, A09, publication,
 indexing, Hospital, Native Code Evidence, or provider branches.
 
@@ -14,17 +14,17 @@ bootstrap is registered and explicitly observation-only but has no declared expi
 Generate and validate a fresh packet after the B07 toolchain digest is current:
 
 ```powershell
-pwsh -NoProfile -File tools/compatibility/New-DoctorWrapperRetirementPacket.ps1 `
+pwsh -NoProfile -File archive/tools/compatibility/New-DoctorWrapperRetirementPacket.ps1 `
   -OutDir orchestration/retirements/e09-doctor-wrapper `
   -EvaluatedAt <unix-seconds>
-pwsh -NoProfile -File tools/compatibility/Test-DoctorWrapperRetirementPacket.ps1 `
+pwsh -NoProfile -File archive/tools/compatibility/Test-DoctorWrapperRetirementPacket.ps1 `
   -PacketRoot orchestration/retirements/e09-doctor-wrapper
 ```
 
 The packet freezes the three exact B10 tests, static ownership, the retained bootstrap hash, a
 three-hunk single-file deletion draft, and exact normalized rollback replay. E01 validates the
 ticket/diff shape and rejects it only because E00 remains blocked. The draft never deletes or edits
-`check-code-intel-tools.ps1` and is not deletion authority.
+`archive/check-code-intel-tools.ps1` and is not deletion authority.
 
 `PG-015` mirrors the blocked E00 Gain Ledger projection. A future change must first route public
 preflight through B10 and give the retained bootstrap an owned expiry/removal criterion; only then

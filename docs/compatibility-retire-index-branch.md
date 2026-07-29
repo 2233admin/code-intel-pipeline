@@ -1,7 +1,7 @@
 # E10 index branch retirement
 
 E10 owns only the explicit legacy traversal below `function Read-JsonFile` in
-`update-code-intel-index.ps1`. Its stable branch id is
+`archive/update-code-intel-index.ps1`. Its stable branch id is
 `update-code-intel-index.legacy-compatibility-traversal`. A08 index semantics and E05 publication
 ownership are excluded.
 
@@ -11,11 +11,11 @@ markerless, forged, and legacy trees. `-LegacyCompatibilityMode` remains publicl
 array output is diagnostic compatibility data and cannot claim the authoritative A08 schema.
 
 ```powershell
-pwsh -NoProfile -File tools/compatibility/Test-IndexRetirementBoundary.ps1
-pwsh -NoProfile -File tools/compatibility/New-IndexRetirementPacket.ps1 `
+pwsh -NoProfile -File archive/tools/compatibility/Test-IndexRetirementBoundary.ps1
+pwsh -NoProfile -File archive/tools/compatibility/New-IndexRetirementPacket.ps1 `
   -OutDir orchestration/retirements/e10-index -EvaluatedAt <unix-seconds> `
   -CodeIntel work/e01-review-target/debug/code-intel.exe
-pwsh -NoProfile -File tools/compatibility/Test-IndexRetirementPacket.ps1 `
+pwsh -NoProfile -File archive/tools/compatibility/Test-IndexRetirementPacket.ps1 `
   -PacketRoot orchestration/retirements/e10-index
 ```
 

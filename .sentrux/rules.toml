@@ -9,7 +9,7 @@
 #
 # Measured ratchet evidence (sentrux-native 2.0.0, 2026-07-27, security-004
 # tree, recorded together with .sentrux/baseline.json in the same commit):
-#   max_complexity 162 (scripts/tests/test-code-intel-pipeline.ps1),
+#   max_complexity 162 (archive/scripts/tests/test-code-intel-pipeline.ps1),
 #   god_file_count 29, coupling_score 45.33, cycle_count 0.
 # The 45.13 -> 45.33 coupling and 3968 -> 3967 quality movement is the cost
 # of the shared tool_path resolver module (security-004, #33): one new module

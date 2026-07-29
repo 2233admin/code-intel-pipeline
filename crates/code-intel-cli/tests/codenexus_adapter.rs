@@ -482,7 +482,7 @@ fn production_registry_facade_and_route_schema_are_declared() {
         .unwrap()
         .contains("-CodeNexusAdapterRequest"));
 
-    let facade = fs::read_to_string(root.join("run-code-intel.ps1")).unwrap();
+    let facade = fs::read_to_string(root.join("archive/run-code-intel.ps1")).unwrap();
     assert!(facade.contains("provider codenexus-adapt"));
     assert!(facade.contains("CodeNexusAdapterMaxAgeSeconds"));
 

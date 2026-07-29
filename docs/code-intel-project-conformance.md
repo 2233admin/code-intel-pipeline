@@ -35,8 +35,8 @@ and a representative performance ratchet exists.
 Run:
 
 ```powershell
-./scripts/tests/Test-CodeIntelProjectConformance.ps1 -Profile fast
-./scripts/tests/Test-CodeIntelProjectConformance.ps1 -Profile full -Json
+./archive/scripts/tests/Test-CodeIntelProjectConformance.ps1 -Profile fast
+./archive/scripts/tests/Test-CodeIntelProjectConformance.ps1 -Profile full -Json
 ```
 
 Exit code `0` means that the selected profile's mechanism readiness and every executable suite pass.
