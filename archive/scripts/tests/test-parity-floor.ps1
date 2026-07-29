@@ -40,8 +40,10 @@ function Invoke-ParityCase {
 }
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
-if ([string]::IsNullOrWhiteSpace($FloorPath)) { $FloorPath = Join-Path $root "tests\fixtures\parity\parity-floor.json" }
-if ([string]::IsNullOrWhiteSpace($FixtureRoot)) { $FixtureRoot = Join-Path $root "tests\fixtures\parity" }
+
+$repoRoot = Split-Path -Parent $root
+if ([string]::IsNullOrWhiteSpace($FloorPath)) { $FloorPath = Join-Path $repoRoot "tests\fixtures\parity\parity-floor.json" }
+if ([string]::IsNullOrWhiteSpace($FixtureRoot)) { $FixtureRoot = Join-Path $repoRoot "tests\fixtures\parity" }
 if ([string]::IsNullOrWhiteSpace($BaselineScript)) { $BaselineScript = Join-Path $root "scripts/tests/test-parity-baseline.ps1" }
 
 Assert-Contract (Test-Path -LiteralPath $FloorPath -PathType Leaf) "Missing parity floor: $FloorPath"

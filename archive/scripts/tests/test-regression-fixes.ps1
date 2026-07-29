@@ -23,6 +23,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+
+$repoRoot = Split-Path -Parent $root
 $script:passed = 0
 $script:failed = 0
 $script:failures = New-Object System.Collections.Generic.List[string]

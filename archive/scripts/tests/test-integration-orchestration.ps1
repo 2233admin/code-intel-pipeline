@@ -6,7 +6,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
-$rustCli = Join-Path $root "target\debug\code-intel.exe"
+
+$repoRoot = Split-Path -Parent $root
+$rustCli = Join-Path $repoRoot "target\debug\code-intel.exe"
 
 if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
     Push-Location $root
@@ -241,7 +243,7 @@ try {
         throw "CODE_INTEL_HOME was shadowed by unrelated cwd manifest: $($homeValidation.errors -join '; ')"
     }
 
-    $manifestPath = Join-Path $root "orchestration\integrations.json"
+    $manifestPath = Join-Path $repoRoot "orchestration\integrations.json"
     $explicitResolution = Invoke-ProviderValidateProcess -WorkingDirectory $fixtureRoot -ExplicitManifest $manifestPath
     if ($explicitResolution.exitCode -ne 0) {
         throw "Explicit manifest provider validation process failed: $($explicitResolution.stderr)"

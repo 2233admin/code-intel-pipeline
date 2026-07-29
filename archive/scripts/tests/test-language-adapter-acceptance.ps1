@@ -3,9 +3,10 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+$repoRoot = Split-Path -Parent $root
 $gate = Join-Path $root "scripts/tests/Test-LanguageAdapterAcceptance.ps1"
-$sourceReport = Join-Path $root "orchestration\acceptance\native-code-evidence-candidate.json"
-$sourcePolicy = Join-Path $root "orchestration\language-adapter-acceptance-policy.v1.json"
+$sourceReport = Join-Path $repoRoot "orchestration\acceptance\native-code-evidence-candidate.json"
+$sourcePolicy = Join-Path $repoRoot "orchestration\language-adapter-acceptance-policy.v1.json"
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("language-adapter-acceptance-" + [guid]::NewGuid().ToString("N"))
 
 function Invoke-Gate {

@@ -12,6 +12,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+
+$repoRoot = Split-Path -Parent $root
 $platformModule = Join-Path (Join-Path $root "tools") "code-intel-platform.psm1"
 Import-Module $platformModule -Force
 $effectivePlatform = Get-CodeIntelPlatform -Platform $Platform

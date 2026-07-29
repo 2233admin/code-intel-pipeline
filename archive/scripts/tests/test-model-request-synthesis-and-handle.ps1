@@ -3,6 +3,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+$repoRoot = Split-Path -Parent $root
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("code-intel-handle-test-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $temp | Out-Null
 try {

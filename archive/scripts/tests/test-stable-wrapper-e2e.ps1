@@ -4,8 +4,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+
+$repoRoot = Split-Path -Parent $root
 $binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
-$rustCli = Join-Path $root "target/debug/$binaryName"
+$rustCli = Join-Path $repoRoot "target/debug/$binaryName"
 $temporaryRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
 $testRoot = Join-Path $temporaryRoot ("code-intel-wrapper-e2e-{0}-{1}" -f $PID, [guid]::NewGuid().ToString("N"))
 $repo = Join-Path $testRoot "fixture-repo"

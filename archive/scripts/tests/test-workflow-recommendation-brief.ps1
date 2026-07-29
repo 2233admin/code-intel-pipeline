@@ -1,5 +1,5 @@
 param(
-    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
 )
 
 Set-StrictMode -Version Latest
@@ -43,17 +43,17 @@ $detectorPath = Join-Path $root "OpenSpec-Detector.ps1"
 Assert-True (Test-Path -LiteralPath $detectorPath -PathType Leaf) "OpenSpec-Detector.ps1 must exist."
 $facadePath = Join-Path $root "Invoke-WorkflowRecommendation.ps1"
 Assert-True (Test-Path -LiteralPath $facadePath -PathType Leaf) "Workflow recommendation facade must exist."
-$schemaPath = Join-Path $root "orchestration/schemas/code-intel-advisory-workflow-recommendation.v1.schema.json"
+$schemaPath = Join-Path $repoRoot "orchestration/schemas/code-intel-advisory-workflow-recommendation.v1.schema.json"
 $schema = Get-Content -LiteralPath $schemaPath -Raw | ConvertFrom-Json
 Assert-True ($schema.additionalProperties -eq $false) "Advisory proposal schema must be closed."
-$registry = Get-Content -LiteralPath (Join-Path $root "orchestration/integrations.json") -Raw | ConvertFrom-Json
+$registry = Get-Content -LiteralPath (Join-Path $repoRoot "orchestration/integrations.json") -Raw | ConvertFrom-Json
 $registration = @($registry.integrations | Where-Object { $_.id -eq "advisory.workflow-recommend" })
 Assert-True ($registration.Count -eq 1) "A01 registry must contain exactly one advisory.workflow-recommend capability."
 Assert-True (@($registration[0].effects).Count -eq 0) "Registered advisory capability must declare zero effects."
 Assert-True ($registration[0].capabilityDeclaration.id -eq "advisory.workflow-recommend") "Registration must expose a real A01 capability declaration."
 Assert-True (@($registration[0].capabilityDeclaration.allowedEffects).Count -eq 0) "A01 declaration must allow no advisory effects."
 Assert-True ($registration[0].runtimeAdapter -eq "advisory.workflow-recommend.compat") "Registration must bind the executable runtime adapter."
-Assert-True (Test-Path -LiteralPath (Join-Path $root "docs/advisory-workflow-recommendation.md") -PathType Leaf) "Advisory boundary documentation must exist."
+Assert-True (Test-Path -LiteralPath (Join-Path $repoRoot "docs/advisory-workflow-recommendation.md") -PathType Leaf) "Advisory boundary documentation must exist."
 $runnerSource = Get-Content -LiteralPath (Join-Path $root "run-code-intel.ps1") -Raw
 Assert-True ($runnerSource -notmatch "function Get-CodeMetrics") "Main runner must not retain duplicated recommender implementation."
 Assert-True ($runnerSource -match "capability exec advisory.workflow-recommend") "Main runner must invoke the recommendation through the A01 envelope."

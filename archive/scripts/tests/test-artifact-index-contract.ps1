@@ -1,5 +1,5 @@
 param(
-    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
 )
 
 Set-StrictMode -Version Latest
@@ -14,7 +14,7 @@ $root = (Resolve-Path -LiteralPath $RepoPath).Path
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-a08-contract-" + [guid]::NewGuid().ToString("N"))
 try {
     New-Item -ItemType Directory -Force -Path $temp | Out-Null
-    cargo build -p code-intel --manifest-path (Join-Path $root "Cargo.toml") | Out-Null
+    cargo build -p code-intel --manifest-path (Join-Path $repoRoot "Cargo.toml") | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) "Rust CLI build failed"
 
     $output = Join-Path $temp "index.md"

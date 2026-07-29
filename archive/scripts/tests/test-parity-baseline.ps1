@@ -123,7 +123,9 @@ function Assert-MismatchRejected {
 }
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
-$fixtureRoot = Join-Path $root "tests\fixtures\parity"
+
+$repoRoot = Split-Path -Parent $root
+$fixtureRoot = Join-Path $repoRoot "tests\fixtures\parity"
 $caseNames = @("clean", "dirty", "provider-unavailable", "domain-fail", "partial-evidence")
 if (-not [string]::IsNullOrWhiteSpace($Fixture)) { $caseNames = @($Fixture) }
 

@@ -26,6 +26,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+
+$repoRoot = Split-Path -Parent $root
 $platformModule = Join-Path (Join-Path $root "tools") "code-intel-platform.psm1"
 Import-Module $platformModule -Force
 $effectivePlatform = Get-CodeIntelPlatform -Platform $Platform
@@ -36,7 +38,7 @@ function Read-JsonFile {
 }
 
 if ([string]::IsNullOrWhiteSpace($Config)) {
-    $Config = Join-Path $root "pipeline.config.json"
+    $Config = Join-Path $repoRoot "pipeline.config.json"
 }
 $doctor = Join-Path $root "check-code-intel-tools.ps1"
 $runner = Join-Path $root "run-code-intel.ps1"

@@ -1,5 +1,5 @@
 param(
-    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
 )
 
 Set-StrictMode -Version Latest

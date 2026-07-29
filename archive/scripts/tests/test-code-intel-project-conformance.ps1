@@ -3,8 +3,9 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+$repoRoot = Split-Path -Parent $root
 $gate = Join-Path $root "scripts/tests/Test-CodeIntelProjectConformance.ps1"
-$policy = Join-Path $root "orchestration\code-intel-project-conformance-policy.v1.json"
+$policy = Join-Path $repoRoot "orchestration\code-intel-project-conformance-policy.v1.json"
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-project-conformance-" + [guid]::NewGuid().ToString("N"))
 
 function Invoke-Gate {

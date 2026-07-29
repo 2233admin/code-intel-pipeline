@@ -1,5 +1,5 @@
 param(
-    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
 )
 
 Set-StrictMode -Version Latest
@@ -60,14 +60,14 @@ function Assert-EnvelopesCoherent {
 }
 
 $root = (Resolve-Path -LiteralPath $RepoPath).Path
-$registryPath = Join-Path $root "orchestration\integrations.json"
-$contractPath = Join-Path $root "orchestration\capability-contract.v1.json"
-$schemaPath = Join-Path $root "orchestration\schemas\code-intel-capability-envelope.v1.schema.json"
+$registryPath = Join-Path $repoRoot "orchestration\integrations.json"
+$contractPath = Join-Path $repoRoot "orchestration\capability-contract.v1.json"
+$schemaPath = Join-Path $repoRoot "orchestration\schemas\code-intel-capability-envelope.v1.schema.json"
 $documentationPaths = @(
-    (Join-Path $root "CONTEXT.md"),
-    (Join-Path $root "docs\atomic-development-model.md"),
-    (Join-Path $root "docs\adr\0009-atomic-capability-execution-model.md"),
-    (Join-Path $root "docs\code-intel-architecture.md")
+    (Join-Path $repoRoot "CONTEXT.md"),
+    (Join-Path $repoRoot "docs\atomic-development-model.md"),
+    (Join-Path $repoRoot "docs\adr\0009-atomic-capability-execution-model.md"),
+    (Join-Path $repoRoot "docs\code-intel-architecture.md")
 )
 
 foreach ($path in @($registryPath, $contractPath, $schemaPath) + $documentationPaths) {

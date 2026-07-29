@@ -4,6 +4,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+
+$repoRoot = Split-Path -Parent $root
 $scratch = Join-Path $env:TEMP ("cip-scoped-worktree-{0}" -f ([guid]::NewGuid().ToString("N").Substring(0, 8)))
 $repo = Join-Path $scratch "repo"
 $shadowRoot = Join-Path $scratch "shadow"

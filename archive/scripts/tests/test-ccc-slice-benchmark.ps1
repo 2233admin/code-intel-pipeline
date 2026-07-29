@@ -4,6 +4,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+
+$repoRoot = Split-Path -Parent $root
 $benchmarkScript = Join-Path $root "Invoke-CccSliceBenchmark.ps1"
 
 function Read-JsonFile {

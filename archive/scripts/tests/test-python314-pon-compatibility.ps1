@@ -3,6 +3,7 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+$repoRoot = Split-Path -Parent $root
 $gate = Join-Path $root "scripts/tests/Test-Python314PonCompatibility.ps1"
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("python314-pon-compat-" + [guid]::NewGuid().ToString("N"))
 

@@ -1,5 +1,5 @@
 param(
-    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
 )
 
 Set-StrictMode -Version Latest
@@ -34,16 +34,16 @@ function Assert-FrontMatterField {
 }
 
 $root = (Resolve-Path -LiteralPath $RepoPath).Path
-$skillPath = Join-Path $root "skills/code-intel-pipeline/SKILL.md"
-$contextPath = Join-Path $root "CONTEXT.md"
-$skillBenchmarkPath = Join-Path $root "docs/skill-development-benchmark.md"
-$skillBenchmarkAdrPath = Join-Path $root "docs/adr/0004-yao-meta-skill-as-skill-development-benchmark.md"
-$implementationMinimalismPath = Join-Path $root "docs/implementation-minimalism-benchmark.md"
-$implementationMinimalismAdrPath = Join-Path $root "docs/adr/0005-ponytail-as-implementation-minimalism-benchmark.md"
-$ponytailImpactScoreboardPath = Join-Path $root "docs/ponytail-impact-scoreboard.md"
-$artifactContractPath = Join-Path $root "docs/artifact-data-contract.md"
-$goalIntakePath = Join-Path $root "docs/agent-goal-intake.md"
-$harnessReferencePath = Join-Path $root "docs/harness-factory-reference.md"
+$skillPath = Join-Path $repoRoot "skills/code-intel-pipeline/SKILL.md"
+$contextPath = Join-Path $repoRoot "CONTEXT.md"
+$skillBenchmarkPath = Join-Path $repoRoot "docs/skill-development-benchmark.md"
+$skillBenchmarkAdrPath = Join-Path $repoRoot "docs/adr/0004-yao-meta-skill-as-skill-development-benchmark.md"
+$implementationMinimalismPath = Join-Path $repoRoot "docs/implementation-minimalism-benchmark.md"
+$implementationMinimalismAdrPath = Join-Path $repoRoot "docs/adr/0005-ponytail-as-implementation-minimalism-benchmark.md"
+$ponytailImpactScoreboardPath = Join-Path $repoRoot "docs/ponytail-impact-scoreboard.md"
+$artifactContractPath = Join-Path $repoRoot "docs/artifact-data-contract.md"
+$goalIntakePath = Join-Path $repoRoot "docs/agent-goal-intake.md"
+$harnessReferencePath = Join-Path $repoRoot "docs/harness-factory-reference.md"
 
 if (-not (Test-Path -LiteralPath $skillPath -PathType Leaf)) {
     throw "Missing skills/code-intel-pipeline/SKILL.md"

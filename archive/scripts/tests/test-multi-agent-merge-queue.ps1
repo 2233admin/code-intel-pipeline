@@ -3,13 +3,14 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+$repoRoot = Split-Path -Parent $root
 $adapter = Join-Path $root "Invoke-MultiAgentMergeQueue.ps1"
-$policy = Join-Path $root "orchestration\multi-agent-merge-queue-policy.v1.json"
-$statusSchema = Join-Path $root "orchestration\schemas\code-intel-multi-agent-merge-queue-status.v1.schema.json"
-$activationConfig = Join-Path $root "claude-code-merge-queue.config.mjs"
+$policy = Join-Path $repoRoot "orchestration\multi-agent-merge-queue-policy.v1.json"
+$statusSchema = Join-Path $repoRoot "orchestration\schemas\code-intel-multi-agent-merge-queue-status.v1.schema.json"
+$activationConfig = Join-Path $repoRoot "claude-code-merge-queue.config.mjs"
 $activationHook = Join-Path $root ".githooks\pre-push"
 $activationInstaller = Join-Path $root "Install-MultiAgentMergeQueue.ps1"
-$packageManifest = Join-Path $root "package.json"
+$packageManifest = Join-Path $repoRoot "package.json"
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-merge-queue-" + [guid]::NewGuid().ToString("N"))
 
 function Invoke-Adapter {

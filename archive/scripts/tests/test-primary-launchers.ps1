@@ -4,6 +4,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+
+$repoRoot = Split-Path -Parent $root
 $launcher = Join-Path $root "code-intel.ps1"
 $legacy = Join-Path $root "invoke-code-intel.ps1"
 $missingRepo = Join-Path ([System.IO.Path]::GetTempPath()) "code-intel-launcher-missing-repo"
@@ -45,7 +47,7 @@ try {
         New-Item -ItemType Directory -Path $binDir -Force | Out-Null
         $binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
         $binaryPath = Join-Path $binDir $binaryName
-        Copy-Item -LiteralPath (Join-Path $root "target/debug/$binaryName") -Destination $binaryPath
+        Copy-Item -LiteralPath (Join-Path $repoRoot "target/debug/$binaryName") -Destination $binaryPath
         $file = Get-Item -LiteralPath $binaryPath
         $sha256 = (Get-FileHash -LiteralPath $binaryPath -Algorithm SHA256).Hash.ToLowerInvariant()
         $relative = "bin/$binaryName"

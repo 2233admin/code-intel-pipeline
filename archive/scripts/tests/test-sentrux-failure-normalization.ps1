@@ -2,6 +2,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+
+$repoRoot = Split-Path -Parent $root
 $runner = Join-Path $root "run-code-intel.ps1"
 $runnerText = Get-Content -LiteralPath $runner -Raw
 $marker = "`$configData = `$null"

@@ -53,7 +53,7 @@ try {
     $head = [string]@(& git -C $repo rev-parse HEAD)[0]
     $snapshot = Get-SnapshotIdentity -Repo $repo -Head $head
     $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-    $codeIntel = Join-Path $root "target\debug\code-intel.exe"
+    $codeIntel = Join-Path $repoRoot "target\debug\code-intel.exe"
     if (-not (Test-Path -LiteralPath $codeIntel -PathType Leaf)) {
         & cargo build -p code-intel --quiet
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $codeIntel -PathType Leaf)) { throw "code-intel decision CLI build failed" }
@@ -66,7 +66,7 @@ try {
     }
     $proposalPath = Join-Path $temp "automatic-pr-proposal.json"
     [IO.File]::WriteAllText($proposalPath, ($proposal | ConvertTo-Json -Depth 8 -Compress), [Text.UTF8Encoding]::new($false))
-    if (-not (Get-Content -LiteralPath $proposalPath -Raw | Test-Json -SchemaFile (Join-Path $root "orchestration/schemas/code-intel-auto-pr-proposal.v1.schema.json") -ErrorAction Stop)) { throw "proposal fixture failed its schema" }
+    if (-not (Get-Content -LiteralPath $proposalPath -Raw | Test-Json -SchemaFile (Join-Path $repoRoot "orchestration/schemas/code-intel-auto-pr-proposal.v1.schema.json") -ErrorAction Stop)) { throw "proposal fixture failed its schema" }
     $proposalSha256 = (Get-FileHash -LiteralPath $proposalPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $evidence = [ordered]@{ refId = "automatic-pr-proposal"; sha256 = $proposalSha256; observedAt = $now - 10; expiresAt = $now + 600 }
     $options = @(
@@ -134,7 +134,7 @@ try {
     }
     $authPath = Join-Path $temp "authorization.json"
     [IO.File]::WriteAllText($authPath, ($authorization | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
-    if (-not (Get-Content -LiteralPath $authPath -Raw | Test-Json -SchemaFile (Join-Path $root "orchestration/schemas/code-intel-auto-pr-authorization.v1.schema.json") -ErrorAction Stop)) {
+    if (-not (Get-Content -LiteralPath $authPath -Raw | Test-Json -SchemaFile (Join-Path $repoRoot "orchestration/schemas/code-intel-auto-pr-authorization.v1.schema.json") -ErrorAction Stop)) {
         throw "authorization fixture failed its schema"
     }
     $log = Join-Path $temp "gh.log"
@@ -150,7 +150,7 @@ exit 0
     $snapshot = Get-SnapshotIdentity -Repo $repo -Head $head
 
     $noPermissions = Invoke-Atom -Repo $repo -Auth $authPath -DecisionStore $decisionStore -ReplayQuery $replayQueryPath -Proposal $proposalPath -CodeIntel $codeIntel -Head $head -Snapshot $snapshot -FakeGh $fakeGh
-    if (-not ($noPermissions.result | ConvertTo-Json -Depth 10 | Test-Json -SchemaFile (Join-Path $root "orchestration/schemas/code-intel-auto-pr-execution-result.v1.schema.json") -ErrorAction Stop)) { throw "default-disabled result failed its schema" }
+    if (-not ($noPermissions.result | ConvertTo-Json -Depth 10 | Test-Json -SchemaFile (Join-Path $repoRoot "orchestration/schemas/code-intel-auto-pr-execution-result.v1.schema.json") -ErrorAction Stop)) { throw "default-disabled result failed its schema" }
     if ($noPermissions.exitCode -eq 0 -or (Test-Path -LiteralPath $log)) { throw "default-disabled path invoked gh" }
 
     $onePermission = Invoke-Atom -Repo $repo -Auth $authPath -DecisionStore $decisionStore -ReplayQuery $replayQueryPath -Proposal $proposalPath -CodeIntel $codeIntel -Head $head -Snapshot $snapshot -FakeGh $fakeGh -RepoPermission
@@ -174,8 +174,8 @@ exit 0
     if ($created.exitCode -ne 0 -or $created.result.status -ne "created") {
         throw "fully authorized path did not create the draft PR: exit=$($created.exitCode); reason=$($created.result.reason)"
     }
-    if (-not ($created.result | ConvertTo-Json -Depth 10 | Test-Json -SchemaFile (Join-Path $root "orchestration/schemas/code-intel-auto-pr-execution-result.v1.schema.json") -ErrorAction Stop)) { throw "created result failed its schema" }
-    if (-not (Get-Content -LiteralPath $created.result.receipt -Raw | Test-Json -SchemaFile (Join-Path $root "orchestration/schemas/code-intel-auto-pr-execution-receipt.v1.schema.json") -ErrorAction Stop)) { throw "created receipt failed its schema" }
+    if (-not ($created.result | ConvertTo-Json -Depth 10 | Test-Json -SchemaFile (Join-Path $repoRoot "orchestration/schemas/code-intel-auto-pr-execution-result.v1.schema.json") -ErrorAction Stop)) { throw "created result failed its schema" }
+    if (-not (Get-Content -LiteralPath $created.result.receipt -Raw | Test-Json -SchemaFile (Join-Path $repoRoot "orchestration/schemas/code-intel-auto-pr-execution-receipt.v1.schema.json") -ErrorAction Stop)) { throw "created receipt failed its schema" }
     $calls = @(Get-Content -LiteralPath $log)
     if ($calls.Count -ne 1) { throw "fake gh must be invoked exactly once" }
     if ($calls[0] -notmatch '^pr\s+create\s+' -or $calls[0] -notmatch '\s--draft$') { throw "fake gh did not receive one draft PR creation command" }

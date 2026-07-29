@@ -25,6 +25,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
+$repoRoot = Split-Path -Parent $root
 $authorityKind = "repository_mutation_and_network_pr_create"
 $branchScope = "automatic_pr_execution"
 
@@ -55,7 +56,7 @@ function Resolve-CodeIntel {
     if (Test-Path -LiteralPath $Command -PathType Leaf) { return [IO.Path]::GetFullPath($Command) }
     $resolved = Get-Command $Command -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($null -ne $resolved) { return [string]$resolved.Source }
-    foreach ($candidate in @((Join-Path $root "bin\code-intel.exe"), (Join-Path $root "target\release\code-intel.exe"), (Join-Path $root "target\debug\code-intel.exe"))) {
+    foreach ($candidate in @((Join-Path $repoRoot "bin\code-intel.exe"), (Join-Path $repoRoot "target\release\code-intel.exe"), (Join-Path $repoRoot "target\debug\code-intel.exe"))) {
         if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
     }
     throw "Code Intel CLI is unavailable."

@@ -2,6 +2,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+
+$repoRoot = Split-Path -Parent $root
 $helper = Join-Path $root "Invoke-RepomixCodePack.ps1"
 $base = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-repomix-test-" + [guid]::NewGuid().ToString("N"))
 $fakeBin = Join-Path $base "bin"

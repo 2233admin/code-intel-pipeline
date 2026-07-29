@@ -30,6 +30,7 @@ function Resolve-RepoBoundFile {
         throw "provenance path must be repository-relative: $RelativePath"
     }
     $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    $repoRoot = Split-Path -Parent $root
     $prefix = [System.IO.Path]::TrimEndingDirectorySeparator($root) + [System.IO.Path]::DirectorySeparatorChar
     $resolved = [System.IO.Path]::GetFullPath((Join-Path $root $RelativePath))
     if (-not $resolved.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {

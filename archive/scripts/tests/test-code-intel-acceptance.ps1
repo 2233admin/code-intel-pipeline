@@ -3,9 +3,10 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+$repoRoot = Split-Path -Parent $root
 $sourceAdapter = Join-Path $root "Invoke-CodeIntelAcceptance.ps1"
-$sourcePolicy = Join-Path $root "orchestration\code-intel-acceptance-policy.v1.json"
-$sourceSchema = Join-Path $root "orchestration\schemas\code-intel-acceptance-result.v1.schema.json"
+$sourcePolicy = Join-Path $repoRoot "orchestration\code-intel-acceptance-policy.v1.json"
+$sourceSchema = Join-Path $repoRoot "orchestration\schemas\code-intel-acceptance-result.v1.schema.json"
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("code intel acceptance fixture " + [guid]::NewGuid().ToString("N"))
 
 function Test-ExactSet {

@@ -1,6 +1,6 @@
 #requires -Version 7.2
 
-param([string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../..")))
+param([string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../..")))
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -43,7 +43,7 @@ try {
     & cargo test -p code-intel --test repowise_route -q
     if ($LASTEXITCODE -ne 0) { throw "Repowise production route contract failed" }
 
-    $fixtureRoot = Join-Path $root "tests/fixtures/repowise-adapter"
+    $fixtureRoot = Join-Path $repoRoot "tests/fixtures/repowise-adapter"
     $facadeOutput = & pwsh -NoProfile -File (Join-Path $root "run-code-intel.ps1") `
         -RepowiseAdapterRequest (Join-Path $fixtureRoot "success.json") `
         -RepowiseAdapterArtifactRoot $fixtureRoot `
@@ -51,7 +51,7 @@ try {
         -RepowiseAdapterMaxAgeSeconds 300
     if ($LASTEXITCODE -ne 0) { throw "Repowise production facade route failed" }
     $facadeJson = [string]::Join([Environment]::NewLine, @($facadeOutput))
-    if (-not ($facadeJson | Test-Json -SchemaFile (Join-Path $root "orchestration/schemas/code-intel-repowise-route-result.v1.schema.json"))) {
+    if (-not ($facadeJson | Test-Json -SchemaFile (Join-Path $repoRoot "orchestration/schemas/code-intel-repowise-route-result.v1.schema.json"))) {
         throw "Repowise production facade output failed its checked schema"
     }
     $facadeResult = $facadeJson | ConvertFrom-Json

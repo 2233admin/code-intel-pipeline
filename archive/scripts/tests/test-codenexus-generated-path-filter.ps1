@@ -4,6 +4,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+
+$repoRoot = Split-Path -Parent $root
 $fixture = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-codenexus-generated-paths-" + [guid]::NewGuid().ToString("N"))
 $repo = Join-Path $fixture "repo"
 $run = Join-Path $fixture "run"

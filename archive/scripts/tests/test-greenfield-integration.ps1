@@ -4,6 +4,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+
+$repoRoot = Split-Path -Parent $root
 $scratch = Join-Path $env:TEMP ("cip-greenfield-{0}" -f [guid]::NewGuid().ToString("N").Substring(0, 8))
 $repo = Join-Path $scratch "repo"
 $artifacts = Join-Path $scratch "artifacts"
@@ -85,7 +87,7 @@ exit /b 0
         throw "Invalid Greenfield exclude should fail"
     }
 
-    $rustCli = Join-Path $root "target\debug\code-intel.exe"
+    $rustCli = Join-Path $repoRoot "target\debug\code-intel.exe"
     if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
         Push-Location $root
         try {
@@ -104,7 +106,7 @@ exit /b 0
     if ($greenfield.Count -ne 0) {
         throw "Retired external spec.greenfield integration must not appear in production plans"
     }
-    $registry = Get-Content -LiteralPath (Join-Path $root "orchestration/integrations.json") -Raw | ConvertFrom-Json
+    $registry = Get-Content -LiteralPath (Join-Path $repoRoot "orchestration/integrations.json") -Raw | ConvertFrom-Json
     if (@($registry.integrations | Where-Object { [string]$_.id -eq "spec.greenfield" }).Count -ne 0) {
         throw "Retired external spec.greenfield integration remains registered"
     }

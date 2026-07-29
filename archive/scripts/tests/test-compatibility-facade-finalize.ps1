@@ -3,9 +3,10 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+$repoRoot = Split-Path -Parent $root
 $script = Join-Path $root "Invoke-CompatibilityFacadeFinalize.ps1"
-$policy = Join-Path $root "orchestration/facade-finalize-policy.v1.json"
-$schema = Join-Path $root "orchestration/schemas/code-intel-compatibility-facade-finalize.v1.schema.json"
+$policy = Join-Path $repoRoot "orchestration/facade-finalize-policy.v1.json"
+$schema = Join-Path $repoRoot "orchestration/schemas/code-intel-compatibility-facade-finalize.v1.schema.json"
 $scratch = Join-Path $env:TEMP ("code-intel-e06-{0}" -f [guid]::NewGuid().ToString("N"))
 
 try {

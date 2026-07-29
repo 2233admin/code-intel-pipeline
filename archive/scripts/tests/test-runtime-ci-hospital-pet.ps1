@@ -3,6 +3,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+$repoRoot = Split-Path -Parent $root
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("code-intel-runtime-pet-" + [guid]::NewGuid().ToString("N"))
 $repo = Join-Path $temp "repo"
 $sourceRoot = Join-Path $temp "runtime"

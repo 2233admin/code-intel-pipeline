@@ -10,6 +10,8 @@ $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
 
 $root = Split-Path -Parent $PSScriptRoot
+
+$repoRoot = Split-Path -Parent $root
 $slash = [string][char]92
 $literalPatterns = @(
     ("C:" + $slash + "Users" + $slash + "Administrator"),

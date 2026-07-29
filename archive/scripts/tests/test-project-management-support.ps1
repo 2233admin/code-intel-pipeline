@@ -1,5 +1,5 @@
 param(
-    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
 )
 
 Set-StrictMode -Version Latest
@@ -24,14 +24,14 @@ function Assert-FileContains {
 
 $root = (Resolve-Path -LiteralPath $RepoPath).Path
 
-$projectManagementPath = Join-Path $root "docs/project-management-support.md"
-$issueTrackerPath = Join-Path $root "docs/agents/issue-tracker.md"
-$triageLabelsPath = Join-Path $root "docs/agents/triage-labels.md"
-$domainPath = Join-Path $root "docs/agents/domain.md"
-$adrPath = Join-Path $root "docs/adr/0006-project-management-support-as-agent-intake.md"
-$contextPath = Join-Path $root "CONTEXT.md"
-$readmePath = Join-Path $root "README.md"
-$skillPath = Join-Path $root "skills/code-intel-pipeline/SKILL.md"
+$projectManagementPath = Join-Path $repoRoot "docs/project-management-support.md"
+$issueTrackerPath = Join-Path $repoRoot "docs/agents/issue-tracker.md"
+$triageLabelsPath = Join-Path $repoRoot "docs/agents/triage-labels.md"
+$domainPath = Join-Path $repoRoot "docs/agents/domain.md"
+$adrPath = Join-Path $repoRoot "docs/adr/0006-project-management-support-as-agent-intake.md"
+$contextPath = Join-Path $repoRoot "CONTEXT.md"
+$readmePath = Join-Path $repoRoot "README.md"
+$skillPath = Join-Path $repoRoot "skills/code-intel-pipeline/SKILL.md"
 
 $checks = @(
     @{

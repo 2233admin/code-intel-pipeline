@@ -1,18 +1,18 @@
 #requires -Version 7.2
 
 param(
-    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = (Resolve-Path -LiteralPath $RepoPath).Path
-$schemaPath = Join-Path $root "orchestration/schemas/code-intel-ponytail-gate.v1.schema.json"
-$policyPath = Join-Path $root "orchestration/ponytail-gate-policy.v1.json"
-$fixturePath = Join-Path $root "tests/fixtures/ponytail/c00-necessity-trace.json"
-$docPath = Join-Path $root "docs/ponytail-governance-gate.md"
-$registryPath = Join-Path $root "orchestration/integrations.json"
+$schemaPath = Join-Path $repoRoot "orchestration/schemas/code-intel-ponytail-gate.v1.schema.json"
+$policyPath = Join-Path $repoRoot "orchestration/ponytail-gate-policy.v1.json"
+$fixturePath = Join-Path $repoRoot "tests/fixtures/ponytail/c00-necessity-trace.json"
+$docPath = Join-Path $repoRoot "docs/ponytail-governance-gate.md"
+$registryPath = Join-Path $repoRoot "orchestration/integrations.json"
 
 $schema = Get-Content -Raw -LiteralPath $schemaPath | ConvertFrom-Json
 $policy = Get-Content -Raw -LiteralPath $policyPath | ConvertFrom-Json
@@ -62,7 +62,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Ponytail gate targeted Rust tests failed with exit code $LASTEXITCODE"
     }
-    $binary = Join-Path $root "target/debug/code-intel.exe"
+    $binary = Join-Path $repoRoot "target/debug/code-intel.exe"
     $resultRaw = & $binary governance ponytail-gate --request $fixturePath
     if ($LASTEXITCODE -ne 0) {
         throw "Ponytail gate production CLI rejected the admitted self trace: $LASTEXITCODE"

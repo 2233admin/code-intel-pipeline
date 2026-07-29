@@ -5,11 +5,11 @@ param()
 
 $ErrorActionPreference = "Stop"
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
-
+$repoRoot = Split-Path -Parent $root
 & cargo test -p code-intel --test survival_scan --quiet
 if ($LASTEXITCODE -ne 0) { throw "B05 Rust contract suite failed" }
 
-$manifest = Get-Content -LiteralPath (Join-Path $root "orchestration\integrations.json") -Raw | ConvertFrom-Json -Depth 100
+$manifest = Get-Content -LiteralPath (Join-Path $repoRoot "orchestration\integrations.json") -Raw | ConvertFrom-Json -Depth 100
 $entry = @($manifest.integrations | Where-Object { $_.id -eq "repository.survival-scan" })
 if ($entry.Count -ne 1) { throw "repository.survival-scan must have exactly one integration entry" }
 if (-not $entry[0].required) { throw "repository.survival-scan must be required" }

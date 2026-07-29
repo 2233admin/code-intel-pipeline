@@ -36,8 +36,8 @@ try {
     if (Test-Path -LiteralPath (Join-Path $disabledOut "automatic-pr-consent.request.json")) { throw "disabled automatic PR emitted a decision request" }
 
     foreach ($pair in @(
-        @{ Document = (Join-Path $out "follow-up-automation.json"); Schema = (Join-Path $root "orchestration/schemas/code-intel-follow-up-automation.v1.schema.json") },
-        @{ Document = (Join-Path $out "automatic-pr-consent.request.json"); Schema = (Join-Path $root "orchestration/schemas/code-intel-decision-request.v1.schema.json") }
+        @{ Document = (Join-Path $out "follow-up-automation.json"); Schema = (Join-Path $repoRoot "orchestration/schemas/code-intel-follow-up-automation.v1.schema.json") },
+        @{ Document = (Join-Path $out "automatic-pr-consent.request.json"); Schema = (Join-Path $repoRoot "orchestration/schemas/code-intel-decision-request.v1.schema.json") }
     )) {
         if (-not (Get-Content -LiteralPath $pair.Document -Raw | Test-Json -SchemaFile $pair.Schema -ErrorAction Stop)) {
             throw "schema validation failed: $($pair.Document)"

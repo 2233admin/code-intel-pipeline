@@ -1,5 +1,5 @@
 param(
-    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    [string]$RepoPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
 )
 
 Set-StrictMode -Version Latest
@@ -27,6 +27,8 @@ function New-TestClassification {
 }
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+
+$repoRoot = Split-Path -Parent $root
 $helper = Join-Path $root "Invoke-GitHubSolutionResearch.ps1"
 $base = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-gh-research-test-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $base | Out-Null

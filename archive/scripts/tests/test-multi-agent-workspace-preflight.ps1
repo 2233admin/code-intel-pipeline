@@ -3,8 +3,9 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+$repoRoot = Split-Path -Parent $root
 $adapter = Join-Path $root "Invoke-MultiAgentWorkspacePreflight.ps1"
-$policy = Join-Path $root "orchestration\multi-agent-workspace-policy.v1.json"
+$policy = Join-Path $repoRoot "orchestration\multi-agent-workspace-policy.v1.json"
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-workspace-preflight-" + [guid]::NewGuid().ToString("N"))
 
 function Invoke-Preflight {

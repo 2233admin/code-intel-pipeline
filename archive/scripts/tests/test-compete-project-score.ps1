@@ -4,6 +4,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+
+$repoRoot = Split-Path -Parent $root
 $adapter = Join-Path $root "Invoke-CompeteProjectScore.ps1"
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("code-intel-compete-test-" + [guid]::NewGuid().ToString("N"))
 $repo = Join-Path $tempRoot "repo"

@@ -4,7 +4,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 $flow = Join-Path $root "Invoke-CodeIntelAutomaticPullRequestFlow.ps1"
-$codeIntel = Join-Path $root "target\debug\code-intel.exe"
+$codeIntel = Join-Path $repoRoot "target\debug\code-intel.exe"
 $temp = Join-Path ([IO.Path]::GetTempPath()) ("code-intel-auto-pr-flow-" + [guid]::NewGuid().ToString("N"))
 
 function Invoke-Flow {
@@ -81,16 +81,16 @@ exit 0
     $approveArtifacts = Join-Path $temp "approve"
     $approved = Invoke-Flow -Repo $repo -Artifacts $approveArtifacts -Store (Join-Path $temp "approve-store") -Option "enable_once_for_snapshot" -FakeGh $fakeGh -Execute
     if ($approved.exitCode -ne 0 -or $approved.value.status -ne "created" -or @($approved.value.observedEffects).Count -ne 2) { throw "approved flow did not create exactly one draft PR" }
-    if (-not ($approved.value | ConvertTo-Json -Depth 20 | Test-Json -SchemaFile (Join-Path $root "orchestration/schemas/code-intel-auto-pr-flow-result.v1.schema.json") -ErrorAction Stop)) { throw "flow result schema validation failed" }
+    if (-not ($approved.value | ConvertTo-Json -Depth 20 | Test-Json -SchemaFile (Join-Path $repoRoot "orchestration/schemas/code-intel-auto-pr-flow-result.v1.schema.json") -ErrorAction Stop)) { throw "flow result schema validation failed" }
     $calls = @(Get-Content -LiteralPath $log)
     if ($calls.Count -ne 1 -or $calls[0] -notmatch '^pr\s+create\s+' -or $calls[0] -notmatch '\s--draft$') { throw "fake gh invocation was not one draft PR" }
     foreach ($file in @("automatic-pr-proposal.json", "automatic-pr-consent.request.json", "automatic-pr-consent.response.json", "automatic-pr-decision-resolution.json", "automatic-pr-decision-replay.json", "automatic-pr-authorization.json")) {
         if (-not (Test-Path -LiteralPath (Join-Path $approveArtifacts $file) -PathType Leaf)) { throw "approved flow artifact missing: $file" }
     }
     $auth = Get-Content -LiteralPath (Join-Path $approveArtifacts "automatic-pr-authorization.json") -Raw
-    if (-not ($auth | Test-Json -SchemaFile (Join-Path $root "orchestration/schemas/code-intel-auto-pr-authorization.v1.schema.json") -ErrorAction Stop)) { throw "orchestrated authorization schema failed" }
+    if (-not ($auth | Test-Json -SchemaFile (Join-Path $repoRoot "orchestration/schemas/code-intel-auto-pr-authorization.v1.schema.json") -ErrorAction Stop)) { throw "orchestrated authorization schema failed" }
     $proposal = Get-Content -LiteralPath (Join-Path $approveArtifacts "automatic-pr-proposal.json") -Raw
-    if (-not ($proposal | Test-Json -SchemaFile (Join-Path $root "orchestration/schemas/code-intel-auto-pr-proposal.v1.schema.json") -ErrorAction Stop)) { throw "orchestrated proposal schema failed" }
+    if (-not ($proposal | Test-Json -SchemaFile (Join-Path $repoRoot "orchestration/schemas/code-intel-auto-pr-proposal.v1.schema.json") -ErrorAction Stop)) { throw "orchestrated proposal schema failed" }
     if ([string]@(& git -C $repo rev-parse HEAD)[0] -ne $initialHead -or (@(& git -C $repo status --porcelain=v1 --untracked-files=all) -join "`n") -ne $initialStatus) { throw "flow changed repository HEAD or worktree" }
 
     $duplicate = Invoke-Flow -Repo $repo -Artifacts (Join-Path $temp "duplicate") -Store (Join-Path $temp "duplicate-store") -Option "enable_once_for_snapshot" -FakeGh $fakeGh -Execute

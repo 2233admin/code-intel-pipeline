@@ -4,6 +4,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+
+$repoRoot = Split-Path -Parent $root
 $doctor = Join-Path $root "check-code-intel-tools.ps1"
 $scratch = Join-Path $env:TEMP ("code-intel-doctor-config-{0}" -f [guid]::NewGuid().ToString("N"))
 

@@ -3,7 +3,9 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$repoRoot = Split-Path -Parent $PSScriptRoot
+$archiveRoot = Split-Path -Parent $PSScriptRoot
+
+$repoRoot = Split-Path -Parent $archiveRoot
 $delegate = Join-Path $repoRoot "Invoke-ModelChannelDelegate.ps1"
 $root = Join-Path ([IO.Path]::GetTempPath()) ("code-intel-delegate-test-{0}" -f [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $root | Out-Null

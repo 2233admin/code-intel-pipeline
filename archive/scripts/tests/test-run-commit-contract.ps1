@@ -1,6 +1,6 @@
 #requires -Version 7.2
 
-param([string]$Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../..")))
+param([string]$Root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../..")))
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
