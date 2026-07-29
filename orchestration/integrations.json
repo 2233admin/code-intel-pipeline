@@ -46,7 +46,7 @@
         "status": "deleted",
         "callSite": {
           "source": "archive/run-code-intel.ps1",
-          "anchor": "$repomixTool = Join-Path $PSScriptRoot \"archive/Invoke-RepomixCodePack.ps1\""
+          "anchor": "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\""
         },
         "reviewedDeletion": {
           "reviewer": "code-intel-maintainers",
@@ -85,7 +85,7 @@
         "status": "deleted",
         "callSite": {
           "source": "archive/run-code-intel.ps1",
-          "anchor": "$githubResearchScript = Join-Path $PSScriptRoot \"archive/Invoke-GitHubSolutionResearch.ps1\""
+          "anchor": "$githubResearchScript = Join-Path $PSScriptRoot \"Invoke-GitHubSolutionResearch.ps1\""
         },
         "reviewedDeletion": {
           "reviewer": "code-intel-maintainers",
@@ -98,7 +98,7 @@
         "status": "declared",
         "callSite": {
           "source": "archive/run-code-intel.ps1",
-          "anchor": "$scopedRepowiseScript = Join-Path $PSScriptRoot \"archive/Invoke-ScopedRepowise.ps1\""
+          "anchor": "$scopedRepowiseScript = Join-Path $PSScriptRoot \"Invoke-ScopedRepowise.ps1\""
         },
         "envelope": "legacy-powershell-script-result.v1",
         "owner": "code-intel-pipeline",
@@ -124,7 +124,7 @@
         "status": "declared",
         "callSite": {
           "source": "archive/run-code-intel.ps1",
-          "anchor": "$sentruxAgentTool = Join-Path $PSScriptRoot \"archive/Invoke-SentruxAgentTool.ps1\""
+          "anchor": "$sentruxAgentTool = Join-Path $PSScriptRoot \"Invoke-SentruxAgentTool.ps1\""
         },
         "envelope": "legacy-powershell-script-result.v1",
         "owner": "code-intel-pipeline",
@@ -137,7 +137,7 @@
         "status": "declared",
         "callSite": {
           "source": "archive/run-code-intel.ps1",
-          "anchor": "$codeNexusLiteTool = Join-Path $PSScriptRoot \"archive/Invoke-CodeNexusLite.ps1\""
+          "anchor": "$codeNexusLiteTool = Join-Path $PSScriptRoot \"Invoke-CodeNexusLite.ps1\""
         },
         "envelope": "legacy-powershell-script-result.v1",
         "owner": "code-intel-pipeline",
@@ -285,8 +285,8 @@
           "id": "doctor.envelope.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "93abc817f553ab61d83dcb73c10629d8962c80ca2587eca0d97ae75ffef504de",
-            "68aa0d7db1f027f6e95a1be68410b7806d1eb445b9d93877898bf696c6995fbc"
+            "cbce5325f0455639d6957d4b82a4a72af7adde235926aca07acd5dcfa561cb3f",
+            "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab"
           ]
         },
         "determinism": "external_nondeterministic",
@@ -370,7 +370,7 @@
         "codenexus_doctor"
       ],
       "commands": {
-        "compat": "pwsh -NoProfile -File \"$env:CODE_INTEL_HOME\\Invoke-CodeNexusLite.ps1\" -RepoPath '<repo-path>'"
+        "compat": "pwsh -NoProfile -File \"$env:CODE_INTEL_HOME\\archive/Invoke-CodeNexusLite.ps1\" -RepoPath '<repo-path>'"
       },
       "artifactContract": [
         "codenexus-context.json",
@@ -743,7 +743,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "713daf121490de0eb9e3a94139318da47b46d4368fce5ef09c5719b8d546f403",
-            "68aa0d7db1f027f6e95a1be68410b7806d1eb445b9d93877898bf696c6995fbc"
+            "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab"
           ]
         },
         "determinism": "deterministic",
@@ -834,7 +834,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "3ba256f4ca0bf62aca08f688f7ecf31800dd10e68371054e2f1605eff197ea81",
-            "68aa0d7db1f027f6e95a1be68410b7806d1eb445b9d93877898bf696c6995fbc",
+            "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab",
             "733a02d87b07b91696bb93bc4e904b536b5aade6ef8f6a806a3e8a93332756d9",
             "b118ba78ff3ef4a189525c642184cbd320a268d2885681ab153544db554c5965",
             "e3072b6b01a4f692c2ac75c7c4995747f9a0fd1ce4f32e1ab1599f348661f570",
@@ -897,7 +897,7 @@
           "toolchainDigests": [
             "13968a5e5da8923b00ab8495b5b848e0f41514e7c004c183ae2311d35d5ff2a3",
             "733a02d87b07b91696bb93bc4e904b536b5aade6ef8f6a806a3e8a93332756d9",
-            "68aa0d7db1f027f6e95a1be68410b7806d1eb445b9d93877898bf696c6995fbc"
+            "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab"
           ]
         },
         "determinism": "deterministic",
@@ -948,7 +948,7 @@
           "toolchainDigests": [
             "a6da84444e815dd94c15887190c7d6bd48c7bca5975fb5d493eb77ab39f27d80",
             "733a02d87b07b91696bb93bc4e904b536b5aade6ef8f6a806a3e8a93332756d9",
-            "68aa0d7db1f027f6e95a1be68410b7806d1eb445b9d93877898bf696c6995fbc"
+            "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab"
           ]
         },
         "determinism": "deterministic",
@@ -1023,7 +1023,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-            "68aa0d7db1f027f6e95a1be68410b7806d1eb445b9d93877898bf696c6995fbc"
+            "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab"
           ]
         },
         "determinism": "deterministic",
@@ -1189,7 +1189,7 @@
           "id": "inventory.rg.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "68aa0d7db1f027f6e95a1be68410b7806d1eb445b9d93877898bf696c6995fbc"
+            "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab"
           ]
         },
         "determinism": "deterministic",
@@ -1416,7 +1416,7 @@
         "reference_hits"
       ],
       "commands": {
-        "compat": "pwsh -NoProfile -File \"$env:CODE_INTEL_HOME\\Invoke-CodeNexusLite.ps1\" -RepoPath '<repo-path>'"
+        "compat": "pwsh -NoProfile -File \"$env:CODE_INTEL_HOME\\archive/Invoke-CodeNexusLite.ps1\" -RepoPath '<repo-path>'"
       },
       "artifactContract": [
         "codenexus-context.json"

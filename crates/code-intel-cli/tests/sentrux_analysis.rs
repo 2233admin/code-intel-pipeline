@@ -277,8 +277,9 @@ fn production_pipeline_prefers_rust_dsm_with_explicit_powershell_rollback() {
     assert!(pipeline.contains("& $sentruxDsmRustCli sentrux dsm $sentruxTargetPath"));
     assert!(pipeline.contains("& $sentruxAgentTool dsm $sentruxTargetPath"));
     assert!(pipeline.contains("$rustExecutableName = if ($effectivePlatform -eq \"windows\")"));
+    // target/ stayed at the repository root when the facade moved under archive/
     assert!(pipeline.contains(
-        "$defaultRustCli = Join-Path $PSScriptRoot (Join-Path \"target/debug\" $rustExecutableName)"
+        "$defaultRustCli = Join-Path (Split-Path -Parent $PSScriptRoot) (Join-Path \"target/debug\" $rustExecutableName)"
     ));
     assert!(pipeline.contains("$sentruxDsmRustCli = if"));
     assert!(pipeline.contains("$defaultRustCli"));

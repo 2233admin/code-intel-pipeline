@@ -922,9 +922,13 @@ fn legacy_facade_and_rust_execute_the_same_fixture_with_stable_machine_parity() 
     let main = source
         .find("\n$configData = $null")
         .expect("legacy function boundary");
+    // the facade now lives under archive/, so $PSScriptRoot resolves there
     let function_source = source[..main].replace(
         "$PSScriptRoot",
-        &format!("'{}'", root.to_string_lossy().replace('\\', "/")),
+        &format!(
+            "'{}'",
+            root.join("archive").to_string_lossy().replace('\\', "/")
+        ),
     );
     let legacy_out = temp.0.join("legacy");
     fs::create_dir(&legacy_out).unwrap();

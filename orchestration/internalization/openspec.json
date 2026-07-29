@@ -22,7 +22,7 @@
   },
   "update": { "policy": "Before 2026-10-11, verify the upstream commit, LICENSE, release status, and candidate semantics; keep research-only until all checks are admitted", "nextCheckAt": 1791676800, "evidence": { "evidenceIds": ["gap:openspec:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
   "ownedModifications": [
-    { "path": "OpenSpec-Detector.ps1", "description": "Pipeline-owned OpenSpec candidate detection and advisory rendering; does not contain or invoke the upstream runtime", "evidenceIds": ["local:atom:openspec-opsx-five-occurrences", "local:b06:no-auto-init-boundary"] }
+    { "path": "archive/OpenSpec-Detector.ps1", "description": "Pipeline-owned OpenSpec candidate detection and advisory rendering; does not contain or invoke the upstream runtime", "evidenceIds": ["local:atom:openspec-opsx-five-occurrences", "local:b06:no-auto-init-boundary"] }
   ],
   "rollback": { "strategy": "delete this candidate record and remove the OpenSpec alternative from candidate data without changing the advisory schema or authority boundary", "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
   "exit": { "strategy": "replace the reference with a pinned, licensed candidate record or retire it while retaining audit provenance", "replacementCriteria": ["replacement has exact upstream revision and verified license obligations", "replacement passes proposal conformance and no-auto-init tests"], "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },

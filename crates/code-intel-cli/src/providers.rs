@@ -162,7 +162,7 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         protocol: "artifact+command",
         method: "POST",
         route: "/api/providers/codenexus/lite",
-        command_template: r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\archive\Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#,
+        command_template: r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\archive/Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#,
         artifact: "codenexus-context.json",
         required: false,
         status: "compatibility",
@@ -176,7 +176,7 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         protocol: "compatibility-alias",
         method: "POST",
         route: "/api/providers/repowise/lite",
-        command_template: r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\archive\Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#,
+        command_template: r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\archive/Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#,
         artifact: "codenexus-context.json",
         required: false,
         status: "compatibility",
@@ -1563,7 +1563,7 @@ mod tests {
         let canonical = find("codenexus", "lite").expect("canonical CodeNexus provider");
         assert_eq!(
             canonical.command_template,
-            r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\archive\Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#
+            r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\archive/Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#
         );
         assert!(!canonical.required);
         assert_eq!(canonical.status, "compatibility");
@@ -1582,7 +1582,7 @@ mod tests {
             .expect("clock should be after epoch")
             .as_nanos();
         let root = env::temp_dir().join(format!("code-intel-provider-drift-{stamp}"));
-        fs::create_dir_all(&root).expect("fixture root");
+        fs::create_dir_all(root.join("archive")).expect("fixture root");
         fs::write(root.join("archive/Invoke-CodeNexusLite.ps1"), "# fixture\n")
             .expect("fixture entrypoint");
         let manifest = json!({
@@ -1678,7 +1678,7 @@ mod tests {
         );
         assert_eq!(
             command,
-            r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\archive\Invoke-CodeNexusLite.ps1" -RepoPath 'D:\work repo\O''Brien'"#
+            r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\archive/Invoke-CodeNexusLite.ps1" -RepoPath 'D:\work repo\O''Brien'"#
         );
     }
 }

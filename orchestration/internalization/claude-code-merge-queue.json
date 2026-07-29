@@ -7,7 +7,7 @@
     "kind": "adapted_capability",
     "source": {
       "uri": "https://github.com/2233admin/claude-code-merge-queue",
-      "revision": "e7a76958dbd3953b84f12abbc2e6bd755aafce53; version:0.5.1; local-adapter-sha256:7a5bf1613548a48c9ef0b8a1727b5db108e9c3ba2745aefaac9d8163394f0a85; local-conformance-sha256:8dc3464084ce949c748e909fab995deaa4f22e5d0bffca4eec1363c533338a36; local-policy-sha256:158ee8bafe3bd19c76d495860b8737c614854ebd0319014e7c7b03d9d4579d18; local-doc-sha256:2c2cf572fcebf4e627ad61aa7532de3fb2e2dccad7b1c6023e9da0f8b7e41d4c"
+      "revision": "e7a76958dbd3953b84f12abbc2e6bd755aafce53; version:0.5.1; local-adapter-sha256:118cdaf683e3a8ef492e13644c27c1fac45c251d06d6e28d301261ca7a541e24; local-conformance-sha256:63a4b5adecb6a974da9404776890c3f8a7faf0f5a76cc6bed7e44bc79c5a1d2f; local-policy-sha256:158ee8bafe3bd19c76d495860b8737c614854ebd0319014e7c7b03d9d4579d18; local-doc-sha256:3e49601535c9d4989f3fc45681589610676ca45c3a79559a7792769e32dea225"
     },
     "license": {
       "id": "MIT",
@@ -47,42 +47,42 @@
     {
       "integrationId": "delivery.multi-agent-merge-queue",
       "operation": "status",
-      "command": "pwsh -NoProfile -File Invoke-MultiAgentMergeQueue.ps1 -Action status -RepoPath '<repo-path>' -Json",
+      "command": "pwsh -NoProfile -File archive/Invoke-MultiAgentMergeQueue.ps1 -Action status -RepoPath '<repo-path>' -Json",
       "implementationIdentity": { "providerId": "claude-code-merge-queue", "implementationId": "pipeline.adapter.v1", "activation": "optional" },
-      "source": { "path": "Invoke-MultiAgentMergeQueue.ps1", "sha256": "7a5bf1613548a48c9ef0b8a1727b5db108e9c3ba2745aefaac9d8163394f0a85" },
-      "conformance": { "path": "scripts/tests/test-multi-agent-merge-queue.ps1", "sha256": "8dc3464084ce949c748e909fab995deaa4f22e5d0bffca4eec1363c533338a36", "testName": "PASS multi-agent merge queue" }
+      "source": { "path": "archive/Invoke-MultiAgentMergeQueue.ps1", "sha256": "118cdaf683e3a8ef492e13644c27c1fac45c251d06d6e28d301261ca7a541e24" },
+      "conformance": { "path": "archive/scripts/tests/test-multi-agent-merge-queue.ps1", "sha256": "63a4b5adecb6a974da9404776890c3f8a7faf0f5a76cc6bed7e44bc79c5a1d2f", "testName": "PASS multi-agent merge queue" }
     },
     {
       "integrationId": "delivery.multi-agent-merge-queue",
       "operation": "validate",
-      "command": "pwsh -NoProfile -File Invoke-MultiAgentMergeQueue.ps1 -Action validate -RepoPath '<repo-path>' -Json",
+      "command": "pwsh -NoProfile -File archive/Invoke-MultiAgentMergeQueue.ps1 -Action validate -RepoPath '<repo-path>' -Json",
       "implementationIdentity": { "providerId": "claude-code-merge-queue", "implementationId": "pipeline.adapter.v1", "activation": "optional" },
-      "source": { "path": "Invoke-MultiAgentMergeQueue.ps1", "sha256": "7a5bf1613548a48c9ef0b8a1727b5db108e9c3ba2745aefaac9d8163394f0a85" },
-      "conformance": { "path": "scripts/tests/test-multi-agent-merge-queue.ps1", "sha256": "8dc3464084ce949c748e909fab995deaa4f22e5d0bffca4eec1363c533338a36", "testName": "PASS multi-agent merge queue" }
+      "source": { "path": "archive/Invoke-MultiAgentMergeQueue.ps1", "sha256": "118cdaf683e3a8ef492e13644c27c1fac45c251d06d6e28d301261ca7a541e24" },
+      "conformance": { "path": "archive/scripts/tests/test-multi-agent-merge-queue.ps1", "sha256": "63a4b5adecb6a974da9404776890c3f8a7faf0f5a76cc6bed7e44bc79c5a1d2f", "testName": "PASS multi-agent merge queue" }
     },
     {
       "integrationId": "delivery.multi-agent-merge-queue",
       "operation": "land",
-      "command": "pwsh -NoProfile -File Invoke-MultiAgentMergeQueue.ps1 -Action land -RepoPath '<repo-path>' -AllowRepositoryMutation -AllowNetworkPush",
+      "command": "pwsh -NoProfile -File archive/Invoke-MultiAgentMergeQueue.ps1 -Action land -RepoPath '<repo-path>' -AllowRepositoryMutation -AllowNetworkPush",
       "implementationIdentity": { "providerId": "claude-code-merge-queue", "implementationId": "pipeline.adapter.v1", "activation": "explicit-authority" },
-      "source": { "path": "Invoke-MultiAgentMergeQueue.ps1", "sha256": "7a5bf1613548a48c9ef0b8a1727b5db108e9c3ba2745aefaac9d8163394f0a85" },
-      "conformance": { "path": "scripts/tests/test-multi-agent-merge-queue.ps1", "sha256": "8dc3464084ce949c748e909fab995deaa4f22e5d0bffca4eec1363c533338a36", "testName": "PASS multi-agent merge queue" }
+      "source": { "path": "archive/Invoke-MultiAgentMergeQueue.ps1", "sha256": "118cdaf683e3a8ef492e13644c27c1fac45c251d06d6e28d301261ca7a541e24" },
+      "conformance": { "path": "archive/scripts/tests/test-multi-agent-merge-queue.ps1", "sha256": "63a4b5adecb6a974da9404776890c3f8a7faf0f5a76cc6bed7e44bc79c5a1d2f", "testName": "PASS multi-agent merge queue" }
     },
     {
       "integrationId": "delivery.multi-agent-merge-queue",
       "operation": "reconcile",
-      "command": "pwsh -NoProfile -File Invoke-MultiAgentMergeQueue.ps1 -Action reconcile -RepoPath '<repo-path>'",
+      "command": "pwsh -NoProfile -File archive/Invoke-MultiAgentMergeQueue.ps1 -Action reconcile -RepoPath '<repo-path>'",
       "implementationIdentity": { "providerId": "claude-code-merge-queue", "implementationId": "pipeline.adapter.v1", "activation": "optional" },
-      "source": { "path": "Invoke-MultiAgentMergeQueue.ps1", "sha256": "7a5bf1613548a48c9ef0b8a1727b5db108e9c3ba2745aefaac9d8163394f0a85" },
-      "conformance": { "path": "scripts/tests/test-multi-agent-merge-queue.ps1", "sha256": "8dc3464084ce949c748e909fab995deaa4f22e5d0bffca4eec1363c533338a36", "testName": "PASS multi-agent merge queue" }
+      "source": { "path": "archive/Invoke-MultiAgentMergeQueue.ps1", "sha256": "118cdaf683e3a8ef492e13644c27c1fac45c251d06d6e28d301261ca7a541e24" },
+      "conformance": { "path": "archive/scripts/tests/test-multi-agent-merge-queue.ps1", "sha256": "63a4b5adecb6a974da9404776890c3f8a7faf0f5a76cc6bed7e44bc79c5a1d2f", "testName": "PASS multi-agent merge queue" }
     },
     {
       "integrationId": "delivery.multi-agent-merge-queue",
       "operation": "history",
-      "command": "pwsh -NoProfile -File Invoke-MultiAgentMergeQueue.ps1 -Action history -RepoPath '<repo-path>'",
+      "command": "pwsh -NoProfile -File archive/Invoke-MultiAgentMergeQueue.ps1 -Action history -RepoPath '<repo-path>'",
       "implementationIdentity": { "providerId": "claude-code-merge-queue", "implementationId": "pipeline.adapter.v1", "activation": "optional" },
-      "source": { "path": "Invoke-MultiAgentMergeQueue.ps1", "sha256": "7a5bf1613548a48c9ef0b8a1727b5db108e9c3ba2745aefaac9d8163394f0a85" },
-      "conformance": { "path": "scripts/tests/test-multi-agent-merge-queue.ps1", "sha256": "8dc3464084ce949c748e909fab995deaa4f22e5d0bffca4eec1363c533338a36", "testName": "PASS multi-agent merge queue" }
+      "source": { "path": "archive/Invoke-MultiAgentMergeQueue.ps1", "sha256": "118cdaf683e3a8ef492e13644c27c1fac45c251d06d6e28d301261ca7a541e24" },
+      "conformance": { "path": "archive/scripts/tests/test-multi-agent-merge-queue.ps1", "sha256": "63a4b5adecb6a974da9404776890c3f8a7faf0f5a76cc6bed7e44bc79c5a1d2f", "testName": "PASS multi-agent merge queue" }
     }
   ],
   "economics": {
@@ -101,12 +101,12 @@
     "evidence": { "evidenceIds": ["gap:merge-queue:update-review", "gap:merge-queue:representative-cluster-throughput", "gap:merge-queue:independent-provider-security-review"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
   },
   "ownedModifications": [
-    { "path": "Invoke-MultiAgentMergeQueue.ps1", "description": "Pipeline-owned readiness and explicit-authority compatibility adapter", "evidenceIds": ["local:merge-queue:eight-readiness-gates", "local:merge-queue:explicit-mutation-network-authority"] },
+    { "path": "archive/Invoke-MultiAgentMergeQueue.ps1", "description": "Pipeline-owned readiness and explicit-authority compatibility adapter", "evidenceIds": ["local:merge-queue:eight-readiness-gates", "local:merge-queue:explicit-mutation-network-authority"] },
     { "path": "orchestration/multi-agent-merge-queue-policy.v1.json", "description": "Pinned provider, required gates, allowed actions, and authority boundary", "evidenceIds": ["local:merge-queue:source-revision-version-pinned", "local:merge-queue:no-install-init-promote-prune"] },
     { "path": "orchestration/integrations.json", "description": "Optional landing-coordination stage and provider operation registry", "evidenceIds": ["local:merge-queue:optional-stage", "local:merge-queue:no-normal-run-callsite"] },
     { "path": "orchestration/schemas/code-intel-multi-agent-merge-queue-status.v1.schema.json", "description": "Checked machine-readable readiness result contract", "evidenceIds": ["local:merge-queue:eight-readiness-gates"] },
-    { "path": "scripts/tests/test-multi-agent-merge-queue.ps1", "description": "Positive delegation and fail-closed authority, acceptance, and promotion fixtures", "evidenceIds": ["local:merge-queue:ready-fixture-land", "local:merge-queue:authority-rejection", "local:merge-queue:acceptance-and-promotion-rejection"] },
-    { "path": "scripts/tests/test-integration-orchestration.ps1", "description": "Registry and path-quoting acceptance for the optional delivery adapter", "evidenceIds": ["local:merge-queue:optional-stage", "local:merge-queue:explicit-mutation-network-authority"] },
+    { "path": "archive/scripts/tests/test-multi-agent-merge-queue.ps1", "description": "Positive delegation and fail-closed authority, acceptance, and promotion fixtures", "evidenceIds": ["local:merge-queue:ready-fixture-land", "local:merge-queue:authority-rejection", "local:merge-queue:acceptance-and-promotion-rejection"] },
+    { "path": "archive/scripts/tests/test-integration-orchestration.ps1", "description": "Registry and path-quoting acceptance for the optional delivery adapter", "evidenceIds": ["local:merge-queue:optional-stage", "local:merge-queue:explicit-mutation-network-authority"] },
     { "path": "orchestration/code-intel-project-conformance-policy.v1.json", "description": "Adds the merge-queue contract to unified fast and full project acceptance", "evidenceIds": ["local:merge-queue:acceptance-and-promotion-rejection"] },
     { "path": ".github/workflows/ci.yml", "description": "Runs parser, orchestration, unified conformance, and cross-platform merge-queue contract checks", "evidenceIds": ["local:merge-queue:ready-fixture-land", "local:merge-queue:authority-rejection"] },
     { "path": "docs/multi-agent-merge-queue.md", "description": "Human integration, acceptance binding, authority, and limits contract", "evidenceIds": ["local:merge-queue:optional-stage", "local:merge-queue:no-normal-run-callsite"] },

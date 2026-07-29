@@ -237,7 +237,7 @@ const PRODUCTION_PARTICIPANTS: [ProductionParticipant; 12] = [
     ProductionParticipant {
         capability_id: "pack.repomix",
         source: "archive/run-code-intel.ps1",
-        marker: "$repomixTool = Join-Path $PSScriptRoot \"archive/Invoke-RepomixCodePack.ps1\"",
+        marker: "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"",
     },
     ProductionParticipant {
         capability_id: "evidence.native-code",
@@ -253,12 +253,12 @@ const PRODUCTION_PARTICIPANTS: [ProductionParticipant; 12] = [
         capability_id: "research.github-solution",
         source: "archive/run-code-intel.ps1",
         marker:
-            "$githubResearchScript = Join-Path $PSScriptRoot \"archive/Invoke-GitHubSolutionResearch.ps1\"",
+            "$githubResearchScript = Join-Path $PSScriptRoot \"Invoke-GitHubSolutionResearch.ps1\"",
     },
     ProductionParticipant {
         capability_id: "memory.repowise",
         source: "archive/run-code-intel.ps1",
-        marker: "$scopedRepowiseScript = Join-Path $PSScriptRoot \"archive/Invoke-ScopedRepowise.ps1\"",
+        marker: "$scopedRepowiseScript = Join-Path $PSScriptRoot \"Invoke-ScopedRepowise.ps1\"",
     },
     ProductionParticipant {
         capability_id: "graph.code-intel-understand",
@@ -268,12 +268,12 @@ const PRODUCTION_PARTICIPANTS: [ProductionParticipant; 12] = [
     ProductionParticipant {
         capability_id: "structure.sentrux",
         source: "archive/run-code-intel.ps1",
-        marker: "$sentruxAgentTool = Join-Path $PSScriptRoot \"archive/Invoke-SentruxAgentTool.ps1\"",
+        marker: "$sentruxAgentTool = Join-Path $PSScriptRoot \"Invoke-SentruxAgentTool.ps1\"",
     },
     ProductionParticipant {
         capability_id: "localization.codenexus-lite",
         source: "archive/run-code-intel.ps1",
-        marker: "$codeNexusLiteTool = Join-Path $PSScriptRoot \"archive/Invoke-CodeNexusLite.ps1\"",
+        marker: "$codeNexusLiteTool = Join-Path $PSScriptRoot \"Invoke-CodeNexusLite.ps1\"",
     },
     ProductionParticipant {
         capability_id: "run.commit",
@@ -835,6 +835,9 @@ mod tests {
     }
 
     fn touch(path: &Path, text: &str) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("fixture parent dir should be creatable");
+        }
         fs::write(path, text).expect("fixture file should be writable");
     }
 
@@ -935,7 +938,7 @@ mod tests {
         let dir = orchestration_fixture_dir("registry-undeclared-repomix");
         touch(
             &dir.join("archive/run-code-intel.ps1"),
-            "$repomixTool = Join-Path $PSScriptRoot \"archive/Invoke-RepomixCodePack.ps1\"\n",
+            "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"\n",
         );
         let manifest = json!({
             "productionRegistry": {
@@ -958,7 +961,7 @@ mod tests {
         let dir = orchestration_fixture_dir("registry-incomplete-repomix");
         touch(
             &dir.join("archive/run-code-intel.ps1"),
-            "$repomixTool = Join-Path $PSScriptRoot \"archive/Invoke-RepomixCodePack.ps1\"\n",
+            "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"\n",
         );
         let manifest = json!({
             "productionRegistry": {
@@ -969,7 +972,7 @@ mod tests {
                     "status": "declared",
                     "callSite": {
                         "source": "archive/run-code-intel.ps1",
-                        "anchor": "$repomixTool = Join-Path $PSScriptRoot \"archive/Invoke-RepomixCodePack.ps1\""
+                        "anchor": "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\""
                     },
                     "envelope": "code-intel-capability-envelope.v1",
                     "owner": "code-intel-pipeline",
@@ -994,7 +997,7 @@ mod tests {
     #[test]
     fn registry_audit_rejects_duplicate_call_site_and_contract_anchor_drift() {
         let dir = orchestration_fixture_dir("registry-call-site-drift");
-        let anchor = "$repomixTool = Join-Path $PSScriptRoot \"archive/Invoke-RepomixCodePack.ps1\"";
+        let anchor = "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"";
         touch(
             &dir.join("archive/run-code-intel.ps1"),
             &format!("{anchor}\n{anchor}\n"),
@@ -1031,7 +1034,7 @@ mod tests {
     #[test]
     fn registry_audit_rejects_every_required_participant_metadata_field() {
         let dir = orchestration_fixture_dir("registry-required-metadata");
-        let anchor = "$repomixTool = Join-Path $PSScriptRoot \"archive/Invoke-RepomixCodePack.ps1\"";
+        let anchor = "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"";
         touch(&dir.join("archive/run-code-intel.ps1"), &format!("{anchor}\n"));
         let ids = HashSet::from(["pack.repomix".to_string()]);
 
@@ -1121,7 +1124,7 @@ mod tests {
     fn registry_audit_accepts_reviewed_deletion_only_after_call_site_is_removed() {
         let dir = orchestration_fixture_dir("registry-reviewed-deletion");
         touch(&dir.join("archive/run-code-intel.ps1"), "# call site removed\n");
-        let anchor = "$repomixTool = Join-Path $PSScriptRoot \"archive/Invoke-RepomixCodePack.ps1\"";
+        let anchor = "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\"";
         let manifest = json!({
             "productionRegistry": {
                 "mode": "enforce",
