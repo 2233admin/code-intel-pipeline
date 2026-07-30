@@ -1,5 +1,8 @@
 [CmdletBinding()]param([string]$RepoRoot=(Split-Path (Split-Path $PSScriptRoot -Parent) -Parent))
-Set-StrictMode -Version Latest;$ErrorActionPreference="Stop";$run=Get-Content (Join-Path $RepoRoot "run-code-intel.ps1") -Raw;$registry=Get-Content (Join-Path $RepoRoot "orchestration\integrations.json") -Raw|ConvertFrom-Json
+# $RepoRoot lands on archive/ after the PowerShell move; assets that
+# stayed behind (orchestration/, crates/) live one level above it
+$PipelineRepoRoot = Split-Path -Parent $RepoRoot
+Set-StrictMode -Version Latest;$ErrorActionPreference="Stop";$run=Get-Content (Join-Path $RepoRoot "run-code-intel.ps1") -Raw;$registry=Get-Content (Join-Path $PipelineRepoRoot "orchestration\integrations.json") -Raw|ConvertFrom-Json
 $functions='(?s)function New-HospitalProtocol \{.*?(?=\r?\nfunction Get-CodeIntelSentruxStep)';$call='(?s)\$hospitalReport = New-CodeIntelHospitalReport .*?Convert-HospitalReportToMarkdown \$hospitalReport \| Set-Content -LiteralPath \$hospitalMarkdownPath -Encoding UTF8\r?\n'
 $functionBlocks=@([regex]::Matches($run,$functions)).Count;$callBlocks=@([regex]::Matches($run,$call)).Count;$integration=@($registry.integrations|Where-Object id -eq "diagnosis.hospital")
 $normalB09Route=($run-match'capability exec diagnosis\.hospital' -or $run-match'& \$rustCli diagnosis hospital')

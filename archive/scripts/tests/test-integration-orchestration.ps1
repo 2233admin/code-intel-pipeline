@@ -121,7 +121,7 @@ $mergeQueue = @($mergeQueuePlan.plan | Where-Object { $_.id -eq "delivery.multi-
 if ($mergeQueue.Count -ne 1 -or [bool]$mergeQueue[0].required -or $mergeQueue[0].stage -ne "landing_coordination") {
     throw "Expected one optional delivery.multi-agent-merge-queue integration"
 }
-if ($mergeQueue[0].entrypoint -ne "Invoke-MultiAgentMergeQueue.ps1" -or @($mergeQueue[0].capabilities).Count -lt 4) {
+if ($mergeQueue[0].entrypoint -ne "archive/Invoke-MultiAgentMergeQueue.ps1" -or @($mergeQueue[0].capabilities).Count -lt 4) {
     throw "Merge queue adapter entrypoint and capabilities are incomplete"
 }
 $promoteCommand = $mergeQueue[0].commands.PSObject.Properties["promote"]
@@ -178,7 +178,7 @@ if ([bool]$canonicalCodeNexus[0].required -or $canonicalCodeNexus[0].status -ne 
 if ($canonicalCodeNexus[0].notes -notmatch "non-blocking") {
     throw "Canonical codenexus/lite provider must explicitly document non-blocking behavior"
 }
-if ($canonicalCodeNexus[0].commandTemplate -ne 'pwsh -NoProfile -File "$env:CODE_INTEL_HOME\Invoke-CodeNexusLite.ps1" -RepoPath ''<repo-path>''') {
+if ($canonicalCodeNexus[0].commandTemplate -ne 'pwsh -NoProfile -File "$env:CODE_INTEL_HOME\archive/Invoke-CodeNexusLite.ps1" -RepoPath ''<repo-path>''') {
     throw "Canonical codenexus/lite provider must use an executable CODE_INTEL_HOME PowerShell entrypoint"
 }
 
@@ -214,7 +214,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Canonical CodeNexus provider plan failed"
 }
 $providerPlan = $providerPlanRaw | ConvertFrom-Json
-if ($providerPlan.command -notmatch '^pwsh -NoProfile -File "\$env:CODE_INTEL_HOME\\Invoke-CodeNexusLite\.ps1" -RepoPath ''.+code intel provider plan''$') {
+if ($providerPlan.command -notmatch '^pwsh -NoProfile -File "\$env:CODE_INTEL_HOME\\archive/Invoke-CodeNexusLite\.ps1" -RepoPath ''.+code intel provider plan''$') {
     throw "Canonical CodeNexus provider plan did not safely quote the repo path"
 }
 $parseTokens = $null
@@ -234,7 +234,7 @@ try {
     New-Item -ItemType Directory -Force -Path $fixtureManifestDir | Out-Null
     '{"policy":{"name":"unrelated"},"integrations":[]}' | Set-Content -LiteralPath (Join-Path $fixtureManifestDir "integrations.json") -Encoding utf8
 
-    $homeResolution = Invoke-ProviderValidateProcess -WorkingDirectory $fixtureRoot -CodeIntelHome $root
+    $homeResolution = Invoke-ProviderValidateProcess -WorkingDirectory $fixtureRoot -CodeIntelHome $repoRoot
     if ($homeResolution.exitCode -ne 0) {
         throw "CODE_INTEL_HOME provider validation process failed: $($homeResolution.stderr)"
     }

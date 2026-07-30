@@ -12,7 +12,7 @@ $scratch = Join-Path $env:TEMP ("code-intel-e06-{0}" -f [guid]::NewGuid().ToStri
 try {
     New-Item -ItemType Directory -Force -Path $scratch | Out-Null
     $out = Join-Path $scratch "final-manifest.json"
-    & pwsh -NoProfile -File $script -RepoRoot $root -PolicyPath $policy -EvaluatedAt 1783987200 -OutFile $out -Json | Out-Null
+    & pwsh -NoProfile -File $script -RepoRoot $repoRoot -PolicyPath $policy -EvaluatedAt 1783987200 -OutFile $out -Json | Out-Null
     if ($LASTEXITCODE -ne 2) { throw "E06 current-state audit must exit 2, got $LASTEXITCODE" }
     $resultRaw = Get-Content -LiteralPath $out -Raw
     if (-not ($resultRaw | Test-Json -SchemaFile $schema)) { throw "E06 current-state manifest failed its closed schema" }
@@ -56,7 +56,7 @@ try {
         $attackedPolicyPath = Join-Path $scratch ("attacked-{0}.json" -f $attack.name)
         $attackedOut = Join-Path $scratch ("attacked-{0}-result.json" -f $attack.name)
         [System.IO.File]::WriteAllText($attackedPolicyPath, ($attackedPolicy | ConvertTo-Json -Depth 20), [System.Text.UTF8Encoding]::new($false))
-        & pwsh -NoProfile -File $script -RepoRoot $root -PolicyPath $attackedPolicyPath -EvaluatedAt 1783987200 -OutFile $attackedOut -Json *> $null
+        & pwsh -NoProfile -File $script -RepoRoot $repoRoot -PolicyPath $attackedPolicyPath -EvaluatedAt 1783987200 -OutFile $attackedOut -Json *> $null
         if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 2) { throw "E06 accepted attackerField in $($attack.name) policy object" }
         if (Test-Path -LiteralPath $attackedOut) { throw "E06 published an audit result for invalid $($attack.name) policy" }
     }
@@ -78,7 +78,7 @@ try {
         [System.IO.File]::WriteAllText((Join-Path $fixtureRoot ([string]$mode.fixture)), ($fixture | ConvertTo-Json -Depth 10), [System.Text.UTF8Encoding]::new($false))
     }
     $out2 = Join-Path $scratch "fixture-final-manifest.json"
-    & pwsh -NoProfile -File $script -RepoRoot $root -PolicyPath $policy -FixtureRoot $fixtureRoot -EvaluatedAt 1783987200 -OutFile $out2 -Json | Out-Null
+    & pwsh -NoProfile -File $script -RepoRoot $repoRoot -PolicyPath $policy -FixtureRoot $fixtureRoot -EvaluatedAt 1783987200 -OutFile $out2 -Json | Out-Null
     if ($LASTEXITCODE -ne 2) { throw "passing mode fixtures must not override blocked dependency packets" }
     $fixtureResultRaw = Get-Content -LiteralPath $out2 -Raw
     if (-not ($fixtureResultRaw | Test-Json -SchemaFile $schema)) { throw "E06 fixture manifest failed its closed schema" }

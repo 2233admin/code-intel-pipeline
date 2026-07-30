@@ -7,6 +7,9 @@ param(
 )
 
 Set-StrictMode -Version Latest
+# $RepoRoot lands on archive/ after the PowerShell move; assets that
+# stayed behind (orchestration/, crates/) live one level above it
+$PipelineRepoRoot = Split-Path -Parent $RepoRoot
 $ErrorActionPreference = "Stop"
 if ($EvaluatedAt -le 0) { throw "EvaluatedAt must be positive" }
 if (Test-Path -LiteralPath $OutDir) { throw "packet output must be exclusive: $OutDir" }
@@ -182,7 +185,7 @@ $manifest = [ordered]@{
 Write-JsonFile (Join-Path $OutDir "compatibility-retirement-manifest.json") $manifest
 $manifestRef = New-ArtifactRef "code-intel-compatibility-retirement-manifest.v1" "compatibility.retirement-manifest" "compatibility-retirement-manifest.json" $snapshotIdentity
 
-$registryJson = Get-Content -LiteralPath (Join-Path $RepoRoot "orchestration/integrations.json") -Raw | ConvertFrom-Json
+$registryJson = Get-Content -LiteralPath (Join-Path $PipelineRepoRoot "orchestration/integrations.json") -Raw | ConvertFrom-Json
 $gateDecl = ($registryJson.integrations | Where-Object { $_.id -eq "compatibility.retirement-gate" }).capabilityDeclaration
 $gateInputs = @($manifestRef, $replacement, $golden, $contract, $effects, $registry, $window, $rollback, $usage, $necessity, $b05Dependency, $independent)
 $requestSnapshot = [ordered]@{

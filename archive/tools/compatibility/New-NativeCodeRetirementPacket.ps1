@@ -7,6 +7,9 @@ param(
 )
 
 Set-StrictMode -Version Latest
+# $RepoRoot lands on archive/ after the PowerShell move; assets that
+# stayed behind (orchestration/, crates/) live one level above it
+$PipelineRepoRoot = Split-Path -Parent $RepoRoot
 $ErrorActionPreference = "Stop"
 if ($EvaluatedAt -le 0) { throw "EvaluatedAt must be positive" }
 if (Test-Path -LiteralPath $OutDir) { throw "packet output must be exclusive: $OutDir" }
@@ -45,11 +48,11 @@ $dagFacadeCount = [regex]::Matches($runText, '(?m)^if \(\$DagCoordinate\) \{').C
 $dagCommandCount = [regex]::Matches($runText, '& \$rustCli run dag-coordinate --repo \$repoPath --out \$dagOut').Count
 if ($dagFacadeCount -ne 1 -or $dagCommandCount -ne 1) { throw "E07 requires one A09 facade route" }
 
-$registry = Get-Content -LiteralPath (Join-Path $RepoRoot "orchestration/integrations.json") -Raw | ConvertFrom-Json
+$registry = Get-Content -LiteralPath (Join-Path $PipelineRepoRoot "orchestration/integrations.json") -Raw | ConvertFrom-Json
 $nativeDeclarations = @($registry.integrations | Where-Object id -eq "evidence.native-code")
 if ($nativeDeclarations.Count -ne 1) { throw "B07 registry must declare evidence.native-code exactly once" }
 $declaredDigest = [string]$nativeDeclarations[0].capabilityDeclaration.implementation.toolchainDigests[0]
-$sourceDigest = (Get-FileHash -LiteralPath (Join-Path $RepoRoot "crates/code-intel-cli/src/native_code_evidence.rs") -Algorithm SHA256).Hash.ToLowerInvariant()
+$sourceDigest = (Get-FileHash -LiteralPath (Join-Path $PipelineRepoRoot "crates/code-intel-cli/src/native_code_evidence.rs") -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($declaredDigest -ne $sourceDigest) { throw "R06/B07 native-code digest is not stable: declared=$declaredDigest source=$sourceDigest" }
 
 $nativeTests = @(
@@ -70,7 +73,7 @@ foreach ($testName in $dagTests) {
     & cargo test -q -p code-intel --test dag_run $testName -- --exact
     if ($LASTEXITCODE -ne 0) { throw "A09/B08 targeted route test failed: $testName" }
 }
-$registryAudit = & $CodeIntel orchestrate --action Validate --manifest (Join-Path $RepoRoot "orchestration/integrations.json") --json | ConvertFrom-Json
+$registryAudit = & $CodeIntel orchestrate --action Validate --manifest (Join-Path $PipelineRepoRoot "orchestration/integrations.json") --json | ConvertFrom-Json
 if (-not $registryAudit.ok -or -not $registryAudit.registryAudit.ok) { throw "B07 registry audit failed" }
 
 $snapshotInputs = @(

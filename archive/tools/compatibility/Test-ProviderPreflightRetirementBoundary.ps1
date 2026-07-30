@@ -18,7 +18,10 @@ $testWrapper = Get-Content -LiteralPath (Join-Path $RepoRoot "scripts/tests/test
 if ($testWrapper -notmatch 'Invoke-RepowiseProviderProbe\.ps1') {
     throw "test-only compatibility wrapper no longer delegates to the production probe"
 }
-$historical = @(& git -C $RepoRoot log --format=%H -S 'test-code-intel-provider.ps1' -- run-code-intel.ps1)
+# the facade's history spans the archive move, and -S does not cross a
+# rename, so both spellings of the path are queried from the repository root
+$pipelineRepoRoot = Split-Path -Parent $RepoRoot
+$historical = @(& git -C $pipelineRepoRoot log --format=%H -S 'test-code-intel-provider.ps1' -- archive/run-code-intel.ps1 run-code-intel.ps1)
 if ($LASTEXITCODE -ne 0 -or $historical.Count -eq 0) {
     throw "historical legacy provider-preflight branch cannot be located for rollback provenance"
 }

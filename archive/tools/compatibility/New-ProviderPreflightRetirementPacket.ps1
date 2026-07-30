@@ -7,6 +7,9 @@ param(
     [string]$SourceRevision = "ca9334aa8eb8df3be7e10c5547069f03645cabe2"
 )
 Set-StrictMode -Version Latest
+# $RepoRoot lands on archive/ after the PowerShell move; assets that
+# stayed behind (orchestration/, crates/) live one level above it
+$PipelineRepoRoot = Split-Path -Parent $RepoRoot
 $ErrorActionPreference = "Stop"
 if ($EvaluatedAt -le 0) { throw "EvaluatedAt must be positive" }
 if (Test-Path -LiteralPath $OutDir) { throw "packet output must be exclusive: $OutDir" }
@@ -50,7 +53,7 @@ $baseText = $legacyMatch.Value.Replace("`r`n","`n").Replace("`r","`n")
 $resultText = ""
 $deletedLines = @($baseText -split "`n")
 
-$snapshotIdentity = Get-TextSha ((@($liveHash, (Get-TextSha $baseText), ((Get-FileHash (Join-Path $RepoRoot "Invoke-RepowiseProviderProbe.ps1") -Algorithm SHA256).Hash.ToLowerInvariant()), ((Get-FileHash (Join-Path $RepoRoot "orchestration\integrations.json") -Algorithm SHA256).Hash.ToLowerInvariant())) -join "`n"))
+$snapshotIdentity = Get-TextSha ((@($liveHash, (Get-TextSha $baseText), ((Get-FileHash (Join-Path $RepoRoot "Invoke-RepowiseProviderProbe.ps1") -Algorithm SHA256).Hash.ToLowerInvariant()), ((Get-FileHash (Join-Path $PipelineRepoRoot "orchestration\integrations.json") -Algorithm SHA256).Hash.ToLowerInvariant())) -join "`n"))
 $retirementId = "retire-provider-preflight-branch"
 $branchId = "run-code-intel.provider-preflight.test-wrapper"
 $replacementId = "provider.repowise-adapt"
@@ -90,7 +93,7 @@ $manifest = [ordered]@{ schema="code-intel-compatibility-retirement-manifest.v1"
 Write-Json (Join-Path $OutDir "compatibility-retirement-manifest.json") $manifest
 $manifestRef = New-Ref "code-intel-compatibility-retirement-manifest.v1" "compatibility.retirement-manifest" "compatibility-retirement-manifest.json"
 
-$registryJson = Get-Content (Join-Path $RepoRoot "orchestration\integrations.json") -Raw | ConvertFrom-Json
+$registryJson = Get-Content (Join-Path $PipelineRepoRoot "orchestration\integrations.json") -Raw | ConvertFrom-Json
 $gateDecl = ($registryJson.integrations | Where-Object id -eq "compatibility.retirement-gate").capabilityDeclaration
 $request = [ordered]@{
     schema="code-intel-capability-request.v1"; capability="compatibility.retirement-gate"; contractVersion=1; implementation=$gateDecl.implementation

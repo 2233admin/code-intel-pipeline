@@ -5,6 +5,9 @@ param(
 )
 
 Set-StrictMode -Version Latest
+# $RepoRoot lands on archive/ after the PowerShell move; assets that
+# stayed behind (orchestration/, crates/) live one level above it
+$PipelineRepoRoot = Split-Path -Parent $RepoRoot
 $ErrorActionPreference = "Stop"
 function Read-Packet([string]$Relative) {
     $path = Join-Path $PacketRoot $Relative
@@ -122,7 +125,7 @@ $bootstrapHash = (Get-FileHash -LiteralPath (Join-Path $RepoRoot "check-code-int
 if ($registryEvidence.details.registryAuditOk -ne $true -or $registryEvidence.details.owner -ne "code-intel-pipeline" -or
     $registryEvidence.details.bootstrapHash -ne $bootstrapHash) { throw "retained bootstrap ownership or hash changed" }
 
-$registry = Get-Content -LiteralPath (Join-Path $RepoRoot "orchestration/integrations.json") -Raw | ConvertFrom-Json
+$registry = Get-Content -LiteralPath (Join-Path $PipelineRepoRoot "orchestration/integrations.json") -Raw | ConvertFrom-Json
 $doctor = @($registry.integrations | Where-Object id -eq "doctor")
 if ($doctor.Count -ne 1 -or $doctor[0].owner -ne "code-intel-pipeline" -or
     [string]$doctor[0].extensionPoint -notmatch 'observation-only bootstrap') {
