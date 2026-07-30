@@ -31,8 +31,17 @@ $snapshotInputs = @(
     "crates/code-intel-cli/src/doctor_adapter.rs", "crates/code-intel-cli/tests/doctor_envelope.rs",
     "crates/code-intel-cli/src/dag_run.rs", "orchestration/integrations.json"
 )
+# PowerShell entry points are $RepoRoot-relative (archive/); crates/ and
+# orchestration/ stayed at the repository root one level above it. Must match
+# New-DoctorWrapperRetirementPacket.ps1's FrozenPath resolution exactly.
+function Resolve-FrozenPath([string]$Relative) {
+    if ($Relative -like "crates/*" -or $Relative -like "orchestration/*") {
+        return (Join-Path $PipelineRepoRoot $Relative)
+    }
+    return (Join-Path $RepoRoot $Relative)
+}
 $currentSnapshotIdentity = Get-Sha256Text (($snapshotInputs | ForEach-Object {
-    (Get-FileHash -LiteralPath (Join-Path $RepoRoot $_) -Algorithm SHA256).Hash.ToLowerInvariant()
+    (Get-FileHash -LiteralPath (Resolve-FrozenPath $_) -Algorithm SHA256).Hash.ToLowerInvariant()
 }) -join "`n")
 foreach ($artifact in @($ticket, $manifest, $decision, $diff)) {
     if ($artifact.snapshotIdentity -ne $currentSnapshotIdentity) { throw "E09 packet is stale relative to its frozen source set" }
