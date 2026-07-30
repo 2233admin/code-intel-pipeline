@@ -293,6 +293,7 @@ struct SentruxCommand {
     stdout: String,
     stderr: String,
     violations: Vec<Violation>,
+    governed: bool,
 }
 
 impl SentruxCommand {
@@ -309,6 +310,7 @@ impl SentruxCommand {
             stdout: run.stdout,
             stderr: String::new(),
             violations: run.violations,
+            governed: run.governed,
         }
     }
 
@@ -352,6 +354,9 @@ impl SentruxCommand {
             stdout,
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
             violations,
+            // External engines expose no governance signal, so their exit code
+            // is the only verdict available and is taken at face value.
+            governed: true,
         }
     }
 }
@@ -445,14 +450,30 @@ fn command_evidence(subcommand: &str, command: &SentruxCommand) -> Value {
     })
 }
 
+/// Translates one Sentrux command into an authoritative rule verdict.
+///
+/// An ungoverned command carries no structural verdict: `check` without
+/// `.sentrux/rules.toml` evaluated no rule, and `gate` without
+/// `.sentrux/baseline.json` had no prior measurement to detect a regression
+/// against. Its nonzero exit code is an operator affordance ("save a
+/// baseline"), not evidence that an admitted rule failed, so reporting `fail`
+/// here made every never-baselined repository read as an architecture gate
+/// failure in diagnosis. The raw exit code and stdout stay verbatim in the
+/// command observation artifact, which is where the ungoverned state is
+/// auditable.
 fn command_rule(kind: &str, command: &SentruxCommand) -> Value {
+    let verdict = if command.success || !command.governed {
+        "pass"
+    } else {
+        "fail"
+    };
     let mut rule = json!({
         "kind":kind,
         "status":"evaluated",
-        "verdict":if command.success { "pass" } else { "fail" },
+        "verdict":verdict,
         "failure":{"kind":"none"}
     });
-    if !command.success && !command.violations.is_empty() {
+    if verdict == "fail" && !command.violations.is_empty() {
         rule["details"] = json!({
             "violations":command
                 .violations

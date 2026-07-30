@@ -2,64 +2,9 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum RunProfile {
-    Default,
-    Strict,
-    Offline,
-    Compatibility,
-}
+mod inputs;
 
-impl RunProfile {
-    pub(crate) fn parse(value: &str) -> Result<Self, String> {
-        match value {
-            "default" => Ok(Self::Default),
-            "strict" => Ok(Self::Strict),
-            "offline" => Ok(Self::Offline),
-            _ => Err("--profile must be default, strict, or offline".into()),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum WorkingTreePolicy {
-    HeadOnly,
-    ExplicitOverlay,
-}
-
-impl WorkingTreePolicy {
-    pub(crate) fn parse(value: &str) -> Result<Self, String> {
-        match value {
-            "head_only" => Ok(Self::HeadOnly),
-            "explicit_overlay" => Ok(Self::ExplicitOverlay),
-            _ => Err("--working-tree-policy must be head_only or explicit_overlay".into()),
-        }
-    }
-
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::HeadOnly => "head_only",
-            Self::ExplicitOverlay => "explicit_overlay",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ProviderRequirement {
-    Required,
-    Optional,
-    Disabled,
-}
-
-impl ProviderRequirement {
-    pub(crate) fn is_required(self) -> bool {
-        matches!(self, Self::Required)
-    }
-
-    pub(crate) fn is_enabled(self) -> bool {
-        !matches!(self, Self::Disabled)
-    }
-}
+pub(crate) use inputs::{ProviderRequirement, RunMode, RunProfile, SkipFlags, WorkingTreePolicy};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ProviderPolicy {
@@ -77,6 +22,7 @@ pub(crate) enum EffectPolicy {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ExecutionPolicy {
     profile: RunProfile,
+    mode: RunMode,
     working_tree: WorkingTreePolicy,
     scopes: Vec<String>,
     providers: ProviderPolicy,
@@ -114,12 +60,58 @@ impl ExecutionPolicy {
         };
         Self {
             profile,
+            mode: RunMode::Normal,
             working_tree: WorkingTreePolicy::ExplicitOverlay,
             scopes: vec![".".into()],
             providers,
             effects: EffectPolicy::RegistryDeclared,
             tool_path_prefix: None,
         }
+    }
+
+    /// Compose the run mode onto the profile's requirement policy.
+    ///
+    /// Mode may only *narrow within what the profile already permits*. `lite`
+    /// drops the structural stage when the profile left it optional, but a
+    /// profile that marks it `Required` keeps it: otherwise `--mode lite`
+    /// would be a way to silently disarm a strict run, which is the same
+    /// hazard `with_doctor_overrides` already refuses. `Offline` stays
+    /// disabled regardless — mode never re-enables.
+    pub(crate) fn with_mode(mut self, mode: RunMode) -> Self {
+        self.mode = mode;
+        if mode == RunMode::Lite {
+            self.providers.sentrux = self.providers.sentrux.narrowed();
+        }
+        self
+    }
+
+    pub(crate) fn mode(&self) -> RunMode {
+        self.mode
+    }
+
+    /// Compose the launcher's stage switches onto the requirement policy.
+    ///
+    /// Same rule as [`Self::with_mode`], for the same reason: a skip may only
+    /// narrow within what the profile already permits. `Required` survives
+    /// every skip, so no compatibility switch can disarm a strict gate, and
+    /// `Disabled` is never turned back on, so `Offline` stays offline.
+    ///
+    /// `require_understand_graph` moves in the other direction — it
+    /// *strengthens* — which is always safe, but it still may not resurrect a
+    /// capability the profile disabled.
+    pub(crate) fn with_skips(mut self, skips: SkipFlags) -> Self {
+        if skips.repowise {
+            self.providers.repowise = self.providers.repowise.narrowed();
+        }
+        if skips.sentrux {
+            self.providers.sentrux = self.providers.sentrux.narrowed();
+        }
+        if skips.require_understand_graph
+            && self.providers.understand == ProviderRequirement::Optional
+        {
+            self.providers.understand = ProviderRequirement::Required;
+        }
+        self
     }
 
     pub(crate) fn with_working_tree(
@@ -189,7 +181,14 @@ impl ExecutionPolicy {
         manifest: &Path,
     ) -> Value {
         let mut options = match capability {
-            "diagnosis.hospital" => json!({}),
+            // The hospital must be able to tell "the structural stage was
+            // never requested" from "it was requested and produced nothing".
+            // Only the policy can say this, and the policy refuses to disable
+            // a capability its profile marks Required — so a narrow scope can
+            // never be claimed for a run that demanded the gate.
+            "diagnosis.hospital" => json!({
+                "structuralEvidenceInScope": self.capability_enabled("provider.sentrux-adapt")
+            }),
             "doctor" => json!({
                 "repoPath":repo,
                 "manifestPath":manifest,
@@ -243,6 +242,114 @@ mod tests {
         assert!(!offline.capability_enabled("provider.graph-adapt"));
         assert!(!offline.capability_enabled("provider.sentrux-adapt"));
         assert!(!offline.provider_diagnosis_enabled());
+    }
+
+    #[test]
+    fn mode_is_a_separate_axis_and_leaves_the_profile_intact() {
+        // Mode and profile are orthogonal: every combination has to stay
+        // expressible, so composing a mode must not change which profile the
+        // policy reports or what `normal`/`full` require.
+        for mode in [RunMode::Lite, RunMode::Normal, RunMode::Full] {
+            let policy = ExecutionPolicy::for_profile(RunProfile::Default).with_mode(mode);
+            assert_eq!(policy.profile, RunProfile::Default);
+            assert_eq!(policy.mode(), mode);
+        }
+        let normal = ExecutionPolicy::for_profile(RunProfile::Default).with_mode(RunMode::Normal);
+        let full = ExecutionPolicy::for_profile(RunProfile::Default).with_mode(RunMode::Full);
+        assert_eq!(normal.providers, full.providers);
+        assert!(normal.capability_enabled("provider.sentrux-adapt"));
+    }
+
+    #[test]
+    fn lite_drops_the_structural_stage_only_where_the_profile_left_it_optional() {
+        let lite = ExecutionPolicy::for_profile(RunProfile::Default).with_mode(RunMode::Lite);
+        assert!(!lite.capability_enabled("provider.sentrux-adapt"));
+        // The graph stage is Required under Default and must survive lite.
+        assert!(lite.capability_enabled("provider.graph-adapt"));
+        assert!(lite.provider_diagnosis_enabled());
+    }
+
+    #[test]
+    fn lite_cannot_disarm_a_strict_run_or_reenable_an_offline_one() {
+        // The hazard this pins: if `--mode lite` could drop a Required
+        // capability, it would be a compatibility flag that silently weakens
+        // a strict gate — exactly what with_doctor_overrides already refuses.
+        let strict = ExecutionPolicy::for_profile(RunProfile::Strict).with_mode(RunMode::Lite);
+        assert!(strict.providers.sentrux.is_required());
+        assert!(strict.capability_enabled("provider.sentrux-adapt"));
+
+        let compatibility =
+            ExecutionPolicy::for_profile(RunProfile::Compatibility).with_mode(RunMode::Lite);
+        assert!(compatibility.providers.sentrux.is_required());
+
+        // ...and mode never turns anything back on.
+        for mode in [RunMode::Lite, RunMode::Normal, RunMode::Full] {
+            let offline = ExecutionPolicy::for_profile(RunProfile::Offline).with_mode(mode);
+            assert_eq!(offline.providers.sentrux, ProviderRequirement::Disabled);
+            assert_eq!(offline.providers.graph, ProviderRequirement::Disabled);
+            assert!(!offline.provider_diagnosis_enabled());
+        }
+    }
+
+    #[test]
+    fn skips_drop_optional_stages_and_narrow_the_hospital_scope_with_them() {
+        let policy = ExecutionPolicy::for_profile(RunProfile::Default).with_skips(SkipFlags {
+            repowise: true,
+            sentrux: true,
+            ..SkipFlags::default()
+        });
+        assert_eq!(policy.providers.repowise, ProviderRequirement::Disabled);
+        assert!(!policy.capability_enabled("provider.sentrux-adapt"));
+        // Skipping the structural stage must tell the hospital the stage was
+        // excluded, not that its evidence went missing.
+        let options = policy.capability_options(
+            "diagnosis.hospital",
+            Path::new("repo"),
+            Path::new("integrations.json"),
+        );
+        assert_eq!(options["structuralEvidenceInScope"], json!(false));
+    }
+
+    #[test]
+    fn skips_cannot_disarm_a_strict_run_or_reenable_an_offline_one() {
+        let all = SkipFlags {
+            repowise: true,
+            sentrux: true,
+            require_understand_graph: true,
+        };
+        let strict = ExecutionPolicy::for_profile(RunProfile::Strict).with_skips(all);
+        assert!(strict.providers.repowise.is_required());
+        assert!(strict.providers.sentrux.is_required());
+        assert!(strict.capability_enabled("provider.sentrux-adapt"));
+
+        let offline = ExecutionPolicy::for_profile(RunProfile::Offline).with_skips(all);
+        assert_eq!(offline.providers.repowise, ProviderRequirement::Disabled);
+        assert_eq!(offline.providers.sentrux, ProviderRequirement::Disabled);
+        // require_understand_graph strengthens, but must not resurrect a
+        // capability the profile disabled.
+        assert_eq!(offline.providers.understand, ProviderRequirement::Disabled);
+    }
+
+    #[test]
+    fn require_understand_graph_promotes_an_optional_stage_to_required() {
+        let policy = ExecutionPolicy::for_profile(RunProfile::Default).with_skips(SkipFlags {
+            require_understand_graph: true,
+            ..SkipFlags::default()
+        });
+        assert!(policy.providers.understand.is_required());
+        // ...and it reaches the doctor, which is what makes a missing graph
+        // fatal rather than advisory.
+        let options =
+            policy.capability_options("doctor", Path::new("repo"), Path::new("integrations.json"));
+        assert_eq!(options["requireUnderstand"], json!(true));
+    }
+
+    #[test]
+    fn no_skips_is_the_identity_on_the_provider_policy() {
+        let plain = ExecutionPolicy::for_profile(RunProfile::Default);
+        let skipped =
+            ExecutionPolicy::for_profile(RunProfile::Default).with_skips(SkipFlags::default());
+        assert_eq!(plain.providers, skipped.providers);
     }
 
     #[test]

@@ -92,6 +92,13 @@ pub(crate) struct EngineRun {
     pub(crate) success: bool,
     pub(crate) stdout: String,
     pub(crate) violations: Vec<Violation>,
+    /// False when the repository never configured the governance this run
+    /// needs: no `.sentrux/rules.toml` for `check`, no `.sentrux/baseline.json`
+    /// for `gate`. Ungoverned is not the same as violated — no rule was
+    /// evaluated and no regression was measurable. The CLI still exits nonzero
+    /// so an operator who asked for a gate is told to save a baseline, but
+    /// evidence consumers must not read that exit code as a structural verdict.
+    pub(crate) governed: bool,
 }
 
 #[derive(Default)]
@@ -132,6 +139,7 @@ pub(crate) fn run_check(repo: &Path) -> Result<EngineRun, String> {
             success: true,
             stdout: out,
             violations: Vec::new(),
+            governed: false,
         });
     }
     let rules = fs::read_to_string(&rules_path)
@@ -146,6 +154,7 @@ pub(crate) fn run_check(repo: &Path) -> Result<EngineRun, String> {
             success: true,
             stdout: out,
             violations,
+            governed: true,
         });
     }
     out.push_str("Sentrux check failed\n");
@@ -159,6 +168,7 @@ pub(crate) fn run_check(repo: &Path) -> Result<EngineRun, String> {
         success: false,
         stdout: out,
         violations,
+        governed: true,
     })
 }
 
@@ -185,6 +195,7 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
             success: true,
             stdout: out,
             violations: Vec::new(),
+            governed: true,
         });
     }
     if !baseline_path.is_file() {
@@ -200,6 +211,7 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
                 message,
                 targets: vec![".sentrux/baseline.json".into()],
             }],
+            governed: false,
         });
     }
     let raw = fs::read(&baseline_path)
@@ -232,6 +244,9 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
                 message,
                 targets: vec![".sentrux/baseline.json".into()],
             }],
+            // A baseline exists but this engine cannot read it. That is a real
+            // gate failure: re-baselining must stay a deliberate decision.
+            governed: true,
         });
     }
     let before = &baseline["metrics"];
@@ -284,6 +299,7 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
             success: true,
             stdout: out,
             violations,
+            governed: true,
         });
     }
     out.push_str("Quality degraded during this session\n");
@@ -294,6 +310,7 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
         success: false,
         stdout: out,
         violations,
+        governed: true,
     })
 }
 

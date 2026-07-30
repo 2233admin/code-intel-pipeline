@@ -531,7 +531,7 @@
         "id": "provider.graph-builtin.compat",
         "version": "1.0.0",
         "toolchainDigests": [
-              "bdc3c77334f6193624c18538b41abe273007abe45073705f74b556efa48fd950",
+              "92dcffeeb4226eac01acf1f995cf32ee3c93b4abcd958c9aff461ccdc86bfe9a",
               "6671234c5b00847c7130f535cca5b049030d67f34f6e5341faf45f45b9d01c95",
               "339536b6756cecd60b706faafb3ee9f53f8c1436ac6d2becb0448d27dc0b0322",
               "52644a812174988ede91d98ddfec63c6a91f8478277d7bf74c73f106dd0f776b",
@@ -583,9 +583,9 @@
         "id": "provider.sentrux-builtin.compat",
         "version": "1.0.0",
         "toolchainDigests": [
-              "bdc3c77334f6193624c18538b41abe273007abe45073705f74b556efa48fd950",
+              "92dcffeeb4226eac01acf1f995cf32ee3c93b4abcd958c9aff461ccdc86bfe9a",
               "08bf222bf5822a5ece89554be86d0687eb1437b18298a940638997459d95f5ee",
-              "7bad6c0aff7bfda64c23dd608599c34192702925f1cf67a065495e492a1f94d3",
+              "0689c2b7bb3d93e44e0758faf9683a53b07a49cd054a5aa3c4a1ef318bf290fc",
               "52644a812174988ede91d98ddfec63c6a91f8478277d7bf74c73f106dd0f776b",
               "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26"
             ]
@@ -1456,7 +1456,7 @@
           "id": "diagnosis.hospital.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "5bc06caa29f786b3f6e4d732dc26005d313a01071940221c1b03b65911283efd"
+            "15fe44854b79b0b860ad2b63fbd461f358f2b19ec4ac8921eca08978239a9703"
           ]
         },
         "determinism": "deterministic",

@@ -26,8 +26,11 @@ $contract=Ev "contract-parity" "contract_parity" ([ordered]@{outcome="blocked";a
 $effects=Ev "effect-parity" "effect_parity" ([ordered]@{outcome="blocked";assertionCount=3;declaredEffects=@("local_write");indexTraversalChanged=$false;blocker="end-to-end A09 to A07 effect parity is not yet available"})
 $registry=Ev "registry-reconciliation" "registry_reconciliation" ([ordered]@{outcome="passed";registryParticipantId="facade.publication.legacy-staging-marker";replacementCapabilityId=$rep;status="declared";indexTraversalExcluded=$true})
 $window=Ev "compatibility-window" "compatibility_window" ([ordered]@{outcome="blocked";startedAt=$EvaluatedAt;observedThrough=$EvaluatedAt;minimumDays=30;checkedAt=$EvaluatedAt;expiresAt=$expiry;blocker="no completed 30-day window"})
-$rr="work/e05-publication-rollback-$EvaluatedAt";$rollbackCommand="pwsh -NoLogo -NoProfile -File tools/compatibility/Restore-PublicationLegacyBranch.ps1 -RehearsalRoot $rr"
-$rollbackResult=& pwsh -NoLogo -NoProfile -File (Join-Path $RepoRoot "tools\compatibility\Restore-PublicationLegacyBranch.ps1") -RehearsalRoot (Join-Path $RepoRoot ($rr-replace'/',[IO.Path]::DirectorySeparatorChar))|ConvertFrom-Json;if($LASTEXITCODE-ne0-or$rollbackResult.exactReplay-ne$true){throw "rollback failed"}
+# The rehearsal lives inside the packet, like E04/E07/E09. Writing it to an
+# ephemeral archive/work/<name>-<timestamp>/ left the rollback evidence pointing
+# at a path a clean checkout never has, so the verifier could not confirm it.
+$rr="rollback-rehearsal";$rollbackCommand="pwsh -NoLogo -NoProfile -File tools/compatibility/Restore-PublicationLegacyBranch.ps1 -RehearsalRoot <packet-root>/$rr"
+$rollbackResult=& pwsh -NoLogo -NoProfile -File (Join-Path $RepoRoot "tools\compatibility\Restore-PublicationLegacyBranch.ps1") -RehearsalRoot (Join-Path $OutDir $rr)|ConvertFrom-Json;if($LASTEXITCODE-ne0-or$rollbackResult.exactReplay-ne$true){throw "rollback failed"}
 $rollback=Ev "rollback-execution" "rollback_execution" ([ordered]@{outcome="passed";command=$rollbackCommand;executedAt=$EvaluatedAt;exitCode=0;target="$rr/run-code-intel.ps1";exactReplay=$rollbackResult.exactReplay;sourceSha256=$rollbackResult.sourceSha256;targetSha256=$rollbackResult.targetSha256;replacementChanged=$false;indexTraversalChanged=$false})
 $usage=Ev "usage-observation" "usage_observation" ([ordered]@{outcome="blocked";startedAt=$EvaluatedAt;endedAt=$EvaluatedAt;totalInvocations=0;legacyInvocations=0;replacementInvocations=0;blocker="no production usage observation"})
 $trace='{"legacyBranchId":"'+$bid+'","replacementCapabilityId":"'+$rep+'","retirementId":"'+$rid+'"}'

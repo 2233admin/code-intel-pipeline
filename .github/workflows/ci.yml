@@ -136,6 +136,7 @@ jobs:
             "archive/scripts/tests/test-primary-launchers.ps1",
             "archive/scripts/tests/test-github-solution-research.ps1",
             "archive/scripts/tests/test-hospital-trust-contract.ps1",
+            "archive/scripts/tests/test-dag-facade.ps1",
             "archive/scripts/tests/test-atomic-capability-contract.ps1",
             "archive/scripts/tests/test-project-discovery.ps1",
             "archive/scripts/tests/test-project-management-support.ps1",
@@ -228,6 +229,10 @@ jobs:
       - name: Hospital fail-closed contract tests
         shell: pwsh
         run: .\archive/scripts/tests/test-hospital-trust-contract.ps1
+
+      - name: DAG facade path and parity tests
+        shell: pwsh
+        run: .\archive/scripts/tests/test-dag-facade.ps1
 
       - name: Scoped Repowise trust-boundary tests
         shell: pwsh
@@ -475,6 +480,7 @@ jobs:
             "archive/scripts/tests/test-primary-launchers.ps1",
             "archive/scripts/tests/test-github-solution-research.ps1",
             "archive/scripts/tests/test-hospital-trust-contract.ps1",
+            "archive/scripts/tests/test-dag-facade.ps1",
             "archive/scripts/tests/test-atomic-capability-contract.ps1",
             "archive/scripts/tests/test-project-discovery.ps1",
             "archive/scripts/tests/test-project-management-support.ps1",

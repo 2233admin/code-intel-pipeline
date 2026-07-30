@@ -8,12 +8,24 @@ use crate::adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterErro
 use crate::artifact_ref::VerifiedArtifact;
 use crate::audit_report::AuditReport;
 
-#[derive(Default)]
 struct Signals {
     local_tool_failure: bool,
     provider_quota: bool,
     graph_seen: bool,
     graph_current: bool,
+    /// Whether the run was configured to produce structural evidence at all.
+    ///
+    /// Absence and exclusion are different facts. A run that was asked for the
+    /// structural stage and got nothing has an evidence gap and must not be
+    /// certified; a run that was never asked for it (`--mode lite`) simply has
+    /// a narrower scope, and reporting that as "unavailable" would make every
+    /// deliberately-narrow run indistinguishable from a broken one.
+    ///
+    /// Only the execution policy may set this false, and the policy already
+    /// refuses to disable a capability its profile marks `Required` — so this
+    /// cannot become a way to talk the hospital out of a gate that a strict
+    /// run demanded. The resulting narrowing is recorded in the report.
+    structural_in_scope: bool,
     structural_seen: bool,
     structural_trusted: bool,
     structural_rules: bool,
@@ -25,6 +37,29 @@ struct Signals {
     admissions: BTreeMap<String, String>,
 }
 
+impl Default for Signals {
+    fn default() -> Self {
+        Self {
+            local_tool_failure: false,
+            provider_quota: false,
+            graph_seen: false,
+            graph_current: false,
+            // Fail closed: unless a run explicitly declares the structural
+            // stage out of scope, its absence stays an evidence gap.
+            structural_in_scope: true,
+            structural_seen: false,
+            structural_trusted: false,
+            structural_rules: false,
+            structural_failure: false,
+            native_seen: false,
+            modernization_debt: false,
+            top_target: None,
+            failing_rules: Vec::new(),
+            admissions: BTreeMap::new(),
+        }
+    }
+}
+
 pub(crate) fn execute(
     request: &Value,
     verified_inputs: &[VerifiedArtifact],
@@ -34,17 +69,35 @@ pub(crate) fn execute(
         .get("options")
         .and_then(Value::as_object)
         .ok_or_else(|| AdapterError::InvalidOptions("options must be an object".into()))?;
-    if !options.is_empty() {
-        return Err(AdapterError::InvalidOptions(
-            "diagnosis.hospital accepts no options".into(),
-        ));
+    // `structuralEvidenceInScope` is the only option, and it may only ever
+    // narrow: the caller declares that the run never asked for the structural
+    // stage. Anything else is rejected so the option surface cannot grow into
+    // a way to hand-tune a diagnosis.
+    let mut structural_in_scope = true;
+    for (key, value) in options {
+        match (key.as_str(), value.as_bool()) {
+            ("structuralEvidenceInScope", Some(in_scope)) => structural_in_scope = in_scope,
+            ("structuralEvidenceInScope", None) => {
+                return Err(AdapterError::InvalidOptions(
+                    "diagnosis.hospital structuralEvidenceInScope must be boolean".into(),
+                ))
+            }
+            _ => {
+                return Err(AdapterError::InvalidOptions(
+                    "diagnosis.hospital accepts only structuralEvidenceInScope".into(),
+                ))
+            }
+        }
     }
     if verified_inputs.is_empty() {
         return Err(AdapterError::Contract(
             "diagnosis.hospital requires A04 admission Artifact Refs".into(),
         ));
     }
-    let mut signals = Signals::default();
+    let mut signals = Signals {
+        structural_in_scope,
+        ..Signals::default()
+    };
     for input in verified_inputs {
         if input.artifact_schema() != "code-intel-evidence-admissibility-result.v1"
             || input.artifact_type() != "evidence.admission"
@@ -274,7 +327,7 @@ fn diagnose(request: &Value, s: &Signals, audit: Option<&AuditReport>) -> Value 
             "admit",
             "unknown",
         )
-    } else if !s.structural_seen || !s.structural_trusted {
+    } else if s.structural_in_scope && (!s.structural_seen || !s.structural_trusted) {
         (
             "unknown",
             "authoritative structural evidence unavailable",
@@ -282,7 +335,7 @@ fn diagnose(request: &Value, s: &Signals, audit: Option<&AuditReport>) -> Value 
             "admit",
             "unknown",
         )
-    } else if !s.structural_rules {
+    } else if s.structural_in_scope && !s.structural_rules {
         (
             "amber",
             "ungoverned structural scope",
@@ -368,7 +421,7 @@ fn diagnose(request: &Value, s: &Signals, audit: Option<&AuditReport>) -> Value 
         },
         "state_machine":{"schema":"code-intel-hospital-state-machine.v1","current_state":next_protocol,"disposition":disposition,"next_protocol":next_protocol,"states":["triage","diagnose","govern","surgery_plan","post_op","discharge_ready"],"transitions":[]},
         "modalities":evidence,
-        "policies":{"precedence":["local tool failure","provider quota exhausted","architecture gate failure","architecture graph missing","authoritative structural evidence unavailable","ungoverned structural scope","known modernization debt","clean snapshot"]},
+        "policies":{"precedence":["local tool failure","provider quota exhausted","architecture gate failure","architecture graph missing","authoritative structural evidence unavailable","ungoverned structural scope","known modernization debt","clean snapshot"],"scope":{"structuralEvidence":if s.structural_in_scope {"in_scope"} else {"out_of_scope"}}},
         "report_quality":{"overall_score":null,"diagnostic_score":null,"governance_score":null,"dimensions":[]},
         "diagnosis":{"findings":[diagnosis],"impression":diagnosis,"risk":status,"evidence":evidence},
         "treatment":{"plan":treatment,"follow_up":["Rerun diagnosis.hospital with current admitted evidence."]},
@@ -558,6 +611,115 @@ mod audit_wiring_tests {
         assert!(machine.get("audit").is_none());
         let markdown = render_hospital(&machine, None);
         assert!(!markdown.contains("## Audit"));
+    }
+
+    /// A run that never asked for the structural stage has a narrower scope,
+    /// not an evidence gap. Before this distinction existed, `--mode lite`
+    /// exited 20 on a clean repository because absence was read as a gap.
+    #[test]
+    fn structural_evidence_out_of_scope_reaches_a_verdict_instead_of_unknown() {
+        let signals = Signals {
+            graph_seen: true,
+            graph_current: true,
+            structural_in_scope: false,
+            ..Signals::default()
+        };
+        let machine = diagnose(&sample_request(), &signals, None);
+        assert_eq!(machine["domainVerdict"], "pass");
+        assert_eq!(machine["diagnosis"]["impression"], "clean snapshot");
+        // The narrowing has to be visible in the artifact, never silent.
+        assert_eq!(
+            machine["policies"]["scope"]["structuralEvidence"],
+            "out_of_scope"
+        );
+    }
+
+    /// The fail-closed half: in scope and absent is still a gap.
+    #[test]
+    fn structural_evidence_in_scope_but_absent_stays_unknown() {
+        let signals = Signals {
+            graph_seen: true,
+            graph_current: true,
+            ..Signals::default()
+        };
+        let machine = diagnose(&sample_request(), &signals, None);
+        assert_eq!(machine["domainVerdict"], "unknown");
+        assert_eq!(
+            machine["diagnosis"]["impression"],
+            "authoritative structural evidence unavailable"
+        );
+        assert_eq!(
+            machine["policies"]["scope"]["structuralEvidence"],
+            "in_scope"
+        );
+    }
+
+    /// Defence in depth: admitted evidence beats a scope claim. If structural
+    /// evidence was actually produced and it fails, declaring it out of scope
+    /// must not launder the failure into a pass — otherwise the option would
+    /// be a way to talk the hospital out of a gate it already has evidence for.
+    #[test]
+    fn an_out_of_scope_claim_cannot_launder_an_admitted_structural_failure() {
+        let signals = Signals {
+            graph_seen: true,
+            graph_current: true,
+            structural_in_scope: false,
+            structural_seen: true,
+            structural_trusted: true,
+            structural_rules: true,
+            structural_failure: true,
+            ..Signals::default()
+        };
+        let machine = diagnose(&sample_request(), &signals, None);
+        assert_eq!(machine["domainVerdict"], "fail");
+        assert_eq!(
+            machine["diagnosis"]["impression"],
+            "architecture gate failure"
+        );
+    }
+
+    /// Scope narrowing never outranks a real failure signal that precedes it
+    /// in the ladder.
+    #[test]
+    fn out_of_scope_does_not_mask_local_tool_failure_or_quota_exhaustion() {
+        for (label, signals) in [
+            (
+                "local tool failure",
+                Signals {
+                    local_tool_failure: true,
+                    structural_in_scope: false,
+                    ..Signals::default()
+                },
+            ),
+            (
+                "provider quota exhausted",
+                Signals {
+                    provider_quota: true,
+                    structural_in_scope: false,
+                    ..Signals::default()
+                },
+            ),
+        ] {
+            let machine = diagnose(&sample_request(), &signals, None);
+            assert_eq!(machine["domainVerdict"], "unknown", "{label}");
+            assert_eq!(machine["diagnosis"]["impression"], label);
+        }
+    }
+
+    /// A missing architecture graph outranks the structural scope question,
+    /// so lite runs still cannot certify without one.
+    #[test]
+    fn out_of_scope_does_not_excuse_a_missing_architecture_graph() {
+        let signals = Signals {
+            structural_in_scope: false,
+            ..Signals::default()
+        };
+        let machine = diagnose(&sample_request(), &signals, None);
+        assert_eq!(machine["domainVerdict"], "unknown");
+        assert_eq!(
+            machine["diagnosis"]["impression"],
+            "architecture graph missing"
+        );
     }
 
     #[test]
