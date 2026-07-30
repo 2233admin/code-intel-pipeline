@@ -21,6 +21,41 @@ impl RunProfile {
     }
 }
 
+/// How much work a run does, ported from the launcher's `-Mode`.
+///
+/// Deliberately a separate axis from [`RunProfile`]: the profile says how
+/// strictly providers are *required*, the mode says how much is *attempted*.
+/// A strict lite run is a meaningful combination, so the two must not be
+/// flattened into one enum — see docs/ps1-exit/t2-launcher-classification.md §2.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum RunMode {
+    /// Skip the optional structural stage; the fastest useful run.
+    Lite,
+    #[default]
+    Normal,
+    /// Normal plus the deeper understand sweep.
+    Full,
+}
+
+impl RunMode {
+    pub(crate) fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "lite" => Ok(Self::Lite),
+            "normal" => Ok(Self::Normal),
+            "full" => Ok(Self::Full),
+            _ => Err("--mode must be lite, normal, or full".into()),
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Lite => "lite",
+            Self::Normal => "normal",
+            Self::Full => "full",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum WorkingTreePolicy {
     HeadOnly,
@@ -77,6 +112,7 @@ pub(crate) enum EffectPolicy {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ExecutionPolicy {
     profile: RunProfile,
+    mode: RunMode,
     working_tree: WorkingTreePolicy,
     scopes: Vec<String>,
     providers: ProviderPolicy,
@@ -114,12 +150,33 @@ impl ExecutionPolicy {
         };
         Self {
             profile,
+            mode: RunMode::Normal,
             working_tree: WorkingTreePolicy::ExplicitOverlay,
             scopes: vec![".".into()],
             providers,
             effects: EffectPolicy::RegistryDeclared,
             tool_path_prefix: None,
         }
+    }
+
+    /// Compose the run mode onto the profile's requirement policy.
+    ///
+    /// Mode may only *narrow within what the profile already permits*. `lite`
+    /// drops the structural stage when the profile left it optional, but a
+    /// profile that marks it `Required` keeps it: otherwise `--mode lite`
+    /// would be a way to silently disarm a strict run, which is the same
+    /// hazard `with_doctor_overrides` already refuses. `Offline` stays
+    /// disabled regardless — mode never re-enables.
+    pub(crate) fn with_mode(mut self, mode: RunMode) -> Self {
+        self.mode = mode;
+        if mode == RunMode::Lite && self.providers.sentrux == ProviderRequirement::Optional {
+            self.providers.sentrux = ProviderRequirement::Disabled;
+        }
+        self
+    }
+
+    pub(crate) fn mode(&self) -> RunMode {
+        self.mode
     }
 
     pub(crate) fn with_working_tree(
@@ -243,6 +300,63 @@ mod tests {
         assert!(!offline.capability_enabled("provider.graph-adapt"));
         assert!(!offline.capability_enabled("provider.sentrux-adapt"));
         assert!(!offline.provider_diagnosis_enabled());
+    }
+
+    #[test]
+    fn mode_is_a_separate_axis_and_leaves_the_profile_intact() {
+        // Mode and profile are orthogonal: every combination has to stay
+        // expressible, so composing a mode must not change which profile the
+        // policy reports or what `normal`/`full` require.
+        for mode in [RunMode::Lite, RunMode::Normal, RunMode::Full] {
+            let policy = ExecutionPolicy::for_profile(RunProfile::Default).with_mode(mode);
+            assert_eq!(policy.profile, RunProfile::Default);
+            assert_eq!(policy.mode(), mode);
+        }
+        let normal = ExecutionPolicy::for_profile(RunProfile::Default).with_mode(RunMode::Normal);
+        let full = ExecutionPolicy::for_profile(RunProfile::Default).with_mode(RunMode::Full);
+        assert_eq!(normal.providers, full.providers);
+        assert!(normal.capability_enabled("provider.sentrux-adapt"));
+    }
+
+    #[test]
+    fn lite_drops_the_structural_stage_only_where_the_profile_left_it_optional() {
+        let lite = ExecutionPolicy::for_profile(RunProfile::Default).with_mode(RunMode::Lite);
+        assert!(!lite.capability_enabled("provider.sentrux-adapt"));
+        // The graph stage is Required under Default and must survive lite.
+        assert!(lite.capability_enabled("provider.graph-adapt"));
+        assert!(lite.provider_diagnosis_enabled());
+    }
+
+    #[test]
+    fn lite_cannot_disarm_a_strict_run_or_reenable_an_offline_one() {
+        // The hazard this pins: if `--mode lite` could drop a Required
+        // capability, it would be a compatibility flag that silently weakens
+        // a strict gate — exactly what with_doctor_overrides already refuses.
+        let strict = ExecutionPolicy::for_profile(RunProfile::Strict).with_mode(RunMode::Lite);
+        assert!(strict.providers.sentrux.is_required());
+        assert!(strict.capability_enabled("provider.sentrux-adapt"));
+
+        let compatibility =
+            ExecutionPolicy::for_profile(RunProfile::Compatibility).with_mode(RunMode::Lite);
+        assert!(compatibility.providers.sentrux.is_required());
+
+        // ...and mode never turns anything back on.
+        for mode in [RunMode::Lite, RunMode::Normal, RunMode::Full] {
+            let offline = ExecutionPolicy::for_profile(RunProfile::Offline).with_mode(mode);
+            assert_eq!(offline.providers.sentrux, ProviderRequirement::Disabled);
+            assert_eq!(offline.providers.graph, ProviderRequirement::Disabled);
+            assert!(!offline.provider_diagnosis_enabled());
+        }
+    }
+
+    #[test]
+    fn mode_parsing_accepts_the_launchers_vocabulary_and_rejects_the_rest() {
+        assert_eq!(RunMode::parse("lite").unwrap(), RunMode::Lite);
+        assert_eq!(RunMode::parse("normal").unwrap(), RunMode::Normal);
+        assert_eq!(RunMode::parse("full").unwrap(), RunMode::Full);
+        assert_eq!(RunMode::default(), RunMode::Normal);
+        assert!(RunMode::parse("deep").is_err());
+        assert!(RunMode::parse("").is_err());
     }
 
     #[test]
