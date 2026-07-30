@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::dag_run::{self, DagExecutionRequest};
 use crate::execution_kernel;
-use crate::execution_policy::{ExecutionPolicy, RunMode, RunProfile, WorkingTreePolicy};
+use crate::execution_policy::{ExecutionPolicy, RunMode, RunProfile, SkipFlags, WorkingTreePolicy};
 use crate::run_error::RunError;
 
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
@@ -78,6 +78,7 @@ impl Cli {
             RunCommand::Execute => RunProfile::Default,
         };
         let mut mode = RunMode::default();
+        let mut skips = SkipFlags::default();
         let mut session_evidence = None;
         let mut index = 1;
         while index < raw.len() {
@@ -91,6 +92,9 @@ impl Cli {
                     | "--manifest"
                     | "--profile"
                     | "--mode"
+                    | "--skip-repowise"
+                    | "--skip-sentrux"
+                    | "--require-understand-graph"
                     | "--max-concurrency"
                     | "--working-tree-policy"
                     | "--scope"
@@ -134,6 +138,11 @@ impl Cli {
                         return Err("--mode is available only for run execute".into());
                     }
                     mode = RunMode::parse(value)?;
+                }
+                "--skip-repowise" => skips.repowise = parse_bool_flag(flag, value)?,
+                "--skip-sentrux" => skips.sentrux = parse_bool_flag(flag, value)?,
+                "--require-understand-graph" => {
+                    skips.require_understand_graph = parse_bool_flag(flag, value)?
                 }
                 "--max-concurrency" => {
                     max_concurrency = value
@@ -251,6 +260,7 @@ impl Cli {
         // last word on provider requirements.
         let policy = ExecutionPolicy::for_profile(profile)
             .with_mode(mode)
+            .with_skips(skips)
             .with_working_tree(WorkingTreePolicy::parse(&working_tree_policy)?, scopes)
             .with_doctor_overrides(
                 doctor_require_repowise,
@@ -274,7 +284,7 @@ impl Cli {
 }
 
 fn usage() -> String {
-    "usage: run <dag-coordinate|execute> --repo <repo-root> --out <run-staging-directory> [--authority-root <publication-root> --final-name <name>] [--profile <default|strict|offline>] [--mode <lite|normal|full>] [--manifest <integrations.json>] [--max-concurrency <n>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]".into()
+    "usage: run <dag-coordinate|execute> --repo <repo-root> --out <run-staging-directory> [--authority-root <publication-root> --final-name <name>] [--profile <default|strict|offline>] [--mode <lite|normal|full>] [--skip-repowise <true|false>] [--skip-sentrux <true|false>] [--require-understand-graph <true|false>] [--manifest <integrations.json>] [--max-concurrency <n>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]".into()
 }
 
 fn parse_bool_flag(flag: &str, value: &str) -> Result<bool, String> {
