@@ -2,7 +2,9 @@
 
 [CmdletBinding()]
 param(
-    [string]$RepoPath = (Split-Path -Parent $PSScriptRoot),
+    # the packager lives at archive/tools/, and it reads the git index,
+    # Cargo.toml and crate sources -- all at the repository root above it
+    [string]$RepoPath = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
     [string]$ExecutablePath,
     [string]$OutputDirectory,
     [string]$PackageName = "code-intel-pipeline-windows-beta",
