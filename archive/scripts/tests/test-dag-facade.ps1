@@ -42,7 +42,9 @@ function Invoke-DagFacadeCase {
             }
         }
         catch {
-            Write-Output "DAG facade reported: $($_.Exception.Message)"
+            # Write-Host, not Write-Output: this function returns a value, and
+            # anything on the output stream would be appended to it.
+            Write-Host "DAG facade reported: $($_.Exception.Message)"
         }
 
         $repoName = Split-Path -Leaf $RepoPath
@@ -73,7 +75,7 @@ function Invoke-DagFacadeCase {
             $nonGreen = @($manifest.nodes.PSObject.Properties |
                 Where-Object { (Get-Prop $_.Value "status") -ne "succeeded" } |
                 ForEach-Object { "$($_.Name)=$(Get-Prop $_.Value 'status')/$(Get-Prop $_.Value 'diagnostic')" }) -join "; "
-            Write-Output "Host toolchain is incomplete, so run-level outcome is not asserted. Non-green nodes: $nonGreen"
+            Write-Host "Host toolchain is incomplete, so run-level outcome is not asserted. Non-green nodes: $nonGreen"
         }
 
         return [pscustomobject]@{
@@ -101,3 +103,8 @@ try {
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# $LASTEXITCODE still carries the coordinator's exit code, and the CI `pwsh`
+# shell exits with it. Every assertion above passed, so say so explicitly rather
+# than failing the step on a tolerated node's exit code.
+exit 0
