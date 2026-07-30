@@ -1,6 +1,17 @@
 [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$PacketRoot,[string]$RepoRoot=(Split-Path (Split-Path $PSScriptRoot -Parent) -Parent))
 Set-StrictMode -Version Latest;$ErrorActionPreference="Stop";function J([string]$r){$p=Join-Path $PacketRoot $r;if(-not(Test-Path $p -PathType Leaf)){throw "missing $r"};Get-Content $p -Raw|ConvertFrom-Json};function S([string]$t){([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($t)))).ToLowerInvariant()}
 $t=J "compatibility-retirement-ticket.json";$m=J "compatibility-retirement-manifest.json";$d=J "compatibility-retirement-deletion-diff.json";$g=J "gate-out/compatibility-retirement-decision.json";$s=J "status.json";$b="update-code-intel-index.legacy-compatibility-traversal";$c="update-code-intel-index.ps1::$b";$r="artifact.index-committed-only"
+# Staleness. This must mirror New-IndexRetirementPacket.ps1's $frozen set and
+# root resolution exactly. Without it E10 could be stale in six of its seven
+# frozen inputs and still pass: the only other freshness signal is the rollback
+# evidence on line 10, which rehashes update-code-intel-index.ps1 alone. That is
+# how #48's edits to orchestration/integrations.json went undetected here while
+# E04, E07 and E08 correctly went red on the same change.
+$PipelineRepoRoot=Split-Path -Parent $RepoRoot
+function FrozenPath([string]$p){if($p-like'crates/*'-or$p-like'orchestration/*'){Join-Path $PipelineRepoRoot $p}else{Join-Path $RepoRoot $p}}
+$frozen=@('update-code-intel-index.ps1','crates/code-intel-cli/src/artifact_index.rs','crates/code-intel-cli/tests/artifact_index.rs','crates/code-intel-cli/src/run_commit.rs','orchestration/integrations.json','orchestration/retirements/e05-publication/status.json','orchestration/retirements/e05-publication/gate-out/compatibility-retirement-decision.json')
+$snapshot=S (($frozen|ForEach-Object{(Get-FileHash (FrozenPath $_) -Algorithm SHA256).Hash.ToLowerInvariant()})-join"`n")
+foreach($a in @($t,$m,$d,$g)){if($a.snapshotIdentity-ne$snapshot){throw "E10 packet is stale relative to its frozen source set"}}
 if($t.legacyBranch.branchId-ne$b-or$t.legacyBranch.callPath-ne$c-or$m.approvalSubject.legacyBranch.callPath-ne$c-or$t.replacement.capabilityId-ne$r){throw "E10 identity mismatch"};if(@($t.affectedFiles).Count-ne1-or$t.affectedFiles[0]-ne"update-code-intel-index.ps1"){throw "E10 escaped file boundary"};if($d.patch.algorithm-ne"replayable-delete-only-v1"-or@($d.patch.files).Count-ne1-or@($d.patch.files[0].hunks).Count-ne1){throw "E10 patch shape invalid"}
 $f=$d.patch.files[0];if((S $f.baseText)-ne$f.baseBlobSha256-or(S $f.resultText)-ne$f.resultBlobSha256-or(S (ConvertTo-Json -InputObject @($d.patch.files)-Depth 40 -Compress))-ne$d.patch.sha256){throw "E10 patch hash invalid"};$h=$f.hunks[0];if($h.newLines-ne0-or@($h.addedLines).Count-ne0-or$h.oldLines-le0){throw "E10 patch is not deletion only"};if($f.baseText-notmatch'function Read-JsonFile'-or$f.resultText-match'function Read-JsonFile'-or$f.resultText-notmatch'"artifact", "index"'-or$f.resultText-notmatch'exit 0'){throw "E10 branch deletion or A08 preservation invalid"}
 $baseLines=@($f.baseText-split"`n");$kept=@();for($i=1;$i-le$baseLines.Count;$i++){if(-not($i-ge$h.oldStart-and$i-lt($h.oldStart+$h.oldLines))){$kept+=$baseLines[$i-1]}};if(($kept-join"`n")-cne$f.resultText){throw "E10 patch replay failed"}
