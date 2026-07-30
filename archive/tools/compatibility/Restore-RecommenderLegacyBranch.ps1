@@ -7,7 +7,12 @@ param(
     [string]$RehearsalRoot,
 
     [string]$RepoRoot = (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent),
-    [string]$SourceRevision = "HEAD"
+    # The legacy inline recommender was removed by 42de063, the same commit that
+    # created this packet, so HEAD has never contained the markers this script
+    # restores while New-RecommenderRetirementPacket.ps1 simultaneously requires
+    # them absent from the live facade. Pin the last revision that has them, the
+    # way Restore-ProviderPreflightLegacyBranch.ps1 already does.
+    [string]$SourceRevision = "e6e73e4f720ab2ae2bca531a07ed638f55fecd1d"
 )
 
 Set-StrictMode -Version Latest
@@ -32,9 +37,18 @@ if (-not (Test-Path -LiteralPath $resolvedTarget -PathType Leaf)) {
     throw "rollback target is missing: $resolvedTarget"
 }
 
-$legacyLines = @(& git -C $RepoRoot show "$SourceRevision`:run-code-intel.ps1")
-if ($LASTEXITCODE -ne 0 -or $legacyLines.Count -eq 0) {
-    throw "cannot load legacy recommender source from $SourceRevision`:run-code-intel.ps1"
+# `git show <rev>:<path>` is always repository-root-relative, and the archive
+# move relocated run-code-intel.ps1. Revisions at or after that move carry it at
+# archive/, earlier ones at the root, so try both rather than pinning either:
+# $SourceRevision defaults to HEAD but is caller-overridable to any revision.
+$legacyCandidates = @("archive/run-code-intel.ps1", "run-code-intel.ps1")
+$legacyLines = @()
+foreach ($candidate in $legacyCandidates) {
+    $attempt = @(& git -C $RepoRoot show "$SourceRevision`:$candidate" 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $attempt.Count -gt 0) { $legacyLines = $attempt; break }
+}
+if ($legacyLines.Count -eq 0) {
+    throw "cannot load legacy recommender source from $SourceRevision at any of: $($legacyCandidates -join ', ')"
 }
 
 $legacy = $legacyLines -join "`n"

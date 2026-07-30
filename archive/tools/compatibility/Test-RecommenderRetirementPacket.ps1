@@ -6,6 +6,9 @@ param(
 )
 
 Set-StrictMode -Version Latest
+# PowerShell entry points are $RepoRoot-relative (archive/); crates/ and
+# orchestration/ stayed at the repository root one level above it.
+$PipelineRepoRoot = Split-Path -Parent $RepoRoot
 $ErrorActionPreference = "Stop"
 
 function Read-Json([string]$RelativePath) {
@@ -13,11 +16,29 @@ function Read-Json([string]$RelativePath) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "packet file is missing: $RelativePath" }
     return Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
 }
+function Get-Sha256Text([string]$Text) {
+    ([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Text)))).ToLowerInvariant()
+}
+function FrozenPath([string]$p) {
+    if ($p -like 'crates/*' -or $p -like 'orchestration/*') { Join-Path $PipelineRepoRoot $p } else { Join-Path $RepoRoot $p }
+}
 
 $ticket = Read-Json "compatibility-retirement-ticket.json"
 $manifest = Read-Json "compatibility-retirement-manifest.json"
 $decision = Read-Json "gate-out/compatibility-retirement-decision.json"
 $diff = Read-Json "compatibility-retirement-deletion-diff.json"
+
+# Staleness. This must mirror New-RecommenderRetirementPacket.ps1's
+# $inputDigests set and root resolution exactly. E02 previously had no drift
+# guard of any kind: it could pass with every frozen input changed, so a green
+# result said nothing about whether the packet still described the live tree.
+$frozen = @("run-code-intel.ps1", "OpenSpec-Detector.ps1", "Invoke-WorkflowRecommendation.ps1", "orchestration/integrations.json")
+$snapshotIdentity = Get-Sha256Text ((($frozen | ForEach-Object {
+    (Get-FileHash -LiteralPath (FrozenPath $_) -Algorithm SHA256).Hash.ToLowerInvariant()
+})) -join "`n")
+foreach ($artifact in @($ticket, $manifest, $decision, $diff)) {
+    if ($artifact.snapshotIdentity -ne $snapshotIdentity) { throw "E02 packet is stale relative to its frozen source set" }
+}
 $status = Read-Json "status.json"
 $expectedBranch = "run-code-intel.workflow-recommender.inline"
 $expectedReplacement = "advisory.workflow-recommend"
