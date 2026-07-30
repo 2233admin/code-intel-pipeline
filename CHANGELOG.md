@@ -55,6 +55,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rehearsal now lives inside the packet at `rollback-rehearsal/`, as it already
   did for E04/E07/E09, and the verifier resolves it against `$PacketRoot`.
 
+  Carrying the rehearsal in-tree adds a 4742-line frozen copy of
+  `run-code-intel.ps1`, which Sentrux counts as a god file, so
+  `.sentrux/baseline.json` moves `god_file_count` 32 → 33 and `quality_signal`
+  3603 → 3484. The delta is entirely that one evidence artifact — with it moved
+  aside the gate reports `No degradation detected` — and matches how the
+  existing E04/E07 rehearsal copies are already carried in the baseline. Anyone
+  adding a future retirement packet should expect the same one-file step.
+
 - **The doctor capability no longer answers from a stub when `pwsh` is
   absent.** The adapter previously shelled out to the PowerShell probe and, on
   failure to launch it, fell back to an in-process approximation that reported
