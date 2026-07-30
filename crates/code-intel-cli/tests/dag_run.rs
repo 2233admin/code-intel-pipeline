@@ -862,3 +862,168 @@ fn strict_profile_cannot_be_weakened_and_keeps_all_provider_nodes_required() {
 
     let _ = fs::remove_dir_all(root);
 }
+
+/// Reads the single admitted structural rule of one kind out of a completed
+/// `evidence.sentrux` payload.
+fn sentrux_rule(out: &Path, kind: &str) -> Value {
+    let payload: Value = serde_json::from_slice(
+        &fs::read(out.join("evidence.sentrux/sentrux-payload.json")).unwrap(),
+    )
+    .unwrap();
+    payload["data"]["structuralEvidence"]["rules"]
+        .as_array()
+        .expect("structural evidence must carry rules")
+        .iter()
+        .find(|rule| rule["kind"] == kind)
+        .unwrap_or_else(|| panic!("structural evidence is missing rule {kind}"))
+        .clone()
+}
+
+fn sentrux_command(out: &Path, id: &str) -> Value {
+    let observation: Value = serde_json::from_slice(
+        &fs::read(out.join("evidence.sentrux/sentrux-command-observation.json")).unwrap(),
+    )
+    .unwrap();
+    observation["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|command| command["id"] == id)
+        .unwrap_or_else(|| panic!("command observation is missing {id}"))
+        .clone()
+}
+
+/// A repository that never ran `save_baseline` has no prior measurement, so the
+/// built-in gate cannot detect a regression against one. That absence of
+/// governance is not a structural violation: reporting it as a failing rule made
+/// the hospital diagnose "architecture gate failure" and the whole run exit 10
+/// on any never-baselined repository, including a fixture holding one README.
+#[test]
+fn ungoverned_repository_completes_instead_of_failing_the_architecture_gate() {
+    let root = temp_dir();
+    let repo = root.join("repo");
+    let out = root.join("run");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(repo.join("README.md"), "fixture\n").unwrap();
+    fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["run", "dag-coordinate", "--repo"])
+        .arg(&repo)
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let manifest: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(manifest["outcome"], "completed", "manifest={manifest}");
+    assert_eq!(manifest["nodes"]["diagnosis.hospital"]["verdict"], "pass");
+
+    let gate = sentrux_rule(&out, "sentrux_gate");
+    assert_eq!(gate["status"], "evaluated");
+    assert_eq!(gate["verdict"], "pass");
+    assert!(
+        gate.get("details").is_none(),
+        "an ungoverned gate must not publish violation details: {gate}"
+    );
+    assert_eq!(sentrux_rule(&out, "sentrux_check")["verdict"], "pass");
+
+    let hospital: Value = serde_json::from_slice(
+        &fs::read(out.join("diagnosis.hospital/hospital-report.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(hospital["triage"]["primary_diagnosis"], "clean snapshot");
+    assert_eq!(hospital["triage"]["failing_rules"], json!([]));
+
+    // The ungoverned state stays auditable: the command observation keeps the
+    // engine's real exit code and operator instruction verbatim.
+    let observed_gate = sentrux_command(&out, "gate");
+    assert_eq!(observed_gate["success"], false);
+    assert_eq!(observed_gate["exitCode"], 1);
+    assert!(observed_gate["stdout"]
+        .as_str()
+        .unwrap()
+        .contains("Sentrux baseline missing"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The counterpart of the case above: once a baseline exists, a real regression
+/// against it must still stop the run. This is the assertion that keeps the
+/// ungoverned exemption from becoming a hole in the gate.
+#[test]
+fn baselined_repository_that_regresses_still_fails_the_architecture_gate() {
+    let root = temp_dir();
+    let repo = root.join("repo");
+    let out = root.join("run");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(repo.join("README.md"), "fixture\n").unwrap();
+    fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
+
+    let baseline = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["sentrux", "--operation", "save_baseline", "--repo"])
+        .arg(&repo)
+        .output()
+        .unwrap();
+    assert_eq!(
+        baseline.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&baseline.stdout),
+        String::from_utf8_lossy(&baseline.stderr)
+    );
+    assert!(repo.join(".sentrux/baseline.json").is_file());
+
+    // A god file is any source file over 800 lines, so this regresses the gated
+    // god_file_count metric from 0 to 1.
+    fs::write(repo.join("src/god.rs"), "pub fn wide() {}\n".repeat(900)).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["run", "dag-coordinate", "--repo"])
+        .arg(&repo)
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(10),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let manifest: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(manifest["outcome"], "domain_failed");
+    assert_eq!(
+        manifest["nodes"]["diagnosis.hospital"]["diagnostic"],
+        "architecture gate failure"
+    );
+
+    let gate = sentrux_rule(&out, "sentrux_gate");
+    assert_eq!(gate["verdict"], "fail");
+    assert!(
+        gate["details"]["violations"]
+            .as_array()
+            .expect("a failing gate must publish violation details")
+            .iter()
+            .any(|violation| violation["rule"] == "god_files_increased"),
+        "gate={gate}"
+    );
+
+    let hospital: Value = serde_json::from_slice(
+        &fs::read(out.join("diagnosis.hospital/hospital-report.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        hospital["triage"]["primary_diagnosis"],
+        "architecture gate failure"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
