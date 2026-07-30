@@ -186,6 +186,68 @@ fn unparsable_config_is_a_domain_finding_not_a_crash() {
     fs::remove_dir_all(root).ok();
 }
 
+/// Regression: an installed `code-intel` sits next to a copy of
+/// `orchestration/integrations.json` that the installer places in its bin
+/// directory, so deriving the pipeline root from the executable resolved that
+/// bin directory and reported `pipeline script` / `pipeline config` missing —
+/// which is exactly how CI's Doctor step failed on all four runners. Without
+/// `--pipeline-root`, the checkout the caller is standing in must win.
+#[test]
+fn the_pipeline_root_defaults_to_the_checkout_the_caller_stands_in() {
+    let root = temp_dir("cwd-root");
+    let checkout = root.join("checkout");
+    let bin = root.join("bin");
+    // A decoy manifest beside the "installed" binary location, mirroring what
+    // install-code-intel-pipeline.ps1 writes.
+    for dir in [&checkout, &bin] {
+        fs::create_dir_all(dir.join("orchestration")).unwrap();
+        fs::write(dir.join("orchestration").join("integrations.json"), b"{}").unwrap();
+    }
+    fs::create_dir_all(checkout.join("archive")).unwrap();
+    fs::write(checkout.join("archive").join("run-code-intel.ps1"), b"").unwrap();
+    fs::write(checkout.join("pipeline.config.json"), b"{}").unwrap();
+    let crate_src = checkout.join("crates").join("code-intel-cli").join("src");
+    fs::create_dir_all(&crate_src).unwrap();
+    fs::write(crate_src.join("graph.rs"), b"").unwrap();
+    fs::write(
+        checkout
+            .join("crates")
+            .join("code-intel-cli")
+            .join("Cargo.toml"),
+        b"[package]",
+    )
+    .unwrap();
+
+    // No --pipeline-root, and the working directory is a subdirectory of the
+    // checkout so the upward walk is exercised too.
+    let nested = checkout.join("crates");
+    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["doctor", "bootstrap", "--no-require-repowise", "--json"])
+        .current_dir(&nested)
+        .output()
+        .expect("run doctor bootstrap");
+    let observation: Value =
+        serde_json::from_slice(&output.stdout).expect("observation is one JSON document");
+
+    assert_eq!(
+        observation["checks"]["pipelineScript"]["found"],
+        json!(true)
+    );
+    assert_eq!(observation["checks"]["config"]["found"], json!(true));
+    assert_eq!(
+        observation["checks"]["graphProvider"]["sourceFound"],
+        json!(true)
+    );
+    let missing = observation["missing"].as_array().unwrap();
+    for absent in ["pipeline script", "pipeline config"] {
+        assert!(
+            !missing.iter().any(|value| value == absent),
+            "{absent} must not be reported when standing in the checkout: {missing:?}"
+        );
+    }
+    fs::remove_dir_all(root).ok();
+}
+
 #[test]
 fn an_unknown_flag_fails_closed_without_emitting_an_observation() {
     let (code, observation, stderr) = doctor(&["--not-a-flag"]);

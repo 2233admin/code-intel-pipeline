@@ -378,6 +378,31 @@ pub(crate) fn pipeline_root() -> PathBuf {
         .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(".."))
 }
 
+/// The pipeline checkout a bare `code-intel doctor bootstrap` should inspect.
+///
+/// Deliberately NOT `pipeline_root()`: that walks up from the executable, and
+/// the installer copies `orchestration/integrations.json` next to the
+/// installed binary, so an installed `code-intel` would resolve its own bin
+/// directory as the pipeline and report every repository-side check missing.
+/// The retired script derived the root from its own location inside the
+/// checkout; the closest CLI analogue is the checkout the caller is standing
+/// in, so walk up from the working directory first and only then fall back to
+/// manifest discovery. `--pipeline-root` overrides both.
+fn default_pipeline_root() -> PathBuf {
+    std::env::current_dir()
+        .ok()
+        .and_then(|cwd| {
+            cwd.ancestors()
+                .find(|dir| {
+                    dir.join("orchestration")
+                        .join("integrations.json")
+                        .is_file()
+                })
+                .map(Path::to_path_buf)
+        })
+        .unwrap_or_else(pipeline_root)
+}
+
 /// The human-readable rendering the PowerShell probe printed without `-Json`.
 /// CI reads these lines, so the wording is preserved verbatim.
 pub(crate) fn render_human(observation: &Value) -> String {
@@ -501,7 +526,7 @@ fn repo_lines(
 /// `archive/check-code-intel-tools.ps1`. Exits 1 when the probe reports
 /// missing prerequisites, matching the script it retired.
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
-    let mut options = Options::new(pipeline_root());
+    let mut options = Options::new(default_pipeline_root());
     let mut json_output = false;
     let mut index = 0;
     while index < raw.len() {
