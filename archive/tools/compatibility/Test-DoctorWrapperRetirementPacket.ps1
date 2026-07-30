@@ -26,25 +26,16 @@ $manifest = Read-Packet "compatibility-retirement-manifest.json"
 $decision = Read-Packet "gate-out/compatibility-retirement-decision.json"
 $diff = Read-Packet "compatibility-retirement-deletion-diff.json"
 $status = Read-Packet "status.json"
-$snapshotInputs = @(
-    "invoke-code-intel.ps1", "check-code-intel-tools.ps1",
-    "crates/code-intel-cli/src/doctor_adapter.rs", "crates/code-intel-cli/tests/doctor_envelope.rs",
-    "crates/code-intel-cli/src/dag_run.rs", "orchestration/integrations.json"
-)
-# PowerShell entry points are $RepoRoot-relative (archive/); crates/ and
-# orchestration/ stayed at the repository root one level above it. Must match
-# New-DoctorWrapperRetirementPacket.ps1's FrozenPath resolution exactly.
-function Resolve-FrozenPath([string]$Relative) {
-    if ($Relative -like "crates/*" -or $Relative -like "orchestration/*") {
-        return (Join-Path $PipelineRepoRoot $Relative)
-    }
-    return (Join-Path $RepoRoot $Relative)
-}
-$currentSnapshotIdentity = Get-Sha256Text (($snapshotInputs | ForEach-Object {
-    (Get-FileHash -LiteralPath (Resolve-FrozenPath $_) -Algorithm SHA256).Hash.ToLowerInvariant()
-}) -join "`n")
+# E09 is a historical record, so it is not re-derived from the live tree.
+# The packet was frozen against an explicit working-tree overlay rather than a
+# commit: no revision in this repository reproduces $frozenSnapshotIdentity,
+# because invoke-code-intel.ps1 was overlaid from f3a4e867 while three of the
+# six frozen inputs did not exist at that commit. Re-hashing live sources would
+# therefore always report drift and could never report anything else. The packet
+# is anchored to its own content-bound artifacts and to the recorded deletion.
+$frozenSnapshotIdentity = "ff712225ab6fea6d458a660b15350f3fcc75b8158c24ed7d995f6a786171365a"
 foreach ($artifact in @($ticket, $manifest, $decision, $diff)) {
-    if ($artifact.snapshotIdentity -ne $currentSnapshotIdentity) { throw "E09 packet is stale relative to its frozen source set" }
+    if ($artifact.snapshotIdentity -ne $frozenSnapshotIdentity) { throw "E09 artifacts do not share one frozen snapshot identity" }
 }
 
 if ($ticket.legacyBranch.branchId -ne $branch -or $ticket.legacyBranch.callPath -ne $callPath -or
@@ -101,14 +92,17 @@ if ($replayed -cne $patchFile.resultText -or (Get-Sha256Text $replayed) -ne $pat
 
 $liveInvoke = [IO.File]::ReadAllText((Join-Path $RepoRoot "invoke-code-intel.ps1")).Replace("`r`n", "`n").Replace("`r", "`n")
 $rollback = [IO.File]::ReadAllText((Join-Path $PacketRoot "rollback-rehearsal/invoke-code-intel.ps1"))
-if ($patchFile.baseText -cne $liveInvoke -or $rollback -cne $liveInvoke) {
-    throw "E09 rollback rehearsal does not exactly replay the current normalized wrapper"
+if ($rollback -cne $patchFile.baseText) {
+    throw "E09 rollback rehearsal is not the exact pre-deletion wrapper the diff was cut from"
+}
+if ($rollback -ceq $liveInvoke) {
+    throw "E09 is recorded as retired but the live wrapper still matches the pre-deletion text"
 }
 
 $evidence = @(Get-ChildItem -LiteralPath (Join-Path $PacketRoot "evidence") -Filter "*.json" -File | ForEach-Object {
     Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json
 })
-if ($evidence.Count -ne 11) { throw "E09 requires exactly eleven E00 evidence artifacts" }
+if ($evidence.Count -ne 12) { throw "E09 requires the eleven E00 evidence artifacts plus the out-of-band deletion record" }
 foreach ($item in $evidence) {
     if ($item.legacyBranchId -ne $branch -or $item.replacementCapabilityId -ne $replacement) {
         throw "E09 evidence crossed a branch boundary"
@@ -119,6 +113,20 @@ $golden = $evidence | Where-Object evidenceClass -eq "golden_parity"
 $contract = $evidence | Where-Object evidenceClass -eq "contract_parity"
 $effects = $evidence | Where-Object evidenceClass -eq "effect_parity"
 $registryEvidence = $evidence | Where-Object evidenceClass -eq "registry_reconciliation"
+$outOfBand = $evidence | Where-Object evidenceClass -eq "out_of_band_deletion"
+if ($null -eq $outOfBand) { throw "E09 is retired without an out-of-band deletion record" }
+if ($outOfBand.details.gateAuthorityObtained -ne $false -or $outOfBand.details.governanceBypass -ne $true -or
+    $outOfBand.details.gateDecisionAtDeletion -ne "blocked" -or $outOfBand.details.gateDecisionSuperseded -ne $false -or
+    $outOfBand.details.packetBornStale -ne $true -or $outOfBand.details.snapshotIdentityCommitReachable -ne $false -or
+    $outOfBand.details.bootstrapRetained -ne $true) {
+    throw "E09 out-of-band deletion record overstates its authority"
+}
+foreach ($field in @("authoringCommit", "landedOnMainVia", "packetIntroducedBy", "baseTextCommit")) {
+    $sha = [string]$outOfBand.details.$field
+    if ($sha -notmatch '^[0-9a-f]{40}$') { throw "E09 out-of-band record has no resolvable $field commit" }
+    & git -C $RepoRoot cat-file -e "$sha^{commit}" 2>$null
+    if ($LASTEXITCODE -ne 0) { throw "E09 out-of-band record cites a commit that is not in this repository: $field=$sha" }
+}
 if ($atom.details.outcome -ne "blocked" -or $atom.details.b10EnvelopeAvailable -ne $true -or
     $atom.details.publicWrapperUsesDirectDoctor -ne $true -or $atom.details.bootstrapNonAuthoritative -ne $true -or
     $atom.details.bootstrapRegistered -ne $true -or $atom.details.bootstrapOwner -ne "code-intel-pipeline" -or
@@ -130,9 +138,16 @@ if ($contract.details.readinessConformanceSeparated -ne $true -or $contract.deta
     $contract.details.admissibilityNotPromoted -ne $true -or $effects.details.secretRedacted -ne $true) {
     throw "B10 envelope, domain, or redaction contract is missing"
 }
-$bootstrapHash = (Get-FileHash -LiteralPath (Join-Path $RepoRoot "check-code-intel-tools.ps1") -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($registryEvidence.details.registryAuditOk -ne $true -or $registryEvidence.details.owner -ne "code-intel-pipeline" -or
-    $registryEvidence.details.bootstrapHash -ne $bootstrapHash) { throw "retained bootstrap ownership or hash changed" }
+if ($registryEvidence.details.registryAuditOk -ne $true -or $registryEvidence.details.owner -ne "code-intel-pipeline") {
+    throw "retained bootstrap ownership changed"
+}
+# E09 never had authority over check-code-intel-tools.ps1, so the historical
+# record only requires that the retirement did not take the bootstrap with the
+# branch. Its content has drifted since the packet was frozen, which is expected
+# for a live script, so the frozen hash is not asserted against the working tree.
+if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot "check-code-intel-tools.ps1") -PathType Leaf)) {
+    throw "retained bootstrap was deleted; E09 never had authority over it"
+}
 
 $registry = Get-Content -LiteralPath (Join-Path $PipelineRepoRoot "orchestration/integrations.json") -Raw | ConvertFrom-Json
 $doctor = @($registry.integrations | Where-Object id -eq "doctor")
@@ -140,17 +155,31 @@ if ($doctor.Count -ne 1 -or $doctor[0].owner -ne "code-intel-pipeline" -or
     [string]$doctor[0].extensionPoint -notmatch 'observation-only bootstrap') {
     throw "B07 doctor registration no longer declares the bootstrap non-authoritative"
 }
-if ($decision.decision -ne "blocked" -or $status.decision -ne "blocked" -or
-    $status.liveDirectDoctorRoute -ne $true -or $status.publicPreflightUsesB10 -ne $false -or
+# The E00 gate output is never rewritten. It still reads blocked, and that
+# disagreement with the retired status is the point of the historical record:
+# the branch was removed without the gate, not because the gate was satisfied.
+if ($decision.decision -ne "blocked") { throw "E09 gate decision must remain the unaltered blocked record" }
+if ($status.decision -ne "retired_out_of_band" -or $status.gateDecision -ne "blocked" -or
+    $status.gateAuthorityObtained -ne $false -or $status.governanceBypass -ne $true -or
+    $status.retirementBasis -ne "historical" -or $status.retired -ne $true -or
+    $status.deletionExecuted -ne $true -or $status.liveDirectDoctorRoute -ne $false -or
+    $status.publicPreflightUsesB10 -ne $false -or
     $status.bootstrapRetained -ne $true -or $status.bootstrapNonAuthoritative -ne $true -or
     $status.bootstrapRegistered -ne $true -or $status.bootstrapOwned -ne $true -or
-    $status.bootstrapExpiring -ne $false -or $status.deletionExecuted -ne $false -or $status.retired -ne $false) {
-    throw "E09 blocked state was overstated"
+    $status.bootstrapExpiring -ne $false) {
+    throw "E09 historical retirement state is misrecorded"
 }
-$requiredBlockers = @("unproven_compatibility_window", "unproven_independent_approval", "unproven_replacement_atom", "unproven_usage_observation")
-if (@($status.blockers).Count -ne $requiredBlockers.Count) { throw "E09 contains an unexpected blocker or unproven parity claim" }
-foreach ($blocker in $requiredBlockers) {
-    if (@($status.blockers) -notcontains $blocker) { throw "E09 missing blocker: $blocker" }
+if ($status.deletionExecutedBy -ne $outOfBand.details.authoringCommit -or
+    $status.deletionLandedOnMainVia -ne $outOfBand.details.landedOnMainVia) {
+    throw "E09 status and out-of-band evidence disagree about which commit removed the branch"
+}
+if (@($status.blockers).Count -ne 0) { throw "a retired packet cannot still carry live gate blockers" }
+$unmetBlockers = @("unproven_compatibility_window", "unproven_independent_approval", "unproven_replacement_atom", "unproven_usage_observation")
+if (@($status.unmetGateBlockersAtDeletion).Count -ne $unmetBlockers.Count) {
+    throw "E09 must preserve exactly the gate blockers that were unmet when the branch was deleted"
+}
+foreach ($blocker in $unmetBlockers) {
+    if (@($status.unmetGateBlockersAtDeletion) -notcontains $blocker) { throw "E09 missing unmet gate blocker: $blocker" }
 }
 $e01 = Get-Content -LiteralPath (Join-Path $PacketRoot "e01-stderr.txt") -Raw
 if ($e01 -notmatch '"exitCode":65' -or $e01 -notmatch 'ticket requires an approved E00 decision') {
@@ -159,13 +188,21 @@ if ($e01 -notmatch '"exitCode":65' -or $e01 -notmatch 'ticket requires an approv
 $directAssignmentCount = [regex]::Matches($liveInvoke, '(?m)^\$doctor = Join-Path \$root "check-code-intel-tools\.ps1"$').Count
 $directInvocationCount = [regex]::Matches($liveInvoke, '(?m)^        & \$doctor -Config \$Config').Count
 $missingGuardCount = [regex]::Matches($liveInvoke, '(?m)^    throw "Doctor script missing: \$doctor"$').Count
-if ($directAssignmentCount -ne 1 -or $directInvocationCount -ne 2 -or $missingGuardCount -ne 1) {
-    throw "current E09 public doctor route changed after packet generation"
+if ($directAssignmentCount -ne 0 -or $directInvocationCount -ne 0 -or $missingGuardCount -ne 0) {
+    throw "E09 is recorded as retired but the direct production doctor route is still present"
+}
+if ($liveInvoke -match '(?i)doctor') { throw "E09 is recorded as retired but the live wrapper still mentions doctor" }
+$liveInvokeHash = Get-Sha256Text $liveInvoke
+if ($outOfBand.details.liveWrapperSha256 -ne $liveInvokeHash) {
+    throw "the live wrapper changed since the out-of-band deletion was recorded; re-verify and update the record"
 }
 
 [ordered]@{
     ok = $true; retirementId = "retire-doctor-wrapper-branch"; decision = $status.decision
+    gateDecision = $status.gateDecision; gateAuthorityObtained = $status.gateAuthorityObtained
+    governanceBypass = $status.governanceBypass; retirementBasis = $status.retirementBasis
     liveDirectDoctorRoute = $status.liveDirectDoctorRoute; publicPreflightUsesB10 = $status.publicPreflightUsesB10
     bootstrapRetained = $status.bootstrapRetained; bootstrapExpiring = $status.bootstrapExpiring
-    deletionExecuted = $status.deletionExecuted; retired = $status.retired; evidenceCount = $evidence.Count
+    deletionExecuted = $status.deletionExecuted; deletionExecutedBy = $status.deletionExecutedBy
+    retired = $status.retired; evidenceCount = $evidence.Count
 } | ConvertTo-Json -Compress

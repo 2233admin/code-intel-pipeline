@@ -82,7 +82,8 @@ $snapshotInputs = @(
     "orchestration/integrations.json"
 )
 $snapshotIdentity = Get-Sha256Text (($snapshotInputs | ForEach-Object {
-    (Get-FileHash -LiteralPath (Join-Path $RepoRoot $_) -Algorithm SHA256).Hash.ToLowerInvariant()
+    $root = if ($_.StartsWith('crates/') -or $_.StartsWith('orchestration/')) { $PipelineRepoRoot } else { $RepoRoot }
+    (Get-FileHash -LiteralPath (Join-Path $root $_) -Algorithm SHA256).Hash.ToLowerInvariant()
 }) -join "`n")
 $retirementId = "retire-native-code-branch"
 $branchId = "run-code-intel.native-code.embedded"

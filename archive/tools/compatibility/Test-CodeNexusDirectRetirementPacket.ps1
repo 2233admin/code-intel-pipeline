@@ -5,7 +5,14 @@ param(
 )
 
 Set-StrictMode -Version Latest
+# $RepoRoot lands on archive/ after the PowerShell move; assets that
+# stayed behind (orchestration/, crates/) live one level above it
+$PipelineRepoRoot = Split-Path -Parent $RepoRoot
 $ErrorActionPreference = "Stop"
+function Resolve-SnapshotInput([string]$Relative) {
+    $root = if ($Relative.StartsWith('crates/') -or $Relative.StartsWith('orchestration/')) { $PipelineRepoRoot } else { $RepoRoot }
+    Join-Path $root $Relative
+}
 function Read-Packet([string]$Relative) {
     $path = Join-Path $PacketRoot $Relative
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "packet file missing: $Relative" }
@@ -28,7 +35,7 @@ $snapshotInputs = @(
     "crates/code-intel-cli/src/survival_scan.rs", "orchestration/integrations.json"
 )
 $currentSnapshotIdentity = Get-Sha256Text (($snapshotInputs | ForEach-Object {
-    (Get-FileHash -LiteralPath (Join-Path $RepoRoot $_) -Algorithm SHA256).Hash.ToLowerInvariant()
+    (Get-FileHash -LiteralPath (Resolve-SnapshotInput $_) -Algorithm SHA256).Hash.ToLowerInvariant()
 }) -join "`n")
 if ($manifest.snapshotIdentity -ne $currentSnapshotIdentity -or $ticket.snapshotIdentity -ne $currentSnapshotIdentity -or
     $decision.snapshotIdentity -ne $currentSnapshotIdentity -or $diff.snapshotIdentity -ne $currentSnapshotIdentity) {
