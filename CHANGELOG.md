@@ -28,12 +28,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An ungoverned repository no longer reads as an architecture gate failure.**
+  A repository that never ran `save_baseline` has no prior measurement, so the
+  built-in Sentrux gate cannot detect a regression against one. That absence of
+  governance was being published as a failing `sentrux_gate` rule, which made
+  `diagnosis.hospital` diagnose `architecture gate failure` and
+  `code-intel run dag-coordinate` exit 10 on *any* never-baselined repository —
+  including a fixture holding a single `README.md`. The gate now reports the
+  ungoverned case as `pass`, matching how `check` has always treated a missing
+  `.sentrux/rules.toml` ("Quality: not gated").
+
+  `code-intel sentrux --operation gate` still exits 1 with the save-baseline
+  instruction, and the raw exit code and stdout stay verbatim in
+  `sentrux-command-observation.json`, so the ungoverned state remains auditable.
+  A baseline that exists but cannot be read by this engine
+  (`baseline_engine_mismatch`) is unchanged: re-baselining stays a deliberate
+  decision. A baselined repository that genuinely regresses still fails the
+  gate and still exits 10.
+
+- **The E05 publication retirement packet can be regenerated and verified from
+  a clean checkout.** Two defects kept it pinned as the sole known-blocked
+  retirement lane. Regeneration ran `test-dag-facade.ps1`, which failed on the
+  gate false positive above; and the rollback rehearsal was written to an
+  ephemeral `archive/work/<name>-<timestamp>/` directory outside the packet, so
+  its frozen evidence pointed at a path a clean checkout never has. The
+  rehearsal now lives inside the packet at `rollback-rehearsal/`, as it already
+  did for E04/E07/E09, and the verifier resolves it against `$PacketRoot`.
+
+  Carrying the rehearsal in-tree adds a 4742-line frozen copy of
+  `run-code-intel.ps1`, which Sentrux counts as a god file, so
+  `.sentrux/baseline.json` moves `god_file_count` 32 → 33 and `quality_signal`
+  3603 → 3484. The delta is entirely that one evidence artifact — with it moved
+  aside the gate reports `No degradation detected` — and matches how the
+  existing E04/E07 rehearsal copies are already carried in the baseline. Anyone
+  adding a future retirement packet should expect the same one-file step.
+
 - **The doctor capability no longer answers from a stub when `pwsh` is
   absent.** The adapter previously shelled out to the PowerShell probe and, on
   failure to launch it, fell back to an in-process approximation that reported
   `graphProvider` presence as hardcoded `true` — masking exactly the drift the
   doctor exists to surface. With one native probe there is no fallback path and
   no `pwsh` dependency on the kernel path.
+
+### Added
+
+- `archive/scripts/tests/test-dag-facade.ps1` runs in CI. It asserts DAG facade
+  artifact routing and explicit/default inventory parity against a repository
+  name containing spaces, `&`, and non-ASCII characters, and had never been
+  wired into a workflow.
 
 ## [0.7.0-beta.2] — 2026-07-30
 
