@@ -11,10 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed — action required
 
-- **Every PowerShell entry point moved under `archive/`.** The documented
-  install command is now:
+- **Every PowerShell entry point moved under `archive/`.** Installation still
+  runs through PowerShell — the compiled `code-intel` CLI cannot install the
+  binary that provides it — so the documented command moves with it:
 
-  ```
+  ```powershell
   pwsh ./archive/install-code-intel-pipeline.ps1 -RepoPath <repo> -InstallMissing
   ```
 
