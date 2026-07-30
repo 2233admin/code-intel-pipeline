@@ -848,7 +848,11 @@ Test-Case "invoke-code-intel.ps1 accepts common parameters and forwards default-
         # forward its artifactRoot (regression: config was only loaded for the
         # -Config/-Repo shapes). Copy the facade next to a stub launcher so the
         # forwarded arguments are observable without running the real pipeline.
-        Copy-Item -LiteralPath $legacy -Destination (Join-Path $dir "invoke-code-intel.ps1")
+        # mirror the real layout: the facade and its launcher sit under
+        # archive/, the default config stays at the repository root
+        $fixtureArchive = Join-Path $dir "archive"
+        New-Item -ItemType Directory -Force -Path $fixtureArchive | Out-Null
+        Copy-Item -LiteralPath $legacy -Destination (Join-Path $fixtureArchive "invoke-code-intel.ps1")
         $stubLauncher = @'
 param(
     [string]$RepoPath = "",
@@ -859,11 +863,11 @@ param(
 [pscustomobject]@{ repoPath = $RepoPath; mode = $Mode; remaining = @($Remaining) } | ConvertTo-Json -Compress
 exit 0
 '@
-        Set-Content -LiteralPath (Join-Path $dir "code-intel.ps1") -Value $stubLauncher -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $fixtureArchive "code-intel.ps1") -Value $stubLauncher -Encoding UTF8
         $configuredRoot = Join-Path $dir "artifact-root"
         @{ artifactRoot = $configuredRoot; repos = @{} } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dir "pipeline.config.json") -Encoding UTF8
 
-        $forwarded = @(& (Join-Path $dir "invoke-code-intel.ps1") -RepoPath $dir 2>&1)
+        $forwarded = @(& (Join-Path $fixtureArchive "invoke-code-intel.ps1") -RepoPath $dir 2>&1)
         Assert-Equal 0 $LASTEXITCODE "stubbed launcher run must exit 0"
         $json = ($forwarded -join "`n") | ConvertFrom-Json
         Assert-Equal $dir $json.repoPath "RepoPath must be forwarded unchanged"
@@ -1274,9 +1278,12 @@ Test-Case "installer: bundled skill parity ignores __pycache__ so a local bootst
 function New-DoctorScratchRoot {
     param([string]$Dir)
 
-    Copy-Item -LiteralPath (Join-Path $root "check-code-intel-tools.ps1") -Destination (Join-Path $Dir "check-code-intel-tools.ps1")
-    New-Item -ItemType Directory -Force -Path (Join-Path $Dir "tools") | Out-Null
-    Copy-Item -LiteralPath (Join-Path $root "tools\code-intel-platform.psm1") -Destination (Join-Path $Dir "tools\code-intel-platform.psm1")
+    # mirror the real layout: the doctor and its platform module live under
+    # archive/, while crates/ and target/ stay at the repository root
+    $archiveDir = Join-Path $Dir "archive"
+    New-Item -ItemType Directory -Force -Path (Join-Path $archiveDir "tools") | Out-Null
+    Copy-Item -LiteralPath (Join-Path $root "check-code-intel-tools.ps1") -Destination (Join-Path $archiveDir "check-code-intel-tools.ps1")
+    Copy-Item -LiteralPath (Join-Path $root "tools\code-intel-platform.psm1") -Destination (Join-Path $archiveDir "tools\code-intel-platform.psm1")
 
     $crateDir = Join-Path (Join-Path $Dir "crates") "code-intel-cli"
     New-Item -ItemType Directory -Force -Path (Join-Path $crateDir "src") | Out-Null
@@ -1290,7 +1297,8 @@ function Invoke-DoctorScratch {
         [string[]]$ExtraArgs = @()
     )
 
-    $raw = @(& pwsh -NoLogo -NoProfile -File (Join-Path $Dir "check-code-intel-tools.ps1") -Json @ExtraArgs 2>&1)
+    $doctor = Join-Path (Join-Path $Dir "archive") "check-code-intel-tools.ps1"
+    $raw = @(& pwsh -NoLogo -NoProfile -File $doctor -Json @ExtraArgs 2>&1)
     return ($raw -join "`n") | ConvertFrom-Json
 }
 
