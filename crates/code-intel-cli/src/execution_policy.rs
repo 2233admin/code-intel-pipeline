@@ -246,7 +246,14 @@ impl ExecutionPolicy {
         manifest: &Path,
     ) -> Value {
         let mut options = match capability {
-            "diagnosis.hospital" => json!({}),
+            // The hospital must be able to tell "the structural stage was
+            // never requested" from "it was requested and produced nothing".
+            // Only the policy can say this, and the policy refuses to disable
+            // a capability its profile marks Required — so a narrow scope can
+            // never be claimed for a run that demanded the gate.
+            "diagnosis.hospital" => json!({
+                "structuralEvidenceInScope": self.capability_enabled("provider.sentrux-adapt")
+            }),
             "doctor" => json!({
                 "repoPath":repo,
                 "manifestPath":manifest,
