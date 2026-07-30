@@ -19,7 +19,7 @@ about half the surface.** Measured against `5065482`.
 | code-evidence symbol extraction | 9 | `native_code_evidence.rs` | genuinely duplicated — retire |
 | sentrux gate metric deltas | 3 | `sentrux_gate.rs` | genuinely duplicated — retire |
 | hospital state machine / diagnosis | ~5 | `hospital_diagnosis.rs` | genuinely duplicated — retire |
-| **hospital scoring / measurements** | **~7** | **none — Rust emits `null`** | **gap, see §3** |
+| **hospital scoring / measurements** | **~7** | arithmetic ported to `hospital_score.rs`; not wired, inputs incomplete | **integration gap, see §3** |
 
 ## 1. Code-evidence symbol extraction — duplicated
 
@@ -53,14 +53,21 @@ exercised on every CI run and every local `code-intel sentrux gate .` — this
 campaign has been gated by it repeatedly, including two god-file regressions
 it caught. Production use is stronger evidence than a unit test here.
 
-## 3. Hospital scoring — NOT duplicated, and this is the finding
+## 3. Hospital scoring — was NOT duplicated, and this is the finding
 
 `Get-StepScore`, `New-HospitalMeasurements`, `Get-ImportResolutionScore`,
 `Get-SourceCoverageScore`, `New-HospitalScoreBlock`, `Read-HospitalArtifacts`,
 `Read-HospitalArtifactFile`.
 
-The Rust hospital **does not compute scores at all.** Measured on the same
-repository, same commit:
+**Status after this change:** the arithmetic is now ported to
+`crates/code-intel-cli/src/hospital_score.rs` and verified value-for-value
+against the PowerShell originals (dot-sourced and executed, not read). What
+remains is *integration*, not translation — the launcher is not wired to it,
+and several score inputs still have no Rust producer (§3.2). Until that lands,
+the emitted report is unchanged and still carries nulls.
+
+The measurement that made this a finding rather than a de-duplication, taken
+before the port on the same repository at the same commit:
 
 | field | PowerShell producer | Rust producer |
 |---|---|---|
@@ -101,18 +108,35 @@ completeness wiring — map onto
 ladder ends at `post_op` and no test names `discharge_ready`, so this one may
 be a second, smaller gap. It needs its own check before deletion.
 
-## 4. Open product question
+### 3.2 What still blocks wiring
 
-Whether hospital scoring survives is not answerable from the code:
+The arithmetic is complete; roughly half its inputs are not produced by any
+Rust node:
 
-- **If it survives**, ~7 functions plus their measurement inputs have to port
-  to Rust before the PowerShell copies can go, and the nine test cases port
-  with them. That is real work, not a deletion.
-- **If it is deliberately dropped**, the null fields are the intended contract
-  and the PowerShell scoring engine is dead code whose tests go with it —
-  but `docs/hospital-mode.md` still lists `triage.overall_score` and
-  `report_quality.dimensions` as part of the documented reader surface, so
-  that documentation has to change in the same breath.
+| score dimension | input | Rust producer |
+|---|---|---|
+| governance (rules / gate / check) | structural signals | present |
+| graph | architecture graph admission | present |
+| source coverage | inventory file count, scan file count | present (`inventory.rg`, sentrux payload) |
+| import resolution | resolved / unresolved import counts | present (sentrux payload) |
+| pollution | DSM `scope.excluded_files` | **absent** — DSM is a PowerShell tool operation, T5 (#50) |
+| MRI | CodeNexus context | **absent** |
+| PET | runtime CI health, or what-if + evolution | **absent** |
+| memory | repowise step result | **absent from the default DAG** |
 
-Recorded rather than decided. Guessing here would either delete a live
-product surface or spend days porting something already abandoned.
+Wiring the arithmetic to inputs that do not exist would publish confidently
+wrong numbers. `0` in this scheme means *observed and absent*, not *never
+attempted* — the same distinction `d029b3f` drew for structural evidence, and
+the reason `hospital_score.rs` ships unwired behind `allow(dead_code)`.
+
+## 4. Product decision (settled)
+
+Whether hospital scoring survives was not answerable from the code, so it was
+escalated rather than guessed. **Decision: it survives** — the scoring is real
+product behaviour, so it ports to Rust and the nine PowerShell test cases port
+with it, rather than the null fields becoming the intended contract.
+
+Consequence for T2's exit criteria: `run-code-intel.ps1` cannot reach ≤50
+lines until the wiring in §3.2 lands, because the scoring engine has to stay
+somewhere until Rust can produce the same numbers. The twelve genuinely
+duplicated functions in §1 and §2 are unblocked and can retire first.
