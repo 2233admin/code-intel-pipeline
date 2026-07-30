@@ -370,17 +370,6 @@ fn repo_state(repo_path: Option<&Path>, sentrux_scope: Option<&Path>) -> Value {
     })
 }
 
-/// Sorted view of an observation's `checks` keys — used by the coverage
-/// assertion so a silently dropped check surfaces as a test failure rather
-/// than as a missing field downstream. `serde_json::Map` is a `BTreeMap`
-/// here, so iteration is already ordered.
-pub(crate) fn check_names(observation: &Value) -> Vec<String> {
-    observation["checks"]
-        .as_object()
-        .map(|checks| checks.keys().cloned().collect())
-        .unwrap_or_default()
-}
-
 /// Repository root: the directory holding `orchestration/`, discovered the
 /// same way the capability layer discovers its manifest.
 pub(crate) fn pipeline_root() -> PathBuf {
@@ -673,8 +662,17 @@ mod tests {
         assert_eq!(observation["schema"], BOOTSTRAP_SCHEMA);
         assert_eq!(observation["authority"], "observation_only");
         assert!(observation["ok"].is_boolean());
+        // `serde_json::Map` is a `BTreeMap` here, so the key order is stable.
+        // A silently dropped check has to surface as a test failure rather
+        // than as a missing field downstream.
+        let checks = observation["checks"]
+            .as_object()
+            .expect("checks object")
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
         assert_eq!(
-            check_names(&observation),
+            checks,
             vec![
                 "config".to_string(),
                 "env".to_string(),

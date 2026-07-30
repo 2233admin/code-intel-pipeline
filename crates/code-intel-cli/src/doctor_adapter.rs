@@ -14,6 +14,14 @@ use crate::capability::sha256_hex;
 // integration tests pull this adapter into their own crate via `#[path]`, and
 // those roots do not declare the binary's module list. Same convention the
 // adapter already used for `tool_path`.
+//
+// `allow(dead_code)` sits here rather than on the individual items because it
+// is this inclusion that makes them unreachable: the adapter needs only
+// `Options`, `observe` and `BOOTSTRAP_SCHEMA`, so the CLI surface (`run_raw`,
+// `render_human`, `pipeline_root`, …) has no caller in this copy. `main.rs`
+// declares the same module without the allowance, so genuinely dead code still
+// warns where the module is actually the binary's.
+#[allow(dead_code)]
 #[path = "doctor_bootstrap/mod.rs"]
 mod doctor_bootstrap;
 
