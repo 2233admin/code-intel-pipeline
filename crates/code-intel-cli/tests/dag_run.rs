@@ -902,8 +902,9 @@ fn sentrux_command(out: &Path, id: &str) -> Value {
 ///
 /// The gate claim is therefore asserted on the `diagnosis.hospital` node, which
 /// is not downstream of `doctor` and runs either way. The whole-run outcome is
-/// only asserted when the doctor agreed. `test-dag-facade.ps1` covers the
-/// run-level exit code in CI, where the toolchain is installed.
+/// only asserted when the doctor agreed. CI's `Authoritative self-scan (release
+/// gate parity)` step is what covers run-level exit 0, because it passes the
+/// doctor requirements explicitly.
 fn doctor_succeeded(manifest: &Value) -> bool {
     manifest["nodes"]["doctor"]["status"] == "succeeded"
 }
