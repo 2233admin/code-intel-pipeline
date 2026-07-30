@@ -7,8 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0-beta.2] — 2026-07-30
+
+### Changed — action required
+
+- **Every PowerShell entry point moved under `archive/`.** Installation still
+  runs through PowerShell — the compiled `code-intel` CLI cannot install the
+  binary that provides it — so the documented command moves with it:
+
+  ```powershell
+  pwsh ./archive/install-code-intel-pipeline.ps1 -RepoPath <repo> -InstallMissing
+  ```
+
+  The same shift applies to `code-intel.ps1`, `check-code-intel-tools.ps1`,
+  `run-code-intel.ps1`, the contract test suites under
+  `archive/scripts/tests/`, and every `$env:CODE_INTEL_HOME/*.ps1` invocation
+  the bundled skill documents. Release archives carry the same layout, so a
+  packaged `code-intel.ps1` now lives at `archive/code-intel.ps1`.
+
+  Nothing was deleted: this is a relocation, not the entry-point retirement
+  tracked in the PS1-exit campaign. The 132 relocated files keep their
+  relative structure, so script-to-script references are unchanged.
+
+- The skill bootstrap installs both layouts. `find_payload_root` probes
+  `archive/` first and falls back to the payload root, so releases published
+  before this one stay installable.
+
 ### Fixed
 
+- Path resolution in the relocated scripts, wherever a single root variable
+  had been carrying two meanings — "where the PowerShell lives" and "where the
+  repository is". Those diverged under `archive/`, and the split had to be made
+  explicit in the doctor (its graph-provider probe and `CODE_INTEL_HOME`
+  default), the installer (binary install, integrations manifest, vlang
+  overlay, bundled skill, reported root), the beta packager and its verifier,
+  the orchestrator's manifest validation, the compatibility retirement
+  packets, and the archived contract suites.
 - `cargo test --release` no longer fails on the inventory fault-injection
   contract test. The `CODE_INTEL_TEST_RG_EXTRA_PATH` hook it drives is
   deliberately `#[cfg(debug_assertions)]`, so the shipped binary carries no
