@@ -266,7 +266,7 @@
       "owner": "code-intel-pipeline",
       "kind": "internal-rust-binary",
       "required": true,
-      "entrypoint": "crates/code-intel-cli/src/doctor_bootstrap.rs",
+      "entrypoint": "crates/code-intel-cli/src/doctor_bootstrap/mod.rs",
       "capabilities": [
         "preflight",
         "tool_contract",
@@ -285,8 +285,11 @@
           "id": "doctor.envelope.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "0d43645caedd67c3a76533c7de0734822d514a52866f512b1a62332840c9ff15",
-            "da7afbcc1c3072df79082cc2542daa4a2339fd437386341c75f366afa5c6e149",
+            "084f4322c59669bce76c846196b48709a14140f56e9452d9057b7929415296e4",
+            "85ffb7a1bc3ba01cac92438793165893d933aada7cdf6a0217c40c4938617402",
+            "7db9e80857f3c65aada25041986cb5cb3b50b95fa69de794d55ad38fd4a8d8d4",
+            "af67633e245665cdccef1b8dac1f672f3aca7af188449cde6e5fc518917c51be",
+            "c9842468b904868391ff0fd2bb5d9627f4d61ab5f39fa01513dc409d0d2b484d",
             "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab"
           ]
         },
@@ -299,7 +302,10 @@
         "algorithm": "sha256",
         "inputs": [
           "crates/code-intel-cli/src/doctor_adapter.rs",
-          "crates/code-intel-cli/src/doctor_bootstrap.rs",
+          "crates/code-intel-cli/src/doctor_bootstrap/mod.rs",
+          "crates/code-intel-cli/src/doctor_bootstrap/config.rs",
+          "crates/code-intel-cli/src/doctor_bootstrap/paths.rs",
+          "crates/code-intel-cli/src/doctor_bootstrap/probe.rs",
           "crates/code-intel-cli/src/capability_inventory.rs"
         ]
       },
