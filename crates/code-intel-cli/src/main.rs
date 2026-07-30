@@ -24,6 +24,7 @@ mod dag_coordinator;
 mod dag_run;
 mod decision_port;
 mod decision_record;
+mod doctor_bootstrap;
 mod evidence_query;
 mod execution_kernel;
 mod execution_policy;
@@ -513,6 +514,12 @@ struct RawRoute {
 }
 
 const RAW_ROUTES: &[RawRoute] = &[
+    RawRoute {
+        command: "doctor",
+        subcommand: Some("bootstrap"),
+        argument_offset: 2,
+        runner: doctor_bootstrap::run_raw,
+    },
     RawRoute {
         command: "compatibility",
         subcommand: Some("retirement-ticket"),
@@ -1595,6 +1602,7 @@ Commands:
   sentrux-normalize --steps <report.json> [--out <sentrux-failures.json>]
   sentrux-debt-register --failures <sentrux-failures.json> [--repo <path>] [--out <sentrux-debt-register.json>]
   doctor [--artifact-root <path>] [--json]
+  doctor bootstrap [--repo <alias>] [--repo-path <path>] [--config <pipeline.config.json>] [--platform auto|windows|macos|linux] [--no-require-repowise] [--require-understand] [--json]
   graph --repo <path> [--language zh] [--full] [--write] [--json]
   provider [--action List|Plan|Validate|Invoke] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--language zh] [--write] [--json]
   provider repowise-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>

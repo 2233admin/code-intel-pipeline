@@ -1278,13 +1278,9 @@ Test-Case "installer: bundled skill parity ignores __pycache__ so a local bootst
 function New-DoctorScratchRoot {
     param([string]$Dir)
 
-    # mirror the real layout: the doctor and its platform module live under
-    # archive/, while crates/ and target/ stay at the repository root
-    $archiveDir = Join-Path $Dir "archive"
-    New-Item -ItemType Directory -Force -Path (Join-Path $archiveDir "tools") | Out-Null
-    Copy-Item -LiteralPath (Join-Path $root "check-code-intel-tools.ps1") -Destination (Join-Path $archiveDir "check-code-intel-tools.ps1")
-    Copy-Item -LiteralPath (Join-Path $root "tools\code-intel-platform.psm1") -Destination (Join-Path $archiveDir "tools\code-intel-platform.psm1")
-
+    # mirror the real layout: archive/ holds the PowerShell entry points while
+    # crates/ and target/ stay at the repository root
+    New-Item -ItemType Directory -Force -Path (Join-Path $Dir "archive") | Out-Null
     $crateDir = Join-Path (Join-Path $Dir "crates") "code-intel-cli"
     New-Item -ItemType Directory -Force -Path (Join-Path $crateDir "src") | Out-Null
     Set-Content -LiteralPath (Join-Path $crateDir "Cargo.toml") -Value "[package]" -Encoding UTF8
@@ -1297,8 +1293,18 @@ function Invoke-DoctorScratch {
         [string[]]$ExtraArgs = @()
     )
 
-    $doctor = Join-Path (Join-Path $Dir "archive") "check-code-intel-tools.ps1"
-    $raw = @(& pwsh -NoLogo -NoProfile -File $doctor -Json @ExtraArgs 2>&1)
+    # The probe is native since T3 (#48): drive the real binary against the
+    # scratch root rather than the retired script. The scratch tree's own
+    # target/ holds a fake binary on purpose, so it must never be the one run.
+    $binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
+    $repoRoot = Split-Path -Parent $root
+    $cli = @(
+        (Join-Path (Join-Path (Join-Path $repoRoot "target") "release") $binaryName),
+        (Join-Path (Join-Path (Join-Path $repoRoot "target") "debug") $binaryName)
+    ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if ($null -eq $cli) { throw "code-intel binary not built; run cargo build -p code-intel" }
+
+    $raw = @(& $cli doctor bootstrap --pipeline-root $Dir --json @ExtraArgs 2>&1)
     return ($raw -join "`n") | ConvertFrom-Json
 }
 
@@ -1311,7 +1317,7 @@ Test-Case "doctor graph provider: a target/release platform binary satisfies the
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $releaseBinary) | Out-Null
         Set-Content -LiteralPath $releaseBinary -Value "fake binary" -Encoding UTF8
 
-        $json = Invoke-DoctorScratch $dir @("-RequireUnderstand")
+        $json = Invoke-DoctorScratch $dir @("--require-understand")
         Assert-True $json.checks.graphProvider.sourceFound "chained Join-Path must find crates/code-intel-cli/src/graph.rs"
         Assert-True $json.checks.graphProvider.cargoFound "chained Join-Path must find crates/code-intel-cli/Cargo.toml"
         Assert-True $json.checks.graphProvider.binaryFound "a target/release build must satisfy the binary check (regression: only target\debug\code-intel.exe was probed)"

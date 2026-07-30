@@ -10,8 +10,20 @@ use crate::adapter_contract::AdapterDomainVerdict;
 use crate::artifact_ref::VerifiedArtifact;
 use crate::capability::sha256_hex;
 
-#[path = "tool_path.rs"]
-mod tool_path;
+// Included by path rather than imported from the crate root: several
+// integration tests pull this adapter into their own crate via `#[path]`, and
+// those roots do not declare the binary's module list. Same convention the
+// adapter already used for `tool_path`.
+//
+// `allow(dead_code)` sits here rather than on the individual items because it
+// is this inclusion that makes them unreachable: the adapter needs only
+// `Options`, `observe` and `BOOTSTRAP_SCHEMA`, so the CLI surface (`run_raw`,
+// `render_human`, `pipeline_root`, …) has no caller in this copy. `main.rs`
+// declares the same module without the allowance, so genuinely dead code still
+// warns where the module is actually the binary's.
+#[allow(dead_code)]
+#[path = "doctor_bootstrap/mod.rs"]
+mod doctor_bootstrap;
 
 pub(crate) fn execute(
     request: &Value,
@@ -155,111 +167,28 @@ fn validate_snapshot_input(
     Ok(())
 }
 
+/// Run the bootstrap probe in-process.
+///
+/// Before T3 this shelled out to `archive/check-code-intel-tools.ps1` and fell
+/// back to a hand-written stub when `pwsh` or the script was absent — a stub
+/// that answered `graphProvider` with hardcoded `true`s and so could not
+/// report the very drift doctor exists to catch. The probe is native now, so
+/// there is one implementation, no `pwsh` dependency on the kernel path, and
+/// the same answers on every platform.
 fn run_bootstrap(options: &Options) -> Result<Value, AdapterError> {
-    // The PowerShell bootstrap stays authoritative when it is present; a
-    // kernel run must not process-fail just because the script or pwsh is
-    // absent (bare `run execute`, extracted release package). Contract
-    // failures do NOT fall back: a script that ran and produced a
-    // nonconforming observation is an integrity signal, not an absence.
-    match run_script_bootstrap(options) {
-        Ok(value) => Ok(value),
-        Err(AdapterError::Unavailable(_)) => Ok(native_bootstrap(options)),
-        Err(error) => Err(error),
-    }
-}
-
-fn native_bootstrap(options: &Options) -> Value {
-    let prefix = options.tool_path_prefix.as_deref();
-    let rg = tool_available("rg", prefix);
-    let git = tool_available("git", prefix);
-    let repowise = tool_available("repowise", prefix);
-    let understand = tool_available("understand", prefix);
-    let external_sentrux = tool_available("sentrux", prefix);
-    let mut ok = rg && git && options.repo_path.is_dir();
-    if options.require_repowise {
-        ok &= repowise;
-    }
-    if options.require_understand {
-        ok &= understand;
-    }
-    json!({
-        "schema":"code-intel-doctor-bootstrap-observation.v1",
-        "authority":"observation_only",
-        "source":"native-fallback",
-        "ok": ok,
-        "checks":{
-            "repo":{"exists": options.repo_path.is_dir()},
-            "tools":[
-                {"name":"rg","required":true,"found":rg},
-                {"name":"git","required":true,"found":git},
-                {"name":"repowise","required":options.require_repowise,"found":repowise},
-                {"name":"understand","required":options.require_understand,"found":understand},
-                {"name":"sentrux","required":false,"found":external_sentrux}
-            ],
-            "sentrux":{
-                "builtin":{"found":true},
-                "core":{"found":external_sentrux},
-                "pro":{"found":false}
-            },
-            "graphProvider":{"sourceFound":true,"cargoFound":true,"binaryFound":true}
-        }
-    })
-}
-
-fn tool_available(name: &str, prefix: Option<&Path>) -> bool {
-    // Delegates to the same candidate-name/PATH search `tool_path::resolve`
-    // uses to pick an absolute path for `Command::new`, so presence-checking
-    // here and path-resolution at the actual launch site never drift apart.
-    tool_path::locate(name, prefix).is_some()
-}
-
-fn run_script_bootstrap(options: &Options) -> Result<Value, AdapterError> {
-    let script = pipeline_root().join("archive/check-code-intel-tools.ps1");
-    if !script.is_file() {
-        return Err(AdapterError::Unavailable(format!(
-            "doctor bootstrap adapter is unavailable: {}",
-            script.display()
-        )));
-    }
-    let mut command = Command::new("pwsh");
-    command
-        .args(["-NoLogo", "-NoProfile", "-File"])
-        .arg(&script)
-        .arg("-RepoPath")
-        .arg(&options.repo_path)
-        .arg("-Platform")
-        .arg(&options.platform)
-        .arg(format!("-RequireRepowise:${}", options.require_repowise))
-        .arg(format!(
-            "-RequireUnderstand:${}",
-            options.require_understand
-        ))
-        .arg("-Json");
-    if let Some(config) = &options.config_path {
-        command.arg("-Config").arg(config);
-    }
-    if let Some(prefix) = &options.tool_path_prefix {
-        let mut paths = vec![prefix.clone()];
-        paths.extend(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        ));
-        let path = std::env::join_paths(paths).map_err(|error| {
-            AdapterError::InvalidOptions(format!("compose options.toolPathPrefix PATH: {error}"))
-        })?;
-        command
-            .env_remove("PATH")
-            .env_remove("Path")
-            .env("PATH", path);
-    }
-    let output = command
-        .output()
-        .map_err(|error| AdapterError::Unavailable(format!("start doctor bootstrap: {error}")))?;
-    let value: Value = serde_json::from_slice(&output.stdout).map_err(|error| {
-        AdapterError::Contract(format!(
-            "doctor bootstrap stdout is not one JSON observation: {error}"
-        ))
-    })?;
-    if value["schema"] != "code-intel-doctor-bootstrap-observation.v1"
+    let mut probe = doctor_bootstrap::Options::new(pipeline_root());
+    probe.repo_path = Some(options.repo_path.to_string_lossy().into_owned());
+    probe.config = options.config_path.clone();
+    probe.platform = options.platform.clone();
+    probe.require_repowise = options.require_repowise;
+    probe.require_understand = options.require_understand;
+    probe.tool_path_prefix = options.tool_path_prefix.clone();
+    let value = doctor_bootstrap::observe(&probe)
+        .map_err(|error| AdapterError::InvalidOptions(format!("doctor bootstrap: {error}")))?;
+    // Kept as an explicit boundary check rather than an invariant assumed from
+    // the call above: the adapter must never publish an observation that does
+    // not carry the non-authoritative v1 contract, whoever produced it.
+    if value["schema"] != doctor_bootstrap::BOOTSTRAP_SCHEMA
         || value["authority"] != "observation_only"
         || !value["ok"].is_boolean()
     {
@@ -573,6 +502,10 @@ mod tests {
             .unwrap();
         for relative in [
             "crates/code-intel-cli/src/doctor_adapter.rs",
+            "crates/code-intel-cli/src/doctor_bootstrap/mod.rs",
+            "crates/code-intel-cli/src/doctor_bootstrap/config.rs",
+            "crates/code-intel-cli/src/doctor_bootstrap/paths.rs",
+            "crates/code-intel-cli/src/doctor_bootstrap/probe.rs",
             "crates/code-intel-cli/src/capability_inventory.rs",
         ] {
             let actual = sha256_hex(&fs::read(root.join(relative)).unwrap());

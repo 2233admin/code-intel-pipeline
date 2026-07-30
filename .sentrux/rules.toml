@@ -7,15 +7,30 @@
 # no god files, coupling grade B) is tracked modernization debt
 # (issue #14, "Remaining tracked debt").
 #
-# Measured ratchet evidence (sentrux-native 2.0.0, 2026-07-27, security-004
+# Measured ratchet evidence (sentrux-native 2.0.0, 2026-07-30, T3 doctor
 # tree, recorded together with .sentrux/baseline.json in the same commit):
-#   max_complexity 162 (archive/scripts/tests/test-code-intel-pipeline.ps1),
-#   god_file_count 29, coupling_score 45.33, cycle_count 0.
-# The 45.13 -> 45.33 coupling and 3968 -> 3967 quality movement is the cost
-# of the shared tool_path resolver module (security-004, #33): one new module
-# imported by six call sites replaces bare Command::new("rg"/"git") names, so
-# the added import edges are the fix working as intended, not drift. God files
-# and cycles did not move.
+#   coupling_score 45.26 -> 45.79, quality_signal 3607 -> 3603,
+#   god_file_count 32 (unchanged), cycle_count 0 (unchanged).
+# Cause: T3 (#48) replaced 409 lines of archive/check-code-intel-tools.ps1
+# with a native Rust probe split across four cohesive modules
+# (doctor_bootstrap/{mod,config,paths,probe}.rs) plus one integration test
+# file. Import edges went 1041 -> 1076 over 230 -> 235 files.
+#
+# Why the movement is accepted rather than engineered away: coupling_score is
+# import_lines / file_count * 10, and this tree's 45.26 average is held down by
+# large PowerShell files that carry almost no import lines. Any idiomatic Rust
+# module — roughly four to six `use`/`mod` lines — sits above that average, so
+# adding well-factored Rust always pushes the ratio up. Reaching 45.26 here
+# would have required dropping ~13 `use` lines in favour of inline fully
+# qualified paths: worse code, chosen only to move a line-counting metric.
+# What was NOT accepted: the first cut of this work landed the probe as one
+# 1124-line file, which tripped god_file_count 32 -> 33 (quality -120). That
+# is a real regression and was fixed by the module split above, not baselined.
+# Prior entry (2026-07-27, security-004): 45.13 -> 45.33 coupling and
+# 3968 -> 3967 quality was the cost of the shared tool_path resolver module
+# (#33): one new module imported by six call sites replaces bare
+# Command::new("rg"/"git") names, so the added import edges are the fix
+# working as intended, not drift. God files and cycles did not move.
 # Prior entry (2026-07-26): 45.07 -> 45.13 / 3969 -> 3968 was the ast-grep
 # internalization conformance suite cost.
 # The previous B / 70 / no-god thresholds were never green under any engine:
