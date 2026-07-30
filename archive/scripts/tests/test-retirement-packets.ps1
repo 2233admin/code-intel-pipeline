@@ -36,15 +36,15 @@ $packets = @(
     @{ Ticket = "E10"; Verifier = "Test-IndexRetirementPacket.ps1";             Packet = "e10-index" }
 )
 
-# E05 cannot be regenerated: New-PublicationRetirementPacket.ps1 requires
-# archive/scripts/tests/test-dag-facade.ps1, and `code-intel run dag-coordinate`
-# exits 10 because the diagnosis.hospital node reports domain_failed
-# ("architecture gate failure") even on a single-file fixture repository. Until
-# that is fixed, E05 stays frozen against a run-code-intel.ps1 that has moved on.
-# Pinning the message keeps the lane honest in both directions.
-$KnownBlocked = @{
-    "E05" = "E05 exact rollback replay drifted"
-}
+# Nothing is known-blocked right now. E05 was, because dag-coordinate exited 10
+# when diagnosis.hospital reported domain_failed on any repository; 805ef28
+# ("an ungoverned repository is not an architecture gate failure") fixed that,
+# so E05 regenerates and verifies again and was removed from this table.
+#
+# To park a packet here, map its ticket id to the exact error it must fail with.
+# The suite then fails if that packet passes, or fails differently — a parked
+# lane cannot rot silently, and an accidental fix cannot go unnoticed.
+$KnownBlocked = @{}
 
 $failures = [Collections.Generic.List[string]]::new()
 
