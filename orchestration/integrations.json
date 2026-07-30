@@ -264,9 +264,9 @@
       "id": "doctor",
       "stage": "preflight",
       "owner": "code-intel-pipeline",
-      "kind": "internal-script",
+      "kind": "internal-rust-binary",
       "required": true,
-      "entrypoint": "archive/check-code-intel-tools.ps1",
+      "entrypoint": "crates/code-intel-cli/src/doctor_bootstrap/mod.rs",
       "capabilities": [
         "preflight",
         "tool_contract",
@@ -274,7 +274,7 @@
         "enveloped_readiness_observation"
       ],
       "commands": {
-        "validate": "archive/check-code-intel-tools.ps1 -RepoPath <repo-path> -RequireRepowise -Json",
+        "validate": "target/debug/code-intel.exe doctor bootstrap --repo-path <repo-path> --require-repowise --json",
         "capabilityExec": "target/debug/code-intel.exe capability exec doctor --request <request.json|-> --out <staging-dir> --artifact-root <run-root>"
       },
       "capabilityDeclaration": {
@@ -285,7 +285,11 @@
           "id": "doctor.envelope.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "cbce5325f0455639d6957d4b82a4a72af7adde235926aca07acd5dcfa561cb3f",
+            "21fc5754b9803f9fdee3d0a3eebe7db3d5f2bae1d93cd4218590522c9d3b9f19",
+            "c50788e1e790e496056de6a4ed208c8f5903345f15aef2ab783c9780d648dc34",
+            "7db9e80857f3c65aada25041986cb5cb3b50b95fa69de794d55ad38fd4a8d8d4",
+            "af67633e245665cdccef1b8dac1f672f3aca7af188449cde6e5fc518917c51be",
+            "c9842468b904868391ff0fd2bb5d9627f4d61ab5f39fa01513dc409d0d2b484d",
             "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab"
           ]
         },
@@ -298,6 +302,10 @@
         "algorithm": "sha256",
         "inputs": [
           "crates/code-intel-cli/src/doctor_adapter.rs",
+          "crates/code-intel-cli/src/doctor_bootstrap/mod.rs",
+          "crates/code-intel-cli/src/doctor_bootstrap/config.rs",
+          "crates/code-intel-cli/src/doctor_bootstrap/paths.rs",
+          "crates/code-intel-cli/src/doctor_bootstrap/probe.rs",
           "crates/code-intel-cli/src/capability_inventory.rs"
         ]
       },
@@ -306,7 +314,7 @@
         "doctor-observation.json",
         "doctor_json"
       ],
-      "extensionPoint": "PowerShell remains an observation-only bootstrap probe until E09; authoritative doctor execution uses the A01 envelope and never promotes readiness into conformance or admissibility."
+      "extensionPoint": "The probe is native Rust (doctor_bootstrap.rs) and stays an observation-only bootstrap; archive/check-code-intel-tools.ps1 is a thin forwarder kept for installer and rollback paths. Authoritative doctor execution uses the A01 envelope and never promotes readiness into conformance or admissibility."
     },
     {
       "id": "runtime.code-intel",

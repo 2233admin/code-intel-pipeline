@@ -201,7 +201,9 @@ jobs:
 
       - name: Doctor
         shell: pwsh
-        run: .\archive\check-code-intel-tools.ps1 -RepoPath . -RequireRepowise:$false
+        # T3 (#48): the tool/runtime probe is native now; the PowerShell entry
+        # point is a thin forwarder onto this same subcommand.
+        run: code-intel doctor bootstrap --repo-path . --no-require-repowise
 
       - name: GitHub research contract tests
         shell: pwsh
@@ -536,7 +538,8 @@ jobs:
 
       - name: Doctor
         shell: pwsh
-        run: ./archive/check-code-intel-tools.ps1 -RepoPath . -RequireRepowise:$false -Json
+        # T3 (#48): native probe; the PowerShell entry point now forwards here.
+        run: code-intel doctor bootstrap --repo-path . --no-require-repowise --json
 
       - name: Hospital fail-closed contract tests
         shell: pwsh

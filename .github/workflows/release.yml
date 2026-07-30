@@ -133,8 +133,9 @@ jobs:
       - name: Doctor
         shell: pwsh
         # Runners don't install repowise; smoke runs on the lite fallback
-        # (same as ci.yml). RequireRepowise defaults to $true since 0.2.0.
-        run: .\archive\check-code-intel-tools.ps1 -RepoPath . -RequireRepowise:$false
+        # (same as ci.yml). The probe requires repowise by default, hence the
+        # explicit opt-out. Native since T3 (#48).
+        run: code-intel doctor bootstrap --repo-path . --no-require-repowise
 
       - name: GitHub research contract tests
         shell: pwsh

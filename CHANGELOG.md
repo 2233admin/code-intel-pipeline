@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The doctor bootstrap probe is native Rust** (issue #48, T3 of the PS1
+  retirement campaign). `code-intel doctor bootstrap` now computes the
+  tool/runtime health inventory that `archive/check-code-intel-tools.ps1` used
+  to implement in 409 lines of PowerShell; the script is a ~35-line thin
+  forwarder retained for the installer and rollback paths. The observation it
+  emits keeps the `code-intel-doctor-bootstrap-observation.v1` schema, the
+  `observation_only` authority, and the same `ok`/`missing` pair, so installer
+  and CI consumers are unchanged.
+
+  ```bash
+  code-intel doctor bootstrap --repo-path . --no-require-repowise --json
+  ```
+
+  CI and release workflows call the binary directly. Running the forwarder on a
+  machine without the binary is now reported as a `code-intel binary` entry in
+  `missing` (exit 1) rather than as a crash.
+
+### Fixed
+
+- **The doctor capability no longer answers from a stub when `pwsh` is
+  absent.** The adapter previously shelled out to the PowerShell probe and, on
+  failure to launch it, fell back to an in-process approximation that reported
+  `graphProvider` presence as hardcoded `true` — masking exactly the drift the
+  doctor exists to surface. With one native probe there is no fallback path and
+  no `pwsh` dependency on the kernel path.
+
 ## [0.7.0-beta.2] — 2026-07-30
 
 ### Changed — action required
