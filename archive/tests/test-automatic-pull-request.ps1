@@ -15,7 +15,7 @@ foreach ($schemaName in @(
     "code-intel-auto-pr-execution-result.v1.schema.json",
     "code-intel-auto-pr-execution-receipt.v1.schema.json"
 )) {
-    $schemaPath = Join-Path $root ("orchestration\schemas\" + $schemaName)
+    $schemaPath = Join-Path $repoRoot ("orchestration\schemas\" + $schemaName)
     if (-not (Test-Path -LiteralPath $schemaPath -PathType Leaf)) { throw "missing schema: $schemaName" }
     Get-Content -LiteralPath $schemaPath -Raw | ConvertFrom-Json | Out-Null
 }
