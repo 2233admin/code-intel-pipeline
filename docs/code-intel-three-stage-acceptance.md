@@ -1,6 +1,6 @@
 # Code Intel three-stage acceptance
 
-`Invoke-CodeIntelAcceptance.ps1` is the language-neutral acceptance entry point used before an
+`archive/Invoke-CodeIntelAcceptance.ps1` is the language-neutral acceptance entry point used before an
 Agent hands off work, before a queue lands work, and before a human promotes an integration branch.
 It does not merge, push, publish, or promote anything. It only returns an acceptance decision.
 
@@ -12,7 +12,7 @@ It does not merge, push, publish, or promote anything. It only returns an accept
 | `land` | project conformance only | `fast` |
 | `promote` | project conformance only | `full` |
 
-Project suites remain owned by `scripts/tests/Test-CodeIntelProjectConformance.ps1` and
+Project suites remain owned by `archive/scripts/tests/Test-CodeIntelProjectConformance.ps1` and
 `orchestration/code-intel-project-conformance-policy.v1.json`. The three-stage entry point delegates
 to that command; it does not duplicate suite definitions or test implementations.
 
@@ -29,11 +29,11 @@ they are resolved and containment-checked before any command runs:
 $target = @{
     id = "acceptance-contract"
     kind = "pwsh"
-    file = "scripts/tests/test-code-intel-acceptance.ps1"
+    file = "archive/scripts/tests/test-code-intel-acceptance.ps1"
     args = @()
 } | ConvertTo-Json -Compress
 
-./Invoke-CodeIntelAcceptance.ps1 -Stage agent -TargetCheckJson $target -Json
+./archive/Invoke-CodeIntelAcceptance.ps1 -Stage agent -TargetCheckJson $target -Json
 ```
 
 Language tools use `kind=process` and a policy-allowed executable. Arguments are passed as an argv
@@ -47,7 +47,7 @@ $target = @{
     args = @("test", "-p", "code-intel", "--test", "graph_adapter")
 } | ConvertTo-Json -Compress
 
-./Invoke-CodeIntelAcceptance.ps1 -Stage agent -TargetCheckJson $target -Json
+./archive/Invoke-CodeIntelAcceptance.ps1 -Stage agent -TargetCheckJson $target -Json
 ```
 
 For multiple checks, pass a PowerShell string array to `-TargetCheckJson`. All specifications are
@@ -58,7 +58,7 @@ block the complete request.
 A change with no applicable focused test may explicitly declare why:
 
 ```powershell
-./Invoke-CodeIntelAcceptance.ps1 `
+./archive/Invoke-CodeIntelAcceptance.ps1 `
     -Stage agent `
     -SkipTargetedChecksReason "documentation-only change; no executable behavior changed" `
     -Json
@@ -83,8 +83,8 @@ Consumers must treat every nonzero exit and every status other than `pass` as fa
 ## Land and promote
 
 ```powershell
-./Invoke-CodeIntelAcceptance.ps1 -Stage land -Json
-./Invoke-CodeIntelAcceptance.ps1 -Stage promote -Json
+./archive/Invoke-CodeIntelAcceptance.ps1 -Stage land -Json
+./archive/Invoke-CodeIntelAcceptance.ps1 -Stage promote -Json
 ```
 
 `land` maps to the usable `fast` profile. `promote` maps to `full`; with the current project policy,
@@ -95,7 +95,7 @@ the project-wide profile.
 ## Contract test
 
 ```powershell
-./scripts/tests/test-code-intel-acceptance.ps1
+./archive/scripts/tests/test-code-intel-acceptance.ps1
 ```
 
 The test uses an isolated repository-shaped fixture whose path contains spaces. It proves all three

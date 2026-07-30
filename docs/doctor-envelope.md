@@ -6,7 +6,7 @@
 same snapshot identity. The environment policy is stored without host paths and
 is independently SHA-256 bound inside the observation.
 
-`check-code-intel-tools.ps1` remains the shell-compatible fresh-machine probe.
+`archive/check-code-intel-tools.ps1` remains the shell-compatible fresh-machine probe.
 Its JSON is explicitly marked `observation_only`; the Rust adapter whitelists
 fields from that probe, reconciles `orchestration/integrations.json`, and removes
 paths and command output before publication. Presence, readiness, conformance,

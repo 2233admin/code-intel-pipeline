@@ -123,34 +123,34 @@ jobs:
         shell: pwsh
         run: |
           $files = @(
-            "code-intel.ps1",
-            "invoke-code-intel.ps1",
-            "run-code-intel.ps1",
-            "Invoke-ScopedRepowise.ps1",
-            "Find-CodeIntelProjects.ps1",
-            "Invoke-GitHubSolutionResearch.ps1",
-            "Invoke-ModelChannelDelegate.ps1",
-            "Invoke-SentruxAgentTool.ps1",
-            "scripts/tests/test-code-intel-pipeline.ps1",
-            "scripts/tests/test-stable-wrapper-e2e.ps1",
-            "scripts/tests/test-primary-launchers.ps1",
-            "scripts/tests/test-github-solution-research.ps1",
-            "scripts/tests/test-hospital-trust-contract.ps1",
-            "scripts/tests/test-atomic-capability-contract.ps1",
-            "scripts/tests/test-project-discovery.ps1",
-            "scripts/tests/test-project-management-support.ps1",
-            "scripts/tests/Test-CodeIntelProjectConformance.ps1",
-            "scripts/tests/test-code-intel-project-conformance.ps1",
-            "Invoke-MultiAgentMergeQueue.ps1",
-            "scripts/tests/test-multi-agent-merge-queue.ps1",
-            "scripts/tests/test-integration-orchestration.ps1",
-            "scripts/tests/Test-Python314PonCompatibility.ps1",
-            "scripts/tests/test-python314-pon-compatibility.ps1",
-            "scripts/tests/test-scoped-repowise-security.ps1",
-            "scripts/tests/test-scoped-repowise-worktree.ps1",
-            "scripts/tests/test-skill-development-benchmark.ps1",
-            "tools/New-BetaPackage.ps1",
-            "tools/Test-BetaPackage.ps1"
+            "archive/code-intel.ps1",
+            "archive/invoke-code-intel.ps1",
+            "archive/run-code-intel.ps1",
+            "archive/Invoke-ScopedRepowise.ps1",
+            "archive/Find-CodeIntelProjects.ps1",
+            "archive/Invoke-GitHubSolutionResearch.ps1",
+            "archive/Invoke-ModelChannelDelegate.ps1",
+            "archive/Invoke-SentruxAgentTool.ps1",
+            "archive/scripts/tests/test-code-intel-pipeline.ps1",
+            "archive/scripts/tests/test-stable-wrapper-e2e.ps1",
+            "archive/scripts/tests/test-primary-launchers.ps1",
+            "archive/scripts/tests/test-github-solution-research.ps1",
+            "archive/scripts/tests/test-hospital-trust-contract.ps1",
+            "archive/scripts/tests/test-atomic-capability-contract.ps1",
+            "archive/scripts/tests/test-project-discovery.ps1",
+            "archive/scripts/tests/test-project-management-support.ps1",
+            "archive/scripts/tests/Test-CodeIntelProjectConformance.ps1",
+            "archive/scripts/tests/test-code-intel-project-conformance.ps1",
+            "archive/Invoke-MultiAgentMergeQueue.ps1",
+            "archive/scripts/tests/test-multi-agent-merge-queue.ps1",
+            "archive/scripts/tests/test-integration-orchestration.ps1",
+            "archive/scripts/tests/Test-Python314PonCompatibility.ps1",
+            "archive/scripts/tests/test-python314-pon-compatibility.ps1",
+            "archive/scripts/tests/test-scoped-repowise-security.ps1",
+            "archive/scripts/tests/test-scoped-repowise-worktree.ps1",
+            "archive/scripts/tests/test-skill-development-benchmark.ps1",
+            "archive/tools/New-BetaPackage.ps1",
+            "archive/tools/Test-BetaPackage.ps1"
           )
           foreach ($file in $files) {
             $tokens = $null
@@ -192,7 +192,7 @@ jobs:
 
       - name: Install portable pipeline
         shell: pwsh
-        run: .\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -RequireRepowise:$false -Json
+        run: .\archive\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -RequireRepowise:$false -Json
 
       - name: Add pipeline tools PATH
         shell: pwsh
@@ -200,69 +200,69 @@ jobs:
 
       - name: Doctor
         shell: pwsh
-        run: .\check-code-intel-tools.ps1 -RepoPath . -RequireRepowise:$false
+        run: .\archive\check-code-intel-tools.ps1 -RepoPath . -RequireRepowise:$false
 
       - name: GitHub research contract tests
         shell: pwsh
-        run: .\scripts/tests/test-github-solution-research.ps1 -RepoPath .
+        run: .\archive/scripts/tests/test-github-solution-research.ps1 -RepoPath .
 
       - name: Project discovery contract tests
         shell: pwsh
-        run: .\scripts/tests/test-project-discovery.ps1 -RepoPath .
+        run: .\archive/scripts/tests/test-project-discovery.ps1 -RepoPath .
 
       - name: Project management support contract tests
         shell: pwsh
-        run: .\scripts/tests/test-project-management-support.ps1 -RepoPath .
+        run: .\archive/scripts/tests/test-project-management-support.ps1 -RepoPath .
 
       - name: Atomic capability contract tests
         shell: pwsh
-        run: .\scripts/tests/test-atomic-capability-contract.ps1 -RepoPath .
+        run: .\archive/scripts/tests/test-atomic-capability-contract.ps1 -RepoPath .
 
       - name: Skill development benchmark contract tests
         shell: pwsh
-        run: .\scripts/tests/test-skill-development-benchmark.ps1 -RepoPath .
+        run: .\archive/scripts/tests/test-skill-development-benchmark.ps1 -RepoPath .
 
       - name: Hospital fail-closed contract tests
         shell: pwsh
-        run: .\scripts/tests/test-hospital-trust-contract.ps1
+        run: .\archive/scripts/tests/test-hospital-trust-contract.ps1
 
       - name: Scoped Repowise trust-boundary tests
         shell: pwsh
         run: |
-          .\scripts/tests/test-scoped-repowise-security.ps1
-          .\scripts/tests/test-scoped-repowise-worktree.ps1
+          .\archive/scripts/tests/test-scoped-repowise-security.ps1
+          .\archive/scripts/tests/test-scoped-repowise-worktree.ps1
 
       - name: Scoped Repowise manifest validator tests
         run: python .\test-scoped-repowise-validator.py
 
       - name: Core PowerShell regression tests
         shell: pwsh
-        run: .\scripts/tests/test-regression-fixes.ps1
+        run: .\archive/scripts/tests/test-regression-fixes.ps1
 
       - name: Python 3.14 and project conformance
         shell: pwsh
         run: |
-          .\scripts/tests/test-python314-pon-compatibility.ps1
-          .\scripts/tests/test-integration-orchestration.ps1
-          .\scripts/tests/test-code-intel-project-conformance.ps1
+          .\archive/scripts/tests/test-python314-pon-compatibility.ps1
+          .\archive/scripts/tests/test-integration-orchestration.ps1
+          .\archive/scripts/tests/test-code-intel-project-conformance.ps1
 
       - name: Pipeline smoke
         shell: pwsh
-        run: .\scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -SkipGitHubResearch -Mode normal
+        run: .\archive/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -SkipGitHubResearch -Mode normal
 
       - name: Stable wrapper authoritative outcome E2E
         shell: pwsh
-        run: .\scripts/tests/test-stable-wrapper-e2e.ps1
+        run: .\archive/scripts/tests/test-stable-wrapper-e2e.ps1
 
       - name: Model channel and automation regression suites
         shell: pwsh
         run: |
           $tests = @(
-            ".\tests/test-model-channel-delegate.ps1"
-            ".\tests/test-model-channel-degraded-pipeline.ps1"
-            ".\tests/test-automatic-pull-request.ps1"
-            ".\tests/test-automatic-pull-request-flow.ps1"
-            ".\tests/test-follow-up-automation.ps1"
+            ".\archive/tests/test-model-channel-delegate.ps1"
+            ".\archive/tests/test-model-channel-degraded-pipeline.ps1"
+            ".\archive/tests/test-automatic-pull-request.ps1"
+            ".\archive/tests/test-automatic-pull-request-flow.ps1"
+            ".\archive/tests/test-follow-up-automation.ps1"
           )
           foreach ($test in $tests) {
             & pwsh -NoProfile -File $test
@@ -272,16 +272,16 @@ jobs:
       - name: Primary launcher contract tests
         shell: pwsh
         run: |
-          & pwsh -NoProfile -File .\scripts/tests/test-primary-launchers.ps1
+          & pwsh -NoProfile -File .\archive/scripts/tests/test-primary-launchers.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Conformance evidence suites
         shell: pwsh
         run: |
           $tests = @(
-            ".\scripts/tests/test-sentrux-failure-normalization.ps1"
-            ".\scripts/tests/test-codenexus-adapter-contract.ps1"
-            ".\scripts/tests/test-transactional-publication.ps1"
+            ".\archive/scripts/tests/test-sentrux-failure-normalization.ps1"
+            ".\archive/scripts/tests/test-codenexus-adapter-contract.ps1"
+            ".\archive/scripts/tests/test-transactional-publication.ps1"
           )
           foreach ($test in $tests) {
             & pwsh -NoProfile -File $test
@@ -291,19 +291,19 @@ jobs:
       - name: Run commit contract tests
         shell: pwsh
         run: |
-          & pwsh -NoProfile -File .\scripts/tests/test-run-commit-contract.ps1
+          & pwsh -NoProfile -File .\archive/scripts/tests/test-run-commit-contract.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Package
         shell: pwsh
         run: |
-          & pwsh -NoProfile -File ./tools/New-BetaPackage.ps1 -ExecutablePath ./target/release/code-intel.exe -OutputDirectory ./dist -PackageName code-intel-pipeline-windows-beta
+          & pwsh -NoProfile -File ./archive/tools/New-BetaPackage.ps1 -ExecutablePath ./target/release/code-intel.exe -OutputDirectory ./dist -PackageName code-intel-pipeline-windows-beta
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify beta package
         shell: pwsh
         run: |
-          & pwsh -NoProfile -File ./tools/Test-BetaPackage.ps1 -ZipPath ./dist/code-intel-pipeline-windows-beta.zip -Json
+          & pwsh -NoProfile -File ./archive/tools/Test-BetaPackage.ps1 -ZipPath ./dist/code-intel-pipeline-windows-beta.zip -Json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload package artifact
@@ -455,34 +455,34 @@ jobs:
         shell: pwsh
         run: |
           $files = @(
-            "code-intel.ps1",
-            "invoke-code-intel.ps1",
-            "run-code-intel.ps1",
-            "Invoke-ScopedRepowise.ps1",
-            "Find-CodeIntelProjects.ps1",
-            "Invoke-GitHubSolutionResearch.ps1",
-            "Invoke-ModelChannelDelegate.ps1",
-            "Invoke-SentruxAgentTool.ps1",
-            "scripts/tests/test-code-intel-pipeline.ps1",
-            "scripts/tests/test-stable-wrapper-e2e.ps1",
-            "scripts/tests/test-primary-launchers.ps1",
-            "scripts/tests/test-github-solution-research.ps1",
-            "scripts/tests/test-hospital-trust-contract.ps1",
-            "scripts/tests/test-atomic-capability-contract.ps1",
-            "scripts/tests/test-project-discovery.ps1",
-            "scripts/tests/test-project-management-support.ps1",
-            "scripts/tests/Test-CodeIntelProjectConformance.ps1",
-            "scripts/tests/test-code-intel-project-conformance.ps1",
-            "Invoke-MultiAgentMergeQueue.ps1",
-            "scripts/tests/test-multi-agent-merge-queue.ps1",
-            "scripts/tests/test-integration-orchestration.ps1",
-            "scripts/tests/Test-Python314PonCompatibility.ps1",
-            "scripts/tests/test-python314-pon-compatibility.ps1",
-            "scripts/tests/test-scoped-repowise-security.ps1",
-            "scripts/tests/test-scoped-repowise-worktree.ps1",
-            "scripts/tests/test-skill-development-benchmark.ps1",
-            "tools/New-BetaPackage.ps1",
-            "tools/Test-BetaPackage.ps1"
+            "archive/code-intel.ps1",
+            "archive/invoke-code-intel.ps1",
+            "archive/run-code-intel.ps1",
+            "archive/Invoke-ScopedRepowise.ps1",
+            "archive/Find-CodeIntelProjects.ps1",
+            "archive/Invoke-GitHubSolutionResearch.ps1",
+            "archive/Invoke-ModelChannelDelegate.ps1",
+            "archive/Invoke-SentruxAgentTool.ps1",
+            "archive/scripts/tests/test-code-intel-pipeline.ps1",
+            "archive/scripts/tests/test-stable-wrapper-e2e.ps1",
+            "archive/scripts/tests/test-primary-launchers.ps1",
+            "archive/scripts/tests/test-github-solution-research.ps1",
+            "archive/scripts/tests/test-hospital-trust-contract.ps1",
+            "archive/scripts/tests/test-atomic-capability-contract.ps1",
+            "archive/scripts/tests/test-project-discovery.ps1",
+            "archive/scripts/tests/test-project-management-support.ps1",
+            "archive/scripts/tests/Test-CodeIntelProjectConformance.ps1",
+            "archive/scripts/tests/test-code-intel-project-conformance.ps1",
+            "archive/Invoke-MultiAgentMergeQueue.ps1",
+            "archive/scripts/tests/test-multi-agent-merge-queue.ps1",
+            "archive/scripts/tests/test-integration-orchestration.ps1",
+            "archive/scripts/tests/Test-Python314PonCompatibility.ps1",
+            "archive/scripts/tests/test-python314-pon-compatibility.ps1",
+            "archive/scripts/tests/test-scoped-repowise-security.ps1",
+            "archive/scripts/tests/test-scoped-repowise-worktree.ps1",
+            "archive/scripts/tests/test-skill-development-benchmark.ps1",
+            "archive/tools/New-BetaPackage.ps1",
+            "archive/tools/Test-BetaPackage.ps1"
           )
           foreach ($file in $files) {
             $tokens = $null
@@ -525,36 +525,36 @@ jobs:
       - name: Install portable pipeline
         shell: pwsh
         run: |
-          $result = ./install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -RequireRepowise:$false -Json | ConvertFrom-Json
+          $result = ./archive/install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -RequireRepowise:$false -Json | ConvertFrom-Json
           Add-Content -Path $env:GITHUB_PATH -Value $result.paths.bin
 
       - name: Doctor
         shell: pwsh
-        run: ./check-code-intel-tools.ps1 -RepoPath . -RequireRepowise:$false -Json
+        run: ./archive/check-code-intel-tools.ps1 -RepoPath . -RequireRepowise:$false -Json
 
       - name: Hospital fail-closed contract tests
         shell: pwsh
-        run: ./scripts/tests/test-hospital-trust-contract.ps1
+        run: ./archive/scripts/tests/test-hospital-trust-contract.ps1
 
       - name: Atomic capability contract tests
         shell: pwsh
-        run: ./scripts/tests/test-atomic-capability-contract.ps1 -RepoPath .
+        run: ./archive/scripts/tests/test-atomic-capability-contract.ps1 -RepoPath .
 
       - name: Scoped Repowise manifest validator tests
         run: python ./test-scoped-repowise-validator.py
 
       - name: Python 3.14 compatibility lane
         shell: pwsh
-        run: ./scripts/tests/test-python314-pon-compatibility.ps1
+        run: ./archive/scripts/tests/test-python314-pon-compatibility.ps1
 
       - name: Multi-agent merge queue contract
         shell: pwsh
-        run: ./scripts/tests/test-multi-agent-merge-queue.ps1
+        run: ./archive/scripts/tests/test-multi-agent-merge-queue.ps1
 
       - name: Pipeline smoke
         shell: pwsh
-        run: ./scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxCheck -SkipSentruxGate -SkipGitHubResearch -Mode normal
+        run: ./archive/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxCheck -SkipSentruxGate -SkipGitHubResearch -Mode normal
 
       - name: Hardcoded path scan
         shell: pwsh
-        run: ./tools/check-hardcoded-paths.ps1
+        run: ./archive/tools/check-hardcoded-paths.ps1

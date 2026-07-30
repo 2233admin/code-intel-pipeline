@@ -1,7 +1,7 @@
 # E07 embedded Native Code Evidence retirement
 
 E07 is restricted to the embedded Native Code Evidence function family and its direct
-`New-CodeEvidenceLayer` call in `run-code-intel.ps1`. It does not own the B08 algorithm, A09 DAG,
+`New-CodeEvidenceLayer` call in `archive/run-code-intel.ps1`. It does not own the B08 algorithm, A09 DAG,
 publication, committed-run indexing, Hospital diagnosis, provider adapters, or other facade branches.
 
 The branch is not retired. Normal and full modes still reach the embedded call unless the separate
@@ -12,10 +12,10 @@ therefore remain `blocked`, with `deletionExecuted=false` and `retired=false`.
 Generate and validate a fresh packet only after the R06/B07 toolchain digest is current:
 
 ```powershell
-pwsh -NoProfile -File tools/compatibility/New-NativeCodeRetirementPacket.ps1 `
+pwsh -NoProfile -File archive/tools/compatibility/New-NativeCodeRetirementPacket.ps1 `
   -OutDir orchestration/retirements/e07-native-code `
   -EvaluatedAt <unix-seconds>
-pwsh -NoProfile -File tools/compatibility/Test-NativeCodeRetirementPacket.ps1 `
+pwsh -NoProfile -File archive/tools/compatibility/Test-NativeCodeRetirementPacket.ps1 `
   -PacketRoot orchestration/retirements/e07-native-code
 ```
 

@@ -39,4 +39,4 @@ Each gap belongs behind an existing Pipeline-owned boundary. The fix is to add s
 1. Targeted negative and fixture tests.
 2. Closed-schema validation and integration registry audit.
 3. `cargo fmt --all -- --check`, `cargo check -p code-intel`, full `cargo test -q -p code-intel`.
-4. `invoke-code-intel.ps1 -RepoPath <repo> -Mode normal`, followed by summary, hospital, and understanding review.
+4. `archive/invoke-code-intel.ps1 -RepoPath <repo> -Mode normal`, followed by summary, hospital, and understanding review.

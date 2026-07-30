@@ -31,10 +31,10 @@ Its `code-intel-repowise-route-result.v1` output keeps the translation and an A0
 emitted evidence channel. Exit `0` means every emitted observation was admitted (including an
 `unknown` domain verdict for partial docs); exit `65` means the native contract or at least one A04
 check was rejected. Missing CLI emits no fabricated evidence. Native diagnostics are never copied.
-The `run-code-intel.ps1 -RepowiseAdapterRequest ...` facade selects this same Rust route.
+The `archive/run-code-intel.ps1 -RepowiseAdapterRequest ...` facade selects this same Rust route.
 
-`Invoke-RepowiseProviderProbe.ps1` is the production health probe. The historical
-`scripts/tests/test-code-intel-provider.ps1` name is now only a test wrapper over that production seam.
-`run-code-intel.ps1` uses the production probe and continues index-only execution when optional
+`archive/Invoke-RepowiseProviderProbe.ps1` is the production health probe. The historical
+`archive/scripts/tests/test-code-intel-provider.ps1` name is now only a test wrapper over that production seam.
+`archive/run-code-intel.ps1` uses the production probe and continues index-only execution when optional
 docs health fails. Existing direct Repowise CLI/index commands remain compatibility and rollback
 surfaces; they are optional diagnostics/rollback only, and their raw output has no evidence or fact authority.

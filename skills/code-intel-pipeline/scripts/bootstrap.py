@@ -360,33 +360,50 @@ def safe_extract_zip(archive: Path, destination: Path) -> None:
             restore_member_mode(member, target)
 
 
+ENTRY_POINTS = (
+    "install-code-intel-pipeline.ps1",
+    "check-code-intel-tools.ps1",
+    "code-intel.ps1",
+    "invoke-code-intel.ps1",
+)
+
+# Releases from 0.7.0-beta.2 onward carry the PowerShell entry points under
+# archive/. Earlier archives keep them at the payload root, and bootstrap has
+# to stay able to install those, so both layouts are probed, newest first.
+PAYLOAD_LAYOUTS = ("archive/", "")
+
+
 def find_payload_root(extracted_root: Path) -> Path:
-    candidates = [
-        path.parent
-        for path in extracted_root.glob("*/install-code-intel-pipeline.ps1")
-        if path.is_file()
-    ]
-    root_installer = extracted_root / "install-code-intel-pipeline.ps1"
-    if root_installer.is_file():
-        candidates.append(extracted_root)
-    unique_candidates = list(dict.fromkeys(candidates))
-    if len(unique_candidates) != 1:
-        raise BootstrapError(
-            "Release archive must contain exactly one Code Intel Pipeline root."
-        )
-    payload = unique_candidates[0]
-    required = (
-        "install-code-intel-pipeline.ps1",
-        "check-code-intel-tools.ps1",
-        "code-intel.ps1",
-        "invoke-code-intel.ps1",
+    for prefix in PAYLOAD_LAYOUTS:
+        installer = f"{prefix}{ENTRY_POINTS[0]}"
+        depth = installer.count("/")
+        candidates = [
+            path.parents[depth]
+            for path in extracted_root.glob(f"*/{installer}")
+            if path.is_file()
+        ]
+        if (extracted_root / installer).is_file():
+            candidates.append(extracted_root)
+        unique_candidates = list(dict.fromkeys(candidates))
+        if len(unique_candidates) > 1:
+            raise BootstrapError(
+                "Release archive must contain exactly one Code Intel Pipeline root."
+            )
+        if not unique_candidates:
+            continue
+
+        payload = unique_candidates[0]
+        required = tuple(f"{prefix}{name}" for name in ENTRY_POINTS)
+        missing = [name for name in required if not (payload / name).is_file()]
+        if missing:
+            raise BootstrapError(
+                "Release archive is missing required files: " + ", ".join(missing)
+            )
+        return payload
+
+    raise BootstrapError(
+        "Release archive must contain exactly one Code Intel Pipeline root."
     )
-    missing = [name for name in required if not (payload / name).is_file()]
-    if missing:
-        raise BootstrapError(
-            "Release archive is missing required files: " + ", ".join(missing)
-        )
-    return payload
 
 
 def payload_manifest(payload: Path) -> dict[str, dict[str, Any]]:
@@ -648,7 +665,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     release_root, install_status = install_release(asset, install_root)
     ensure_release_binary_executable(release_root, platform_name)
     pwsh = find_pwsh()
-    installer = release_root / "install-code-intel-pipeline.ps1"
+    installer = release_root / "archive/install-code-intel-pipeline.ps1"
     install_command = [
         pwsh,
         "-NoProfile",
@@ -680,7 +697,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "-ExecutionPolicy",
             "Bypass",
             "-File",
-            str(release_root / "check-code-intel-tools.ps1"),
+            str(release_root / "archive/check-code-intel-tools.ps1"),
             "-RepoPath",
             str(repo_path),
             "-RequireRepowise:$false",

@@ -918,13 +918,17 @@ fn a09_seeded_path_executes_hospital_through_a01_and_rejects_snapshot_mismatch()
 fn legacy_facade_and_rust_execute_the_same_fixture_with_stable_machine_parity() {
     let temp = Temp::new();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let source = fs::read_to_string(root.join("run-code-intel.ps1")).unwrap();
+    let source = fs::read_to_string(root.join("archive/run-code-intel.ps1")).unwrap();
     let main = source
         .find("\n$configData = $null")
         .expect("legacy function boundary");
+    // the facade now lives under archive/, so $PSScriptRoot resolves there
     let function_source = source[..main].replace(
         "$PSScriptRoot",
-        &format!("'{}'", root.to_string_lossy().replace('\\', "/")),
+        &format!(
+            "'{}'",
+            root.join("archive").to_string_lossy().replace('\\', "/")
+        ),
     );
     let legacy_out = temp.0.join("legacy");
     fs::create_dir(&legacy_out).unwrap();

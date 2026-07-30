@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
-    "68aa0d7db1f027f6e95a1be68410b7806d1eb445b9d93877898bf696c6995fbc";
+    "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab";
 const STRUCTURED_EDIT_DIGEST: &str =
     "6f481d582dc0301fb438bcd18b9ab5704fc72f81b7044635140d4b99c4fae0ac";
 static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -1585,7 +1585,7 @@ fn normalized_inventory_matches_real_legacy_runner_with_custom_exclude() {
     let runner = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
-        .join("run-code-intel.ps1");
+        .join("archive/run-code-intel.ps1");
     let legacy = Command::new("pwsh")
         .args(["-NoProfile", "-File"])
         .arg(&runner)
@@ -1639,7 +1639,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
         "version":"1.0.0",
         "toolchainDigests":[
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-            "68aa0d7db1f027f6e95a1be68410b7806d1eb445b9d93877898bf696c6995fbc"
+            "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab"
         ]
     });
     value["options"] = json!({"repoPath":repo,"auto":true});
@@ -1676,7 +1676,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
 
     let facade = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
-        .join("Invoke-WorkflowRecommendation.ps1");
+        .join("archive/Invoke-WorkflowRecommendation.ps1");
     let direct = Command::new("pwsh")
         .args(["-NoLogo", "-NoProfile", "-File"])
         .arg(facade)

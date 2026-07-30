@@ -1,7 +1,7 @@
 # E08 Hospital branch retirement
 
 E08 owns only the embedded Hospital diagnosis/rendering function block and its invocation block in
-`run-code-intel.ps1`. Its stable branch id is
+`archive/run-code-intel.ps1`. Its stable branch id is
 `run-code-intel.hospital.embedded-diagnosis-render`; physical line numbers are not authoritative.
 B09 semantics, publication, index, and doctor ownership are excluded.
 
@@ -11,11 +11,11 @@ the legacy facade on the same untrusted authoritative fixture. The normal facade
 embedded PowerShell authority, however, so the replacement atom is not production-routed.
 
 ```powershell
-pwsh -NoProfile -File tools/compatibility/Test-HospitalRetirementBoundary.ps1
-pwsh -NoProfile -File tools/compatibility/New-HospitalRetirementPacket.ps1 `
+pwsh -NoProfile -File archive/tools/compatibility/Test-HospitalRetirementBoundary.ps1
+pwsh -NoProfile -File archive/tools/compatibility/New-HospitalRetirementPacket.ps1 `
   -OutDir orchestration/retirements/e08-hospital -EvaluatedAt <unix-seconds> `
   -CodeIntel work/e01-review-target/debug/code-intel.exe
-pwsh -NoProfile -File tools/compatibility/Test-HospitalRetirementPacket.ps1 `
+pwsh -NoProfile -File archive/tools/compatibility/Test-HospitalRetirementPacket.ps1 `
   -PacketRoot orchestration/retirements/e08-hospital
 ```
 

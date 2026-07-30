@@ -24,7 +24,7 @@ content="".join(
 ),
 ```
 
-**Self-healing:** `install-code-intel-pipeline.ps1` applies this patch
+**Self-healing:** `archive/install-code-intel-pipeline.ps1` applies this patch
 idempotently on every run (`Repair-RepowiseThinkingBlockPatch`, reported as
 `repowise-thinking-patch` in the INSTALL output). After any
 `uv tool upgrade repowise`, just re-run the installer. Symptom of the patch

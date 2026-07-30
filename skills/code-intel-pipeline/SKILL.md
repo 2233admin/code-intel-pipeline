@@ -11,7 +11,7 @@ skill.
 ## Resolve the installation
 
 1. Check whether `code-intel --help` succeeds.
-2. Reuse that installation when it is valid. Use `code-intel.ps1` only to repair a missing or
+2. Reuse that installation when it is valid. Use `archive/code-intel.ps1` only to repair a missing or
    invalid installation.
 3. Bootstrap only when the user requested installation or the task explicitly requires the
    missing pipeline.
@@ -88,8 +88,8 @@ version boundary; do not install a prerelease or source checkout implicitly.
 Use the Sentrux session wrapper for an Agent coding session:
 
 ```powershell
-& "$env:CODE_INTEL_HOME/Invoke-SentruxAgentTool.ps1" session_start "<scope-path>"
-& "$env:CODE_INTEL_HOME/Invoke-SentruxAgentTool.ps1" session_end "<scope-path>"
+& "$env:CODE_INTEL_HOME/archive/Invoke-SentruxAgentTool.ps1" session_start "<scope-path>"
+& "$env:CODE_INTEL_HOME/archive/Invoke-SentruxAgentTool.ps1" session_end "<scope-path>"
 ```
 
 Keep `.sentrux/rules.toml` separate from `.sentrux/baseline.json`. Rules define architecture
@@ -102,7 +102,7 @@ Run this loop whenever implementing, refactoring, or fixing code in an analyzed 
 1. Start the regression baseline before the first edit:
 
 ```powershell
-& "$env:CODE_INTEL_HOME/Invoke-SentruxAgentTool.ps1" session_start "<scope-path>"
+& "$env:CODE_INTEL_HOME/archive/Invoke-SentruxAgentTool.ps1" session_start "<scope-path>"
 ```
 
 2. Query blast radius and test candidates mid-edit:
@@ -125,7 +125,7 @@ The plan is preview-only (`repositoryMutation=false`); it never rewrites files.
 4. Edit, run the selected tests, then close the gate:
 
 ```powershell
-& "$env:CODE_INTEL_HOME/Invoke-SentruxAgentTool.ps1" session_end "<scope-path>"
+& "$env:CODE_INTEL_HOME/archive/Invoke-SentruxAgentTool.ps1" session_end "<scope-path>"
 ```
 
 `session_end` fails on structural regression. Verify it passes before reporting the change

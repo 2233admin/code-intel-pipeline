@@ -214,7 +214,7 @@ fn tool_available(name: &str, prefix: Option<&Path>) -> bool {
 }
 
 fn run_script_bootstrap(options: &Options) -> Result<Value, AdapterError> {
-    let script = pipeline_root().join("check-code-intel-tools.ps1");
+    let script = pipeline_root().join("archive/check-code-intel-tools.ps1");
     if !script.is_file() {
         return Err(AdapterError::Unavailable(format!(
             "doctor bootstrap adapter is unavailable: {}",

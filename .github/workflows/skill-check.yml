@@ -7,7 +7,7 @@ on:
       - ".claude/skills/**"
       - "skills/**"
       - "tests/test_skill_package.py"
-      - "install-code-intel-pipeline.ps1"
+      - "archive/install-code-intel-pipeline.ps1"
   workflow_dispatch:
 
 permissions:

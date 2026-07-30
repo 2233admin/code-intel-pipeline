@@ -2,10 +2,10 @@
 _Locked via grill - by Codex + user_
 
 ## Goal
-Make Sentrux check/gate failures in Code Intel Pipeline true, stable, and explainable for agents. This slice does not try to make `sentrux gate` pass. It stops diagnosis drift: if `sentrux check` reports `run-code-intel.ps1:Get-CodeEvidenceSymbols (cc=311)`, downstream artifacts must not silently choose a different primary target such as `Invoke-SentruxAgentTool.ps1:Get-ModuleBucket (cc=86)`.
+Make Sentrux check/gate failures in Code Intel Pipeline true, stable, and explainable for agents. This slice does not try to make `sentrux gate` pass. It stops diagnosis drift: if `sentrux check` reports `archive/run-code-intel.ps1:Get-CodeEvidenceSymbols (cc=311)`, downstream artifacts must not silently choose a different primary target such as `archive/Invoke-SentruxAgentTool.ps1:Get-ModuleBucket (cc=86)`.
 
 ## Approach
-1. Add a minimal Sentrux failure parser/normalizer in `run-code-intel.ps1` that consumes existing `sentrux check` and `sentrux gate` step output.
+1. Add a minimal Sentrux failure parser/normalizer in `archive/run-code-intel.ps1` that consumes existing `sentrux check` and `sentrux gate` step output.
 2. Emit `sentrux-failures.json` with schema `code-intel-sentrux-failures.v1`.
 3. Publish the artifact through normal discovery surfaces: `report.json`, `summary.md`, `understanding.md`, and `docs/artifact-data-contract.md`.
 4. Treat `sentrux check` stdout as authoritative for `max_cc` rule failure existence and values when it names the offender. If stdout only reports an aggregate max-cc failure, emit `target.status = "unresolved"` instead of inventing a symbol from enrichment artifacts.
@@ -43,20 +43,20 @@ Record-level `target.status` values:
   "status": "failed",
   "generatedAt": "2026-07-01T00:00:00.0000000+08:00",
   "primary": {
-    "id": "check:max_cc:run-code-intel.ps1:Get-CodeEvidenceSymbols",
+    "id": "check:max_cc:archive/run-code-intel.ps1:Get-CodeEvidenceSymbols",
     "kind": "max_cc",
     "source": "sentrux check",
     "source_step": "sentrux check",
     "provenance": "stdout",
     "raw_output_path": "report.json#/steps/sentrux check/output",
-    "stdout_excerpt": "run-code-intel.ps1:Get-CodeEvidenceSymbols (cc=311)",
+    "stdout_excerpt": "archive/run-code-intel.ps1:Get-CodeEvidenceSymbols (cc=311)",
     "parsed_at": "2026-07-01T00:00:00.0000000+08:00",
     "metric": "cyclomatic_complexity",
     "value": 311,
     "threshold": 70,
     "target": {
       "status": "resolved",
-      "file": "run-code-intel.ps1",
+      "file": "archive/run-code-intel.ps1",
       "symbol": "Get-CodeEvidenceSymbols"
     }
   },
@@ -78,15 +78,15 @@ Record-level `target.status` values:
   "conflicts": [
     {
       "kind": "metric_conflict",
-      "authoritative_record_id": "check:max_cc:run-code-intel.ps1:Get-CodeEvidenceSymbols",
-      "conflicting_record_id": "hotspots:max_cc:Invoke-SentruxAgentTool.ps1:Get-ModuleBucket",
+      "authoritative_record_id": "check:max_cc:archive/run-code-intel.ps1:Get-CodeEvidenceSymbols",
+      "conflicting_record_id": "hotspots:max_cc:archive/Invoke-SentruxAgentTool.ps1:Get-ModuleBucket",
       "metric": "cyclomatic_complexity",
       "authoritative_value": 311,
       "conflicting_value": 86,
       "authoritative_source": "sentrux check",
       "conflicting_source": "sentrux-hotspots",
       "raw_output_path": "sentrux-hotspots.json#/functions/0",
-      "stdout_excerpt": "Get-ModuleBucket Invoke-SentruxAgentTool.ps1 (cc=86)",
+      "stdout_excerpt": "Get-ModuleBucket archive/Invoke-SentruxAgentTool.ps1 (cc=86)",
       "parsed_at": "2026-07-01T00:00:00.0000000+08:00",
       "resolution": "primary target uses authoritative check/gate output"
     }

@@ -185,7 +185,7 @@ fn fixture(temp: &Path) -> (Value, Vec<Value>, String) {
         json!({"outcome":"passed","dependencyId":"D02","status":"approved","reviewer":"d02-reviewer"}),
     );
     let subject = json!({
-        "legacyBranch":{"capabilityId":"legacy.capability","branchId":"legacy.branch","callPath":"run-code-intel.ps1::legacy.branch","affectedFiles":["run-code-intel.ps1"],"owner":"owner-team","registryParticipantId":"legacy.registry"},
+        "legacyBranch":{"capabilityId":"legacy.capability","branchId":"legacy.branch","callPath":"archive/run-code-intel.ps1::legacy.branch","affectedFiles":["archive/run-code-intel.ps1"],"owner":"owner-team","registryParticipantId":"legacy.registry"},
         "replacement":{"capabilityId":"replacement.atom","implementationId":"replacement.atom.compat","dependencies":["D02"],"atomEvidence":atom},
         "parity":{"golden":golden,"contract":contract,"effects":effects},"registryReconciliation":registry,"compatibilityWindow":window,
         "rollback":{"command":"restore legacy.branch","executionEvidence":rollback},"usageObservation":usage,"necessityEvidence":necessity,"dependencyStates":[dependency],"lineReductionEvidence":false
@@ -437,7 +437,7 @@ fn e01_ticket_is_content_bound_to_the_approved_e00_subject() {
     let decision: Value = serde_json::from_slice(&fs::read(&decision_path).unwrap()).unwrap();
     assert_eq!(decision["decision"], "approved");
     fs::copy(&decision_path, temp.0.join("decision.json")).unwrap();
-    let deletion = deletion_diff(&temp.0, &["run-code-intel.ps1"]);
+    let deletion = deletion_diff(&temp.0, &["archive/run-code-intel.ps1"]);
     let deletion_ref = write_artifact(
         &temp.0,
         "deletion.json",
@@ -455,8 +455,8 @@ fn e01_ticket_is_content_bound_to_the_approved_e00_subject() {
     let subject = &manifest["approvalSubject"];
     let ticket = json!({
         "schema":"code-intel-compatibility-retirement-ticket-template.v1","snapshotIdentity":SNAPSHOT,"ticketId":"ticket-ret-1","retirementId":"ret-1",
-        "legacyBranch":{"capabilityId":"legacy.capability","branchId":"legacy.branch","callPath":"run-code-intel.ps1::legacy.branch"},
-        "replacement":{"capabilityId":"replacement.atom","dependencies":["D02"]},"affectedFiles":["run-code-intel.ps1"],
+        "legacyBranch":{"capabilityId":"legacy.capability","branchId":"legacy.branch","callPath":"archive/run-code-intel.ps1::legacy.branch"},
+        "replacement":{"capabilityId":"replacement.atom","dependencies":["D02"]},"affectedFiles":["archive/run-code-intel.ps1"],
         "evidence":{"golden":subject["parity"]["golden"],"contract":subject["parity"]["contract"],"effects":subject["parity"]["effects"],"usage":subject["usageObservation"],"rollbackRehearsal":subject["rollback"]["executionEvidence"],"deletionDiff":deletion_ref},
         "source":{"retirementDecision":source_ref("code-intel-compatibility-retirement-decision.v1","compatibility.retirement-decision","decision.json"),"retirementManifest":inputs[0]},
         "owner":"executor-a","verifier":"verifier-b","observationExpiry":NOW+100,"status":"draft","authorityBoundary":"template_only_no_approval_or_deletion_authority"
@@ -538,7 +538,10 @@ fn e01_ticket_is_content_bound_to_the_approved_e00_subject() {
         String::from_utf8_lossy(&forged.stderr)
     );
 
-    let hidden_deletion = deletion_diff(&temp.0, &["run-code-intel.ps1", "second-branch.ps1"]);
+    let hidden_deletion = deletion_diff(
+        &temp.0,
+        &["archive/run-code-intel.ps1", "second-branch.ps1"],
+    );
     let hidden_deletion_ref = write_artifact(
         &temp.0,
         "hidden-deletion.json",
@@ -547,7 +550,7 @@ fn e01_ticket_is_content_bound_to_the_approved_e00_subject() {
         &hidden_deletion,
     );
     let mut hidden_ticket = ticket.clone();
-    hidden_ticket["affectedFiles"] = json!(["run-code-intel.ps1", "second-branch.ps1"]);
+    hidden_ticket["affectedFiles"] = json!(["archive/run-code-intel.ps1", "second-branch.ps1"]);
     hidden_ticket["evidence"]["deletionDiff"] = hidden_deletion_ref.clone();
     let hidden_ticket_ref = write_artifact(
         &temp.0,

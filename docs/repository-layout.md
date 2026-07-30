@@ -7,14 +7,14 @@ This repository is converging toward a smaller public surface.
 Keep these files at the repository root until a release explicitly changes the
 install and CI contract:
 
-- `code-intel.ps1`: recovery and update launcher for the compiled CLI.
-- `invoke-code-intel.ps1`: v0.x compatibility forwarder.
-- `run-code-intel.ps1`: compatibility adapter host for capabilities not yet internalized.
-- `check-code-intel-tools.ps1`: environment doctor.
-- `install-code-intel-pipeline.ps1`: installer and repair entry point.
-- `Find-CodeIntelProjects.ps1`: local project discovery entry point.
-- `bootstrap-new-machine.ps1`: new-machine bootstrap entry point.
-- `Invoke-SentruxAgentTool.ps1`: Sentrux compatibility entry point.
+- `archive/code-intel.ps1`: recovery and update launcher for the compiled CLI.
+- `archive/invoke-code-intel.ps1`: v0.x compatibility forwarder.
+- `archive/run-code-intel.ps1`: compatibility adapter host for capabilities not yet internalized.
+- `archive/check-code-intel-tools.ps1`: environment doctor.
+- `archive/install-code-intel-pipeline.ps1`: installer and repair entry point.
+- `archive/Find-CodeIntelProjects.ps1`: local project discovery entry point.
+- `archive/bootstrap-new-machine.ps1`: new-machine bootstrap entry point.
+- `archive/Invoke-SentruxAgentTool.ps1`: Sentrux compatibility entry point.
 - `README.md`, `CHANGELOG.md`, `CONTEXT.md`: operator-facing docs.
 - `Cargo.toml`, `Cargo.lock`, `crates/code-intel-cli`: primary compiled CLI and execution kernel.
 

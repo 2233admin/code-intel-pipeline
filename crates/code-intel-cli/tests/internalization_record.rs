@@ -936,7 +936,10 @@ fn ticket_r04_codenexus_compat_command_executes_and_writes_context() {
     command.args([
         "-NoProfile",
         "-File",
-        root().join("Invoke-CodeNexusLite.ps1").to_str().unwrap(),
+        root()
+            .join("archive/Invoke-CodeNexusLite.ps1")
+            .to_str()
+            .unwrap(),
         "-RepoPath",
         repo.to_str().unwrap(),
         "-Quiet",
@@ -999,7 +1002,7 @@ fn ticket_r05_repomix_is_a_measured_reviewed_deletion_not_fake_production() {
         measurements["observations"]["r05Repomix"]["npmInstalledOrExtractedExecutableEntries"],
         0
     );
-    let source = fs::read_to_string(root().join("run-code-intel.ps1")).unwrap();
+    let source = fs::read_to_string(root().join("archive/run-code-intel.ps1")).unwrap();
     assert!(!source.contains("$repomixTool = Join-Path"));
     assert!(source.contains("Repomix production participation was reviewed and removed"));
 }
@@ -1077,7 +1080,7 @@ fn ticket_r07_cocoindex_is_a_reviewed_retirement_with_no_production_path() {
     ] {
         assert!(text.contains(boundary), "missing {boundary}");
     }
-    let source = fs::read_to_string(root().join("run-code-intel.ps1")).unwrap();
+    let source = fs::read_to_string(root().join("archive/run-code-intel.ps1")).unwrap();
     assert!(!source.contains("Get-JsonProperty $adapters \"cocoindex-code\""));
     assert!(!source.contains("Test-CommandAvailable $cocoCommand"));
 }
@@ -1115,7 +1118,7 @@ fn ticket_r08_github_research_failed_live_reproduction_is_reviewed_out() {
     );
     let text = serde_json::to_string(&record).unwrap();
     assert!(text.contains("invalid-query"));
-    let source = fs::read_to_string(root().join("run-code-intel.ps1")).unwrap();
+    let source = fs::read_to_string(root().join("archive/run-code-intel.ps1")).unwrap();
     assert!(!source.contains("$githubResearchScript"));
 }
 
@@ -1182,7 +1185,7 @@ fn ticket_r12_unverified_greenfield_plugin_is_retired_from_production() {
 fn ticket_r13_openspec_record_is_measured_removable_and_fail_closed() {
     let record = advisory_candidate("openspec");
     assert_research_candidate(&record, "internalization.openspec-record");
-    let atom = fs::read_to_string(root().join("OpenSpec-Detector.ps1")).unwrap();
+    let atom = fs::read_to_string(root().join("archive/OpenSpec-Detector.ps1")).unwrap();
     assert_eq!(atom.matches("openspec-opsx").count(), 5);
     assert_eq!(record["economics"]["benefit"]["value"], 5);
     let boundary = serde_json::to_string(&record["adoption"]["ownedBoundary"]).unwrap();
@@ -1197,7 +1200,7 @@ fn ticket_r13_openspec_record_is_measured_removable_and_fail_closed() {
 fn ticket_r14_spec_kit_record_requires_facts_and_has_no_auto_init_authority() {
     let record = advisory_candidate("spec-kit");
     assert_research_candidate(&record, "internalization.spec-kit-record");
-    let atom = fs::read_to_string(root().join("OpenSpec-Detector.ps1")).unwrap();
+    let atom = fs::read_to_string(root().join("archive/OpenSpec-Detector.ps1")).unwrap();
     assert_eq!(atom.matches("spec-kit").count(), 8);
     assert_eq!(record["economics"]["benefit"]["value"], 8);
     let boundary = serde_json::to_string(&record["adoption"]["ownedBoundary"]).unwrap();
@@ -1212,7 +1215,7 @@ fn ticket_r14_spec_kit_record_requires_facts_and_has_no_auto_init_authority() {
 fn ticket_r15_matt_flow_record_traces_one_owned_branch_without_external_effects() {
     let record = advisory_candidate("matt-flow");
     assert_research_candidate(&record, "internalization.matt-flow-record");
-    let atom = fs::read_to_string(root().join("OpenSpec-Detector.ps1")).unwrap();
+    let atom = fs::read_to_string(root().join("archive/OpenSpec-Detector.ps1")).unwrap();
     assert_eq!(atom.matches("stack = \"matt-flow\"").count(), 1);
     assert_eq!(record["economics"]["benefit"]["value"], 1);
     let boundary = serde_json::to_string(&record["adoption"]["ownedBoundary"]).unwrap();
@@ -1224,7 +1227,7 @@ fn ticket_r15_matt_flow_record_traces_one_owned_branch_without_external_effects(
 fn ticket_r16_gstack_record_exposes_source_gap_and_no_execution_authority() {
     let record = advisory_candidate("gstack");
     assert_research_candidate(&record, "internalization.gstack-record");
-    let atom = fs::read_to_string(root().join("OpenSpec-Detector.ps1")).unwrap();
+    let atom = fs::read_to_string(root().join("archive/OpenSpec-Detector.ps1")).unwrap();
     assert_eq!(atom.matches("stack = \"gstack\"").count(), 1);
     assert_eq!(record["economics"]["benefit"]["value"], 1);
     assert!(record["subject"]["source"]["uri"]
@@ -1402,7 +1405,7 @@ fn ticket_r11_tree_sitter_v_record_does_not_claim_sentrux_or_grammar_ownership()
     assert_research_record_projects(&record, "internalization.tree-sitter-v-record");
     assert_recomputable_sha(
         &record,
-        "Install-SentruxVlangOverlay.ps1",
+        "archive/Install-SentruxVlangOverlay.ps1",
         "local-installer-sha256",
     );
     assert_recomputable_sha(
@@ -1488,7 +1491,7 @@ fn ticket_r23_r24_r25_reference_records_add_no_external_write_ui_or_model_runtim
         );
         assert_recomputable_sha(
             &record,
-            "scripts/tests/test-project-management-support.ps1",
+            "archive/scripts/tests/test-project-management-support.ps1",
             "local-boundary-test-sha256",
         );
         assert_eq!(record["economics"]["benefit"]["value"], 0);
@@ -1566,12 +1569,12 @@ fn claude_code_merge_queue_record_traces_optional_adapter_and_keeps_promotion_hu
         .contains("e7a76958dbd3953b84f12abbc2e6bd755aafce53"));
     assert_recomputable_sha(
         &record,
-        "Invoke-MultiAgentMergeQueue.ps1",
+        "archive/Invoke-MultiAgentMergeQueue.ps1",
         "local-adapter-sha256",
     );
     assert_recomputable_sha(
         &record,
-        "scripts/tests/test-multi-agent-merge-queue.ps1",
+        "archive/scripts/tests/test-multi-agent-merge-queue.ps1",
         "local-conformance-sha256",
     );
     assert_recomputable_sha(

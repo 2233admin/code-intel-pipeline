@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
-    "68aa0d7db1f027f6e95a1be68410b7806d1eb445b9d93877898bf696c6995fbc";
+    "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab";
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 struct TempTree(PathBuf);
