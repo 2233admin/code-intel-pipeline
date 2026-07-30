@@ -31,6 +31,7 @@ mod execution_policy;
 mod file_boundary;
 mod graph;
 mod hardened_git;
+mod hospital_score;
 mod method_catalog;
 mod model_channels;
 mod orchestration;
