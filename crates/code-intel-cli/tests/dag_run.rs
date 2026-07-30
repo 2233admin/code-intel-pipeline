@@ -893,6 +893,21 @@ fn sentrux_command(out: &Path, id: &str) -> Value {
         .clone()
 }
 
+/// Neither of the two tests below can stub the `doctor` node, because the same
+/// `--doctor-tool-path-prefix` also feeds `provider.sentrux-adapt` — pointing it
+/// at a stub takes the external Sentrux path and bypasses the built-in engine
+/// these tests exist to exercise. So the doctor probes the host's real
+/// toolchain, and on a runner without `repowise` it domain-fails and takes the
+/// run outcome with it, independently of anything Sentrux reported.
+///
+/// The gate claim is therefore asserted on the `diagnosis.hospital` node, which
+/// is not downstream of `doctor` and runs either way. The whole-run outcome is
+/// only asserted when the doctor agreed. `test-dag-facade.ps1` covers the
+/// run-level exit code in CI, where the toolchain is installed.
+fn doctor_succeeded(manifest: &Value) -> bool {
+    manifest["nodes"]["doctor"]["status"] == "succeeded"
+}
+
 /// A repository that never ran `save_baseline` has no prior measurement, so the
 /// built-in gate cannot detect a regression against one. That absence of
 /// governance is not a structural violation: reporting it as a failing rule made
@@ -914,16 +929,25 @@ fn ungoverned_repository_completes_instead_of_failing_the_architecture_gate() {
         .arg(&out)
         .output()
         .unwrap();
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stdout={} stderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
     let manifest: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(manifest["outcome"], "completed", "manifest={manifest}");
-    assert_eq!(manifest["nodes"]["diagnosis.hospital"]["verdict"], "pass");
+    assert_eq!(
+        manifest["nodes"]["diagnosis.hospital"]["status"], "succeeded",
+        "manifest={manifest}"
+    );
+    assert_eq!(
+        manifest["nodes"]["diagnosis.hospital"]["verdict"], "pass",
+        "manifest={manifest}"
+    );
+    if doctor_succeeded(&manifest) {
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(manifest["outcome"], "completed", "manifest={manifest}");
+    }
 
     let gate = sentrux_rule(&out, "sentrux_gate");
     assert_eq!(gate["status"], "evaluated");
@@ -991,19 +1015,25 @@ fn baselined_repository_that_regresses_still_fails_the_architecture_gate() {
         .arg(&out)
         .output()
         .unwrap();
-    assert_eq!(
-        output.status.code(),
-        Some(10),
-        "stdout={} stderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
     let manifest: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(manifest["outcome"], "domain_failed");
     assert_eq!(
-        manifest["nodes"]["diagnosis.hospital"]["diagnostic"],
-        "architecture gate failure"
+        manifest["nodes"]["diagnosis.hospital"]["status"], "domain_failed",
+        "manifest={manifest}"
     );
+    assert_eq!(
+        manifest["nodes"]["diagnosis.hospital"]["diagnostic"], "architecture gate failure",
+        "manifest={manifest}"
+    );
+    if doctor_succeeded(&manifest) {
+        assert_eq!(
+            output.status.code(),
+            Some(10),
+            "stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(manifest["outcome"], "domain_failed", "manifest={manifest}");
+    }
 
     let gate = sentrux_rule(&out, "sentrux_gate");
     assert_eq!(gate["verdict"], "fail");
