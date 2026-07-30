@@ -132,8 +132,9 @@ try {
     Assert-Condition ($LASTEXITCODE -eq 0) "Packaged $BinaryName --help failed."
     Assert-Condition ($helpText -match 'code-intel') "Packaged CLI help output is unexpected."
 
-    $invokeWrapper = Join-Path $packageRoot "code-intel.ps1"
-    Assert-Condition (Test-Path -LiteralPath $invokeWrapper -PathType Leaf) "Package is missing code-intel.ps1."
+    # the recovery launcher ships under archive/ from 0.7.0-beta.2 onward
+    $invokeWrapper = Join-Path $packageRoot "archive/code-intel.ps1"
+    Assert-Condition (Test-Path -LiteralPath $invokeWrapper -PathType Leaf) "Package is missing archive/code-intel.ps1."
     $pwshExecutable = (Get-Process -Id $PID).Path
     $originalPath = $env:PATH
     $originalDevelopmentOverride = $env:CODE_INTEL_ALLOW_UNVERIFIED_DEV
