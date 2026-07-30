@@ -1,0 +1,105 @@
+#requires -Version 7.2
+
+<#
+.SYNOPSIS
+Runs every compatibility retirement packet verifier plus the two audits that
+consume their status files.
+
+.DESCRIPTION
+Nothing ran these before. That is how a path-resolution bug introduced by the
+archive move, a packet frozen against a working-tree overlay that never existed
+as a commit, and five stale packets all survived unnoticed. This suite is the
+gate that makes those failures loud.
+
+Every packet is expected to pass. The one exception is declared in
+$KnownBlocked with the exact message it must fail with, so that neither a new
+failure mode nor an accidental fix can pass silently.
+#>
+
+[CmdletBinding()]
+param(
+    [string]$ArchiveRoot = (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent),
+    [string]$RepoRoot = (Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent)
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$packets = @(
+    @{ Ticket = "E02"; Verifier = "Test-RecommenderRetirementPacket.ps1";       Packet = "e02-recommender" }
+    @{ Ticket = "E03"; Verifier = "Test-ProviderPreflightRetirementPacket.ps1"; Packet = "e03-provider-preflight" }
+    @{ Ticket = "E04"; Verifier = "Test-CodeNexusDirectRetirementPacket.ps1";   Packet = "e04-codenexus-direct" }
+    @{ Ticket = "E05"; Verifier = "Test-PublicationRetirementPacket.ps1";       Packet = "e05-publication" }
+    @{ Ticket = "E07"; Verifier = "Test-NativeCodeRetirementPacket.ps1";        Packet = "e07-native-code" }
+    @{ Ticket = "E08"; Verifier = "Test-HospitalRetirementPacket.ps1";          Packet = "e08-hospital" }
+    @{ Ticket = "E09"; Verifier = "Test-DoctorWrapperRetirementPacket.ps1";     Packet = "e09-doctor-wrapper" }
+    @{ Ticket = "E10"; Verifier = "Test-IndexRetirementPacket.ps1";             Packet = "e10-index" }
+)
+
+# E05 cannot be regenerated: New-PublicationRetirementPacket.ps1 requires
+# archive/scripts/tests/test-dag-facade.ps1, and `code-intel run dag-coordinate`
+# exits 10 because the diagnosis.hospital node reports domain_failed
+# ("architecture gate failure") even on a single-file fixture repository. Until
+# that is fixed, E05 stays frozen against a run-code-intel.ps1 that has moved on.
+# Pinning the message keeps the lane honest in both directions.
+$KnownBlocked = @{
+    "E05" = "E05 exact rollback replay drifted"
+}
+
+$failures = [Collections.Generic.List[string]]::new()
+
+foreach ($packet in $packets) {
+    $verifier = Join-Path $ArchiveRoot "tools/compatibility/$($packet.Verifier)"
+    $packetRoot = Join-Path $RepoRoot "orchestration/retirements/$($packet.Packet)"
+    if (-not (Test-Path -LiteralPath $verifier -PathType Leaf)) {
+        $failures.Add("$($packet.Ticket): verifier is missing: $verifier")
+        continue
+    }
+    if (-not (Test-Path -LiteralPath $packetRoot -PathType Container)) {
+        $failures.Add("$($packet.Ticket): packet directory is missing: $packetRoot")
+        continue
+    }
+
+    $output = @(& pwsh -NoLogo -NoProfile -File $verifier -PacketRoot $packetRoot 2>&1) -join "`n"
+    $succeeded = $LASTEXITCODE -eq 0
+
+    if ($KnownBlocked.ContainsKey($packet.Ticket)) {
+        $expected = $KnownBlocked[$packet.Ticket]
+        if ($succeeded) {
+            $failures.Add("$($packet.Ticket): is recorded as known-blocked but now passes; remove it from `$KnownBlocked and drop the follow-up")
+        }
+        elseif ($output -notlike "*$expected*") {
+            $failures.Add("$($packet.Ticket): failed for a new reason. Expected '$expected'. Got: $output")
+        }
+        else {
+            Write-Output "KNOWN-BLOCKED $($packet.Ticket) $($packet.Packet): $expected"
+        }
+        continue
+    }
+
+    if (-not $succeeded) {
+        $failures.Add("$($packet.Ticket): $output")
+    }
+    else {
+        Write-Output "PASS $($packet.Ticket) $($packet.Packet)"
+    }
+}
+
+# These two consume the packet status files, so they belong in the same gate:
+# an out-of-band retirement or a regenerated packet must keep them coherent.
+$audits = @(
+    @{ Name = "final commitment reconciliation"; Script = Join-Path $ArchiveRoot "tools/Test-FinalCommitmentReconciliation.ps1" }
+    @{ Name = "compatibility facade finalize";   Script = Join-Path $ArchiveRoot "scripts/tests/test-compatibility-facade-finalize.ps1" }
+)
+foreach ($audit in $audits) {
+    $output = @(& pwsh -NoLogo -NoProfile -File $audit.Script 2>&1) -join "`n"
+    if ($LASTEXITCODE -ne 0) { $failures.Add("$($audit.Name): $output") }
+    else { Write-Output "PASS $($audit.Name)" }
+}
+
+if ($failures.Count -gt 0) {
+    foreach ($failure in $failures) { [Console]::Error.WriteLine("FAIL $failure") }
+    throw "retirement packet suite failed: $($failures.Count) of $($packets.Count + $audits.Count) checks"
+}
+
+Write-Output "Retirement packet suite passed: $($packets.Count) packets, $($audits.Count) audits, $($KnownBlocked.Count) known-blocked"

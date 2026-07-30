@@ -1,8 +1,13 @@
 [CmdletBinding()]
 param(
-    [string]$RepoRoot = (Split-Path $PSScriptRoot -Parent),
+    # every path below is pipeline-root-relative (orchestration/, docs/), and
+    # this script now lives under archive/tools/, so climb two levels not one
+    [string]$RepoRoot = (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent),
     [string]$ReconciliationPath = "orchestration/evidence/final-commitment-reconciliation.json",
-    [string]$ProjectionPath = "docs/final-commitment-reconciliation.md"
+    [string]$ProjectionPath = "docs/final-commitment-reconciliation.md",
+    # rewrite the Markdown projection from the authoritative JSON instead of
+    # failing on drift; the JSON stays the source of truth either way
+    [switch]$UpdateProjection
 )
 
 Set-StrictMode -Version Latest
@@ -73,7 +78,7 @@ for ($index = 0; $index -lt 69; $index++) {
     }
 }
 
-$allowedStatuses = @("implemented_verified", "implemented_pending_verification", "implemented_blocked", "retirement_blocked", "not_implemented")
+$allowedStatuses = @("implemented_verified", "implemented_pending_verification", "implemented_blocked", "retirement_blocked", "retired_out_of_band", "not_implemented")
 if ((@($document.allowedClaimStatuses) -join "`n") -cne ($allowedStatuses -join "`n")) { throw "claim-status enum drifted" }
 foreach ($item in $items) {
     $fields = @($item.psobject.Properties.Name)
@@ -117,6 +122,27 @@ foreach ($item in $items) {
                 throw "$($item.ticketId) retirement packet is not actually blocked and unexecuted"
             }
         }
+        "retired_out_of_band" {
+            # The branch is gone but the gate never approved its removal. This
+            # status exists so that fact can be stated instead of being laundered
+            # into a clean retirement or left as a permanently false "blocked".
+            if ($item.independentVerdict -ne "recorded" -or @($item.blockers).Count -ne 0) {
+                throw "$($item.ticketId) out-of-band retirement must be recorded with zero live blockers"
+            }
+            $statusArtifact = @($item.artifacts | Where-Object { $_ -match '/status\.json$' })
+            if ($statusArtifact.Count -ne 1) { throw "$($item.ticketId) must bind exactly one retirement status artifact" }
+            $status = Get-Content -LiteralPath (Join-Path $RepoRoot $statusArtifact[0]) -Raw | ConvertFrom-Json
+            if ($status.decision -ne "retired_out_of_band" -or $status.retired -ne $true -or
+                $status.deletionExecuted -ne $true -or $status.gateAuthorityObtained -ne $false -or
+                $status.governanceBypass -ne $true -or $status.gateDecision -ne "blocked") {
+                throw "$($item.ticketId) claims an out-of-band retirement its packet does not record"
+            }
+            if (@($status.unmetGateBlockersAtDeletion).Count -eq 0) {
+                throw "$($item.ticketId) must preserve the gate blockers that were unmet when the branch was deleted"
+            }
+            $oobArtifact = @($item.artifacts | Where-Object { $_ -match '/out-of-band-deletion\.json$' })
+            if ($oobArtifact.Count -ne 1) { throw "$($item.ticketId) must bind exactly one out-of-band deletion record" }
+        }
         "not_implemented" {
             if ($item.independentVerdict -ne "pending" -or @($item.blockers).Count -eq 0) { throw "$($item.ticketId) not-implemented state is incoherent" }
         }
@@ -124,6 +150,9 @@ foreach ($item in $items) {
 }
 
 $expectedProjection = Render-Projection $document
+if ($UpdateProjection) {
+    [IO.File]::WriteAllText($projection, $expectedProjection, [Text.UTF8Encoding]::new($false))
+}
 $actualProjection = [IO.File]::ReadAllText($projection).Replace("`r`n", "`n").Replace("`r", "`n")
 if ($actualProjection -cne $expectedProjection) { throw "Markdown projection is stale or edited independently of the machine-readable reconciliation" }
 

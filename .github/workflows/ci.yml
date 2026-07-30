@@ -149,6 +149,7 @@ jobs:
             "archive/scripts/tests/test-scoped-repowise-security.ps1",
             "archive/scripts/tests/test-scoped-repowise-worktree.ps1",
             "archive/scripts/tests/test-skill-development-benchmark.ps1",
+            "archive/scripts/tests/test-retirement-packets.ps1",
             "archive/tools/New-BetaPackage.ps1",
             "archive/tools/Test-BetaPackage.ps1"
           )
@@ -238,6 +239,10 @@ jobs:
       - name: Core PowerShell regression tests
         shell: pwsh
         run: .\archive/scripts/tests/test-regression-fixes.ps1
+
+      - name: Compatibility retirement packets
+        shell: pwsh
+        run: .\archive/scripts/tests/test-retirement-packets.ps1
 
       - name: Python 3.14 and project conformance
         shell: pwsh
@@ -481,6 +486,7 @@ jobs:
             "archive/scripts/tests/test-scoped-repowise-security.ps1",
             "archive/scripts/tests/test-scoped-repowise-worktree.ps1",
             "archive/scripts/tests/test-skill-development-benchmark.ps1",
+            "archive/scripts/tests/test-retirement-packets.ps1",
             "archive/tools/New-BetaPackage.ps1",
             "archive/tools/Test-BetaPackage.ps1"
           )

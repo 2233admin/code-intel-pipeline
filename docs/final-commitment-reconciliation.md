@@ -3,8 +3,8 @@
 This is the human-readable projection of `orchestration/evidence/final-commitment-reconciliation.json`.
 The JSON is authoritative; this table must be regenerated or updated in the same change and is checked byte-for-byte after newline normalization.
 
-Source plan: `docs/plans/adr-0010-execution-plan.md`<br>
-Source SHA-256: `8ba922970a66f55087ec9711f16e71e4ca1af492ec79da0554d0718b0e580d33`<br>
+Source plan: `docs/plans/adr-0010-execution-plan.md`  
+Source SHA-256: `790f56ca02e32697b6bc8037e0e6fad6ba51184b3833292fa154dc344079b3e7`  
 Tickets: **69**
 
 ## Status totals
@@ -13,7 +13,8 @@ Tickets: **69**
 | --- | ---: |
 | implemented_blocked | 1 |
 | implemented_verified | 60 |
-| retirement_blocked | 8 |
+| retired_out_of_band | 1 |
+| retirement_blocked | 7 |
 
 ## Itemized reconciliation
 
@@ -85,6 +86,6 @@ Tickets: **69**
 | E05 — `compatibility.retire-publication-branch` | retirement_blocked | blocked | E00 decision remains blocked<br>deletionExecuted=false<br>retired=false | `orchestration/retirements/e05-publication/status.json`<br>`docs/compatibility-retire-publication-branch.md` |
 | E07 — `compatibility.retire-native-code-branch` | retirement_blocked | blocked | E00 decision remains blocked<br>deletionExecuted=false<br>retired=false | `orchestration/retirements/e07-native-code/status.json`<br>`docs/compatibility-retire-native-code-branch.md` |
 | E08 — `compatibility.retire-hospital-branch` | retirement_blocked | blocked | E00 decision remains blocked<br>deletionExecuted=false<br>retired=false | `orchestration/retirements/e08-hospital/status.json`<br>`docs/compatibility-retire-hospital-branch.md` |
-| E09 — `compatibility.retire-doctor-wrapper-branch` | retirement_blocked | blocked | E00 decision remains blocked<br>deletionExecuted=false<br>retired=false | `orchestration/retirements/e09-doctor-wrapper/status.json`<br>`docs/compatibility-retire-doctor-wrapper-branch.md` |
+| E09 — `compatibility.retire-doctor-wrapper-branch` | retired_out_of_band | recorded | — | `orchestration/retirements/e09-doctor-wrapper/status.json`<br>`orchestration/retirements/e09-doctor-wrapper/evidence/out-of-band-deletion.json`<br>`docs/compatibility-retire-doctor-wrapper-branch.md` |
 | E10 — `compatibility.retire-index-branch` | retirement_blocked | blocked | E00 decision remains blocked<br>deletionExecuted=false<br>retired=false | `orchestration/retirements/e10-index/status.json`<br>`docs/compatibility-retire-index-branch.md` |
 | E06 — `compatibility.facade-finalize` | implemented_blocked | blocked | independent audit implementation approved, but final facade approval remains blocked<br>E02-E05 and E07-E10 retirement dependencies are not completed<br>current audit exits 2 with approvalEligible=false and independentApproval=null | `archive/Invoke-CompatibilityFacadeFinalize.ps1`<br>`archive/scripts/tests/test-compatibility-facade-finalize.ps1`<br>`orchestration/facade-finalize-policy.v1.json`<br>`orchestration/schemas/code-intel-compatibility-facade-finalize.v1.schema.json`<br>`docs/compatibility-facade-finalize.md` |

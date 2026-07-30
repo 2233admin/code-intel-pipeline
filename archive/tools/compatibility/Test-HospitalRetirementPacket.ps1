@@ -1,5 +1,9 @@
 [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$PacketRoot,[string]$RepoRoot=(Split-Path (Split-Path $PSScriptRoot -Parent) -Parent))
 Set-StrictMode -Version Latest;$ErrorActionPreference="Stop"
+# $RepoRoot lands on archive/ after the PowerShell move; assets that
+# stayed behind (orchestration/, crates/) live one level above it
+$PipelineRepoRoot = Split-Path -Parent $RepoRoot
+function RS([string]$r){Join-Path $(if($r.StartsWith('crates/')-or$r.StartsWith('orchestration/')){$PipelineRepoRoot}else{$RepoRoot}) $r}
 function J([string]$r){$p=Join-Path $PacketRoot $r;if(-not(Test-Path $p -PathType Leaf)){throw "missing $r"};Get-Content $p -Raw|ConvertFrom-Json}
 function S([string]$t){([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($t)))).ToLowerInvariant()}
 $t=J "compatibility-retirement-ticket.json";$m=J "compatibility-retirement-manifest.json";$d=J "compatibility-retirement-deletion-diff.json";$g=J "gate-out/compatibility-retirement-decision.json";$s=J "status.json"
@@ -14,7 +18,7 @@ $canonical=@($d.patch.files);if((S (ConvertTo-Json -InputObject $canonical -Dept
 $baseLines=@($base-split"`n");$replayed=for($i=1;$i-le$baseLines.Count;$i++){if(-not@($file.hunks|Where-Object{$i-ge$_.oldStart-and$i-lt($_.oldStart+$_.oldLines)}).Count){$baseLines[$i-1]}};$replayed=$replayed-join"`n";if($replayed-ne$result){throw "E08 patch replay mismatch"}
 if($base-notmatch'function New-HospitalProtocol'-or$base-notmatch'\$hospitalReport = New-CodeIntelHospitalReport'-or$result-match'function New-HospitalProtocol'-or$result-match'\$hospitalReport = New-CodeIntelHospitalReport'){throw "E08 patch does not remove bounded Hospital authority"}
 foreach($h in @($file.hunks)){if($h.newLines-ne0-or@($h.addedLines).Count-ne0-or$h.oldLines-le0){throw "E08 patch is not deletion-only"};$joined=@($h.deletedLines)-join"`n";if($joined-match'run-complete\.json|update-code-intel-index|doctor_adapter|run_commit|artifact_index'){throw "E08 patch touches excluded ownership"}}
-$frozen=@('run-code-intel.ps1','crates/code-intel-cli/src/hospital_diagnosis.rs','orchestration/integrations.json','crates/code-intel-cli/src/run_commit.rs','crates/code-intel-cli/src/artifact_index.rs','crates/code-intel-cli/src/doctor_adapter.rs');$snapshot=S (($frozen|ForEach-Object{(Get-FileHash (Join-Path $RepoRoot $_) -Algorithm SHA256).Hash.ToLowerInvariant()})-join"`n");if($snapshot-ne$m.snapshotIdentity){throw "E08 snapshot drift"}
+$frozen=@('run-code-intel.ps1','crates/code-intel-cli/src/hospital_diagnosis.rs','orchestration/integrations.json','crates/code-intel-cli/src/run_commit.rs','crates/code-intel-cli/src/artifact_index.rs','crates/code-intel-cli/src/doctor_adapter.rs');$snapshot=S (($frozen|ForEach-Object{(Get-FileHash (RS $_) -Algorithm SHA256).Hash.ToLowerInvariant()})-join"`n");if($snapshot-ne$m.snapshotIdentity){throw "E08 snapshot drift"}
 $e=@(Get-ChildItem (Join-Path $PacketRoot evidence) -Filter *.json -File|ForEach-Object{Get-Content $_.FullName -Raw|ConvertFrom-Json});if($e.Count-ne12){throw "E08 must have twelve evidence objects"};if(@($e|Where-Object{$_.legacyBranchId-ne$b-or$_.replacementCapabilityId-ne$r}).Count){throw "E08 evidence identity mismatch"}
 $gold=$e|Where-Object evidenceClass -eq golden_parity;$contract=$e|Where-Object evidenceClass -eq contract_parity;$effects=$e|Where-Object evidenceClass -eq effect_parity;$rollback=$e|Where-Object evidenceClass -eq rollback_execution
 if($gold.details.sameUntrustedAuthoritativeFixture-ne$true-or$gold.details.machineParity-ne$true-or$gold.details.executedTestCount-ne7){throw "E08 golden parity incomplete"}

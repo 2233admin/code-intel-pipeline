@@ -67,7 +67,10 @@ if (-not $providerPreflightPresent) { throw "unrelated provider-preflight branch
 
 $inputDigests = @(
     "run-code-intel.ps1", "OpenSpec-Detector.ps1", "Invoke-WorkflowRecommendation.ps1", "orchestration/integrations.json"
-) | ForEach-Object { (Get-FileHash -LiteralPath (Join-Path $RepoRoot $_) -Algorithm SHA256).Hash.ToLowerInvariant() }
+) | ForEach-Object {
+    $root = if ($_.StartsWith('crates/') -or $_.StartsWith('orchestration/')) { $PipelineRepoRoot } else { $RepoRoot }
+    (Get-FileHash -LiteralPath (Join-Path $root $_) -Algorithm SHA256).Hash.ToLowerInvariant()
+}
 $snapshotIdentity = Get-Sha256Text ($inputDigests -join "`n")
 $retirementId = "retire-recommender-branch"
 $branchId = "run-code-intel.workflow-recommender.inline"

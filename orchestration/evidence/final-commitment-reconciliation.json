@@ -1,13 +1,14 @@
 {
   "schema": "code-intel-final-commitment-reconciliation.v1",
   "sourcePlan": "docs/plans/adr-0010-execution-plan.md",
-  "sourcePlanSha256": "8ba922970a66f55087ec9711f16e71e4ca1af492ec79da0554d0718b0e580d33",
+  "sourcePlanSha256": "790f56ca02e32697b6bc8037e0e6fad6ba51184b3833292fa154dc344079b3e7",
   "ticketCount": 69,
   "allowedClaimStatuses": [
     "implemented_verified",
     "implemented_pending_verification",
     "implemented_blocked",
     "retirement_blocked",
+    "retired_out_of_band",
     "not_implemented"
   ],
   "statusPolicy": "A planned, drafted, packet-only, or in-progress item cannot be mapped to an implemented status without implementation evidence and an independent verdict.",
@@ -824,7 +825,7 @@
       "title": "compatibility.retire-recommender-branch",
       "claimStatus": "retirement_blocked",
       "evidenceCommands": [
-        "pwsh -NoProfile -File tools/compatibility/Test-RecommenderRetirementPacket.ps1 -PacketRoot orchestration/retirements/e02-recommender"
+        "pwsh -NoProfile -File archive/tools/compatibility/Test-RecommenderRetirementPacket.ps1 -PacketRoot orchestration/retirements/e02-recommender"
       ],
       "artifacts": [
         "orchestration/retirements/e02-recommender/status.json",
@@ -842,7 +843,7 @@
       "title": "compatibility.retire-provider-preflight-branch",
       "claimStatus": "retirement_blocked",
       "evidenceCommands": [
-        "pwsh -NoProfile -File tools/compatibility/Test-ProviderPreflightRetirementPacket.ps1 -PacketRoot orchestration/retirements/e03-provider-preflight"
+        "pwsh -NoProfile -File archive/tools/compatibility/Test-ProviderPreflightRetirementPacket.ps1 -PacketRoot orchestration/retirements/e03-provider-preflight"
       ],
       "artifacts": [
         "orchestration/retirements/e03-provider-preflight/status.json",
@@ -860,7 +861,7 @@
       "title": "compatibility.retire-codenexus-direct-branch",
       "claimStatus": "retirement_blocked",
       "evidenceCommands": [
-        "pwsh -NoProfile -File tools/compatibility/Test-CodeNexusDirectRetirementPacket.ps1 -PacketRoot orchestration/retirements/e04-codenexus-direct"
+        "pwsh -NoProfile -File archive/tools/compatibility/Test-CodeNexusDirectRetirementPacket.ps1 -PacketRoot orchestration/retirements/e04-codenexus-direct"
       ],
       "artifacts": [
         "orchestration/retirements/e04-codenexus-direct/status.json",
@@ -878,7 +879,7 @@
       "title": "compatibility.retire-publication-branch",
       "claimStatus": "retirement_blocked",
       "evidenceCommands": [
-        "pwsh -NoProfile -File tools/compatibility/Test-PublicationRetirementPacket.ps1 -PacketRoot orchestration/retirements/e05-publication"
+        "pwsh -NoProfile -File archive/tools/compatibility/Test-PublicationRetirementPacket.ps1 -PacketRoot orchestration/retirements/e05-publication"
       ],
       "artifacts": [
         "orchestration/retirements/e05-publication/status.json",
@@ -896,7 +897,7 @@
       "title": "compatibility.retire-native-code-branch",
       "claimStatus": "retirement_blocked",
       "evidenceCommands": [
-        "pwsh -NoProfile -File tools/compatibility/Test-NativeCodeRetirementPacket.ps1 -PacketRoot orchestration/retirements/e07-native-code"
+        "pwsh -NoProfile -File archive/tools/compatibility/Test-NativeCodeRetirementPacket.ps1 -PacketRoot orchestration/retirements/e07-native-code"
       ],
       "artifacts": [
         "orchestration/retirements/e07-native-code/status.json",
@@ -914,7 +915,7 @@
       "title": "compatibility.retire-hospital-branch",
       "claimStatus": "retirement_blocked",
       "evidenceCommands": [
-        "pwsh -NoProfile -File tools/compatibility/Test-HospitalRetirementPacket.ps1 -PacketRoot orchestration/retirements/e08-hospital"
+        "pwsh -NoProfile -File archive/tools/compatibility/Test-HospitalRetirementPacket.ps1 -PacketRoot orchestration/retirements/e08-hospital"
       ],
       "artifacts": [
         "orchestration/retirements/e08-hospital/status.json",
@@ -930,27 +931,24 @@
     {
       "ticketId": "E09",
       "title": "compatibility.retire-doctor-wrapper-branch",
-      "claimStatus": "retirement_blocked",
+      "claimStatus": "retired_out_of_band",
       "evidenceCommands": [
-        "pwsh -NoProfile -File tools/compatibility/Test-DoctorWrapperRetirementPacket.ps1 -PacketRoot orchestration/retirements/e09-doctor-wrapper"
+        "pwsh -NoProfile -File archive/tools/compatibility/Test-DoctorWrapperRetirementPacket.ps1 -PacketRoot orchestration/retirements/e09-doctor-wrapper"
       ],
       "artifacts": [
         "orchestration/retirements/e09-doctor-wrapper/status.json",
+        "orchestration/retirements/e09-doctor-wrapper/evidence/out-of-band-deletion.json",
         "docs/compatibility-retire-doctor-wrapper-branch.md"
       ],
-      "independentVerdict": "blocked",
-      "blockers": [
-        "E00 decision remains blocked",
-        "deletionExecuted=false",
-        "retired=false"
-      ]
+      "independentVerdict": "recorded",
+      "blockers": []
     },
     {
       "ticketId": "E10",
       "title": "compatibility.retire-index-branch",
       "claimStatus": "retirement_blocked",
       "evidenceCommands": [
-        "pwsh -NoProfile -File tools/compatibility/Test-IndexRetirementPacket.ps1 -PacketRoot orchestration/retirements/e10-index"
+        "pwsh -NoProfile -File archive/tools/compatibility/Test-IndexRetirementPacket.ps1 -PacketRoot orchestration/retirements/e10-index"
       ],
       "artifacts": [
         "orchestration/retirements/e10-index/status.json",
@@ -968,11 +966,11 @@
       "title": "compatibility.facade-finalize",
       "claimStatus": "implemented_blocked",
       "evidenceCommands": [
-        "pwsh -NoProfile -File scripts/tests/test-compatibility-facade-finalize.ps1"
+        "pwsh -NoProfile -File archive/scripts/tests/test-compatibility-facade-finalize.ps1"
       ],
       "artifacts": [
-        "Invoke-CompatibilityFacadeFinalize.ps1",
-        "scripts/tests/test-compatibility-facade-finalize.ps1",
+        "archive/Invoke-CompatibilityFacadeFinalize.ps1",
+        "archive/scripts/tests/test-compatibility-facade-finalize.ps1",
         "orchestration/facade-finalize-policy.v1.json",
         "orchestration/schemas/code-intel-compatibility-facade-finalize.v1.schema.json",
         "docs/compatibility-facade-finalize.md"
