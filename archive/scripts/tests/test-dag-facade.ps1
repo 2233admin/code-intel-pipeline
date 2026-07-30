@@ -42,8 +42,12 @@ function Invoke-DagFacadeCase {
             }
         }
         catch {
+            # Only a nonzero coordinator exit is tolerated here, and only so the
+            # manifest below can name the failing node. Anything else — a missing
+            # binary, a facade bug — is a real failure and must propagate.
             # Write-Host, not Write-Output: this function returns a value, and
             # anything on the output stream would be appended to it.
+            if ($_.Exception.Message -notmatch "DAG coordinator failed with exit code") { throw }
             Write-Host "DAG facade reported: $($_.Exception.Message)"
         }
 
@@ -60,22 +64,37 @@ function Invoke-DagFacadeCase {
 
         # A structural gate failure on a fixture holding one README is the
         # regression this lane exists to catch, so it is asserted unconditionally.
-        # The whole-run outcome additionally depends on `doctor`, which fails on a
-        # runner without the full toolchain; `Authoritative self-scan (release
-        # gate parity)` covers run-level exit 0 with the doctor configured.
         $hospital = Get-Prop $manifest.nodes "diagnosis.hospital"
         Assert-Contract ($null -ne $hospital) "DAG facade ran no diagnosis.hospital node."
         Assert-Contract ((Get-Prop $hospital "status") -eq "succeeded") "diagnosis.hospital did not succeed: $(Get-Prop $hospital 'status') $(Get-Prop $hospital 'diagnostic')"
         Assert-Contract ((Get-Prop $hospital "verdict") -eq "pass") "diagnosis.hospital did not pass: $(Get-Prop $hospital 'diagnostic')"
 
-        if ((Get-Prop (Get-Prop $manifest.nodes "doctor") "status") -eq "succeeded") {
-            Assert-Contract ($manifest.outcome -eq "completed") "DAG facade did not complete: $($manifest.outcome)"
+        # Exactly one non-green node is tolerated, and only in one shape: `doctor`
+        # reporting a bootstrap-readiness domain failure, which means the host
+        # lacks a required tool. This lane cannot configure the doctor, because
+        # `run-code-intel.ps1` passes no doctor flags and is frozen by hash in the
+        # E05 packet. Every other node, and every other doctor failure mode —
+        # `process_failed`, a missing node, a different diagnosis — is a real
+        # failure. `Authoritative self-scan (release gate parity)` covers
+        # run-level exit 0 with the doctor requirements passed explicitly.
+        $doctor = Get-Prop $manifest.nodes "doctor"
+        Assert-Contract ($null -ne $doctor) "DAG facade ran no doctor node."
+        $doctorStatus = [string](Get-Prop $doctor "status")
+        $doctorDiagnostic = [string](Get-Prop $doctor "diagnostic")
+        $toleratedDoctorGap = $doctorStatus -eq "domain_failed" -and $doctorDiagnostic -match "bootstrap readiness failed"
+
+        foreach ($node in $manifest.nodes.PSObject.Properties) {
+            $status = [string](Get-Prop $node.Value "status")
+            if ($status -eq "succeeded") { continue }
+            if ($node.Name -eq "doctor" -and $toleratedDoctorGap) { continue }
+            throw "$($node.Name) did not succeed: $status/$(Get-Prop $node.Value 'diagnostic')"
+        }
+
+        if ($toleratedDoctorGap) {
+            Write-Host "Host toolchain is incomplete, so run-level outcome is not asserted: doctor=$doctorStatus/$doctorDiagnostic"
         }
         else {
-            $nonGreen = @($manifest.nodes.PSObject.Properties |
-                Where-Object { (Get-Prop $_.Value "status") -ne "succeeded" } |
-                ForEach-Object { "$($_.Name)=$(Get-Prop $_.Value 'status')/$(Get-Prop $_.Value 'diagnostic')" }) -join "; "
-            Write-Host "Host toolchain is incomplete, so run-level outcome is not asserted. Non-green nodes: $nonGreen"
+            Assert-Contract ($manifest.outcome -eq "completed") "DAG facade did not complete: $($manifest.outcome)"
         }
 
         return [pscustomobject]@{
