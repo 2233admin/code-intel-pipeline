@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Sentrux `coupling_score` now divides by import-modelled files only**
+  (sentrux-native 2.1.0). The score is import lines per file; the scanner reads
+  `import` / `from` / `use` / `mod` / `require(` / `#include` / `using`, none of
+  which is how PowerShell declares a dependency. Counting `.ps1`/`.psm1` files
+  in the denominator therefore made the number track the PowerShell share of a
+  tree: it fell when PowerShell grew and rose when PowerShell shrank. Under the
+  PS1 retirement campaign (issue #78) that inverted the gate — deleting a
+  PowerShell test and landing the Rust test that replaces it improved
+  `quality_signal` and still tripped `coupling_increased`. Numerator and
+  denominator now both cover only languages whose imports the scanner models,
+  so a repository with none of the unmodelled languages scores exactly as
+  before. `metrics.import_modeled_files` and a `[coupling_basis]` line report
+  the denominator instead of leaving it to be derived.
+
+  This tree measures 74.41 (1064 import edges over 143 modelled files) where
+  the diluted formula reported 45.48. Consequences, all in this same commit:
+
+  - `.sentrux/baseline.json` re-saved; schema moved to
+    `code-intel-sentrux-baseline.v3`. A v2 baseline holds a number this engine
+    cannot produce, so it now fails closed as `baseline_engine_mismatch` with
+    the re-baseline instruction rather than reporting a fabricated ~30-point
+    coupling regression. **Any repository with a v2 baseline must re-save it.**
+  - `max_coupling` accepts a bare number as well as an `A`..`D` grade. The
+    ladder tops out at D = 6 imports per file, which no idiomatic Rust tree
+    stays under, so `.sentrux/rules.toml` records the measured ceiling (76.0)
+    as a ratchet; tightening it is tracked with the other threshold debt in
+    issue #14.
+  - `legacy/tools/sentrux-shim/sentrux-lite-core.ps1` mirrors the same
+    denominator and numeric limit, so a shim injected through
+    `options.toolPathPrefix` cannot compare an old-formula score against a
+    new-formula baseline.
+
 - **The doctor bootstrap probe is native Rust** (issue #48, T3 of the PS1
   retirement campaign). `code-intel doctor bootstrap` now computes the
   tool/runtime health inventory that `archive/check-code-intel-tools.ps1` used

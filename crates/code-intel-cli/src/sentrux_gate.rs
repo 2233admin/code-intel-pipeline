@@ -8,8 +8,21 @@
 //!
 //! Metric formulas continue the sentrux-lite scale (quality 0..10000,
 //! coupling = imports per file x 10) so `.sentrux/rules.toml` thresholds keep
-//! their meaning, with one deliberate difference: `cycle_count` is computed
-//! from resolved Rust module imports (sentrux-lite hardcoded it to zero).
+//! their meaning, with two deliberate differences: `cycle_count` is computed
+//! from resolved Rust module imports (sentrux-lite hardcoded it to zero), and
+//! coupling counts only files written in a language whose dependency syntax
+//! this scanner actually models (`IMPORT_MODELED_EXTENSIONS`).
+//!
+//! The coupling denominator matters more than it looks. `is_import_line` reads
+//! `import` / `from` / `use` / `mod` / `require(` / `#include` / `using`; none
+//! of those is how PowerShell declares a dependency (it dot-sources and calls
+//! `Import-Module`). Counting `.ps1` files in the denominator therefore made
+//! the score fall whenever PowerShell grew and rise whenever it shrank: the
+//! metric read "share of PowerShell", not "coupling". In a repository midway
+//! through replacing PowerShell with Rust, that inverted the gate — every
+//! correct migration step registered as structural regression. Restricting
+//! both numerator and denominator to modelled languages leaves the score
+//! unchanged for repositories that have none of the unmodelled ones.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -22,8 +35,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 pub(crate) const ENGINE_ID: &str = "sentrux-native";
-pub(crate) const ENGINE_VERSION: &str = "2.0.0";
-pub(crate) const BASELINE_SCHEMA: &str = "code-intel-sentrux-baseline.v2";
+pub(crate) const ENGINE_VERSION: &str = "2.1.0";
+// v3 because `coupling_score` changed denominator in 2.1.0. A v2 baseline
+// holds a number this engine can no longer produce, so comparing against it
+// would report a large fabricated coupling regression on the first run after
+// upgrade. The schema bump turns that into `baseline_engine_mismatch`, which
+// tells the operator to re-baseline deliberately.
+pub(crate) const BASELINE_SCHEMA: &str = "code-intel-sentrux-baseline.v3";
 
 // Metric keys the gate comparisons in `run_gate` read from the baseline.
 // `number()` defaults an absent key to 0.0, so a baseline missing any of
@@ -39,6 +57,21 @@ const CODE_EXTENSIONS: &[&str] = &[
     "ps1", "psm1", "py", "rs", "go", "ts", "tsx", "js", "jsx", "mjs", "cjs", "java", "cs", "cpp",
     "c", "h", "hpp", "v",
 ];
+// Subset of CODE_EXTENSIONS whose dependency declarations `is_import_line`
+// recognises. Everything measured except coupling (size, functions,
+// complexity, god files) still covers the full CODE_EXTENSIONS set — a
+// PowerShell god file is still a god file.
+// `every_code_extension_is_classified_as_import_modeled_or_not` keeps this
+// list from silently drifting when CODE_EXTENSIONS grows.
+const IMPORT_MODELED_EXTENSIONS: &[&str] = &[
+    "py", "rs", "go", "ts", "tsx", "js", "jsx", "mjs", "cjs", "java", "cs", "cpp", "c", "h", "hpp",
+    "v",
+];
+// PowerShell declares dependencies by dot-sourcing and `Import-Module`; this
+// scanner reads neither, so counting .ps1/.psm1 files would only dilute the
+// average. Adding either form to `is_import_line` is the prerequisite for
+// moving these into IMPORT_MODELED_EXTENSIONS.
+const IMPORT_UNMODELED_EXTENSIONS: &[&str] = &["ps1", "psm1"];
 const SKIP_DIRECTORIES: &[&str] = &[
     ".git",
     ".repowise",
@@ -111,11 +144,16 @@ struct FileMetrics {
     calls: i64,
     god_file: bool,
     complex_file: bool,
+    /// Whether this file's language declares dependencies in a form
+    /// `is_import_line` reads. False files are excluded from both sides of
+    /// the coupling ratio.
+    import_modeled: bool,
 }
 
 struct ProjectMetrics {
     files: Vec<FileMetrics>,
     file_count: i64,
+    import_modeled_file_count: i64,
     function_count: i64,
     total_import_edges: i64,
     call_edges: i64,
@@ -340,6 +378,7 @@ fn baseline_document(repo: &Path, metrics: &ProjectMetrics) -> Result<Value, Str
             "total_import_edges": metrics.total_import_edges,
             "cross_module_edges": metrics.total_import_edges,
             "files": metrics.file_count,
+            "import_modeled_files": metrics.import_modeled_file_count,
             "functions": metrics.function_count,
         }
     }))
@@ -352,6 +391,7 @@ fn metrics_json(repo: &Path, metrics: &ProjectMetrics) -> Value {
         "path": repo.display().to_string(),
         "quality_signal": metrics.quality_signal,
         "files": metrics.file_count,
+        "import_modeled_files": metrics.import_modeled_file_count,
         "functions": metrics.function_count,
         "coupling_score": metrics.coupling_score,
         "cycle_count": metrics.cycle_count,
@@ -374,6 +414,12 @@ fn resolve_header(out: &mut String, metrics: &ProjectMetrics) {
     out.push_str(&format!(
         "[build_graphs] {} files | {} import, {} call, 0 inherit edges\n",
         metrics.file_count, metrics.total_import_edges, metrics.call_edges
+    ));
+    // Coupling divides by this count, not by the file count above, so print
+    // the basis rather than leaving the reader to derive it from the ratio.
+    out.push_str(&format!(
+        "[coupling_basis] {} of {} files in import-modelled languages\n",
+        metrics.import_modeled_file_count, metrics.file_count
     ));
 }
 
@@ -446,20 +492,18 @@ fn evaluate_rules(rules: &str, metrics: &ProjectMetrics) -> Vec<Violation> {
             });
         }
     }
-    if let Some(grade) = string_rule(rules, "max_coupling") {
-        let limit = match grade.as_str() {
-            "A" => Some(5.0),
-            "B" => Some(15.0),
-            "C" => Some(30.0),
-            "D" => Some(60.0),
-            _ => None,
-        };
+    if let Some(configured) = string_rule(rules, "max_coupling") {
+        // The A..D ladder tops out at 6 imports per file, which no idiomatic
+        // Rust tree stays under, so the rule also accepts a bare number. A
+        // repository that has outgrown the ladder records the honest measured
+        // ceiling instead of dropping the absolute check entirely.
+        let limit = coupling_limit(&configured);
         if let Some(limit) = limit {
             if metrics.coupling_score > limit {
                 violations.push(Violation {
                     rule: "max_coupling".into(),
                     message: format!(
-                        "coupling grade exceeded: {} > {limit} for {grade}",
+                        "coupling limit exceeded: {} > {limit} for {configured}",
                         metrics.coupling_score
                     ),
                     targets: top_import_files(metrics),
@@ -501,6 +545,7 @@ fn top_import_files(metrics: &ProjectMetrics) -> Vec<String> {
     let mut files = metrics
         .files
         .iter()
+        .filter(|file| file.import_modeled)
         .map(|file| (file.imports, file.path.clone()))
         .collect::<Vec<_>>();
     files.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
@@ -529,8 +574,13 @@ fn measure_project(repo: &Path) -> Result<ProjectMetrics, String> {
         files.push(measure_file(relative, &content));
     }
     let file_count = files.len() as i64;
+    let import_modeled_file_count = files.iter().filter(|file| file.import_modeled).count() as i64;
     let function_count = files.iter().map(|file| file.functions).sum();
-    let total_import_edges: i64 = files.iter().map(|file| file.imports).sum();
+    let total_import_edges: i64 = files
+        .iter()
+        .filter(|file| file.import_modeled)
+        .map(|file| file.imports)
+        .sum();
     let call_edges = files.iter().map(|file| file.calls).sum();
     let god_file_count = files.iter().filter(|file| file.god_file).count() as i64;
     let complex_fn_count = files.iter().filter(|file| file.complex_file).count() as i64;
@@ -539,8 +589,8 @@ fn measure_project(repo: &Path) -> Result<ProjectMetrics, String> {
         .map(|file| file.max_complexity)
         .max()
         .unwrap_or(0);
-    let coupling_score = if file_count > 0 {
-        round2(total_import_edges as f64 / file_count as f64 * 10.0)
+    let coupling_score = if import_modeled_file_count > 0 {
+        round2(total_import_edges as f64 / import_modeled_file_count as f64 * 10.0)
     } else {
         0.0
     };
@@ -556,6 +606,7 @@ fn measure_project(repo: &Path) -> Result<ProjectMetrics, String> {
         cycles,
         files,
         file_count,
+        import_modeled_file_count,
         function_count,
         total_import_edges,
         call_edges,
@@ -673,7 +724,18 @@ fn measure_file(relative: &str, content: &str) -> FileMetrics {
         calls,
         god_file: loc > 800 || (functions > 25 && loc > 400),
         complex_file: max_complexity > 25,
+        import_modeled: imports_modeled(relative),
     }
+}
+
+fn imports_modeled(relative: &str) -> bool {
+    let extension = relative
+        .rsplit('/')
+        .next()
+        .and_then(|leaf| leaf.rsplit_once('.'))
+        .map(|(_, extension)| extension.to_ascii_lowercase())
+        .unwrap_or_default();
+    IMPORT_MODELED_EXTENSIONS.contains(&extension.as_str())
 }
 
 fn is_function_line(trimmed: &str) -> bool {
@@ -933,6 +995,20 @@ fn strongly_connected_cycles(edges: &BTreeMap<String, BTreeSet<String>>) -> Vec<
     cycles
 }
 
+/// Absolute coupling ceiling from a `max_coupling` value: a letter grade on
+/// the inherited sentrux-lite ladder, or a number on the same scale. An
+/// unreadable value yields `None`, which leaves the absolute check disabled —
+/// the no-degradation gate against the baseline still runs.
+fn coupling_limit(configured: &str) -> Option<f64> {
+    match configured.trim() {
+        "A" => Some(5.0),
+        "B" => Some(15.0),
+        "C" => Some(30.0),
+        "D" => Some(60.0),
+        other => other.parse::<f64>().ok().filter(|limit| *limit >= 0.0),
+    }
+}
+
 fn integer_rule(rules: &str, name: &str) -> Option<i64> {
     rule_value(rules, name)?.trim().parse().ok()
 }
@@ -984,6 +1060,19 @@ fn round2(value: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fixture_root(label: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock after epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("create fixture");
+        root
+    }
 
     #[test]
     fn crate_use_segments_cover_plain_grouped_and_visibility_forms() {
@@ -1045,6 +1134,74 @@ mod tests {
     }
 
     #[test]
+    fn every_code_extension_is_classified_as_import_modeled_or_not() {
+        // A new extension added to CODE_EXTENSIONS without a decision here
+        // would silently land in the coupling denominator with zero imports,
+        // which is the exact defect this split exists to prevent.
+        for extension in CODE_EXTENSIONS {
+            let modeled = IMPORT_MODELED_EXTENSIONS.contains(extension);
+            let unmodeled = IMPORT_UNMODELED_EXTENSIONS.contains(extension);
+            assert!(
+                modeled ^ unmodeled,
+                "{extension} must appear in exactly one of IMPORT_MODELED_EXTENSIONS / IMPORT_UNMODELED_EXTENSIONS"
+            );
+        }
+        for extension in IMPORT_MODELED_EXTENSIONS
+            .iter()
+            .chain(IMPORT_UNMODELED_EXTENSIONS)
+        {
+            assert!(
+                CODE_EXTENSIONS.contains(extension),
+                "{extension} is classified but never collected"
+            );
+        }
+    }
+
+    #[test]
+    fn coupling_ignores_files_whose_language_has_no_modeled_imports() {
+        let root = fixture_root("sentrux-native-coupling");
+        fs::write(
+            root.join("lib.rs"),
+            "use std::fs;\nuse std::io;\npub fn f() {}\n",
+        )
+        .expect("write rust fixture");
+        let rust_only = measure_project(&root).expect("measure rust-only tree");
+        assert_eq!(rust_only.import_modeled_file_count, 1);
+        assert_eq!(rust_only.coupling_score, 20.0);
+
+        // Ten PowerShell files, each carrying a real dot-source dependency
+        // this scanner cannot read. Under the old all-files denominator the
+        // score would fall from 20.0 to 1.82 purely for gaining PowerShell.
+        for index in 0..10 {
+            fs::write(
+                root.join(format!("helper{index}.ps1")),
+                ". $PSScriptRoot/other.ps1\nfunction Invoke-Thing {}\n",
+            )
+            .expect("write powershell fixture");
+        }
+        let mixed = measure_project(&root).expect("measure mixed tree");
+        assert_eq!(mixed.file_count, 11);
+        assert_eq!(mixed.import_modeled_file_count, 1);
+        assert_eq!(mixed.coupling_score, rust_only.coupling_score);
+
+        // Deleting PowerShell — the whole point of the migration — must not
+        // register as a coupling regression either.
+        fs::remove_file(root.join("helper0.ps1")).expect("remove one powershell fixture");
+        let after_deletion = measure_project(&root).expect("measure tree after deletion");
+        assert_eq!(after_deletion.coupling_score, mixed.coupling_score);
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn coupling_limit_reads_ladder_grades_and_bare_numbers() {
+        assert_eq!(coupling_limit("D"), Some(60.0));
+        assert_eq!(coupling_limit("76.0"), Some(76.0));
+        assert_eq!(coupling_limit(" 76 "), Some(76.0));
+        assert_eq!(coupling_limit("E"), None);
+        assert_eq!(coupling_limit("-1"), None);
+    }
+
+    #[test]
     fn rule_parsing_reads_integer_boolean_and_grade_values() {
         let rules = "[constraints]\nmax_cycles = 0\nmax_coupling = \"B\"\nmax_cc = 70 # comment\nno_god_files = true\n";
         assert_eq!(integer_rule(rules, "max_cycles"), Some(0));
@@ -1055,14 +1212,7 @@ mod tests {
 
     #[test]
     fn gate_rejects_legacy_baseline_without_engine_identity() {
-        let root = std::env::temp_dir().join(format!(
-            "sentrux-native-gate-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("clock after epoch")
-                .as_nanos()
-        ));
+        let root = fixture_root("sentrux-native-gate");
         fs::create_dir_all(root.join(".sentrux")).expect("create fixture");
         fs::write(root.join("lib.rs"), "pub fn fixture() {}\n").expect("write fixture source");
         fs::write(
@@ -1078,14 +1228,7 @@ mod tests {
 
     #[test]
     fn gate_rejects_current_schema_baseline_missing_a_gated_metric() {
-        let root = std::env::temp_dir().join(format!(
-            "sentrux-native-metrics-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("clock after epoch")
-                .as_nanos()
-        ));
+        let root = fixture_root("sentrux-native-metrics");
         fs::create_dir_all(root.join(".sentrux")).expect("create fixture");
         fs::write(root.join("lib.rs"), "pub fn fixture() {}\n").expect("write fixture source");
         // Correct schema and engine but no quality_signal: `number()` would

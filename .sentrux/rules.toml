@@ -7,6 +7,34 @@
 # no god files, coupling grade B) is tracked modernization debt
 # (issue #14, "Remaining tracked debt").
 #
+# Coupling denominator change (sentrux-native 2.1.0, 2026-07-31):
+# `coupling_score` now divides import edges by the count of files written in a
+# language whose dependency syntax the scanner models, not by every code file.
+# The engine reads `import`/`from`/`use`/`mod`/`require(`/`#include`/`using`;
+# PowerShell declares dependencies by dot-sourcing and `Import-Module` and so
+# contributed ~0 import edges from 96 of this tree's 239 files. The old score
+# therefore tracked the PowerShell share of the tree: it fell when PowerShell
+# grew and rose when PowerShell shrank. Under the PS1 retirement campaign
+# (#78) that inverted the gate — PR #80 deleted one PowerShell test, added the
+# Rust test that replaced it, improved quality_signal by 60, and still failed
+# `coupling_increased` 45.64 -> 45.73. Every remaining call point would have
+# failed the same way, so the gate was measuring the campaign, not regression.
+#
+# The rescale is a change of population, not of intent: a tree with none of the
+# unmodelled languages scores identically under both formulas. This tree's
+# honest coupling is 74.41 (1064 import edges over 143 modelled files), which
+# the old formula had been diluting to 45.48.
+#
+# max_coupling therefore moves from the inherited A..D letter ladder to an
+# absolute number on the same scale. The ladder tops out at D = 6 imports per
+# file, which no idiomatic Rust tree stays under, so keeping "D" would have
+# meant a permanently red rule — the same failure mode the B/70/no-god
+# thresholds had. 76.0 is a ratchet snapshotted from the measured 74.41;
+# tightening it is tracked with the other threshold debt in issue #14.
+# `.sentrux/baseline.json` was re-saved in this same commit, and the baseline
+# schema moved to v3 so any v2 baseline elsewhere fails closed with
+# `baseline_engine_mismatch` instead of reporting a fabricated 45 -> 74 jump.
+#
 # Measured ratchet evidence (sentrux-native 2.0.0, 2026-07-30, T3 doctor
 # tree, recorded together with .sentrux/baseline.json in the same commit):
 #   coupling_score 45.26 -> 45.79, quality_signal 3607 -> 3603,
@@ -47,6 +75,6 @@
 
 [constraints]
 max_cycles = 0
-max_coupling = "D"
+max_coupling = 76.0
 max_cc = 162
 no_god_files = false

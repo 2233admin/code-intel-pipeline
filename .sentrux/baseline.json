@@ -1,22 +1,23 @@
 {
   "engine": {
     "id": "sentrux-native",
-    "version": "2.0.0"
+    "version": "2.1.0"
   },
   "metrics": {
     "complex_fn_count": 12,
-    "coupling_score": 45.64,
-    "cross_module_edges": 1077,
+    "coupling_score": 74.41,
+    "cross_module_edges": 1064,
     "cycle_count": 0,
-    "files": 236,
-    "functions": 3277,
+    "files": 239,
+    "functions": 3335,
     "god_file_count": 33,
+    "import_modeled_files": 143,
     "max_complexity": 162,
-    "quality_signal": 3484,
-    "total_import_edges": 1077
+    "quality_signal": 3254,
+    "total_import_edges": 1064
   },
-  "savedAt": 1785403843,
-  "schema": "code-intel-sentrux-baseline.v2",
+  "savedAt": 1785488520,
+  "schema": "code-intel-sentrux-baseline.v3",
   "scope": ".",
-  "sourceCommit": "a120f1ed09f0c6d47e34238fcd4ae682b21c8b48"
+  "sourceCommit": "6b226e9d0fa935efc7b8970d01d56849154b027d"
 }
