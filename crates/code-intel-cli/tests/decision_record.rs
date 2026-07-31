@@ -134,7 +134,11 @@ fn spawn_record(resolution: &Path, store: &Path) -> std::process::Child {
 }
 
 fn wait_record_pair(mut children: [std::process::Child; 2]) -> [std::process::Output; 2] {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // The deadline is here to catch a store-lock deadlock, not to measure how
+    // fast two child processes run. A tight wall-clock budget turns any loaded
+    // CI runner into a false failure — ten seconds already did, on a
+    // two-core Windows runner sharing the machine with the rest of the suite.
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let exited = children
             .iter_mut()
