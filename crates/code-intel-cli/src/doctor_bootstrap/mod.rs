@@ -24,6 +24,11 @@ mod config;
 mod paths;
 mod probe;
 
+// Included by path so every crate root that pulls this module in — the binary
+// and the adapter copies used by integration tests — resolves it the same way.
+#[path = "../doctor_provider_rows.rs"]
+mod doctor_provider_rows;
+
 use paths::display;
 
 /// Marker the doctor capability adapter matches on. Kept as a constant so the
@@ -528,6 +533,13 @@ fn repo_lines(
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
     let mut options = Options::new(default_pipeline_root());
     let mut json_output = false;
+    // Bootstrap deliberately reports `ok` while an external provider overlay
+    // is broken, because the built-in engines make the overlay optional. The
+    // strict verdict — a *present* provider must conform — lives in the DAG
+    // doctor node, which CI runs before installing anything. This flag makes
+    // that same verdict callable after an install, so the branch every
+    // installed machine takes is reachable without a full pipeline run.
+    let mut require_provider_conformance = false;
     let mut index = 0;
     while index < raw.len() {
         let token = raw[index].as_str();
@@ -549,6 +561,10 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
             }
             ("--require-understand", _) => {
                 options.require_understand = true;
+                1
+            }
+            ("--require-provider-conformance", _) => {
+                require_provider_conformance = true;
                 1
             }
             ("--repo", Some(value)) => {
@@ -591,6 +607,15 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
         render_human(&observation)
     };
     println!("{rendered}");
+    if require_provider_conformance {
+        let nonconforming = doctor_provider_rows::nonconforming_providers(&observation);
+        if !nonconforming.is_empty() {
+            return fail(&format!(
+                "provider conformance failed: {} present but nonconforming. A broken overlay on PATH is a verdict-drift hazard: reinstall it, or take it off PATH so the built-in engine applies.",
+                nonconforming.join(", ")
+            ));
+        }
+    }
     i32::from(!observation["ok"].as_bool().unwrap_or(false))
 }
 

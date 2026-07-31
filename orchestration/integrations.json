@@ -285,12 +285,13 @@
           "id": "doctor.envelope.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "421a3a2947d2fa3d48267ad6822ee36086007aa6cbae6cad437ead71a652073a",
-            "272c499f611608a120c6e81041152a93679cc7dbbfda9fb84230d25623468400",
+            "e370f11ccd1c075f81466f11c0e3df55eee25e9ca6fedc8eac75c57f3087a07e",
+            "b4b6fc64473de6bc6c3c37385ed9ecc6bc2a08fb61d1efae6449542f774a7eb3",
             "7db9e80857f3c65aada25041986cb5cb3b50b95fa69de794d55ad38fd4a8d8d4",
             "78f88f1aaa3f77d28fbadf2bf8fd1c5e5a6b99a4728457262b19baabff2c8a80",
             "c9842468b904868391ff0fd2bb5d9627f4d61ab5f39fa01513dc409d0d2b484d",
-            "003748487700f8ae84f18f45bdfc8c43b9a0931e5fdfeb51d95b867caf6fb9db"
+            "8fa05f139f9a0eb03853faad7a74858d5b6a4ba9836beea6d2b359da5d294966",
+            "d17d5a5ce8f88f9976efc73857ea0a45336bdce5a899b6da40b527139dd456cb"
           ]
         },
         "determinism": "external_nondeterministic",
@@ -306,7 +307,8 @@
           "crates/code-intel-cli/src/doctor_bootstrap/config.rs",
           "crates/code-intel-cli/src/doctor_bootstrap/paths.rs",
           "crates/code-intel-cli/src/doctor_bootstrap/probe.rs",
-          "crates/code-intel-cli/src/capability_inventory.rs"
+          "crates/code-intel-cli/src/capability_inventory.rs",
+          "crates/code-intel-cli/src/doctor_provider_rows.rs"
         ]
       },
       "artifactContract": [
@@ -751,7 +753,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "713daf121490de0eb9e3a94139318da47b46d4368fce5ef09c5719b8d546f403",
-            "003748487700f8ae84f18f45bdfc8c43b9a0931e5fdfeb51d95b867caf6fb9db"
+            "8fa05f139f9a0eb03853faad7a74858d5b6a4ba9836beea6d2b359da5d294966"
           ]
         },
         "determinism": "deterministic",
@@ -842,7 +844,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "3ba256f4ca0bf62aca08f688f7ecf31800dd10e68371054e2f1605eff197ea81",
-            "003748487700f8ae84f18f45bdfc8c43b9a0931e5fdfeb51d95b867caf6fb9db",
+            "8fa05f139f9a0eb03853faad7a74858d5b6a4ba9836beea6d2b359da5d294966",
             "203e3b0d3be3c17331a7c7115aec71104db8f2b682e57e2c14dd9ee6f3fe18fb",
             "b118ba78ff3ef4a189525c642184cbd320a268d2885681ab153544db554c5965",
             "e3072b6b01a4f692c2ac75c7c4995747f9a0fd1ce4f32e1ab1599f348661f570",
@@ -905,7 +907,7 @@
           "toolchainDigests": [
             "2d2b38c4650795e2bba99e8ec38ca21adcb204042e9289577c535f7087e899d8",
             "203e3b0d3be3c17331a7c7115aec71104db8f2b682e57e2c14dd9ee6f3fe18fb",
-            "003748487700f8ae84f18f45bdfc8c43b9a0931e5fdfeb51d95b867caf6fb9db"
+            "8fa05f139f9a0eb03853faad7a74858d5b6a4ba9836beea6d2b359da5d294966"
           ]
         },
         "determinism": "deterministic",
@@ -956,7 +958,7 @@
           "toolchainDigests": [
             "a6da84444e815dd94c15887190c7d6bd48c7bca5975fb5d493eb77ab39f27d80",
             "203e3b0d3be3c17331a7c7115aec71104db8f2b682e57e2c14dd9ee6f3fe18fb",
-            "003748487700f8ae84f18f45bdfc8c43b9a0931e5fdfeb51d95b867caf6fb9db"
+            "8fa05f139f9a0eb03853faad7a74858d5b6a4ba9836beea6d2b359da5d294966"
           ]
         },
         "determinism": "deterministic",
@@ -1031,7 +1033,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-            "003748487700f8ae84f18f45bdfc8c43b9a0931e5fdfeb51d95b867caf6fb9db"
+            "8fa05f139f9a0eb03853faad7a74858d5b6a4ba9836beea6d2b359da5d294966"
           ]
         },
         "determinism": "deterministic",
@@ -1197,7 +1199,7 @@
           "id": "inventory.rg.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "003748487700f8ae84f18f45bdfc8c43b9a0931e5fdfeb51d95b867caf6fb9db"
+            "8fa05f139f9a0eb03853faad7a74858d5b6a4ba9836beea6d2b359da5d294966"
           ]
         },
         "determinism": "deterministic",

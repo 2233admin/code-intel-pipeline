@@ -204,7 +204,15 @@ jobs:
         shell: pwsh
         # T3 (#48): the tool/runtime probe is native now; the PowerShell entry
         # point is a thin forwarder onto this same subcommand.
-        run: code-intel doctor bootstrap --repo-path . --no-require-repowise
+        #
+        # --require-provider-conformance is what makes this step cover the
+        # branch a developer machine actually takes. The authoritative
+        # self-scan above runs BEFORE the install and PATH steps, so on the
+        # runner no external provider is on PATH and the doctor node only ever
+        # evaluates `builtin && !external`. The `(core && pro)` branch — the
+        # one every installed machine hits, and the one a stale shim forwarder
+        # breaks — was unreachable from the step named "release gate parity".
+        run: code-intel doctor bootstrap --repo-path . --no-require-repowise --require-provider-conformance
 
       - name: GitHub research contract tests
         shell: pwsh
@@ -535,7 +543,10 @@ jobs:
       - name: Doctor
         shell: pwsh
         # T3 (#48): native probe; the PowerShell entry point now forwards here.
-        run: code-intel doctor bootstrap --repo-path . --no-require-repowise --json
+        # --require-provider-conformance: see the windows job's Doctor step —
+        # the self-scan runs before the install, so this is the only place the
+        # installed-overlay branch is reachable.
+        run: code-intel doctor bootstrap --repo-path . --no-require-repowise --require-provider-conformance --json
 
       - name: Hospital fail-closed contract tests
         shell: pwsh
