@@ -36,6 +36,15 @@
 # true per-function maximum needs body ranges, which no scanner in this
 # repository has.
 #
+# Ratchet movement (2026-07-31, same commit): coupling 74.41 -> 74.48 for one
+# `use std::sync::atomic::{AtomicU64, Ordering};` line added to
+# tests/runtime_ci_evidence.rs. That import fixes a real test-isolation defect
+# — two tests could name the same temp directory, and one then read the other's
+# deliberately malformed fixture. The alternative was an inline fully qualified
+# path chosen purely to keep a line count down, which is the trade this file
+# already refused once below. Accepted and re-baselined rather than engineered
+# around.
+#
 # Coupling denominator change (sentrux-native 2.1.0, 2026-07-31):
 # `coupling_score` now divides import edges by the count of files written in a
 # language whose dependency syntax the scanner models, not by every code file.

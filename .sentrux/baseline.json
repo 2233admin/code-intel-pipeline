@@ -6,19 +6,19 @@
   "metrics": {
     "branch_density_per_fn": 156,
     "complex_fn_count": 8,
-    "coupling_score": 74.41,
-    "cross_module_edges": 1064,
+    "coupling_score": 74.48,
+    "cross_module_edges": 1065,
     "cycle_count": 0,
     "files": 239,
-    "functions": 3345,
+    "functions": 3348,
     "god_file_count": 33,
     "import_modeled_files": 143,
     "max_complexity": 156,
     "quality_signal": 3554,
-    "total_import_edges": 1064
+    "total_import_edges": 1065
   },
-  "savedAt": 1785493531,
+  "savedAt": 1785502811,
   "schema": "code-intel-sentrux-baseline.v4",
   "scope": ".",
-  "sourceCommit": "798f63356a4b0a2b374f03da4ed15fa29aedfdda"
+  "sourceCommit": "ee22f6c34eb5ccabc3551db85c196cccdb52cf27"
 }
