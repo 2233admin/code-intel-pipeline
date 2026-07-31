@@ -7,6 +7,35 @@
 # no god files, coupling grade B) is tracked modernization debt
 # (issue #14, "Remaining tracked debt").
 #
+# Complexity counting change (sentrux-native 2.2.0, 2026-07-31):
+# `complexity_terms` now strips comments and string bodies before tokenising,
+# and only counts the words `and`/`or` for languages where they really are
+# operators (Python). PowerShell's `-and`/`-or` are counted; its bare English
+# `and`/`or` are not.
+#
+# This is where max_cc = 162 came from. The number was produced by
+# legacy/scripts/tests/test-code-intel-pipeline.ps1: 465 lines, one recognised
+# `function`, and 161 "complexity terms" of which 45 were the word `or` and 11
+# were `and` sitting in comments and strings. So a third of the repository's
+# headline complexity threshold was English prose.
+#
+# Measured after the fix: max_cc 162 -> 156, complex_fn_count 12 -> 8,
+# quality_signal 3254 -> 3554. The threshold is ratcheted to the new measured
+# 156 rather than left at 162 — a real tightening, if a small one.
+#
+# It does not reach the intended 70 because the remaining 156 is honest: that
+# same test script has 93 `if` branches over a single recognised function. It
+# is genuinely branch-dense and genuinely undecomposed. Issue #78 deletes it;
+# tightening toward 70 is tracked with the rest of the threshold debt in #14.
+#
+# One naming caveat, recorded so nobody re-derives it: `max_cc` does not gate
+# any function's cyclomatic complexity. The value is branch tokens divided by
+# recognised functions within one file — a per-file density. The metric is now
+# also emitted as `branch_density_per_fn` under its honest name; `max_cc` and
+# `max_complexity` keep the historical names the sentrux-lite scale used. A
+# true per-function maximum needs body ranges, which no scanner in this
+# repository has.
+#
 # Coupling denominator change (sentrux-native 2.1.0, 2026-07-31):
 # `coupling_score` now divides import edges by the count of files written in a
 # language whose dependency syntax the scanner models, not by every code file.
@@ -76,5 +105,5 @@
 [constraints]
 max_cycles = 0
 max_coupling = 76.0
-max_cc = 162
+max_cc = 156
 no_god_files = false

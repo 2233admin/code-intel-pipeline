@@ -1601,7 +1601,14 @@ fn assert_checked_schema(value: &Value, schema: &str) {
     // PowerShell's Test-Json schema engine is not reliable under concurrent
     // invocations from this parallel test binary. Keep the external validator
     // serialized while preserving unique payload paths for failure diagnosis.
-    let _guard = SCHEMA_CHECK_LOCK.lock().unwrap();
+    // Recover from poisoning instead of propagating it. The lock guards
+    // nothing but serialisation of an external validator — there is no shared
+    // state a panicking holder could have corrupted. Unwrapping turned a
+    // single timeout in one test into eight failures in unrelated ones, all
+    // reporting a poisoned mutex rather than the timeout that caused it.
+    let _guard = SCHEMA_CHECK_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let path = std::env::temp_dir().join(format!(
         "code-intel-c03-schema-{}-{}.json",
         std::process::id(),
@@ -1626,13 +1633,22 @@ fn assert_checked_schema(value: &Value, schema: &str) {
     );
 }
 
+/// Ten seconds was a cold-start budget, not a work budget: `SCHEMA_CHECK_LOCK`
+/// serialises roughly thirty of these, each one a fresh `pwsh` process loading
+/// `Test-Json`, and a Windows CI runner under load has exceeded it on a tree
+/// byte-identical to one that passed minutes earlier. The timeout exists to
+/// stop a hung validator from hanging the suite, so it only has to be shorter
+/// than the job timeout — being tight buys nothing and costs false failures.
+const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(120);
+
 fn run_command_with_timeout(command: &mut Command) -> std::process::Output {
     let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let started = Instant::now();
+    let deadline = started + SUBPROCESS_TIMEOUT;
     loop {
         if child.try_wait().unwrap().is_some() {
             return child.wait_with_output().unwrap();
@@ -1641,7 +1657,8 @@ fn run_command_with_timeout(command: &mut Command) -> std::process::Output {
             let _ = child.kill();
             let output = child.wait_with_output().unwrap();
             panic!(
-                "subprocess timed out; stderr: {}",
+                "subprocess exceeded {}s; stderr: {}",
+                SUBPROCESS_TIMEOUT.as_secs(),
                 String::from_utf8_lossy(&output.stderr)
             );
         }
