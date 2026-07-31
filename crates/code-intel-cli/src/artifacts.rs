@@ -3,8 +3,12 @@ use std::env;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+/// The environment variable that names the artifact root when no flag does.
+pub(crate) const ARTIFACT_ROOT_ENV: &str = "CODE_INTEL_ARTIFACT_ROOT";
 
 #[derive(Debug)]
 struct ResumeSummary {
@@ -283,7 +287,7 @@ pub(crate) fn resolve_artifact_root(explicit: Option<&Path>) -> Result<PathBuf> 
     if let Some(path) = explicit {
         return Ok(path.to_path_buf());
     }
-    if let Ok(value) = env::var("CODE_INTEL_ARTIFACT_ROOT") {
+    if let Ok(value) = env::var(ARTIFACT_ROOT_ENV) {
         if !value.trim().is_empty() {
             return Ok(PathBuf::from(value));
         }
@@ -298,6 +302,72 @@ pub(crate) fn resolve_artifact_root(explicit: Option<&Path>) -> Result<PathBuf> 
         .join(".code-intel")
         .join("code-intel")
         .join("artifacts"))
+}
+
+/// Composes a DAG staging directory the way `resume` and `artifact index` read
+/// runs back: `<artifact root>/<repo name>/<run>`. The PowerShell launcher owned
+/// this composition until it was retired, and the failure it existed to prevent
+/// is repeating the repository name inside the path, which strands a run where
+/// no reader looks. Only the repository directory is created here; the run
+/// directory is left absent because `dag_run::execute_dag` claims it
+/// exclusively and must keep failing when it already exists.
+pub(crate) fn compose_dag_staging_dir(
+    artifact_root: Option<&Path>,
+    repo: &Path,
+) -> Result<PathBuf> {
+    let repo = absolute_existing_dir(repo)?;
+    let artifact_root = resolve_artifact_root(artifact_root)?;
+    let repo_name = repo
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("repo path has no final directory name")?;
+    let repo_artifacts = artifact_root.join(repo_name);
+    fs::create_dir_all(&repo_artifacts)?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("system clock is before the unix epoch: {error}"))?;
+    let stem = utc_run_stamp(now.as_secs());
+    let mut nonce = u64::from(now.subsec_nanos());
+    for _ in 0..64 {
+        let candidate = repo_artifacts.join(format!("{stem}.dag-staging-{nonce:012x}"));
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+        nonce = nonce.wrapping_add(1);
+    }
+    Err(format!(
+        "no free DAG staging directory under {}",
+        repo_artifacts.display()
+    )
+    .into())
+}
+
+/// `yyyyMMdd-HHmmss` in UTC, by Howard Hinnant's `civil_from_days`. Nothing
+/// parses this stem back, but `latest_run_dir` sorts run directories by name,
+/// so a run written today must still sort after one the launcher wrote.
+fn utc_run_stamp(seconds: u64) -> String {
+    let days = (seconds / 86_400) as i64;
+    let second_of_day = seconds % 86_400;
+    let shifted = days + 719_468;
+    let era = shifted.div_euclid(146_097);
+    let day_of_era = shifted.rem_euclid(146_097);
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_position = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_position + 2) / 5 + 1;
+    let month = if month_position < 10 {
+        month_position + 3
+    } else {
+        month_position - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}{month:02}{day:02}-{:02}{:02}{:02}",
+        second_of_day / 3_600,
+        (second_of_day % 3_600) / 60,
+        second_of_day % 60
+    )
 }
 
 fn absolute_existing_dir(path: &Path) -> Result<PathBuf> {
