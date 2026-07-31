@@ -126,13 +126,22 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
     commit_fixture(&repo, "baseline");
 
     let (code, output) = run_wrapper(&repo, &artifacts);
-    // The doctor probes the host toolchain, and this route passes it no flags.
-    // A doctor-only domain failure therefore says the machine lacks a required
-    // tool, not that the wrapper regressed — the same tolerance
-    // `production_run_preserves_doctor_domain_failure_and_completes_unrelated_branches`
-    // encodes. CI installs the pinned tools, so the assertions below still run
-    // where it counts. Every other failure is real and must not be swallowed.
-    if code != Some(0) && output.contains("Domain failure: doctor") {
+    // The doctor reports three distinct causes (`doctor_adapter.rs::diagnosis`).
+    // Two of them — bootstrap readiness and provider conformance — describe the
+    // machine's tools, and this route passes the doctor no flags to fix that up,
+    // so on a host that is missing or mismatching a pinned tool they say nothing
+    // about the wrapper. The third, manifest reconciliation, is about this
+    // repository's own orchestration manifest and is never tolerated here, nor
+    // is any second domain failure. CI installs the pinned tools, so everything
+    // below still runs where it counts.
+    let host_toolchain_gap = code != Some(0)
+        && output.matches("Domain failure:").count() == 1
+        && output.contains("Domain failure: doctor")
+        && !output.contains("manifest reconciliation failed")
+        && ["bootstrap readiness failed", "provider conformance failed"]
+            .iter()
+            .any(|cause| output.contains(cause));
+    if host_toolchain_gap {
         eprintln!(
             "host toolchain is incomplete, so the authoritative route is not asserted:\n{output}"
         );
