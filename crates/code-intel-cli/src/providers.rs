@@ -68,7 +68,7 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         required: true,
         status: "active",
         source_spec: "Pipeline-owned B03 translation over Sentrux/shim native output and A04 admissibility",
-        notes: "Canonical structural evidence route. The bundled shim and archive/Invoke-SentruxAgentTool.ps1 remain replaceable provider implementations/rollback surfaces, never diagnosis authority.",
+        notes: "Canonical structural evidence route. The bundled shim and legacy/Invoke-SentruxAgentTool.ps1 remain replaceable provider implementations/rollback surfaces, never diagnosis authority.",
     },
     ProviderOperation {
         provider: "session",
@@ -162,11 +162,11 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         protocol: "artifact+command",
         method: "POST",
         route: "/api/providers/codenexus/lite",
-        command_template: r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\archive/Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#,
+        command_template: r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy/Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#,
         artifact: "codenexus-context.json",
         required: false,
         status: "compatibility",
-        source_spec: "Repository-owned archive/Invoke-CodeNexusLite.ps1 localization adapter",
+        source_spec: "Repository-owned legacy/Invoke-CodeNexusLite.ps1 localization adapter",
         notes: "Canonical compatibility route; non-blocking and replaceable, with Survival Scanner preserving localization when unavailable.",
     },
     ProviderOperation {
@@ -176,7 +176,7 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         protocol: "compatibility-alias",
         method: "POST",
         route: "/api/providers/repowise/lite",
-        command_template: r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\archive/Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#,
+        command_template: r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy/Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#,
         artifact: "codenexus-context.json",
         required: false,
         status: "compatibility",
@@ -1563,7 +1563,7 @@ mod tests {
         let canonical = find("codenexus", "lite").expect("canonical CodeNexus provider");
         assert_eq!(
             canonical.command_template,
-            r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\archive/Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#
+            r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy/Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#
         );
         assert!(!canonical.required);
         assert_eq!(canonical.status, "compatibility");
@@ -1582,15 +1582,15 @@ mod tests {
             .expect("clock should be after epoch")
             .as_nanos();
         let root = env::temp_dir().join(format!("code-intel-provider-drift-{stamp}"));
-        fs::create_dir_all(root.join("archive")).expect("fixture root");
-        fs::write(root.join("archive/Invoke-CodeNexusLite.ps1"), "# fixture\n")
+        fs::create_dir_all(root.join("legacy")).expect("fixture root");
+        fs::write(root.join("legacy/Invoke-CodeNexusLite.ps1"), "# fixture\n")
             .expect("fixture entrypoint");
         let manifest = json!({
             "integrations": [{
                 "id": "localization.codenexus-lite",
                 "required": false,
                 "kind": "compatibility-adapter",
-                "entrypoint": "archive/Invoke-CodeNexusLite.ps1",
+                "entrypoint": "legacy/Invoke-CodeNexusLite.ps1",
                 "commands": {"compat": "target/debug/code-nexus-lite.exe codenexus::lite"}
             }]
         });
@@ -1678,7 +1678,7 @@ mod tests {
         );
         assert_eq!(
             command,
-            r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\archive/Invoke-CodeNexusLite.ps1" -RepoPath 'D:\work repo\O''Brien'"#
+            r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy/Invoke-CodeNexusLite.ps1" -RepoPath 'D:\work repo\O''Brien'"#
         );
     }
 }

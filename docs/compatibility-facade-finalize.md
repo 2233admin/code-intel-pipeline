@@ -8,7 +8,7 @@ evidence.
 Run the current audit with:
 
 ```powershell
-pwsh -NoProfile -File archive/Invoke-CompatibilityFacadeFinalize.ps1 `
+pwsh -NoProfile -File legacy/Invoke-CompatibilityFacadeFinalize.ps1 `
   -EvaluatedAt ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) `
   -OutFile work/e06/final-manifest.json `
   -Json

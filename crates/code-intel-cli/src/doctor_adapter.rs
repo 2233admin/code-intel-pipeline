@@ -169,7 +169,7 @@ fn validate_snapshot_input(
 
 /// Run the bootstrap probe in-process.
 ///
-/// Before T3 this shelled out to `archive/check-code-intel-tools.ps1` and fell
+/// Before T3 this shelled out to `legacy/check-code-intel-tools.ps1` and fell
 /// back to a hand-written stub when `pwsh` or the script was absent — a stub
 /// that answered `graphProvider` with hardcoded `true`s and so could not
 /// report the very drift doctor exists to catch. The probe is native now, so

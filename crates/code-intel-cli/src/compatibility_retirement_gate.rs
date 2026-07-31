@@ -735,7 +735,7 @@ mod tests {
             json!({"outcome":"passed","dependencyId":"D02","status":"approved","reviewer":"d02-reviewer"}),
         );
         let subject = json!({
-            "legacyBranch":{"capabilityId":"legacy.capability","branchId":"legacy.branch","callPath":"archive/run-code-intel.ps1::legacy.branch","affectedFiles":["archive/run-code-intel.ps1"],"owner":"owner-team","registryParticipantId":"legacy.registry"},
+            "legacyBranch":{"capabilityId":"legacy.capability","branchId":"legacy.branch","callPath":"legacy/run-code-intel.ps1::legacy.branch","affectedFiles":["legacy/run-code-intel.ps1"],"owner":"owner-team","registryParticipantId":"legacy.registry"},
             "replacement":{"capabilityId":"replacement.atom","implementationId":"replacement.atom.compat","dependencies":["D02"],"atomEvidence":atom},
             "parity":{"golden":golden,"contract":contract,"effects":effects},
             "registryReconciliation":registry,"compatibilityWindow":window,

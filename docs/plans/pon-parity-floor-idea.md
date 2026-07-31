@@ -31,7 +31,7 @@ ratchet without changing the underlying parity oracle.
 ## Constraints
 - Do not add dependencies.
 - Do not copy `pon` implementation code; the upstream repository has no declared license.
-- Keep `archive/scripts/tests/test-parity-baseline.ps1` as the behavioral oracle and avoid overlapping its current edits.
+- Keep `legacy/scripts/tests/test-parity-baseline.ps1` as the behavioral oracle and avoid overlapping its current edits.
 - Do not add a divergence waiver path until a real, independently reviewed exception class exists.
 - Treat the source as a design reference; production authority remains local.
 

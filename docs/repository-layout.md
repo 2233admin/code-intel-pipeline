@@ -2,39 +2,52 @@
 
 This repository is converging toward a smaller public surface.
 
-## Public Root Entry Points
+## Repository Root
 
-Keep these files at the repository root until a release explicitly changes the
-install and CI contract:
-
-- `archive/code-intel.ps1`: recovery and update launcher for the compiled CLI.
-- `archive/invoke-code-intel.ps1`: v0.x compatibility forwarder.
-- `archive/run-code-intel.ps1`: compatibility adapter host for capabilities not yet internalized.
-- `archive/check-code-intel-tools.ps1`: environment doctor.
-- `archive/install-code-intel-pipeline.ps1`: installer and repair entry point.
-- `archive/Find-CodeIntelProjects.ps1`: local project discovery entry point.
-- `archive/bootstrap-new-machine.ps1`: new-machine bootstrap entry point.
-- `archive/Invoke-SentruxAgentTool.ps1`: Sentrux compatibility entry point.
 - `README.md`, `CHANGELOG.md`, `CONTEXT.md`: operator-facing docs.
 - `Cargo.toml`, `Cargo.lock`, `crates/code-intel-cli`: primary compiled CLI and execution kernel.
 
+No PowerShell entry point lives at the repository root. Every `.ps1` surface is
+under `legacy/`.
+
+## The `legacy/` Directory
+
+`legacy/` holds the whole PowerShell surface. The name records *which language
+tier a file belongs to*, not whether it is retired — the directory mixes live
+entry points with facades awaiting retirement. Read the per-file status below;
+do not infer it from the directory name.
+
+Still live, with no replacement today:
+
+- `legacy/install-code-intel-pipeline.ps1`: installer and repair entry point. The
+  only source-install path, including macOS and Linux.
+- `legacy/code-intel.ps1`: recovery and update launcher for the compiled CLI.
+- `legacy/Invoke-SentruxAgentTool.ps1`: coding-session gate entry point
+  (`session_start` / `session_end`), mandated by AGENTS.md. Teardown: #50.
+- `legacy/Find-CodeIntelProjects.ps1`: local project discovery entry point.
+- `legacy/bootstrap-new-machine.ps1`: new-machine bootstrap entry point.
+
+Superseded or retiring — do not add new callers:
+
+- `legacy/check-code-intel-tools.ps1`: superseded by the native Rust doctor
+  (#48). Use `code-intel doctor`.
+- `legacy/run-code-intel.ps1`: compatibility adapter host for capabilities not yet
+  internalized. Absorbed into `code-intel run` by #47.
+- `legacy/invoke-code-intel.ps1`: v0.x compatibility forwarder.
+
 ## Internal Script Buckets
 
-Internal scripts use these buckets:
+`legacy/scripts/tests/` holds the PowerShell contract tests and smoke tests. It
+is the only bucket that exists today; `benchmarks/`, `adapters/` and
+`incubator/` are the reserved names for their categories, to be created under
+`legacy/scripts/` when such a script first appears.
 
-- `scripts/tests/`: PowerShell contract tests and smoke tests.
-- `scripts/benchmarks/`: benchmark and A/B scripts.
-- `scripts/adapters/`: tool-specific helper wrappers.
-- `scripts/incubator/`: experiments that are not in the shipped product path.
+Do not move a PowerShell file out of `legacy/` without one of these:
 
-The public PowerShell compatibility and recovery entry points stay at the repository root. Test
-scripts are internal and must remain under `scripts/tests/`.
-
-Do not move a root PowerShell file without one of these:
-
-- a root compatibility shim with the old filename, or
+- a compatibility shim at the old path with the old filename, or
 - a simultaneous update to installer, CI, release packaging, README, skill docs,
-  and tests.
+  and tests — plus a re-freeze of every retirement packet that pins a file you
+  touched, and a digest-pin re-sync afterwards.
 
 ## Rust Core Boundary
 

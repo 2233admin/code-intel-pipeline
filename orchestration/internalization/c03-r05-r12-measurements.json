@@ -23,7 +23,7 @@
       "unsupportedLanguageRelationshipPrecision": "unknown",
       "suiteElapsedMs": 27110,
       "sourceSha256": "44f89f430ebf776b35e705d482807dd58a2803723268b4e162c9a753fadf8390",
-      "testSha256": "1f74220af1385ca5c549f0e3d12eb4e02218a0b4aabf247e328ccfa3e4e32e32",
+      "testSha256": "3f7b49ecde974d748021bd3d6e9c5aff546819afab5c1a538a8747b471872ef6",
       "labeledCorpus": {
         "fixture": "orchestration/internalization/fixtures/r06-native-labeled-corpus.json",
         "samples": 12,
@@ -48,7 +48,7 @@
       "comparisonStatus": "reviewed-retirement-no-unique-value"
     },
     "r08GitHubResearch": {
-      "command": "pwsh -NoProfile -File archive/scripts/tests/test-github-solution-research.ps1",
+      "command": "pwsh -NoProfile -File legacy/scripts/tests/test-github-solution-research.ps1",
       "fixtureElapsedMs": 855.4559,
       "readOnlyCommandFamilies": 1,
       "rateLimitFallbacksPassed": 1,
@@ -97,7 +97,7 @@
       "rollbackRoutesTested": ["git", "unversioned-explicit-overlay"]
     },
     "r12Greenfield": {
-      "command": "pwsh -NoProfile -File archive/scripts/tests/test-greenfield-integration.ps1",
+      "command": "pwsh -NoProfile -File legacy/scripts/tests/test-greenfield-integration.ps1",
       "fixtureElapsedMs": 2127.4285,
       "planArtifacts": 2,
       "explicitAnalyzeFixtures": 1,

@@ -117,7 +117,7 @@ fn run_legacy(repo: &Path, root: &Path) -> PathBuf {
     let output = Command::new("pwsh")
         .arg("-NoProfile")
         .arg("-File")
-        .arg(project_root.join("archive/run-code-intel.ps1"))
+        .arg(project_root.join("legacy/run-code-intel.ps1"))
         .arg("-RepoPath")
         .arg(repo)
         .arg("-Config")

@@ -1,6 +1,6 @@
 # T2 launcher classification (issue #47)
 
-Working document for retiring `archive/run-code-intel.ps1` (4742 lines, 90
+Working document for retiring `legacy/run-code-intel.ps1` (4742 lines, 90
 function definitions, 72 parameters) into `code-intel run` plus a ≤50-line
 thin forwarder.
 
@@ -16,10 +16,10 @@ library that two PowerShell test suites dot-source out of**, via
 
 | test file | functions pulled | subject |
 |---|---|---|
-| `archive/scripts/tests/test-hospital-trust-contract.ps1` | 18 | hospital state machine, diagnosis, scoring |
-| `archive/scripts/tests/test-regression-fixes.ps1` | 9 | code-evidence symbol extraction (6 languages) |
-| `archive/scripts/tests/test-regression-fixes.ps1` | 3 | sentrux gate metric deltas / no-degradation |
-| `archive/scripts/tests/test-regression-fixes.ps1` | 4 | hospital state machine + surgery target |
+| `legacy/scripts/tests/test-hospital-trust-contract.ps1` | 18 | hospital state machine, diagnosis, scoring |
+| `legacy/scripts/tests/test-regression-fixes.ps1` | 9 | code-evidence symbol extraction (6 languages) |
+| `legacy/scripts/tests/test-regression-fixes.ps1` | 3 | sentrux gate metric deltas / no-degradation |
+| `legacy/scripts/tests/test-regression-fixes.ps1` | 4 | hospital state machine + surgery target |
 
 34 function references in total. **Shrinking the launcher to a forwarder
 deletes the subject of those tests.** No amount of parameter forwarding

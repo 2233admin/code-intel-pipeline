@@ -3295,23 +3295,23 @@ mod tests {
     fn retirement_deletion_patch_replays_pure_deletion_and_rejects_forged_addition() {
         let valid = deletion_diff(
             vec![deletion_file(
-                "archive/run-code-intel.ps1",
+                "legacy/run-code-intel.ps1",
                 "legacy\nkeep\n",
                 "keep\n",
                 vec![],
             )],
-            vec!["archive/run-code-intel.ps1"],
+            vec!["legacy/run-code-intel.ps1"],
         );
         validate_retirement_deletion_diff_value(&valid).unwrap();
 
         let forged = deletion_diff(
             vec![deletion_file(
-                "archive/run-code-intel.ps1",
+                "legacy/run-code-intel.ps1",
                 "legacy\nkeep\n",
                 "new-executable-code\nkeep\n",
                 vec!["new-executable-code"],
             )],
-            vec!["archive/run-code-intel.ps1"],
+            vec!["legacy/run-code-intel.ps1"],
         );
         let error = validate_retirement_deletion_diff_value(&forged).unwrap_err();
         assert!(error.contains("added or replacement"));
@@ -3322,14 +3322,14 @@ mod tests {
         let hidden = deletion_diff(
             vec![
                 deletion_file(
-                    "archive/run-code-intel.ps1",
+                    "legacy/run-code-intel.ps1",
                     "legacy\nkeep\n",
                     "keep\n",
                     vec![],
                 ),
                 deletion_file("second-branch.ps1", "legacy\nkeep\n", "keep\n", vec![]),
             ],
-            vec!["archive/run-code-intel.ps1"],
+            vec!["legacy/run-code-intel.ps1"],
         );
         let error = validate_retirement_deletion_diff_value(&hidden).unwrap_err();
         assert!(error.contains("touched paths differ"));

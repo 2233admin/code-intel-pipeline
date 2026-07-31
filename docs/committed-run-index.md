@@ -23,4 +23,4 @@ code-intel artifact index --artifact-root <root> --output <index.json> --operati
 code-intel artifact index --artifact-root <root> --output <index.json> --operation incremental --existing <index.json>
 ```
 
-`archive/update-code-intel-index.ps1` is the compatibility facade. Normal mode routes to the Rust engine and writes a Markdown projection alongside the JSON index. The previous report-based traversal remains available only with `-LegacyCompatibilityMode`; it does not delete or migrate legacy data.
+`legacy/update-code-intel-index.ps1` is the compatibility facade. Normal mode routes to the Rust engine and writes a Markdown projection alongside the JSON index. The previous report-based traversal remains available only with `-LegacyCompatibilityMode`; it does not delete or migrate legacy data.

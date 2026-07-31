@@ -14,7 +14,7 @@ Two local tools have overlapping "operator infrastructure" identity but differen
   claude_env / hooks / standards / npm / dotfiles / symlink_refs / scripts_scan / backups),
   three sync backends (gitea / github / gitlab), organizer / cleaner / checkpoint,
   full pytest suite (~20 test modules). Concern: *this machine* -- drives, Python/uv,
-  archive/clean hygiene, drift vs SKILL.md.
+  legacy/clean hygiene, drift vs SKILL.md.
 - **code-intel-pipeline (CIP)** -- target-repo understanding pipeline. 15 PowerShell
   scripts + `crates/code-nexus-lite` (Rust) + 1 Python helper. Concern: *a cloned repo* --
   rg inventory, repowise semantic index, Understand Anything graph, Sentrux structure gate,
@@ -54,7 +54,7 @@ Target layout:
 code-intel-pipeline/   (Cargo workspace)
   crates/
     cli/             clap entrypoint -- one binary, subcommands: pipeline + machine
-    pipeline/        repo-understanding (was archive/run-code-intel.ps1 + adapters + hospital)
+    pipeline/        repo-understanding (was legacy/run-code-intel.ps1 + adapters + hospital)
     governance/      hospital state machine + triage + surgery-plan + sentruxInsight
     machine/         host-env mgmt (was mmc: detectors, archive, clean, doctor)
     sync/            git-backed sync backends (gitea/github/gitlab; was mmc/sync)
@@ -82,7 +82,7 @@ gets more efficient -- otherwise the ADR lies to its future readers:
   multi-second tool runs. Near-zero runtime gain on the glue layer. Do not claim otherwise.
 - **The other real wins of Rust-unified:**
   1. **Single static binary** -- no Python runtime, no PowerShell, no `uv` bootstrap on a
-     fresh machine. `archive/bootstrap-new-machine.ps1` (currently a script) collapses into "drop one
+     fresh machine. `legacy/bootstrap-new-machine.ps1` (currently a script) collapses into "drop one
      binary." This also deletes the runtime-bootstrap fragility class that has mcm broken today.
   2. **One language** for the whole repo (code-nexus-lite is already Rust).
   3. **Strongest cross-platform story** -- `sysinfo`/`std::fs`/`camino` give portable drive,

@@ -3,7 +3,7 @@ name: code-intel-parity-observe
 # Non-blocking PS1-vs-Rust parity observation (issue #46 / campaign #55, T1).
 #
 # This workflow is deliberately NOT wired into ci.yml. It exists to WATCH the
-# gap between the legacy archive/run-code-intel.ps1 pipeline and the Rust
+# gap between the legacy legacy/run-code-intel.ps1 pipeline and the Rust
 # `code-intel run execute` path while T2-T5 port the PS1 monolith piece by
 # piece, without ever being able to block a PR on a divergence that is
 # currently expected. continue-on-error is set at both the job and the
@@ -16,9 +16,9 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - archive/run-code-intel.ps1
-      - archive/Invoke-SentruxAgentTool.ps1
-      - archive/scripts/tests/test-ps1-rust-parity.ps1
+      - legacy/run-code-intel.ps1
+      - legacy/Invoke-SentruxAgentTool.ps1
+      - legacy/scripts/tests/test-ps1-rust-parity.ps1
       - crates/**
 
 permissions:
@@ -51,7 +51,7 @@ jobs:
       # ci.yml's "Install portable pipeline" / "Add pipeline tools PATH".
       - name: Install portable pipeline
         shell: pwsh
-        run: .\archive\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -RequireRepowise:$false -Json
+        run: .\legacy\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -RequireRepowise:$false -Json
 
       - name: Add pipeline tools PATH
         shell: pwsh
@@ -63,7 +63,7 @@ jobs:
         continue-on-error: true
         run: |
           $verdictPath = Join-Path $env:RUNNER_TEMP "parity-verdict.json"
-          ./archive/scripts/tests/test-ps1-rust-parity.ps1 -RepoPath . -VerdictPath $verdictPath
+          ./legacy/scripts/tests/test-ps1-rust-parity.ps1 -RepoPath . -VerdictPath $verdictPath
           $harnessExitCode = $LASTEXITCODE
           Add-Content -Path $env:GITHUB_OUTPUT -Value "verdict-path=$verdictPath"
           Add-Content -Path $env:GITHUB_OUTPUT -Value "harness-exit-code=$harnessExitCode"

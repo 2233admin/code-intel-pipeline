@@ -12,6 +12,6 @@ Provider absence is an observation, not an empty result. It is represented as `s
 
 ## Full/lite swap and rollback
 
-Full CodeNexus is the `primary` provider. `archive/Invoke-CodeNexusLite.ps1` is a compatibility implementation and may appear only as `explicit_fallback` or `legacy_rollback`. It uses the same port and A04 path, but its provenance and repository/Git/Sentrux effects remain distinct. The demoted Rust worker is not part of this adapter.
+Full CodeNexus is the `primary` provider. `legacy/Invoke-CodeNexusLite.ps1` is a compatibility implementation and may appear only as `explicit_fallback` or `legacy_rollback`. It uses the same port and A04 path, but its provenance and repository/Git/Sentrux effects remain distinct. The demoted Rust worker is not part of this adapter.
 
 This design makes provider replacement an adapter-level change: no shared storage migration, Pipeline-side impact algorithm, or change to downstream admission semantics is required.

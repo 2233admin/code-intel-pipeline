@@ -124,7 +124,7 @@ jobs:
 
       - name: Install portable pipeline
         shell: pwsh
-        run: .\archive\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -Json
+        run: .\legacy\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -Json
 
       - name: Add pipeline tools PATH
         shell: pwsh
@@ -139,23 +139,23 @@ jobs:
 
       - name: GitHub research contract tests
         shell: pwsh
-        run: .\archive/scripts/tests/test-github-solution-research.ps1 -RepoPath .
+        run: .\legacy/scripts/tests/test-github-solution-research.ps1 -RepoPath .
 
       - name: Project discovery contract tests
         shell: pwsh
-        run: .\archive/scripts/tests/test-project-discovery.ps1 -RepoPath .
+        run: .\legacy/scripts/tests/test-project-discovery.ps1 -RepoPath .
 
       - name: Project management support contract tests
         shell: pwsh
-        run: .\archive/scripts/tests/test-project-management-support.ps1 -RepoPath .
+        run: .\legacy/scripts/tests/test-project-management-support.ps1 -RepoPath .
 
       - name: Skill development benchmark contract tests
         shell: pwsh
-        run: .\archive/scripts/tests/test-skill-development-benchmark.ps1 -RepoPath .
+        run: .\legacy/scripts/tests/test-skill-development-benchmark.ps1 -RepoPath .
 
       - name: Pipeline smoke
         shell: pwsh
-        run: .\archive/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -SkipGitHubResearch -Mode normal
+        run: .\legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -SkipGitHubResearch -Mode normal
 
       - name: Package
         shell: pwsh
@@ -192,8 +192,8 @@ jobs:
           Expand-Archive -LiteralPath $asset -DestinationPath $expanded
           $payload = Join-Path $expanded "code-intel-pipeline"
           $required = @(
-            (Join-Path $payload "archive/install-code-intel-pipeline.ps1"),
-            (Join-Path $payload "archive/code-intel.ps1"),
+            (Join-Path $payload "legacy/install-code-intel-pipeline.ps1"),
+            (Join-Path $payload "legacy/code-intel.ps1"),
             (Join-Path $payload "skills\code-intel-pipeline\SKILL.md"),
             (Join-Path $payload "skills\code-intel-pipeline\agents\openai.yaml"),
             (Join-Path $payload "skills\code-intel-pipeline\scripts\bootstrap.py"),
@@ -355,8 +355,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "unzip failed with exit code ${LASTEXITCODE}" }
           $payload = Join-Path $expanded "code-intel-pipeline"
           $required = @(
-            (Join-Path $payload "archive/install-code-intel-pipeline.ps1"),
-            (Join-Path $payload "archive/code-intel.ps1"),
+            (Join-Path $payload "legacy/install-code-intel-pipeline.ps1"),
+            (Join-Path $payload "legacy/code-intel.ps1"),
             (Join-Path $payload "skills/code-intel-pipeline/SKILL.md"),
             (Join-Path $payload "skills/code-intel-pipeline/agents/openai.yaml"),
             (Join-Path $payload "skills/code-intel-pipeline/scripts/bootstrap.py"),

@@ -1,6 +1,6 @@
 # Follow-up automation
 
-The legacy compatibility runner (`archive/run-code-intel.ps1`) emits `follow-up-automation.json` after normalized failure and Sentrux debt classification. This is a zero-effect advisory artifact, not proof that a skill ran or a pull request was created. The compiled primary entry (`code-intel`) does not emit this artifact; primary-entry support is future work.
+The legacy compatibility runner (`legacy/run-code-intel.ps1`) emits `follow-up-automation.json` after normalized failure and Sentrux debt classification. This is a zero-effect advisory artifact, not proof that a skill ran or a pull request was created. The compiled primary entry (`code-intel`) does not emit this artifact; primary-entry support is future work.
 
 ## Proactive skill suggestions
 
@@ -21,7 +21,7 @@ Disable or change the suggestion in `pipeline.config.json`:
 
 Only the legacy runner reads this policy from `pipeline.config.json`; the
 compiled primary entry neither reads `followUpAutomation` nor accepts its
-flags (`archive/invoke-code-intel.ps1` rejects them as unsupported compatibility
+flags (`legacy/invoke-code-intel.ps1` rejects them as unsupported compatibility
 options). Primary-entry support is future work.
 
 ## Automatic pull requests
@@ -31,7 +31,7 @@ Automatic PR mode defaults to `ask`. When an actionable problem exists, the Pipe
 The choices are:
 
 - `keep_disabled`: no PR may be created;
-- `enable_once_for_snapshot`: enter the exact-proposal flow. `archive/Invoke-CodeIntelAutomaticPullRequestFlow.ps1` delegates to the executor only after proposal-specific consent, C07 replay, snapshot, HEAD, repository-mutation, and network checks all pass.
+- `enable_once_for_snapshot`: enter the exact-proposal flow. `legacy/Invoke-CodeIntelAutomaticPullRequestFlow.ps1` delegates to the executor only after proposal-specific consent, C07 replay, snapshot, HEAD, repository-mutation, and network checks all pass.
 
 `enabled` means the operator requested the execution path; it is not sufficient authority by itself. The execution atom remains fail-closed until it receives scoped authorization artifacts and both runtime effect switches. `disabled` emits neither a consent request nor an external effect.
 
@@ -45,7 +45,7 @@ Decision Record as documented in `automatic-pull-request-beta.md`.
 Interactive use defaults to `keep_disabled`:
 
 ```powershell
-./archive/Invoke-CodeIntelAutomaticPullRequestFlow.ps1 `
+./legacy/Invoke-CodeIntelAutomaticPullRequestFlow.ps1 `
   -RepoPath C:\src\project `
   -Repository owner/project `
   -BaseBranch main `

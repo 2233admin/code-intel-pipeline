@@ -66,7 +66,7 @@ fn build_case(root: &Path, fixture: &Value) -> Value {
     let mut native = fixture.clone();
     native["schema"] = json!("code-intel-sentrux-provider-native.v1");
     native["implementation"] = json!({"id":"sentrux.shim.compat","version":"1.0.0","digest":IMPL});
-    native["rollbackIdentity"] = json!("archive/Invoke-SentruxAgentTool.ps1");
+    native["rollbackIdentity"] = json!("legacy/Invoke-SentruxAgentTool.ps1");
     native["sourceRevision"] = json!("revision-b03");
     native["expectedSnapshotIdentity"] = json!(CURRENT);
     native["sourceSnapshotIdentity"] = json!(CURRENT);

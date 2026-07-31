@@ -70,7 +70,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```bash
 git clone https://github.com/2233admin/code-intel-pipeline.git
 cd code-intel-pipeline
-pwsh ./archive/install-code-intel-pipeline.ps1 -RepoPath ~/src/your-repo -InstallMissing
+pwsh ./legacy/install-code-intel-pipeline.ps1 -RepoPath ~/src/your-repo -InstallMissing
 ```
 
 安装器把编译好的 `code-intel` 复制到平台 bin 目录：
@@ -94,22 +94,30 @@ code-intel ~/src/your-repo
 
 ## 仓库入口
 
-编译后的 `code-intel` 是唯一正式入口。PowerShell 只保留安装、恢复和旧命令转发，不实现 Pipeline 语义。真正的治理边界见 [Repository Layout](docs/repository-layout.md)。
+编译后的 `code-intel` 是唯一正式入口：所有 Pipeline 语义都在它和 `crates/code-intel-cli` 里。真正的治理边界见 [Repository Layout](docs/repository-layout.md)。
 
-公共入口：
+**`legacy/` 是什么**：PowerShell 面的统一存放目录，**不等于「已退役」**。它混着两类东西——仍是唯一活路径的安装/恢复/门禁入口，和正在按 [#55](https://github.com/2233admin/code-intel-pipeline/issues/55) 逐个退役的兼容 facade。下面逐条标注，不要按目录名推断状态。
 
-- `code-intel`: 人工和 Agent 的正式主入口。
-- `archive/code-intel.ps1`: PowerShell 7.2+ 恢复启动器；健康安装只转发，`-Update` 才显式更新。
-- `archive/invoke-code-intel.ps1`: v0.x 兼容转发器，不再推荐新调用。
-- `archive/run-code-intel.ps1`: 兼容 facade；不传开关时默认走旧扫描器分支，只有显式传 `-DagCoordinate` 才调用 Rust DAG 协调。
-- `archive/check-code-intel-tools.ps1`: 环境 doctor。
-- `archive/install-code-intel-pipeline.ps1`: 安装和修复入口。
-- `archive/Find-CodeIntelProjects.ps1`: 项目发现入口。
-- `archive/bootstrap-new-machine.ps1`: 新机器自举入口。
-- `archive/Invoke-SentruxAgentTool.ps1`: Sentrux 兼容入口。
+正式主入口：
+
+- `code-intel`: 人工和 Agent 的正式主入口。新文档和命令示例一律以它开头。
 - `crates/code-intel-cli`: Rust policy/artifact CLI core。
 
-PowerShell 合同测试已迁到 `scripts/tests/`。其余根目录兼容 facade 仍被安装器、集成清单和 Rust 合同绑定，后续迁移到 `scripts/powershell/` 时必须同时更新这些契约或保留兼容 shim，不能只做文件移动。
+`legacy/` 中**仍然活跃、目前没有替代品**的入口：
+
+- `legacy/install-code-intel-pipeline.ps1`: 安装和修复入口。源码安装（含 macOS / Linux）目前只有这一条路径。
+- `legacy/code-intel.ps1`: PowerShell 7.2+ 恢复启动器；健康安装只转发，`-Update` 才显式更新。
+- `legacy/Invoke-SentruxAgentTool.ps1`: 编码会话门禁入口（`session_start` / `session_end`），AGENTS.md 强制要求，退役前不可绕过。拆解见 [#50](https://github.com/2233admin/code-intel-pipeline/issues/50)。
+- `legacy/Find-CodeIntelProjects.ps1`: 项目发现入口。
+- `legacy/bootstrap-new-machine.ps1`: 新机器自举入口。
+
+`legacy/` 中**已被取代或正在退役**的兼容 facade，新调用一律不要用：
+
+- `legacy/check-code-intel-tools.ps1`: 已被原生 Rust doctor 取代（[#48](https://github.com/2233admin/code-intel-pipeline/issues/48) 已完成），保留仅为历史参考。请用 `code-intel doctor`。
+- `legacy/run-code-intel.ps1`: 兼容 facade；不传开关时默认走旧扫描器分支，只有显式传 `-DagCoordinate` 才调用 Rust DAG 协调。收编进 `code-intel run` 见 [#47](https://github.com/2233admin/code-intel-pipeline/issues/47)。
+- `legacy/invoke-code-intel.ps1`: v0.x 兼容转发器，不再推荐新调用。
+
+PowerShell 合同测试在 `legacy/scripts/tests/`。`legacy/` 下的兼容 facade 仍被安装器、集成清单和 Rust 合同绑定：再次移动它们必须同时更新这些契约、重新冻结受影响的退役 packet 并重算 digest pin，不能只做文件移动。
 
 ## Public beta 范围
 
@@ -204,23 +212,23 @@ Skill 默认只解析稳定版，校验 GitHub Release 提供的 SHA-256 后才�
 ```powershell
 git clone https://github.com/2233admin/code-intel-pipeline.git
 cd code-intel-pipeline
-.\archive\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo -RepairSkillLinks -InstallMissing
+.\legacy\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo -RepairSkillLinks -InstallMissing
 code-intel C:\path\to\your\repo
 ```
 
 PowerShell 恢复入口：
 
 ```powershell
-.\archive\code-intel.ps1 C:\path\to\your\repo
-.\archive\code-intel.ps1 -Update
+.\legacy\code-intel.ps1 C:\path\to\your\repo
+.\legacy\code-intel.ps1 -Update
 ```
 
 先找候选项目：
 
 ```powershell
-.\archive\Find-CodeIntelProjects.ps1 -Root D:\projects -Json
-.\archive\Find-CodeIntelProjects.ps1 -Root D:\projects -WizTreeExe WizTree64.exe -Json
-.\archive\Find-CodeIntelProjects.ps1 -WizTreeCsv C:\tmp\wiztree.csv -Json
+.\legacy\Find-CodeIntelProjects.ps1 -Root D:\projects -Json
+.\legacy\Find-CodeIntelProjects.ps1 -Root D:\projects -WizTreeExe WizTree64.exe -Json
+.\legacy\Find-CodeIntelProjects.ps1 -WizTreeCsv C:\tmp\wiztree.csv -Json
 ```
 
 WizTree CLI/CSV 只是项目发现加速输入；真正选中项目后再运行 `code-intel <path>`。
@@ -228,31 +236,31 @@ WizTree CLI/CSV 只是项目发现加速输入；真正选中项目后再运行 
 完整 smoke test：
 
 ```powershell
-.\archive/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo
+.\legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo
 ```
 
 单元级回归测试（覆盖 fail-open / 假绿类修复 + fail-open lint，不依赖真实 repo，跑在临时目录里）：
 
 ```powershell
-.\archive/scripts/tests/test-regression-fixes.ps1 -VerboseOutput
+.\legacy/scripts/tests/test-regression-fixes.ps1 -VerboseOutput
 ```
 
 GitHub research artifact contract 离线测试：
 
 ```powershell
-.\archive/scripts/tests/test-github-solution-research.ps1 -RepoPath C:\path\to\your\repo
+.\legacy/scripts/tests/test-github-solution-research.ps1 -RepoPath C:\path\to\your\repo
 ```
 
 Skill development benchmark contract 测试：
 
 ```powershell
-.\archive/scripts/tests/test-skill-development-benchmark.ps1 -RepoPath C:\path\to\your\repo
+.\legacy/scripts/tests/test-skill-development-benchmark.ps1 -RepoPath C:\path\to\your\repo
 ```
 
 Project management support contract 测试：
 
 ```powershell
-.\archive/scripts/tests/test-project-management-support.ps1 -RepoPath C:\path\to\your\repo
+.\legacy/scripts/tests/test-project-management-support.ps1 -RepoPath C:\path\to\your\repo
 ```
 
 从 GitHub Release ZIP 运行时，安装后直接使用编译入口；不需要 Cargo，也不依赖仓库里的 `target/`：
@@ -270,7 +278,7 @@ code-intel C:\path\to\your\repo --mode lite
 Greenfield 行为规格适配器测试：
 
 ```powershell
-.\archive/scripts/tests/test-greenfield-integration.ps1
+.\legacy/scripts/tests/test-greenfield-integration.ps1
 ```
 
 普通用户直接运行主入口；兼容 runner 只保留给维护测试：
@@ -284,7 +292,7 @@ code-intel C:\path\to\your\repo --mode normal
 最省心：
 
 ```powershell
-.\archive\bootstrap-new-machine.ps1 -RepoPath C:\path\to\your\repo
+.\legacy\bootstrap-new-machine.ps1 -RepoPath C:\path\to\your\repo
 ```
 
 它会连续执行：
@@ -302,7 +310,7 @@ install -> doctor -> smoke test
 只检查环境，不自动安装缺失工具：
 
 ```powershell
-.\archive\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo
+.\legacy\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo
 ```
 
 安装脚本不会写 API key，不会把 secret 存进仓库。
@@ -388,7 +396,7 @@ Measured minimalism impact lives in
 Project management intake, Linear, and Obsidian/LLM wiki boundaries live in
 [`docs/project-management-support.md`](docs/project-management-support.md).
 
-下列报告与结构产物目前只由旧兼容 runner（`archive/run-code-intel.ps1` / `archive/scripts/tests/test-code-intel-pipeline.ps1`）生成，主入口不产出：
+下列报告与结构产物目前只由旧兼容 runner（`legacy/run-code-intel.ps1` / `legacy/scripts/tests/test-code-intel-pipeline.ps1`）生成，主入口不产出：
 
 ```text
 summary.md
@@ -504,13 +512,13 @@ code-intel audit --operation scope --repo C:\path\to\repo --since <git-ref>
 Agent 开始改代码前：
 
 ```powershell
-.\archive\Invoke-SentruxAgentTool.ps1 session_start C:\path\to\repo\backend
+.\legacy\Invoke-SentruxAgentTool.ps1 session_start C:\path\to\repo\backend
 ```
 
 Agent 改完代码后：
 
 ```powershell
-.\archive\Invoke-SentruxAgentTool.ps1 session_end C:\path\to\repo\backend
+.\legacy\Invoke-SentruxAgentTool.ps1 session_end C:\path\to\repo\backend
 ```
 
 如果结构质量下降，`session_end` 会失败，并返回前后分数。
@@ -560,10 +568,10 @@ sentrux_test_gaps
 常用命令：
 
 ```powershell
-.\archive\Invoke-SentruxAgentTool.ps1 health C:\path\to\repo\backend
-.\archive\Invoke-SentruxAgentTool.ps1 dsm C:\path\to\repo\backend
-.\archive\Invoke-SentruxAgentTool.ps1 evolution C:\path\to\repo\backend
-.\archive\Invoke-SentruxAgentTool.ps1 what_if C:\path\to\repo\backend
+.\legacy\Invoke-SentruxAgentTool.ps1 health C:\path\to\repo\backend
+.\legacy\Invoke-SentruxAgentTool.ps1 dsm C:\path\to\repo\backend
+.\legacy\Invoke-SentruxAgentTool.ps1 evolution C:\path\to\repo\backend
+.\legacy\Invoke-SentruxAgentTool.ps1 what_if C:\path\to\repo\backend
 ```
 
 别让 Agent 裸奔。没有 `session_start/session_end`，它改完代码以后自己也不知道有没有把结构弄坏。
@@ -584,7 +592,7 @@ sentrux_test_gaps
 - 优先转发给真实 `sentrux.exe`。
 - 没有真实 core 时，使用仓库内置 `sentrux-lite-core.ps1` 保底，覆盖 `scan`、`health`、`check`、`gate` 和 `plugin list/validate`。
 
-`bin\` 里的 `sentrux-shim.ps1` / `sentrux-lite-core.ps1` 只是薄转发器（thin forwarder），不是脚本正文的拷贝：它们在安装时把仓库路径写死进去，运行时转发到 `tools\sentrux-shim\` 下的真身并透传参数和退出码。改仓库里的 `tools\sentrux-shim\*.ps1` 立即生效，PATH 调用不需要重跑 install。只有仓库整体挪了目录才需要重跑 `archive/install-code-intel-pipeline.ps1`——挪了目录之后转发器会报清晰错误（`repo not found at <path>`），不会静默失败或跑到旧代码。
+`bin\` 里的 `sentrux-shim.ps1` / `sentrux-lite-core.ps1` 只是薄转发器（thin forwarder），不是脚本正文的拷贝：它们在安装时把仓库路径写死进去，运行时转发到 `tools\sentrux-shim\` 下的真身并透传参数和退出码。改仓库里的 `tools\sentrux-shim\*.ps1` 立即生效，PATH 调用不需要重跑 install。只有仓库整体挪了目录才需要重跑 `legacy/install-code-intel-pipeline.ps1`——挪了目录之后转发器会报清晰错误（`repo not found at <path>`），不会静默失败或跑到旧代码。
 
 检查：
 
@@ -647,7 +655,7 @@ overlays/sentrux/vlang
 单独安装：
 
 ```powershell
-.\archive\Install-SentruxVlangOverlay.ps1
+.\legacy\Install-SentruxVlangOverlay.ps1
 ```
 
 验证：
@@ -655,13 +663,13 @@ overlays/sentrux/vlang
 ```powershell
 sentrux plugin validate ~/.sentrux/plugins/vlang
 sentrux plugin list
-.\archive/scripts/tests/Test-SentruxVlangOverlay.ps1
+.\legacy/scripts/tests/Test-SentruxVlangOverlay.ps1
 ```
 
 不安装覆盖包：
 
 ```powershell
-.\archive\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\repo -SkipSentruxVlangOverlay
+.\legacy\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\repo -SkipSentruxVlangOverlay
 ```
 
 ## Repowise 语义记忆
@@ -717,8 +725,8 @@ $env:CODE_INTEL_BASE_URL = "https://your-endpoint/v1"
 跑 docs 前可先做 preflight:
 
 ```powershell
-.\archive/scripts/tests/test-code-intel-provider.ps1 -Json                              # 按 env 选 provider
-.\archive/scripts/tests/test-code-intel-provider.ps1 -Provider ollama -Model qwen3:4b   # 显式指定
+.\legacy/scripts/tests/test-code-intel-provider.ps1 -Json                              # 按 env 选 provider
+.\legacy/scripts/tests/test-code-intel-provider.ps1 -Provider ollama -Model qwen3:4b   # 显式指定
 ```
 
 ## Understand Anything 图谱
@@ -835,13 +843,13 @@ code-intel C:\path\to\repo\tools\some-lib --mode normal
 
 ```text
 本项目完整链路：
-archive/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath $env:CODE_INTEL_HOME -Mode normal
+legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath $env:CODE_INTEL_HOME -Mode normal
 
 GitHub fresh clone：
-archive/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath <tmp>/code-intel-pipeline-online-test -Mode normal
+legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath <tmp>/code-intel-pipeline-online-test -Mode normal
 
 Katana 大仓库 scoped：
-archive/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath <k-atana-path> -SentruxPath backend -Mode normal
+legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath <k-atana-path> -SentruxPath backend -Mode normal
 ```
 
 Katana 结果示例：

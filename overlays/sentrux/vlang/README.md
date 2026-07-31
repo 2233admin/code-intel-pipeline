@@ -11,7 +11,7 @@ Sentrux 0.5.7 自带的 `vlang` 标准包不完整：`plugin.toml` 缺少 `[gram
 安装：
 
 ```powershell
-.\archive\Install-SentruxVlangOverlay.ps1
+.\legacy\Install-SentruxVlangOverlay.ps1
 ```
 
 验证：

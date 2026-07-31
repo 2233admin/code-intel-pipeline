@@ -1,6 +1,6 @@
 # Automatic pull request beta atom
 
-`archive/Invoke-CodeIntelAutomaticPullRequest.ps1` is an optional execution atom. Ordinary Code Intel
+`legacy/Invoke-CodeIntelAutomaticPullRequest.ps1` is an optional execution atom. Ordinary Code Intel
 scans, GitHub solution research, Hospital diagnosis, and workflow recommendations never invoke it.
 Finding a repairable problem is a proposal, not permission to edit a repository or create a pull
 request.
@@ -35,11 +35,11 @@ to tracked and untracked working-tree state without relying on a machine-specifi
 ## Example
 
 For the full proposal → decision → C07 record → executor sequence, prefer
-`archive/Invoke-CodeIntelAutomaticPullRequestFlow.ps1`. The lower-level executor example below remains useful
+`legacy/Invoke-CodeIntelAutomaticPullRequestFlow.ps1`. The lower-level executor example below remains useful
 for hosts that already own the decision artifacts.
 
 ```powershell
-./archive/Invoke-CodeIntelAutomaticPullRequest.ps1 `
+./legacy/Invoke-CodeIntelAutomaticPullRequest.ps1 `
   -RepoPath C:\src\project `
   -AuthorizationPath C:\secure\auto-pr-authorization.json `
   -ProposalPath C:\secure\auto-pr-proposal.json `

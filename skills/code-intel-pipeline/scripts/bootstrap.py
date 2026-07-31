@@ -368,9 +368,9 @@ ENTRY_POINTS = (
 )
 
 # Releases from 0.7.0-beta.2 onward carry the PowerShell entry points under
-# archive/. Earlier archives keep them at the payload root, and bootstrap has
+# legacy/. Earlier archives keep them at the payload root, and bootstrap has
 # to stay able to install those, so both layouts are probed, newest first.
-PAYLOAD_LAYOUTS = ("archive/", "")
+PAYLOAD_LAYOUTS = ("legacy/", "")
 
 
 def find_payload_root(extracted_root: Path) -> Path:
@@ -665,7 +665,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     release_root, install_status = install_release(asset, install_root)
     ensure_release_binary_executable(release_root, platform_name)
     pwsh = find_pwsh()
-    installer = release_root / "archive/install-code-intel-pipeline.ps1"
+    installer = release_root / "legacy/install-code-intel-pipeline.ps1"
     install_command = [
         pwsh,
         "-NoProfile",
@@ -697,7 +697,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "-ExecutionPolicy",
             "Bypass",
             "-File",
-            str(release_root / "archive/check-code-intel-tools.ps1"),
+            str(release_root / "legacy/check-code-intel-tools.ps1"),
             "-RepoPath",
             str(repo_path),
             "-RequireRepowise:$false",

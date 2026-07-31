@@ -10,7 +10,7 @@
     "kind": "design_reference",
     "source": {
       "uri": "unverified-local-external-project:my-code-machine; local-proposal=docs/adr/0001-merge-mcm-rust-unified.md",
-      "revision": "external-project-revision-and-license-unverified; local-merge-proposal-sha256:efdcd4fc2557b7a871ffc70aafd3194f666bc78a0dcfd43feec78575b47e4937; local-no-big-bang-adr-sha256:1c8800fe6bbc5032d325a5e6ce2a93774e9c7fdc17143251c4a5c44ff5bb774d"
+      "revision": "external-project-revision-and-license-unverified; local-merge-proposal-sha256:140f8950b88b430f4bc3e489c1a5d36d24377e5b18aad33cd7964c48cc1ad708; local-no-big-bang-adr-sha256:1c8800fe6bbc5032d325a5e6ce2a93774e9c7fdc17143251c4a5c44ff5bb774d"
     },
     "license": {
       "id": "UNKNOWN-RESEARCH-ONLY",

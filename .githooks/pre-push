@@ -14,7 +14,7 @@ if [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev/null 2>&1; then
 fi
 
 if [ ! -f "$queue_command" ]; then
-  printf '%s\n' 'pre-push: repository-local claude-code-merge-queue is missing; run archive/Install-MultiAgentMergeQueue.ps1.' >&2
+  printf '%s\n' 'pre-push: repository-local claude-code-merge-queue is missing; run legacy/Install-MultiAgentMergeQueue.ps1.' >&2
   exit 1
 fi
 
