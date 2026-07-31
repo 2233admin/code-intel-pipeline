@@ -1224,7 +1224,81 @@ fn validate_codenexus_integration(
     }
 }
 
+/// Resolves the trusted orchestration manifest, refusing the case where the
+/// resolved manifest belongs to a different checkout than the one the process
+/// is standing in.
+///
+/// The refusal exists because the silent version of this is a false PASS, not
+/// a false failure. `CODE_INTEL_HOME` is commonly set to a primary checkout;
+/// run a validation from a git worktree of the same repository and every
+/// provider/route check reads the *primary* checkout's manifest while
+/// appearing to validate the worktree. A worktree whose manifest is genuinely
+/// broken then reports green as long as the primary checkout is consistent.
+/// Naming both roots costs one error message; not naming them costs a
+/// verification result that means nothing.
+///
+/// `CODE_INTEL_INTEGRATIONS_MANIFEST` is exempt: it is an explicit operator
+/// instruction to use one specific file, so there is no ambiguity to resolve.
 fn orchestration_manifest() -> std::result::Result<(PathBuf, PathBuf), String> {
+    let explicit = env::var("CODE_INTEL_INTEGRATIONS_MANIFEST").is_ok();
+    let (manifest, root) = resolve_orchestration_manifest()?;
+    if !explicit {
+        reject_foreign_checkout(&manifest, cwd_manifest_path())?;
+    }
+    Ok((manifest, root))
+}
+
+/// The manifest a cwd-anchored reader would have picked, used only to detect
+/// disagreement. This never grants trust — `orchestration_manifest`'s own cwd
+/// fallback still gates on [`is_safe_cwd_manifest`].
+fn cwd_manifest_path() -> Option<PathBuf> {
+    let cwd = env::current_dir().ok()?;
+    cwd.ancestors()
+        .map(|ancestor| ancestor.join("orchestration").join("integrations.json"))
+        .find(|candidate| candidate.is_file())
+}
+
+fn reject_foreign_checkout(
+    resolved: &Path,
+    local: Option<PathBuf>,
+) -> std::result::Result<(), String> {
+    let Some(local) = local else {
+        return Ok(());
+    };
+    let canonical = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    if canonical(&local) == canonical(resolved) {
+        return Ok(());
+    }
+    Err(format!(
+        "orchestration manifest ambiguity: resolved {} but the current directory belongs to {}. \
+These are different checkouts, so validating one while standing in the other proves nothing. \
+Set CODE_INTEL_HOME to the checkout you mean, or CODE_INTEL_INTEGRATIONS_MANIFEST to one manifest explicitly.",
+        resolved.display(),
+        local.display()
+    ))
+}
+
+// Registry tests must assert against the checkout they were built from, not
+// against whatever `CODE_INTEL_HOME` happens to name on the developer's
+// machine. Reading the ambient variable is what let a worktree's registry
+// look valid while the primary checkout was the thing actually validated.
+#[cfg(test)]
+fn test_manifest_override() -> Option<PathBuf> {
+    let candidate = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("orchestration")
+        .join("integrations.json");
+    candidate.is_file().then_some(candidate)
+}
+
+fn resolve_orchestration_manifest() -> std::result::Result<(PathBuf, PathBuf), String> {
+    #[cfg(test)]
+    if let Some(path) = test_manifest_override() {
+        return manifest_candidate(path).ok_or_else(|| {
+            "built-from checkout has no readable integrations manifest".to_string()
+        });
+    }
+
     if let Ok(explicit) = env::var("CODE_INTEL_INTEGRATIONS_MANIFEST") {
         let path = PathBuf::from(explicit);
         let path = if path.is_absolute() {
@@ -1668,6 +1742,34 @@ mod tests {
                 .any(|error| error
                     == "provider binding missing integration: provider.codenexus-adapt")
         );
+    }
+
+    #[test]
+    fn manifest_from_another_checkout_is_refused_and_names_both_roots() {
+        // The worktree case: CODE_INTEL_HOME points at the primary checkout
+        // while the process stands in a worktree of the same repository.
+        let primary = Path::new(r"D:\projects\code-intel-pipeline\orchestration\integrations.json");
+        let worktree = Path::new(
+            r"D:\projects\code-intel-pipeline\.claude\worktrees\wt\orchestration\integrations.json",
+        );
+        let error = reject_foreign_checkout(primary, Some(worktree.to_path_buf()))
+            .expect_err("two different checkouts must not validate silently");
+        assert!(error.contains("ambiguity"), "{error}");
+        assert!(error.contains(&primary.display().to_string()), "{error}");
+        assert!(error.contains(&worktree.display().to_string()), "{error}");
+        assert!(
+            error.contains("CODE_INTEL_INTEGRATIONS_MANIFEST"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn matching_checkout_and_absent_local_manifest_both_pass() {
+        let same = Path::new(r"D:\repo\orchestration\integrations.json");
+        assert!(reject_foreign_checkout(same, Some(same.to_path_buf())).is_ok());
+        // Running against an arbitrary directory that has no manifest of its
+        // own is the normal installed-CLI case, not an ambiguity.
+        assert!(reject_foreign_checkout(same, None).is_ok());
     }
 
     #[test]

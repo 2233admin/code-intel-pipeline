@@ -437,7 +437,11 @@ param(
     [string[]]`$RemainingArgs
 )
 
-`$repoRoot = '$repoRootLiteral'
+# CODE_INTEL_REPO_ROOT is honoured here because the error below tells the
+# operator to set it. The literal is the install-time location, which goes
+# stale the moment the repository is moved or a directory is renamed — the
+# override is how you recover without reinstalling.
+`$repoRoot = if (-not [string]::IsNullOrWhiteSpace(`$env:CODE_INTEL_REPO_ROOT)) { `$env:CODE_INTEL_REPO_ROOT } else { '$repoRootLiteral' }
 `$target = Join-Path `$repoRoot '$relativeLiteral'
 
 if (-not (Test-Path -LiteralPath `$target -PathType Leaf)) {
