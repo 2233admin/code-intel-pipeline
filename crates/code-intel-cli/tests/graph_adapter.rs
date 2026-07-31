@@ -414,8 +414,19 @@ fn public_route_usage_registry_facade_and_schemas_are_real() {
     assert_eq!(output.status.code(), Some(64));
     assert!(output.stdout.is_empty());
 
+    // Name the manifest this test means. Without it the spawned binary
+    // resolves whatever `CODE_INTEL_HOME` points at, which on a developer
+    // machine is usually a different checkout than the one being tested —
+    // the assertion below would then be about someone else's tree.
     let validation = Command::new(env!("CARGO_BIN_EXE_code-intel"))
         .args(["provider", "--action", "Validate", "--json"])
+        .env(
+            "CODE_INTEL_INTEGRATIONS_MANIFEST",
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join("orchestration")
+                .join("integrations.json"),
+        )
         .output()
         .unwrap();
     let validation_json: Value = serde_json::from_slice(&validation.stdout).unwrap();
