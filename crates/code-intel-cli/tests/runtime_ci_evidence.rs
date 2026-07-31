@@ -4,6 +4,7 @@ mod runtime_ci_evidence;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -12,14 +13,26 @@ const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 struct Temp(PathBuf);
 
+// `SystemTime::now()` is not a unique id. Its resolution is platform
+// dependent — coarser than a nanosecond on macOS — so two tests starting
+// together in this parallel binary could name the same directory. When that
+// happened, `production_cli_rejects_duplicate_source_keys` wrote its
+// deliberately malformed runtime-ci.json into the directory
+// `production_cli_reads_only_the_pinned_local_artifact` was reading from, and
+// the second test failed with the first test's error: "duplicate JSON object
+// key: completeness". The counter makes the name unique regardless of clock
+// resolution; `artifact_ref.rs` already does this.
+static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
 impl Temp {
     fn new() -> Self {
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
+        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
-            "code-intel-runtime-ci-{}-{nonce}",
+            "code-intel-runtime-ci-{}-{nonce}-{sequence}",
             std::process::id()
         ));
         fs::create_dir_all(&path).unwrap();

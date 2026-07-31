@@ -35,13 +35,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 pub(crate) const ENGINE_ID: &str = "sentrux-native";
-pub(crate) const ENGINE_VERSION: &str = "2.1.0";
-// v3 because `coupling_score` changed denominator in 2.1.0. A v2 baseline
-// holds a number this engine can no longer produce, so comparing against it
-// would report a large fabricated coupling regression on the first run after
-// upgrade. The schema bump turns that into `baseline_engine_mismatch`, which
-// tells the operator to re-baseline deliberately.
-pub(crate) const BASELINE_SCHEMA: &str = "code-intel-sentrux-baseline.v3";
+pub(crate) const ENGINE_VERSION: &str = "2.2.0";
+// The schema tracks metric *definitions*, not just field names, because every
+// gate comparison is a comparison against numbers a previous engine produced.
+//   v3 (2.1.0): `coupling_score` changed denominator.
+//   v4 (2.2.0): `complexity_terms` stopped counting comments and string
+//               bodies, which raises `quality_signal` on any tree that had
+//               prose in it.
+// Both moves make an older baseline describe a tree this engine cannot
+// reproduce. Comparing anyway is worse than refusing: v2 would have reported
+// a fabricated coupling regression, and v3 would silently pocket a quality
+// gain instead of re-anchoring the ratchet. The mismatch turns either case
+// into `baseline_engine_mismatch` with the re-baseline instruction.
+pub(crate) const BASELINE_SCHEMA: &str = "code-intel-sentrux-baseline.v4";
 
 // Metric keys the gate comparisons in `run_gate` read from the baseline.
 // `number()` defaults an absent key to 0.0, so a baseline missing any of
@@ -375,6 +381,7 @@ fn baseline_document(repo: &Path, metrics: &ProjectMetrics) -> Result<Value, Str
             "god_file_count": metrics.god_file_count,
             "complex_fn_count": metrics.complex_fn_count,
             "max_complexity": metrics.max_complexity,
+            "branch_density_per_fn": metrics.max_complexity,
             "total_import_edges": metrics.total_import_edges,
             "cross_module_edges": metrics.total_import_edges,
             "files": metrics.file_count,
@@ -399,6 +406,12 @@ fn metrics_json(repo: &Path, metrics: &ProjectMetrics) -> Value {
         "god_file_count": metrics.god_file_count,
         "complex_fn_count": metrics.complex_fn_count,
         "max_complexity": metrics.max_complexity,
+        // Same number, honest name. `max_complexity` is what the sentrux-lite
+        // scale called it and what `max_cc` gates, but the value is branch
+        // tokens divided by recognised functions in one file — a per-file
+        // density, not any function's cyclomatic complexity. A true max needs
+        // per-function body ranges, which no scanner in this repository has.
+        "branch_density_per_fn": metrics.max_complexity,
         "total_import_edges": metrics.total_import_edges,
         "cross_module_edges": metrics.total_import_edges,
         "call_edges": metrics.call_edges,
@@ -706,7 +719,7 @@ fn measure_file(relative: &str, content: &str) -> FileMetrics {
             imports += 1;
         }
     }
-    let complexity_terms = complexity_terms(content);
+    let complexity_terms = complexity_terms(relative, content);
     let max_complexity = if functions > 0 {
         ((complexity_terms as f64 / functions as f64).ceil() as i64 + 1).max(1)
     } else if complexity_terms > 0 {
@@ -779,23 +792,155 @@ fn is_import_line(trimmed: &str) -> bool {
         || trimmed.starts_with("using ")
 }
 
-fn complexity_terms(content: &str) -> i64 {
+/// Branch-ish tokens per file, the numerator of the complexity metric.
+///
+/// Two things this deliberately does that the first version did not.
+///
+/// **Prose does not branch.** The original tokenised the raw file, so every
+/// `if`, `or` and `and` inside a comment or a string literal counted. That is
+/// how `.sentrux/rules.toml` ended up ratcheted at `max_cc = 162`: the number
+/// came from `legacy/scripts/tests/test-code-intel-pipeline.ps1`, 465 lines
+/// with one recognised function, whose 161 "terms" included 45 bare `or` and
+/// 11 bare `and` — English words in comments, since PowerShell spells the
+/// operators `-or` and `-and`. Comments and string bodies are stripped first.
+///
+/// **`and`/`or` are only operators in some languages.** They branch in Python;
+/// in PowerShell, Rust, C-family and JS they are ordinary words, and the
+/// operators are `-and`/`-or` or `&&`/`||`. Counting by extension stops one
+/// language's prose from inflating another language's threshold.
+fn complexity_terms(relative: &str, content: &str) -> i64 {
     const WORDS: &[&str] = &[
-        "if", "for", "foreach", "while", "switch", "case", "catch", "except", "match", "and", "or",
+        "if", "elif", "elseif", "for", "foreach", "while", "switch", "case", "catch", "except",
+        "match",
     ];
+    const WORD_OPERATOR_LANGUAGES: &[&str] = &["py"];
+
+    let stripped = strip_comments_and_strings(relative, content);
+    let word_operators = WORD_OPERATOR_LANGUAGES.contains(&extension_of(relative).as_str());
     let mut count = 0i64;
-    for token in content.split(|character: char| !character.is_alphanumeric() && character != '_') {
-        if WORDS.contains(&token) {
+    for token in stripped.split(|character: char| !character.is_alphanumeric() && character != '_')
+    {
+        if WORDS.contains(&token) || (word_operators && (token == "and" || token == "or")) {
             count += 1;
         }
     }
-    let bytes = content.as_bytes();
-    for window in bytes.windows(2) {
+    let bytes = stripped.as_bytes();
+    let mut index = 0;
+    while index + 1 < bytes.len() {
+        let window = &bytes[index..index + 2];
         if window == b"&&" || window == b"||" {
             count += 1;
+            // Skip the pair so `&&&&` reads as two operators, not three.
+            index += 2;
+            continue;
         }
+        if window == b"-a" || window == b"-o" {
+            // PowerShell's `-and` / `-or`.
+            let rest = &stripped[index..];
+            if rest.starts_with("-and") || rest.starts_with("-or") {
+                count += 1;
+            }
+        }
+        index += 1;
     }
     count
+}
+
+fn extension_of(relative: &str) -> String {
+    relative
+        .rsplit('/')
+        .next()
+        .and_then(|leaf| leaf.rsplit_once('.'))
+        .map(|(_, extension)| extension.to_ascii_lowercase())
+        .unwrap_or_default()
+}
+
+/// Replaces comment and string-literal bodies with spaces, preserving byte
+/// offsets and line structure so every other measurement is unaffected.
+///
+/// This is a scanner, not a parser: it knows line comments, block comments and
+/// single/double/backtick quoted runs, and it does not attempt heredocs,
+/// nested block comments, or regex literals. That is enough to stop prose from
+/// being counted as control flow, which is the whole point; a file that
+/// defeats it degrades to the old behaviour rather than to a wrong parse.
+fn strip_comments_and_strings(relative: &str, content: &str) -> String {
+    let hash_comments = !matches!(
+        extension_of(relative).as_str(),
+        "rs" | "go"
+            | "ts"
+            | "tsx"
+            | "js"
+            | "jsx"
+            | "mjs"
+            | "cjs"
+            | "java"
+            | "cs"
+            | "cpp"
+            | "c"
+            | "h"
+            | "hpp"
+            | "v"
+    );
+    let mut out = String::with_capacity(content.len());
+    let mut chars = content.chars().peekable();
+    let mut quote: Option<char> = None;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+    while let Some(character) = chars.next() {
+        if in_line_comment {
+            if character == '\n' {
+                in_line_comment = false;
+                out.push('\n');
+            } else {
+                out.push(' ');
+            }
+            continue;
+        }
+        if in_block_comment {
+            if character == '*' && chars.peek() == Some(&'/') {
+                chars.next();
+                in_block_comment = false;
+                out.push_str("  ");
+            } else {
+                out.push(if character == '\n' { '\n' } else { ' ' });
+            }
+            continue;
+        }
+        if let Some(open) = quote {
+            if character == '\\' {
+                chars.next();
+                out.push_str("  ");
+                continue;
+            }
+            if character == open {
+                quote = None;
+            }
+            out.push(if character == '\n' { '\n' } else { ' ' });
+            continue;
+        }
+        match character {
+            '/' if chars.peek() == Some(&'/') => {
+                chars.next();
+                in_line_comment = true;
+                out.push_str("  ");
+            }
+            '/' if chars.peek() == Some(&'*') => {
+                chars.next();
+                in_block_comment = true;
+                out.push_str("  ");
+            }
+            '#' if hash_comments => {
+                in_line_comment = true;
+                out.push(' ');
+            }
+            '"' | '\'' | '`' => {
+                quote = Some(character);
+                out.push(' ');
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 fn call_sites(content: &str) -> i64 {
@@ -1190,6 +1335,43 @@ mod tests {
         let after_deletion = measure_project(&root).expect("measure tree after deletion");
         assert_eq!(after_deletion.coupling_score, mixed.coupling_score);
         fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn prose_in_comments_and_strings_does_not_count_as_branching() {
+        // The shape that produced this repository's max_cc = 162: PowerShell
+        // spells its operators -and / -or, so bare "and"/"or" in a comment is
+        // English, not control flow.
+        let powershell = "# choose one branch or another, this and that\n$message = \"if or and while\"\nif ($x) { }\n";
+        assert_eq!(complexity_terms("script.ps1", powershell), 1);
+
+        // Real PowerShell operators still count.
+        assert_eq!(
+            complexity_terms("script.ps1", "if ($a -and $b -or $c) { }\n"),
+            3
+        );
+
+        // Python is the language where the words really are operators.
+        assert_eq!(complexity_terms("m.py", "if a and b or c:\n    pass\n"), 3);
+        assert_eq!(
+            complexity_terms("m.py", "# and or if\nvalue = 'and or if'\n"),
+            0
+        );
+
+        // C-family block and line comments, and && / || pairs.
+        assert_eq!(
+            complexity_terms("m.rs", "/* if while */\n// for match\nif a && b || c { }\n"),
+            3
+        );
+    }
+
+    #[test]
+    fn stripping_preserves_line_structure_so_other_metrics_are_unaffected() {
+        let source = "let a = \"x\";\n// comment\nlet b = 1;\n";
+        let stripped = strip_comments_and_strings("m.rs", source);
+        assert_eq!(stripped.lines().count(), source.lines().count());
+        assert_eq!(stripped.len(), source.len());
+        assert!(!stripped.contains("comment"));
     }
 
     #[test]

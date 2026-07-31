@@ -669,7 +669,12 @@ fn head_manifest(
 ) -> Result<Vec<ManifestEntry>, SnapshotError> {
     let args = ["ls-tree", "-r", "-z", "--full-tree", head, "--"];
     let bytes = git_required(repo, &args, "build HEAD input manifest")?;
-    let mut entries = Vec::new();
+
+    // Two passes so every blob can be fetched in one Git invocation. The
+    // first pass parses and filters tree entries; the second attaches
+    // content. Splitting them is what makes the batch read possible.
+    let mut parsed: Vec<(String, Vec<String>)> = Vec::new();
+    let mut blob_oids: BTreeSet<String> = BTreeSet::new();
     for raw in bytes
         .split(|byte| *byte == 0)
         .filter(|entry| !entry.is_empty())
@@ -692,8 +697,30 @@ fn head_manifest(
         if !path_in_scopes(&path, scopes) && !ignore_control_relevant(&path, scopes) {
             continue;
         }
+        if fields[1] == "blob" {
+            blob_oids.insert(fields[2].to_string());
+        }
+        parsed.push((
+            path,
+            vec![
+                fields[0].to_string(),
+                fields[1].to_string(),
+                fields[2].to_string(),
+                std::str::from_utf8(&raw[tab + 1..])
+                    .unwrap_or_default()
+                    .to_string(),
+            ],
+        ));
+    }
+
+    let blobs = batch_read_blobs(repo, &blob_oids)?;
+    let mut entries = Vec::new();
+    for (path, fields) in parsed {
         let content = if fields[1] == "blob" {
-            git_required(repo, &["cat-file", "blob", fields[2]], "read Git tree blob")?
+            blobs
+                .get(&fields[2])
+                .cloned()
+                .ok_or_else(|| SnapshotError::Unavailable("Git batch omitted a blob".into()))?
         } else {
             fields[2].as_bytes().to_vec()
         };
@@ -706,12 +733,9 @@ fn head_manifest(
             } else {
                 "file".into()
             },
-            mode: fields[0].into(),
+            mode: fields[0].clone(),
             digest: sha256_hex(&content),
-            control_bytes: is_ignore_control_path(
-                std::str::from_utf8(&raw[tab + 1..]).unwrap_or_default(),
-            )
-            .then_some(content),
+            control_bytes: is_ignore_control_path(&fields[3]).then_some(content),
         });
     }
     Ok(entries)
@@ -1387,6 +1411,93 @@ fn git_required(repo: &Path, args: &[&str], action: &str) -> Result<Vec<u8>, Sna
     Ok(output.stdout)
 }
 
+/// Reads many blobs with one `git cat-file --batch` instead of one
+/// `git cat-file blob <oid>` per object.
+///
+/// Snapshot identity is on the critical path of every run and of every
+/// mid-edit query, and a process spawn per blob dominated it: ~10s for this
+/// repository's ~830 tracked files, identical in debug and release, because
+/// the cost is process creation rather than any work Git does.
+///
+/// Batch record framing is `<oid> SP <type> SP <size> LF <content> LF`. Git
+/// answers in request order, so a missing or ambiguous object (`<oid> missing`)
+/// would desynchronise the stream — that case is an error rather than a skip,
+/// because silently shifting contents onto the wrong paths would corrupt every
+/// digest after it.
+fn batch_read_blobs(
+    repo: &Path,
+    oids: &BTreeSet<String>,
+) -> Result<BTreeMap<String, Vec<u8>>, SnapshotError> {
+    let mut contents = BTreeMap::new();
+    if oids.is_empty() {
+        return Ok(contents);
+    }
+    let mut request = String::with_capacity(oids.len() * 41);
+    for oid in oids {
+        request.push_str(oid);
+        request.push('\n');
+    }
+
+    let mut child = hardened_git::command(repo)
+        .arg("cat-file")
+        .arg("--batch")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| SnapshotError::Unavailable(format!("cannot launch Git: {error}")))?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| SnapshotError::Unavailable("Git batch stdin unavailable".into()))?
+        .write_all(request.as_bytes())
+        .map_err(|error| {
+            SnapshotError::Unavailable(format!("cannot write Git batch request: {error}"))
+        })?;
+    let output = child.wait_with_output().map_err(|error| {
+        SnapshotError::Unavailable(format!("cannot read Git batch output: {error}"))
+    })?;
+    if !output.status.success() {
+        return Err(SnapshotError::Unavailable(format!(
+            "cannot read Git tree blobs: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+
+    let stream = output.stdout;
+    let mut cursor = 0usize;
+    for oid in oids {
+        let newline = stream[cursor..]
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .ok_or_else(|| {
+                SnapshotError::Unavailable("Git batch output ended mid-header".into())
+            })?;
+        let header = std::str::from_utf8(&stream[cursor..cursor + newline]).map_err(|error| {
+            SnapshotError::Unavailable(format!("Git batch header is not UTF-8: {error}"))
+        })?;
+        cursor += newline + 1;
+        let fields = header.split(' ').collect::<Vec<_>>();
+        if fields.len() != 3 {
+            return Err(SnapshotError::Unavailable(format!(
+                "Git could not read object {oid}: {header}"
+            )));
+        }
+        let size: usize = fields[2].parse().map_err(|_| {
+            SnapshotError::Unavailable(format!("Git batch size is not a number: {header}"))
+        })?;
+        if cursor + size > stream.len() {
+            return Err(SnapshotError::Unavailable(
+                "Git batch output ended mid-object".into(),
+            ));
+        }
+        contents.insert(oid.clone(), stream[cursor..cursor + size].to_vec());
+        // Skip the object body and the newline Git appends after it.
+        cursor += size + 1;
+    }
+    Ok(contents)
+}
+
 fn trim_ascii(bytes: &[u8]) -> &[u8] {
     let start = bytes
         .iter()
@@ -1413,6 +1524,44 @@ fn hash_records(records: &[Vec<u8>]) -> String {
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn batched_blob_reads_match_one_object_at_a_time() {
+        // Snapshot identity is a digest over these bytes, so a batch parser
+        // that drifts by one byte — or attaches a blob to the wrong oid —
+        // would silently change every recorded identity in the repository.
+        // Compare the batch stream against the per-object read it replaced.
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let listing = git_required(
+            &repo,
+            &["ls-tree", "-r", "--full-tree", "HEAD", "--"],
+            "list tree for batch test",
+        )
+        .expect("git ls-tree should run against this repository");
+        let listing = String::from_utf8_lossy(&listing);
+        let oids: BTreeSet<String> = listing
+            .lines()
+            .filter_map(|line| {
+                let header = line.split('\t').next()?;
+                let fields = header.split(' ').collect::<Vec<_>>();
+                (fields.len() == 3 && fields[1] == "blob").then(|| fields[2].to_string())
+            })
+            .take(24)
+            .collect();
+        assert!(!oids.is_empty(), "repository should have tracked blobs");
+
+        let batched = batch_read_blobs(&repo, &oids).expect("batch read should succeed");
+        assert_eq!(batched.len(), oids.len());
+        for oid in &oids {
+            let individual = git_required(&repo, &["cat-file", "blob", oid], "read blob")
+                .expect("per-object read should succeed");
+            assert_eq!(
+                batched.get(oid).expect("batch covers every requested oid"),
+                &individual,
+                "batch content differs for {oid}"
+            );
+        }
+    }
 
     #[test]
     fn overlay_rejects_a_change_between_complete_reads() {
