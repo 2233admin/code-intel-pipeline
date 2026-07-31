@@ -1,5 +1,7 @@
+use std::env;
 use std::path::PathBuf;
 
+use crate::artifacts::{self, ARTIFACT_ROOT_ENV};
 use crate::dag_run::{self, DagExecutionRequest};
 use crate::execution_kernel;
 use crate::execution_policy::{ExecutionPolicy, RunMode, RunProfile, SkipFlags, WorkingTreePolicy};
@@ -42,7 +44,8 @@ enum RunCommand {
 struct Cli {
     command: RunCommand,
     repo: PathBuf,
-    out: PathBuf,
+    out: Option<PathBuf>,
+    artifact_root: Option<PathBuf>,
     authority_root: Option<PathBuf>,
     final_name: Option<String>,
     manifest: Option<PathBuf>,
@@ -62,6 +65,7 @@ impl Cli {
         };
         let mut repo = None;
         let mut out = None;
+        let mut artifact_root = None;
         let mut authority_root = None;
         let mut final_name = None;
         let mut manifest = None;
@@ -87,6 +91,7 @@ impl Cli {
                 flag,
                 "--repo"
                     | "--out"
+                    | "--artifact-root"
                     | "--authority-root"
                     | "--final-name"
                     | "--manifest"
@@ -117,6 +122,9 @@ impl Cli {
                 }
                 "--out" if out.replace(PathBuf::from(value)).is_some() => {
                     return Err("duplicate --out".into())
+                }
+                "--artifact-root" if artifact_root.replace(PathBuf::from(value)).is_some() => {
+                    return Err("duplicate --artifact-root".into())
                 }
                 "--authority-root" if authority_root.replace(PathBuf::from(value)).is_some() => {
                     return Err("duplicate --authority-root".into())
@@ -233,8 +241,30 @@ impl Cli {
                             .into(),
                     );
                 }
+                // The two routes disagree about who owns the path, so accepting
+                // both would silently honour one and drop the other.
+                if out.is_some() && artifact_root.is_some() {
+                    return Err(
+                        "--out and --artifact-root are mutually exclusive; --out names the staging directory, --artifact-root composes one"
+                            .into(),
+                    );
+                }
+                if out.is_none()
+                    && artifact_root.is_none()
+                    && env::var_os(ARTIFACT_ROOT_ENV).is_none()
+                {
+                    return Err(format!(
+                        "run dag-coordinate requires --out, --artifact-root, or {ARTIFACT_ROOT_ENV}"
+                    ));
+                }
             }
             RunCommand::Execute => {
+                if artifact_root.is_some() {
+                    return Err(
+                        "--artifact-root is available only for run dag-coordinate; run execute publishes through --authority-root"
+                            .into(),
+                    );
+                }
                 if diagnosis_inputs.is_some() || seed_artifact_root.is_some() {
                     return Err(
                         "run execute does not accept diagnosis-only inputs; use run dag-coordinate for the non-authoritative compatibility primitive"
@@ -267,10 +297,14 @@ impl Cli {
                 doctor_require_understand,
                 doctor_tool_path_prefix,
             );
+        if command == RunCommand::Execute && out.is_none() {
+            return Err("--out is required".into());
+        }
         Ok(Self {
             command,
             repo,
-            out: out.ok_or("--out is required")?,
+            out,
+            artifact_root,
             authority_root,
             final_name,
             manifest,
@@ -284,7 +318,7 @@ impl Cli {
 }
 
 fn usage() -> String {
-    "usage: run <dag-coordinate|execute> --repo <repo-root> --out <run-staging-directory> [--authority-root <publication-root> --final-name <name>] [--profile <default|strict|offline>] [--mode <lite|normal|full>] [--skip-repowise <true|false>] [--skip-sentrux <true|false>] [--require-understand-graph <true|false>] [--manifest <integrations.json>] [--max-concurrency <n>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]".into()
+    "usage: run <dag-coordinate|execute> --repo <repo-root> <--out <run-staging-directory> | --artifact-root <root> (dag-coordinate only; also read from CODE_INTEL_ARTIFACT_ROOT)> [--authority-root <publication-root> --final-name <name>] [--profile <default|strict|offline>] [--mode <lite|normal|full>] [--skip-repowise <true|false>] [--skip-sentrux <true|false>] [--require-understand-graph <true|false>] [--manifest <integrations.json>] [--max-concurrency <n>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]".into()
 }
 
 fn parse_bool_flag(flag: &str, value: &str) -> Result<bool, String> {
@@ -298,9 +332,16 @@ fn parse_bool_flag(flag: &str, value: &str) -> Result<bool, String> {
 fn execute_cli(cli: Cli) -> Result<CliResult, RunError> {
     match cli.command {
         RunCommand::DagCoordinate => {
+            let out = match cli.out {
+                Some(out) => out,
+                None => artifacts::compose_dag_staging_dir(cli.artifact_root.as_deref(), &cli.repo)
+                    .map_err(|error| {
+                        RunError::io(format!("compose DAG staging directory: {error}"))
+                    })?,
+            };
             let result = dag_run::execute_dag(DagExecutionRequest {
                 repo: cli.repo,
-                out: cli.out,
+                out,
                 manifest: cli.manifest,
                 max_concurrency: cli.max_concurrency,
                 policy: cli.policy,
@@ -316,7 +357,7 @@ fn execute_cli(cli: Cli) -> Result<CliResult, RunError> {
         RunCommand::Execute => {
             let result = execution_kernel::execute(execution_kernel::RunRequest {
                 repo: cli.repo,
-                staging_root: cli.out,
+                staging_root: cli.out.expect("validated execute staging root"),
                 authority_root: cli
                     .authority_root
                     .expect("validated execute authority root"),

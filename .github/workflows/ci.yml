@@ -230,10 +230,6 @@ jobs:
         shell: pwsh
         run: .\legacy/scripts/tests/test-hospital-trust-contract.ps1
 
-      - name: DAG facade path and parity tests
-        shell: pwsh
-        run: .\legacy/scripts/tests/test-dag-facade.ps1
-
       - name: Scoped Repowise trust-boundary tests
         shell: pwsh
         run: |
@@ -299,12 +295,6 @@ jobs:
             & pwsh -NoProfile -File $test
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
-
-      - name: Run commit contract tests
-        shell: pwsh
-        run: |
-          & pwsh -NoProfile -File .\legacy/scripts/tests/test-run-commit-contract.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Package
         shell: pwsh

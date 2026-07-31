@@ -1058,3 +1058,105 @@ fn baselined_repository_that_regresses_still_fails_the_architecture_gate() {
 
     let _ = fs::remove_dir_all(root);
 }
+
+/// `test-dag-facade.ps1` guarded the artifact-path composition the PowerShell
+/// launcher owned: a run lands directly under `<artifact root>/<repo name>`,
+/// the repository name never repeats inside the path, and the explicit route
+/// and the environment default produce the same evidence. `run dag-coordinate`
+/// owns that composition now, so the guard lives here. The run outcome is
+/// deliberately not asserted — the host toolchain decides it, and
+/// `production_run_route_executes_snapshot_then_inventory` covers the outcome
+/// with the doctor configured.
+#[test]
+fn artifact_root_routes_runs_where_readers_look_and_matches_the_environment_default() {
+    let root = temp_dir();
+    // The launcher fixture carried a space, an ampersand and non-ASCII, because
+    // each of those has broken a path round trip in this pipeline before.
+    let repo_name = "repo & 文";
+    let repo = root.join(repo_name);
+    fs::create_dir_all(&repo).unwrap();
+    fs::write(repo.join("README & 文.md"), "fixture").unwrap();
+
+    let run = |base: &Path, explicit: bool| -> PathBuf {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_code-intel"));
+        command.args(["run", "dag-coordinate", "--repo"]).arg(&repo);
+        if explicit {
+            command.arg("--artifact-root").arg(base);
+        } else {
+            command.env("CODE_INTEL_ARTIFACT_ROOT", base);
+        }
+        // A nonzero exit means a node failed on this host, not that the path
+        // composition failed, so the run is judged from disk below.
+        let output = command.output().unwrap();
+        let repo_artifacts = base.join(repo_name);
+        let runs: Vec<PathBuf> = fs::read_dir(&repo_artifacts)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "no artifacts under {}: {error}; stderr={}",
+                    repo_artifacts.display(),
+                    String::from_utf8_lossy(&output.stderr)
+                )
+            })
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        assert_eq!(
+            runs.len(),
+            1,
+            "a run must be a direct child of the repository artifact root: {runs:?}"
+        );
+        assert!(
+            !repo_artifacts.join(repo_name).exists(),
+            "the repository name must not repeat inside the artifact path"
+        );
+        assert!(
+            runs[0]
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.contains(".dag-staging-")),
+            "run directory={:?}",
+            runs[0]
+        );
+        runs[0].clone()
+    };
+
+    let explicit = run(&root.join("explicit artifacts"), true);
+    let default = run(&root.join("default artifacts"), false);
+
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(explicit.join("run-manifest.json")).unwrap()).unwrap();
+    assert_eq!(manifest["schema"], "code-intel-run-manifest.v1");
+    assert_eq!(
+        fs::read(explicit.join("inventory.rg/files.txt")).unwrap(),
+        fs::read(default.join("inventory.rg/files.txt")).unwrap(),
+        "the explicit and default artifact roots disagreed about the inventory"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The two routes disagree about who owns the staging path, so accepting both
+/// would silently honour one and drop the other.
+#[test]
+fn out_and_artifact_root_cannot_both_name_the_staging_directory() {
+    let root = temp_dir();
+    let repo = root.join("repo");
+    fs::create_dir_all(&repo).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["run", "dag-coordinate", "--repo"])
+        .arg(&repo)
+        .arg("--out")
+        .arg(root.join("run"))
+        .arg("--artifact-root")
+        .arg(root.join("artifacts"))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(64));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("mutually exclusive"),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
