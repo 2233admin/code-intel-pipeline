@@ -1,5 +1,7 @@
 #[path = "../src/authority.rs"]
 mod authority;
+#[path = "../src/content_contract.rs"]
+mod content_contract;
 #[path = "../src/internalization_record.rs"]
 mod internalization_record;
 
@@ -657,23 +659,17 @@ fn assert_signed_out_of_scope_record_projects(record: &Value, expected_id: &str)
     assert_checked_schema(record, "code-intel-internalization-record.v1.schema.json");
 }
 
+/// Digests are recomputed in process rather than through `Get-FileHash`. Every
+/// operation trace pins two files, so shelling out once per pin spawned dozens
+/// of concurrent `pwsh` processes; the macOS runner killed them with
+/// `Stack overflow.`, which surfaced here as 26 of 40 records failing at once
+/// and read exactly like real digest drift. SHA256 over the same bytes is the
+/// same digest either way, so nothing about what this asserts changes.
 fn recompute_sha(relative: &str) -> String {
     let path = root().join(relative);
-    let mut command = Command::new("pwsh");
-    command.args([
-        "-NoProfile",
-        "-CommandWithArgs",
-        "(Get-FileHash -LiteralPath $args[0] -Algorithm SHA256).Hash.ToLowerInvariant()",
-        path.to_str().unwrap(),
-    ]);
-    let output = run_command_with_timeout(&mut command);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let digest = String::from_utf8(output.stdout).unwrap();
-    let digest = digest.trim().to_string();
+    let bytes = fs::read(&path)
+        .unwrap_or_else(|error| panic!("conformance source is unreadable: {relative}: {error}"));
+    let digest = content_contract::sha256_hex(&bytes);
     assert_eq!(digest.len(), 64);
     digest
 }
