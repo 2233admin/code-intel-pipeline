@@ -53,7 +53,20 @@ $baseText = $legacyMatch.Value.Replace("`r`n","`n").Replace("`r","`n")
 $resultText = ""
 $deletedLines = @($baseText -split "`n")
 
-$snapshotIdentity = Get-TextSha ((@($liveHash, (Get-TextSha $baseText), ((Get-FileHash (Join-Path $RepoRoot "Invoke-RepowiseProviderProbe.ps1") -Algorithm SHA256).Hash.ToLowerInvariant()), ((Get-FileHash (Join-Path $PipelineRepoRoot "orchestration\integrations.json") -Algorithm SHA256).Hash.ToLowerInvariant())) -join "`n"))
+# Frozen source set. Test-ProviderPreflightRetirementPacket.ps1 mirrors this
+# composition exactly and both sides compute the registry component through the
+# same dot-sourced helper, so the mirror pair cannot drift.
+#
+# The fourth component is a canonical projection over exactly the integration
+# this retirement concerns - provider.repowise-adapt, the replacement capability
+# - plus the manifest policy header, not the whole of
+# orchestration/integrations.json. E03's staleness claim is about the registry
+# state of the capability it retires; it is not about the toolchainDigests of
+# unrelated Rust sources that happen to be pinned in the same file, which are
+# re-pinned on every routine source edit.
+. (Join-Path $PSScriptRoot "Get-FrozenManifestProjection.ps1")
+$registryProjection = Get-FrozenManifestProjection -ManifestPath (Join-Path $PipelineRepoRoot "orchestration\integrations.json") -IntegrationIds @("provider.repowise-adapt")
+$snapshotIdentity = Get-TextSha ((@($liveHash, (Get-TextSha $baseText), ((Get-FileHash (Join-Path $RepoRoot "Invoke-RepowiseProviderProbe.ps1") -Algorithm SHA256).Hash.ToLowerInvariant()), $registryProjection) -join "`n"))
 $retirementId = "retire-provider-preflight-branch"
 $branchId = "run-code-intel.provider-preflight.test-wrapper"
 $replacementId = "provider.repowise-adapt"

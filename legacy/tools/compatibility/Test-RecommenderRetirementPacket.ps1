@@ -16,26 +16,32 @@ function Read-Json([string]$RelativePath) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "packet file is missing: $RelativePath" }
     return Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
 }
-function Get-Sha256Text([string]$Text) {
-    ([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Text)))).ToLowerInvariant()
-}
-function FrozenPath([string]$p) {
-    if ($p -like 'crates/*' -or $p -like 'orchestration/*') { Join-Path $PipelineRepoRoot $p } else { Join-Path $RepoRoot $p }
-}
 
 $ticket = Read-Json "compatibility-retirement-ticket.json"
 $manifest = Read-Json "compatibility-retirement-manifest.json"
 $decision = Read-Json "gate-out/compatibility-retirement-decision.json"
 $diff = Read-Json "compatibility-retirement-deletion-diff.json"
 
-# Staleness. This must mirror New-RecommenderRetirementPacket.ps1's
-# $inputDigests set and root resolution exactly. E02 previously had no drift
-# guard of any kind: it could pass with every frozen input changed, so a green
-# result said nothing about whether the packet still described the live tree.
-$frozen = @("run-code-intel.ps1", "OpenSpec-Detector.ps1", "Invoke-WorkflowRecommendation.ps1", "orchestration/integrations.json")
-$snapshotIdentity = Get-Sha256Text ((($frozen | ForEach-Object {
-    (Get-FileHash -LiteralPath (FrozenPath $_) -Algorithm SHA256).Hash.ToLowerInvariant()
-})) -join "`n")
+# Staleness. This must mirror New-RecommenderRetirementPacket.ps1's $frozen set
+# exactly; the digest and root resolution are computed by the shared helper both
+# scripts dot-source, so the two lists are the only thing that has to match.
+# E02 previously had no drift guard of any kind: it could pass with every frozen
+# input changed, so a green result said nothing about whether the packet still
+# described the live tree.
+#
+# The registry input is a canonical projection over exactly the integration this
+# retirement concerns - advisory.workflow-recommend, the replacement capability -
+# plus the manifest policy header, not the whole of
+# orchestration/integrations.json. E02's staleness claim is about the registry
+# state of the capability it retires; it is not about the toolchainDigests of
+# unrelated Rust sources that happen to be pinned in the same file, which are
+# re-pinned on every routine source edit.
+. (Join-Path $PSScriptRoot "Get-FrozenManifestProjection.ps1")
+$frozen = @(
+    "run-code-intel.ps1", "OpenSpec-Detector.ps1", "Invoke-WorkflowRecommendation.ps1",
+    "manifest-projection:orchestration/integrations.json#advisory.workflow-recommend"
+)
+$snapshotIdentity = Get-FrozenSourceIdentity -FrozenSet $frozen -RepoRoot $RepoRoot -PipelineRepoRoot $PipelineRepoRoot
 foreach ($artifact in @($ticket, $manifest, $decision, $diff)) {
     if ($artifact.snapshotIdentity -ne $snapshotIdentity) { throw "E02 packet is stale relative to its frozen source set" }
 }

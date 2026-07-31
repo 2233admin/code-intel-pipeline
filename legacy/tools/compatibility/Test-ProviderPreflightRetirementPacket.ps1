@@ -22,11 +22,21 @@ $file=$diff.patch.files[0]; $hunk=$file.hunks[0]
 # drift guard at all. The second component is taken from the packet's own
 # baseText by design — that text is frozen history and cannot drift — so the
 # guard is carried by the three live components.
+#
+# The fourth component is a canonical projection over exactly the integration
+# this retirement concerns — provider.repowise-adapt, the replacement capability
+# — plus the manifest policy header, not the whole of
+# orchestration/integrations.json. E03's staleness claim is about the registry
+# state of the capability it retires; it is not about the toolchainDigests of
+# unrelated Rust sources that happen to be pinned in the same file, which are
+# re-pinned on every routine source edit. Generator and verifier compute the
+# projection through the same dot-sourced helper so the two cannot drift.
+. (Join-Path $PSScriptRoot "Get-FrozenManifestProjection.ps1")
 $snapshotIdentity = Get-TextSha ((@(
     (Get-FileHash -LiteralPath (Join-Path $RepoRoot "run-code-intel.ps1") -Algorithm SHA256).Hash.ToLowerInvariant(),
     (Get-TextSha $file.baseText),
     (Get-FileHash -LiteralPath (Join-Path $RepoRoot "Invoke-RepowiseProviderProbe.ps1") -Algorithm SHA256).Hash.ToLowerInvariant(),
-    (Get-FileHash -LiteralPath (Join-Path $PipelineRepoRoot "orchestration/integrations.json") -Algorithm SHA256).Hash.ToLowerInvariant()
+    (Get-FrozenManifestProjection -ManifestPath (Join-Path $PipelineRepoRoot "orchestration/integrations.json") -IntegrationIds @("provider.repowise-adapt"))
 )) -join "`n")
 foreach($artifact in @($ticket,$manifest,$decision,$diff)){if($artifact.snapshotIdentity-ne$snapshotIdentity){throw "E03 packet is stale relative to its frozen source set"}}
 if($file.path-ne"run-code-intel.ps1"-or$file.baseText-notmatch'test-code-intel-provider\.ps1'-or$file.baseText-match'Invoke-RepowiseProviderProbe\.ps1'-or$file.resultText-ne""-or$hunk.newLines-ne0-or@($hunk.addedLines).Count-ne0){throw "E03 diff is not a pure deletion of the historical direct wrapper block"}

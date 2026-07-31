@@ -1,16 +1,26 @@
 [CmdletBinding()]param([Parameter(Mandatory=$true)][string]$PacketRoot,[string]$RepoRoot=(Split-Path (Split-Path $PSScriptRoot -Parent) -Parent))
 Set-StrictMode -Version Latest;$ErrorActionPreference="Stop";function J([string]$r){$p=Join-Path $PacketRoot $r;if(-not(Test-Path $p -PathType Leaf)){throw "missing $r"};Get-Content $p -Raw|ConvertFrom-Json};function S([string]$t){([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($t)))).ToLowerInvariant()}
 $t=J "compatibility-retirement-ticket.json";$m=J "compatibility-retirement-manifest.json";$d=J "compatibility-retirement-deletion-diff.json";$g=J "gate-out/compatibility-retirement-decision.json";$s=J "status.json";$b="update-code-intel-index.legacy-compatibility-traversal";$c="update-code-intel-index.ps1::$b";$r="artifact.index-committed-only"
-# Staleness. This must mirror New-IndexRetirementPacket.ps1's $frozen set and
-# root resolution exactly. Without it E10 could be stale in six of its seven
-# frozen inputs and still pass: the only other freshness signal is the rollback
-# evidence on line 10, which rehashes update-code-intel-index.ps1 alone. That is
-# how #48's edits to orchestration/integrations.json went undetected here while
-# E04, E07 and E08 correctly went red on the same change.
+# Staleness. This must mirror New-IndexRetirementPacket.ps1's $frozen set
+# exactly; the digest and root resolution are computed by the shared helper both
+# scripts dot-source, so the two lists are the only thing that has to match.
+# Without this guard E10 could be stale in six of its seven frozen inputs and
+# still pass: the only other freshness signal is the rollback evidence on line
+# 10, which rehashes update-code-intel-index.ps1 alone. That is how #48's edits
+# to the registry went undetected here while E04, E07 and E08 correctly went red
+# on the same change.
+#
+# The registry input is a canonical projection over exactly the integration this
+# retirement concerns — artifact.index-committed-only, the replacement capability
+# and the registry participant — plus the manifest policy header, not the whole
+# of orchestration/integrations.json. E10's staleness claim is about the registry
+# state of the capability it retires; it is not about the toolchainDigests of
+# unrelated Rust sources that happen to be pinned in the same file, which are
+# re-pinned on every routine source edit.
 $PipelineRepoRoot=Split-Path -Parent $RepoRoot
-function FrozenPath([string]$p){if($p-like'crates/*'-or$p-like'orchestration/*'){Join-Path $PipelineRepoRoot $p}else{Join-Path $RepoRoot $p}}
-$frozen=@('update-code-intel-index.ps1','crates/code-intel-cli/src/artifact_index.rs','crates/code-intel-cli/tests/artifact_index.rs','crates/code-intel-cli/src/run_commit.rs','orchestration/integrations.json','orchestration/retirements/e05-publication/status.json','orchestration/retirements/e05-publication/gate-out/compatibility-retirement-decision.json')
-$snapshot=S (($frozen|ForEach-Object{(Get-FileHash (FrozenPath $_) -Algorithm SHA256).Hash.ToLowerInvariant()})-join"`n")
+. (Join-Path $PSScriptRoot "Get-FrozenManifestProjection.ps1")
+$frozen=@('update-code-intel-index.ps1','crates/code-intel-cli/src/artifact_index.rs','crates/code-intel-cli/tests/artifact_index.rs','crates/code-intel-cli/src/run_commit.rs','manifest-projection:orchestration/integrations.json#artifact.index-committed-only','orchestration/retirements/e05-publication/status.json','orchestration/retirements/e05-publication/gate-out/compatibility-retirement-decision.json')
+$snapshot=Get-FrozenSourceIdentity -FrozenSet $frozen -RepoRoot $RepoRoot -PipelineRepoRoot $PipelineRepoRoot
 foreach($a in @($t,$m,$d,$g)){if($a.snapshotIdentity-ne$snapshot){throw "E10 packet is stale relative to its frozen source set"}}
 if($t.legacyBranch.branchId-ne$b-or$t.legacyBranch.callPath-ne$c-or$m.approvalSubject.legacyBranch.callPath-ne$c-or$t.replacement.capabilityId-ne$r){throw "E10 identity mismatch"};if(@($t.affectedFiles).Count-ne1-or$t.affectedFiles[0]-ne"update-code-intel-index.ps1"){throw "E10 escaped file boundary"};if($d.patch.algorithm-ne"replayable-delete-only-v1"-or@($d.patch.files).Count-ne1-or@($d.patch.files[0].hunks).Count-ne1){throw "E10 patch shape invalid"}
 $f=$d.patch.files[0];if((S $f.baseText)-ne$f.baseBlobSha256-or(S $f.resultText)-ne$f.resultBlobSha256-or(S (ConvertTo-Json -InputObject @($d.patch.files)-Depth 40 -Compress))-ne$d.patch.sha256){throw "E10 patch hash invalid"};$h=$f.hunks[0];if($h.newLines-ne0-or@($h.addedLines).Count-ne0-or$h.oldLines-le0){throw "E10 patch is not deletion only"};if($f.baseText-notmatch'function Read-JsonFile'-or$f.resultText-match'function Read-JsonFile'-or$f.resultText-notmatch'"artifact", "index"'-or$f.resultText-notmatch'exit 0'){throw "E10 branch deletion or A08 preservation invalid"}

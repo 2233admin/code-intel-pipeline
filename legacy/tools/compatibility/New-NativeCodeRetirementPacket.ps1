@@ -76,15 +76,24 @@ foreach ($testName in $dagTests) {
 $registryAudit = & $CodeIntel orchestrate --action Validate --manifest (Join-Path $PipelineRepoRoot "orchestration/integrations.json") --json | ConvertFrom-Json
 if (-not $registryAudit.ok -or -not $registryAudit.registryAudit.ok) { throw "B07 registry audit failed" }
 
+# Frozen source set. Test-NativeCodeRetirementPacket.ps1 repeats this list and
+# both sides hash it through the same dot-sourced helper, so the mirror pair
+# cannot drift.
+#
+# The registry input is a canonical projection over exactly the integration this
+# retirement concerns - evidence.native-code, the replacement capability and the
+# registry participant - plus the manifest policy header, not the whole of
+# orchestration/integrations.json. E07's staleness claim is about the registry
+# state of the capability it retires; it is not about the toolchainDigests of
+# unrelated Rust sources that happen to be pinned in the same file, which are
+# re-pinned on every routine source edit.
+. (Join-Path $PSScriptRoot "Get-FrozenManifestProjection.ps1")
 $snapshotInputs = @(
     "run-code-intel.ps1", "crates/code-intel-cli/src/native_code_evidence.rs",
     "crates/code-intel-cli/tests/native_code_evidence.rs", "crates/code-intel-cli/tests/dag_run.rs",
-    "orchestration/integrations.json"
+    "manifest-projection:orchestration/integrations.json#evidence.native-code"
 )
-$snapshotIdentity = Get-Sha256Text (($snapshotInputs | ForEach-Object {
-    $root = if ($_.StartsWith('crates/') -or $_.StartsWith('orchestration/')) { $PipelineRepoRoot } else { $RepoRoot }
-    (Get-FileHash -LiteralPath (Join-Path $root $_) -Algorithm SHA256).Hash.ToLowerInvariant()
-}) -join "`n")
+$snapshotIdentity = Get-FrozenSourceIdentity -FrozenSet $snapshotInputs -RepoRoot $RepoRoot -PipelineRepoRoot $PipelineRepoRoot
 $retirementId = "retire-native-code-branch"
 $branchId = "run-code-intel.native-code.embedded"
 $replacementId = "evidence.native-code"

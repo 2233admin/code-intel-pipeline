@@ -76,14 +76,24 @@ foreach ($testName in $b05Tests) {
     if ($LASTEXITCODE -ne 0) { throw "B05 targeted fallback test failed: $testName" }
 }
 
+# Frozen source set. Test-CodeNexusDirectRetirementPacket.ps1 repeats this list
+# and both sides hash it through the same dot-sourced helper, so the mirror pair
+# cannot drift.
+#
+# The registry input is a canonical projection over exactly the integrations
+# this retirement concerns - localization.codenexus-lite, the participant being
+# retired, and provider.codenexus-adapt, the replacement - plus the manifest
+# policy header, not the whole of orchestration/integrations.json. E04's
+# staleness claim is about the registry state of the capability it retires; it
+# is not about the toolchainDigests of unrelated Rust sources that happen to be
+# pinned in the same file, which are re-pinned on every routine source edit.
+. (Join-Path $PSScriptRoot "Get-FrozenManifestProjection.ps1")
 $snapshotInputs = @(
     "run-code-intel.ps1", "Invoke-CodeNexusLite.ps1", "crates/code-intel-cli/src/codenexus_adapter.rs",
-    "crates/code-intel-cli/src/survival_scan.rs", "orchestration/integrations.json"
+    "crates/code-intel-cli/src/survival_scan.rs",
+    "manifest-projection:orchestration/integrations.json#localization.codenexus-lite,provider.codenexus-adapt"
 )
-$snapshotIdentity = Get-Sha256Text (($snapshotInputs | ForEach-Object {
-    $root = if ($_.StartsWith('crates/') -or $_.StartsWith('orchestration/')) { $PipelineRepoRoot } else { $RepoRoot }
-    (Get-FileHash -LiteralPath (Join-Path $root $_) -Algorithm SHA256).Hash.ToLowerInvariant()
-}) -join "`n")
+$snapshotIdentity = Get-FrozenSourceIdentity -FrozenSet $snapshotInputs -RepoRoot $RepoRoot -PipelineRepoRoot $PipelineRepoRoot
 $retirementId = "retire-codenexus-direct-branch"
 $branchId = "run-code-intel.codenexus-lite.direct"
 $replacementId = "provider.codenexus-adapt"
