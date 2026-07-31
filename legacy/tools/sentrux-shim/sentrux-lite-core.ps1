@@ -179,6 +179,13 @@ function Measure-File {
         calls = $callMatches.Count
         is_god_file = ($loc -gt 800 -or ($functionCount -gt 25 -and $loc -gt 400))
         is_complex = ($maxComplexity -gt 25)
+        # Mirrors IMPORT_MODELED_EXTENSIONS in crates/code-intel-cli/src/sentrux_gate.rs.
+        # PowerShell dot-sourcing and Import-Module are not matched by the import
+        # regex above, so .ps1/.psm1 files are excluded from both sides of the
+        # coupling ratio. Diverging from the Rust engine here would let an
+        # injected shim (options.toolPathPrefix) compare an old-formula score
+        # against a new-formula baseline and report a fabricated regression.
+        import_modeled = ($File.Extension.ToLowerInvariant() -notin @(".ps1", ".psm1"))
     }
 }
 
@@ -212,13 +219,15 @@ function Measure-Project {
     $files = Get-CodeFiles $TargetPath
     $fileMetrics = @($files | ForEach-Object { [pscustomobject](Measure-File $TargetPath $_) })
     $fileCount = $fileMetrics.Count
-    $importEdges = Get-SafeSum $fileMetrics 'imports'
+    $modeledMetrics = @($fileMetrics | Where-Object { $_.import_modeled })
+    $modeledFileCount = $modeledMetrics.Count
+    $importEdges = Get-SafeSum $modeledMetrics 'imports'
     $callEdges = Get-SafeSum $fileMetrics 'calls'
     $godFiles = @($fileMetrics | Where-Object { $_.is_god_file }).Count
     $complexFiles = @($fileMetrics | Where-Object { $_.is_complex }).Count
     $functions = Get-SafeSum $fileMetrics 'functions'
     $maxComplexity = Get-SafeMaximum $fileMetrics 'max_complexity'
-    $couplingScore = if ($fileCount -gt 0) { [Math]::Round(($importEdges / [Math]::Max(1, $fileCount)) * 10, 2) } else { 0 }
+    $couplingScore = if ($modeledFileCount -gt 0) { [Math]::Round(($importEdges / [Math]::Max(1, $modeledFileCount)) * 10, 2) } else { 0 }
     $quality = [int][Math]::Max(0, 10000 - ($couplingScore * 8) - ($complexFiles * 60) - ($godFiles * 120) - [Math]::Max(0, $maxComplexity - 15) * 10)
 
     return [ordered]@{
@@ -226,6 +235,7 @@ function Measure-Project {
         path = $TargetPath
         quality_signal = $quality
         files = $fileCount
+        import_modeled_files = $modeledFileCount
         functions = $functions
         coupling_score = $couplingScore
         cycle_count = 0
@@ -340,12 +350,15 @@ function Invoke-Check {
     if ($maxCyclesMatch.Success -and $metrics.cycle_count -gt [int]$maxCyclesMatch.Groups[1].Value) {
         $violations.Add("cycles exceeded: $($metrics.cycle_count) > $($maxCyclesMatch.Groups[1].Value)")
     }
-    $maxCouplingMatch = [regex]::Match($rules, "(?m)^\s*max_coupling\s*=\s*""?([A-D])""?")
+    # Accepts the A..D ladder or a bare number on the same scale, matching
+    # coupling_limit() in crates/code-intel-cli/src/sentrux_gate.rs.
+    $maxCouplingMatch = [regex]::Match($rules, "(?m)^\s*max_coupling\s*=\s*""?([A-D]|[0-9]+(?:\.[0-9]+)?)""?")
     if ($maxCouplingMatch.Success) {
         $thresholds = @{ A = 5; B = 15; C = 30; D = 60 }
-        $grade = $maxCouplingMatch.Groups[1].Value
-        if ($metrics.coupling_score -gt $thresholds[$grade]) {
-            $violations.Add("coupling grade exceeded: $($metrics.coupling_score) > $($thresholds[$grade]) for $grade")
+        $configured = $maxCouplingMatch.Groups[1].Value
+        $limit = if ($thresholds.ContainsKey($configured)) { [double]$thresholds[$configured] } else { [double]$configured }
+        if ([double]$metrics.coupling_score -gt $limit) {
+            $violations.Add("coupling limit exceeded: $($metrics.coupling_score) > $limit for $configured")
         }
     }
 
