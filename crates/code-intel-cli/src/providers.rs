@@ -1255,7 +1255,15 @@ fn cwd_manifest_path() -> Option<PathBuf> {
     let cwd = env::current_dir().ok()?;
     cwd.ancestors()
         .map(|ancestor| ancestor.join("orchestration").join("integrations.json"))
-        .find(|candidate| candidate.is_file())
+        // `is_safe_cwd_manifest` is what separates the two cases that both
+        // look like "cwd disagrees with CODE_INTEL_HOME". Standing in an
+        // unrelated repository that merely happens to have a file at
+        // orchestration/integrations.json is not ambiguity — the operator
+        // named a checkout and nothing here rivals it, which is exactly what
+        // test-integration-orchestration.ps1:243 has always asserted. Only a
+        // real code-intel registry is a rival, and that is the worktree case
+        // this guard exists for.
+        .find(|candidate| candidate.is_file() && is_safe_cwd_manifest(candidate))
 }
 
 fn reject_foreign_checkout(
@@ -1761,6 +1769,31 @@ mod tests {
             error.contains("CODE_INTEL_INTEGRATIONS_MANIFEST"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn an_unrelated_cwd_manifest_never_rivals_code_intel_home() {
+        // Regression guard for test-integration-orchestration.ps1:243. A
+        // directory holding {"policy":{"name":"unrelated"},"integrations":[]}
+        // is not a code-intel registry, so CODE_INTEL_HOME still wins and
+        // nothing is ambiguous.
+        let root = std::env::temp_dir().join(format!(
+            "code-intel-unrelated-manifest-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock after epoch")
+                .as_nanos()
+        ));
+        let manifest = root.join("orchestration").join("integrations.json");
+        fs::create_dir_all(manifest.parent().expect("orchestration dir")).expect("fixture");
+        fs::write(
+            &manifest,
+            br#"{"policy":{"name":"unrelated"},"integrations":[]}"#,
+        )
+        .expect("write fixture manifest");
+        assert!(!is_safe_cwd_manifest(&manifest));
+        fs::remove_dir_all(&root).expect("cleanup");
     }
 
     #[test]
