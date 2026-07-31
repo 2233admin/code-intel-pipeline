@@ -65,13 +65,20 @@ $providerPreflightPresent = $runText -match 'Invoke-RepowiseProviderProbe\.ps1'
 if (-not $legacyInlineAbsent) { throw "legacy inline recommender is still present" }
 if (-not $providerPreflightPresent) { throw "unrelated provider-preflight branch changed; E02 refuses to proceed" }
 
-$inputDigests = @(
-    "run-code-intel.ps1", "OpenSpec-Detector.ps1", "Invoke-WorkflowRecommendation.ps1", "orchestration/integrations.json"
-) | ForEach-Object {
-    $root = if ($_.StartsWith('crates/') -or $_.StartsWith('orchestration/')) { $PipelineRepoRoot } else { $RepoRoot }
-    (Get-FileHash -LiteralPath (Join-Path $root $_) -Algorithm SHA256).Hash.ToLowerInvariant()
-}
-$snapshotIdentity = Get-Sha256Text ($inputDigests -join "`n")
+# Frozen source set. Test-RecommenderRetirementPacket.ps1 repeats this list and
+# both sides hash it through the same dot-sourced helper, so the mirror pair
+# cannot drift. The registry input is a canonical projection over exactly the
+# integration this retirement concerns - advisory.workflow-recommend, the
+# replacement capability - plus the manifest policy header, not the whole of
+# orchestration/integrations.json. E02's staleness claim is about the registry
+# state of the capability it retires; it is not about the toolchainDigests of
+# unrelated Rust sources that happen to be pinned in the same file.
+. (Join-Path $PSScriptRoot "Get-FrozenManifestProjection.ps1")
+$frozen = @(
+    "run-code-intel.ps1", "OpenSpec-Detector.ps1", "Invoke-WorkflowRecommendation.ps1",
+    "manifest-projection:orchestration/integrations.json#advisory.workflow-recommend"
+)
+$snapshotIdentity = Get-FrozenSourceIdentity -FrozenSet $frozen -RepoRoot $RepoRoot -PipelineRepoRoot $PipelineRepoRoot
 $retirementId = "retire-recommender-branch"
 $branchId = "run-code-intel.workflow-recommender.inline"
 $replacementId = "advisory.workflow-recommend"

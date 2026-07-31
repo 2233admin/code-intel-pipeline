@@ -9,17 +9,10 @@ Set-StrictMode -Version Latest
 # stayed behind (orchestration/, crates/) live one level above it
 $PipelineRepoRoot = Split-Path -Parent $RepoRoot
 $ErrorActionPreference = "Stop"
-function Resolve-SnapshotInput([string]$Relative) {
-    $root = if ($Relative.StartsWith('crates/') -or $Relative.StartsWith('orchestration/')) { $PipelineRepoRoot } else { $RepoRoot }
-    Join-Path $root $Relative
-}
 function Read-Packet([string]$Relative) {
     $path = Join-Path $PacketRoot $Relative
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "packet file missing: $Relative" }
     return Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-}
-function Get-Sha256Text([string]$Text) {
-    return ([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Text)))).ToLowerInvariant()
 }
 
 $branch = "run-code-intel.codenexus-lite.direct"
@@ -30,13 +23,24 @@ $manifest = Read-Packet "compatibility-retirement-manifest.json"
 $decision = Read-Packet "gate-out/compatibility-retirement-decision.json"
 $diff = Read-Packet "compatibility-retirement-deletion-diff.json"
 $status = Read-Packet "status.json"
+# Staleness. This must mirror New-CodeNexusDirectRetirementPacket.ps1's frozen
+# set exactly; the digest and root resolution are computed by the shared helper
+# both scripts dot-source, so the two lists are the only thing that has to match.
+#
+# The registry input is a canonical projection over exactly the integrations
+# this retirement concerns — localization.codenexus-lite, the participant being
+# retired, and provider.codenexus-adapt, the replacement — plus the manifest
+# policy header, not the whole of orchestration/integrations.json. E04's
+# staleness claim is about the registry state of the capability it retires; it
+# is not about the toolchainDigests of unrelated Rust sources that happen to be
+# pinned in the same file, which are re-pinned on every routine source edit.
+. (Join-Path $PSScriptRoot "Get-FrozenManifestProjection.ps1")
 $snapshotInputs = @(
     "run-code-intel.ps1", "Invoke-CodeNexusLite.ps1", "crates/code-intel-cli/src/codenexus_adapter.rs",
-    "crates/code-intel-cli/src/survival_scan.rs", "orchestration/integrations.json"
+    "crates/code-intel-cli/src/survival_scan.rs",
+    "manifest-projection:orchestration/integrations.json#localization.codenexus-lite,provider.codenexus-adapt"
 )
-$currentSnapshotIdentity = Get-Sha256Text (($snapshotInputs | ForEach-Object {
-    (Get-FileHash -LiteralPath (Resolve-SnapshotInput $_) -Algorithm SHA256).Hash.ToLowerInvariant()
-}) -join "`n")
+$currentSnapshotIdentity = Get-FrozenSourceIdentity -FrozenSet $snapshotInputs -RepoRoot $RepoRoot -PipelineRepoRoot $PipelineRepoRoot
 if ($manifest.snapshotIdentity -ne $currentSnapshotIdentity -or $ticket.snapshotIdentity -ne $currentSnapshotIdentity -or
     $decision.snapshotIdentity -ne $currentSnapshotIdentity -or $diff.snapshotIdentity -ne $currentSnapshotIdentity) {
     throw "E04 packet is stale relative to its frozen source set"
