@@ -1,4 +1,4 @@
-//! Hospital report scoring, ported from `archive/run-code-intel.ps1`.
+//! Hospital report scoring, ported from `legacy/run-code-intel.ps1`.
 //!
 //! The Rust hospital emitted `null` for every score while the PowerShell
 //! launcher computed real values, so this was never duplication — it was the

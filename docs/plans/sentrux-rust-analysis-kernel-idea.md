@@ -2,8 +2,8 @@
 
 ## Outcome
 
-Move the performance-sensitive DSM analysis path from `archive/Invoke-SentruxAgentTool.ps1` into the
-`code-intel` Rust CLI without changing the artifact contract consumed by `archive/run-code-intel.ps1`.
+Move the performance-sensitive DSM analysis path from `legacy/Invoke-SentruxAgentTool.ps1` into the
+`code-intel` Rust CLI without changing the artifact contract consumed by `legacy/run-code-intel.ps1`.
 
 ## First vertical slice
 

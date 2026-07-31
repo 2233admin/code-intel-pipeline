@@ -1,6 +1,6 @@
 //! Path and platform derivation for the doctor bootstrap probe.
 //!
-//! Mirrors the helpers the retired `archive/tools/code-intel-platform.psm1`
+//! Mirrors the helpers the retired `legacy/tools/code-intel-platform.psm1`
 //! exposed to `check-code-intel-tools.ps1`: platform resolution,
 //! `Resolve-CodeIntelPath`, the home/data-root/bin triple, and the
 //! platform-correct binary name.

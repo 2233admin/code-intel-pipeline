@@ -91,7 +91,7 @@ Network-backed results will also bind provider, model, prompt/config digest, and
 5. Wrap Repowise, Understand, and Sentrux behind effect-declaring adapters.
 6. Add node-level cache, resume, and red-green invalidation.
 7. Separate rendering, transactional publish, and indexing.
-8. Keep `archive/run-code-intel.ps1` as a compatibility façade until parity is proven.
+8. Keep `legacy/run-code-intel.ps1` as a compatibility façade until parity is proven.
 
 ## Non-Goals
 

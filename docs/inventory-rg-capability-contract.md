@@ -1,7 +1,7 @@
 # inventory.rg capability contract
 
 `inventory.rg` v1 is the deterministic capability-envelope adapter for the existing
-`archive/run-code-intel.ps1` file-inventory step. It does not replace the compatibility facade.
+`legacy/run-code-intel.ps1` file-inventory step. It does not replace the compatibility facade.
 
 Compatibility is defined over the normalized file set, not the byte order emitted by a
 particular `rg --files` process. The legacy runner preserves ripgrep's process order, which is

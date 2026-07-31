@@ -30,6 +30,6 @@ State the one non-obvious observation that makes this worth doing.
 2.
 
 ## Implementation Notes
-- Start with `archive/install-code-intel-pipeline.ps1 -RepoPath <repo>`.
-- Run `archive/invoke-code-intel.ps1 -RepoPath <repo> -Mode lite` before normal mode.
+- Start with `legacy/install-code-intel-pipeline.ps1 -RepoPath <repo>`.
+- Run `legacy/invoke-code-intel.ps1 -RepoPath <repo> -Mode lite` before normal mode.
 - Read `understanding.md` before making project changes.

@@ -1,11 +1,11 @@
 # Multi-Agent Workspace Governance
 
-`archive/Invoke-MultiAgentWorkspacePreflight.ps1` is a read-only admission gate for agents that share a local Git worktree. It inventories the complete worktree before mutation begins; it does not clean, stash, reset, commit, or write files in the inspected repository.
+`legacy/Invoke-MultiAgentWorkspacePreflight.ps1` is a read-only admission gate for agents that share a local Git worktree. It inventories the complete worktree before mutation begins; it does not clean, stash, reset, commit, or write files in the inspected repository.
 
 ## Default mutation preflight
 
 ```powershell
-pwsh -NoProfile -File ./archive/Invoke-MultiAgentWorkspacePreflight.ps1 -RepoPath . -Intent mutation -Json
+pwsh -NoProfile -File ./legacy/Invoke-MultiAgentWorkspacePreflight.ps1 -RepoPath . -Intent mutation -Json
 ```
 
 The default intent is `mutation`. A clean repository root exits `0`. A dirty repository root emits its inventory and exits `20`, so an agent must move to a clean dedicated worktree instead of adding more changes to the shared root.
@@ -13,7 +13,7 @@ The default intent is `mutation`. A clean repository root exits `0`. A dirty rep
 ## Explicit observation
 
 ```powershell
-pwsh -NoProfile -File ./archive/Invoke-MultiAgentWorkspacePreflight.ps1 -RepoPath . -Intent observation -Json
+pwsh -NoProfile -File ./legacy/Invoke-MultiAgentWorkspacePreflight.ps1 -RepoPath . -Intent observation -Json
 ```
 
 Observation is explicit and exits `0` even when the root is dirty. The result always carries `authority: observation_only`; this path permits inspection only and cannot be treated as write authority.

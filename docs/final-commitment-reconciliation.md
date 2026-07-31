@@ -4,7 +4,7 @@ This is the human-readable projection of `orchestration/evidence/final-commitmen
 The JSON is authoritative; this table must be regenerated or updated in the same change and is checked byte-for-byte after newline normalization.
 
 Source plan: `docs/plans/adr-0010-execution-plan.md`  
-Source SHA-256: `790f56ca02e32697b6bc8037e0e6fad6ba51184b3833292fa154dc344079b3e7`  
+Source SHA-256: `d1ae95c344bc8604f26b49324c317c399cb80a16088a61c2f80f94f446044124`  
 Tickets: **69**
 
 ## Status totals
@@ -88,4 +88,4 @@ Tickets: **69**
 | E08 — `compatibility.retire-hospital-branch` | retirement_blocked | blocked | E00 decision remains blocked<br>deletionExecuted=false<br>retired=false | `orchestration/retirements/e08-hospital/status.json`<br>`docs/compatibility-retire-hospital-branch.md` |
 | E09 — `compatibility.retire-doctor-wrapper-branch` | retired_out_of_band | recorded | — | `orchestration/retirements/e09-doctor-wrapper/status.json`<br>`orchestration/retirements/e09-doctor-wrapper/evidence/out-of-band-deletion.json`<br>`docs/compatibility-retire-doctor-wrapper-branch.md` |
 | E10 — `compatibility.retire-index-branch` | retirement_blocked | blocked | E00 decision remains blocked<br>deletionExecuted=false<br>retired=false | `orchestration/retirements/e10-index/status.json`<br>`docs/compatibility-retire-index-branch.md` |
-| E06 — `compatibility.facade-finalize` | implemented_blocked | blocked | independent audit implementation approved, but final facade approval remains blocked<br>E02-E05 and E07-E10 retirement dependencies are not completed<br>current audit exits 2 with approvalEligible=false and independentApproval=null | `archive/Invoke-CompatibilityFacadeFinalize.ps1`<br>`archive/scripts/tests/test-compatibility-facade-finalize.ps1`<br>`orchestration/facade-finalize-policy.v1.json`<br>`orchestration/schemas/code-intel-compatibility-facade-finalize.v1.schema.json`<br>`docs/compatibility-facade-finalize.md` |
+| E06 — `compatibility.facade-finalize` | implemented_blocked | blocked | independent audit implementation approved, but final facade approval remains blocked<br>E02-E05 and E07-E10 retirement dependencies are not completed<br>current audit exits 2 with approvalEligible=false and independentApproval=null | `legacy/Invoke-CompatibilityFacadeFinalize.ps1`<br>`legacy/scripts/tests/test-compatibility-facade-finalize.ps1`<br>`orchestration/facade-finalize-policy.v1.json`<br>`orchestration/schemas/code-intel-compatibility-facade-finalize.v1.schema.json`<br>`docs/compatibility-facade-finalize.md` |

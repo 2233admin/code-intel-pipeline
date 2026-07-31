@@ -11,7 +11,7 @@
 # tree, recorded together with .sentrux/baseline.json in the same commit):
 #   coupling_score 45.26 -> 45.79, quality_signal 3607 -> 3603,
 #   god_file_count 32 (unchanged), cycle_count 0 (unchanged).
-# Cause: T3 (#48) replaced 409 lines of archive/check-code-intel-tools.ps1
+# Cause: T3 (#48) replaced 409 lines of legacy/check-code-intel-tools.ps1
 # with a native Rust probe split across four cohesive modules
 # (doctor_bootstrap/{mod,config,paths,probe}.rs) plus one integration test
 # file. Import edges went 1041 -> 1076 over 230 -> 235 files.

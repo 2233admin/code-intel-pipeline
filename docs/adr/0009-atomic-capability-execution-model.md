@@ -9,7 +9,7 @@ The trust-boundary work made Hospital and scoped Repowise fail closed, but real 
 
 Examples include stale graph files treated as current anatomy, Sentrux rule failures normalized only partially, enrichment selecting a surgery target while authoritative diagnosis is untrusted, and Repowise combining successful indexing with optional global hook installation in one process outcome.
 
-The current system is conceptually layered but operationally monolithic. `archive/run-code-intel.ps1` and `archive/Invoke-SentruxAgentTool.ps1` still combine collection, normalization, policy, rendering, and publication. A full rewrite would mix language migration with boundary repair and would be difficult to verify.
+The current system is conceptually layered but operationally monolithic. `legacy/run-code-intel.ps1` and `legacy/Invoke-SentruxAgentTool.ps1` still combine collection, normalization, policy, rendering, and publication. A full rewrite would mix language migration with boundary repair and would be difficult to verify.
 
 ## Decision
 

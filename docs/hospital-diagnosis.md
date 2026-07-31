@@ -47,6 +47,6 @@ registered A01 `diagnosis.hospital` capability, and re-verifies all four outputs
 through A03. Snapshot mismatch, unknown schema/type, digest mismatch, empty
 seeds, and non-admitted evidence fail closed without a hospital report.
 
-`archive/run-code-intel.ps1` remains the rollback facade until E08. Its stable diagnosis
+`legacy/run-code-intel.ps1` remains the rollback facade until E08. Its stable diagnosis
 labels and precedence are the compatibility baseline; new authority belongs to
 the A01/A03/A04/A09 path above.

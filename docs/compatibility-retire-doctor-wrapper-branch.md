@@ -46,14 +46,14 @@ evidence would be worse than recording the bypass. The bypass is recorded.
 `New-DoctorWrapperRetirementPacket.ps1` **cannot regenerate this packet** and is retained only for
 reference. It requires exactly one match for each of the three route-marker regexes in the live
 wrapper and throws `E09 route marker absent or ambiguous` on the first one, because the live
-`archive/invoke-code-intel.ps1` is a thin facade forwarding to `code-intel.ps1` with zero
+`legacy/invoke-code-intel.ps1` is a thin facade forwarding to `code-intel.ps1` with zero
 occurrences of the string `doctor`. The pre-deletion wrapper survives only as the packet's own
 rehearsal artifact, `rollback-rehearsal/invoke-code-intel.ps1`.
 
 ## Verification
 
 ```powershell
-pwsh -NoProfile -File archive/tools/compatibility/Test-DoctorWrapperRetirementPacket.ps1 -PacketRoot orchestration/retirements/e09-doctor-wrapper
+pwsh -NoProfile -File legacy/tools/compatibility/Test-DoctorWrapperRetirementPacket.ps1 -PacketRoot orchestration/retirements/e09-doctor-wrapper
 ```
 
 The verifier is anchored to history, not to the live tree. It checks that the four artifacts share

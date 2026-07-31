@@ -11,7 +11,7 @@ Its structural contract is
 Validate both representations with:
 
 ```powershell
-pwsh -NoProfile -File archive/tools/Test-FinalCommitmentReconciliation.ps1
+pwsh -NoProfile -File legacy/tools/Test-FinalCommitmentReconciliation.ps1
 ```
 
 The validator fails on a changed ADR digest, any missing/duplicate/reordered ID, an unknown status,

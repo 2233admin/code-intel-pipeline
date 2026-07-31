@@ -57,7 +57,7 @@
     "sourcePath": "crates/code-intel-cli/src/native_code_evidence.rs",
     "sourceDigest": "44f89f430ebf776b35e705d482807dd58a2803723268b4e162c9a753fadf8390",
     "conformancePath": "crates/code-intel-cli/tests/native_code_evidence.rs",
-    "conformanceDigest": "1f74220af1385ca5c549f0e3d12eb4e02218a0b4aabf247e328ccfa3e4e32e32"
+    "conformanceDigest": "3f7b49ecde974d748021bd3d6e9c5aff546819afab5c1a538a8747b471872ef6"
   },
   "rollback": {
     "documented": true,

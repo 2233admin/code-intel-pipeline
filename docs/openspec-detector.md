@@ -94,13 +94,13 @@
 
 ### 独立脚本
 
-`archive/OpenSpec-Detector.ps1` 是同一套逻辑的独立可执行版本（不依赖 pipeline），供单独跑三栈检测：
+`legacy/OpenSpec-Detector.ps1` 是同一套逻辑的独立可执行版本（不依赖 pipeline），供单独跑三栈检测：
 
 ```powershell
-.\archive\OpenSpec-Detector.ps1 -RepoPath <path> -Auto
+.\legacy\OpenSpec-Detector.ps1 -RepoPath <path> -Auto
 ```
 
-> ⚠️ 实现同步提醒：`archive/run-code-intel.ps1`（内联函数 `Get-CodeMetrics` / `Get-GovernanceIndicators` / `Get-SpecDrivenRecommendation` / `Get-MattFlowRecommendation` / `Get-GstackRecommendation` / `Invoke-WorkflowStackDetector` 等）与独立的 `archive/OpenSpec-Detector.ps1` 是两份重复实现，改动其中一份逻辑时务必同步另一份。
+> ⚠️ 实现同步提醒：`legacy/run-code-intel.ps1`（内联函数 `Get-CodeMetrics` / `Get-GovernanceIndicators` / `Get-SpecDrivenRecommendation` / `Get-MattFlowRecommendation` / `Get-GstackRecommendation` / `Invoke-WorkflowStackDetector` 等）与独立的 `legacy/OpenSpec-Detector.ps1` 是两份重复实现，改动其中一份逻辑时务必同步另一份。
 
 ## 下一步
 

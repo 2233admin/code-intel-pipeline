@@ -1,5 +1,5 @@
 //! Contract tests for `code-intel doctor bootstrap`, the subcommand that
-//! replaced `archive/check-code-intel-tools.ps1` under T3 (issue #48).
+//! replaced `legacy/check-code-intel-tools.ps1` under T3 (issue #48).
 //!
 //! What is pinned here is what other components actually read: the
 //! observation schema and `observation_only` authority the doctor capability
@@ -203,8 +203,8 @@ fn the_pipeline_root_defaults_to_the_checkout_the_caller_stands_in() {
         fs::create_dir_all(dir.join("orchestration")).unwrap();
         fs::write(dir.join("orchestration").join("integrations.json"), b"{}").unwrap();
     }
-    fs::create_dir_all(checkout.join("archive")).unwrap();
-    fs::write(checkout.join("archive").join("run-code-intel.ps1"), b"").unwrap();
+    fs::create_dir_all(checkout.join("legacy")).unwrap();
+    fs::write(checkout.join("legacy").join("run-code-intel.ps1"), b"").unwrap();
     fs::write(checkout.join("pipeline.config.json"), b"{}").unwrap();
     let crate_src = checkout.join("crates").join("code-intel-cli").join("src");
     fs::create_dir_all(&crate_src).unwrap();
@@ -260,7 +260,7 @@ fn an_unknown_flag_fails_closed_without_emitting_an_observation() {
 fn the_powershell_entry_point_is_a_thin_forwarder() {
     // The retirement bar for T3 is "<=50 lines shim or deleted". Assert the
     // shim stays thin and stays a forwarder rather than growing logic back.
-    let script = pipeline_root().join("archive/check-code-intel-tools.ps1");
+    let script = pipeline_root().join("legacy/check-code-intel-tools.ps1");
     let text = fs::read_to_string(&script).expect("read forwarder");
     let code_lines = text
         .lines()

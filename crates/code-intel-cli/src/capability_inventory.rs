@@ -149,7 +149,7 @@ fn workflow_recommendation(
             AdapterError::InvalidOptions("options.auto must be boolean when present".into())
         })?,
     };
-    let script = pipeline_root().join("archive/Invoke-WorkflowRecommendation.ps1");
+    let script = pipeline_root().join("legacy/Invoke-WorkflowRecommendation.ps1");
     if !script.is_file() {
         return Err(AdapterError::Unavailable(format!(
             "workflow recommendation facade is unavailable: {}",
@@ -1147,7 +1147,7 @@ mod tests {
     fn workflow_recommendation_script_resolves_from_the_pipeline_root() {
         assert!(
             pipeline_root()
-                .join("archive/Invoke-WorkflowRecommendation.ps1")
+                .join("legacy/Invoke-WorkflowRecommendation.ps1")
                 .is_file(),
             "workflow facade must resolve through the discovered pipeline root"
         );

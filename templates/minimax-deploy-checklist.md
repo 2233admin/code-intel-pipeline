@@ -13,13 +13,13 @@
 ```powershell
 git clone https://github.com/2233admin/code-intel-pipeline.git
 cd code-intel-pipeline
-.\archive\bootstrap-new-machine.ps1 -RepoPath <REPO_PATH>
+.\legacy\bootstrap-new-machine.ps1 -RepoPath <REPO_PATH>
 ```
 
 ## 验收
 
-- `archive/bootstrap-new-machine.ps1` 返回 `Code intel bootstrap: OK`
-- `archive/check-code-intel-tools.ps1 -RepoPath <REPO_PATH>` 返回 OK
+- `legacy/bootstrap-new-machine.ps1` 返回 `Code intel bootstrap: OK`
+- `legacy/check-code-intel-tools.ps1 -RepoPath <REPO_PATH>` 返回 OK
 - 最新 artifact 目录里存在：
   - `summary.md`
   - `report.json`

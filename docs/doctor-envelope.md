@@ -15,7 +15,7 @@ output before publication. Presence, readiness, conformance, and admissibility
 are separate fields. Doctor never emits engineering facts and never claims
 provider admissibility.
 
-`archive/check-code-intel-tools.ps1` is a thin forwarder onto that subcommand,
+`legacy/check-code-intel-tools.ps1` is a thin forwarder onto that subcommand,
 retained for the installer and rollback paths (T3, issue #48). It no longer
 computes anything: a missing binary is reported as a `code-intel binary` entry
 in `missing` rather than as a crash, so installers can keep reporting their own

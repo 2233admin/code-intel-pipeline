@@ -16,8 +16,8 @@ Ordinary code-intel analysis never requires the queue.
 ## Status and validation
 
 ```powershell
-./archive/Invoke-MultiAgentMergeQueue.ps1 -Action status -RepoPath C:\path\to\repo -Json
-./archive/Invoke-MultiAgentMergeQueue.ps1 -Action validate -RepoPath C:\path\to\repo
+./legacy/Invoke-MultiAgentMergeQueue.ps1 -Action status -RepoPath C:\path\to\repo -Json
+./legacy/Invoke-MultiAgentMergeQueue.ps1 -Action validate -RepoPath C:\path\to\repo
 ```
 
 The default command resolver accepts only `node_modules/.bin/claude-code-merge-queue`; it never uses
@@ -28,7 +28,7 @@ gate fails.
 ## Landing
 
 ```powershell
-./archive/Invoke-MultiAgentMergeQueue.ps1 -Action land -RepoPath C:\path\to\lane `
+./legacy/Invoke-MultiAgentMergeQueue.ps1 -Action land -RepoPath C:\path\to\lane `
   -AllowRepositoryMutation -AllowNetworkPush
 ```
 
@@ -43,7 +43,7 @@ For this repository, the queue's project-local config should use the fast unifie
 export default {
   integrationBranch: "integration",
   productionBranch: "main",
-  checkCommand: "pwsh -NoProfile -File ./archive/scripts/tests/Test-CodeIntelProjectConformance.ps1 -Profile fast",
+  checkCommand: "pwsh -NoProfile -File ./legacy/scripts/tests/Test-CodeIntelProjectConformance.ps1 -Profile fast",
   checksRequired: true,
 };
 ```

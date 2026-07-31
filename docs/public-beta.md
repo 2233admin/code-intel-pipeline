@@ -7,8 +7,8 @@ From the next tag onward, every release ships three ZIPs:
 `code-intel-pipeline-<tag>-windows.zip`, `code-intel-pipeline-<tag>-macos.zip`,
 and `code-intel-pipeline-<tag>-linux.zip`. The stable entrypoint is the
 packaged `bin/code-intel.exe` on Windows and `bin/code-intel` on macOS/Linux;
-`archive/code-intel.ps1` is the PowerShell recovery launcher and
-`archive/invoke-code-intel.ps1` is a v0.x compatibility forwarder. PowerShell 7.2+
+`legacy/code-intel.ps1` is the PowerShell recovery launcher and
+`legacy/invoke-code-intel.ps1` is a v0.x compatibility forwarder. PowerShell 7.2+
 (`pwsh`) is required on every platform, including macOS and Linux, because the
 installer and launchers are implemented in PowerShell. A release package must
 not require Cargo, a source-tree `target/` directory, or a local Rust
@@ -86,7 +86,7 @@ used when available.
 
 ## Upgrade and rollback
 
-Release ZIPs are self-contained. `archive/code-intel.ps1 -Update` installs a verified
+Release ZIPs are self-contained. `legacy/code-intel.ps1 -Update` installs a verified
 official stable release while retaining a verified local fallback. Manual
 rollback means switching back to the previous extracted directory. Generated
 artifacts live outside the package under the platform Code Intel data root.

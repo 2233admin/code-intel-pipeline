@@ -5,22 +5,22 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-POWERSHELL_TESTS = ROOT / "archive" / "scripts" / "tests"
-PUBLIC_ROOT_ENTRY_POINTS = {
-    "archive/bootstrap-new-machine.ps1",
-    "archive/check-code-intel-tools.ps1",
-    "archive/Find-CodeIntelProjects.ps1",
-    "archive/install-code-intel-pipeline.ps1",
-    "archive/code-intel.ps1",
-    "archive/invoke-code-intel.ps1",
-    "archive/Invoke-SentruxAgentTool.ps1",
-    "archive/run-code-intel.ps1",
+POWERSHELL_TESTS = ROOT / "legacy" / "scripts" / "tests"
+PUBLIC_ENTRY_POINTS = {
+    "legacy/bootstrap-new-machine.ps1",
+    "legacy/check-code-intel-tools.ps1",
+    "legacy/Find-CodeIntelProjects.ps1",
+    "legacy/install-code-intel-pipeline.ps1",
+    "legacy/code-intel.ps1",
+    "legacy/invoke-code-intel.ps1",
+    "legacy/Invoke-SentruxAgentTool.ps1",
+    "legacy/run-code-intel.ps1",
 }
 
 
 class RepositoryLayoutTests(unittest.TestCase):
-    def test_public_root_entry_points_remain_stable(self) -> None:
-        for name in PUBLIC_ROOT_ENTRY_POINTS:
+    def test_public_entry_points_remain_stable(self) -> None:
+        for name in PUBLIC_ENTRY_POINTS:
             with self.subTest(name=name):
                 self.assertTrue((ROOT / name).is_file())
 

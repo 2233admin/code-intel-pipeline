@@ -1,5 +1,5 @@
 //! Native bootstrap/environment probe — the Rust owner of what
-//! `archive/check-code-intel-tools.ps1` used to compute in PowerShell.
+//! `legacy/check-code-intel-tools.ps1` used to compute in PowerShell.
 //!
 //! Emits `code-intel-doctor-bootstrap-observation.v1`, the same
 //! non-authoritative observation the doctor capability adapter consumes. The
@@ -44,7 +44,7 @@ pub(crate) struct Options {
     /// Directory searched ahead of `PATH` when probing for tools. Lets a test
     /// stand up a fixture toolchain without mutating the process environment.
     pub(crate) tool_path_prefix: Option<PathBuf>,
-    /// Repository root holding `crates/`, `target/` and `archive/`.
+    /// Repository root holding `crates/`, `target/` and `legacy/`.
     pub(crate) pipeline_root: PathBuf,
 }
 
@@ -90,7 +90,7 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
 
     let pipeline_script = options
         .pipeline_root
-        .join("archive")
+        .join("legacy")
         .join("run-code-intel.ps1");
     let cli_root = options.pipeline_root.join("crates").join("code-intel-cli");
     let graph_source = cli_root.join("src").join("graph.rs");
@@ -127,7 +127,7 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
         |text| probe::contains_ignore_case(text, probe::SENTRUX_CORE_MARKER),
     );
     // Tier: free is healthy without the SENTRUX_AUTO_PRO opt-in (Pro
-    // auto-activation is opt-in; see archive/tools/sentrux-shim/sentrux-shim.ps1).
+    // auto-activation is opt-in; see legacy/tools/sentrux-shim/sentrux-shim.ps1).
     let require_pro_tier = probe::requires_pro_tier();
     let sentrux_pro = probe::probe_command_output(
         "sentrux-pro",
@@ -523,7 +523,7 @@ fn repo_lines(
 }
 
 /// `code-intel doctor bootstrap [...]` — the direct CLI surface that replaced
-/// `archive/check-code-intel-tools.ps1`. Exits 1 when the probe reports
+/// `legacy/check-code-intel-tools.ps1`. Exits 1 when the probe reports
 /// missing prerequisites, matching the script it retired.
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
     let mut options = Options::new(default_pipeline_root());

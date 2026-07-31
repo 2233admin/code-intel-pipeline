@@ -12,7 +12,7 @@
     "productionFiles": [
       "crates/code-intel-cli/src/doctor_adapter.rs",
       "crates/code-intel-cli/src/main.rs",
-      "archive/run-code-intel.ps1"
+      "legacy/run-code-intel.ps1"
     ],
     "participants": [
       {
@@ -32,7 +32,7 @@
         "capabilityId": "diagnosis.hospital",
         "status": "declared",
         "callSite": {
-          "source": "archive/run-code-intel.ps1",
+          "source": "legacy/run-code-intel.ps1",
           "anchor": "$hospitalReport = New-CodeIntelHospitalReport"
         },
         "envelope": "legacy-powershell-function-result.v1",
@@ -45,7 +45,7 @@
         "capabilityId": "pack.repomix",
         "status": "deleted",
         "callSite": {
-          "source": "archive/run-code-intel.ps1",
+          "source": "legacy/run-code-intel.ps1",
           "anchor": "$repomixTool = Join-Path $PSScriptRoot \"Invoke-RepomixCodePack.ps1\""
         },
         "reviewedDeletion": {
@@ -58,7 +58,7 @@
         "capabilityId": "evidence.native-code",
         "status": "declared",
         "callSite": {
-          "source": "archive/run-code-intel.ps1",
+          "source": "legacy/run-code-intel.ps1",
           "anchor": "$codeEvidence = New-CodeEvidenceLayer -RepoPath"
         },
         "envelope": "legacy-powershell-function-result.v1",
@@ -71,7 +71,7 @@
         "capabilityId": "evidence.cocoindex-code",
         "status": "deleted",
         "callSite": {
-          "source": "archive/run-code-intel.ps1",
+          "source": "legacy/run-code-intel.ps1",
           "anchor": "$adapterConfig = Get-JsonProperty $adapters \"cocoindex-code\" $null"
         },
         "reviewedDeletion": {
@@ -84,7 +84,7 @@
         "capabilityId": "research.github-solution",
         "status": "deleted",
         "callSite": {
-          "source": "archive/run-code-intel.ps1",
+          "source": "legacy/run-code-intel.ps1",
           "anchor": "$githubResearchScript = Join-Path $PSScriptRoot \"Invoke-GitHubSolutionResearch.ps1\""
         },
         "reviewedDeletion": {
@@ -97,7 +97,7 @@
         "capabilityId": "memory.repowise",
         "status": "declared",
         "callSite": {
-          "source": "archive/run-code-intel.ps1",
+          "source": "legacy/run-code-intel.ps1",
           "anchor": "$scopedRepowiseScript = Join-Path $PSScriptRoot \"Invoke-ScopedRepowise.ps1\""
         },
         "envelope": "legacy-powershell-script-result.v1",
@@ -110,7 +110,7 @@
         "capabilityId": "graph.code-intel-understand",
         "status": "declared",
         "callSite": {
-          "source": "archive/run-code-intel.ps1",
+          "source": "legacy/run-code-intel.ps1",
           "anchor": "$knowledgeGraph = Join-Path $understandDir \"knowledge-graph.json\""
         },
         "envelope": "legacy-artifact-read.v1",
@@ -123,7 +123,7 @@
         "capabilityId": "structure.sentrux",
         "status": "declared",
         "callSite": {
-          "source": "archive/run-code-intel.ps1",
+          "source": "legacy/run-code-intel.ps1",
           "anchor": "$sentruxAgentTool = Join-Path $PSScriptRoot \"Invoke-SentruxAgentTool.ps1\""
         },
         "envelope": "legacy-powershell-script-result.v1",
@@ -136,7 +136,7 @@
         "capabilityId": "localization.codenexus-lite",
         "status": "declared",
         "callSite": {
-          "source": "archive/run-code-intel.ps1",
+          "source": "legacy/run-code-intel.ps1",
           "anchor": "$codeNexusLiteTool = Join-Path $PSScriptRoot \"Invoke-CodeNexusLite.ps1\""
         },
         "envelope": "legacy-powershell-script-result.v1",
@@ -149,7 +149,7 @@
         "capabilityId": "run.commit",
         "status": "declared",
         "callSite": {
-          "source": "archive/run-code-intel.ps1",
+          "source": "legacy/run-code-intel.ps1",
           "anchor": "& $rustCli run commit"
         },
         "envelope": "rust-cli-process.v1",
@@ -285,12 +285,12 @@
           "id": "doctor.envelope.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "21fc5754b9803f9fdee3d0a3eebe7db3d5f2bae1d93cd4218590522c9d3b9f19",
-            "c50788e1e790e496056de6a4ed208c8f5903345f15aef2ab783c9780d648dc34",
+            "421a3a2947d2fa3d48267ad6822ee36086007aa6cbae6cad437ead71a652073a",
+            "272c499f611608a120c6e81041152a93679cc7dbbfda9fb84230d25623468400",
             "7db9e80857f3c65aada25041986cb5cb3b50b95fa69de794d55ad38fd4a8d8d4",
-            "af67633e245665cdccef1b8dac1f672f3aca7af188449cde6e5fc518917c51be",
+            "78f88f1aaa3f77d28fbadf2bf8fd1c5e5a6b99a4728457262b19baabff2c8a80",
             "c9842468b904868391ff0fd2bb5d9627f4d61ab5f39fa01513dc409d0d2b484d",
-            "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab"
+            "003748487700f8ae84f18f45bdfc8c43b9a0931e5fdfeb51d95b867caf6fb9db"
           ]
         },
         "determinism": "external_nondeterministic",
@@ -314,7 +314,7 @@
         "doctor-observation.json",
         "doctor_json"
       ],
-      "extensionPoint": "The probe is native Rust (doctor_bootstrap.rs) and stays an observation-only bootstrap; archive/check-code-intel-tools.ps1 is a thin forwarder kept for installer and rollback paths. Authoritative doctor execution uses the A01 envelope and never promotes readiness into conformance or admissibility."
+      "extensionPoint": "The probe is native Rust (doctor_bootstrap.rs) and stays an observation-only bootstrap; legacy/check-code-intel-tools.ps1 is a thin forwarder kept for installer and rollback paths. Authoritative doctor execution uses the A01 envelope and never promotes readiness into conformance or admissibility."
     },
     {
       "id": "runtime.code-intel",
@@ -371,14 +371,14 @@
       "owner": "code-intel-pipeline",
       "kind": "compatibility-script",
       "required": false,
-      "entrypoint": "archive/Invoke-CodeNexusLite.ps1",
+      "entrypoint": "legacy/Invoke-CodeNexusLite.ps1",
       "capabilities": [
         "codenexus_scan",
         "codenexus_lite",
         "codenexus_doctor"
       ],
       "commands": {
-        "compat": "pwsh -NoProfile -File \"$env:CODE_INTEL_HOME\\archive/Invoke-CodeNexusLite.ps1\" -RepoPath '<repo-path>'"
+        "compat": "pwsh -NoProfile -File \"$env:CODE_INTEL_HOME\\legacy/Invoke-CodeNexusLite.ps1\" -RepoPath '<repo-path>'"
       },
       "artifactContract": [
         "codenexus-context.json",
@@ -451,7 +451,7 @@
       "owner": "code-intel-pipeline",
       "kind": "internal-policy-adapter",
       "required": false,
-      "entrypoint": "archive/Invoke-MultiAgentWorkspacePreflight.ps1",
+      "entrypoint": "legacy/Invoke-MultiAgentWorkspacePreflight.ps1",
       "capabilities": [
         "dirty_workspace_inventory",
         "stable_inventory_digest",
@@ -459,8 +459,8 @@
         "explicit_observation_only"
       ],
       "commands": {
-        "observe": "pwsh -NoProfile -File archive/Invoke-MultiAgentWorkspacePreflight.ps1 -RepoPath '<repo-path>' -Intent observation -Json",
-        "admitMutation": "pwsh -NoProfile -File archive/Invoke-MultiAgentWorkspacePreflight.ps1 -RepoPath '<repo-path>' -Intent mutation -Json"
+        "observe": "pwsh -NoProfile -File legacy/Invoke-MultiAgentWorkspacePreflight.ps1 -RepoPath '<repo-path>' -Intent observation -Json",
+        "admitMutation": "pwsh -NoProfile -File legacy/Invoke-MultiAgentWorkspacePreflight.ps1 -RepoPath '<repo-path>' -Intent mutation -Json"
       },
       "artifactContract": [
         "orchestration/multi-agent-workspace-policy.v1.json"
@@ -496,7 +496,7 @@
       "capabilities": ["repowise_native_translation", "provider_neutral_admissibility", "independent_index_docs_status"],
       "commands": {
         "adapt": "target/debug/code-intel.exe provider repowise-adapt --request <native.json|-> --artifact-root <artifact-directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>",
-        "facade": "archive/run-code-intel.ps1 -RepowiseAdapterRequest <native.json> -RepowiseAdapterArtifactRoot <artifact-directory> -RepowiseAdapterEvaluatedAt <unix-seconds> -RepowiseAdapterMaxAgeSeconds <seconds>"
+        "facade": "legacy/run-code-intel.ps1 -RepowiseAdapterRequest <native.json> -RepowiseAdapterArtifactRoot <artifact-directory> -RepowiseAdapterEvaluatedAt <unix-seconds> -RepowiseAdapterMaxAgeSeconds <seconds>"
       },
       "artifactContract": [
         "orchestration/schemas/code-intel-repowise-route-result.v1.schema.json",
@@ -520,7 +520,7 @@
       ],
     "commands": {
       "adapt": "target/debug/code-intel.exe provider graph-adapt --request <native.json|-> --artifact-root <artifact-directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>",
-      "facade": "archive/run-code-intel.ps1 -GraphAdapterRequest <native.json> -GraphAdapterArtifactRoot <artifact-directory> -GraphAdapterEvaluatedAt <unix-seconds> -GraphAdapterMaxAgeSeconds <seconds>",
+      "facade": "legacy/run-code-intel.ps1 -GraphAdapterRequest <native.json> -GraphAdapterArtifactRoot <artifact-directory> -GraphAdapterEvaluatedAt <unix-seconds> -GraphAdapterMaxAgeSeconds <seconds>",
       "capabilityExec": "target/debug/code-intel.exe capability exec provider.graph-adapt --request <request.json|-> --out <staging-dir> --artifact-root <run-root>"
     },
     "capabilityDeclaration": {
@@ -571,7 +571,7 @@
       "capabilities": ["authoritative_rule_normalization", "effect_reconciliation", "provider_neutral_admissibility", "fail_closed_unknown_rules"],
     "commands": {
       "adapt": "target/debug/code-intel.exe provider sentrux-adapt --request <native.json|-> --artifact-root <artifact-directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>",
-      "facade": "archive/run-code-intel.ps1 -SentruxAdapterRequest <native.json> -SentruxAdapterArtifactRoot <artifact-directory> -SentruxAdapterEvaluatedAt <unix-seconds> -SentruxAdapterMaxAgeSeconds <seconds>",
+      "facade": "legacy/run-code-intel.ps1 -SentruxAdapterRequest <native.json> -SentruxAdapterArtifactRoot <artifact-directory> -SentruxAdapterEvaluatedAt <unix-seconds> -SentruxAdapterMaxAgeSeconds <seconds>",
       "capabilityExec": "target/debug/code-intel.exe capability exec provider.sentrux-adapt --request <request.json|-> --out <staging-dir> --artifact-root <run-root>",
       "native-gate": "target/debug/code-intel.exe sentrux --operation check|gate --repo <repo-path>"
     },
@@ -606,7 +606,7 @@
       ]
     },
       "artifactContract": ["orchestration/schemas/code-intel-structural-evidence-port.v1.schema.json", "orchestration/schemas/code-intel-sentrux-route-result.v1.schema.json", "orchestration/schemas/code-intel-evidence-admissibility-result.v1.schema.json"],
-      "extensionPoint": "The default provider executes real sentrux gate/check commands and normalizes their command-level observations through A04. Sentrux algorithms remain external, diagnosis policy stays in Hospital, and archive/Invoke-SentruxAgentTool.ps1 is a legacy compatibility/rollback surface rather than the authoritative normal route."
+      "extensionPoint": "The default provider executes real sentrux gate/check commands and normalizes their command-level observations through A04. Sentrux algorithms remain external, diagnosis policy stays in Hospital, and legacy/Invoke-SentruxAgentTool.ps1 is a legacy compatibility/rollback surface rather than the authoritative normal route."
     },
     {
       "id": "provider.session-adapt",
@@ -647,7 +647,7 @@
       ],
       "commands": {
         "adapt": "target/debug/code-intel.exe provider codenexus-adapt --request <native.json|-> --artifact-root <artifact-directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>",
-        "facade": "archive/run-code-intel.ps1 -CodeNexusAdapterRequest <native.json> -CodeNexusAdapterArtifactRoot <artifact-directory> -CodeNexusAdapterEvaluatedAt <unix-seconds> -CodeNexusAdapterMaxAgeSeconds <seconds>"
+        "facade": "legacy/run-code-intel.ps1 -CodeNexusAdapterRequest <native.json> -CodeNexusAdapterArtifactRoot <artifact-directory> -CodeNexusAdapterEvaluatedAt <unix-seconds> -CodeNexusAdapterMaxAgeSeconds <seconds>"
       },
       "artifactContract": [
         "orchestration/schemas/code-intel-codenexus-port.v1.schema.json",
@@ -673,7 +673,7 @@
       ],
       "commands": {
         "scan": "target/debug/code-intel.exe repository survival-scan --request <request.json|-> --artifact-root <artifact-directory>",
-        "facade": "archive/run-code-intel.ps1 -SurvivalScanRequest <request.json> -SurvivalScanArtifactRoot <artifact-directory>"
+        "facade": "legacy/run-code-intel.ps1 -SurvivalScanRequest <request.json> -SurvivalScanArtifactRoot <artifact-directory>"
       },
       "artifactContract": [
         "orchestration/schemas/code-intel-repository-survival-scan-request.v1.schema.json",
@@ -751,7 +751,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "713daf121490de0eb9e3a94139318da47b46d4368fce5ef09c5719b8d546f403",
-            "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab"
+            "003748487700f8ae84f18f45bdfc8c43b9a0931e5fdfeb51d95b867caf6fb9db"
           ]
         },
         "determinism": "deterministic",
@@ -842,8 +842,8 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "3ba256f4ca0bf62aca08f688f7ecf31800dd10e68371054e2f1605eff197ea81",
-            "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab",
-            "417825de55b7ffde49ad60ceacca3f91c4148059873920df092d08570b838311",
+            "003748487700f8ae84f18f45bdfc8c43b9a0931e5fdfeb51d95b867caf6fb9db",
+            "203e3b0d3be3c17331a7c7115aec71104db8f2b682e57e2c14dd9ee6f3fe18fb",
             "b118ba78ff3ef4a189525c642184cbd320a268d2885681ab153544db554c5965",
             "e3072b6b01a4f692c2ac75c7c4995747f9a0fd1ce4f32e1ab1599f348661f570",
             "40c532ed3aa52144bdc8bb4422e04b23c54196d352ac9cb0f3e93a5a059af120"
@@ -903,9 +903,9 @@
           "id": "compatibility.retirement-gate.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "663f6293f4da744d7010593b3d3052b439a26aed16751d6322b60a1ccb9e20b2",
-            "417825de55b7ffde49ad60ceacca3f91c4148059873920df092d08570b838311",
-            "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab"
+            "2d2b38c4650795e2bba99e8ec38ca21adcb204042e9289577c535f7087e899d8",
+            "203e3b0d3be3c17331a7c7115aec71104db8f2b682e57e2c14dd9ee6f3fe18fb",
+            "003748487700f8ae84f18f45bdfc8c43b9a0931e5fdfeb51d95b867caf6fb9db"
           ]
         },
         "determinism": "deterministic",
@@ -955,8 +955,8 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "a6da84444e815dd94c15887190c7d6bd48c7bca5975fb5d493eb77ab39f27d80",
-            "417825de55b7ffde49ad60ceacca3f91c4148059873920df092d08570b838311",
-            "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab"
+            "203e3b0d3be3c17331a7c7115aec71104db8f2b682e57e2c14dd9ee6f3fe18fb",
+            "003748487700f8ae84f18f45bdfc8c43b9a0931e5fdfeb51d95b867caf6fb9db"
           ]
         },
         "determinism": "deterministic",
@@ -985,7 +985,7 @@
       "owner": "code-intel-pipeline",
       "kind": "verification-audit",
       "required": false,
-      "entrypoint": "archive/Invoke-CompatibilityFacadeFinalize.ps1",
+      "entrypoint": "legacy/Invoke-CompatibilityFacadeFinalize.ps1",
       "capabilities": [
         "frozen_retirement_dependency_audit",
         "retained_powershell_registry_owner_expiry_audit",
@@ -993,7 +993,7 @@
         "blocked_without_independent_approval"
       ],
       "commands": {
-        "audit": "pwsh -NoProfile -File archive/Invoke-CompatibilityFacadeFinalize.ps1 -EvaluatedAt <unix-seconds> -OutFile <final-manifest.json> -Json"
+        "audit": "pwsh -NoProfile -File legacy/Invoke-CompatibilityFacadeFinalize.ps1 -EvaluatedAt <unix-seconds> -OutFile <final-manifest.json> -Json"
       },
       "artifactContract": [
         "orchestration/facade-finalize-policy.v1.json",
@@ -1009,7 +1009,7 @@
       "owner": "code-intel-pipeline",
       "kind": "advisory-atom",
       "required": false,
-      "entrypoint": "archive/OpenSpec-Detector.ps1",
+      "entrypoint": "legacy/OpenSpec-Detector.ps1",
       "capabilities": [
         "evidence_backed_workflow_proposal",
         "candidate_comparison",
@@ -1017,10 +1017,10 @@
         "authority_separated_adoption"
       ],
       "commands": {
-        "atom": "archive/OpenSpec-Detector.ps1 -RepoPath <repository> [-Auto]",
-        "facade": "archive/Invoke-WorkflowRecommendation.ps1 -RepoPath <repository> [-Auto]",
+        "atom": "legacy/OpenSpec-Detector.ps1 -RepoPath <repository> [-Auto]",
+        "facade": "legacy/Invoke-WorkflowRecommendation.ps1 -RepoPath <repository> [-Auto]",
         "capabilityExec": "target/debug/code-intel.exe capability exec advisory.workflow-recommend --request <request.json|-> --out <staging-dir>",
-        "pipeline": "archive/run-code-intel.ps1 -Repo <repository> [-SkipOpenSpec] [-AutoOpenSpec]"
+        "pipeline": "legacy/run-code-intel.ps1 -Repo <repository> [-SkipOpenSpec] [-AutoOpenSpec]"
       },
       "capabilityDeclaration": {
         "schema": "code-intel-capability-declaration.v1",
@@ -1031,7 +1031,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-            "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab"
+            "003748487700f8ae84f18f45bdfc8c43b9a0931e5fdfeb51d95b867caf6fb9db"
           ]
         },
         "determinism": "deterministic",
@@ -1042,7 +1042,7 @@
       "toolchainDigestEvidence": {
         "algorithm": "sha256",
         "inputs": [
-          "archive/Invoke-WorkflowRecommendation.ps1",
+          "legacy/Invoke-WorkflowRecommendation.ps1",
           "crates/code-intel-cli/src/capability_inventory.rs"
         ]
       },
@@ -1124,7 +1124,7 @@
       ],
       "commands": {
         "run": "target/debug/code-intel.exe run commit --source-root <A09-artifact-root> --authority-root <publication-root> --manifest-ref <artifact-ref.json> --final-name <name>",
-        "facade": "archive/run-code-intel.ps1 -RunCommitSourceRoot <A09-artifact-root> -RunCommitAuthorityRoot <publication-root> -RunCommitManifestRef <artifact-ref.json> -RunCommitFinalName <name>"
+        "facade": "legacy/run-code-intel.ps1 -RunCommitSourceRoot <A09-artifact-root> -RunCommitAuthorityRoot <publication-root> -RunCommitManifestRef <artifact-ref.json> -RunCommitFinalName <name>"
       },
       "artifactContract": [
         "orchestration/schemas/code-intel-staged-artifact-set.v1.schema.json",
@@ -1143,7 +1143,7 @@
       "capabilities": ["authoritative_execution", "compiled_execution_policy", "typed_run_outcome", "atomic_publication"],
       "commands": {
         "run": "target/debug/code-intel.exe run execute --repo <repo-root> --out <run-staging-directory> --authority-root <publication-root> --final-name <name> [--profile default|strict|offline]",
-        "facade": "archive/invoke-code-intel.ps1 -RepoPath <repo-root> -Mode <lite|normal|full>"
+        "facade": "legacy/invoke-code-intel.ps1 -RepoPath <repo-root> -Mode <lite|normal|full>"
       },
       "artifactContract": [
         "orchestration/schemas/code-intel-run-dag.v1.schema.json",
@@ -1165,7 +1165,7 @@
       "commands": {
         "run": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--doctor-tool-path-prefix <controlled-tool-directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]",
         "diagnosis": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> --diagnosis-inputs <artifact-refs.json> --seed-artifact-root <artifact-root>",
-        "facade": "archive/run-code-intel.ps1 -RepoPath <repo-root> -ArtifactRoot <artifact-root> -DagCoordinate"
+        "facade": "legacy/run-code-intel.ps1 -RepoPath <repo-root> -ArtifactRoot <artifact-root> -DagCoordinate"
       },
       "artifactContract": [
         "orchestration/schemas/code-intel-run-dag.v1.schema.json",
@@ -1180,13 +1180,13 @@
       "owner": "code-intel-pipeline",
       "kind": "internal-adapter",
       "required": true,
-      "entrypoint": "archive/run-code-intel.ps1",
+      "entrypoint": "legacy/run-code-intel.ps1",
       "capabilities": [
         "file_inventory",
         "text_inventory"
       ],
       "commands": {
-        "run": "archive/run-code-intel.ps1 -RepoPath <repo-path> -Mode <mode>",
+        "run": "legacy/run-code-intel.ps1 -RepoPath <repo-path> -Mode <mode>",
         "capabilityExec": "target/debug/code-intel.exe capability exec inventory.rg --request <request.json|-> --out <staging-dir>"
       },
       "capabilityDeclaration": {
@@ -1197,7 +1197,7 @@
           "id": "inventory.rg.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "129dc6ff0b2f72b0c84f9f770a9ca7c348ada4c9a0e0537e94c63cf29f708bab"
+            "003748487700f8ae84f18f45bdfc8c43b9a0931e5fdfeb51d95b867caf6fb9db"
           ]
         },
         "determinism": "deterministic",
@@ -1306,7 +1306,7 @@
       "owner": "code-intel-pipeline",
       "kind": "internalizing-adapter",
       "required": false,
-      "entrypoint": "archive/Invoke-ScopedRepowise.ps1",
+      "entrypoint": "legacy/Invoke-ScopedRepowise.ps1",
       "capabilities": [
         "status",
         "index",
@@ -1315,8 +1315,8 @@
         "docs"
       ],
       "commands": {
-        "status": "archive/Invoke-ScopedRepowise.ps1 -RepoPath <repo-path> -ScopePaths <paths> -RootFiles <files> -AllowShadowWorktreeMutation",
-        "docs": "archive/run-code-intel.ps1 -RepoPath <repo-path> -Mode normal -RepowiseDocs -AllowRepowiseShadowMutation"
+        "status": "legacy/Invoke-ScopedRepowise.ps1 -RepoPath <repo-path> -ScopePaths <paths> -RootFiles <files> -AllowShadowWorktreeMutation",
+        "docs": "legacy/run-code-intel.ps1 -RepoPath <repo-path> -Mode normal -RepowiseDocs -AllowRepowiseShadowMutation"
       },
       "artifactContract": [
         ".repowise/state.json",
@@ -1377,7 +1377,7 @@
       "owner": "code-intel-pipeline",
       "kind": "internal-first-adapter",
       "required": true,
-      "entrypoint": "archive/Invoke-SentruxAgentTool.ps1",
+      "entrypoint": "legacy/Invoke-SentruxAgentTool.ps1",
       "capabilities": [
         "scan",
         "health",
@@ -1398,9 +1398,9 @@
         "rustCheckRules": "target/debug/code-intel.exe sentrux check_rules <repo-path>",
         "rustTestGaps": "target/debug/code-intel.exe sentrux test_gaps <repo-path>",
         "rustWhatIf": "target/debug/code-intel.exe sentrux what_if <repo-path>",
-        "shimScan": "archive/Invoke-SentruxAgentTool.ps1 scan <repo-path>",
-        "shimSessionStart": "archive/Invoke-SentruxAgentTool.ps1 session_start <repo-path>",
-        "shimSessionEnd": "archive/Invoke-SentruxAgentTool.ps1 session_end <repo-path>"
+        "shimScan": "legacy/Invoke-SentruxAgentTool.ps1 scan <repo-path>",
+        "shimSessionStart": "legacy/Invoke-SentruxAgentTool.ps1 session_start <repo-path>",
+        "shimSessionEnd": "legacy/Invoke-SentruxAgentTool.ps1 session_end <repo-path>"
       },
       "artifactContract": [
         "sentrux-dsm.json",
@@ -1409,7 +1409,7 @@
         "sentrux-evolution.json",
         "sentrux-what-if.json"
       ],
-      "extensionPoint": "External sentrux.exe is an accelerator and archive/Invoke-SentruxAgentTool.ps1 is an implementation/rollback behind provider.sentrux-adapt; neither direct output is diagnosis authority before A04."
+      "extensionPoint": "External sentrux.exe is an accelerator and legacy/Invoke-SentruxAgentTool.ps1 is an implementation/rollback behind provider.sentrux-adapt; neither direct output is diagnosis authority before A04."
     },
     {
       "id": "localization.codenexus-lite",
@@ -1417,14 +1417,14 @@
       "owner": "code-intel-pipeline",
       "kind": "compatibility-adapter",
       "required": false,
-      "entrypoint": "archive/Invoke-CodeNexusLite.ps1",
+      "entrypoint": "legacy/Invoke-CodeNexusLite.ps1",
       "capabilities": [
         "hotspot_context",
         "recent_commits",
         "reference_hits"
       ],
       "commands": {
-        "compat": "pwsh -NoProfile -File \"$env:CODE_INTEL_HOME\\archive/Invoke-CodeNexusLite.ps1\" -RepoPath '<repo-path>'"
+        "compat": "pwsh -NoProfile -File \"$env:CODE_INTEL_HOME\\legacy/Invoke-CodeNexusLite.ps1\" -RepoPath '<repo-path>'"
       },
       "artifactContract": [
         "codenexus-context.json"
@@ -1446,7 +1446,7 @@
       ],
       "commands": {
         "capabilityExec": "target/debug/code-intel.exe capability exec diagnosis.hospital --request <request.json|-> --out <staging-dir> --artifact-root <artifact-directory>",
-        "compatibility": "archive/run-code-intel.ps1 -RepoPath <repo-path> -Mode <mode>"
+        "compatibility": "legacy/run-code-intel.ps1 -RepoPath <repo-path> -Mode <mode>"
       },
       "capabilityDeclaration": {
         "schema": "code-intel-capability-declaration.v1",
@@ -1489,14 +1489,14 @@
       "owner": "code-intel-pipeline",
       "kind": "internal-observer",
       "required": false,
-      "entrypoint": "archive/Invoke-ProviderRuntimeInventory.ps1",
+      "entrypoint": "legacy/Invoke-ProviderRuntimeInventory.ps1",
       "capabilities": [
         "secret_free_channel_discovery",
         "bounded_executable_verification",
         "configuration_broker_presence"
       ],
       "commands": {
-        "inventory": "pwsh -NoProfile -File archive/Invoke-ProviderRuntimeInventory.ps1 -Json > <inventory.json>"
+        "inventory": "pwsh -NoProfile -File legacy/Invoke-ProviderRuntimeInventory.ps1 -Json > <inventory.json>"
       },
       "artifactContract": [
         "orchestration/schemas/code-intel-model-channel-inventory-request.v1.schema.json",
@@ -1521,7 +1521,7 @@
       "commands": {
         "route": "target/debug/code-intel.exe model route --request <routing-request.json> --out <routing-result.json>",
         "validateInventory": "target/debug/code-intel.exe model inventory-validate --request <inventory.json>",
-        "synthesizeAndInvoke": "archive/run-code-intel.ps1 -ModelInventoryResult <inventory.json> -ModelRoutingResult <routing-result.json> -ModelPromptFile <prompt> -ModelExecutableHandle <handle.json> -ModelAdapterArtifactRoot <artifact-root>"
+        "synthesizeAndInvoke": "legacy/run-code-intel.ps1 -ModelInventoryResult <inventory.json> -ModelRoutingResult <routing-result.json> -ModelPromptFile <prompt> -ModelExecutableHandle <handle.json> -ModelAdapterArtifactRoot <artifact-root>"
       },
       "artifactContract": [
         "orchestration/schemas/code-intel-model-routing-request.v1.schema.json",
@@ -1572,7 +1572,7 @@
       "owner": "code-intel-pipeline",
       "kind": "internal-policy-adapter",
       "required": false,
-      "entrypoint": "archive/Invoke-CodeIntelAcceptance.ps1",
+      "entrypoint": "legacy/Invoke-CodeIntelAcceptance.ps1",
       "capabilities": [
         "agent_targeted_plus_fast_acceptance",
         "land_fast_acceptance",
@@ -1580,9 +1580,9 @@
         "language_neutral_result_status"
       ],
       "commands": {
-        "agent": "pwsh -NoProfile -File archive/Invoke-CodeIntelAcceptance.ps1 -Stage agent -TargetCheckJson '<target-check-json>' -Json",
-        "land": "pwsh -NoProfile -File archive/Invoke-CodeIntelAcceptance.ps1 -Stage land -Json",
-        "promote": "pwsh -NoProfile -File archive/Invoke-CodeIntelAcceptance.ps1 -Stage promote -Json"
+        "agent": "pwsh -NoProfile -File legacy/Invoke-CodeIntelAcceptance.ps1 -Stage agent -TargetCheckJson '<target-check-json>' -Json",
+        "land": "pwsh -NoProfile -File legacy/Invoke-CodeIntelAcceptance.ps1 -Stage land -Json",
+        "promote": "pwsh -NoProfile -File legacy/Invoke-CodeIntelAcceptance.ps1 -Stage promote -Json"
       },
       "artifactContract": [
         "orchestration/code-intel-acceptance-policy.v1.json",
@@ -1597,15 +1597,15 @@
       "owner": "code-intel-pipeline",
       "kind": "optional-external-provider-adapter",
       "required": false,
-      "entrypoint": "archive/Invoke-CompeteProjectScore.ps1",
+      "entrypoint": "legacy/Invoke-CompeteProjectScore.ps1",
       "capabilities": [
         "competitive_intelligence_task_preparation",
         "upstream_compete_score_normalization",
         "orca_agent_handoff"
       ],
       "commands": {
-        "prepare": "pwsh -NoProfile -File archive/Invoke-CompeteProjectScore.ps1 -Action prepare -RepoPath '<repo-path>' -ArtifactRoot '<artifact-directory>' -CompeteRoot '<compete-root>'",
-        "score": "pwsh -NoProfile -File archive/Invoke-CompeteProjectScore.ps1 -Action score -RepoPath '<repo-path>' -ArtifactRoot '<artifact-directory>' -CompeteRoot '<compete-root>' -CompeteDataPath '<compete-data-directory>'"
+        "prepare": "pwsh -NoProfile -File legacy/Invoke-CompeteProjectScore.ps1 -Action prepare -RepoPath '<repo-path>' -ArtifactRoot '<artifact-directory>' -CompeteRoot '<compete-root>'",
+        "score": "pwsh -NoProfile -File legacy/Invoke-CompeteProjectScore.ps1 -Action score -RepoPath '<repo-path>' -ArtifactRoot '<artifact-directory>' -CompeteRoot '<compete-root>' -CompeteDataPath '<compete-data-directory>'"
       },
       "artifactContract": [
         "competitive-intelligence-request.json",
@@ -1621,7 +1621,7 @@
       "owner": "code-intel-pipeline",
       "kind": "optional-external-provider-adapter",
       "required": false,
-      "entrypoint": "archive/Invoke-MultiAgentMergeQueue.ps1",
+      "entrypoint": "legacy/Invoke-MultiAgentMergeQueue.ps1",
       "capabilities": [
         "repository_local_queue_discovery",
         "acceptance_bound_fifo_landing",
@@ -1629,11 +1629,11 @@
         "human_production_promotion_boundary"
       ],
       "commands": {
-        "status": "pwsh -NoProfile -File archive/Invoke-MultiAgentMergeQueue.ps1 -Action status -RepoPath '<repo-path>' -Json",
-        "validate": "pwsh -NoProfile -File archive/Invoke-MultiAgentMergeQueue.ps1 -Action validate -RepoPath '<repo-path>' -Json",
-        "land": "pwsh -NoProfile -File archive/Invoke-MultiAgentMergeQueue.ps1 -Action land -RepoPath '<repo-path>' -AllowRepositoryMutation -AllowNetworkPush",
-        "reconcile": "pwsh -NoProfile -File archive/Invoke-MultiAgentMergeQueue.ps1 -Action reconcile -RepoPath '<repo-path>'",
-        "history": "pwsh -NoProfile -File archive/Invoke-MultiAgentMergeQueue.ps1 -Action history -RepoPath '<repo-path>'"
+        "status": "pwsh -NoProfile -File legacy/Invoke-MultiAgentMergeQueue.ps1 -Action status -RepoPath '<repo-path>' -Json",
+        "validate": "pwsh -NoProfile -File legacy/Invoke-MultiAgentMergeQueue.ps1 -Action validate -RepoPath '<repo-path>' -Json",
+        "land": "pwsh -NoProfile -File legacy/Invoke-MultiAgentMergeQueue.ps1 -Action land -RepoPath '<repo-path>' -AllowRepositoryMutation -AllowNetworkPush",
+        "reconcile": "pwsh -NoProfile -File legacy/Invoke-MultiAgentMergeQueue.ps1 -Action reconcile -RepoPath '<repo-path>'",
+        "history": "pwsh -NoProfile -File legacy/Invoke-MultiAgentMergeQueue.ps1 -Action history -RepoPath '<repo-path>'"
       },
       "artifactContract": [
         "orchestration/multi-agent-merge-queue-policy.v1.json",
@@ -1658,8 +1658,8 @@
       "commands": {
         "rebuild": "target/debug/code-intel.exe artifact index --artifact-root <artifact-root> --output <index.json> --operation rebuild",
         "incremental": "target/debug/code-intel.exe artifact index --artifact-root <artifact-root> --output <index.json> --operation incremental --existing <index.json>",
-        "facade": "archive/update-code-intel-index.ps1 -ArtifactRoot <artifact-root> -OutputPath <index.md>",
-        "legacyCompatibility": "archive/update-code-intel-index.ps1 -ArtifactRoot <artifact-root> -OutputPath <index.md> -LegacyCompatibilityMode"
+        "facade": "legacy/update-code-intel-index.ps1 -ArtifactRoot <artifact-root> -OutputPath <index.md>",
+        "legacyCompatibility": "legacy/update-code-intel-index.ps1 -ArtifactRoot <artifact-root> -OutputPath <index.md> -LegacyCompatibilityMode"
       },
       "artifactContract": [
         "orchestration/schemas/code-intel-run-commit.v1.schema.json",
