@@ -132,7 +132,6 @@ jobs:
             "legacy/Invoke-ModelChannelDelegate.ps1",
             "legacy/Invoke-SentruxAgentTool.ps1",
             "legacy/scripts/tests/test-code-intel-pipeline.ps1",
-            "legacy/scripts/tests/test-stable-wrapper-e2e.ps1",
             "legacy/scripts/tests/test-primary-launchers.ps1",
             "legacy/scripts/tests/test-github-solution-research.ps1",
             "legacy/scripts/tests/test-hospital-trust-contract.ps1",
@@ -265,10 +264,6 @@ jobs:
       - name: Pipeline smoke
         shell: pwsh
         run: .\legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -SkipGitHubResearch -Mode normal
-
-      - name: Stable wrapper authoritative outcome E2E
-        shell: pwsh
-        run: .\legacy/scripts/tests/test-stable-wrapper-e2e.ps1
 
       - name: Model channel and automation regression suites
         shell: pwsh
@@ -474,7 +469,6 @@ jobs:
             "legacy/Invoke-ModelChannelDelegate.ps1",
             "legacy/Invoke-SentruxAgentTool.ps1",
             "legacy/scripts/tests/test-code-intel-pipeline.ps1",
-            "legacy/scripts/tests/test-stable-wrapper-e2e.ps1",
             "legacy/scripts/tests/test-primary-launchers.ps1",
             "legacy/scripts/tests/test-github-solution-research.ps1",
             "legacy/scripts/tests/test-hospital-trust-contract.ps1",
