@@ -25,6 +25,11 @@ use crate::capability::sha256_hex;
 #[path = "doctor_bootstrap/mod.rs"]
 mod doctor_bootstrap;
 
+// Same reason: included by path so the integration-test crate roots that pull
+// this adapter in still resolve it.
+#[path = "doctor_provider_rows.rs"]
+mod doctor_provider_rows;
+
 pub(crate) fn execute(
     request: &Value,
     verified_inputs: &[VerifiedArtifact],
@@ -242,40 +247,6 @@ fn adapt(
             })
         })
         .collect::<Vec<_>>();
-    let tool_present = |name: &str| {
-        tools
-            .iter()
-            .any(|tool| string(tool, "name") == name && boolean(tool, "found"))
-    };
-    let sentrux_core = raw
-        .pointer("/checks/sentrux/core/found")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let sentrux_pro = raw
-        .pointer("/checks/sentrux/pro/found")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let sentrux_builtin = raw
-        .pointer("/checks/sentrux/builtin/found")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    // The built-in engine makes an external Sentrux optional, but a PRESENT
-    // external installation must still conform: a broken overlay on PATH is
-    // exactly the verdict-drift hazard this doctor exists to surface.
-    let external_sentrux = tool_present("sentrux");
-    let sentrux_ready = (sentrux_builtin && !external_sentrux) || (sentrux_core && sentrux_pro);
-    let graph_source = raw
-        .pointer("/checks/graphProvider/sourceFound")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let graph_cargo = raw
-        .pointer("/checks/graphProvider/cargoFound")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let graph_binary = raw
-        .pointer("/checks/graphProvider/binaryFound")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
     let policy = json!({
         "platform": options.platform,
         "requireRepowise": options.require_repowise,
@@ -295,11 +266,7 @@ fn adapt(
         "bootstrap":{"schema":raw["schema"],"authority":"observation_only","ready":raw["ok"]},
         "repository":{"presence":if raw.pointer("/checks/repo/exists").and_then(Value::as_bool).unwrap_or(false) { "present" } else { "missing" },"readiness":if raw.pointer("/checks/repo/exists").and_then(Value::as_bool).unwrap_or(false) { "ready" } else { "unavailable" },"conformance":"not_evaluated","admissibility":"not_evaluated"},
         "tools":tool_observations,
-        "providers":[
-            {"id":"repowise","presence":if tool_present("repowise") {"present"} else {"missing"},"readiness":if tool_present("repowise") {"ready"} else {"unavailable"},"conformance":"not_evaluated","admissibility":"not_evaluated"},
-            {"id":"sentrux","presence":if sentrux_builtin || tool_present("sentrux") {"present"} else {"missing"},"readiness":if sentrux_ready {"ready"} else {"unavailable"},"conformance":if sentrux_ready {"conforming"} else if tool_present("sentrux") {"nonconforming"} else {"not_evaluated"},"admissibility":"not_evaluated"},
-            {"id":"graph.code-intel","presence":if graph_source && graph_cargo {"present"} else {"missing"},"readiness":if graph_source && graph_cargo && graph_binary {"ready"} else {"unavailable"},"conformance":if graph_source && graph_cargo {"conforming"} else {"not_evaluated"},"admissibility":"not_evaluated"}
-        ],
+        "providers":doctor_provider_rows::provider_rows(raw),
         "manifest":{"reconciled":manifest_ok,"registryReconciled":registry_ok,"findingCount":manifest["errors"].as_array().map_or(0, Vec::len)},
         "diagnostics":{"bootstrapReady":raw["ok"],"manifestReady":manifest_ok},
         "engineeringFacts":[]
@@ -507,6 +474,7 @@ mod tests {
             "crates/code-intel-cli/src/doctor_bootstrap/paths.rs",
             "crates/code-intel-cli/src/doctor_bootstrap/probe.rs",
             "crates/code-intel-cli/src/capability_inventory.rs",
+            "crates/code-intel-cli/src/doctor_provider_rows.rs",
         ] {
             let actual = sha256_hex(&fs::read(root.join(relative)).unwrap());
             assert!(

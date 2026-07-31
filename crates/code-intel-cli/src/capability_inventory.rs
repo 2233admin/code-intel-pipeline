@@ -20,7 +20,9 @@ mod compatibility_retirement_ticket;
 #[path = "delivery_light_speed.rs"]
 mod delivery_light_speed;
 #[path = "doctor_adapter.rs"]
-mod doctor_adapter;
+// Crate-visible so `doctor bootstrap --require-provider-conformance` can reuse
+// the node's own provider rows instead of restating the predicate.
+pub(crate) mod doctor_adapter;
 #[path = "hospital_diagnosis.rs"]
 mod hospital_diagnosis;
 #[path = "native_code_evidence.rs"]
