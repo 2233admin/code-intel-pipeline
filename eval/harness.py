@@ -84,11 +84,13 @@ from arms import (  # noqa: E402
     arm_a_answer as _arm_a_answer_impl,
     arm_b_answer as _arm_b_answer_impl,
     git_ls_files,
+    is_excluded_from_corpus,
     load_artifact_index,
     merge_ranges,
     posix,
     read_bytes,
     read_line_window,
+    search_kind,
     span_fully_covered,
 )
 from reporting import aggregate, render_markdown  # noqa: E402

@@ -1,0 +1,4 @@
+{
+  "purpose": "Fixture proving corpus-exclusion (issue #93 self-reference pollution fix, #104).",
+  "note": "Deliberately repeats fq01's own keywords far more than sample.py/other.py do -- add add add add add sample sample sample sample sample -- so an unfiltered Arm B would rank this file above both real fixture files (out-scoring the 2-hit sample.py and other.py) and an unfiltered Arm A chunk search would find it too. It sits under eval/ (relative to the fixture repo root) specifically to exercise is_excluded_from_corpus; CorpusExclusionTests in eval/test_harness.py asserts it never appears in either arm's files_touched despite outscoring the real golden file."
+}

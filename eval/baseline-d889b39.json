@@ -3,9 +3,9 @@
     "arm_a": {
       "coverage_rate": 0.5,
       "covered_count": 6,
-      "mean_bytes_when_covered": 1076094.83,
-      "total_bytes_all_questions": 14914639,
-      "total_bytes_when_covered": 6456569
+      "mean_bytes_when_covered": 1078896.17,
+      "total_bytes_all_questions": 14959835,
+      "total_bytes_when_covered": 6473377
     },
     "arm_a_failure_reasons": {
       "no_pointer_found": 4,
@@ -47,7 +47,7 @@
     },
     "win_loss_table": [
       {
-        "arm_a_bytes": 964594,
+        "arm_a_bytes": 966752,
         "arm_a_covered": true,
         "arm_b_bytes": 65650,
         "arm_b_covered": true,
@@ -56,7 +56,7 @@
         "winner": "B"
       },
       {
-        "arm_a_bytes": 1631861,
+        "arm_a_bytes": 1637879,
         "arm_a_covered": false,
         "arm_b_bytes": 230665,
         "arm_b_covered": true,
@@ -65,7 +65,7 @@
         "winner": "B"
       },
       {
-        "arm_a_bytes": 965715,
+        "arm_a_bytes": 967873,
         "arm_a_covered": false,
         "arm_b_bytes": 76264,
         "arm_b_covered": true,
@@ -74,7 +74,7 @@
         "winner": "B"
       },
       {
-        "arm_a_bytes": 964769,
+        "arm_a_bytes": 966927,
         "arm_a_covered": true,
         "arm_b_bytes": 53768,
         "arm_b_covered": true,
@@ -83,7 +83,7 @@
         "winner": "B"
       },
       {
-        "arm_a_bytes": 1631861,
+        "arm_a_bytes": 1637879,
         "arm_a_covered": false,
         "arm_b_bytes": 197759,
         "arm_b_covered": true,
@@ -92,7 +92,7 @@
         "winner": "B"
       },
       {
-        "arm_a_bytes": 965500,
+        "arm_a_bytes": 967658,
         "arm_a_covered": true,
         "arm_b_bytes": 177933,
         "arm_b_covered": true,
@@ -101,7 +101,7 @@
         "winner": "B"
       },
       {
-        "arm_a_bytes": 1631861,
+        "arm_a_bytes": 1637879,
         "arm_a_covered": false,
         "arm_b_bytes": 22102,
         "arm_b_covered": true,
@@ -110,7 +110,7 @@
         "winner": "B"
       },
       {
-        "arm_a_bytes": 964806,
+        "arm_a_bytes": 966964,
         "arm_a_covered": true,
         "arm_b_bytes": 2206906,
         "arm_b_covered": false,
@@ -119,7 +119,7 @@
         "winner": "A"
       },
       {
-        "arm_a_bytes": 1631861,
+        "arm_a_bytes": 1637879,
         "arm_a_covered": false,
         "arm_b_bytes": 203127,
         "arm_b_covered": true,
@@ -128,7 +128,7 @@
         "winner": "B"
       },
       {
-        "arm_a_bytes": 1631989,
+        "arm_a_bytes": 1638007,
         "arm_a_covered": true,
         "arm_b_bytes": 125624,
         "arm_b_covered": false,
@@ -137,7 +137,7 @@
         "winner": "A"
       },
       {
-        "arm_a_bytes": 964911,
+        "arm_a_bytes": 967069,
         "arm_a_covered": true,
         "arm_b_bytes": 27120,
         "arm_b_covered": true,
@@ -146,7 +146,7 @@
         "winner": "B"
       },
       {
-        "arm_a_bytes": 964911,
+        "arm_a_bytes": 967069,
         "arm_a_covered": false,
         "arm_b_bytes": 27120,
         "arm_b_covered": true,
@@ -157,26 +157,26 @@
     ]
   },
   "meta": {
-    "artifact_run_dir": "artifacts/t2-eval-baseline/1785605131785-91040-core",
-    "baseline_file": "eval/baseline-8a79814.json",
-    "generated_at": "2026-08-01T17:25:38Z",
+    "artifact_run_dir": "artifacts/t3-cut/1785612676552-89404-core",
+    "baseline_file": "eval/baseline-d889b39.json",
+    "generated_at": "2026-08-01T19:31:30Z",
     "platform": "win32",
     "python_version": "3.13.14",
-    "repo_head_sha": "8a79814",
+    "repo_head_sha": "d889b39",
     "timing": {
-      "build_seconds": 0.059,
-      "build_skipped": false,
-      "pipeline_run_seconds": 6.092
+      "build_seconds": 0.0,
+      "build_skipped": true,
+      "pipeline_run_seconds": 13.635
     }
   },
   "questions": [
     {
       "arm_a": {
-        "artifact_bytes": 964083,
+        "artifact_bytes": 966241,
         "artifact_kinds_consulted": [
           "code_evidence.symbols"
         ],
-        "bytes_to_answer": 964594,
+        "bytes_to_answer": 966752,
         "covered": true,
         "files_touched": [
           "code_evidence.symbols",
@@ -208,13 +208,13 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 1631861,
+        "artifact_bytes": 1637879,
         "artifact_kinds_consulted": [
           "code_evidence.symbols",
           "code_evidence.imports",
           "code_evidence.chunks"
         ],
-        "bytes_to_answer": 1631861,
+        "bytes_to_answer": 1637879,
         "covered": false,
         "files_touched": [
           "code_evidence.symbols",
@@ -246,11 +246,11 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 964083,
+        "artifact_bytes": 966241,
         "artifact_kinds_consulted": [
           "code_evidence.symbols"
         ],
-        "bytes_to_answer": 965715,
+        "bytes_to_answer": 967873,
         "covered": false,
         "files_touched": [
           "code_evidence.symbols",
@@ -287,11 +287,11 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 964083,
+        "artifact_bytes": 966241,
         "artifact_kinds_consulted": [
           "code_evidence.symbols"
         ],
-        "bytes_to_answer": 964769,
+        "bytes_to_answer": 966927,
         "covered": true,
         "files_touched": [
           "code_evidence.symbols",
@@ -323,13 +323,13 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 1631861,
+        "artifact_bytes": 1637879,
         "artifact_kinds_consulted": [
           "code_evidence.symbols",
           "code_evidence.imports",
           "code_evidence.chunks"
         ],
-        "bytes_to_answer": 1631861,
+        "bytes_to_answer": 1637879,
         "covered": false,
         "files_touched": [
           "code_evidence.symbols",
@@ -360,11 +360,11 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 964083,
+        "artifact_bytes": 966241,
         "artifact_kinds_consulted": [
           "code_evidence.symbols"
         ],
-        "bytes_to_answer": 965500,
+        "bytes_to_answer": 967658,
         "covered": true,
         "files_touched": [
           "code_evidence.symbols",
@@ -404,13 +404,13 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 1631861,
+        "artifact_bytes": 1637879,
         "artifact_kinds_consulted": [
           "code_evidence.symbols",
           "code_evidence.imports",
           "code_evidence.chunks"
         ],
-        "bytes_to_answer": 1631861,
+        "bytes_to_answer": 1637879,
         "covered": false,
         "files_touched": [
           "code_evidence.symbols",
@@ -438,11 +438,11 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 964083,
+        "artifact_bytes": 966241,
         "artifact_kinds_consulted": [
           "code_evidence.symbols"
         ],
-        "bytes_to_answer": 964806,
+        "bytes_to_answer": 966964,
         "covered": true,
         "files_touched": [
           "code_evidence.symbols",
@@ -461,7 +461,7 @@
       "arm_b": {
         "bytes_to_answer": 2206906,
         "covered": false,
-        "files_matched_total": 142,
+        "files_matched_total": 136,
         "files_touched": [
           "orchestration/retirements/e02-recommender/compatibility-retirement-deletion-diff.json (102 hits)",
           "orchestration/retirements/e04-codenexus-direct/compatibility-retirement-deletion-diff.json (102 hits)",
@@ -478,13 +478,13 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 1631861,
+        "artifact_bytes": 1637879,
         "artifact_kinds_consulted": [
           "code_evidence.symbols",
           "code_evidence.imports",
           "code_evidence.chunks"
         ],
-        "bytes_to_answer": 1631861,
+        "bytes_to_answer": 1637879,
         "covered": false,
         "files_touched": [
           "code_evidence.symbols",
@@ -516,13 +516,13 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 1631861,
+        "artifact_bytes": 1637879,
         "artifact_kinds_consulted": [
           "code_evidence.symbols",
           "code_evidence.imports",
           "code_evidence.chunks"
         ],
-        "bytes_to_answer": 1631989,
+        "bytes_to_answer": 1638007,
         "covered": true,
         "files_touched": [
           "code_evidence.symbols",
@@ -560,11 +560,11 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 964083,
+        "artifact_bytes": 966241,
         "artifact_kinds_consulted": [
           "code_evidence.symbols"
         ],
-        "bytes_to_answer": 964911,
+        "bytes_to_answer": 967069,
         "covered": true,
         "files_touched": [
           "code_evidence.symbols",
@@ -596,11 +596,11 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 964083,
+        "artifact_bytes": 966241,
         "artifact_kinds_consulted": [
           "code_evidence.symbols"
         ],
-        "bytes_to_answer": 964911,
+        "bytes_to_answer": 967069,
         "covered": false,
         "files_touched": [
           "code_evidence.symbols",
@@ -641,8 +641,8 @@
     "file_cap": 5,
     "pipeline_mode": "lite",
     "pipeline_outcome": "completed",
-    "repo_file_count": 840,
-    "setup_bytes": 2814166,
+    "repo_file_count": 822,
+    "setup_bytes": 2824738,
     "window_lines": 10
   }
 }

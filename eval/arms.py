@@ -41,6 +41,38 @@ def read_text(path: Path) -> str:
 
 
 # --------------------------------------------------------------------------
+# Corpus exclusions (issue #93 self-reference pollution fix, #104).
+#
+# The benchmark must never read its own corpus, its own outputs, or archived
+# material. eval/ holds eval/questions.json, which contains every question's
+# own golden.keywords as literal JSON text -- an unfiltered naive search
+# therefore ranks the benchmark's own question file as a top hit for the
+# very question it defines (verified: q06's keywords match eval/questions.json
+# 11 times), and eval/BASELINE.md (a rendered per-question summary) does the
+# same. Left in, this dilutes Arm B's file cap and pushes the true golden
+# file out of the top FILE_CAP results. docs/archive/ holds docs already
+# classified non-current (see docs/INVENTORY.md); .out-of-scope/ is a
+# non-goal registry, not product content -- neither belongs in an "agent
+# reading the repo to answer a question" corpus either.
+#
+# Applied at both enumeration (git_ls_files, below) and at each arm's point
+# of use (arm_b_answer's ranking loop, search_kind's hit collection) so the
+# exclusion holds regardless of how file_universe/artifact data was built,
+# not only via the one call site that currently constructs it.
+# --------------------------------------------------------------------------
+
+EXCLUDED_CORPUS_PREFIXES: Tuple[str, ...] = ("eval/", "docs/archive/", ".out-of-scope/")
+
+
+def is_excluded_from_corpus(rel_path: str) -> bool:
+    """True if `rel_path` (repo-relative) is the benchmark's own corpus,
+    its own output, or archived/non-goal material -- never a valid answer
+    source for either arm."""
+    rel = posix(rel_path)
+    return any(rel.startswith(prefix) for prefix in EXCLUDED_CORPUS_PREFIXES)
+
+
+# --------------------------------------------------------------------------
 # Line-range arithmetic shared by both arms' coverage checks
 # --------------------------------------------------------------------------
 
@@ -154,7 +186,7 @@ def search_kind(kind: str, artifact_json: Dict[str, Any], keywords: Sequence[str
         if all(k in text for k in lowered):
             line = entry.get(line_key)
             file = entry.get("file")
-            if file and isinstance(line, int):
+            if file and isinstance(line, int) and not is_excluded_from_corpus(file):
                 hits.add((file, line))
     return sorted(hits)
 
@@ -254,7 +286,11 @@ def git_ls_files(repo_root: Path) -> List[str]:
         text=True,
         check=True,
     )
-    files = sorted(posix(line) for line in proc.stdout.splitlines() if line.strip())
+    files = sorted(
+        posix(line)
+        for line in proc.stdout.splitlines()
+        if line.strip() and not is_excluded_from_corpus(line)
+    )
     return files
 
 
@@ -285,6 +321,8 @@ def arm_b_answer(
     # to actually open in full.
     scored: List[Tuple[int, str]] = []
     for rel in file_universe:
+        if is_excluded_from_corpus(rel):
+            continue
         text = _read_text_or_none(repo_root / rel)
         if text is None:
             continue
