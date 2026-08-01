@@ -25,6 +25,7 @@ mod dag_run;
 mod decision_port;
 mod decision_record;
 mod doctor_bootstrap;
+mod edit_impact;
 mod evidence_query;
 mod execution_kernel;
 mod execution_policy;
@@ -32,6 +33,7 @@ mod file_boundary;
 mod graph;
 mod hardened_git;
 mod hospital_score;
+mod impact_graph;
 mod method_catalog;
 mod model_channels;
 mod orchestration;
@@ -202,6 +204,9 @@ mod sentrux_contract_tests {
 
 fn main() {
     let raw: Vec<String> = env::args().skip(1).collect();
+    if let Some(exit_code) = dispatch_version(&raw) {
+        process::exit(exit_code);
+    }
     if is_primary_invocation(&raw) {
         process::exit(run_primary(&raw));
     }
@@ -212,6 +217,41 @@ fn main() {
         eprintln!("error: {err}");
         process::exit(1);
     }
+}
+
+/// Answers `--version` before any route dispatch.
+///
+/// This reports a self-declared build identity, not provenance: the value is
+/// `CARGO_PKG_VERSION` baked into the same binary being questioned, so it
+/// separates a stale build from a current one and nothing more. The installer
+/// records the actual provenance signal (`sha256=` on the installed binary)
+/// separately, and that is what a substitution check should compare.
+///
+/// Stale-build detection is the gap worth closing here. The installed
+/// `bin/repo.json` records where the installer ran from, not what it produced,
+/// so a machine on an old build looked identical to a current one — and the
+/// installer's version gate had nothing to compare against.
+///
+/// Kept ahead of `is_primary_invocation` deliberately — a leading `-` flag is
+/// not a primary invocation and is not a raw route, so it would otherwise fall
+/// through to `run()` and exit as an unknown command.
+fn dispatch_version(raw: &[String]) -> Option<i32> {
+    if !matches!(raw.first().map(String::as_str), Some("--version" | "-V")) {
+        return None;
+    }
+    if raw.iter().any(|arg| arg == "--json") {
+        println!(
+            "{}",
+            json!({
+                "schema": "code-intel-version.v1",
+                "name": env!("CARGO_PKG_NAME"),
+                "version": env!("CARGO_PKG_VERSION"),
+            })
+        );
+    } else {
+        println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    }
+    Some(0)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -599,6 +639,16 @@ const RAW_ROUTES: &[RawRoute] = &[
         subcommand: Some("impact"),
         argument_offset: 1,
         runner: change_impact::run_raw,
+    },
+    RawRoute {
+        // Working-tree sibling of `change impact`. Separate command because
+        // it answers without authority; folding it into `change impact` as a
+        // flag would have made one command sometimes admissible and sometimes
+        // not, which is the property callers cannot afford to guess at.
+        command: "edit",
+        subcommand: Some("impact"),
+        argument_offset: 2,
+        runner: edit_impact::run_raw,
     },
     RawRoute {
         command: "decision",
@@ -1635,6 +1685,7 @@ Commands:
   artifact index --artifact-root <root> [--output <index.json>] [--operation rebuild|incremental] [--existing <index.json>]
   artifact query --artifact-root <root> --repo <name> [--repo-path <path>] [--artifact-schema <schema>] [--type <artifact-type>] [--contains <text>] [--limit <1..100>]
   change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--staleness current|advisory]
+  edit impact --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--scope <directory>]... (working tree, no prior run, authority: none)
   decision request-response --request <request.json|-> [--response <response.json>|--cancel <cancellation.json>] --now <unix-seconds> --branch <branch-id>...
   decision record --resolution <resolution.json> --store <record-directory>
   decision replay --query <query.json> --store <record-directory>

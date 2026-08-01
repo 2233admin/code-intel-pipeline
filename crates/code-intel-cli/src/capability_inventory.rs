@@ -26,7 +26,9 @@ pub(crate) mod doctor_adapter;
 #[path = "hospital_diagnosis.rs"]
 mod hospital_diagnosis;
 #[path = "native_code_evidence.rs"]
-mod native_code_evidence;
+// Crate-visible so dit impact reuses the same import heuristics the
+// evidence.native-code node publishes, instead of restating them.
+pub(crate) mod native_code_evidence;
 #[path = "project_orientation.rs"]
 mod project_orientation;
 #[path = "project_orientation_benchmark.rs"]

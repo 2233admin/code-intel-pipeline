@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
-    "8fa05f139f9a0eb03853faad7a74858d5b6a4ba9836beea6d2b359da5d294966";
+    "2b3ad83032ceca7c7e745c4f30dfd45ec50d4cd0a2a5829368c22246ed2d7a5a";
 const STRUCTURED_EDIT_DIGEST: &str =
     "6f481d582dc0301fb438bcd18b9ab5704fc72f81b7044635140d4b99c4fae0ac";
 static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -1639,7 +1639,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
         "version":"1.0.0",
         "toolchainDigests":[
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-            "8fa05f139f9a0eb03853faad7a74858d5b6a4ba9836beea6d2b359da5d294966"
+            "2b3ad83032ceca7c7e745c4f30dfd45ec50d4cd0a2a5829368c22246ed2d7a5a"
         ]
     });
     value["options"] = json!({"repoPath":repo,"auto":true});
