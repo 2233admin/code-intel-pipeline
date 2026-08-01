@@ -62,7 +62,7 @@ pattern alone — see TASK_REPORT.md for the cases where the obvious pattern mat
 
 | path | class | disposition | reason |
 | --- | --- | --- | --- |
-| docs/archive/compatibility-retire-doctor-wrapper-branch.md | one-shot | archived | E09 status.json: retired=true, deletionExecuted=true |
+| docs/compatibility-retire-doctor-wrapper-branch.md | living-contract | kept (restored) | E09 packet reconciliation pins this path as evidence; packets freeze paths even after retired=true |
 
 ## Kept: still-open plan (not one-shot — do not archive)
 
