@@ -256,6 +256,67 @@ class RangeHelperTests(unittest.TestCase):
         self.assertFalse(harness.span_fully_covered(1, 3, [(5, 12)]))
 
 
+class CorpusExclusionTests(unittest.TestCase):
+    """Corpus exclusion (issue #93 self-reference pollution fix, #104): neither
+    arm may ever read eval/, docs/archive/, or .out-of-scope/ as an answer
+    source, even when a file there outscores the real golden file."""
+
+    def setUp(self):
+        self.questions = _fixture_questions()
+
+    def test_is_excluded_from_corpus_matches_eval_archive_and_out_of_scope(self):
+        self.assertTrue(harness.is_excluded_from_corpus("eval/questions.json"))
+        self.assertTrue(harness.is_excluded_from_corpus("eval/BASELINE.md"))
+        self.assertTrue(harness.is_excluded_from_corpus("docs/archive/plans/foo-idea.md"))
+        self.assertTrue(harness.is_excluded_from_corpus(".out-of-scope/some-non-goal.md"))
+        # arm_b's file_universe entries are posix-normalized, but the
+        # predicate itself must not assume that -- a Windows-style path
+        # must still match.
+        self.assertTrue(harness.is_excluded_from_corpus("eval\\questions.json"))
+        self.assertFalse(harness.is_excluded_from_corpus("crates/code-intel-cli/src/main.rs"))
+        self.assertFalse(harness.is_excluded_from_corpus("docs/run-commit.md"))
+
+    def test_search_kind_never_returns_a_pointer_into_excluded_corpus(self):
+        # Identical keyword, one legitimate hit and one planted inside
+        # eval/ -- only the legitimate one may survive.
+        artifact_json = {
+            "symbols": [
+                {"id": "eval::pipeline_root_stub", "file": "eval/questions.json", "startLine": 5},
+                {
+                    "id": "capability_inventory::pipeline_root",
+                    "file": "crates/code-intel-cli/src/capability_inventory.rs",
+                    "startLine": 252,
+                },
+            ]
+        }
+        hits = harness.search_kind("code_evidence.symbols", artifact_json, ["pipeline_root"])
+        self.assertEqual(hits, [("crates/code-intel-cli/src/capability_inventory.rs", 252)])
+
+    def test_arm_b_never_touches_excluded_corpus_even_when_it_outscores_the_golden_file(self):
+        # eval/fixtures/repo/eval/questions.json is a fixture file that
+        # sits under an excluded dir (eval/, relative to the fixture repo
+        # root) and deliberately repeats fq01's own keywords far more than
+        # the real golden files do, so this proves exclusion, not a vacuous
+        # "it never matched anyway" case.
+        excluded_rel = "eval/questions.json"
+        excluded_path = FIXTURE_REPO / excluded_rel
+        self.assertTrue(excluded_path.is_file(), "fixture file must exist under an excluded dir")
+        keywords = self.questions["fq01"]["golden"]["keywords"]
+        excluded_text = excluded_path.read_text(encoding="utf-8")
+        outscore = sum(excluded_text.lower().count(k.lower()) for k in keywords)
+        self.assertGreaterEqual(outscore, 4, "fixture must genuinely outscore the real 2-hit files")
+
+        result = harness.arm_b_answer(
+            self.questions["fq01"], FIXTURE_REPO, FIXTURE_FILE_UNIVERSE + [excluded_rel]
+        )
+        self.assertTrue(all(not touched.startswith(excluded_rel) for touched in result["files_touched"]))
+        # Byte-for-byte the same answer as without the excluded file present
+        # (see ArmBNaiveSearchTests.test_matched_files_are_read_in_full_and_cover_the_golden_file):
+        # planting a higher-scoring excluded file must change nothing.
+        self.assertTrue(result["covered"])
+        self.assertEqual(result["files_touched"], ["other.py (2 hits)", "sample.py (2 hits)"])
+
+
 class QuestionSchemaTests(unittest.TestCase):
     def test_real_questions_file_has_twelve_valid_entries(self):
         questions = harness.load_questions(EVAL_DIR / "questions.json")
