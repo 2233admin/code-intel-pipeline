@@ -15,7 +15,10 @@ name: code-intel-pr-gate
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    # labeled/unlabeled included so adding `risk-accepted` after a red run
+    # re-evaluates the gate — otherwise a blocked PR stays blocked until the
+    # next push even after a human accepts the risk.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     branches:
       - main
 
