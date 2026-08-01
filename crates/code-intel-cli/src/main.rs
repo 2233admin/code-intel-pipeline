@@ -17,6 +17,7 @@ mod authority;
 mod capability;
 mod capability_inventory;
 mod change_impact;
+mod change_risk;
 mod codenexus_adapter;
 mod committed_evidence;
 mod compatibility_retirement_ticket;
@@ -639,6 +640,17 @@ const RAW_ROUTES: &[RawRoute] = &[
         subcommand: Some("impact"),
         argument_offset: 1,
         runner: change_impact::run_raw,
+    },
+    RawRoute {
+        // Git-only, index-free defect-risk score for the PR gate (issue
+        // #95). Same "change" namespace and offset convention as `change
+        // impact` above, but deliberately independent of it: `change impact`
+        // requires a committed authoritative run, and this must work on
+        // every PR before any such run exists.
+        command: "change",
+        subcommand: Some("risk"),
+        argument_offset: 1,
+        runner: change_risk::run_raw,
     },
     RawRoute {
         // Working-tree sibling of `change impact`. Separate command because
@@ -1685,6 +1697,7 @@ Commands:
   artifact index --artifact-root <root> [--output <index.json>] [--operation rebuild|incremental] [--existing <index.json>]
   artifact query --artifact-root <root> --repo <name> [--repo-path <path>] [--artifact-schema <schema>] [--type <artifact-type>] [--contains <text>] [--limit <1..100>]
   change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--staleness current|advisory]
+  change risk <revspec> [--sample <N>] [--format json|text] (git-only defect-risk score, no prior run, no index)
   edit impact --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--scope <directory>]... (working tree, no prior run, authority: none)
   decision request-response --request <request.json|-> [--response <response.json>|--cancel <cancellation.json>] --now <unix-seconds> --branch <branch-id>...
   decision record --resolution <resolution.json> --store <record-directory>
