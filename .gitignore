@@ -12,6 +12,7 @@ __pycache__/
 .ruff_cache/
 .repowise-workspace/
 .repowise/
+.repowise.backup*/
 .understand-anything/
 .sentrux/cache/
 artifacts/
