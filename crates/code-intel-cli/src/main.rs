@@ -201,6 +201,9 @@ mod sentrux_contract_tests {
 
 fn main() {
     let raw: Vec<String> = env::args().skip(1).collect();
+    if let Some(exit_code) = dispatch_version(&raw) {
+        process::exit(exit_code);
+    }
     if is_primary_invocation(&raw) {
         process::exit(run_primary(&raw));
     }
@@ -211,6 +214,41 @@ fn main() {
         eprintln!("error: {err}");
         process::exit(1);
     }
+}
+
+/// Answers `--version` before any route dispatch.
+///
+/// This reports a self-declared build identity, not provenance: the value is
+/// `CARGO_PKG_VERSION` baked into the same binary being questioned, so it
+/// separates a stale build from a current one and nothing more. The installer
+/// records the actual provenance signal (`sha256=` on the installed binary)
+/// separately, and that is what a substitution check should compare.
+///
+/// Stale-build detection is the gap worth closing here. The installed
+/// `bin/repo.json` records where the installer ran from, not what it produced,
+/// so a machine on an old build looked identical to a current one — and the
+/// installer's version gate had nothing to compare against.
+///
+/// Kept ahead of `is_primary_invocation` deliberately — a leading `-` flag is
+/// not a primary invocation and is not a raw route, so it would otherwise fall
+/// through to `run()` and exit as an unknown command.
+fn dispatch_version(raw: &[String]) -> Option<i32> {
+    if !matches!(raw.first().map(String::as_str), Some("--version" | "-V")) {
+        return None;
+    }
+    if raw.iter().any(|arg| arg == "--json") {
+        println!(
+            "{}",
+            json!({
+                "schema": "code-intel-version.v1",
+                "name": env!("CARGO_PKG_NAME"),
+                "version": env!("CARGO_PKG_VERSION"),
+            })
+        );
+    } else {
+        println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    }
+    Some(0)
 }
 
 #[derive(Debug, PartialEq, Eq)]

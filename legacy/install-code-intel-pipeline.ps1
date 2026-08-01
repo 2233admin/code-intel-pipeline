@@ -273,7 +273,11 @@ function Get-InstallMetadata {
     param([string]$CommandName)
 
     switch ($CommandName) {
-        "repowise" { return [ordered]@{ packageManager = "pip"; requiresElevation = $false } }
+        # pinnedVersion turns the supply-chain-003 pin from a declaration into a
+        # gate. Without it Install-MissingTool returns on presence alone, so a
+        # machine that installed repowise once keeps whatever version it landed
+        # on and the pin never executes.
+        "repowise" { return [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = $script:RepowisePinnedVersion } }
         "sentrux" { return [ordered]@{ packageManager = "manual"; requiresElevation = $false } }
     }
 
@@ -294,6 +298,106 @@ function Get-InstallMetadata {
     }
 }
 
+function Test-ToolVersionProbeAllowed {
+    # Mirrors the resolution rule crates/code-intel-cli/src/tool_path.rs states
+    # for every tool launch in this project: "only ever launches by absolute
+    # path", and "relative PATH entries are skipped outright". This matters
+    # here because the installer runs against a repository it does not trust,
+    # and a `repowise.ps1` on PATH would be dot-run *inside this process* by
+    # `& $Source` — arbitrary in-process code, not a sandboxed child.
+    #
+    # A refused probe is not a failed probe: the caller keeps the pre-existing
+    # presence-only behaviour rather than reporting drift, so an unverifiable
+    # source can never induce a reinstall.
+    param([string]$Source)
+
+    if ([string]::IsNullOrWhiteSpace($Source)) { return $false }
+    if (-not [System.IO.Path]::IsPathRooted($Source)) { return $false }
+    if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) { return $false }
+    if ([System.IO.Path]::GetExtension($Source) -in @(".ps1", ".psm1", ".psd1")) { return $false }
+    return $true
+}
+
+function Get-ToolVersion {
+    # Reads a tool's own reported version.
+    #
+    # Returns $null when the probe was REFUSED (source is not a rooted, real,
+    # non-script file) — the caller must fall back to presence-only reporting.
+    # Returns "" when the probe RAN but produced no readable version, which
+    # callers must treat as "unknown", never as "matches".
+    param(
+        [string]$Source,
+        [string]$ExpectedName = ""
+    )
+
+    if (-not (Test-ToolVersionProbeAllowed $Source)) { return $null }
+
+    # Launch the child explicitly so the exit code, stdout, and stderr all come
+    # from the process we started. `$LASTEXITCODE` is only set by native
+    # commands, so reading it after `& $Source` would either see a stale value
+    # from an unrelated earlier call or, under Set-StrictMode, throw on an
+    # unset automatic variable and abort the whole installer.
+    $stdoutFile = [System.IO.Path]::GetTempFileName()
+    $stderrFile = [System.IO.Path]::GetTempFileName()
+    try {
+        $process = Start-Process -FilePath $Source -ArgumentList "--version" `
+            -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile `
+            -NoNewWindow -PassThru -Wait -ErrorAction Stop
+        if ($process.ExitCode -ne 0) { return "" }
+        # stdout only: a deprecation banner on stderr must not win the match.
+        $raw = Get-Content -Raw -LiteralPath $stdoutFile -ErrorAction SilentlyContinue
+    }
+    catch {
+        return ""
+    }
+    finally {
+        Remove-Item -LiteralPath $stdoutFile, $stderrFile -Force -ErrorAction SilentlyContinue
+    }
+
+    if ([string]::IsNullOrWhiteSpace($raw)) { return "" }
+
+    # Anchor to the tool's own name when we know it, so an unrelated
+    # version-shaped number in a warning line cannot forge a match either way.
+    # Accepts "repowise, version 0.32.0" and "code-intel 0.7.0-beta.2".
+    $versionPattern = '(\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)'
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedName)) {
+        $named = [regex]::Match($raw, "(?im)^\s*$([regex]::Escape($ExpectedName))[,]?\s+(?:version\s+)?$versionPattern\s*$")
+        if ($named.Success) { return $named.Groups[1].Value }
+    }
+    $match = [regex]::Match($raw, $versionPattern)
+    if ($match.Success) { return $match.Groups[1].Value }
+    return ""
+}
+
+function Add-VersionComplianceChecks {
+    # A pin that only shows up in installActions is still a declaration nothing
+    # enforces: `ok` is computed from $checks alone, and
+    # bootstrap-new-machine.ps1 reads only installResult.ok. Without this a
+    # drifted machine reports "Install OK: True" — the exact shape
+    # doctor_provider_rows.rs was written to call out: "bootstrap reports ok
+    # while a present external provider is broken".
+    #
+    # Only CONFIRMED drift is required: the tool answered and the answer did
+    # not match the pin. A refused or unreadable probe is uncertainty, not a
+    # known violation, and must not fail an install over something that could
+    # not be measured.
+    param(
+        [System.Collections.Generic.List[object]]$Checks,
+        [System.Collections.Generic.List[object]]$Actions
+    )
+
+    foreach ($action in $Actions) {
+        if ([string]$action.status -notin @("version_drift", "upgrade_failed")) { continue }
+        # "unknown" is the single word both branches use for an unreadable
+        # version (Install-MissingTool's $observed, and the post-reinstall
+        # detail). Matching on it keeps this derivation in one place; the
+        # alternative is a structured field on every Add-InstallAction call
+        # site, which is a wider change than this fix warrants.
+        $confirmed = -not ([string]$action.detail -like "*unknown*")
+        Add-Check $Checks "version:$($action.name)" "version" $confirmed $false ([string]$action.detail) ([string]$action.fix)
+    }
+}
+
 function Install-MissingTool {
     param(
         [System.Collections.Generic.List[object]]$Actions,
@@ -305,7 +409,53 @@ function Install-MissingTool {
     $metadata = Get-InstallMetadata $CommandName
     $existing = if ($CommandName -eq "python") { Get-CodeIntelPythonCommand } else { Get-Command $CommandName -ErrorAction SilentlyContinue }
     if ($existing) {
-        Add-InstallAction $Actions $CommandName "already_present" $existing.Source "" $metadata.packageManager ([bool]$metadata.requiresElevation)
+        $pinned = if ($metadata.Contains("pinnedVersion")) { [string]$metadata.pinnedVersion } else { "" }
+        if ([string]::IsNullOrWhiteSpace($pinned)) {
+            Add-InstallAction $Actions $CommandName "already_present" $existing.Source "" $metadata.packageManager ([bool]$metadata.requiresElevation)
+            return
+        }
+
+        $actual = Get-ToolVersion $existing.Source -ExpectedName $CommandName
+        if ($null -eq $actual) {
+            # Probe refused (see Test-ToolVersionProbeAllowed). Fall back to the
+            # pre-existing presence-only behaviour rather than reporting drift:
+            # an unverifiable source must not be able to induce a reinstall.
+            Add-InstallAction $Actions $CommandName "already_present" "$($existing.Source) (version not probed: source is not a rooted executable file)" "" $metadata.packageManager ([bool]$metadata.requiresElevation)
+            return
+        }
+        if ($actual -eq $pinned) {
+            Add-InstallAction $Actions $CommandName "already_present" "$($existing.Source) (version $actual)" "" $metadata.packageManager ([bool]$metadata.requiresElevation)
+            return
+        }
+
+        $observed = if ([string]::IsNullOrWhiteSpace($actual)) { "unknown" } else { $actual }
+        $driftDetail = "$($existing.Source) reports version $observed; pinned version is $pinned"
+        $driftFix = "Rerun with -InstallMissing to reinstall $CommandName at the pinned version, or set the pin to the version you intend to run."
+
+        # Drift is reported whether or not we are allowed to fix it. Staying
+        # silent here is the failure this whole branch exists to prevent: a
+        # present-but-wrong version currently reads as already_present, which is
+        # indistinguishable from correct.
+        if (-not $InstallMissing) {
+            Add-InstallAction $Actions $CommandName "version_drift" $driftDetail $driftFix $metadata.packageManager ([bool]$metadata.requiresElevation)
+            return
+        }
+
+        try {
+            & $Installer
+            $afterDrift = if ($CommandName -eq "python") { Get-CodeIntelPythonCommand } else { Get-Command $CommandName -ErrorAction SilentlyContinue }
+            $afterVersion = if ($afterDrift) { Get-ToolVersion $afterDrift.Source } else { "" }
+            if ($afterVersion -eq $pinned) {
+                Add-InstallAction $Actions $CommandName "upgraded" "$($afterDrift.Source) (version $afterVersion, was $observed)" "" $metadata.packageManager ([bool]$metadata.requiresElevation)
+            }
+            else {
+                $stillDetail = if ($afterDrift) { "$($afterDrift.Source) still reports $(if ([string]::IsNullOrWhiteSpace($afterVersion)) { 'unknown' } else { $afterVersion }) after reinstall; pinned version is $pinned" } else { "$CommandName is not visible in this shell after reinstall" }
+                Add-InstallAction $Actions $CommandName "upgrade_failed" $stillDetail $driftFix $metadata.packageManager ([bool]$metadata.requiresElevation)
+            }
+        }
+        catch {
+            Add-InstallAction $Actions $CommandName "upgrade_failed" $_.Exception.Message $driftFix $metadata.packageManager ([bool]$metadata.requiresElevation)
+        }
         return
     }
 
@@ -1002,6 +1152,8 @@ Install-SentruxShim $installActions $root
 Install-MissingTool $installActions "sentrux" { Invoke-SentruxInstall } "Install the repo-owned shim or ensure sentrux.exe is on PATH."
 Repair-RepowiseThinkingBlockPatch $installActions
 Install-SentruxVlangPluginOverlay $installActions $root
+
+Add-VersionComplianceChecks $checks $installActions
 
 $requiredFiles = @(
     "check-code-intel-tools.ps1",
