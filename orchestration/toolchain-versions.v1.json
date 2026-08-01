@@ -1,0 +1,113 @@
+{
+  "schema": "code-intel-toolchain-versions.v1",
+  "note": "Single source for the consistency self-check: does this machine run the versions this repository declares? Every entry's `version` is asserted against its real declaration sites by tests/toolchain_versions.rs, so this file cannot silently drift from them. Upstream freshness (is the declared version behind what the ecosystem publishes?) is deliberately NOT modelled here — pinning is a supply-chain control (supply-chain-001/003) and reproducibility control (rust-toolchain.toml), and conflating the two would turn a pin into an auto-upgrade.",
+  "tools": [
+    {
+      "name": "rust-toolchain",
+      "version": "1.95.0",
+      "scope": "build",
+      "required": true,
+      "rationale": "Pinned so CI, release, and local builds share one compiler; an unpinned channel makes released binaries unreproducible.",
+      "declaredIn": [
+        {
+          "file": "rust-toolchain.toml",
+          "pattern": "channel = \"([^\"]+)\""
+        }
+      ],
+      "probe": {
+        "kind": "command",
+        "command": "rustc",
+        "expectedName": "rustc"
+      }
+    },
+    {
+      "name": "ast-grep",
+      "version": "0.42.3",
+      "scope": "ci",
+      "required": false,
+      "rationale": "Structural-edit engine. CI pins the version, verifies the download's sha256, and re-checks --version after install.",
+      "declaredIn": [
+        {
+          "file": ".github/workflows/ci.yml",
+          "pattern": "\\$version = '([^']+)'",
+          "note": "Two jobs install ast-grep independently; every match must agree."
+        }
+      ],
+      "probe": {
+        "kind": "command",
+        "command": "ast-grep",
+        "expectedName": "ast-grep"
+      }
+    },
+    {
+      "name": "pyyaml",
+      "version": "6.0.3",
+      "scope": "ci",
+      "required": false,
+      "rationale": "Hash-pinned for skill-check.yml (supply-chain-001); installed with --require-hashes.",
+      "declaredIn": [
+        {
+          "file": "requirements-ci.txt",
+          "pattern": "^pyyaml==([^\\s\\\\]+)"
+        }
+      ],
+      "probe": {
+        "kind": "python-module",
+        "module": "yaml"
+      }
+    },
+    {
+      "name": "claude-code-merge-queue",
+      "version": "0.5.1",
+      "scope": "ci",
+      "required": false,
+      "rationale": "Merge-queue tooling, pinned exactly rather than by range.",
+      "declaredIn": [
+        {
+          "file": "package.json",
+          "pattern": "\"claude-code-merge-queue\": \"([^\"]+)\""
+        }
+      ],
+      "probe": {
+        "kind": "npm-package",
+        "package": "claude-code-merge-queue"
+      }
+    },
+    {
+      "name": "repowise",
+      "version": "0.36.0",
+      "scope": "runtime",
+      "required": true,
+      "rationale": "Semantic index provider. Pinned so --upgrade cannot pull an unreviewed release onto the machine (supply-chain-003).",
+      "declaredIn": [
+        {
+          "file": "legacy/install-code-intel-pipeline.ps1",
+          "pattern": "\\$script:RepowisePinnedVersion = \"([^\"]+)\""
+        }
+      ],
+      "probe": {
+        "kind": "command",
+        "command": "repowise",
+        "expectedName": "repowise"
+      }
+    },
+    {
+      "name": "code-intel",
+      "version": "0.7.0-beta.2",
+      "scope": "runtime",
+      "required": true,
+      "rationale": "The pipeline's own binary. An installed copy that lags the tree is invisible without a version surface: a v0.6.0 build answered `snapshot identity` in 10.9s where the current tree answers in 0.28s.",
+      "declaredIn": [
+        {
+          "file": "crates/code-intel-cli/Cargo.toml",
+          "pattern": "^version = \"([^\"]+)\""
+        }
+      ],
+      "probe": {
+        "kind": "command",
+        "command": "code-intel",
+        "expectedName": "code-intel"
+      }
+    }
+  ]
+}
