@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::git::{commits_in_range, tip_token};
+use super::git::{commits_in_range, diff_stats, tip_token};
 use super::signals::{is_source_file, is_test_file, looks_like_fix_subject};
 use super::*;
 
@@ -307,6 +307,26 @@ fn commits_in_range_normalizes_triple_dot_to_the_diffed_commit_set() {
     assert!(
         !excluded.contains(&base_only_commit),
         "a commit unique to the base side of a...b must not appear in the exclusion set: {excluded:?}"
+    );
+
+    std::fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn non_ascii_paths_arrive_unquoted_from_git() {
+    let repo = init_repo("quotepath");
+    write_file(&repo, "src/lib.rs", "fn base() {}\n");
+    commit(&repo, "base");
+    write_file(&repo, "src/统计模块.rs", "fn stats() {}\n");
+    commit(&repo, "add non-ascii source file");
+
+    let files = diff_stats(&repo, "HEAD^..HEAD").expect("diff should resolve");
+    let paths: Vec<&str> = files.iter().map(|(_, _, path)| path.as_str()).collect();
+    assert_eq!(
+        paths,
+        vec!["src/统计模块.rs"],
+        "with core.quotePath unset git C-quotes non-ASCII paths (\"src/\\347...\"), \
+         which never match repository-relative lookup keys"
     );
 
     std::fs::remove_dir_all(&repo).ok();

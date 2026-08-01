@@ -47,9 +47,6 @@ use std::path::Path;
 
 use serde_json::Value;
 
-#[path = "../hardened_git.rs"]
-mod hardened_git;
-
 mod git;
 mod render;
 mod scoring;
