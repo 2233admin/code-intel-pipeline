@@ -1,0 +1,8 @@
+{
+  "schema": "code-evidence-chunks.v1",
+  "chunks": [
+    {"file": "sample.py", "id": "sample.py#file", "kind": "file", "startLine": 1, "endLine": 30},
+    {"file": "other.py", "id": "other.py#file", "kind": "file", "startLine": 1, "endLine": 8},
+    {"file": "notes.md", "id": "notes.md#file", "kind": "file", "startLine": 1, "endLine": 7}
+  ]
+}

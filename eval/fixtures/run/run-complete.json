@@ -1,0 +1,6 @@
+{
+  "schema": "code-intel-run-commit.v1",
+  "manifest": {
+    "path": "objects/sha256/manifest.json"
+  }
+}

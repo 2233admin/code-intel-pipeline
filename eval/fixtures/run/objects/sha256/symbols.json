@@ -1,0 +1,8 @@
+{
+  "schema": "code-evidence-symbols.v1",
+  "symbols": [
+    {"file": "sample.py", "id": "sample.py#function:add", "kind": "function", "name": "add", "startLine": 23, "endLine": 23},
+    {"file": "sample.py", "id": "sample.py#function:greet", "kind": "function", "name": "greet", "startLine": 28, "endLine": 28},
+    {"file": "other.py", "id": "other.py#function:add", "kind": "function", "name": "add", "startLine": 4, "endLine": 4}
+  ]
+}

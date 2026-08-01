@@ -1,0 +1,68 @@
+[
+  {
+    "id": "fq01",
+    "question": "fixture: symbols-kind hit, disambiguated by an AND keyword pair",
+    "category": "how",
+    "golden": {
+      "paths": ["sample.py"],
+      "spans": [{"path": "sample.py", "start_line": 23, "end_line": 25}],
+      "keywords": ["add", "sample"]
+    },
+    "notes": "Both sample.py and other.py define add(); pairing 'add' with the path fragment 'sample' must resolve only to sample.py's add at line 23, not other.py's at line 4."
+  },
+  {
+    "id": "fq02",
+    "question": "fixture: imports-kind hit, search stops before ever reading chunks",
+    "category": "where",
+    "golden": {
+      "paths": ["sample.py"],
+      "spans": [{"path": "sample.py", "start_line": 9, "end_line": 9}],
+      "keywords": ["fixture_module"]
+    },
+    "notes": "fixture_module only appears as an import target, never as a symbol name, so this proves the symbols->imports fallthrough."
+  },
+  {
+    "id": "fq03",
+    "question": "fixture: keyword matches no structured field anywhere -> no_pointer_found",
+    "category": "why",
+    "golden": {
+      "paths": ["sample.py"],
+      "spans": [{"path": "sample.py", "start_line": 3, "end_line": 6}],
+      "keywords": ["WHY_RATIONALE"]
+    },
+    "notes": "WHY_RATIONALE only exists inside the module docstring; no symbol/import/chunk id ever contains it."
+  },
+  {
+    "id": "fq04",
+    "question": "fixture: pointer found but its +-10 window excludes the golden span",
+    "category": "why",
+    "golden": {
+      "paths": ["sample.py"],
+      "spans": [{"path": "sample.py", "start_line": 1, "end_line": 7}],
+      "keywords": ["greet"]
+    },
+    "notes": "greet resolves to a real symbol at line 28; its window (18-30 after clamping) never reaches the docstring at lines 1-7."
+  },
+  {
+    "id": "fq05",
+    "question": "fixture: no symbols/imports for this file at all -> chunks fallback",
+    "category": "where",
+    "golden": {
+      "paths": ["notes.md"],
+      "spans": [{"path": "notes.md", "start_line": 1, "end_line": 7}],
+      "keywords": ["notes.md"]
+    },
+    "notes": "notes.md has zero symbol/import entries (unsupported language, like a real .yml file); only the whole-file chunk (startLine 1) can resolve a pointer."
+  },
+  {
+    "id": "fq06",
+    "question": "fixture: Arm B naive search, used with a monkeypatched FILE_CAP to exercise cap exhaustion",
+    "category": "how",
+    "golden": {
+      "paths": ["sample.py"],
+      "spans": [{"path": "sample.py", "start_line": 23, "end_line": 25}],
+      "keywords": ["add"]
+    },
+    "notes": "other.py matches 'add' twice (definition + comment), sample.py once, so with FILE_CAP=1 only other.py survives and sample.py's golden span goes uncovered."
+  }
+]
