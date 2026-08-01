@@ -134,6 +134,43 @@ pub(crate) fn build_for_dag(
     build(repo, policy, scopes).map_err(|error| error.message().to_string())
 }
 
+/// Path -> content sha256, at HEAD and in the worktree. A named pair rather
+/// than a same-shaped tuple, so a caller cannot accidentally transpose the
+/// two maps.
+pub(crate) struct RepinDigests {
+    pub(crate) head: BTreeMap<String, String>,
+    pub(crate) worktree: BTreeMap<String, String>,
+}
+
+/// Path -> content sha256 for the whole repository, at HEAD and in the
+/// worktree. The one seam `repin` needs: it never touches `ManifestEntry`,
+/// `SnapshotError`, or the batched Git plumbing underneath directly.
+pub(crate) fn repin_digests(repo: &Path) -> Result<RepinDigests, String> {
+    let scopes = vec![".".to_string()];
+    let git = git_context(repo)
+        .map_err(|error| error.message().to_string())?
+        .ok_or_else(|| "not a Git repository".to_string())?;
+    let head =
+        head_manifest(repo, &git.head, &scopes).map_err(|error| error.message().to_string())?;
+    let worktree = worktree_manifest(repo, &scopes).map_err(|error| error.message().to_string())?;
+    // A path indexed at HEAD but removed from disk comes back from
+    // `worktree_manifest` as a "tombstone" entry hashing empty content, not
+    // as an absent path: callers that mean "does this path currently have
+    // content" (repin's fixpoint loop, in particular) must see it as
+    // missing, not as content that changed to empty.
+    let to_map = |entries: Vec<ManifestEntry>| {
+        entries
+            .into_iter()
+            .filter(|entry| entry.kind != "tombstone")
+            .map(|entry| (entry.path, entry.digest))
+            .collect::<BTreeMap<_, _>>()
+    };
+    Ok(RepinDigests {
+        head: to_map(head),
+        worktree: to_map(worktree),
+    })
+}
+
 fn parse_cli(raw: &[String]) -> Result<Cli, SnapshotError> {
     if raw.first().map(String::as_str) != Some("identity") {
         return Err(SnapshotError::Usage(

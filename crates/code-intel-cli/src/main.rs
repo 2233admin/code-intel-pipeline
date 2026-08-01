@@ -40,6 +40,7 @@ mod orchestration;
 mod ponytail_gate;
 mod project_orientation_benchmark;
 mod providers;
+mod repin;
 mod routes;
 mod run_cli;
 mod run_commit;
@@ -690,6 +691,12 @@ const RAW_ROUTES: &[RawRoute] = &[
         subcommand: None,
         argument_offset: 1,
         runner: snapshot::run_raw,
+    },
+    RawRoute {
+        command: "repin",
+        subcommand: None,
+        argument_offset: 1,
+        runner: repin::run_raw,
     },
     RawRoute {
         command: "evidence",
@@ -1670,6 +1677,7 @@ Commands:
   model inventory-validate --request <inventory.json> [--out <validated.json>]
   model route --request <routing-request.json> [--out <routing-result.json>]
   snapshot identity --repo <root> --working-tree-policy <head_only|explicit_overlay> [--scope <relative-path>]...
+  repin [--repo <root>] [--write] [--json] [--exclude <path-prefix>]...
   evidence validate --request <request.json> --artifact-root <directory>
   repository survival-scan --request <request.json|-> --artifact-root <directory>
   audit --operation validate|render --repo <root> --report <report.json> [--format markdown|html]
