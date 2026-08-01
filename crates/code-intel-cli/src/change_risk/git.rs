@@ -18,7 +18,7 @@ const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 pub(super) fn resolve_repo_root() -> Result<PathBuf, RiskError> {
     let cwd = std::env::current_dir()
         .map_err(|error| RiskError::HostIo(format!("cannot resolve current directory: {error}")))?;
-    let output = super::hardened_git::command(&cwd)
+    let output = crate::hardened_git::command(&cwd)
         .args(["rev-parse", "--show-toplevel"])
         .output()
         .map_err(|error| RiskError::HostIo(format!("cannot launch Git: {error}")))?;
@@ -88,8 +88,19 @@ pub(super) fn diff_stats(repo: &Path, range: &str) -> Option<Vec<FileDiff>> {
 }
 
 fn run_git_diff_numstat(repo: &Path, range: &str) -> Option<Vec<FileDiff>> {
-    let output = super::hardened_git::command(repo)
-        .args(["diff", "--numstat", "--no-renames", range])
+    let output = crate::hardened_git::command(repo)
+        .args([
+            // Git C-quotes non-ASCII paths by default ("\346\226\207..."),
+            // which would never match the repository-relative keys this
+            // module looks paths up by. Applies to every parsed-path call
+            // site, not cosmetic ones.
+            "-c",
+            "core.quotePath=false",
+            "diff",
+            "--numstat",
+            "--no-renames",
+            range,
+        ])
         .output()
         .ok()?;
     if !output.status.success() {
@@ -130,7 +141,7 @@ fn normalize_path(path: &str) -> String {
 }
 
 pub(super) fn commit_unix_time(repo: &Path, rev: &str) -> Result<i64, RiskError> {
-    let output = super::hardened_git::command(repo)
+    let output = crate::hardened_git::command(repo)
         .args(["log", "-1", "--format=%ct", rev])
         .output()
         .map_err(|error| RiskError::HostIo(format!("cannot launch Git: {error}")))?;
@@ -151,7 +162,7 @@ pub(super) fn commit_unix_time(repo: &Path, rev: &str) -> Result<i64, RiskError>
 /// `diff_stats` already proved the range itself resolves.
 pub(super) fn commits_in_range(repo: &Path, range: &str) -> Vec<String> {
     let range = rev_list_range(range);
-    let Ok(output) = super::hardened_git::command(repo)
+    let Ok(output) = crate::hardened_git::command(repo)
         .args(["rev-list", &range])
         .output()
     else {
@@ -193,7 +204,7 @@ pub(super) fn sample_history(repo: &Path, start: &str, sample: u32) -> Vec<(Stri
     if sample == 0 {
         return Vec::new();
     }
-    let Ok(output) = super::hardened_git::command(repo)
+    let Ok(output) = crate::hardened_git::command(repo)
         .args([
             "log",
             "--no-merges",
@@ -240,8 +251,12 @@ pub(super) fn file_commit_history(
         return history;
     }
     let since_unix = anchor_unix - BUG_MAGNET_WINDOW_DAYS * 86_400;
-    let Ok(output) = super::hardened_git::command(repo)
+    let Ok(output) = crate::hardened_git::command(repo)
         .args([
+            // Same quotePath rule as run_git_diff_numstat: --name-only output
+            // is matched against `files` keys and must arrive unquoted.
+            "-c",
+            "core.quotePath=false",
             "log",
             &format!("--since=@{since_unix}"),
             &format!("--until=@{anchor_unix}"),
