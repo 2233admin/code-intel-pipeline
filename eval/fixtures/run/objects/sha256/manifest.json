@@ -1,0 +1,13 @@
+{
+  "schema": "code-intel-run-manifest.v1",
+  "nodes": {
+    "evidence.native-code": {
+      "status": "succeeded",
+      "artifacts": [
+        {"type": "code_evidence.symbols", "path": "objects/sha256/symbols.json"},
+        {"type": "code_evidence.imports", "path": "objects/sha256/imports.json"},
+        {"type": "code_evidence.chunks", "path": "objects/sha256/chunks.json"}
+      ]
+    }
+  }
+}

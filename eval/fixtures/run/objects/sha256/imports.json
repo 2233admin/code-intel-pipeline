@@ -1,0 +1,6 @@
+{
+  "schema": "code-evidence-imports.v1",
+  "imports": [
+    {"file": "sample.py", "target": "fixture_module", "line": 9, "language": "python"}
+  ]
+}

@@ -1,0 +1,134 @@
+[
+  {
+    "id": "q01",
+    "question": "In crates/code-intel-cli/src/main.rs, how does the CLI decide whether the first argument to `code-intel` is a repository path (primary invocation) versus a named subcommand?",
+    "category": "how",
+    "golden": {
+      "paths": ["crates/code-intel-cli/src/main.rs"],
+      "spans": [{"path": "crates/code-intel-cli/src/main.rs", "start_line": 265, "end_line": 274}],
+      "keywords": ["is_primary_invocation"]
+    },
+    "notes": "is_primary_invocation (declared at line 265) treats a first argument as a repo path unless it starts with '-', matches a registered raw route, or names a legacy subcommand (is_named_command); the disambiguation logic is inline in this ~10-line function body."
+  },
+  {
+    "id": "q02",
+    "question": "Where in crates/code-intel-cli/src/main.rs is the `code-intel repin` subcommand registered, and which function runs when it is invoked?",
+    "category": "where",
+    "golden": {
+      "paths": ["crates/code-intel-cli/src/main.rs"],
+      "spans": [{"path": "crates/code-intel-cli/src/main.rs", "start_line": 695, "end_line": 700}],
+      "keywords": ["RAW_ROUTES", "repin"]
+    },
+    "notes": "repin is wired via a RAW_ROUTES table entry (routing to repin::run_raw) at lines 695-700, inside the 558-725 RAW_ROUTES const. Expected artifact-guided miss: consts are never indexed as symbols, and repin::run_raw's own declaration is one of several RAW_ROUTES handler functions the native-minimal scanner fails to capture at all (verified absent from code_evidence.symbols)."
+  },
+  {
+    "id": "q03",
+    "question": "Why does sentrux_gate.rs's coupling metric only count files in IMPORT_MODELED_EXTENSIONS instead of every file in CODE_EXTENSIONS?",
+    "category": "why",
+    "golden": {
+      "paths": ["crates/code-intel-cli/src/sentrux_gate.rs"],
+      "spans": [{"path": "crates/code-intel-cli/src/sentrux_gate.rs", "start_line": 16, "end_line": 25}],
+      "keywords": ["coupling_limit"]
+    },
+    "notes": "The rationale (PowerShell has no modeled import syntax, so counting .ps1 files in the coupling denominator inverted the gate during the Rust migration -- every correct migration step registered as a structural regression) sits in the module's //! doc comment at the top of the file. The nearest real symbol a keyword search can anchor on is the coupling_limit function at line 1147, roughly 1100 lines away."
+  },
+  {
+    "id": "q04",
+    "question": "How does sentrux_gate.rs's evaluate_rules turn a `max_cc` rule breach into a reported Violation?",
+    "category": "how",
+    "golden": {
+      "paths": ["crates/code-intel-cli/src/sentrux_gate.rs"],
+      "spans": [{"path": "crates/code-intel-cli/src/sentrux_gate.rs", "start_line": 481, "end_line": 491}],
+      "keywords": ["evaluate_rules"]
+    },
+    "notes": "evaluate_rules (line 481) reads the configured max_cc threshold via integer_rule, compares it against metrics.max_complexity, and on breach pushes a Violation carrying rule/message/targets (complexity_targets(metrics))."
+  },
+  {
+    "id": "q05",
+    "question": "Where does capability_inventory::execute route the `edit.ast-grep-plan.compat` adapter id, and which module does it hand off to?",
+    "category": "where",
+    "golden": {
+      "paths": ["crates/code-intel-cli/src/capability_inventory.rs"],
+      "spans": [{"path": "crates/code-intel-cli/src/capability_inventory.rs", "start_line": 76, "end_line": 86}],
+      "keywords": ["edit.ast-grep-plan.compat"]
+    },
+    "notes": "The match arm at line 82 hands off to structured_edit::execute. capability_inventory::execute itself has a multi-line signature and is absent from the symbol index entirely; the match-arm string literal never appears in any structured artifact field (symbols/imports/chunks store no raw source text), so this is unreachable from artifacts regardless of keyword choice."
+  },
+  {
+    "id": "q06",
+    "question": "How does capability_inventory.rs resolve the pipeline's own root directory when it needs to invoke the workflow-recommendation PowerShell script?",
+    "category": "how",
+    "golden": {
+      "paths": ["crates/code-intel-cli/src/capability_inventory.rs"],
+      "spans": [{"path": "crates/code-intel-cli/src/capability_inventory.rs", "start_line": 248, "end_line": 256}],
+      "keywords": ["pipeline_root", "capability_inventory"]
+    },
+    "notes": "pipeline_root() (line 252) mirrors doctor_adapter::pipeline_root: it discovers the installed integrations manifest and walks up two parents, falling back to the compile-time CARGO_MANIFEST_DIR only as a dev-mode default. Directly relevant to the CODE_INTEL_HOME worktree-resolution behavior this task's environment rules warn about."
+  },
+  {
+    "id": "q07",
+    "question": "Why does `code-intel repin`'s DEFAULT_EXCLUDES list exclude orchestration/retirements/ from its stale sha256 pin rewriting?",
+    "category": "why",
+    "golden": {
+      "paths": ["crates/code-intel-cli/src/repin.rs"],
+      "spans": [{"path": "crates/code-intel-cli/src/repin.rs", "start_line": 13, "end_line": 20}],
+      "keywords": ["DEFAULT_EXCLUDES"]
+    },
+    "notes": "Retirement packets freeze a working-tree overlay captured at generation time, not a commit, so there is no 'current' digest to resync them to; only their own New-*RetirementPacket.ps1 generator can produce a valid one. This lives in the module's //! doc comment; DEFAULT_EXCLUDES is a const, never indexed as a symbol."
+  },
+  {
+    "id": "q08",
+    "question": "How does repin.rs's scan() combine DEFAULT_EXCLUDES with any caller-supplied excludes before it starts comparing HEAD and worktree digests?",
+    "category": "how",
+    "golden": {
+      "paths": ["crates/code-intel-cli/src/repin.rs"],
+      "spans": [{"path": "crates/code-intel-cli/src/repin.rs", "start_line": 341, "end_line": 350}],
+      "keywords": ["scan", "repin"]
+    },
+    "notes": "scan() (line 341) builds its exclude list from DEFAULT_EXCLUDES plus extra_excludes, defines an is_excluded prefix-match closure, then fetches head/worktree digest maps from snapshot::repin_digests, immediately before building the digest->paths index used to detect digests shared by more than one path (ambiguous, never rewritten)."
+  },
+  {
+    "id": "q09",
+    "question": "Why does compatibility_retirement_ticket::execute require the E00 decision's authorityBoundary to equal `approval_only_no_deletion_authority`?",
+    "category": "why",
+    "golden": {
+      "paths": ["crates/code-intel-cli/src/compatibility_retirement_ticket.rs"],
+      "spans": [{"path": "crates/code-intel-cli/src/compatibility_retirement_ticket.rs", "start_line": 79, "end_line": 85}],
+      "keywords": ["authorityBoundary"]
+    },
+    "notes": "The check enforces that an E00 retirement decision can only ever be an approval to retire, never a deletion authorization itself; deletion remains a separate, later, explicitly authorized act. execute() has a multi-line signature and is absent from the symbol index; authorityBoundary is a JSON field name, never a source symbol, so no structured artifact field ever carries it."
+  },
+  {
+    "id": "q10",
+    "question": "What events trigger the code-intel-ci GitHub Actions workflow, and what repository permission scope does it request?",
+    "category": "where",
+    "golden": {
+      "paths": [".github/workflows/ci.yml"],
+      "spans": [{"path": ".github/workflows/ci.yml", "start_line": 1, "end_line": 11}],
+      "keywords": ["ci.yml"]
+    },
+    "notes": "ci.yml triggers on push to main, on every pull_request, and on workflow_dispatch, and requests only contents: read. YAML is an unsupported language for symbol extraction (0 indexed symbols for this file), so the only artifact pointer available is the whole-file chunk anchored at line 1 -- which happens to reach this top-of-file span."
+  },
+  {
+    "id": "q11",
+    "question": "How does the skill installer's bootstrap.py guard against an oversized or archive-bomb-like release zip before extracting it?",
+    "category": "how",
+    "golden": {
+      "paths": ["skills/code-intel-pipeline/scripts/bootstrap.py"],
+      "spans": [{"path": "skills/code-intel-pipeline/scripts/bootstrap.py", "start_line": 227, "end_line": 237}],
+      "keywords": ["validated_archive_members"]
+    },
+    "notes": "validated_archive_members (line 227) rejects archives with more than MAX_ARCHIVE_MEMBERS entries before doing any per-member work."
+  },
+  {
+    "id": "q12",
+    "question": "Why does bootstrap.py's validated_archive_members reject an archive member whose normalized path is absolute or contains a `..` segment?",
+    "category": "why",
+    "golden": {
+      "paths": ["skills/code-intel-pipeline/scripts/bootstrap.py"],
+      "spans": [{"path": "skills/code-intel-pipeline/scripts/bootstrap.py", "start_line": 239, "end_line": 251}],
+      "keywords": ["validated_archive_members"]
+    },
+    "notes": "Rejecting '..'/absolute members prevents a malicious release archive from writing outside the install destination (zip-slip). The nearest indexed pointer is the same validated_archive_members declaration that answers q11 (line 227); its +-10 window (217-237) stops just short of this check at lines 239-251 -- the identical symbol hit that satisfies q11 is not enough to reach q12."
+  }
+]
