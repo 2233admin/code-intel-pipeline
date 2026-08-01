@@ -1,0 +1,177 @@
+{
+  "schema": "code-intel-second-repo-cold-start.v1",
+  "task": "issue #99 (Refs #59): first cold start of code-intel-pipeline against a foreign, non-self-hosted repository",
+  "target_repo": "D:/projects/tdxcli-rs",
+  "target_repo_head": "18d777f780e9a6d58f5a9c6c1342060a0b3e2e47",
+  "pipeline_worktree": "D:/projects/code-intel-pipeline/.claude/worktrees/t4-secondrepo",
+  "pipeline_worktree_head": "025573555a33b4ade369d89826a74921bc75577c",
+  "methodology_note": "Built from source per task instructions (cargo build -p code-intel --release --locked) rather than running skills/code-intel-pipeline/SKILL.md's bootstrap.py installer, which would fetch a published GitHub Release instead of exercising this worktree's current code. 'code-intel' was therefore never placed on PATH; every command below invokes the freshly built binary by its full path, shown as $BIN = target/release/code-intel.exe. CODE_INTEL_HOME was exported to the pipeline_worktree path for every step except step 13, which deliberately left it at the machine's ambient value to probe finding F5.",
+  "friction_log": "docs/runbooks/frictions.md",
+  "steps": [
+    {
+      "id": "01-build",
+      "command": "cargo build -p code-intel --release --locked",
+      "purpose": "Task step 1: build the CLI from source in the t4 worktree.",
+      "seconds": 82,
+      "exit": 0,
+      "adapted": false,
+      "adaptation": null,
+      "findings": []
+    },
+    {
+      "id": "02-help",
+      "command": "$BIN --help",
+      "purpose": "SKILL.md 'Resolve the installation' step 1: confirm `code-intel --help` succeeds before doing anything else.",
+      "seconds": 0,
+      "exit": 0,
+      "adapted": false,
+      "adaptation": null,
+      "findings": [
+        "F1: default --help lists only 6 commands (code-intel ., --mode, doctor --json, graph, resume, sentrux check). None of run execute / run dag-coordinate / artifact query / change risk appear here."
+      ]
+    },
+    {
+      "id": "03-help-all",
+      "command": "$BIN --help --all",
+      "purpose": "Only way found to discover run execute / artifact query / change risk short of reading source or CI YAML, since SKILL.md and README never mention them.",
+      "seconds": 0,
+      "exit": 0,
+      "adapted": false,
+      "adaptation": null,
+      "findings": [
+        "F1: the 4 commands this task needed only exist in the 'Advanced commands' full help, which SKILL.md's install-resolution step never instructs a reader to run."
+      ]
+    },
+    {
+      "id": "04-doctor",
+      "command": "$BIN doctor --json",
+      "purpose": "README's stated replacement for retired legacy/check-code-intel-tools.ps1 ('请用 code-intel doctor'); task step 3 requires doctor first.",
+      "seconds": 0,
+      "exit": 0,
+      "adapted": false,
+      "adaptation": null,
+      "findings": [
+        "Informational: bare `doctor` only returns {artifactRoot, artifactRootExists, ok} -- no rg/git/rust/repowise probing. The richer environment probe lives in the separate, README-unlinked `doctor bootstrap` subcommand. Not numbered as a friction (nothing broke), noted for completeness."
+      ]
+    },
+    {
+      "id": "05-primary-quickstart",
+      "command": "$BIN D:/projects/tdxcli-rs",
+      "purpose": "The actual documented outsider entry point: README '30 秒开始' / SKILL.md 'Run the pipeline' step, verbatim.",
+      "seconds": 12,
+      "exit": 0,
+      "adapted": false,
+      "adaptation": null,
+      "findings": [
+        "Clean run: all 7 DAG nodes (doctor, repo.snapshot, inventory.rg, evidence.native-code, evidence.graph, evidence.sentrux, diagnosis.hospital) reported status=succeeded, verdict=pass. Governance state: green / observe / 'clean snapshot' / next_protocol=post_op.",
+        "F3: published output at C:/Users/Administrator/AppData/Local/code-intel/artifacts/tdxcli-rs/<run>/ is a flat objects/sha256/<hash> blob store plus run-complete.json -- no diagnosis.hospital/hospital.md path exists on disk, contra README 'Output在哪里'."
+      ]
+    },
+    {
+      "id": "06-run-execute",
+      "command": "$BIN run execute --repo D:/projects/tdxcli-rs --out $TEMP/t4-scan --authority-root $TEMP/t4-auth --final-name second-repo-scan --manifest orchestration/integrations.json --doctor-require-repowise false",
+      "purpose": "Task step 3's full-chain command, mirroring .github/workflows/ci.yml's self-scan invocation shape with --repo pointed at the foreign target instead of '.'. Run from CWD = pipeline_worktree so the relative --manifest resolves.",
+      "seconds": 13,
+      "exit": 0,
+      "adapted": false,
+      "adaptation": null,
+      "findings": [
+        "Worked as written with zero changes to the CI-derived invocation shape, just repo swapped. All 7 nodes pass again, same clean verdict.",
+        "F3: same flat objects/sha256 layout as step 05, even though the run-manifest's logical 'path' fields (e.g. diagnosis.hospital/hospital.md) look like real paths."
+      ]
+    },
+    {
+      "id": "07-artifact-query-attempt1",
+      "command": "$BIN artifact query --artifact-root $TEMP/t4-auth --repo second-repo-scan --limit 5",
+      "purpose": "Task step 3's 'artifact query' surface, first guess: --repo = the --final-name used to publish.",
+      "seconds": 0,
+      "exit": 65,
+      "adapted": true,
+      "adaptation": "Guessed --repo equal to step 06's --final-name value.",
+      "findings": [
+        "F2: exact error 'no committed authoritative run is indexed for repository: second-repo-scan'."
+      ]
+    },
+    {
+      "id": "08-artifact-query-attempt2",
+      "command": "$BIN artifact query --artifact-root $TEMP/t4-auth --repo tdxcli-rs --limit 5",
+      "purpose": "Second guess after attempt 1 failed: --repo = the target repo's directory name instead.",
+      "seconds": 0,
+      "exit": 65,
+      "adapted": true,
+      "adaptation": "Guessed --repo equal to the target repo's folder name.",
+      "findings": [
+        "F2: exact error 'no committed authoritative run is indexed for repository: tdxcli-rs'. Both guesses fail identically; neither --help nor the error message hints at the real cause."
+      ]
+    },
+    {
+      "id": "09-run-execute-nested-retry",
+      "command": "$BIN run execute --repo D:/projects/tdxcli-rs --out $TEMP/t4-scan2 --authority-root $TEMP/t4-auth2/tdxcli-rs --final-name run-001 --manifest orchestration/integrations.json --doctor-require-repowise false",
+      "purpose": "After reading crates/code-intel-cli/src/committed_evidence.rs (artifact_root.join(repo).join(run)), retested with the repo name manually folded into --authority-root, which nothing in --help or the docs states is required.",
+      "seconds": 37,
+      "exit": 0,
+      "adapted": true,
+      "adaptation": "Changed --authority-root from a flat $TEMP/t4-auth to a pre-nested $TEMP/t4-auth2/tdxcli-rs so the on-disk layout matches what artifact query's index expects.",
+      "findings": [
+        "F2: this is the confirmed root-cause fix, discovered by reading source, not by any documented guidance."
+      ]
+    },
+    {
+      "id": "10-artifact-query-success",
+      "command": "$BIN artifact query --artifact-root $TEMP/t4-auth2 --repo tdxcli-rs --limit 5",
+      "purpose": "Re-run of the step 3 query surface against the correctly-nested authority root from step 09.",
+      "seconds": 0,
+      "exit": 0,
+      "adapted": true,
+      "adaptation": "Depends on step 09's authority-root nesting adaptation.",
+      "findings": [
+        "F2 resolved: returns real matches (repository.snapshot, code_evidence.symbol_chunks, code_evidence.imports, diagnosis.surgery-plan-view, evidence.admission), confidence='limited' because no --repo-path was supplied for freshness comparison."
+      ]
+    },
+    {
+      "id": "11-snapshot-identity",
+      "command": "$BIN snapshot identity --repo D:/projects/tdxcli-rs --working-tree-policy explicit_overlay --scope .",
+      "purpose": "Task step 3's snapshot-identity query surface; also documented in README 'Portable Snapshot Identity'.",
+      "seconds": 1,
+      "exit": 0,
+      "adapted": false,
+      "adaptation": null,
+      "findings": [
+        "Worked exactly as documented. Cross-validated: the reported dirtyOverlay.members.trackedModified list and untracked paths match this task's own BEFORE git-status snapshot of tdxcli-rs byte for byte (7 modified files + .ast-grep/ + .githooks/)."
+      ]
+    },
+    {
+      "id": "12-change-risk",
+      "command": "(cd D:/projects/tdxcli-rs && $BIN change risk HEAD~5..HEAD --format json)",
+      "purpose": "Task step 3's change-risk query surface on the target repo's recent commits.",
+      "seconds": 2,
+      "exit": 0,
+      "adapted": true,
+      "adaptation": "change risk has no --repo/--repo-path flag (confirmed in --help --all's own usage string); had to cd into the target repo and invoke the pipeline binary by absolute path from inside it instead of passing a flag.",
+      "findings": [
+        "F4: only subcommand touched in this task with no explicit repo-selection flag; resolves the repo from CWD via git::resolve_repo_root(). Once run correctly, returned real per-file churn/bug-fix scoring for 40+ files across HEAD~5..HEAD."
+      ]
+    },
+    {
+      "id": "13-code-intel-home-ambient-probe",
+      "command": "$BIN run execute --repo D:/projects/tdxcli-rs --out $TEMP/t4-scan3 --authority-root $TEMP/t4-auth3/tdxcli-rs --final-name run-002-nohome --manifest orchestration/integrations.json --doctor-require-repowise false   (CODE_INTEL_HOME left unset / at machine-ambient value instead of the pipeline_worktree)",
+      "purpose": "Targeted probe of the task's own 'Why' motivation: CODE_INTEL_HOME-style traps. This machine's default shell carries CODE_INTEL_HOME=D:\\projects\\code-intel-pipeline (the main checkout) at all times, not any worktree; 11+ worktrees of this repo coexist on this machine per `git worktree list`.",
+      "seconds": 34,
+      "exit": 0,
+      "adapted": false,
+      "adaptation": null,
+      "findings": [
+        "F5: exit 0, no ambiguity error, despite CODE_INTEL_HOME pointing at a different checkout than the one running. Likely because --manifest was passed explicitly (resolves as a plain CWD-relative path in run_cli.rs, never reaching providers.rs's guarded orchestration_manifest()/reject_foreign_checkout resolver). Not isolated further this session -- see frictions.md F5 for caveats."
+      ]
+    }
+  ],
+  "summary": {
+    "target_repo": "D:/projects/tdxcli-rs",
+    "head": "18d777f780e9a6d58f5a9c6c1342060a0b3e2e47",
+    "total_seconds": 181,
+    "steps_ok": 8,
+    "steps_adapted": 5,
+    "steps_failed": 2,
+    "note": "steps_ok + steps_adapted = 13 = total steps (every step is exactly one or the other). steps_failed (2) is a subset of steps_adapted: both failed rows (07, 08) were guessed-value adaptation attempts later corrected by rows 09-10, not independent failures."
+  }
+}
