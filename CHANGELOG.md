@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0-beta.3] — 2026-08-02
+
+北极星落地批次：占 chokepoint（PR 门禁）、立裁判（eval 基准）、砍概念债（docs 生命周期首扫）、出自举圈（第二仓冷启动）。工作流第一性原理与全部方向决策见 issue #55 及其评论。
+
+### Added
+
+- **`code-intel change risk <revspec>` + PR 门禁 workflow**（#102、#108）。纯 git、免索引、免网络、免 LLM 的确定性缺陷风险分（diff 形状 / 测试不对称 / bug 磁铁 / churn 四信号定权重），对照最近 50 个非 merge 提交出百分位；`pr-gate.yml` 给每张 PR 打分并 sticky 评论，`risk_percentile >= 90` 且无 `risk-accepted` 标签即红检查、阻断 auto-merge。输出 machine-first JSON（`code-intel-change-risk.v1`）。上线当天狗粮自拦（82 分 high，走标签放行完成首次完整拦截+放行演练）；CodeRabbit 审出的基线自污染、`A...B` 三点语义、warning 路径炸门禁、非 ASCII 路径 quotePath 漏匹配均已修复并带回归测试。
+- **eval 北极星双臂基准 v1**（#107、#109）。12 题 artifact-guided（A 臂）vs naive 裸读（B 臂），零 LLM、逐字节可复现。首个数字如实入库：A 臂覆盖 6/12、胜 2 负 10，`why` 类 0/4 全灭——当前工件不是为回答问题设计的（#58/#105 的最硬证据）。修复基准自指污染（两臂搜索空间排除 `eval/`、`docs/archive/`、`.out-of-scope/`），基线轮换至可复现态。
+- **第二仓冷启动实录**（#110）。首次对非自举仓（tdxcli-rs）跑全链路：13 步 8 顺 / 5 改造 / 2 失败、181 秒，目标仓零写入双重验证；机读 runbook `docs/runbooks/second-repo-cold-start.json` + 摩擦五条全部立案（#111–#115，含 `run execute` 写入 `artifact query` 永远索引不到的死端真 bug）。
+- **`.out-of-scope/` 非目标注册表**（#109）。显式非目标当一等文件：无鉴权本地 HTTP 端口 / 人读产物当真源 / 斜杠调用产品形态。
+
+### Changed
+
+- **docs 生命周期首扫**（#109、#116）。123 篇盘点、17 篇一次性文档归档至 `docs/archive/`、机读判例表 `docs/INVENTORY.md`；死代码清扫为诚实零删除（全部候选均有活引用，负结果入档）。#116 回滚恢复 E09 证据文档并立判例：retirement packet 按字面路径钉死证据物，`retired=true` 也不许归档。
+
 ### Added
 
 - **`code-intel --version`** (also `-V`, and `--version --json` emitting
