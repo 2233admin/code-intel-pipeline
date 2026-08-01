@@ -429,7 +429,7 @@
           "id": "repository.snapshot.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "793b3bb886970da5eff17574578e258cae70da946c5f7701be1980d97099a06c"
+            "30713a9a9abae3b3be5d3d44a554d66536b58686dcbf8a9742d20b284344618c"
           ]
         },
         "determinism": "deterministic",

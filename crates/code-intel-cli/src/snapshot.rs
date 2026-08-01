@@ -134,12 +134,18 @@ pub(crate) fn build_for_dag(
     build(repo, policy, scopes).map_err(|error| error.message().to_string())
 }
 
+/// Path -> content sha256, at HEAD and in the worktree. A named pair rather
+/// than a same-shaped tuple, so a caller cannot accidentally transpose the
+/// two maps.
+pub(crate) struct RepinDigests {
+    pub(crate) head: BTreeMap<String, String>,
+    pub(crate) worktree: BTreeMap<String, String>,
+}
+
 /// Path -> content sha256 for the whole repository, at HEAD and in the
 /// worktree. The one seam `repin` needs: it never touches `ManifestEntry`,
 /// `SnapshotError`, or the batched Git plumbing underneath directly.
-pub(crate) fn repin_digests(
-    repo: &Path,
-) -> Result<(BTreeMap<String, String>, BTreeMap<String, String>), String> {
+pub(crate) fn repin_digests(repo: &Path) -> Result<RepinDigests, String> {
     let scopes = vec![".".to_string()];
     let git = git_context(repo)
         .map_err(|error| error.message().to_string())?
@@ -159,7 +165,10 @@ pub(crate) fn repin_digests(
             .map(|entry| (entry.path, entry.digest))
             .collect::<BTreeMap<_, _>>()
     };
-    Ok((to_map(head), to_map(worktree)))
+    Ok(RepinDigests {
+        head: to_map(head),
+        worktree: to_map(worktree),
+    })
 }
 
 fn parse_cli(raw: &[String]) -> Result<Cli, SnapshotError> {

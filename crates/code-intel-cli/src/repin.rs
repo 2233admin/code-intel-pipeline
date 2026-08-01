@@ -75,9 +75,8 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
     } else {
         print_human(&report, cli.write);
     }
-    let orphaned = !report.orphaned.is_empty();
     if cli.write {
-        i32::from(orphaned)
+        i32::from(report.has_unresolved())
     } else if report.is_clean() {
         0
     } else {
@@ -167,16 +166,45 @@ struct OrphanedFinding {
     count: usize,
 }
 
+/// A HEAD digest shared by more than one non-excluded path: repin cannot
+/// tell which of `paths` a pin referencing `digest` meant, so it resolves
+/// none of them and reports the ambiguity instead of guessing.
+struct AmbiguousSource {
+    digest: String,
+    paths: Vec<String>,
+}
+
+/// A scan target repin could not read at all. `gates_clean` is false only
+/// for binary files, which structurally cannot hold a pin in this repo's
+/// convention; anything else (too large, unreadable) means real text went
+/// uninspected and must not be reported as "clean".
+struct SkippedFile {
+    path: String,
+    reason: String,
+    gates_clean: bool,
+}
+
 pub(crate) struct RepinReport {
     passes: usize,
     findings: Vec<FileFinding>,
     orphaned: Vec<OrphanedFinding>,
+    ambiguous: Vec<AmbiguousSource>,
+    skipped: Vec<SkippedFile>,
     rewritten: BTreeMap<String, Vec<u8>>,
 }
 
 impl RepinReport {
+    /// Orphaned pins, ambiguous digests, and gating skips are never touched
+    /// by `--write` — they need a human, not a resync — so they stay
+    /// "unresolved" even after a successful write.
+    fn has_unresolved(&self) -> bool {
+        !self.orphaned.is_empty()
+            || !self.ambiguous.is_empty()
+            || self.skipped.iter().any(|skip| skip.gates_clean)
+    }
+
     fn is_clean(&self) -> bool {
-        self.findings.is_empty() && self.orphaned.is_empty()
+        self.findings.is_empty() && !self.has_unresolved()
     }
 
     fn total_substitutions(&self) -> usize {
@@ -209,6 +237,15 @@ impl RepinReport {
                 "deletedSourcePath": orphan.deleted_source_path,
                 "count": orphan.count,
             })).collect::<Vec<_>>(),
+            "ambiguousSources": self.ambiguous.iter().map(|ambiguous| json!({
+                "digest": ambiguous.digest,
+                "paths": ambiguous.paths,
+            })).collect::<Vec<_>>(),
+            "skipped": self.skipped.iter().map(|skip| json!({
+                "file": skip.path,
+                "reason": skip.reason,
+                "gatesClean": skip.gates_clean,
+            })).collect::<Vec<_>>(),
         })
     }
 }
@@ -237,6 +274,26 @@ fn print_human(report: &RepinReport, write: bool) {
             orphan.deleted_source_path
         );
     }
+    for ambiguous in &report.ambiguous {
+        println!(
+            "ambiguous: {}...{} is shared by {} \u{2014} not resolved, resync by hand",
+            &ambiguous.digest[..12],
+            &ambiguous.digest[56..],
+            ambiguous.paths.join(", ")
+        );
+    }
+    for skip in &report.skipped {
+        println!(
+            "skipped: {} ({}{})",
+            skip.path,
+            skip.reason,
+            if skip.gates_clean {
+                ""
+            } else {
+                ", informational"
+            }
+        );
+    }
     if report.is_clean() {
         println!(
             "repin: clean \u{2014} no stale pins ({} pass{})",
@@ -257,7 +314,26 @@ fn print_human(report: &RepinReport, write: bool) {
 
 fn flush(repo: &Path, report: &RepinReport) -> Result<(), String> {
     for (path, bytes) in &report.rewritten {
-        fs::write(repo.join(path), bytes).map_err(|error| format!("write {path}: {error}"))?;
+        let target = repo.join(path);
+        // Append rather than replace the extension (`Path::with_extension`
+        // would turn `a.json` and `a.txt` into the same `a.repin-tmp`), and
+        // write-then-rename so a failure mid-write never leaves `target`
+        // itself truncated: either the rename lands the full new content or
+        // the original file is untouched.
+        let mut temp_name = target
+            .file_name()
+            .ok_or_else(|| format!("{path}: has no file name"))?
+            .to_os_string();
+        temp_name.push(".repin-tmp");
+        let temporary = target.with_file_name(temp_name);
+        if let Err(error) = fs::write(&temporary, bytes) {
+            let _ = fs::remove_file(&temporary);
+            return Err(format!("write {path}: {error}"));
+        }
+        if let Err(error) = fs::rename(&temporary, &target) {
+            let _ = fs::remove_file(&temporary);
+            return Err(format!("replace {path}: {error}"));
+        }
     }
     Ok(())
 }
@@ -271,15 +347,38 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
             .any(|prefix| path.starts_with(prefix.as_str()))
     };
 
-    let (head_map, worktree_map) = snapshot::repin_digests(repo)?;
+    let digests = snapshot::repin_digests(repo)?;
+    let head_map = digests.head;
+    let worktree_map = digests.worktree;
 
-    // Reverse index: a HEAD digest resolves to the one source path it came
-    // from, so a finding can report *where* a stale pin should now point
-    // without threading that path through every pass of the loop below.
-    let source_of: BTreeMap<String, String> = head_map
+    // Two (or more) tracked files can share one HEAD digest (empty files,
+    // copied fixtures, license copies). A digest-keyed map cannot then say
+    // which of them a given pin meant, so any digest shared by more than one
+    // non-excluded HEAD path is resolved nowhere below — never rewritten,
+    // never reported as orphaned, only surfaced as ambiguous.
+    let mut digest_paths: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (path, digest) in &head_map {
+        if is_excluded(path) {
+            continue;
+        }
+        digest_paths
+            .entry(digest.clone())
+            .or_default()
+            .push(path.clone());
+    }
+    let ambiguous_digests: std::collections::BTreeSet<String> = digest_paths
         .iter()
-        .filter(|(path, _)| !is_excluded(path))
-        .map(|(path, digest)| (digest.clone(), path.clone()))
+        .filter(|(_, paths)| paths.len() > 1)
+        .map(|(digest, _)| digest.clone())
+        .collect();
+
+    // Reverse index: an unambiguous HEAD digest resolves to the one source
+    // path it came from, so a finding can report *where* a stale pin should
+    // now point without threading that path through every pass below.
+    let source_of: BTreeMap<String, String> = digest_paths
+        .iter()
+        .filter(|(digest, _)| !ambiguous_digests.contains(*digest))
+        .map(|(digest, paths)| (digest.clone(), paths[0].clone()))
         .collect();
 
     let scan_targets: Vec<String> = worktree_map
@@ -289,6 +388,10 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
         .collect();
 
     let mut contents: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    // Paths whose content couldn't be read at all: sticky across passes,
+    // since a file that's too large or not UTF-8 now will still be too large
+    // or not UTF-8 on the next pass.
+    let mut skipped: BTreeMap<String, LoadError> = BTreeMap::new();
     let mut current_digest: BTreeMap<String, String> = worktree_map.clone();
     // path -> old_digest -> occurrences, accumulated across passes.
     let mut findings: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
@@ -303,7 +406,7 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
         }
         let mut rewrite_map: BTreeMap<String, String> = BTreeMap::new();
         for (path, head_digest) in &head_map {
-            if is_excluded(path) {
+            if is_excluded(path) || ambiguous_digests.contains(head_digest) {
                 continue;
             }
             if let Some(current) = current_digest.get(path) {
@@ -318,12 +421,18 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
 
         let mut substitutions_this_pass = 0usize;
         for path in &scan_targets {
+            if skipped.contains_key(path) {
+                continue;
+            }
             if !contents.contains_key(path) {
                 match load_text(repo, path) {
-                    Some(bytes) => {
+                    Ok(bytes) => {
                         contents.insert(path.clone(), bytes);
                     }
-                    None => continue,
+                    Err(error) => {
+                        skipped.insert(path.clone(), error);
+                        continue;
+                    }
                 }
             }
             let bytes = contents.get(path).expect("just loaded or already cached");
@@ -346,27 +455,42 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
 
     // A HEAD path that vanished from the worktree pins a digest that can
     // never be resynced: there is no current content to hash. Report it
-    // rather than silently ignoring it.
-    let deleted_map: BTreeMap<String, String> = head_map
+    // rather than silently ignoring it. Ambiguous digests are excluded here
+    // too: if a surviving twin still carries the same digest, the pin isn't
+    // actually orphaned, and if every twin is gone, we still can't say which
+    // deleted path a given pin meant.
+    let deleted_map: BTreeMap<String, String> = digest_paths
         .iter()
-        .filter(|(path, _)| !is_excluded(path) && !worktree_map.contains_key(*path))
-        .map(|(path, digest)| (digest.clone(), path.clone()))
+        .filter(|(digest, paths)| {
+            !ambiguous_digests.contains(*digest) && !worktree_map.contains_key(&paths[0])
+        })
+        .map(|(digest, paths)| (digest.clone(), paths[0].clone()))
         .collect();
     let mut orphaned = Vec::new();
     if !deleted_map.is_empty() {
+        let identity: BTreeMap<String, String> = deleted_map
+            .keys()
+            .map(|old| (old.clone(), old.clone()))
+            .collect();
         for path in &scan_targets {
+            if skipped.contains_key(path) {
+                continue;
+            }
+            let loaded;
             let bytes = match contents.get(path) {
-                Some(bytes) => bytes.clone(),
+                Some(bytes) => bytes,
                 None => match load_text(repo, path) {
-                    Some(bytes) => bytes,
-                    None => continue,
+                    Ok(bytes) => {
+                        loaded = bytes;
+                        &loaded
+                    }
+                    Err(error) => {
+                        skipped.insert(path.clone(), error);
+                        continue;
+                    }
                 },
             };
-            let identity: BTreeMap<String, String> = deleted_map
-                .keys()
-                .map(|old| (old.clone(), old.clone()))
-                .collect();
-            let (_, hits) = rewrite_tokens(&bytes, &identity);
+            let (_, hits) = rewrite_tokens(bytes, &identity);
             for (old, count) in hits {
                 orphaned.push(OrphanedFinding {
                     path: path.clone(),
@@ -377,6 +501,14 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
             }
         }
     }
+
+    let ambiguous: Vec<AmbiguousSource> = ambiguous_digests
+        .into_iter()
+        .map(|digest| AmbiguousSource {
+            paths: digest_paths[&digest].clone(),
+            digest,
+        })
+        .collect();
 
     let rewritten: BTreeMap<String, Vec<u8>> = findings
         .keys()
@@ -408,24 +540,61 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
             FileFinding { path, sites }
         })
         .collect();
+    let skipped: Vec<SkippedFile> = skipped
+        .into_iter()
+        .map(|(path, error)| SkippedFile {
+            gates_clean: error.gates_clean(),
+            reason: error.message(),
+            path,
+        })
+        .collect();
 
     Ok(RepinReport {
         passes,
         findings: file_findings,
         orphaned,
+        ambiguous,
+        skipped,
         rewritten,
     })
 }
 
-fn load_text(repo: &Path, path: &str) -> Option<Vec<u8>> {
-    let full = repo.join(path);
-    let metadata = fs::metadata(&full).ok()?;
-    if !metadata.is_file() || metadata.len() > MAX_FILE_BYTES {
-        return None;
+/// Why a scan target's content wasn't inspected. `Binary` is routine and
+/// never gates "clean" — this repository's pins only ever live in text — but
+/// `TooLarge` and `Unreadable` mean a file that *could* hold a pin went
+/// uninspected, which the report must never fold into a silent "clean".
+enum LoadError {
+    Binary,
+    TooLarge,
+    Unreadable(String),
+}
+
+impl LoadError {
+    fn message(&self) -> String {
+        match self {
+            LoadError::Binary => "not valid UTF-8 (binary file)".to_string(),
+            LoadError::TooLarge => format!("exceeds {MAX_FILE_BYTES} byte scan limit"),
+            LoadError::Unreadable(detail) => format!("unreadable: {detail}"),
+        }
     }
-    let bytes = fs::read(&full).ok()?;
-    std::str::from_utf8(&bytes).ok()?;
-    Some(bytes)
+
+    fn gates_clean(&self) -> bool {
+        !matches!(self, LoadError::Binary)
+    }
+}
+
+fn load_text(repo: &Path, path: &str) -> Result<Vec<u8>, LoadError> {
+    let full = repo.join(path);
+    let metadata = fs::metadata(&full).map_err(|error| LoadError::Unreadable(error.to_string()))?;
+    if !metadata.is_file() {
+        return Err(LoadError::Unreadable("not a regular file".to_string()));
+    }
+    if metadata.len() > MAX_FILE_BYTES {
+        return Err(LoadError::TooLarge);
+    }
+    let bytes = fs::read(&full).map_err(|error| LoadError::Unreadable(error.to_string()))?;
+    std::str::from_utf8(&bytes).map_err(|_| LoadError::Binary)?;
+    Ok(bytes)
 }
 
 fn is_word_byte(byte: u8) -> bool {
