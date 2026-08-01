@@ -21,64 +21,46 @@ pub(super) fn build_report(
 ) -> Value {
     let score = scored.map_or(0, |scored| scored.score.round() as i64);
     let level = level_for_percentile(percentile);
-    let signals = match scored {
-        Some(scored) => json!({
-            "diff": {
-                "filesTouched": scored.diff.files_touched,
-                "insertions": scored.diff.insertions,
-                "deletions": scored.diff.deletions,
-                "linesChanged": scored.diff.lines_changed,
-                "maxFileShare": round2(scored.diff.max_file_share),
-                "subscore": round2(scored.diff.subscore),
-            },
-            "testAsymmetry": {
-                "sourceFilesChanged": scored.test_asymmetry.source_files_changed,
-                "testFilesChanged": scored.test_asymmetry.test_files_changed,
-                "asymmetric": scored.test_asymmetry.asymmetric,
-                "subscore": round2(scored.test_asymmetry.subscore),
-            },
-            "bugMagnet": {
-                "windowDays": BUG_MAGNET_WINDOW_DAYS,
-                "totalFixCommits": scored.bug_magnet.total_fix_commits,
-                "filesWithHistory": scored.bug_magnet.files_with_history,
-                "subscore": round2(scored.bug_magnet.subscore),
-            },
-            "churn": {
-                "windowDays": CHURN_WINDOW_DAYS,
-                "totalCommits": scored.churn.total_commits,
-                "subscore": round2(scored.churn.subscore),
-            },
-            "weights": {
-                "diffShape": WEIGHT_DIFF_SHAPE,
-                "testAsymmetry": WEIGHT_TEST_ASYMMETRY,
-                "bugMagnet": WEIGHT_BUG_MAGNET,
-                "churn": WEIGHT_CHURN,
-            },
-            "sampleRequested": sample_requested,
-            "sampleUsed": sample_used,
-        }),
-        None => json!({
-            "diff": {
-                "filesTouched": 0, "insertions": 0, "deletions": 0, "linesChanged": 0,
-                "maxFileShare": 0.0, "subscore": 0.0,
-            },
-            "testAsymmetry": {
-                "sourceFilesChanged": 0, "testFilesChanged": 0, "asymmetric": false, "subscore": 0.0,
-            },
-            "bugMagnet": {
-                "windowDays": BUG_MAGNET_WINDOW_DAYS, "totalFixCommits": 0, "filesWithHistory": 0, "subscore": 0.0,
-            },
-            "churn": {
-                "windowDays": CHURN_WINDOW_DAYS, "totalCommits": 0, "subscore": 0.0,
-            },
-            "weights": {
-                "diffShape": WEIGHT_DIFF_SHAPE, "testAsymmetry": WEIGHT_TEST_ASYMMETRY,
-                "bugMagnet": WEIGHT_BUG_MAGNET, "churn": WEIGHT_CHURN,
-            },
-            "sampleRequested": sample_requested,
-            "sampleUsed": sample_used,
-        }),
-    };
+    // A warning report (no diff to score) has no `Scored` at all; a
+    // zero-valued default stands in so the signal shape below is written
+    // once and can never drift between the scored and unscored paths.
+    let default_scored = Scored::default();
+    let scored = scored.unwrap_or(&default_scored);
+    let signals = json!({
+        "diff": {
+            "filesTouched": scored.diff.files_touched,
+            "insertions": scored.diff.insertions,
+            "deletions": scored.diff.deletions,
+            "linesChanged": scored.diff.lines_changed,
+            "maxFileShare": round2(scored.diff.max_file_share),
+            "subscore": round2(scored.diff.subscore),
+        },
+        "testAsymmetry": {
+            "sourceFilesChanged": scored.test_asymmetry.source_files_changed,
+            "testFilesChanged": scored.test_asymmetry.test_files_changed,
+            "asymmetric": scored.test_asymmetry.asymmetric,
+            "subscore": round2(scored.test_asymmetry.subscore),
+        },
+        "bugMagnet": {
+            "windowDays": BUG_MAGNET_WINDOW_DAYS,
+            "totalFixCommits": scored.bug_magnet.total_fix_commits,
+            "filesWithHistory": scored.bug_magnet.files_with_history,
+            "subscore": round2(scored.bug_magnet.subscore),
+        },
+        "churn": {
+            "windowDays": CHURN_WINDOW_DAYS,
+            "totalCommits": scored.churn.total_commits,
+            "subscore": round2(scored.churn.subscore),
+        },
+        "weights": {
+            "diffShape": WEIGHT_DIFF_SHAPE,
+            "testAsymmetry": WEIGHT_TEST_ASYMMETRY,
+            "bugMagnet": WEIGHT_BUG_MAGNET,
+            "churn": WEIGHT_CHURN,
+        },
+        "sampleRequested": sample_requested,
+        "sampleUsed": sample_used,
+    });
     let mut result = json!({
         "schema": "code-intel-change-risk.v1",
         "revspec": revspec,

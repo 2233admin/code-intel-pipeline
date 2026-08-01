@@ -1,8 +1,9 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::git::tip_token;
+use super::git::{commits_in_range, tip_token};
 use super::signals::{is_source_file, is_test_file, looks_like_fix_subject};
 use super::*;
 
@@ -53,6 +54,29 @@ fn commit(repo: &Path, message: &str) {
         .status()
         .unwrap()
         .success());
+}
+
+fn checkout_new_branch(repo: &Path, name: &str, start_point: Option<&str>) {
+    let mut args = vec!["checkout", "--quiet", "-b", name];
+    if let Some(start_point) = start_point {
+        args.push(start_point);
+    }
+    assert!(Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .status()
+        .unwrap()
+        .success());
+}
+
+fn rev_parse(repo: &Path, rev: &str) -> String {
+    let output = Command::new("git")
+        .args(["rev-parse", rev])
+        .current_dir(repo)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
 #[test]
@@ -196,6 +220,94 @@ fn a_commit_inside_the_scored_range_does_not_count_toward_its_own_files_history(
         "a fix commit inside the scored range must not count toward its own file's bug-magnet tally: {result}"
     );
     assert_eq!(result["signals"]["bugMagnet"]["totalFixCommits"], 0);
+
+    std::fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn baseline_sampling_excludes_commits_inside_the_scored_range() {
+    let repo = init_repo("baseline-self-contamination");
+    write_file(&repo, "crates/demo/src/lib.rs", "fn a() {}\n");
+    commit(&repo, "feat: c1"); // outside the scored range
+    write_file(&repo, "crates/demo/src/lib.rs", "fn a() {}\nfn b() {}\n");
+    commit(&repo, "feat: c2"); // outside the scored range
+    write_file(
+        &repo,
+        "crates/demo/src/lib.rs",
+        "fn a() {}\nfn b() {}\nfn c() {}\n",
+    );
+    commit(&repo, "feat: c3"); // outside the scored range
+    write_file(
+        &repo,
+        "crates/demo/src/lib.rs",
+        "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}\n",
+    );
+    commit(&repo, "feat: c4"); // inside the scored range
+    write_file(
+        &repo,
+        "crates/demo/src/lib.rs",
+        "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}\nfn e() {}\n",
+    );
+    commit(&repo, "feat: c5"); // inside the scored range (tip)
+
+    // Score only the last two commits, but request a baseline far larger
+    // than the repository's total history (5 commits) so that, absent the
+    // fix, `sample_history` walking back from the tip would pull every
+    // commit reachable from HEAD — including the two commits that make up
+    // the target's own diff — straight into the pool the target is being
+    // compared against.
+    let result = execute(&repo, "HEAD~2..HEAD", 10).expect("scoring succeeds");
+    assert!(result.get("warning").is_none());
+    // 5 commits total reachable from HEAD; the 2 inside HEAD~2..HEAD must
+    // be filtered out of the baseline before scoring, leaving exactly the
+    // 3 commits outside the range (each with a real diff of its own, c1
+    // falling back to the empty-tree diff as the root commit).
+    assert_eq!(
+        result["signals"]["sampleUsed"], 3,
+        "a commit inside the scored range must never also serve as one of its own baseline samples: {result}"
+    );
+
+    std::fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn commits_in_range_normalizes_triple_dot_to_the_diffed_commit_set() {
+    let repo = init_repo("triple-dot");
+    write_file(&repo, "README.md", "base\n");
+    commit(&repo, "chore: seed repository");
+
+    // Diverge into two branches from the same commit: `base-branch` gets
+    // one commit only it has, `feature-branch` gets two commits only it
+    // has. `git diff base-branch...feature-branch` compares their merge
+    // base to feature-branch's tip, so only feature-branch's two commits
+    // should ever count as "the commits the diff was built from".
+    checkout_new_branch(&repo, "base-branch", None);
+    write_file(&repo, "base-only.txt", "base only\n");
+    commit(&repo, "feat: base-only commit");
+    let base_only_commit = rev_parse(&repo, "HEAD");
+
+    checkout_new_branch(&repo, "feature-branch", Some("HEAD~1"));
+    write_file(&repo, "feature-1.txt", "feature one\n");
+    commit(&repo, "feat: feature commit one");
+    let feature_first_commit = rev_parse(&repo, "HEAD");
+    write_file(&repo, "feature-2.txt", "feature two\n");
+    commit(&repo, "feat: feature commit two");
+    let feature_second_commit = rev_parse(&repo, "HEAD");
+
+    let excluded: BTreeSet<String> = commits_in_range(&repo, "base-branch...feature-branch")
+        .into_iter()
+        .collect();
+    let expected: BTreeSet<String> = [feature_first_commit, feature_second_commit]
+        .into_iter()
+        .collect();
+    assert_eq!(
+        excluded, expected,
+        "a...b must resolve to git diff's merge-base(a,b)..b commit set, not rev-list's symmetric difference"
+    );
+    assert!(
+        !excluded.contains(&base_only_commit),
+        "a commit unique to the base side of a...b must not appear in the exclusion set: {excluded:?}"
+    );
 
     std::fs::remove_dir_all(&repo).ok();
 }

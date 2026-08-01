@@ -150,8 +150,9 @@ pub(super) fn commit_unix_time(repo: &Path, rev: &str) -> Result<i64, RiskError>
 /// failure here degrades to "nothing excluded" rather than erroring, since
 /// `diff_stats` already proved the range itself resolves.
 pub(super) fn commits_in_range(repo: &Path, range: &str) -> Vec<String> {
+    let range = rev_list_range(range);
     let Ok(output) = super::hardened_git::command(repo)
-        .args(["rev-list", range])
+        .args(["rev-list", &range])
         .output()
     else {
         return Vec::new();
@@ -164,6 +165,25 @@ pub(super) fn commits_in_range(repo: &Path, range: &str) -> Vec<String> {
         .map(|line| line.trim().to_string())
         .filter(|line| !line.is_empty())
         .collect()
+}
+
+/// `git diff --numstat A...B` compares merge-base(A,B) to B — only B's
+/// commits since it diverged from A. `git rev-list A...B`, in contrast,
+/// returns the *symmetric* difference: commits unique to A as well as
+/// commits unique to B. Left as-is, a three-dot `range` would make
+/// `commits_in_range` return A's own history alongside B's, wrongly
+/// excluding commits from bug-magnet/churn lookups that were never part of
+/// the diff being scored. `git rev-list A..B` (two-dot) is the asymmetric
+/// form — commits reachable from B but not from A — which is exactly the
+/// "since merge-base" set `git diff A...B` compares against (merge-base is
+/// necessarily an ancestor of A, so "not reachable from A" and "not
+/// reachable from merge-base" select the same commits). Rewriting the first
+/// `...` to `..` before `rev-list` therefore makes the exclusion set match
+/// the diff precisely. Git ref names cannot contain "..", so the first
+/// `...` substring is unambiguously the range operator, never part of a
+/// name.
+fn rev_list_range(range: &str) -> String {
+    range.replacen("...", "..", 1)
 }
 
 /// The last `sample` non-merge commits reachable from `start`, each with its

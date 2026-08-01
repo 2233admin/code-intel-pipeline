@@ -243,6 +243,7 @@ fn print_result(value: &Value, format: Format) {
 /// (insertions, deletions, repository-relative path)
 type FileDiff = (i64, i64, String);
 
+#[derive(Default)]
 struct DiffShape {
     files_touched: usize,
     insertions: i64,
@@ -252,6 +253,7 @@ struct DiffShape {
     subscore: f64,
 }
 
+#[derive(Default)]
 struct TestAsymmetry {
     source_files_changed: usize,
     test_files_changed: usize,
@@ -259,17 +261,24 @@ struct TestAsymmetry {
     subscore: f64,
 }
 
+#[derive(Default)]
 struct BugMagnet {
     total_fix_commits: usize,
     files_with_history: usize,
     subscore: f64,
 }
 
+#[derive(Default)]
 struct Churn {
     total_commits: usize,
     subscore: f64,
 }
 
+/// `#[derive(Default)]` backs `render::build_report`'s no-score (warning)
+/// path: a zero-valued `Scored` defines the empty-report signal shape once,
+/// instead of a second hand-written all-zeros JSON literal that could drift
+/// from the real one.
+#[derive(Default)]
 struct Scored {
     score: f64,
     diff: DiffShape,
@@ -310,6 +319,16 @@ fn execute(repo: &Path, revspec: &str, sample_requested: u32) -> Result<Value, R
 
     let mut baseline_scores = Vec::new();
     for (sha, sha_unix) in git::sample_history(repo, &endpoint.tip, sample_requested) {
+        // A commit inside the range being scored (the tip itself, or any
+        // ancestor up to the range base) must never also serve as a
+        // baseline sample: it is part of the very thing being evaluated,
+        // and — being a strict subset of the target's own diff — it is
+        // near-guaranteed to score at or below the (larger, aggregated)
+        // target, which mechanically inflates `risk_percentile` regardless
+        // of whether the change is actually riskier than genuine history.
+        if exclude.contains(&sha) {
+            continue;
+        }
         let sample_range = format!("{sha}^..{sha}");
         let sample_files = git::diff_stats(repo, &sample_range).unwrap_or_default();
         if sample_files.is_empty() {

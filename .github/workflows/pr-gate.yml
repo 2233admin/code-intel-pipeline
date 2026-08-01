@@ -22,6 +22,13 @@ on:
     branches:
       - main
 
+# One run per PR: a new push (or label change) supersedes whatever this
+# gate was already computing for the same PR, so there is no reason to let
+# a stale run keep burning minutes once a fresher one has started.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   pull-requests: write
@@ -40,6 +47,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Rust
         run: |
@@ -106,6 +114,12 @@ jobs:
           } > comment-body.md
 
       - name: Post or update sticky comment
+        # Fork PRs get a read-only GITHUB_TOKEN, so posting/updating a
+        # comment here would fail outright — and with GitHub Actions' default
+        # `bash -e`, that failure would abort the job before it ever reaches
+        # Evaluate gate below. Skip the comment on fork PRs so the actual
+        # risk gate still runs; only the cosmetic comment is lost.
+        if: github.event.pull_request.head.repo.fork == false
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -126,6 +140,17 @@ jobs:
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          # Mirror the warning check in "Render sticky PR comment": a
+          # warning report (e.g. an empty diff) has no meaningful score to
+          # gate on. Handle it explicitly and exit before the numeric `-ge`
+          # comparison below, rather than relying on `risk_percentile`
+          # happening to be a gate-safe value in that case.
+          if [ "$(jq -r 'has("warning")' risk.json)" = "true" ]; then
+            echo "percentile=n/a" >> "$GITHUB_OUTPUT"
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           PERCENTILE=$(jq -r '.risk_percentile' risk.json)
           ACCEPTED=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json labels \
             --jq '[.labels[].name] | any(. == "risk-accepted")')
