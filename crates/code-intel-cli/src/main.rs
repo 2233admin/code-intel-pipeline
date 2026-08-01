@@ -25,6 +25,7 @@ mod dag_run;
 mod decision_port;
 mod decision_record;
 mod doctor_bootstrap;
+mod edit_impact;
 mod evidence_query;
 mod execution_kernel;
 mod execution_policy;
@@ -32,6 +33,7 @@ mod file_boundary;
 mod graph;
 mod hardened_git;
 mod hospital_score;
+mod impact_graph;
 mod method_catalog;
 mod model_channels;
 mod orchestration;
@@ -636,6 +638,16 @@ const RAW_ROUTES: &[RawRoute] = &[
         subcommand: Some("impact"),
         argument_offset: 1,
         runner: change_impact::run_raw,
+    },
+    RawRoute {
+        // Working-tree sibling of `change impact`. Separate command because
+        // it answers without authority; folding it into `change impact` as a
+        // flag would have made one command sometimes admissible and sometimes
+        // not, which is the property callers cannot afford to guess at.
+        command: "edit",
+        subcommand: Some("impact"),
+        argument_offset: 2,
+        runner: edit_impact::run_raw,
     },
     RawRoute {
         command: "decision",
@@ -1665,6 +1677,7 @@ Commands:
   artifact index --artifact-root <root> [--output <index.json>] [--operation rebuild|incremental] [--existing <index.json>]
   artifact query --artifact-root <root> --repo <name> [--repo-path <path>] [--artifact-schema <schema>] [--type <artifact-type>] [--contains <text>] [--limit <1..100>]
   change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--staleness current|advisory]
+  edit impact --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--scope <directory>]... (working tree, no prior run, authority: none)
   decision request-response --request <request.json|-> [--response <response.json>|--cancel <cancellation.json>] --now <unix-seconds> --branch <branch-id>...
   decision record --resolution <resolution.json> --store <record-directory>
   decision replay --query <query.json> --store <record-directory>

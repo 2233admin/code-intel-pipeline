@@ -418,7 +418,7 @@ fn lines(content: &str) -> Vec<&str> {
     }
 }
 
-fn language(path: &str) -> &'static str {
+pub(crate) fn language(path: &str) -> &'static str {
     match Path::new(path)
         .extension()
         .and_then(|value| value.to_str())
@@ -538,7 +538,7 @@ fn arrow_name(line: &str) -> Option<&str> {
     })
 }
 
-fn extract_imports(path: &str, language: &str, lines: &[&str]) -> Vec<Value> {
+pub(crate) fn extract_imports(path: &str, language: &str, lines: &[&str]) -> Vec<Value> {
     lines
         .iter()
         .enumerate()
