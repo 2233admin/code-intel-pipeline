@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`code-intel --version`** (also `-V`, and `--version --json` emitting
+  `code-intel-version.v1`). The installed binary could not report what it was:
+  the installed `bin/repo.json` records where the installer ran from, not what
+  it produced, so a machine on a stale build was indistinguishable from a
+  current one. Observed in practice — an installed v0.6.0 binary answered
+  `snapshot identity` in 10.9s while the same command on a build containing the
+  `git cat-file --batch` fix took 0.28s, and nothing on the machine could tell
+  the two apart. Answered ahead of route dispatch, because a leading `-` flag is
+  neither a primary invocation nor a raw route and previously fell through to
+  `unknown command: --version`.
+
+  This is a self-declared build identity, not provenance: the value is
+  `CARGO_PKG_VERSION` from the binary being questioned. It separates stale from
+  current; it does not separate genuine from substituted. The installer's
+  recorded `sha256=` remains the provenance signal.
+
+### Fixed
+
+- **The installer's version pin is now enforced, not merely declared.**
+  `Install-MissingTool` returned on presence alone: `Get-Command` finding the
+  tool on PATH produced `already_present` and the installer scriptblock never
+  ran. For `repowise` — the one external tool carrying a pinned version
+  (`repowise==0.36.0`, supply-chain-003) — this meant the pin could never fire
+  on a machine that had installed repowise once, and a box sitting four minor
+  releases behind reported the same status as a correct one. `Get-InstallMetadata`
+  now carries `pinnedVersion`, a new `Get-ToolVersion` reads the tool's own
+  `--version`, and a mismatch reports `version_drift` (or `upgraded` /
+  `upgrade_failed` under `-InstallMissing`). An unreadable version reports as
+  `unknown` and never as a match — the state the gate exists to surface. Tools
+  without a pin keep their previous behaviour exactly.
+
+  The probe follows the launch rule `crates/code-intel-cli/src/tool_path.rs`
+  states for the rest of the project — "only ever launches by absolute path",
+  "relative PATH entries are skipped outright". `Test-ToolVersionProbeAllowed`
+  refuses any source that is not a rooted, existing, non-script file, so a
+  `repowise.ps1` planted on PATH cannot be dot-run inside the installer's own
+  process. A refused probe is not a failed probe: the tool keeps its previous
+  presence-only reporting, so an unverifiable source can never induce a
+  reinstall. The child is launched with `Start-Process -PassThru -Wait` and its
+  own exit code is read, rather than the ambient `$LASTEXITCODE`, which is only
+  set by native commands and would otherwise carry a stale value — or, under
+  `Set-StrictMode`, abort the installer outright. Only stdout is parsed, and the
+  match is anchored to the tool's own name when it is known, so a deprecation
+  banner carrying its own version number cannot forge a pass or a drift.
+
+  **Action required on already-provisioned machines.** Confirmed drift now
+  fails the install. `ok` is computed from `checks` alone, so a status that only
+  reached `installActions` was invisible to every consumer —
+  `bootstrap-new-machine.ps1` reads `installResult.ok` and nothing else, and
+  would have reported `Install OK: True` on a drifted box.
+  `Add-VersionComplianceChecks` derives a `version:<tool>` check from the
+  actions, so a machine whose `repowise` is off-pin now reports `ok: false` with
+  `version:repowise` in `missingRequired`. Resolve it with `-InstallMissing`, or
+  move the pin to the version you intend to run. A refused or unreadable probe
+  emits the check as **not required**: uncertainty is surfaced, but an install
+  is never failed over a version that could not be measured.
+
+  One more behaviour change: the default (doctor) mode now executes `--version`
+  on a pinned tool that is already present, where it previously ran no external
+  command for it — today that is `repowise` only.
+
 ### Changed
 
 - **Sentrux `coupling_score` now divides by import-modelled files only**
