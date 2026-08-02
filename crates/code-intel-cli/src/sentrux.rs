@@ -6,12 +6,25 @@ use std::path::Path;
 pub struct Options<'a> {
     pub operation: Option<&'a str>,
     pub repo: Option<&'a Path>,
+    /// CLI `--no-ratchet`. Only consulted by the `check` operation; see
+    /// `sentrux_gate::run_check_aligned`.
+    pub no_ratchet: bool,
 }
 
 /// Structural operations served by the built-in engine. The PATH-resolved
 /// `sentrux` binary is no longer consulted here: the gate verdict must be a
 /// function of the snapshot and this binary. External Sentrux implementations
 /// remain reachable through the provider `toolPathPrefix` seam.
+///
+/// `check` evaluates both `.sentrux/rules.toml` and, by default, the
+/// `.sentrux/baseline.json` ratchet that `gate` evaluates -- the same two
+/// verdicts the authoritative `evidence.sentrux` DAG node always computes
+/// (issue #106: before this, `check` only ran the static rules, so
+/// `code-intel sentrux check` could report green while `code-intel run
+/// execute` failed on the same tree). Pass `--no-ratchet` to see only the
+/// static verdict; the output says so explicitly. `check_rules` is the
+/// unconditional static-only alias kept for parity with the legacy PS1
+/// tool's `check_rules` operation.
 pub fn run(options: &Options<'_>) -> Result<()> {
     let operation = options.operation.ok_or("sentrux requires an operation")?;
     let repo = options.repo.ok_or("sentrux requires a repo/path")?;
@@ -51,7 +64,11 @@ pub fn run(options: &Options<'_>) -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&health)?);
             Ok(())
         }
-        "check" | "check_rules" => finish(sentrux_gate::run_check(&repo)?, "check"),
+        "check" => finish(
+            sentrux_gate::run_check_aligned(&repo, !options.no_ratchet)?,
+            "check",
+        ),
+        "check_rules" => finish(sentrux_gate::run_check(&repo)?, "check"),
         "gate" => finish(sentrux_gate::run_gate(&repo, false)?, "gate"),
         "gate_save" | "save_baseline" => finish(sentrux_gate::run_gate(&repo, true)?, "gate"),
         other => Err(format!("sentrux operation not yet implemented in Rust: {other}").into()),

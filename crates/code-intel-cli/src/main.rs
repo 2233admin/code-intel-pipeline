@@ -93,6 +93,9 @@ struct Args {
     write: bool,
     full: bool,
     json: bool,
+    /// `sentrux check --no-ratchet`: skip the baseline ratchet comparison
+    /// `run_check_aligned` otherwise runs by default. See issue #106.
+    no_ratchet: bool,
 }
 
 #[cfg(test)]
@@ -960,6 +963,7 @@ fn set_switch_arg(args: &mut Args, flag: &str) -> bool {
         "--full" => args.full = true,
         "--all" if matches!(args.command.as_str(), "help" | "--help" | "-h") => args.full = true,
         "--json" => args.json = true,
+        "--no-ratchet" => args.no_ratchet = true,
         "--help" | "-h" => args.command = "help".to_string(),
         _ => return false,
     }
@@ -1646,6 +1650,7 @@ fn cmd_sentrux(args: &Args) -> Result<()> {
     sentrux::run(&sentrux::Options {
         operation: args.operation.as_deref(),
         repo: args.repo.as_deref(),
+        no_ratchet: args.no_ratchet,
     })
 }
 
@@ -1684,7 +1689,8 @@ Commands:
   provider runtime-ci-evidence --artifact-root <directory> --request <request.json> --out <summary.json>
   compatibility retirement-ticket lint --ticket <ticket.json> --evaluated-at <unix-seconds>
   route [--action List|Plan|Validate] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--json]
-  sentrux <dsm|scan|health|check|gate|check_rules|gate_save> <path>
+  sentrux <dsm|scan|health|check|gate|check_rules|gate_save> <path> [--no-ratchet]
+    (--no-ratchet: `check` only, skip the .sentrux/baseline.json ratchet)
   capability exec <id> --request <request.json|-> --out <staging-dir> [--artifact-root <directory>] [--manifest <integrations.json>]
   model inventory-validate --request <inventory.json> [--out <validated.json>]
   model route --request <routing-request.json> [--out <routing-result.json>]
@@ -1815,6 +1821,19 @@ mod tests {
         assert_eq!(args.command, "sentrux");
         assert_eq!(args.operation.as_deref(), Some("check_rules"));
         assert_eq!(args.repo, Some(PathBuf::from("D:/repo")));
+        assert!(!args.no_ratchet);
+    }
+
+    #[test]
+    fn parse_args_reads_sentrux_no_ratchet_switch() {
+        // Issue #106: `--no-ratchet` is the explicit opt-out from the
+        // now-default baseline ratchet comparison in `sentrux check`.
+        let args = parse_args(cli_args(&["sentrux", "check", "D:/repo", "--no-ratchet"]))
+            .expect("sentrux --no-ratchet CLI should parse");
+
+        assert_eq!(args.operation.as_deref(), Some("check"));
+        assert_eq!(args.repo, Some(PathBuf::from("D:/repo")));
+        assert!(args.no_ratchet);
     }
 
     #[test]
