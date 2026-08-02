@@ -3,20 +3,29 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::git::{commits_in_range, diff_stats, tip_token};
+use super::git::{commits_in_range, diff_stats, resolve_repo_root_from, tip_token};
 use super::signals::{is_source_file, is_test_file, looks_like_fix_subject};
 use super::*;
 
-fn init_repo(name: &str) -> PathBuf {
+/// A fresh, empty temp directory namespaced the same way `init_repo` names
+/// its repos, but without running `git init` — the starting point for both
+/// a to-be-initialized repo and (for the invalid-`--repo` test) a directory
+/// that must never look like one.
+fn temp_dir_for(name: &str) -> PathBuf {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let repo = std::env::temp_dir().join(format!(
+    let dir = std::env::temp_dir().join(format!(
         "code-intel-change-risk-{name}-{nonce}-{}",
         std::process::id()
     ));
-    std::fs::create_dir_all(&repo).unwrap();
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn init_repo(name: &str) -> PathBuf {
+    let repo = temp_dir_for(name);
     for args in [
         vec!["init", "--quiet"],
         vec!["config", "user.name", "Change Risk Test"],
@@ -330,4 +339,73 @@ fn non_ascii_paths_arrive_unquoted_from_git() {
     );
 
     std::fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn repo_flag_scores_a_fixture_repo_from_an_unrelated_cwd() {
+    let repo = init_repo("repo-flag");
+    write_file(&repo, "crates/demo/src/lib.rs", "pub fn demo() {}\n");
+    commit(&repo, "feat: seed demo crate");
+    write_file(
+        &repo,
+        "crates/demo/src/lib.rs",
+        "pub fn demo() { println!(\"hi\"); }\n",
+    );
+    commit(&repo, "fix: correct demo output");
+
+    // Deliberately do not touch this test process's own current directory:
+    // it stays wherever `cargo test` started it (this crate's own
+    // checkout), a repository entirely unrelated to the fixture just
+    // created above. `--repo` must steer scoring at the fixture instead
+    // (issue #114) — through the same entry point (`run_raw`) `main.rs`
+    // actually dispatches to, not just the internal helpers.
+    let args: Vec<String> = vec![
+        "risk".to_string(),
+        "HEAD~1..HEAD".to_string(),
+        "--repo".to_string(),
+        repo.to_string_lossy().into_owned(),
+    ];
+
+    assert_eq!(
+        run_raw(&args),
+        0,
+        "the real change-risk entry point should succeed with --repo pointed at the fixture"
+    );
+
+    // `run_raw` only returns an exit code; re-run the identical parse+run
+    // chain it delegates to internally (`Cli::parse(raw).and_then(run)`) to
+    // inspect the report content it printed.
+    let cli = Cli::parse(&args).expect("--repo should parse");
+    let (value, _format) = run(cli).expect("scoring the fixture through --repo should succeed");
+
+    let expected_repo = resolve_repo_root_from(&repo)
+        .expect("the fixture resolves its own Git root")
+        .display()
+        .to_string();
+    assert_eq!(value["repo"], expected_repo);
+    assert!(value.get("warning").is_none());
+    assert_eq!(value["files"].as_array().unwrap().len(), 1);
+
+    std::fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn repo_flag_rejects_a_path_that_is_not_a_git_repository() {
+    let not_a_repo = temp_dir_for("repo-flag-not-a-repo");
+
+    let args: Vec<String> = vec![
+        "risk".to_string(),
+        "HEAD~1..HEAD".to_string(),
+        "--repo".to_string(),
+        not_a_repo.to_string_lossy().into_owned(),
+    ];
+
+    assert_eq!(
+        run_raw(&args),
+        65,
+        "an invalid --repo must fail with the same Contract exit code (65) as every other \
+         change-risk argument error, e.g. an unresolvable --sample or --format"
+    );
+
+    std::fs::remove_dir_all(&not_a_repo).ok();
 }

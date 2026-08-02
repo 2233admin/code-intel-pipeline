@@ -18,21 +18,32 @@ const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 pub(super) fn resolve_repo_root() -> Result<PathBuf, RiskError> {
     let cwd = std::env::current_dir()
         .map_err(|error| RiskError::HostIo(format!("cannot resolve current directory: {error}")))?;
-    let output = crate::hardened_git::command(&cwd)
+    resolve_repo_root_from(&cwd)
+}
+
+/// Resolves `start`'s Git repository root under the same "walk up to the
+/// toplevel, fail closed if it is not a Git repository" contract
+/// `resolve_repo_root` applies to the current directory. Backs an explicit
+/// `--repo <path>` (issue #114): every sibling subcommand (`run execute
+/// --repo`, `audit --repo`, `snapshot identity --repo`) takes an explicit
+/// repo path rather than always trusting the CWD, and this closes that gap
+/// for `change risk` without changing the CWD-derived default at all.
+pub(super) fn resolve_repo_root_from(start: &Path) -> Result<PathBuf, RiskError> {
+    let output = crate::hardened_git::command(start)
         .args(["rev-parse", "--show-toplevel"])
         .output()
         .map_err(|error| RiskError::HostIo(format!("cannot launch Git: {error}")))?;
     if !output.status.success() {
         return Err(RiskError::Contract(format!(
             "not a Git repository: {}",
-            cwd.display()
+            start.display()
         )));
     }
     let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if path.is_empty() {
         return Err(RiskError::Contract(format!(
             "not a Git repository: {}",
-            cwd.display()
+            start.display()
         )));
     }
     Ok(PathBuf::from(path))

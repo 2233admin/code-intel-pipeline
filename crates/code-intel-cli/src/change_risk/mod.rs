@@ -43,7 +43,7 @@
 //! documented scoring constants every submodule draws from.
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
@@ -54,7 +54,8 @@ mod signals;
 #[cfg(test)]
 mod tests;
 
-const USAGE: &str = "usage: change risk <revspec> [--sample <N>] [--format json|text]";
+const USAGE: &str =
+    "usage: change risk <revspec> [--repo <path>] [--sample <N>] [--format json|text]";
 
 /// Baseline size when `--sample` is not given: enough commits to form a
 /// stable percentile without walking arbitrarily deep into history on every
@@ -144,6 +145,10 @@ struct Cli {
     revspec: String,
     sample: u32,
     format: Format,
+    /// Explicit repo root, from `--repo <path>` (issue #114). `None` means
+    /// "keep resolving from the current directory" — the pre-existing
+    /// default behavior, unchanged when the flag is absent.
+    repo: Option<PathBuf>,
 }
 
 impl Cli {
@@ -154,6 +159,7 @@ impl Cli {
         let mut revspec: Option<String> = None;
         let mut sample: Option<u32> = None;
         let mut format: Option<Format> = None;
+        let mut repo: Option<PathBuf> = None;
         let mut index = 1;
         while index < raw.len() {
             let token = raw[index].as_str();
@@ -188,6 +194,14 @@ impl Cli {
                     set_once(&mut format, parsed, "--format")?;
                     index += 2;
                 }
+                "--repo" => {
+                    let value = raw
+                        .get(index + 1)
+                        .filter(|value| !value.is_empty() && !value.starts_with("--"))
+                        .ok_or_else(|| RiskError::Contract("--repo requires one value".into()))?;
+                    set_once(&mut repo, PathBuf::from(value), "--repo")?;
+                    index += 2;
+                }
                 token if token.starts_with("--") => {
                     return Err(RiskError::Contract(format!(
                         "unknown change risk argument: {token}"
@@ -208,6 +222,7 @@ impl Cli {
             revspec,
             sample: sample.unwrap_or(DEFAULT_SAMPLE),
             format: format.unwrap_or(Format::Json),
+            repo,
         })
     }
 }
@@ -221,7 +236,10 @@ fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<(), RiskErr
 }
 
 fn run(cli: Cli) -> Result<(Value, Format), RiskError> {
-    let repo = git::resolve_repo_root()?;
+    let repo = match &cli.repo {
+        Some(path) => git::resolve_repo_root_from(path)?,
+        None => git::resolve_repo_root()?,
+    };
     let value = execute(&repo, &cli.revspec, cli.sample)?;
     Ok((value, cli.format))
 }
@@ -298,6 +316,7 @@ fn execute(repo: &Path, revspec: &str, sample_requested: u32) -> Result<Value, R
     let files = git::diff_stats(repo, &endpoint.range).unwrap_or_default();
     if files.is_empty() {
         return Ok(render::build_report(
+            repo,
             revspec,
             None,
             Vec::new(),
@@ -339,6 +358,7 @@ fn execute(repo: &Path, revspec: &str, sample_requested: u32) -> Result<Value, R
     let percentile = scoring::compute_percentile(target.score, &baseline_scores);
     let target_files = target.files.clone();
     Ok(render::build_report(
+        repo,
         revspec,
         Some(&target),
         target_files,
