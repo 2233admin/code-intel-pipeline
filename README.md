@@ -351,28 +351,27 @@ cargo build -p code-intel
 <platform code-intel data root>/artifacts/<repo-name>/<run-id>/
 ```
 
-主入口（`code-intel .`）走 DAG 执行内核，产物按节点分目录落盘：
+不管是主入口自动落盘的路径，还是 `run execute --authority-root/--final-name` 指到的路径，已提交（committed）的运行目录本身都是扁平、content-addressed 的，不含任何按节点分的子目录，只有两样东西：
 
 ```text
-run-complete.json
-run-manifest.json
-run-manifest-ref.json
-repo.snapshot/snapshot.json
-doctor/doctor-observation.json
-inventory.rg/files.txt
-evidence.native-code/code-evidence/
-evidence.graph/graph-payload.json
-evidence.sentrux/sentrux-payload.json
-diagnosis.hospital/hospital-report.json
-diagnosis.hospital/hospital.md
-diagnosis.hospital/surgery-plan.json
-diagnosis.hospital/surgery-plan.md
+run-complete.json          # 提交标记；manifest.sha256 指向下面的 manifest blob
+objects/sha256/<hash>      # 每个产物的原始字节，文件名就是它自己的 sha256
 ```
 
-每个节点另有 `<node>.request.json` / `<node>.result.json` 请求与结果信封；`evidence.graph`、`evidence.sentrux` 只在对应 provider 启用时出现（`--mode lite` 不生成）。artifact 根目录的 `index.json` 在每次提交后重建。
+`diagnosis.hospital/hospital.md`、`evidence.native-code/code-evidence/...` 这类路径不是磁盘上的文件。manifest blob 里每个 artifact 的 `type` 字段（如 `diagnosis.hospital-view`）才是逻辑身份；它的 `path` / `sha256` 在发布时已经被改写成物理 blob 位置，原始逻辑路径不会留在已提交的 run 里（发布机制见 [docs/run-commit.md](docs/run-commit.md)）。`run execute --out <dir>` 显式指定的 staging 目录是例外——提交前那里仍是人读的真实文件树（`<node>.request.json` / `<node>.result.json` 信封也只在这里）；一旦提交，权威副本就只剩 blob。
 
-`run-complete.json` 是最后写入的事务提交标记；主入口的标记绑定
-`run-manifest.json` 的 sha256，索引只接受标记存在且校验一致的运行目录。
+从 `run-complete.json` 走到某个具体产物（已在本仓验证，Windows Git Bash + `jq`；`<run-dir>` 用命令行 `--json` 输出里的 `publication.path`）：
+
+```bash
+cd <run-dir>
+manifest_sha=$(jq -r '.manifest.sha256' run-complete.json)
+view_sha=$(jq -r '.nodes["diagnosis.hospital"].artifacts[] | select(.type=="diagnosis.hospital-view") | .sha256' "objects/sha256/$manifest_sha")
+cat "objects/sha256/$view_sha"   # 就是 hospital.md 的 markdown 正文
+```
+
+或者跳过手工 jq，直接用上面「全链路命令」里的 `artifact query --type diagnosis.hospital-view`——两条路径读到的是同一份已验证字节，`artifact query` 只是替你做了这趟 manifest 解引用。artifact 根目录的 `index.json` 只有主入口会在提交后自动重建；单独跑 `run execute` 不会顺带写它，要索引就显式 `artifact index --operation rebuild`。
+
+`run-complete.json` 是最后写入的事务提交标记；主入口的标记绑定 manifest blob 的 sha256（即上面 `manifest.sha256` 字段），索引只接受标记存在且校验一致的运行目录。
 旧兼容 runner 的标记绑定的是 `report.json` 的 `reportSha256`。
 
 Artifact ownership and stable routing fields are defined in
@@ -416,12 +415,12 @@ greenfield-manifest.json
 greenfield-plan.md
 ```
 
-读报告顺序（主入口 `code-intel .`）：
+读报告顺序（主入口 `code-intel .` / `run execute`；已提交 run 里没有这些文件名，按 `type` 查，方法见上）：
 
-1. 先看命令行汇总（或 `--json` 输出）确认整轮 outcome；失败细节看 `run-manifest.json` 里的失败节点。
-2. 用 `evidence.native-code/code-evidence/merged/agent/index.md` 做 ranked 文件 / 符号导航。
-3. 做治理判断看 `diagnosis.hospital/hospital.md`，机器读 `hospital-report.json`。
-4. 要开工修结构看 `diagnosis.hospital/surgery-plan.md`。
+1. 先看命令行汇总（或 `--json` 输出）确认整轮 outcome；失败细节看 manifest blob 里的失败节点。
+2. 查 `--type code_evidence.agent_slice` 做 ranked 文件 / 符号导航。
+3. 做治理判断查 `--type diagnosis.hospital-view`（人读）或 `diagnosis.hospital`（机器读 JSON）。
+4. 要开工修结构查 `--type diagnosis.surgery-plan-view`。
 
 读报告顺序（旧兼容 runner）：
 
@@ -575,6 +574,43 @@ sentrux_test_gaps
 ```
 
 别让 Agent 裸奔。没有 `session_start/session_end`，它改完代码以后自己也不知道有没有把结构弄坏。
+
+## 全链路命令
+
+上面这些是编辑时的轻量问答，答案来自上一次已提交（committed）的 run，不重跑管线。CI 级的权威扫描、直接查证据、PR 门禁是另外四个命令——默认 `code-intel --help` 只列 6 个，这几个要 `code-intel --help --all` 才看得到。呼应 [#92](https://github.com/2233admin/code-intel-pipeline/issues/92) 的接入分层：
+
+| 命令 | 档位 | 一句话 |
+| --- | --- | --- |
+| `artifact query` | 直查 | 从已提交 run 里按 type / schema / contains 直接读证据，不重跑管线 |
+| `run execute` | 跑管线 | 权威全量扫描 + 发布到 content-addressed authority root；CI 自扫描步骤用它 |
+| `change risk` | 门禁 | 只用 git 历史给 PR 打缺陷风险分，不需要索引 / 网络 / LLM；驱动 `pr-gate.yml` |
+| `repin` | 维护 | 扫描（可选改写）全仓过期的 sha256 pin，一趟收敛到不动点 |
+
+```powershell
+code-intel run execute --repo . --out <run-staging-dir> --authority-root <publication-root>\<repo-name> --final-name <run-id> --manifest orchestration/integrations.json --doctor-require-repowise false
+```
+
+`.github/workflows/ci.yml` / `release.yml` 的自扫描步骤就是这行去掉 `\<repo-name>`（`--final-name ci-self-scan` / `release-self-scan`）——CI 只认退出码和 `publication.status == "committed"`，从不回查自己，所以省得了这层嵌套。要接下面的 `artifact query`，`--authority-root` 得把仓库名折进去，如上。
+
+```powershell
+code-intel artifact query --artifact-root <publication-root> --repo <repo-name> --type diagnosis.hospital-view --limit 1
+```
+
+字段契约见 [docs/evidence-query.md](docs/evidence-query.md)。
+
+```powershell
+code-intel change risk HEAD~5..HEAD --format json
+```
+
+没有 `--repo` 参数，从目标仓库内部（CWD）跑；`pr-gate.yml` 用它给 PR 打分：`code-intel change risk "origin/<base-branch>..HEAD" --format json`。
+
+```powershell
+code-intel repin --write --json
+```
+
+干净仓库上是安全的空操作；有过期 pin 时内部最多迭代 25 轮收敛到不动点。
+
+完整参数表见 `code-intel --help --all`，不在这里重复。
 
 ## Sentrux 自动 Pro
 
