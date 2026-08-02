@@ -131,6 +131,24 @@ The plan is preview-only (`repositoryMutation=false`); it never rewrites files.
 `session_end` fails on structural regression. Verify it passes before reporting the change
 complete.
 
+## Reach for full-chain commands, not just the local loop
+
+`session_start` / `session_end` and `change impact` above answer from the last committed run and never
+trigger a fresh authoritative scan. Four more commands are CI-grade — visible only via
+`code-intel --help --all`, not the default `--help`:
+
+- `artifact query --artifact-root <root> --repo <name> --type <artifact-type>`: read a committed run's
+  evidence directly. Prefer this over rerunning the pipeline when the answer is already committed.
+- `run execute --repo <repo-root> --out <staging-dir> --authority-root <publication-root> --final-name <name>
+  --manifest orchestration/integrations.json`: the authoritative full scan; the same command
+  `ci.yml` / `release.yml` self-scan steps run.
+- `change risk <revspec> --format json`: git-only PR defect-risk score, no index / network / LLM;
+  powers `pr-gate.yml`. Run it from inside the target repository — it takes no `--repo` flag.
+- `repin --write --json`: resync stale sha256 pins repository-wide in one pass.
+
+See README's "全链路命令" section for the access-tier mental model (直查 / 跑管线 / 门禁) and one verified
+invocation each.
+
 ## Load detailed contracts only when needed
 
 Read these installed references from `CODE_INTEL_HOME` only for the named task:
