@@ -704,7 +704,13 @@ fn support_file(path: &str) -> bool {
         }
         if matches!(
             segment,
-            "example" | "examples" | "fixture" | "fixtures" | "demo" | "demos" | "benchmark"
+            "example"
+                | "examples"
+                | "fixture"
+                | "fixtures"
+                | "demo"
+                | "demos"
+                | "benchmark"
                 | "benchmarks"
         ) {
             return true;
