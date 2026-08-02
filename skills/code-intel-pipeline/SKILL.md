@@ -50,15 +50,27 @@ code-intel "<repo-path>"
 Use `--mode lite` for local-only core evidence. Use `--mode full` only when every optional provider
 must be present. Do not call the legacy PowerShell pipeline.
 
-Read generated artifacts in this order:
+The committed run directory is content-addressed: `run-complete.json` plus `objects/sha256/<hash>`
+blobs. Report file names never exist there — `summary.md`, `understanding.md`, and `report.json`
+are produced only by the legacy runner, and hospital output lives under artifact `type` identities
+read through `artifact query --artifact-root <root> --repo <name>` (the run prints its publication
+path as `<artifact-root>/<repo-name>/<run-id>`).
 
-1. `summary.md`
-2. `hospital.md`
-3. `understanding.md`
-4. `report.json` or `hospital-report.json` when a failure or machine-readable detail matters
-5. `surgery-plan.md` when the hospital report selects `surgery_plan`
+Read a published run in this order:
 
-Report the artifact directory, outcome, first failing category, supporting evidence, and next
+1. The command-line summary (add `--json` for the machine form): overall outcome, publication
+   path, and the first failing node with its diagnostic.
+2. `artifact query --type code_evidence.agent_slice` for ranked file and symbol navigation.
+3. `artifact query --type diagnosis.hospital-view` for the governance read, or
+   `--type diagnosis.hospital` when machine-readable detail matters.
+4. `artifact query --type diagnosis.surgery-plan-view` when the hospital report selects
+   `surgery_plan`.
+
+The `diagnosis.*` artifacts exist only in `--mode` normal or full; `--mode lite` publishes core
+evidence only (`code_evidence.*`, `inventory.files`, `repository.snapshot`, `doctor.observation`)
+and no hospital report.
+
+Report the publication path, outcome, first failing category, supporting evidence, and next
 action. Do not describe a partial or domain-failed run as clean.
 
 ## Apply provider boundaries
