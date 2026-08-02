@@ -42,10 +42,11 @@
     "publication": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "name", "path", "marker"],
+      "required": ["status", "name", "repo", "path", "marker"],
       "properties": {
         "status": { "const": "committed" },
         "name": { "type": "string", "minLength": 1 },
+        "repo": { "type": "string", "minLength": 1 },
         "path": { "type": "string", "minLength": 1 },
         "marker": { "type": "string", "minLength": 1 }
       }

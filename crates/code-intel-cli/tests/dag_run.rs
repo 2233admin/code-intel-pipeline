@@ -190,7 +190,12 @@ fn production_run_route_executes_snapshot_then_inventory() {
 #[test]
 fn production_dag_output_commits_and_enters_the_authoritative_index() {
     let root = temp_dir();
-    let repo = root.join("repo");
+    // Named to match the "fixture-repo" identity used below for the
+    // authority subdirectory, the index entry, and every `--repo` query
+    // flag: `run execute` (A08 F2 fix) derives the published repo key from
+    // this directory's real basename, so a mismatched fixture name would
+    // silently double-nest instead of exercising the intended layout.
+    let repo = root.join("fixture-repo");
     let source = root.join("a09-source");
     let artifact_root = root.join("artifacts");
     let repo_authority = artifact_root.join("fixture-repo");
@@ -453,7 +458,9 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
 #[test]
 fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch() {
     let root = temp_dir();
-    let repo = root.join("repo");
+    // See production_dag_output_commits_and_enters_the_authoritative_index:
+    // must match the "fixture-repo" authority/query identity used below.
+    let repo = root.join("fixture-repo");
     let out = root.join("run");
     let artifact_root = root.join("artifacts");
     let authority = artifact_root.join("fixture-repo");
