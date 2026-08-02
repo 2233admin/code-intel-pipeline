@@ -1,15 +1,24 @@
 {
-  "tool": "sentrux-lite",
-  "saved_at": "2026-08-02T01:55:06.0102707Z",
-  "path": "D:\\projects\\code-intel-pipeline\\.claude\\worktrees\\better-harness-stars-comparison-d97bb9",
-  "quality_signal": 3581,
-  "coupling_score": 71.17,
-  "cycle_count": 0,
-  "god_file_count": 31,
-  "complex_fn_count": 11,
-  "cross_module_edges": 1160,
-  "total_import_edges": 1160,
-  "files": 258,
-  "functions": 3225,
-  "max_complexity": 162
+  "engine": {
+    "id": "sentrux-native",
+    "version": "2.2.0"
+  },
+  "metrics": {
+    "branch_density_per_fn": 156,
+    "complex_fn_count": 8,
+    "coupling_score": 74.48,
+    "cross_module_edges": 1065,
+    "cycle_count": 0,
+    "files": 239,
+    "functions": 3348,
+    "god_file_count": 33,
+    "import_modeled_files": 143,
+    "max_complexity": 156,
+    "quality_signal": 3554,
+    "total_import_edges": 1065
+  },
+  "savedAt": 1785502811,
+  "schema": "code-intel-sentrux-baseline.v4",
+  "scope": ".",
+  "sourceCommit": "ee22f6c34eb5ccabc3551db85c196cccdb52cf27"
 }
