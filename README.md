@@ -1,6 +1,10 @@
 <h1 align="center">Code Intel Pipeline</h1>
 
 <p align="center">
+  <a href="README.en.md">English</a> · 简体中文
+</p>
+
+<p align="center">
   <b>Hand your coding agent a map of the repo before it edits.</b>
 </p>
 
@@ -16,6 +20,7 @@
 
 <p align="center">
   <a href="#30-秒开始">Quick start</a> ·
+  <a href="https://2233admin.github.io/code-intel-pipeline/demo/">Live demo</a> ·
   <a href="#这是什么">What is this</a> ·
   <a href="#适合谁">Who it's for</a> ·
   <a href="docs/public-beta.md">Public beta guide</a>
