@@ -2,6 +2,8 @@
 //! rendering derived from it (`render_text`). Both are pure functions of
 //! already-scored data — nothing here touches `git` or recomputes a signal.
 
+use std::path::Path;
+
 use serde_json::{json, Value};
 
 use super::scoring::{level_for_percentile, round2};
@@ -10,7 +12,9 @@ use super::{
     WEIGHT_DIFF_SHAPE, WEIGHT_TEST_ASYMMETRY,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn build_report(
+    repo: &Path,
     revspec: &str,
     scored: Option<&Scored>,
     files_value: Vec<Value>,
@@ -63,6 +67,11 @@ pub(super) fn build_report(
     });
     let mut result = json!({
         "schema": "code-intel-change-risk.v1",
+        // Resolved Git root the score was computed against — always
+        // present, whether it came from `--repo <path>` or (absent that
+        // flag) the current directory, so a caller never has to guess which
+        // repository a saved report was scored from (issue #114).
+        "repo": repo.display().to_string(),
         "revspec": revspec,
         "score": score,
         "risk_percentile": percentile,
@@ -80,6 +89,7 @@ pub(super) fn build_report(
 /// never recomputed — so `--format text` cannot drift from `--format json`.
 pub(super) fn render_text(value: &Value) -> String {
     let mut lines = Vec::new();
+    lines.push(format!("repo: {}", value["repo"].as_str().unwrap_or("")));
     lines.push(format!(
         "revspec: {}",
         value["revspec"].as_str().unwrap_or("")
