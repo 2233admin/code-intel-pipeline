@@ -4689,9 +4689,9 @@ $understandingLines = @(
 )
 $understandingLines | Set-Content -LiteralPath $understandingPath -Encoding UTF8
 
-# This legacy report directory is a compatibility view only. Repository-run
-# authority is published by the compiled CLI through the Rust iteration
-# controller, which validates Artifact Refs and writes the A07 marker last.
+# A run is authoritative only after every materialized view has been written,
+# staging paths have been replaced with their published locations, the staged
+# directory has been promoted, and run-complete.json is written last.
 $textExtensions = @(".json", ".md", ".txt", ".yaml", ".yml", ".toml")
 $escapedRunDir = ($runDir | ConvertTo-Json -Compress).Trim('"')
 $escapedFinalRunDir = ($finalRunDir | ConvertTo-Json -Compress).Trim('"')
@@ -4715,6 +4715,15 @@ $summaryPath = Join-Path $runDir "summary.md"
 $understandingPath = Join-Path $runDir "understanding.md"
 $hospitalReportPath = Join-Path $runDir "hospital-report.json"
 $hospitalMarkdownPath = Join-Path $runDir "hospital.md"
+$reportDigest = (Get-FileHash -LiteralPath $reportPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$runCommit = [ordered]@{
+    schema = "code-intel-run-commit.v1"
+    generatedAt = (Get-Date).ToString("o")
+    report = "report.json"
+    reportSha256 = $reportDigest
+}
+$runCommit | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $runDir "run-complete.json") -Encoding UTF8
+
 Write-Host "Code intel pipeline complete"
 Write-Host "Repo: $repoPath"
 Write-Host "Report: $reportPath"
