@@ -358,6 +358,62 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
     })
 }
 
+/// The CLI-level `check` operation: `run_check`'s static `.sentrux/rules.toml`
+/// verdict, composed with `run_gate`'s baseline ratchet verdict so the two
+/// can never disagree for the same tree (issue #106).
+///
+/// Before this, `code-intel sentrux check` called only `run_check` and never
+/// opened `.sentrux/baseline.json`, so it could report green on a tree the
+/// authoritative `evidence.sentrux` DAG node -- which always evaluates
+/// `run_check` *and* `run_gate` as two independent rules, see
+/// `builtin_provider_evidence::sentrux_admission` -- correctly failed on.
+/// `.sentrux/rules.toml` in this very repository documents the assumption
+/// that made that possible: `no_god_files` is deliberately left `false`
+/// because god-file monotonicity was meant to be enforced by the baseline
+/// ratchet, not the static rule -- a promise only `run_gate` was keeping.
+///
+/// `ratchet=false` (the CLI's explicit `--no-ratchet` escape hatch) restores
+/// the pre-fix static-only verdict and says so in `stdout`, so a caller can
+/// never mistake it for the honest default.
+///
+/// An ungoverned gate (no `.sentrux/baseline.json` saved yet) does not fail
+/// this check: absence of a baseline is an operator affordance, not a
+/// structural verdict, mirroring `command_rule` in
+/// `builtin_provider_evidence.rs`.
+///
+/// `builtin_provider_evidence::run_sentrux` deliberately keeps calling plain
+/// `run_check` for its own `"check"` rule -- it already runs `run_gate`
+/// separately as the `"sentrux_gate"` rule, so composing the ratchet in here
+/// too would just report the same violation twice under two rule kinds.
+pub(crate) fn run_check_aligned(repo: &Path, ratchet: bool) -> Result<EngineRun, String> {
+    let mut check = run_check(repo)?;
+    if !ratchet {
+        check.stdout.push_str(
+            "Ratchet comparison skipped (--no-ratchet): this verdict does not reflect any \
+             regression against .sentrux/baseline.json. The authoritative gate always \
+             evaluates that ratchet; do not treat this verdict as a substitute for it.\n",
+        );
+        return Ok(check);
+    }
+    let gate = run_gate(repo, false)?;
+    let gate_pass = gate.success || !gate.governed;
+    let mut stdout = String::new();
+    stdout.push_str("-- .sentrux/rules.toml --\n");
+    stdout.push_str(&check.stdout);
+    stdout.push_str("-- .sentrux/baseline.json ratchet --\n");
+    stdout.push_str(&gate.stdout);
+    let mut violations = check.violations;
+    if !gate_pass {
+        violations.extend(gate.violations);
+    }
+    Ok(EngineRun {
+        success: check.success && gate_pass,
+        stdout,
+        violations,
+        governed: check.governed || gate.governed,
+    })
+}
+
 pub(crate) fn scan_json(repo: &Path) -> Result<Value, String> {
     let metrics = measure_project(repo)?;
     Ok(metrics_json(repo, &metrics))
@@ -1474,6 +1530,87 @@ mod tests {
             check.violations[0].targets,
             vec!["src/a.rs".to_string(), "src/b.rs".into()]
         );
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn check_aligned_matches_gate_verdict_when_a_new_god_file_violates_the_ratchet() {
+        // Regression test for issue #106: `code-intel sentrux check` used to
+        // call only `run_check` (the static `.sentrux/rules.toml` rules) and
+        // never opened `.sentrux/baseline.json`, so it reported green on a
+        // tree the authoritative `evidence.sentrux` DAG node -- which always
+        // runs `run_gate` too, as a second independent rule (see
+        // `builtin_provider_evidence::sentrux_admission`) -- correctly
+        // failed. This repository's own `.sentrux/rules.toml` sets
+        // `no_god_files = false` for exactly the documented reason that
+        // god-file monotonicity is meant to be enforced by the baseline
+        // ratchet, not the static rule, so a plain `run_check` can never
+        // catch a new god file by itself.
+        let root = fixture_root("sentrux-native-check-aligned");
+        fs::create_dir_all(root.join("src")).expect("create fixture");
+        fs::write(root.join("src/a.rs"), "pub fn a() {}\n").expect("write a.rs");
+        fs::create_dir_all(root.join(".sentrux")).expect("sentrux dir");
+        fs::write(
+            root.join(".sentrux/rules.toml"),
+            "[constraints]\nmax_cycles = 0\nno_god_files = false\n",
+        )
+        .expect("write rules");
+
+        let saved = run_gate(&root, true).expect("save baseline");
+        assert!(saved.success, "stdout: {}", saved.stdout);
+
+        // Grow src/a.rs past the god-file threshold (loc > 800) without
+        // tripping any static rule: `no_god_files` is off, and nothing else
+        // in this rules.toml gates file size.
+        let mut big = String::from("pub fn a() {}\n");
+        for line in 0..850 {
+            big.push_str(&format!("// padding {line}\n"));
+        }
+        fs::write(root.join("src/a.rs"), &big).expect("grow a.rs past the god-file threshold");
+
+        // Pre-fix behavior, still reachable directly: the static-only check
+        // never looks at the baseline and stays green.
+        let static_only = run_check(&root).expect("static check runs");
+        assert!(
+            static_only.success,
+            "static rules alone should still pass (no_god_files is off): {}",
+            static_only.stdout
+        );
+
+        // The authoritative ratchet catches it directly.
+        let gate = run_gate(&root, false).expect("gate runs");
+        assert!(!gate.success, "stdout: {}", gate.stdout);
+        let gate_rules: BTreeSet<&str> = gate.violations.iter().map(|v| v.rule.as_str()).collect();
+        assert!(gate_rules.contains("god_files_increased"), "{gate_rules:?}");
+
+        // The aligned `check` operation must reach the same verdict as the
+        // authoritative gate for this tree -- the parity issue #106 asks for.
+        let aligned = run_check_aligned(&root, true).expect("aligned check runs");
+        assert!(
+            !aligned.success,
+            "aligned check must fail when the baseline ratchet fails: {}",
+            aligned.stdout
+        );
+        let aligned_rules: BTreeSet<&str> =
+            aligned.violations.iter().map(|v| v.rule.as_str()).collect();
+        assert_eq!(
+            aligned_rules, gate_rules,
+            "check and the authoritative gate must fail on the same rules"
+        );
+
+        // The explicit opt-out reverts to the static-only verdict and says so.
+        let no_ratchet = run_check_aligned(&root, false).expect("no-ratchet check runs");
+        assert!(
+            no_ratchet.success,
+            "explicit --no-ratchet should skip the baseline comparison: {}",
+            no_ratchet.stdout
+        );
+        assert!(
+            no_ratchet.stdout.to_lowercase().contains("skipped"),
+            "no-ratchet output must say the ratchet was skipped: {}",
+            no_ratchet.stdout
+        );
+
         fs::remove_dir_all(&root).expect("remove fixture");
     }
 }
