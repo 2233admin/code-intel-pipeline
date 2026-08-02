@@ -10,21 +10,29 @@ not own Run Commit or index admission.
 
 Agent Goal Intake is an upstream product boundary. It may shape the operator's goal before a scan starts, but it must not produce, mutate, or reinterpret artifact-run files after scanner execution.
 
-An artifact run is one timestamped directory for one target repository:
+An authoritative artifact run is one final-name directory for one target repository:
 
 ```text
-<artifact-root>\<repo-name>\<timestamp>\
+<artifact-root>\<repo-name>\<final-name>\
 ```
 
-Do not hand-edit artifact runs. Regenerate them with `code-intel <repo-path>`.
+Do not hand-edit artifact runs. Regenerate them with the compiled CLI, for example
+`code-intel run execute --repo <repo-root> --out <staging-root> --authority-root <artifact-root> --final-name <name>`.
 
 ## Files
 
-Machine-authoritative files:
+Machine-authoritative compiled-run files:
 
-- `run-complete.json`: final Run Commit marker. Its `reportSha256` binds the
-  published `report.json`; a run without a valid marker is incomplete and must
-  not enter the authoritative artifact index.
+- `run-complete.json`: final `code-intel-run-commit.v1` marker. It binds the
+  content-addressed terminal manifest, run identity, and snapshot identity; it is written last.
+- the content-addressed `code-intel-run-manifest.v1` object referenced by the marker;
+- exactly one `repository.iteration` Artifact Ref with a
+  `code-intel-repository-iteration-provenance.v1` payload bound to the same run and snapshot plus
+  the repository key and publication name;
+- the manifest's verified, snapshot-bound Artifact Refs.
+
+Legacy compatibility reports are advisory files, not repository-run authority:
+
 - `report.json`: scanner execution summary, step outcomes, raw and effective failure categories, artifact paths, and compact summaries.
 - `repomix-summary.json`: Repomix package metadata for the single-file AI context pack.
 - `sentrux-failures.json`: normalized Sentrux check/gate failures. `sentrux check` and `sentrux gate` stdout are authoritative; hotspots and file-details are enrichment only.
@@ -75,26 +83,24 @@ Only those array permutations are normalized. Ranking `score` and `reasons`,
 field values, and the cardinality shape of each value (`null`, scalar, or
 array) remain semantic and must match exactly.
 
-## Transactional Publication Contract
+## Transactional Publication Contracts
 
-Artifact production uses a staging directory named
+The compiled `code-intel run execute` path publishes through the Rust Run Commit boundary. It
+restages verified Artifact Refs into content-addressed objects, binds the manifest, and writes the
+canonical `run-complete.json` marker last. The completed-only index revalidates the marker,
+manifest, refs, and exactly one repository-iteration provenance payload against the authority
+directory names.
+
+The legacy PowerShell compatibility report path uses a staging directory named
 `<timestamp>.staging-<nonce>`. The scanner writes artifacts there, rewrites
 published path references, promotes the directory to its final timestamped
-name, and writes `run-complete.json` last. This compatibility contract binds
-and minimally validates `report.json`; it is not yet a whole-artifact manifest
-or snapshot validation protocol.
+name, but does not write a canonical marker. Its `report.json`, markdown, and auxiliary files are
+a non-authoritative compatibility view. The normal index must reject those directories; explicit
+legacy compatibility traversal may read them only as advisory reports.
 
-`run-complete.json` uses schema `code-intel-run-commit.v1` and contains:
-
-- `generatedAt`: publication timestamp;
-- `report`: the repository-relative authoritative report path, currently
-  `report.json`;
-- `reportSha256`: lowercase SHA-256 of the published report bytes.
-
-Consumers and indexers must reject staging directories, missing or unparseable
-markers, unknown marker schemas, invalid digests, and report digest mismatches.
-Older timestamp directories without a marker remain readable only through an
-explicit direct path; they are not authoritative index candidates.
+The provenance contract is non-cryptographic. A local actor able to coherently replace a whole
+publication can forge the JSON and digests; defending against that actor requires signed
+attestations or an external trust root.
 
 ## Sentrux Failure Contract
 

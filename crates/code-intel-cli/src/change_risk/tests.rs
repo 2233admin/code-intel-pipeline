@@ -142,9 +142,26 @@ fn empty_diff_reports_a_warning_without_erroring() {
     assert_eq!(identical["risk_percentile"], 0);
     assert_eq!(identical["files"].as_array().unwrap().len(), 0);
 
-    let bogus = execute(&repo, "definitely-not-a-real-branch..HEAD", 5)
-        .expect("an unresolvable revspec degrades to a warning, not an error");
-    assert_eq!(bogus["warning"], "empty_diff");
+    std::fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn unresolvable_revspec_fails_closed_instead_of_looking_like_an_empty_diff() {
+    let repo = init_repo("bogus-revspec");
+    write_file(&repo, "README.md", "hello\n");
+    commit(&repo, "chore: seed repository");
+
+    let error = execute(&repo, "definitely-not-a-real-branch..HEAD", 5)
+        .expect_err("an unresolvable revspec must fail the advisory computation");
+    match error {
+        RiskError::Contract(message) => {
+            assert!(
+                message.contains("cannot resolve change-risk revspec"),
+                "{message}"
+            )
+        }
+        RiskError::HostIo(message) => panic!("expected contract error, got host I/O: {message}"),
+    }
 
     std::fs::remove_dir_all(&repo).ok();
 }
@@ -372,11 +389,12 @@ fn repo_flag_scores_a_fixture_repo_from_an_unrelated_cwd() {
         "the real change-risk entry point should succeed with --repo pointed at the fixture"
     );
 
-    // `run_raw` only returns an exit code; re-run the identical parse+run
-    // chain it delegates to internally (`Cli::parse(raw).and_then(run)`) to
-    // inspect the report content it printed.
-    let cli = Cli::parse(&args).expect("--repo should parse");
-    let (value, _format) = run(cli).expect("scoring the fixture through --repo should succeed");
+    // `run_raw` only returns an exit code; re-run the typed parse + execute
+    // path (same as the CLI adapter, without presentation) to inspect content.
+    let request = ChangeRiskRequest::parse(&args).expect("--repo should parse");
+    let result =
+        execute_request(request).expect("scoring the fixture through --repo should succeed");
+    let value = result.value();
 
     let expected_repo = resolve_repo_root_from(&repo)
         .expect("the fixture resolves its own Git root")

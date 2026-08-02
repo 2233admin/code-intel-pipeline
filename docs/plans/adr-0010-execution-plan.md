@@ -1,23 +1,30 @@
 # ADR 0010 Execution Plan
 
-Status: proposed, not implemented
+Status: implemented; superseded as an execution plan
 Scope: ADR 0009 runtime convergence plus ADR 0010 tool-neutral engineering-intelligence core
 Rule: every ticket below delivers exactly one independently testable capability. A checked-in definition, schema, ADR, or plan is not implementation evidence.
 
+Historical-context notice: this file preserves the ticket dependency graph, acceptance criteria,
+and risk reasoning used to deliver ADR 0010. Its “current”, “dirty worktree”, “next executor”, and
+future-tense statements refer to the plan-authoring checkpoint and are not claims about the living
+runtime. Current behavior is documented in `docs/execution-kernel-architecture.md`,
+`docs/run-commit.md`, and `docs/committed-run-index.md`. The compiled `code-intel run execute`
+controller is authoritative; PowerShell remains compatibility/advisory only.
+
 ## Outcome and completion evidence
 
-This plan is complete only when the compatibility facade can produce a committed artifact run through versioned capability envelopes, provider evidence is validated before it becomes fact, recommendations cannot cross authority boundaries, CodeNexus is replaceable through a Pipeline-owned port, the promised method/reuse/decision/orientation capabilities have executable contracts and proving tests, and PowerShell retirement is supported by parity evidence. `legacy/run-code-intel.ps1` remains the public compatibility facade until the final retirement gate passes.
+This plan defined completion as delivery of committed artifact runs through versioned capability envelopes, validation before evidence becomes fact, enforced authority boundaries, a replaceable CodeNexus port, executable method/reuse/decision/orientation contracts, and parity-backed PowerShell retirement. Those implementation waves are complete; retained `legacy/run-code-intel.ps1` is a compatibility surface rather than run authority.
 
 Fresh evidence inspected while writing this plan:
 
-- ADR 0009 originally states its accepted contract did not itself change runtime execution or publication; the current dirty worktree now contains partial, uncommitted implementation attempts that must be verified against this plan rather than treated as absent or complete.
+- ADR 0009 originally stated that its accepted contract did not itself change runtime execution or publication; the plan-authoring worktree contained partial, uncommitted implementation attempts that still required verification.
 - ADR 0010 says convergence is future work and forbids a big-bang rewrite.
 - `legacy/run-code-intel.ps1` still contains the workflow recommender and directly invokes provider preflight and `legacy/Invoke-CodeNexusLite.ps1`.
-- `legacy/run-code-intel.ps1` currently creates a `.staging-<nonce>` directory, promotes it, rewrites staged path text, and writes `run-complete.json` last; `legacy/update-code-intel-index.ps1` rejects staging directories and missing/invalid completion markers. These are partial, dirty-worktree implementations, not yet proof of A06-A08 atomicity, interruption safety, portable identity, envelope coherence, or independent verification.
-- `legacy/scripts/tests/test-transactional-publication.ps1` currently exercises staging exclusion, marker shape, path rewriting, and index admission. It is useful draft regression evidence, but it is untracked and has not independently proven the complete publication contract or all interruption phases.
-- `crates/code-intel-cli/src/providers.rs` and `orchestration/integrations.json` currently contain dirty-worktree provider/manifest reconciliation, including canonical `codenexus/lite`, manifest lookup/drift checks, registered `diagnosis.hospital`, and doctor/runtime entries. These are partial/unverified implementations: several routes remain compatibility commands and they do not yet constitute the A04 shared admissibility engine or B01-B04 conformance.
-- `docs/architecture/reference-capability-map.md` currently inventories 12 manifest integrations plus drift/reference entries and explicitly says it is not adoption approval or health proof. It is an untracked audit draft and becomes input to B07/R01-R26, not completion evidence for those tickets.
-- Current dirty/untracked tests and docs, including `legacy/scripts/tests/test-integration-orchestration.ps1`, `legacy/scripts/tests/test-skill-development-benchmark.ps1`, ADR 0010, and the files above, predate or run concurrently with this plan; this plan neither claims them verified nor rewrites them.
+- At the plan-authoring checkpoint, `legacy/run-code-intel.ps1` created a `.staging-<nonce>` directory, promoted it, rewrote staged path text, and wrote a legacy `run-complete.json`; `legacy/update-code-intel-index.ps1` consumed that old contract. This bullet is retained as historical migration evidence. The living PowerShell report path no longer writes a canonical marker, and compiled Rust owns A06-A08 authority.
+- At that checkpoint, `legacy/scripts/tests/test-transactional-publication.ps1` exercised staging exclusion, the old marker shape, path rewriting, and index admission. It was draft regression evidence, not proof of the completed A06-A08 contract.
+- At that checkpoint, `crates/code-intel-cli/src/providers.rs` and `orchestration/integrations.json` contained partial provider/manifest reconciliation. This observation explains the original ticket ordering and is not a statement about current conformance.
+- At that checkpoint, `docs/architecture/reference-capability-map.md` inventoried 12 manifest integrations plus drift/reference entries and explicitly disclaimed adoption approval or health proof. It was input to B07/R01-R26, not completion evidence.
+- Dirty/untracked tests and docs present at the checkpoint, including `legacy/scripts/tests/test-integration-orchestration.ps1`, `legacy/scripts/tests/test-skill-development-benchmark.ps1`, ADR 0010, and the files above, predated or ran concurrently with this plan; the plan did not treat them as verified.
 
 ## Delivery rules
 
@@ -828,9 +835,9 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 - **Owner / boundary:** executor; owns removal of the legacy staging/promotion/completion-marker branch from `legacy/run-code-intel.ps1`, not index traversal or artifact generation.
 - **Dependencies:** E01, A07, A09.
 - **Affected files (initial):** `legacy/run-code-intel.ps1`, publication facade adapter, transactional publication tests, one retirement record.
-- **Acceptance criteria:** facade routes publication through A09→A07; the current partial dirty-worktree staging/marker code is removed only after interruption/effect/parity/rollback evidence and E00 approval; index implementation is untouched by this ticket.
+- **Acceptance criteria:** facade routes publication through A09→A07; the then-partial dirty-worktree staging/marker code is removed only after interruption/effect/parity/rollback evidence and E00 approval; index implementation is untouched by this ticket.
 - **Smallest proving test:** inject failure at every A07 phase through the facade and assert no completed final run, then complete and assert marker-last publication with A00 parity.
-- **Compatibility / rollback:** explicit legacy publication route remains during the bounded window and is isolated from committed-only index authority.
+- **Compatibility / rollback:** the explicit legacy publication route was to remain during the bounded window, isolated from committed-only index authority.
 - **Ponytail Necessity Trace:** retires exactly one legacy publication branch after the atomic publisher is proven.
 - **Economic implementation lane:** route replacement and deletion only; reuse the current draft test as partial regression input, not completion proof.
 - **Independent verifier condition:** verifier runs the publication interruption matrix, effects/parity, static branch audit, and rollback on Windows without evaluating index retirement.
@@ -876,7 +883,7 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 - **Owner / boundary:** executor; owns removal of the legacy `legacy/update-code-intel-index.ps1` production traversal/call path, not publication or A08 index semantics.
 - **Dependencies:** E01, A08, E05.
 - **Affected files (initial):** `legacy/update-code-intel-index.ps1`, public wrapper/index route, index tests, one retirement record.
-- **Acceptance criteria:** public index refresh routes through A08; current partial dirty-worktree staging/marker guard is retained as regression evidence until replaced; legacy production traversal is absent; rebuild/parity/forged-marker/rollback evidence and E00 approval pass.
+- **Acceptance criteria:** public index refresh routes through A08; the then-partial dirty-worktree staging/marker guard is retained as regression evidence until replaced; legacy production traversal is absent; rebuild/parity/forged-marker/rollback evidence and E00 approval pass.
 - **Smallest proving test:** rebuild an index containing staged, markerless, forged, and valid runs through A08 and assert only the valid run appears, then statically prove no public production call reaches the legacy traversal.
 - **Compatibility / rollback:** old script remains tagged/diagnostic during the bounded observation window and cannot write the authoritative index in normal mode.
 - **Ponytail Necessity Trace:** retires exactly the index branch after publication has independently converged.
@@ -914,13 +921,13 @@ The first implementation slice is A00-A05. It establishes regression evidence, a
 | 12 | E10 | solo after E05 | index branch retires independently after publication convergence |
 | 13 | E06 | solo independent approval | doctor plus public full-DAG mode matrix and zero-unsupported-branch audit pass |
 
-## First five-ticket handoff
+## Historical first five-ticket handoff
 
-The next executor should take A00 only. After its verifier accepts the fixtures, execute A01, A02, A03, and A04 in that order. These first five tickets establish current parity, a real enveloped atom, snapshot identity, Artifact Ref verification, and provider-neutral admissibility. Do not start provider-specific adapter, recommender, or CodeNexus extraction before A04, because doing so would merely reproduce trust logic in each adapter.
+At the plan checkpoint, the next executor was to take A00 only. After its verifier accepted the fixtures, A01, A02, A03, and A04 were sequenced in that order. Those first five tickets established checkpoint parity, a real enveloped atom, snapshot identity, Artifact Ref verification, and provider-neutral admissibility. Provider-specific adapter, recommender, and CodeNexus extraction were intentionally deferred until after A04 to avoid duplicating trust logic.
 
 For A00-A04, the pull-request stop condition is fresh targeted tests plus `cargo test`, affected PowerShell tests, schema validation, `git diff --check`, and an independent verifier report. A passing unit test alone is insufficient if the facade parity fixture differs.
 
-## Principal risks
+## Historical principal risks
 
 - **False parity:** normalization could erase meaningful provenance or verdict differences. Mitigation: verifier-owned fixture audit and deliberate mismatch tests.
 - **Dual authority:** legacy reports and new authority artifacts may disagree during migration. Mitigation: audit-only phase, explicit precedence field, and fail-closed promotion.
@@ -932,4 +939,8 @@ For A00-A04, the pull-request stop condition is fresh targeted tests plus `cargo
 
 ## Final acceptance gate
 
-ADR 0010 may be reported as implemented only when every ticket is implemented and independently verified; doctor, snapshot/inventory, provider evidence, Native Code Evidence, Hospital diagnosis, publication, and indexing execute through the full declared A09 DAG; A07/A08 interruption/index guarantees pass beyond the current partial dirty-worktree drafts; provider adapters pass the shared A04 conformance suite; B07 finds no undeclared production participant; C00 rejects unnecessary output; all R01-R26 records contain current conformance, measurement, update, and retirement evidence or an authority-approved expiring retirement/out-of-scope state; C06 is proven replaceable; the representative D02 corpus meets its p50/p95 quality-and-latency target; and E06 finds no unsupported facade branch. Remaining PowerShell must be documented compatibility or platform glue with an explicit owner. Until then, status reports must name completed ticket IDs and say the rest are planned or in progress.
+This historical gate is recorded as implemented. Living conformance is enforced by the checked
+schemas, capability and provider tests, Run Commit interruption tests, committed-only index tests,
+registry reconciliation, retirement records, and structural gates. Remaining PowerShell is
+documented compatibility or platform glue with an explicit owner; it is not an alternate
+repository-run authority.

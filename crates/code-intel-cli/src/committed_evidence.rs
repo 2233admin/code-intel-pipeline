@@ -10,6 +10,7 @@ pub(crate) struct CommittedEvidence {
     pub(crate) entry: Value,
     pub(crate) refs: Vec<Value>,
     pub(crate) verified: Vec<VerifiedArtifact>,
+    pub(crate) run_root: std::path::PathBuf,
 }
 
 pub(crate) fn load(artifact_root: &Path, repo: &str) -> Result<CommittedEvidence, EvidenceError> {
@@ -48,6 +49,7 @@ pub(crate) fn load(artifact_root: &Path, repo: &str) -> Result<CommittedEvidence
         entry,
         refs,
         verified,
+        run_root,
     })
 }
 

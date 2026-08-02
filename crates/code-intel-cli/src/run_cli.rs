@@ -2,8 +2,8 @@ use std::env;
 use std::path::PathBuf;
 
 use crate::artifacts::{self, ARTIFACT_ROOT_ENV};
+use crate::authoritative_run;
 use crate::dag_run::{self, DagExecutionRequest};
-use crate::execution_kernel;
 use crate::execution_policy::{ExecutionPolicy, RunMode, RunProfile, SkipFlags, WorkingTreePolicy};
 use crate::run_error::RunError;
 
@@ -317,7 +317,7 @@ impl Cli {
     }
 }
 
-fn usage() -> String {
+pub(crate) fn usage() -> String {
     "usage: run <dag-coordinate|execute> --repo <repo-root> <--out <run-staging-directory> | --artifact-root <root> (dag-coordinate only; also read from CODE_INTEL_ARTIFACT_ROOT)> [--authority-root <publication-root> --final-name <name>] [--profile <default|strict|offline>] [--mode <lite|normal|full>] [--skip-repowise <true|false>] [--skip-sentrux <true|false>] [--require-understand-graph <true|false>] [--manifest <integrations.json>] [--max-concurrency <n>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]".into()
 }
 
@@ -355,21 +355,21 @@ fn execute_cli(cli: Cli) -> Result<CliResult, RunError> {
             })
         }
         RunCommand::Execute => {
-            let result = execution_kernel::execute(execution_kernel::RunRequest {
-                repo: cli.repo,
-                staging_root: cli.out.expect("validated execute staging root"),
-                authority_root: cli
-                    .authority_root
+            let request = authoritative_run::RunRequest::new(
+                cli.repo,
+                cli.out.expect("validated execute staging root"),
+                cli.authority_root
                     .expect("validated execute authority root"),
-                final_name: cli.final_name.expect("validated execute final name"),
-                manifest: cli.manifest,
-                max_concurrency: cli.max_concurrency,
-                policy: cli.policy,
-                session_evidence: cli.session_evidence,
-            })?;
+                cli.final_name.expect("validated execute final name"),
+                cli.policy,
+            )
+            .with_manifest(cli.manifest)
+            .with_max_concurrency(cli.max_concurrency)
+            .with_session_evidence(cli.session_evidence);
+            let result = authoritative_run::execute(request)?;
             let exit_code = result.exit_code();
             Ok(CliResult {
-                output: result.to_json(),
+                output: result.to_execution_json(),
                 exit_code,
             })
         }

@@ -64,11 +64,11 @@ pattern alone — see TASK_REPORT.md for the cases where the obvious pattern mat
 | --- | --- | --- | --- |
 | docs/compatibility-retire-doctor-wrapper-branch.md | living-contract | kept (restored) | E09 packet reconciliation pins this path as evidence; packets freeze paths even after retired=true |
 
-## Kept: still-open plan (not one-shot — do not archive)
+## Kept: implemented plan retained as a living contract (do not archive)
 
 | path | class | disposition | reason |
 | --- | --- | --- | --- |
-| docs/plans/adr-0010-execution-plan.md | living-contract | kept | Status "proposed, not implemented"; cited by 3 live files |
+| docs/plans/adr-0010-execution-plan.md | living-contract | kept | Status "implemented; superseded as an execution plan"; retained because 3 live files cite it |
 
 ## Kept: compatibility retirement tickets still blocked (7 of 8 — verified via status.json, not archived)
 
@@ -124,7 +124,7 @@ pattern alone — see TASK_REPORT.md for the cases where the obvious pattern mat
 | docs/doctor-envelope.md | living-contract | kept | Live test module (doctor_envelope) |
 | docs/evidence-admissibility.md | living-contract | kept | Live test module (evidence_admissibility) |
 | docs/evidence-query.md | living-contract | kept | Live src module (evidence_query) |
-| docs/execution-kernel-architecture.md | living-contract | kept | Documents live execution_kernel.rs module |
+| docs/execution-kernel-architecture.md | living-contract | kept | Documents live authoritative_run deep module and private kernel |
 | docs/file-boundary-observation.md | living-contract | kept | Referenced by file_boundary.rs |
 | docs/final-commitment-reconciliation-usage.md | living-contract | kept | Companion usage doc; backtick paths verified live |
 | docs/final-commitment-reconciliation.md | living-contract | kept | Referenced by final-commitment-reconciliation.json |

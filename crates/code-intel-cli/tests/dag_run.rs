@@ -247,19 +247,8 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     assert_eq!(doctor_request["options"]["requireRepowise"], false);
     assert_eq!(doctor_request["options"]["requireUnderstand"], false);
 
-    let index = Command::new(env!("CARGO_BIN_EXE_code-intel"))
-        .args(["artifact", "index", "--artifact-root"])
-        .arg(&artifact_root)
-        .output()
-        .unwrap();
-    assert_eq!(
-        index.status.code(),
-        Some(0),
-        "stdout={} stderr={}",
-        String::from_utf8_lossy(&index.stdout),
-        String::from_utf8_lossy(&index.stderr)
-    );
-    let index: Value = serde_json::from_slice(&index.stdout).unwrap();
+    let index: Value =
+        serde_json::from_slice(&fs::read(artifact_root.join("index.json")).unwrap()).unwrap();
     assert_eq!(index["entries"].as_array().unwrap().len(), 1);
     assert_eq!(index["entries"][0]["repo"], "fixture-repo");
     assert_eq!(index["entries"][0]["run"], "run-001");
@@ -289,6 +278,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     );
     let query: Value = serde_json::from_slice(&query.stdout).unwrap();
     assert_eq!(query["schema"], "code-intel-evidence-query.v1");
+    assert_eq!(query["run"], "run-001");
     assert_eq!(query["runOutcome"], "completed");
     assert_eq!(query["authority"]["status"], "committed");
     assert_eq!(query["coverage"]["status"], "complete");
@@ -461,13 +451,35 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
     // See production_dag_output_commits_and_enters_the_authoritative_index:
     // must match the "fixture-repo" authority/query identity used below.
     let repo = root.join("fixture-repo");
-    let out = root.join("run");
+    let completed_out = root.join("completed-run");
+    let out = root.join("failed-run");
     let artifact_root = root.join("artifacts");
     let authority = artifact_root.join("fixture-repo");
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::create_dir_all(&authority).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
+    let completed_doctor_tools = doctor_tool_fixture(&root, true);
+    let completed = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["run", "execute", "--repo"])
+        .arg(&repo)
+        .arg("--out")
+        .arg(&completed_out)
+        .arg("--authority-root")
+        .arg(&authority)
+        .args(["--final-name", "completed-001"])
+        .arg("--doctor-tool-path-prefix")
+        .arg(&completed_doctor_tools)
+        .output()
+        .unwrap();
+    assert_eq!(
+        completed.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&completed.stdout),
+        String::from_utf8_lossy(&completed.stderr)
+    );
+
     let doctor_tools = doctor_tool_fixture(&root, false);
 
     let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
@@ -540,14 +552,10 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
         .join(committed_doctor_artifact["path"].as_str().unwrap())
         .is_file());
 
-    let index = Command::new(env!("CARGO_BIN_EXE_code-intel"))
-        .args(["artifact", "index", "--artifact-root"])
-        .arg(&artifact_root)
-        .output()
-        .unwrap();
-    assert_eq!(index.status.code(), Some(0));
-    let index: Value = serde_json::from_slice(&index.stdout).unwrap();
-    assert_eq!(index["entries"], json!([]));
+    let index: Value =
+        serde_json::from_slice(&fs::read(artifact_root.join("index.json")).unwrap()).unwrap();
+    assert_eq!(index["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(index["entries"][0]["run"], "completed-001");
     assert!(index["diagnostics"].as_array().unwrap().iter().any(|item| {
         item["run"] == "failed-001"
             && item["classification"] == "non_completed"
@@ -562,9 +570,9 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
         .args(["--repo", "fixture-repo", "--type", "code_evidence.files"])
         .output()
         .unwrap();
-    assert_eq!(query.status.code(), Some(65));
-    assert!(String::from_utf8_lossy(&query.stderr)
-        .contains("no committed authoritative run is indexed"));
+    assert_eq!(query.status.code(), Some(0));
+    let query: Value = serde_json::from_slice(&query.stdout).unwrap();
+    assert_eq!(query["run"], "completed-001");
 
     let impact = Command::new(env!("CARGO_BIN_EXE_code-intel"))
         .args(["change", "impact", "--artifact-root"])
@@ -574,9 +582,9 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
         .args(["--changed", "src/lib.rs"])
         .output()
         .unwrap();
-    assert_eq!(impact.status.code(), Some(65));
-    assert!(String::from_utf8_lossy(&impact.stderr)
-        .contains("no committed authoritative run is indexed"));
+    assert_eq!(impact.status.code(), Some(0));
+    let impact: Value = serde_json::from_slice(&impact.stdout).unwrap();
+    assert_eq!(impact["run"], "completed-001");
 
     let _ = fs::remove_dir_all(root);
 }

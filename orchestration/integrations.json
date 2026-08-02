@@ -11,7 +11,7 @@
     "mode": "enforce",
     "productionFiles": [
       "crates/code-intel-cli/src/doctor_adapter.rs",
-      "crates/code-intel-cli/src/main.rs",
+      "crates/code-intel-cli/src/authoritative_run/completion.rs",
       "legacy/run-code-intel.ps1"
     ],
     "participants": [
@@ -162,7 +162,7 @@
         "capabilityId": "artifact.index-committed-only",
         "status": "declared",
         "callSite": {
-          "source": "crates/code-intel-cli/src/main.rs",
+          "source": "crates/code-intel-cli/src/authoritative_run/completion.rs",
           "anchor": "artifact_index::write_index(&artifact_root.join(\"index.json\"), &index)"
         },
         "envelope": "rust-capability-result.v1",
@@ -845,7 +845,7 @@
           "toolchainDigests": [
             "3ba256f4ca0bf62aca08f688f7ecf31800dd10e68371054e2f1605eff197ea81",
             "2b3ad83032ceca7c7e745c4f30dfd45ec50d4cd0a2a5829368c22246ed2d7a5a",
-            "203e3b0d3be3c17331a7c7115aec71104db8f2b682e57e2c14dd9ee6f3fe18fb",
+            "6ac074d94c384b2e414d909bbc05be62b2f6da2bcb28cb875209c245ade238de",
             "b118ba78ff3ef4a189525c642184cbd320a268d2885681ab153544db554c5965",
             "e3072b6b01a4f692c2ac75c7c4995747f9a0fd1ce4f32e1ab1599f348661f570",
             "40c532ed3aa52144bdc8bb4422e04b23c54196d352ac9cb0f3e93a5a059af120"
@@ -906,7 +906,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "2d2b38c4650795e2bba99e8ec38ca21adcb204042e9289577c535f7087e899d8",
-            "203e3b0d3be3c17331a7c7115aec71104db8f2b682e57e2c14dd9ee6f3fe18fb",
+            "6ac074d94c384b2e414d909bbc05be62b2f6da2bcb28cb875209c245ade238de",
             "2b3ad83032ceca7c7e745c4f30dfd45ec50d4cd0a2a5829368c22246ed2d7a5a"
           ]
         },
@@ -957,7 +957,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "a6da84444e815dd94c15887190c7d6bd48c7bca5975fb5d493eb77ab39f27d80",
-            "203e3b0d3be3c17331a7c7115aec71104db8f2b682e57e2c14dd9ee6f3fe18fb",
+            "6ac074d94c384b2e414d909bbc05be62b2f6da2bcb28cb875209c245ade238de",
             "2b3ad83032ceca7c7e745c4f30dfd45ec50d4cd0a2a5829368c22246ed2d7a5a"
           ]
         },
@@ -1141,7 +1141,7 @@
       "owner": "code-intel-pipeline",
       "kind": "internal-kernel",
       "required": true,
-      "entrypoint": "crates/code-intel-cli/src/execution_kernel.rs",
+      "entrypoint": "crates/code-intel-cli/src/authoritative_run.rs",
       "capabilities": ["authoritative_execution", "compiled_execution_policy", "typed_run_outcome", "atomic_publication"],
       "commands": {
         "run": "target/debug/code-intel.exe run execute --repo <repo-root> --out <run-staging-directory> --authority-root <publication-root> --final-name <name> [--profile default|strict|offline]",
@@ -1151,10 +1151,11 @@
         "orchestration/schemas/code-intel-run-dag.v1.schema.json",
         "orchestration/schemas/code-intel-run-state.v1.schema.json",
         "orchestration/schemas/code-intel-run-manifest.v1.schema.json",
+        "orchestration/schemas/code-intel-repository-iteration-provenance.v1.schema.json",
         "orchestration/schemas/code-intel-run-commit.v1.schema.json",
         "orchestration/schemas/code-intel-execution-result.v1.schema.json"
       ],
-      "extensionPoint": "Run profiles compile into one immutable ExecutionPolicy. Capability adapters execute behind A01 envelopes; the kernel alone owns coordination, typed outcome mapping, and atomic publication."
+      "extensionPoint": "Run profiles compile into one immutable ExecutionPolicy. Capability adapters execute behind A01 envelopes; the private controller alone binds repository.iteration provenance to the run, snapshot, repository key, and publication name before marker-last publication."
     },
     {
       "id": "run.dag-coordinate",
@@ -1666,9 +1667,10 @@
       "artifactContract": [
         "orchestration/schemas/code-intel-run-commit.v1.schema.json",
         "orchestration/schemas/code-intel-run-manifest.v1.schema.json",
+        "orchestration/schemas/code-intel-repository-iteration-provenance.v1.schema.json",
         "orchestration/schemas/code-intel-artifact-index.v1.schema.json"
       ],
-      "extensionPoint": "A08 is a rebuildable materialized view and never run authority. Normal admission requires an A07 marker and revalidates its manifest and Artifact Refs; legacy traversal is explicit compatibility only."
+      "extensionPoint": "A08 is a rebuildable materialized view and never run authority. Normal admission requires an A07 marker plus exactly one verified repository.iteration provenance Artifact Ref whose run, snapshot, repository, and publication bindings match the authority path; legacy traversal is explicit compatibility only."
     }
   ]
 }

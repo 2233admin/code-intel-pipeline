@@ -3,20 +3,22 @@
 ## Goal
 
 Make one deep Rust module authoritative for a Code Intel run. The typed CLI adapter compiles
-intent into one immutable policy; the kernel owns its application, DAG execution, outcome
-classification, and atomic publication. PowerShell remains a compatibility adapter and batch
-selector.
+intent into one immutable policy; the authoritative-run controller owns the production request,
+committed-run validation, and completed-only index publication. Its private kernel owns policy
+application, DAG execution, outcome classification, and atomic run publication. PowerShell
+remains a compatibility adapter and batch selector.
 
 ## External interface
 
 ```rust
-execute(RunRequest) -> Result<ExecutionResult, RunError>
+authoritative_run::execute(RunRequest) -> Result<ProductionRunResult, RunError>
 ```
 
 `RunRequest` contains repository identity, staging and authority destinations, one compiled
 policy, optional admitted session evidence, and concurrency. It does not expose DAG nodes,
-provider commands, or capability implementation details. `ExecutionResult` contains the typed
-`RunOutcome`, terminal manifest, and typed publication record.
+provider commands, or capability implementation details. `ProductionRunResult` contains the
+typed `RunOutcome`, terminal manifest, and typed publication record. The private kernel request
+and result are not available to CLI routes.
 
 `ExecutionPolicy` is resolved once from the selected profile and compatibility overrides. It is
 the only runtime source for:
@@ -33,7 +35,12 @@ the only runtime source for:
 - `domain_unknown` -> exit 20;
 - `process_failed` or `incomplete` -> exit 70.
 
-The existing `code-intel-run-manifest.v1` schema and Artifact Ref contracts remain unchanged.
+The existing `code-intel-run-manifest.v1` schema and Artifact Ref envelope remain unchanged.
+Immediately after DAG completion, the private controller adds exactly one
+`repository.iteration` Artifact Ref. Its payload uses
+`code-intel-repository-iteration-provenance.v1`, declares purpose
+`repository_intelligence_iteration`, identifies a versioned producer, and binds the run identity,
+snapshot identity, repository key, and publication name before marker-last publication.
 
 ## Profiles
 
@@ -49,7 +56,11 @@ legacy doctor overrides.
 
 ## Internal seams
 
-- `execution_kernel.rs` owns the typed authoritative execution and publication boundary.
+- `authoritative_run.rs` is the sole production request/result facade and controller.
+- `authoritative_run/completion.rs` privately owns provenance binding, committed-run validation,
+  and completed-only index admission/publication.
+- `authoritative_run/execution_kernel.rs` owns the private typed execution and atomic run
+  publication boundary.
 - `dag_run.rs` retains CLI parsing plus the non-authoritative `dag-coordinate` compatibility
   primitive.
 - The coordinator remains an internal scheduling seam below the kernel.
@@ -70,6 +81,19 @@ legacy doctor overrides.
 
 - Existing `dag-coordinate` output and exit codes remain compatible.
 - Failed runs remain committed for audit and never replace the latest completed authority.
+- A completed run is successful only when it is the completed-only index selection; an older
+  publication name is rejected as non-authoritative.
+- Index publication failure is reported after marker publication and remains repairable through
+  the explicit administrative index command.
 - The completion marker is still published last.
+- Raw administrative `run commit`, decision runs, and snapshot-only manifests cannot synthesize
+  repository-iteration provenance and therefore cannot enter the repository authority index.
+- Index admission requires exactly one succeeded, verified provenance ref whose payload, ref,
+  manifest, marker, repository directory, and publication directory agree on every binding.
 - Contract, integrity, and I/O failures are never downgraded as optional-provider absence.
 - Tests cross the execution interface and assert observable manifests, publication, and exits.
+
+This is an integrity and provenance boundary, not a cryptographic signer or hostile-local-user
+security boundary. A user who can rewrite an entire local publication coherently can manually
+forge this JSON contract; signed attestations or an external trust root would be required to
+exclude that residual threat.

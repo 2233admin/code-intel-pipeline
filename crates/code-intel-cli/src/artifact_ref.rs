@@ -11,6 +11,14 @@ use content_contract::{reject_duplicate_json_keys, sha256_hex, validate_artifact
 
 const MAX_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;
 
+pub(crate) const REPOSITORY_ITERATION_SCHEMA: &str =
+    "code-intel-repository-iteration-provenance.v1";
+pub(crate) const REPOSITORY_ITERATION_TYPE: &str = "repository.iteration";
+pub(crate) const REPOSITORY_ITERATION_PURPOSE: &str = "repository_intelligence_iteration";
+pub(crate) const REPOSITORY_ITERATION_PRODUCER_COMPONENT: &str = "code-intel.authoritative-run";
+pub(crate) const REPOSITORY_ITERATION_PRODUCER_CONTRACT: &str = "repository-iteration-producer";
+pub(crate) const REPOSITORY_ITERATION_PRODUCER_VERSION: &str = "1";
+
 #[derive(Clone, Copy)]
 pub(crate) struct ArtifactContract {
     pub(crate) artifact_schema: &'static str,
@@ -189,6 +197,14 @@ pub(crate) fn registered_contract(artifact: &Value) -> Result<ArtifactContract, 
         artifact.get("artifactSchema").and_then(Value::as_str),
         artifact.get("type").and_then(Value::as_str),
     ) {
+        (Some(REPOSITORY_ITERATION_SCHEMA), Some(REPOSITORY_ITERATION_TYPE)) => {
+            Ok(ArtifactContract {
+                artifact_schema: REPOSITORY_ITERATION_SCHEMA,
+                artifact_type: REPOSITORY_ITERATION_TYPE,
+                max_bytes: 64 * 1024,
+                validate_payload: validate_repository_iteration_provenance,
+            })
+        }
         (Some("code-intel-file-inventory.v1"), Some("inventory.files")) => Ok(ArtifactContract {
             artifact_schema: "code-intel-file-inventory.v1",
             artifact_type: "inventory.files",
@@ -1865,6 +1881,47 @@ fn validate_run_manifest(bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_repository_iteration_provenance(bytes: &[u8]) -> Result<(), String> {
+    let value = parse_contract_json(bytes, "repository iteration provenance")?;
+    exact_object_keys(
+        &value,
+        &[
+            "schema",
+            "purpose",
+            "runIdentity",
+            "snapshotIdentity",
+            "repositoryKey",
+            "publicationName",
+            "producer",
+        ],
+        "repository iteration provenance",
+    )?;
+    exact_object_keys(
+        &value["producer"],
+        &["component", "contract", "version"],
+        "repository iteration producer",
+    )?;
+    if value["schema"] != REPOSITORY_ITERATION_SCHEMA
+        || value["purpose"] != REPOSITORY_ITERATION_PURPOSE
+        || !value["runIdentity"]
+            .as_str()
+            .is_some_and(valid_run_identity)
+        || !value["snapshotIdentity"].as_str().is_some_and(valid_digest)
+        || !value["repositoryKey"]
+            .as_str()
+            .is_some_and(valid_authority_name)
+        || !value["publicationName"]
+            .as_str()
+            .is_some_and(valid_authority_name)
+        || value["producer"]["component"] != REPOSITORY_ITERATION_PRODUCER_COMPONENT
+        || value["producer"]["contract"] != REPOSITORY_ITERATION_PRODUCER_CONTRACT
+        || value["producer"]["version"] != REPOSITORY_ITERATION_PRODUCER_VERSION
+    {
+        return Err("repository iteration provenance contract is invalid".into());
+    }
+    Ok(())
+}
+
 fn validate_method_catalog(bytes: &[u8]) -> Result<(), String> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| format!("method catalog is not UTF-8: {error}"))?;
@@ -2791,6 +2848,16 @@ fn valid_run_identity(value: &str) -> bool {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
     })
+}
+
+fn valid_authority_name(value: &str) -> bool {
+    !value.is_empty()
+        && value != "."
+        && value != ".."
+        && !value.ends_with(['.', ' '])
+        && !value
+            .chars()
+            .any(|character| character.is_control() || matches!(character, '/' | '\\' | ':'))
 }
 
 fn valid_path_array(value: &Value) -> bool {

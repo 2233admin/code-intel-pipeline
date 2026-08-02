@@ -195,6 +195,15 @@ fn scan(artifact_root: &Path) -> Result<Value, IndexError> {
                         ));
                         continue;
                     }
+                    if !is_repository_iteration(&run, &repo_name, &run_name, &marker, &manifest) {
+                        diagnostics.push(diagnostic(
+                            &repo_name,
+                            &run_name,
+                            "non_repository_iteration",
+                            "committed run has no uniquely verified repository.iteration provenance bound to its authority path",
+                        ));
+                        continue;
+                    }
                     let entry = entry(&repo_name, &run_name, &marker, &manifest);
                     let replace = admitted
                         .get(&repo_name)
@@ -231,6 +240,49 @@ fn scan(artifact_root: &Path) -> Result<Value, IndexError> {
         "entries": admitted.into_values().collect::<Vec<_>>(),
         "diagnostics": diagnostics,
     }))
+}
+
+fn is_repository_iteration(
+    run_root: &Path,
+    repository_key: &str,
+    publication_name: &str,
+    marker: &Value,
+    manifest: &Value,
+) -> bool {
+    let mut provenance = Vec::new();
+    for node in manifest["nodes"].as_object().unwrap().values() {
+        let Some(artifacts) = node["artifacts"].as_array() else {
+            continue;
+        };
+        for reference in artifacts {
+            if reference["artifactSchema"] == crate::artifact_ref::REPOSITORY_ITERATION_SCHEMA
+                && reference["type"] == crate::artifact_ref::REPOSITORY_ITERATION_TYPE
+            {
+                provenance.push((node["status"].as_str(), reference));
+            }
+        }
+    }
+    let [(Some("succeeded"), reference)] = provenance.as_slice() else {
+        return false;
+    };
+    let expected_snapshot = manifest["snapshotIdentity"].as_str().unwrap();
+    let Ok(verified) = crate::artifact_ref::verify_inputs(
+        &Value::Array(vec![(*reference).clone()]),
+        Some(run_root),
+        expected_snapshot,
+    ) else {
+        return false;
+    };
+    let Ok(payload) = serde_json::from_slice::<Value>(verified[0].bytes()) else {
+        return false;
+    };
+    payload["runIdentity"] == manifest["runIdentity"]
+        && payload["runIdentity"] == marker["runIdentity"]
+        && payload["snapshotIdentity"] == manifest["snapshotIdentity"]
+        && payload["snapshotIdentity"] == marker["snapshotIdentity"]
+        && payload["snapshotIdentity"] == reference["consumedSnapshotIdentity"]
+        && payload["repositoryKey"].as_str() == Some(repository_key)
+        && payload["publicationName"].as_str() == Some(publication_name)
 }
 
 fn entry(repo: &str, run: &str, marker: &Value, manifest: &Value) -> Value {
@@ -402,7 +454,14 @@ fn validate_index_diagnostic(value: &Value) -> Result<(), IndexError> {
     portable_name(&value["run"], "diagnostic run")?;
     if !matches!(
         value["classification"].as_str(),
-        Some("staging" | "incomplete" | "forged" | "legacy" | "non_completed")
+        Some(
+            "staging"
+                | "incomplete"
+                | "forged"
+                | "legacy"
+                | "non_completed"
+                | "non_repository_iteration"
+        )
     ) {
         return Err(IndexError::Contract(
             "diagnostic classification is invalid".into(),

@@ -2,12 +2,13 @@
 mod authority;
 #[path = "../src/content_contract.rs"]
 mod content_contract;
+#[path = "../src/hardened_git.rs"]
+mod hardened_git;
 #[path = "../src/internalization_record.rs"]
 mod internalization_record;
 
-use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -17,6 +18,8 @@ use serde_json::{json, Value};
 
 const NOW: u64 = 1_700_000_100;
 static NEXT_SCHEMA_CHECK: AtomicUsize = AtomicUsize::new(1);
+static NEXT_REPOSITORY_FIXTURE: AtomicUsize = AtomicUsize::new(1);
+static NEXT_SOURCE_SCRATCH: AtomicUsize = AtomicUsize::new(1);
 static SCHEMA_CHECK_LOCK: Mutex<()> = Mutex::new(());
 
 fn root() -> PathBuf {
@@ -659,23 +662,595 @@ fn assert_signed_out_of_scope_record_projects(record: &Value, expected_id: &str)
     assert_checked_schema(record, "code-intel-internalization-record.v1.schema.json");
 }
 
+#[test]
+fn repository_source_digest_uses_current_worktree_after_git_clean_filters() {
+    let fixture = RepositoryFixture::new();
+    let verifier = WorktreeSourceVerifier::new(fixture.path()).unwrap();
+    let git_storage_before = fixture.git_storage_state();
+
+    assert_eq!(
+        verifier.sha256("text.txt").unwrap(),
+        content_contract::sha256_hex(b"alpha\nbeta\n")
+    );
+    assert_eq!(
+        verifier.sha256("binary.bin").unwrap(),
+        content_contract::sha256_hex(b"\0alpha\r\nbeta\r\n")
+    );
+    assert_eq!(
+        verifier.sha256("ident.txt").unwrap(),
+        content_contract::sha256_hex(b"$Id$\n")
+    );
+    assert_eq!(
+        verifier.sha256("encoded.txt").unwrap(),
+        content_contract::sha256_hex(b"gamma\n")
+    );
+
+    // Updating a source pin is normally one unstaged edit containing both the
+    // source and its record. Verification must therefore read the current
+    // worktree, not freeze or require the real index.
+    fs::write(fixture.path().join("text.txt"), b"repinned\r\n").unwrap();
+    assert_eq!(
+        verifier.sha256("text.txt").unwrap(),
+        content_contract::sha256_hex(b"repinned\n")
+    );
+    assert_eq!(fixture.git_storage_state(), git_storage_before);
+
+    assert_eq!(
+        content_contract::sha256_hex(b"alpha\r\nbeta\r\n"),
+        "98ab4d3aeab1e120560e942e2df6a0db1147bf94bafcf1590000ffb3c2b6fc80",
+        "general artifact payload digests must remain byte-exact"
+    );
+}
+
+#[test]
+fn repository_source_digest_rejects_missing_and_untracked_paths() {
+    let fixture = RepositoryFixture::new();
+    let verifier = WorktreeSourceVerifier::new(fixture.path()).unwrap();
+
+    fs::write(fixture.path().join("untracked.txt"), b"untracked\n").unwrap();
+    let untracked = verifier.sha256("untracked.txt").unwrap_err();
+    assert!(
+        untracked.contains("not tracked in the current Git index"),
+        "{untracked}"
+    );
+
+    fs::remove_file(fixture.path().join("text.txt")).unwrap();
+    let missing = verifier.sha256("text.txt").unwrap_err();
+    assert!(
+        missing.contains("does not exist in the worktree"),
+        "{missing}"
+    );
+
+    fs::write(fixture.path().join("text.txt"), b"still here\n").unwrap();
+    run_fixture_git(fixture.path(), &["rm", "--cached", "-f", "text.txt"]);
+    let removed_from_index = verifier.sha256("text.txt").unwrap_err();
+    assert!(
+        removed_from_index.contains("not tracked in the current Git index"),
+        "{removed_from_index}"
+    );
+}
+
+#[test]
+fn repository_source_digest_rejects_custom_filters_without_executing_them() {
+    assert_custom_filter_is_never_executed("sentinel");
+}
+
+#[test]
+fn repository_source_digest_rejects_ambiguous_filter_values_without_execution() {
+    for driver in ["unspecified", "unset"] {
+        assert_custom_filter_is_never_executed(driver);
+    }
+}
+
+#[test]
+fn repository_source_digest_checks_filters_against_the_scratch_index() {
+    let fixture = RepositoryFixture::new();
+    let mut attributes = fs::read(fixture.path().join(".gitattributes")).unwrap();
+    attributes.extend_from_slice(b"filtered.txt filter=head-index\n");
+    fs::write(fixture.path().join(".gitattributes"), attributes).unwrap();
+    run_fixture_git(fixture.path(), &["add", ".gitattributes"]);
+    run_fixture_git(
+        fixture.path(),
+        &[
+            "-c",
+            "user.name=Code Intel Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "--amend",
+            "--no-edit",
+        ],
+    );
+    run_fixture_git(fixture.path(), &["rm", ".gitattributes"]);
+    run_fixture_git(
+        fixture.path(),
+        &[
+            "config",
+            "filter.head-index.clean",
+            "echo filter-ran > head-index-filter-ran.txt",
+        ],
+    );
+    let sentinel = fixture.path().join("head-index-filter-ran.txt");
+    assert!(!sentinel.exists(), "test setup executed the clean driver");
+
+    let result = WorktreeSourceVerifier::new(fixture.path())
+        .unwrap()
+        .sha256("filtered.txt");
+
+    assert!(
+        !sentinel.exists(),
+        "scratch-index clean driver executed after the real index hid its attributes"
+    );
+    let error = result.unwrap_err();
+    assert!(error.contains("custom Git filter"), "{error}");
+}
+
+fn assert_custom_filter_is_never_executed(driver: &str) {
+    let fixture = RepositoryFixture::new();
+    let attributes = fs::read(fixture.path().join(".gitattributes")).unwrap();
+    let mut malicious_attributes = attributes;
+    malicious_attributes.extend_from_slice(format!("filtered.txt filter={driver}\n").as_bytes());
+    fs::write(fixture.path().join(".gitattributes"), malicious_attributes).unwrap();
+    let sentinel_name = format!("filter-{driver}-ran.txt");
+    let configured = repository_git(fixture.path())
+        .arg("config")
+        .arg(format!("filter.{driver}.clean"))
+        .arg(format!("echo filter-ran > {sentinel_name}"))
+        .output()
+        .unwrap();
+    assert!(configured.status.success());
+    let sentinel = fixture.path().join(sentinel_name);
+
+    let result = WorktreeSourceVerifier::new(fixture.path())
+        .unwrap()
+        .sha256("filtered.txt");
+
+    assert!(
+        !sentinel.exists(),
+        "custom clean driver {driver} executed before verification rejected it"
+    );
+    let error = result.unwrap_err();
+    assert!(error.contains("custom Git filter"), "{error}");
+}
+
+#[test]
+fn repository_source_digest_rejects_noncanonical_git_paths() {
+    let fixture = RepositoryFixture::new();
+    let verifier = WorktreeSourceVerifier::new(fixture.path()).unwrap();
+
+    for relative in [r"nested\source.txt", "./text.txt", "nested//source.txt"] {
+        let error = verifier.sha256(relative).unwrap_err();
+        assert!(
+            error.contains("not relative and normalized"),
+            "{relative}: {error}"
+        );
+    }
+}
+
+#[test]
+fn temporary_git_scratch_is_removed_on_drop() {
+    let fixture = RepositoryFixture::new();
+    let verifier = WorktreeSourceVerifier::new(fixture.path()).unwrap();
+    let scratch_path = {
+        let scratch = TemporaryGitIndex::new(&verifier.real_objects).unwrap();
+        let path = scratch.path().to_path_buf();
+        assert!(path.is_dir());
+        path
+    };
+
+    assert!(!scratch_path.exists());
+}
+
+struct RepositoryFixture {
+    path: PathBuf,
+}
+
+impl RepositoryFixture {
+    fn new() -> Self {
+        let path = loop {
+            let id = NEXT_REPOSITORY_FIXTURE.fetch_add(1, Ordering::Relaxed);
+            let candidate = std::env::temp_dir().join(format!(
+                "internalization-repository-bytes-{}-{id}",
+                std::process::id()
+            ));
+            match fs::create_dir(&candidate) {
+                Ok(()) => break candidate,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => panic!(
+                    "cannot create repository fixture {}: {error}",
+                    candidate.display()
+                ),
+            }
+        };
+        run_fixture_git(&path, &["init"]);
+        fs::write(
+            path.join(".gitattributes"),
+            b"text.txt text eol=lf\nbinary.bin -text\nident.txt text eol=lf ident\nencoded.txt text working-tree-encoding=UTF-16LE-BOM eol=lf\n",
+        )
+        .unwrap();
+        fs::write(path.join("text.txt"), b"alpha\nbeta\n").unwrap();
+        fs::write(path.join("binary.bin"), b"\0alpha\r\nbeta\r\n").unwrap();
+        fs::write(path.join("ident.txt"), b"$Id$\n").unwrap();
+        fs::write(path.join("encoded.txt"), utf16le_bom("gamma\n")).unwrap();
+        fs::write(path.join("filtered.txt"), b"safe\n").unwrap();
+        run_fixture_git(
+            &path,
+            &[
+                "add",
+                ".gitattributes",
+                "text.txt",
+                "binary.bin",
+                "ident.txt",
+                "encoded.txt",
+                "filtered.txt",
+            ],
+        );
+        run_fixture_git(
+            &path,
+            &[
+                "-c",
+                "user.name=Code Intel Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "-m",
+                "fixture",
+            ],
+        );
+        fs::write(path.join("text.txt"), b"alpha\r\nbeta\r\n").unwrap();
+        fs::write(path.join("ident.txt"), b"$Id: fixture $\r\n").unwrap();
+        fs::write(path.join("encoded.txt"), utf16le_bom("gamma\r\n")).unwrap();
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn git_storage_state(&self) -> (Vec<u8>, Vec<u8>) {
+        let index = repository_git(&self.path)
+            .args(["rev-parse", "--git-path", "index"])
+            .output()
+            .unwrap();
+        assert!(index.status.success());
+        let index = PathBuf::from(String::from_utf8(index.stdout).unwrap().trim());
+        let index = if index.is_absolute() {
+            index
+        } else {
+            self.path.join(index)
+        };
+
+        let objects = repository_git(&self.path)
+            .args(["count-objects", "-v"])
+            .output()
+            .unwrap();
+        assert!(objects.status.success());
+        (fs::read(index).unwrap(), objects.stdout)
+    }
+}
+
+impl Drop for RepositoryFixture {
+    fn drop(&mut self) {
+        fs::remove_dir_all(&self.path).ok();
+    }
+}
+
+fn run_fixture_git(repo: &Path, args: &[&str]) {
+    let output = repository_git(repo)
+        .args(args)
+        .output()
+        .unwrap_or_else(|error| panic!("fixture git {} failed to launch: {error}", args.join(" ")));
+    assert!(
+        output.status.success(),
+        "fixture git {} failed: {}",
+        args.join(" "),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn utf16le_bom(value: &str) -> Vec<u8> {
+    let mut bytes = vec![0xff, 0xfe];
+    for unit in value.encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    bytes
+}
+
+/// Computes source pins from the current worktree after Git's clean
+/// conversion, without staging anything in the repository itself.
+///
+/// The real index is authoritative only for whether a path is tracked. A
+/// private index and object directory then let `git add` apply attributes such
+/// as EOL normalization, `ident`, binary handling, and working-tree encoding
+/// to the current bytes. This matches the normal workflow where a source and
+/// its updated record are both modified but not yet staged.
+struct WorktreeSourceVerifier {
+    repo: PathBuf,
+    real_objects: PathBuf,
+}
+
+impl WorktreeSourceVerifier {
+    fn new(repo: &Path) -> Result<Self, String> {
+        let common_dir = repository_git(repo)
+            .args(["rev-parse", "--git-common-dir"])
+            .output()
+            .map_err(|error| format!("cannot locate the repository object directory: {error}"))?;
+        if !common_dir.status.success() {
+            return Err(format!(
+                "cannot locate the repository object directory: {}",
+                String::from_utf8_lossy(&common_dir.stderr)
+            ));
+        }
+        let common_dir = PathBuf::from(
+            String::from_utf8(common_dir.stdout)
+                .map_err(|error| format!("Git common directory is not UTF-8: {error}"))?
+                .trim(),
+        );
+        let common_dir = if common_dir.is_absolute() {
+            common_dir
+        } else {
+            repo.join(common_dir)
+        };
+        let real_objects = common_dir.join("objects").canonicalize().map_err(|error| {
+            format!(
+                "cannot resolve repository object directory {}: {error}",
+                common_dir.join("objects").display()
+            )
+        })?;
+        Ok(Self {
+            repo: repo.to_path_buf(),
+            real_objects,
+        })
+    }
+
+    fn sha256(&self, relative: &str) -> Result<String, String> {
+        if relative.is_empty()
+            || relative.contains('\0')
+            || relative.contains('\\')
+            || relative.starts_with('/')
+            || relative
+                .split('/')
+                .any(|component| component.is_empty() || component == "." || component == "..")
+        {
+            return Err(format!(
+                "repository source path is not relative and normalized: {relative}"
+            ));
+        }
+
+        let tracked = repository_git(&self.repo)
+            .args(["ls-files", "--error-unmatch", "--"])
+            .arg(&relative)
+            .output()
+            .map_err(|error| format!("cannot inspect repository source {relative}: {error}"))?;
+        if !tracked.status.success() {
+            return Err(format!(
+                "repository source is not tracked in the current Git index: {relative}: {}",
+                String::from_utf8_lossy(&tracked.stderr)
+            ));
+        }
+        if fs::symlink_metadata(self.repo.join(&relative)).is_err() {
+            return Err(format!(
+                "repository source does not exist in the worktree: {relative}"
+            ));
+        }
+        let scratch = TemporaryGitIndex::new(&self.real_objects)?;
+        let head = repository_git(&self.repo)
+            .args(["rev-parse", "--verify", "HEAD^{tree}"])
+            .output()
+            .map_err(|error| format!("cannot inspect the repository HEAD tree: {error}"))?;
+        let mut initialize = scratch.command(&self.repo);
+        if head.status.success() {
+            let tree_oid = String::from_utf8(head.stdout)
+                .map_err(|error| format!("Git HEAD tree OID is not UTF-8: {error}"))?;
+            initialize.args(["read-tree", tree_oid.trim()]);
+        } else {
+            initialize.args(["read-tree", "--empty"]);
+        }
+        let initialized = initialize
+            .output()
+            .map_err(|error| format!("cannot initialize temporary Git index: {error}"))?;
+        if !initialized.status.success() {
+            return Err(format!(
+                "cannot initialize temporary Git index: {}",
+                String::from_utf8_lossy(&initialized.stderr)
+            ));
+        }
+        self.reject_custom_filter(&scratch, relative)?;
+
+        let added = scratch
+            .command(&self.repo)
+            .args(["add", "-f", "--"])
+            .arg(&relative)
+            .output()
+            .map_err(|error| format!("cannot apply Git clean conversion to {relative}: {error}"))?;
+        if !added.status.success() {
+            return Err(format!(
+                "cannot apply Git clean conversion to {relative}: {}",
+                String::from_utf8_lossy(&added.stderr)
+            ));
+        }
+
+        let object = format!(":{relative}");
+        let canonical = scratch
+            .command(&self.repo)
+            .args(["cat-file", "blob", &object])
+            .output()
+            .map_err(|error| {
+                format!("cannot read canonical Git index bytes for {relative}: {error}")
+            })?;
+        if !canonical.status.success() {
+            return Err(format!(
+                "canonical Git index bytes are unavailable for {relative}: {}",
+                String::from_utf8_lossy(&canonical.stderr)
+            ));
+        }
+        Ok(content_contract::sha256_hex(&canonical.stdout))
+    }
+
+    fn reject_custom_filter(
+        &self,
+        scratch: &TemporaryGitIndex,
+        relative: &str,
+    ) -> Result<(), String> {
+        let attributes = scratch
+            .command(&self.repo)
+            .args(["check-attr", "-z", "--all", "--"])
+            .arg(relative)
+            .output()
+            .map_err(|error| format!("cannot inspect Git filter for {relative}: {error}"))?;
+        if !attributes.status.success() {
+            return Err(format!(
+                "cannot inspect Git filter for {relative}: {}",
+                String::from_utf8_lossy(&attributes.stderr)
+            ));
+        }
+
+        let mut fields = attributes
+            .stdout
+            .split(|byte| *byte == 0)
+            .collect::<Vec<_>>();
+        if fields.last() == Some(&&[][..]) {
+            fields.pop();
+        }
+        if fields.len() % 3 != 0
+            || fields
+                .chunks_exact(3)
+                .any(|triplet| triplet[0] != relative.as_bytes() || triplet[1].is_empty())
+        {
+            return Err(format!(
+                "Git returned malformed filter attributes for {relative}"
+            ));
+        }
+        if let Some(filter) = fields
+            .chunks_exact(3)
+            .find(|triplet| triplet[1] == b"filter")
+        {
+            let value = String::from_utf8_lossy(filter[2]);
+            return Err(format!(
+                "repository source declares a custom Git filter and cannot be verified safely: {relative}: {value}"
+            ));
+        }
+        Ok(())
+    }
+}
+
+struct TemporaryGitIndex {
+    directory: TemporaryDirectory,
+    index: PathBuf,
+    objects: PathBuf,
+    alternates: std::ffi::OsString,
+}
+
+impl TemporaryGitIndex {
+    fn new(real_objects: &Path) -> Result<Self, String> {
+        let directory = TemporaryDirectory::new()?;
+        let objects = directory.path().join("objects");
+        fs::create_dir(&objects).map_err(|error| {
+            format!(
+                "cannot create temporary Git object directory {}: {error}",
+                objects.display()
+            )
+        })?;
+        let alternates = std::env::join_paths([real_objects]).map_err(|error| {
+            format!(
+                "cannot encode repository object directory {}: {error}",
+                real_objects.display()
+            )
+        })?;
+        Ok(Self {
+            index: directory.path().join("index"),
+            directory,
+            objects,
+            alternates,
+        })
+    }
+
+    fn path(&self) -> &Path {
+        self.directory.path()
+    }
+
+    fn command(&self, repo: &Path) -> Command {
+        let mut command = repository_git(repo);
+        command
+            .env("GIT_INDEX_FILE", &self.index)
+            .env("GIT_OBJECT_DIRECTORY", &self.objects)
+            .env("GIT_ALTERNATE_OBJECT_DIRECTORIES", &self.alternates);
+        command
+    }
+}
+
+struct TemporaryDirectory {
+    path: PathBuf,
+}
+
+impl TemporaryDirectory {
+    fn new() -> Result<Self, String> {
+        loop {
+            let id = NEXT_SOURCE_SCRATCH.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "code-intel-source-index-{}-{id}",
+                std::process::id()
+            ));
+            match fs::create_dir(&path) {
+                Ok(()) => return Ok(Self { path }),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(format!(
+                        "cannot create temporary Git index directory {}: {error}",
+                        path.display()
+                    ));
+                }
+            }
+        }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TemporaryDirectory {
+    fn drop(&mut self) {
+        fs::remove_dir_all(&self.path).ok();
+    }
+}
+
+fn repository_git(repo: &Path) -> Command {
+    let mut command = hardened_git::command(repo);
+    for variable in [
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_COMMON_DIR",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    ] {
+        command.env_remove(variable);
+    }
+    command.env("GIT_LITERAL_PATHSPECS", "1");
+    command
+}
+
 /// Digests are recomputed in process rather than through `Get-FileHash`. Every
 /// operation trace pins two files, so shelling out once per pin spawned dozens
 /// of concurrent `pwsh` processes; the macOS runner killed them with
 /// `Stack overflow.`, which surfaced here as 26 of 40 records failing at once
-/// and read exactly like real digest drift. SHA256 over the same bytes is the
-/// same digest either way, so nothing about what this asserts changes.
+/// and read exactly like real digest drift. Repository source pins are read
+/// from a disposable Git index so current unstaged edits receive the same
+/// clean conversion as a future commit without mutating the real repository.
+/// General artifact payload hashing remains byte-exact.
 fn recompute_sha(relative: &str) -> String {
-    let path = root().join(relative);
-    let bytes = fs::read(&path)
-        .unwrap_or_else(|error| panic!("conformance source is unreadable: {relative}: {error}"));
-    let digest = content_contract::sha256_hex(&bytes);
+    let verifier = WorktreeSourceVerifier::new(&root())
+        .unwrap_or_else(|error| panic!("cannot initialize conformance source verifier: {error}"));
+    let digest = verifier
+        .sha256(relative)
+        .unwrap_or_else(|error| panic!("conformance source is unverifiable: {error}"));
     assert_eq!(digest.len(), 64);
     digest
 }
 
 fn assert_operation_trace_exact(record: &Value, integration_ids: &[&str]) {
-    let mut expected = BTreeMap::new();
+    let mut expected = std::collections::BTreeMap::new();
     for integration_id in integration_ids {
         let entry = integration(integration_id);
         for (operation, command) in entry["commands"].as_object().unwrap() {
@@ -687,7 +1262,7 @@ fn assert_operation_trace_exact(record: &Value, integration_ids: &[&str]) {
     }
 
     let traces = record["operationTrace"].as_array().unwrap();
-    let mut actual = BTreeMap::new();
+    let mut actual = std::collections::BTreeMap::new();
     for trace in traces {
         let integration_id = trace["integrationId"].as_str().unwrap();
         let operation = trace["operation"].as_str().unwrap();
@@ -1369,7 +1944,7 @@ fn ticket_r09_rg_record_traces_every_registered_production_operation() {
         "local-conformance-sha256",
     );
     assert_operation_trace_exact(&record, &["inventory.rg"]);
-    let exact = BTreeMap::from([
+    let exact = std::collections::BTreeMap::from([
         (
             ("inventory.rg", "run"),
             "normalized_inventory_matches_real_legacy_runner_with_custom_exclude",

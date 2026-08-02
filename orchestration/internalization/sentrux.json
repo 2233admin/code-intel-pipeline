@@ -126,7 +126,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "eb064d3743f679020f5e75efd8122d95de74a19b34177d8a9d4393ffb0c8b3b4",
+        "sha256": "2cbcc6eb4c2e0aecd036ff047564848e9074b696f7d14cac2ce920e11ce8f068",
         "testName": "production_dag_output_commits_and_enters_the_authoritative_index"
       }
     },
@@ -335,7 +335,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "eb064d3743f679020f5e75efd8122d95de74a19b34177d8a9d4393ffb0c8b3b4",
+        "sha256": "2cbcc6eb4c2e0aecd036ff047564848e9074b696f7d14cac2ce920e11ce8f068",
         "testName": "production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch"
       }
     }
@@ -428,7 +428,7 @@
       "description": "Pipeline-owned built-in structural gate engine (metrics, rules check, no-degradation gate, cycle detection)",
       "evidenceIds": [
         "local:b03:native-gate-source-sha256:e40f970f48d3ddbb5ff096068988d8c45daacdf4a1a6797fa54e15e40357516c",
-        "local:b03:native-gate-conformance:eb064d3743f679020f5e75efd8122d95de74a19b34177d8a9d4393ffb0c8b3b4"
+        "local:b03:native-gate-conformance:2cbcc6eb4c2e0aecd036ff047564848e9074b696f7d14cac2ce920e11ce8f068"
       ]
     }
   ],

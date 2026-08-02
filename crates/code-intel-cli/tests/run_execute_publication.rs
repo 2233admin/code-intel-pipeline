@@ -96,9 +96,21 @@ fn doctor_tool_fixture(root: &Path) -> PathBuf {
 /// `inventory.rg`, `evidence.native-code`) with no external adapters, so the
 /// only host dependency left is what `doctor_tool_fixture` already covers.
 fn run_execute(root: &Path, repo: &Path, authority: &Path, final_name: &str) -> (Output, Value) {
+    let output = run_execute_output(root, repo, authority, final_name);
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+        panic!(
+            "run execute did not print JSON: {error}\nstdout={}\nstderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
+    (output, result)
+}
+
+fn run_execute_output(root: &Path, repo: &Path, authority: &Path, final_name: &str) -> Output {
     let doctor_tools = doctor_tool_fixture(root);
     let staging = root.join(format!("stage-{final_name}"));
-    let output = Command::new(binary())
+    Command::new(binary())
         .args(["run", "execute", "--repo"])
         .arg(repo)
         .arg("--out")
@@ -109,15 +121,7 @@ fn run_execute(root: &Path, repo: &Path, authority: &Path, final_name: &str) -> 
         .arg("--doctor-tool-path-prefix")
         .arg(&doctor_tools)
         .output()
-        .expect("spawn code-intel run execute");
-    let result: Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
-        panic!(
-            "run execute did not print JSON: {error}\nstdout={}\nstderr={}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        )
-    });
-    (output, result)
+        .expect("spawn code-intel run execute")
 }
 
 fn query(artifact_root: &Path, repo_name: &str, repo_path: &Path) -> (Output, Value) {
@@ -175,6 +179,35 @@ fn run_execute_publishes_where_artifact_query_can_find_it() {
     assert!(
         published_path.join("run-complete.json").is_file(),
         "completion marker missing at the reported publication path"
+    );
+    let index: Value = serde_json::from_slice(
+        &fs::read(authority.join("index.json")).expect("authoritative index"),
+    )
+    .expect("authoritative index JSON");
+    let provenance_ref = index["entries"][0]["artifactRefs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|reference| reference["type"] == "repository.iteration")
+        .expect("authoritative iteration provenance Artifact Ref");
+    assert_eq!(
+        provenance_ref["artifactSchema"],
+        "code-intel-repository-iteration-provenance.v1"
+    );
+    let provenance: Value = serde_json::from_slice(
+        &fs::read(published_path.join(provenance_ref["path"].as_str().unwrap())).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(provenance["purpose"], "repository_intelligence_iteration");
+    assert_eq!(provenance["repositoryKey"], "fixture-repo");
+    assert_eq!(provenance["publicationName"], "run-001");
+    assert_eq!(
+        provenance["runIdentity"],
+        index["entries"][0]["runIdentity"]
+    );
+    assert_eq!(
+        provenance["snapshotIdentity"],
+        index["entries"][0]["snapshotIdentity"]
     );
 
     let (query_output, query_result) = query(&authority, "fixture-repo", &repo);
@@ -238,6 +271,50 @@ fn run_execute_does_not_double_nest_when_authority_root_already_ends_with_repo_n
         "artifact query failed against a pre-nested --authority-root: {query_result}\nstderr={}",
         String::from_utf8_lossy(&query_output.stderr)
     );
+
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn completed_index_admission_is_current_and_repairable() {
+    let root = temp_dir("index-admission");
+    let repo = fixture_repo(&root);
+    let artifact_root = root.join("authority");
+    let authority = artifact_root.join("fixture-repo");
+    fs::create_dir_all(&authority).expect("fixture authority root");
+
+    let (first, _) = run_execute(&root, &repo, &authority, "run-001");
+    assert_eq!(first.status.code(), Some(0));
+    let index_path = artifact_root.join("index.json");
+    let index: Value = serde_json::from_slice(&fs::read(&index_path).unwrap()).unwrap();
+    assert_eq!(index["entries"][0]["run"], "run-001");
+
+    let older = run_execute_output(&root, &repo, &authority, "run-000");
+    assert_eq!(older.status.code(), Some(65));
+    assert!(String::from_utf8_lossy(&older.stderr)
+        .contains("is not the latest completed-only index entry; selected run-001"));
+    assert!(authority.join("run-000/run-complete.json").is_file());
+    let unchanged: Value = serde_json::from_slice(&fs::read(&index_path).unwrap()).unwrap();
+    assert_eq!(unchanged["entries"][0]["run"], "run-001");
+
+    let blocked_backup = artifact_root.join("index.json.bak");
+    fs::create_dir(&blocked_backup).unwrap();
+    let newest = run_execute_output(&root, &repo, &authority, "run-002");
+    assert_eq!(newest.status.code(), Some(74));
+    assert!(String::from_utf8_lossy(&newest.stderr).contains("replace artifact index"));
+    assert!(authority.join("run-002/run-complete.json").is_file());
+    let unchanged: Value = serde_json::from_slice(&fs::read(&index_path).unwrap()).unwrap();
+    assert_eq!(unchanged["entries"][0]["run"], "run-001");
+
+    fs::remove_dir(&blocked_backup).unwrap();
+    let repaired = Command::new(binary())
+        .args(["artifact", "index", "--artifact-root"])
+        .arg(&artifact_root)
+        .output()
+        .expect("spawn artifact index repair");
+    assert_eq!(repaired.status.code(), Some(0));
+    let repaired: Value = serde_json::from_slice(&repaired.stdout).unwrap();
+    assert_eq!(repaired["entries"][0]["run"], "run-002");
 
     fs::remove_dir_all(&root).ok();
 }
