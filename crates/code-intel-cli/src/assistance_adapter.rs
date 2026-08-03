@@ -111,7 +111,9 @@ fn catalog() -> Result<BTreeMap<String, Value>, AdapterError> {
         ))
     })?;
     let catalog: Value = serde_json::from_slice(&bytes).map_err(|error| {
-        AdapterError::Contract(format!("assistance catalog is not one JSON object: {error}"))
+        AdapterError::Contract(format!(
+            "assistance catalog is not one JSON object: {error}"
+        ))
     })?;
     if catalog["schema"] != "code-intel-agent-assistance-catalog.v1" {
         return Err(AdapterError::Contract(

@@ -108,7 +108,9 @@ fn install_commands_match_the_plugin_and_marketplace_they_claim() {
             "{id} installs from {source} while the catalog pins {marketplace}"
         );
         assert_eq!(
-            entry["install"]["command"].as_str().expect("install command"),
+            entry["install"]["command"]
+                .as_str()
+                .expect("install command"),
             format!("claude plugin install {plugin}@{source}"),
             "{id} states an install command that does not match its own plugin id"
         );
@@ -128,7 +130,9 @@ fn the_source_pins_a_full_commit_so_a_rating_can_be_re_checked() {
         .expect("pinned commit");
     assert_eq!(commit.len(), 40, "pinnedCommit must be a full commit id");
     assert!(
-        commit.chars().all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()),
+        commit
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()),
         "pinnedCommit must be lowercase hex"
     );
     // Every rating cites evidence, and none of them may lean on adoption

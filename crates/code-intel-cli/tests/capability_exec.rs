@@ -1991,7 +1991,10 @@ fn assistance_discovery_turns_catalog_candidates_into_proposal_only_dossiers() {
     let result: Value =
         serde_json::from_slice(&fs::read(out.join("assistance-discovery-result.json")).unwrap())
             .unwrap();
-    assert_eq!(result["schema"], "code-intel-assistance-discovery-result.v1");
+    assert_eq!(
+        result["schema"],
+        "code-intel-assistance-discovery-result.v1"
+    );
     assert_eq!(result["gapId"], "gap-line-level-review");
     assert_eq!(result["proposalOnly"], json!(true));
     assert_eq!(result["effects"], json!([]));
