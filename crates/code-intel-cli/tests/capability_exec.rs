@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
-    "2b3ad83032ceca7c7e745c4f30dfd45ec50d4cd0a2a5829368c22246ed2d7a5a";
+    "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568";
 const STRUCTURED_EDIT_DIGEST: &str =
     "6f481d582dc0301fb438bcd18b9ab5704fc72f81b7044635140d4b99c4fae0ac";
 static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -1639,7 +1639,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
         "version":"1.0.0",
         "toolchainDigests":[
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-            "2b3ad83032ceca7c7e745c4f30dfd45ec50d4cd0a2a5829368c22246ed2d7a5a"
+            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568"
         ]
     });
     value["options"] = json!({"repoPath":repo,"auto":true});
@@ -1915,6 +1915,155 @@ fn normalized_repo_lines(text: &str, repo: &Path) -> Vec<String> {
         .collect::<Vec<_>>()
         .join("\n");
     normalized_lines(&relative)
+}
+
+/// The declared implementation is read from the registry rather than restated
+/// here: a copy would only prove this file agrees with itself, and the pins
+/// move every time `repin` runs.
+fn registry_implementation(capability: &str) -> Value {
+    let registry: Value = serde_json::from_slice(
+        &fs::read(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join("orchestration/integrations.json"),
+        )
+        .expect("read integrations registry"),
+    )
+    .expect("integrations registry is JSON");
+    registry["integrations"]
+        .as_array()
+        .expect("integrations is an array")
+        .iter()
+        .find(|entry| entry["id"] == capability)
+        .unwrap_or_else(|| panic!("{capability} is not registered"))["capabilityDeclaration"]
+        ["implementation"]
+        .clone()
+}
+
+fn assistance_gap() -> Value {
+    json!({
+        "schema": "code-intel-engineering-capability-gap.v1",
+        "id": "gap-line-level-review",
+        "capability": "read a changed diff for defects line by line",
+        "description": "`change risk` scores a revspec and `change impact` selects tests; neither reads the diff itself.",
+        "constraints": ["no repository mutation", "no new runtime service"],
+        "evidenceRefs": ["artifact:change-risk", "artifact:change-impact"]
+    })
+}
+
+#[test]
+fn assistance_discovery_turns_catalog_candidates_into_proposal_only_dossiers() {
+    let root = temp_dir("assistance-discovery");
+    let repo = root.join("repo");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(repo.join("src/main.rs"), "fn main() {}\n").unwrap();
+
+    let mut value = request(&repo, "assistance.discovery");
+    value["implementation"] = registry_implementation("assistance.discovery");
+    value["options"] = json!({
+        "gap": assistance_gap(),
+        "candidateIds": [
+            "official-plugin-pr-review-toolkit",
+            "official-plugin-claude-security"
+        ]
+    });
+    value["effectPolicy"]["allowedEffects"] = json!([]);
+    let out = root.join("out");
+    let output = run_with_request_file(
+        &value,
+        &root.join("request.json"),
+        &out,
+        "assistance.discovery",
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr={} stdout={}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let envelope: Value = serde_json::from_slice(&output.stdout)
+        .expect("stdout must contain exactly one capability result JSON document");
+    assert_eq!(envelope["capability"], "assistance.discovery");
+    assert_eq!(envelope["declaredEffects"], json!([]));
+    assert_eq!(envelope["observedEffects"], json!([]));
+
+    let result: Value =
+        serde_json::from_slice(&fs::read(out.join("assistance-discovery-result.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        result["schema"],
+        "code-intel-assistance-discovery-result.v1"
+    );
+    assert_eq!(result["gapId"], "gap-line-level-review");
+    assert_eq!(result["proposalOnly"], json!(true));
+    assert_eq!(result["effects"], json!([]));
+    assert_eq!(result["authorityEvents"], json!([]));
+    assert_eq!(result["adoptionDecisions"], json!([]));
+    assert_eq!(result["committedEngineeringPlans"], json!([]));
+
+    let dossiers = result["dossiers"].as_array().unwrap();
+    assert_eq!(dossiers.len(), 2);
+    for dossier in dossiers {
+        assert_eq!(dossier["disposition"], "proposal");
+        assert_eq!(dossier["authorityState"], "unresolved");
+    }
+    // The committed rating travels with the dossier. claude-security is the
+    // one candidate whose licence is a proprietary internal-use grant, so a
+    // caller must see `review_required` rather than a rating invented at call
+    // time — that is the whole reason candidates resolve from the catalog.
+    let security = dossiers
+        .iter()
+        .find(|dossier| dossier["id"] == "official-plugin-claude-security")
+        .expect("claude-security dossier");
+    assert_eq!(security["license"]["status"], "review_required");
+    assert_eq!(security["security"]["status"], "review_required");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn assistance_discovery_refuses_a_candidate_that_was_never_reviewed() {
+    let root = temp_dir("assistance-unreviewed");
+    let repo = root.join("repo");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(repo.join("src/main.rs"), "fn main() {}\n").unwrap();
+
+    let mut value = request(&repo, "assistance.discovery");
+    value["implementation"] = registry_implementation("assistance.discovery");
+    value["options"] = json!({
+        "gap": assistance_gap(),
+        "candidateIds": ["official-plugin-code-review", "some-tool-nobody-reviewed"]
+    });
+    value["effectPolicy"]["allowedEffects"] = json!([]);
+    let out = root.join("out");
+    let output = run_with_request_file(
+        &value,
+        &root.join("request.json"),
+        &out,
+        "assistance.discovery",
+    );
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "an unreviewed candidate must not produce a dossier"
+    );
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        text.contains("some-tool-nobody-reviewed")
+            && text.contains("agent-assistance-catalog.v1.json"),
+        "the diagnostic must name the candidate and the catalog: {text}"
+    );
+    assert!(
+        !out.join("assistance-discovery-result.json").exists(),
+        "a refused request must publish nothing"
+    );
+
+    let _ = fs::remove_dir_all(root);
 }
 
 fn find_named_file(root: &Path, name: &str) -> Option<PathBuf> {

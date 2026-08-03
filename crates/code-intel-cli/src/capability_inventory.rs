@@ -11,6 +11,10 @@ use crate::adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterErro
 use crate::artifact_ref::VerifiedArtifact;
 use crate::snapshot;
 
+#[path = "assistance_adapter.rs"]
+mod assistance_adapter;
+#[path = "assistance_discovery.rs"]
+mod assistance_discovery;
 #[path = "builtin_provider_evidence.rs"]
 mod builtin_provider_evidence;
 #[path = "compatibility_retirement_gate.rs"]
@@ -107,6 +111,7 @@ pub(crate) fn execute(
         "advisory.workflow-recommend.compat" => {
             workflow_recommendation(request, verified_inputs, out)
         }
+        "assistance.discovery.compat" => assistance_adapter::execute(request, verified_inputs, out),
         other => Err(AdapterError::Unavailable(format!(
             "runtime adapter is not installed: {other}"
         ))),

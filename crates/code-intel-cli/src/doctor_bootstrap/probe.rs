@@ -91,6 +91,41 @@ pub(super) fn probe_command_output(
     }
 }
 
+/// Assistance candidates are Claude Code plugin assets, not PATH binaries, so
+/// `locate` would never see them and the doctor would stay blind to a routing
+/// target the catalog names. Presence is the directory the harness unpacks a
+/// marketplace plugin into, matching how `understandAnything` already probes
+/// its plugin. A machine with no catalog or no Claude Code installation is a
+/// valid machine: it simply produces no rows, or rows that are all absent.
+pub(super) fn probe_assistance_plugins(catalog_path: &Path, home: &Path) -> Vec<Value> {
+    let Ok(bytes) = std::fs::read(catalog_path) else {
+        return Vec::new();
+    };
+    let Ok(catalog) = serde_json::from_slice::<Value>(&bytes) else {
+        return Vec::new();
+    };
+    let root = home.join(".claude").join("plugins").join("cache");
+    let empty = Vec::new();
+    catalog["entries"]
+        .as_array()
+        .unwrap_or(&empty)
+        .iter()
+        .filter_map(|entry| {
+            let candidate = entry.pointer("/candidate/id")?.as_str()?;
+            let plugin = entry.pointer("/install/plugin")?.as_str()?;
+            let marketplace = entry.pointer("/install/marketplace")?.as_str()?;
+            let path = root.join(marketplace).join(plugin);
+            let found = path.is_dir();
+            Some(json!({
+                "candidateId": candidate,
+                "name": format!("{plugin}@{marketplace}"),
+                "found": found,
+                "source": if found { display(&path) } else { String::new() }
+            }))
+        })
+        .collect()
+}
+
 fn prefixed_path(prefix: &Path) -> Option<std::ffi::OsString> {
     let mut paths = vec![prefix.to_path_buf()];
     paths.extend(env::split_paths(&env::var_os("PATH").unwrap_or_default()));
