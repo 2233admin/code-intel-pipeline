@@ -19,7 +19,13 @@ param(
     [switch]$AllowGraphMissing,
     [switch]$SkipSentruxCheck,
     [switch]$SkipSentruxGate,
-    [switch]$SkipGitHubResearch
+    [switch]$SkipGitHubResearch,
+
+    # Opt-in: by default, a pipeline exit code of 2 (Sentrux gate reported architecture/
+    # quality findings, pipeline otherwise completed -- see issue #130) is treated as a
+    # passing contract-test run, same as exit 0. Pass this switch for callers that
+    # legitimately need "any gate finding fails the test" behavior.
+    [switch]$RequireCleanGates
 )
 
 Set-StrictMode -Version Latest
@@ -137,7 +143,7 @@ foreach ($key in $requiredCategories) {
 if ($missingCategories.Count -gt 0) {
     throw "Missing failure category counters: $($missingCategories -join ', ')"
 }
-$requiredSummaryFields = @("effectiveFailed", "effectiveFailureCategories", "blockingSentruxDebt", "knownSentruxDebt")
+$requiredSummaryFields = @("effectiveFailed", "effectiveFailureCategories", "blockingSentruxDebt", "knownSentruxDebt", "gateFindings")
 $missingSummaryFields = @()
 foreach ($key in $requiredSummaryFields) {
     if ($null -eq $report.summary.PSObject.Properties[$key]) {
@@ -154,7 +160,18 @@ $graphMissingOnly = (
     [int]$report.summary.effectiveFailureCategories.sentruxFail -eq 0
 )
 $pipelineFailureMessage = ""
-if ($pipelineExitCode -ne 0 -and -not ($AllowGraphMissing -and $graphMissingOnly)) {
+if ($pipelineExitCode -eq 2) {
+    # Issue #130: exit 2 means the pipeline completed and Sentrux's architecture/quality
+    # gate reported findings (debt) in the target repo. That is success-with-findings, not
+    # a contract-test failure -- unless the caller explicitly opted into strict
+    # gate-clean behavior via -RequireCleanGates.
+    Write-Host "Pipeline exit code: 2 (gate findings; pipeline completed)"
+    Write-Host "Gate findings: $($report.summary.gateFindings)"
+    if ($RequireCleanGates) {
+        $pipelineFailureMessage = "Pipeline reported $($report.summary.gateFindings) Sentrux gate finding(s) for repo: $label (-RequireCleanGates set)"
+    }
+}
+elseif ($pipelineExitCode -ne 0 -and -not ($AllowGraphMissing -and $graphMissingOnly)) {
     $failedSteps = @($report.steps | Where-Object { $_.status -eq "failed" } | ForEach-Object {
         [ordered]@{
             name = $_.name
@@ -451,6 +468,7 @@ $result = [ordered]@{
     steps = $report.steps.Count
     failed = $report.summary.failed
     effectiveFailed = $report.summary.effectiveFailed
+    gateFindings = $report.summary.gateFindings
     manualRequired = $report.summary.manualRequired
     failureCategories = $report.summary.failureCategories
     effectiveFailureCategories = $report.summary.effectiveFailureCategories

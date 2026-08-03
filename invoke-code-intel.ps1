@@ -68,6 +68,7 @@ function Invoke-OneRepo {
         return [pscustomobject][ordered]@{
             repo = $label
             ok = $false
+            status = "FAILED"
             stage = "doctor"
             exitCode = $LASTEXITCODE
         }
@@ -100,10 +101,20 @@ function Invoke-OneRepo {
         }
     }
 
+    # run-code-intel.ps1 exit codes (issue #130): 0 = clean, 2 = pipeline completed but
+    # Sentrux's architecture/quality gate reported findings (debt) in the target repo --
+    # that is success-with-findings, not a failure -- 1 = the pipeline genuinely did not
+    # complete. Only 1 (or anything outside {0,1,2}) is a real failure here.
     $code = $LASTEXITCODE
+    $status = switch ($code) {
+        0 { "OK" }
+        2 { "FINDINGS" }
+        default { "FAILED" }
+    }
     return [pscustomobject][ordered]@{
         repo = $label
-        ok = $code -eq 0
+        ok = ($code -eq 0 -or $code -eq 2)
+        status = $status
         stage = "pipeline"
         exitCode = $code
     }
@@ -182,12 +193,20 @@ if (-not $NoIndexUpdate -and (Test-Path -LiteralPath $indexer -PathType Leaf)) {
 
 Write-Host "Code intel invoke: batch summary"
 foreach ($result in $results) {
-    $mark = if ($result.ok) { "OK" } else { "FAILED" }
+    $mark = if ($result.PSObject.Properties["status"]) { [string]$result.status } elseif ($result.ok) { "OK" } else { "FAILED" }
     Write-Host "$mark $($result.repo) stage=$($result.stage) exit=$($result.exitCode)"
 }
 
+# Layered batch exit code, mirroring run-code-intel.ps1's own exit-code semantics
+# (issue #130): 1 if any repo genuinely failed, 2 if none failed but at least one
+# reported gate findings (Sentrux architecture/quality debt -- success, not failure),
+# 0 if every repo is clean.
 $failed = @($results | Where-Object { -not $_.ok })
 if ($failed.Count -gt 0) {
     exit 1
+}
+$findings = @($results | Where-Object { [string]$_.status -eq "FINDINGS" })
+if ($findings.Count -gt 0) {
+    exit 2
 }
 exit 0
