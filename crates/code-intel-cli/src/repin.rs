@@ -25,6 +25,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
+use crate::evidence_outcome::{EvidenceOutcome, EvidenceScope, PartialReason};
 use crate::snapshot;
 
 const DEFAULT_EXCLUDES: [&str; 1] = ["orchestration/retirements/"];
@@ -191,16 +192,24 @@ pub(crate) struct RepinReport {
     ambiguous: Vec<AmbiguousSource>,
     skipped: Vec<SkippedFile>,
     rewritten: BTreeMap<String, Vec<u8>>,
+    /// Gate G1 (issue #139 / #138): whether the pin-staleness scan itself
+    /// covered its whole surface, computed once here from the same
+    /// `scan_targets` / `skipped` data every other field on this struct is
+    /// built from. `is_clean()` and the JSON `scanCoverage` field both read
+    /// this single value, so they cannot drift apart the way the charter
+    /// warns against (a pass/fail decision reading different data than the
+    /// interval it is supposed to be judging).
+    outcome: EvidenceOutcome,
 }
 
 impl RepinReport {
-    /// Orphaned pins, ambiguous digests, and gating skips are never touched
-    /// by `--write` — they need a human, not a resync — so they stay
-    /// "unresolved" even after a successful write.
+    /// Orphaned pins and ambiguous digests are never touched by `--write`
+    /// — they need a human, not a resync — so they stay "unresolved" even
+    /// after a successful write. An incomplete scan (`outcome` is not
+    /// `Complete`) is unresolved for the same reason a stale pin is: the
+    /// report cannot back up a "clean" claim over ground it never covered.
     fn has_unresolved(&self) -> bool {
-        !self.orphaned.is_empty()
-            || !self.ambiguous.is_empty()
-            || self.skipped.iter().any(|skip| skip.gates_clean)
+        !self.orphaned.is_empty() || !self.ambiguous.is_empty() || !self.outcome.is_complete()
     }
 
     fn is_clean(&self) -> bool {
@@ -220,6 +229,7 @@ impl RepinReport {
             "mode": if write { "write" } else { "report" },
             "passes": self.passes,
             "clean": self.is_clean(),
+            "scanCoverage": self.outcome.to_json(),
             "filesChanged": self.findings.len(),
             "totalSubstitutions": self.total_substitutions(),
             "stalePins": self.findings.iter().map(|finding| json!({
@@ -301,6 +311,9 @@ fn print_human(report: &RepinReport, write: bool) {
             if report.passes == 1 { "" } else { "es" }
         );
         return;
+    }
+    if !report.outcome.is_complete() {
+        println!("scan coverage: {}", report.outcome.describe());
     }
     let action = if write { "rewrote" } else { "found" };
     println!(
@@ -562,6 +575,8 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
         })
         .collect();
 
+    let outcome = scan_coverage(&scan_targets, &skipped, &excludes);
+
     Ok(RepinReport {
         passes,
         findings: file_findings,
@@ -569,7 +584,61 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
         ambiguous,
         skipped,
         rewritten,
+        outcome,
     })
+}
+
+/// Gate G1 (#139 / #138): compute the honesty bit for this scan from
+/// exactly the data every other part of the report is built from --
+/// `scan_targets` (what a full scan would have covered after exclusions)
+/// and `skipped` (what actually failed to load). No separate tally is
+/// kept anywhere else, so this can never drift from the report it
+/// describes.
+///
+/// An empty `scan_targets` is deliberately treated as `NotComputed`, not
+/// vacuously `Complete`: `--exclude`-ing away every tracked file (or
+/// pointing `--repo` at a tree with none) previously made `is_clean()`
+/// return `true` on zero files inspected, printing the same
+/// `clean: true, filesChanged: 0` shape as the #133 bug this type exists
+/// to prevent -- a scan that covered nothing must not read the same as a
+/// scan that covered everything and found it clean.
+fn scan_coverage(
+    scan_targets: &[String],
+    skipped: &[SkippedFile],
+    excludes: &[String],
+) -> EvidenceOutcome {
+    if scan_targets.is_empty() {
+        return EvidenceOutcome::NotComputed {
+            reason: "scan surface empty: no tracked file remained after exclusions".to_string(),
+        };
+    }
+    let scanned_paths: Vec<String> = scan_targets
+        .iter()
+        .filter(|path| !skipped.iter().any(|skip| &skip.path == *path))
+        .cloned()
+        .collect();
+    let scope = EvidenceScope {
+        artifact_types: vec!["tracked-text-file".to_string()],
+        scanned_paths,
+        excluded_prefixes: excludes.to_vec(),
+    };
+    // Binary/symlink skips are outside the "tracked-text-file" artifact
+    // type this scan declares, so their absence from `scanned_paths` is
+    // not a gap. Only skips that gate `clean` today (too large, unreadable)
+    // represent text this scan should have covered but could not.
+    let unreadable: Vec<String> = skipped
+        .iter()
+        .filter(|skip| skip.gates_clean)
+        .map(|skip| skip.path.clone())
+        .collect();
+    if unreadable.is_empty() {
+        EvidenceOutcome::Complete(scope)
+    } else {
+        EvidenceOutcome::Partial {
+            reason: PartialReason::UnreadableInput(unreadable),
+            scope,
+        }
+    }
 }
 
 /// Why a scan target's content wasn't inspected. `Binary` is routine and
