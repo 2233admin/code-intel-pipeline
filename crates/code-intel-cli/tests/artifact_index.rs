@@ -31,6 +31,32 @@ use run_commit::CommitOptions;
 use staged_artifact::{ArtifactWriteContract, StagedWriter};
 
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const SNAPSHOT_PAYLOAD: &[u8] = br#"{
+  "schema":"code-intel-repository-snapshot.v1",
+  "snapshot":{
+    "identity":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "repoIdentity":"content-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "head":"fixture",
+    "workingTreePolicy":"explicit_overlay",
+    "scope":["."],
+    "inputDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "dirtyOverlay":{
+    "present":false,
+    "digest":null,
+    "paths":[],
+    "members":{
+      "trackedModified":[],
+      "trackedDeleted":[],
+      "untracked":[],
+      "renamed":[],
+      "typeChanged":[],
+      "staged":[]
+    },
+    "ignoredPolicy":"excluded_by_git_ignore"
+  },
+  "repository":{"kind":"unversioned"}
+}"#;
 static SEQ: AtomicU64 = AtomicU64::new(0);
 
 struct Temp(PathBuf);
@@ -57,14 +83,14 @@ impl Drop for Temp {
 
 fn inventory_contract() -> ArtifactWriteContract {
     ArtifactWriteContract {
-        artifact_schema: "code-intel-file-inventory.v1",
-        artifact_type: "inventory.files",
+        artifact_schema: "code-intel-repository-snapshot.v1",
+        artifact_type: "repository.snapshot",
         max_bytes: 1024,
         validate_payload: |bytes| {
-            if bytes == b"portable evidence\n" {
+            if bytes == SNAPSHOT_PAYLOAD {
                 Ok(())
             } else {
-                Err("invalid inventory".into())
+                Err("invalid repository snapshot".into())
             }
         },
     }
@@ -79,20 +105,66 @@ fn manifest_contract() -> ArtifactWriteContract {
     }
 }
 
+fn provenance_contract() -> ArtifactWriteContract {
+    let contract = artifact_ref::registered_contract(&json!({
+        "artifactSchema":artifact_ref::REPOSITORY_ITERATION_SCHEMA,
+        "type":artifact_ref::REPOSITORY_ITERATION_TYPE,
+    }))
+    .unwrap();
+    ArtifactWriteContract {
+        artifact_schema: contract.artifact_schema,
+        artifact_type: contract.artifact_type,
+        max_bytes: contract.max_bytes,
+        validate_payload: contract.validate_payload,
+    }
+}
+
+fn provenance_payload(
+    run_identity: &str,
+    repository_key: &str,
+    publication_name: &str,
+    snapshot_identity: &str,
+) -> Vec<u8> {
+    serde_json::to_vec(&json!({
+        "schema":artifact_ref::REPOSITORY_ITERATION_SCHEMA,
+        "purpose":artifact_ref::REPOSITORY_ITERATION_PURPOSE,
+        "runIdentity":run_identity,
+        "snapshotIdentity":snapshot_identity,
+        "repositoryKey":repository_key,
+        "publicationName":publication_name,
+        "producer":{
+            "component":artifact_ref::REPOSITORY_ITERATION_PRODUCER_COMPONENT,
+            "contract":artifact_ref::REPOSITORY_ITERATION_PRODUCER_CONTRACT,
+            "version":artifact_ref::REPOSITORY_ITERATION_PRODUCER_VERSION,
+        }
+    }))
+    .unwrap()
+}
+
 fn staged_with_outcome(
     root: &Path,
     run_identity: &str,
     outcome: &str,
+    publication_name: &str,
 ) -> (staged_artifact::StagedArtifactSet, Value) {
     let mut writer = StagedWriter::begin(root, SNAPSHOT).unwrap();
     let nodes = match outcome {
         "completed" => {
             let inventory = writer
-                .stage(b"portable evidence\n", inventory_contract())
+                .stage(SNAPSHOT_PAYLOAD, inventory_contract())
+                .unwrap()
+                .to_artifact_ref_value();
+            let repository_key = root.file_name().unwrap().to_str().unwrap();
+            let provenance = writer
+                .stage(
+                    &provenance_payload(run_identity, repository_key, publication_name, SNAPSHOT),
+                    provenance_contract(),
+                )
                 .unwrap()
                 .to_artifact_ref_value();
             json!({
-                "inventory":{"status":"succeeded","verdict":"pass","artifacts":[inventory]}
+                "repo.snapshot":{"status":"succeeded","verdict":"pass","artifacts":[inventory]},
+                "repository.iteration":{"status":"succeeded","verdict":"pass","artifacts":[provenance]}
             })
         }
         "domain_failed" => json!({
@@ -114,8 +186,303 @@ fn staged_with_outcome(
     (writer.seal().unwrap(), manifest_ref)
 }
 
-fn staged(root: &Path, run_identity: &str) -> (staged_artifact::StagedArtifactSet, Value) {
-    staged_with_outcome(root, run_identity, "completed")
+fn staged(
+    root: &Path,
+    run_identity: &str,
+    publication_name: &str,
+) -> (staged_artifact::StagedArtifactSet, Value) {
+    staged_with_outcome(root, run_identity, "completed", publication_name)
+}
+
+fn staged_snapshot_only(
+    root: &Path,
+    run_identity: &str,
+) -> (staged_artifact::StagedArtifactSet, Value) {
+    let mut writer = StagedWriter::begin(root, SNAPSHOT).unwrap();
+    let inventory = writer
+        .stage(SNAPSHOT_PAYLOAD, inventory_contract())
+        .unwrap()
+        .to_artifact_ref_value();
+    let manifest = json!({
+        "schema":"code-intel-run-manifest.v1",
+        "runIdentity":run_identity,
+        "snapshotIdentity":SNAPSHOT,
+        "outcome":"completed",
+        "nodes":{
+            "repo.snapshot":{"status":"succeeded","verdict":"pass","artifacts":[inventory]}
+        }
+    });
+    let manifest_ref = writer
+        .stage(&serde_json::to_vec(&manifest).unwrap(), manifest_contract())
+        .unwrap()
+        .to_artifact_ref_value();
+    (writer.seal().unwrap(), manifest_ref)
+}
+
+fn staged_custom_provenance(
+    root: &Path,
+    run_identity: &str,
+    payloads: &[Vec<u8>],
+    status: &str,
+) -> (staged_artifact::StagedArtifactSet, Value) {
+    let mut writer = StagedWriter::begin(root, SNAPSHOT).unwrap();
+    let inventory = writer
+        .stage(SNAPSHOT_PAYLOAD, inventory_contract())
+        .unwrap()
+        .to_artifact_ref_value();
+    let provenance = payloads
+        .iter()
+        .map(|payload| {
+            writer
+                .stage(payload, provenance_contract())
+                .unwrap()
+                .to_artifact_ref_value()
+        })
+        .collect::<Vec<_>>();
+    let provenance_node = match status {
+        "succeeded" => json!({
+            "status":"succeeded","verdict":"pass","artifacts":provenance
+        }),
+        "domain_failed" => json!({
+            "status":"domain_failed","verdict":"fail",
+            "diagnostic":"fixture wrong provenance status","artifacts":provenance
+        }),
+        other => panic!("unsupported provenance status: {other}"),
+    };
+    let manifest = json!({
+        "schema":"code-intel-run-manifest.v1",
+        "runIdentity":run_identity,
+        "snapshotIdentity":SNAPSHOT,
+        "outcome":"completed",
+        "nodes":{
+            "repo.snapshot":{"status":"succeeded","verdict":"pass","artifacts":[inventory]},
+            "repository.iteration":provenance_node
+        }
+    });
+    let manifest_ref = writer
+        .stage(&serde_json::to_vec(&manifest).unwrap(), manifest_contract())
+        .unwrap()
+        .to_artifact_ref_value();
+    (writer.seal().unwrap(), manifest_ref)
+}
+
+fn staged_non_repository_iteration(root: &Path) -> (staged_artifact::StagedArtifactSet, Value) {
+    let mut writer = StagedWriter::begin(root, SNAPSHOT).unwrap();
+    let manifest = json!({
+        "schema":"code-intel-run-manifest.v1",
+        "runIdentity":"dag-v1:dddd",
+        "snapshotIdentity":SNAPSHOT,
+        "outcome":"completed",
+        "nodes":{
+            "decision_record":{
+                "status":"succeeded",
+                "verdict":"pass",
+                "artifacts":[]
+            }
+        }
+    });
+    let manifest_ref = writer
+        .stage(&serde_json::to_vec(&manifest).unwrap(), manifest_contract())
+        .unwrap()
+        .to_artifact_ref_value();
+    (writer.seal().unwrap(), manifest_ref)
+}
+
+#[test]
+fn completed_governance_run_cannot_enter_the_repository_authority_index() {
+    let tree = Temp::new("governance-purpose");
+    let repo = tree.0.join("repo-a");
+    fs::create_dir(&repo).unwrap();
+    let (set, manifest_ref) = staged_non_repository_iteration(&repo);
+    run_commit::commit(set, &manifest_ref, "decision-001", CommitOptions::default()).unwrap();
+
+    let index = artifact_index::rebuild(&tree.0).unwrap();
+    assert!(index["entries"].as_array().unwrap().is_empty());
+    assert!(index["diagnostics"].as_array().unwrap().iter().any(|item| {
+        item["repo"] == "repo-a"
+            && item["run"] == "decision-001"
+            && item["classification"] == "non_repository_iteration"
+    }));
+}
+
+#[test]
+fn snapshot_only_admin_commit_cannot_enter_the_repository_authority_index() {
+    let tree = Temp::new("snapshot-only-admin");
+    let source = tree.0.join("source");
+    let repo = tree.0.join("repo-a");
+    fs::create_dir_all(&source).unwrap();
+    fs::create_dir_all(&repo).unwrap();
+    let (set, manifest_ref) = staged_snapshot_only(&source, "dag-v1:aabb");
+    let manifest_ref_path = set.path().join("manifest-ref.json");
+    fs::write(
+        &manifest_ref_path,
+        serde_json::to_vec(&manifest_ref).unwrap(),
+    )
+    .unwrap();
+    let command = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .arg("run")
+        .arg("commit")
+        .arg("--source-root")
+        .arg(set.path())
+        .arg("--authority-root")
+        .arg(&repo)
+        .arg("--manifest-ref")
+        .arg(manifest_ref_path)
+        .arg("--final-name")
+        .arg("run-001")
+        .output()
+        .unwrap();
+    assert!(
+        command.status.success(),
+        "{}",
+        String::from_utf8_lossy(&command.stderr)
+    );
+
+    let index = artifact_index::rebuild(&tree.0).unwrap();
+    assert!(index["entries"].as_array().unwrap().is_empty());
+    assert!(index["diagnostics"].as_array().unwrap().iter().any(|item| {
+        item["repo"] == "repo-a"
+            && item["run"] == "run-001"
+            && item["classification"] == "non_repository_iteration"
+    }));
+}
+
+#[test]
+fn repository_iteration_provenance_requires_exact_authority_bindings() {
+    let tree = Temp::new("provenance-bindings");
+    let cases = [
+        ("wrong-run", "dag-v1:ccdd", SNAPSHOT, "wrong-run", "run"),
+        (
+            "wrong-snapshot",
+            "dag-v1:aabb",
+            &"b".repeat(64),
+            "wrong-snapshot",
+            "run",
+        ),
+        ("wrong-repo", "dag-v1:aabb", SNAPSHOT, "another-repo", "run"),
+        (
+            "wrong-publication",
+            "dag-v1:aabb",
+            SNAPSHOT,
+            "wrong-publication",
+            "other-run",
+        ),
+    ];
+    for (repo_name, payload_run, payload_snapshot, payload_repo, payload_publication) in cases {
+        let repo = tree.0.join(repo_name);
+        fs::create_dir(&repo).unwrap();
+        let payload = provenance_payload(
+            payload_run,
+            payload_repo,
+            payload_publication,
+            payload_snapshot,
+        );
+        let (set, manifest_ref) =
+            staged_custom_provenance(&repo, "dag-v1:aabb", &[payload], "succeeded");
+        run_commit::commit(set, &manifest_ref, "run", CommitOptions::default()).unwrap();
+    }
+
+    let index = artifact_index::rebuild(&tree.0).unwrap();
+    assert!(index["entries"].as_array().unwrap().is_empty());
+    assert_eq!(
+        index["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["classification"] == "non_repository_iteration")
+            .count(),
+        4
+    );
+}
+
+#[test]
+fn duplicate_or_wrong_status_provenance_is_not_repository_authority() {
+    let tree = Temp::new("provenance-cardinality-status");
+    for (repo_name, status, duplicate) in [
+        ("duplicate", "succeeded", true),
+        ("wrong-status", "domain_failed", false),
+    ] {
+        let repo = tree.0.join(repo_name);
+        fs::create_dir(&repo).unwrap();
+        let first = provenance_payload("dag-v1:aabb", repo_name, "run", SNAPSHOT);
+        let mut payloads = vec![first];
+        if duplicate {
+            payloads.push(provenance_payload(
+                "dag-v1:aabb",
+                "another-repo",
+                "run",
+                SNAPSHOT,
+            ));
+        }
+        let (set, manifest_ref) = staged_custom_provenance(&repo, "dag-v1:aabb", &payloads, status);
+        run_commit::commit(set, &manifest_ref, "run", CommitOptions::default()).unwrap();
+    }
+    let index = artifact_index::rebuild(&tree.0).unwrap();
+    assert!(index["entries"].as_array().unwrap().is_empty());
+    assert_eq!(
+        index["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["classification"] == "non_repository_iteration")
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn repository_iteration_payload_contract_rejects_strict_field_mutations() {
+    let contract = provenance_contract();
+    let valid: Value = serde_json::from_slice(&provenance_payload(
+        "dag-v1:aabb",
+        "repo-a",
+        "run-001",
+        SNAPSHOT,
+    ))
+    .unwrap();
+    let mut cases = Vec::new();
+    for pointer in [
+        "/schema",
+        "/purpose",
+        "/runIdentity",
+        "/snapshotIdentity",
+        "/repositoryKey",
+        "/publicationName",
+        "/producer/component",
+        "/producer/contract",
+        "/producer/version",
+    ] {
+        let mut mutated = valid.clone();
+        *mutated.pointer_mut(pointer).unwrap() =
+            if matches!(pointer, "/repositoryKey" | "/publicationName") {
+                json!("../wrong")
+            } else {
+                json!("wrong")
+            };
+        cases.push(mutated);
+    }
+    let mut extra = valid.clone();
+    extra["unexpected"] = json!(true);
+    cases.push(extra);
+    let mut producer_extra = valid.clone();
+    producer_extra["producer"]["unexpected"] = json!(true);
+    cases.push(producer_extra);
+    for (index, invalid) in cases.into_iter().enumerate() {
+        assert!(
+            (contract.validate_payload)(&serde_json::to_vec(&invalid).unwrap()).is_err(),
+            "strict provenance field case {index} was accepted"
+        );
+    }
+    assert!(artifact_ref::registered_contract(&json!({
+        "artifactSchema":artifact_ref::REPOSITORY_ITERATION_SCHEMA,
+        "type":"wrong.type"
+    }))
+    .is_err());
+    assert!(artifact_ref::registered_contract(&json!({
+        "artifactSchema":"wrong.schema",
+        "type":artifact_ref::REPOSITORY_ITERATION_TYPE
+    }))
+    .is_err());
 }
 
 #[test]
@@ -123,9 +490,9 @@ fn complete_and_staged_side_by_side_indexes_only_complete_run() {
     let tree = Temp::new("smallest");
     let repo = tree.0.join("repo-a");
     fs::create_dir(&repo).unwrap();
-    let (set, manifest_ref) = staged(&repo, "dag-v1:aabb");
+    let (set, manifest_ref) = staged(&repo, "dag-v1:aabb", "run-001");
     run_commit::commit(set, &manifest_ref, "run-001", CommitOptions::default()).unwrap();
-    let (staged_set, _) = staged(&repo, "dag-v1:ccdd");
+    let (staged_set, _) = staged(&repo, "dag-v1:ccdd", "run-002");
     assert!(staged_set.path().is_dir());
 
     let result = artifact_index::rebuild(&tree.0).unwrap();
@@ -145,7 +512,7 @@ fn complete_and_staged_side_by_side_indexes_only_complete_run() {
 fn committed_repo(root: &Path, repo_name: &str, run_name: &str, identity: &str) -> PathBuf {
     let repo = root.join(repo_name);
     fs::create_dir_all(&repo).unwrap();
-    let (set, manifest_ref) = staged(&repo, identity);
+    let (set, manifest_ref) = staged(&repo, identity, run_name);
     run_commit::commit(set, &manifest_ref, run_name, CommitOptions::default())
         .unwrap()
         .final_path
@@ -186,10 +553,21 @@ fn forged_marker_manifest_and_artifact_bindings_are_diagnosed_and_rejected() {
 
     let bad_artifact = committed_repo(&tree.0, "bad-artifact", "run", "dag-v1:aabb");
     let (_, manifest) = run_commit::validate_committed_run(&bad_artifact).unwrap();
-    let artifact_path = manifest["nodes"]["inventory"]["artifacts"][0]["path"]
+    let artifact_path = manifest["nodes"]["repo.snapshot"]["artifacts"][0]["path"]
         .as_str()
         .unwrap();
     fs::write(bad_artifact.join(artifact_path), b"tampered evidence\n").unwrap();
+
+    let bad_provenance = committed_repo(&tree.0, "bad-provenance", "run", "dag-v1:aabb");
+    let (_, manifest) = run_commit::validate_committed_run(&bad_provenance).unwrap();
+    let provenance_path = manifest["nodes"]["repository.iteration"]["artifacts"][0]["path"]
+        .as_str()
+        .unwrap();
+    fs::write(
+        bad_provenance.join(provenance_path),
+        b"tampered provenance\n",
+    )
+    .unwrap();
 
     let result = artifact_index::rebuild(&tree.0).unwrap();
     assert_eq!(result["entries"], json!([]));
@@ -199,7 +577,7 @@ fn forged_marker_manifest_and_artifact_bindings_are_diagnosed_and_rejected() {
         .iter()
         .filter(|item| item["classification"] == "forged")
         .count();
-    assert_eq!(forged, 4);
+    assert_eq!(forged, 5);
 }
 
 #[test]
@@ -233,7 +611,7 @@ fn newer_committed_non_completed_run_is_diagnostic_only_and_never_becomes_latest
     let tree = Temp::new("non-completed");
     committed_repo(&tree.0, "repo-a", "run-001", "dag-v1:aabb");
     let repo = tree.0.join("repo-a");
-    let (set, manifest_ref) = staged_with_outcome(&repo, "dag-v1:ccdd", "domain_failed");
+    let (set, manifest_ref) = staged_with_outcome(&repo, "dag-v1:ccdd", "domain_failed", "run-999");
     run_commit::commit(set, &manifest_ref, "run-999", CommitOptions::default()).unwrap();
 
     let result = artifact_index::rebuild(&tree.0).unwrap();

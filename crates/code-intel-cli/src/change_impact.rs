@@ -3,11 +3,25 @@ use std::path::PathBuf;
 
 use serde_json::{json, Value};
 
-use crate::committed_evidence::{self, EvidenceError};
+use crate::committed_evidence::{self, CommittedEvidence, EvidenceError};
 use crate::impact_graph::{impacted_files, reverse_import_graph, select_tests, test_commands};
 
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
-    match Cli::parse(raw).and_then(execute) {
+    // Leaf adapter only — controllers wrap the execute_* paths with typed
+    // authority receipts and must not be imported here (import cycle).
+    let result = ChangeImpactInvocation::parse(raw).and_then(|invocation| match invocation {
+        ChangeImpactInvocation::Committed(request) => {
+            let evidence = committed_evidence::load(&request.artifact_root, &request.repo)
+                .map_err(map_evidence)?;
+            execute_committed(request, &evidence).map(|result| result.into_value())
+        }
+        ChangeImpactInvocation::StaleAdvisory(request) => {
+            let evidence = committed_evidence::load(&request.artifact_root, &request.repo)
+                .map_err(map_evidence)?;
+            execute_stale_advisory(request, &evidence).map(|result| result.into_value())
+        }
+    });
+    match result {
         Ok(result) => {
             println!("{}", serde_json::to_string(&result).unwrap());
             0
@@ -29,16 +43,20 @@ enum Staleness {
     Advisory,
 }
 
-struct Cli {
-    artifact_root: PathBuf,
-    repo: String,
-    repo_path: PathBuf,
-    changed: Vec<String>,
-    staleness: Staleness,
+pub(crate) enum ChangeImpactInvocation {
+    Committed(ChangeImpactRequest),
+    StaleAdvisory(ChangeImpactRequest),
 }
 
-impl Cli {
-    fn parse(raw: &[String]) -> Result<Self, ImpactError> {
+pub(crate) struct ChangeImpactRequest {
+    pub(crate) artifact_root: PathBuf,
+    pub(crate) repo: String,
+    pub(crate) repo_path: PathBuf,
+    changed: Vec<String>,
+}
+
+impl ChangeImpactInvocation {
+    pub(crate) fn parse(raw: &[String]) -> Result<Self, ImpactError> {
         if raw.first().map(String::as_str) != Some("impact") {
             return Err(ImpactError::Contract("usage: change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--staleness current|advisory]".into()));
         }
@@ -101,12 +119,15 @@ impl Cli {
                 "at least one --changed path is required".into(),
             ));
         }
-        Ok(Self {
+        let request = ChangeImpactRequest {
             artifact_root,
             repo: repo.ok_or_else(|| ImpactError::Contract("--repo is required".into()))?,
             repo_path,
             changed,
-            staleness: staleness.unwrap_or(Staleness::Current),
+        };
+        Ok(match staleness.unwrap_or(Staleness::Current) {
+            Staleness::Current => Self::Committed(request),
+            Staleness::Advisory => Self::StaleAdvisory(request),
         })
     }
 }
@@ -119,8 +140,24 @@ fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<(), ImpactE
     }
 }
 
-fn execute(cli: Cli) -> Result<Value, ImpactError> {
-    let evidence = committed_evidence::load(&cli.artifact_root, &cli.repo).map_err(map_evidence)?;
+pub(crate) struct ChangeImpactResult {
+    value: Value,
+}
+
+impl ChangeImpactResult {
+    pub(crate) fn value(&self) -> &Value {
+        &self.value
+    }
+
+    pub(crate) fn into_value(self) -> Value {
+        self.value
+    }
+}
+
+pub(crate) fn execute_committed(
+    cli: ChangeImpactRequest,
+    evidence: &CommittedEvidence,
+) -> Result<ChangeImpactResult, ImpactError> {
     let run_outcome = evidence.entry["outcome"]
         .as_str()
         .expect("A08 entry outcome");
@@ -129,19 +166,42 @@ fn execute(cli: Cli) -> Result<Value, ImpactError> {
             "change impact requires a completed authoritative run; latest committed run outcome is {run_outcome}"
         )));
     }
-    let mut freshness = evidence
+    let freshness = evidence
         .freshness(Some(&cli.repo_path))
         .map_err(map_evidence)?;
     if freshness["status"] != "current" {
-        if cli.staleness == Staleness::Current {
-            return Err(ImpactError::Contract(format!(
-                "change impact requires the committed snapshot to be current; recorded={} current={}",
-                freshness["recordedIdentity"].as_str().unwrap_or("unknown"),
-                freshness["currentIdentity"].as_str().unwrap_or("unknown")
-            )));
-        }
+        return Err(ImpactError::Contract(format!(
+            "change impact requires the committed snapshot to be current; recorded={} current={}",
+            freshness["recordedIdentity"].as_str().unwrap_or("unknown"),
+            freshness["currentIdentity"].as_str().unwrap_or("unknown")
+        )));
+    }
+    build_result(cli, evidence, freshness, false)
+}
+
+pub(crate) fn execute_stale_advisory(
+    cli: ChangeImpactRequest,
+    evidence: &CommittedEvidence,
+) -> Result<ChangeImpactResult, ImpactError> {
+    let mut freshness = evidence
+        .freshness(Some(&cli.repo_path))
+        .map_err(map_evidence)?;
+    let stale = freshness["status"] != "current";
+    if stale {
         freshness["status"] = json!("stale-advisory");
     }
+    build_result(cli, evidence, freshness, stale)
+}
+
+fn build_result(
+    cli: ChangeImpactRequest,
+    evidence: &CommittedEvidence,
+    freshness: Value,
+    stale: bool,
+) -> Result<ChangeImpactResult, ImpactError> {
+    let run_outcome = evidence.entry["outcome"]
+        .as_str()
+        .expect("A08 entry outcome");
     let stale_identities = (freshness["status"] == "stale-advisory").then(|| {
         (
             freshness["recordedIdentity"].clone(),
@@ -230,7 +290,8 @@ fn execute(cli: Cli) -> Result<Value, ImpactError> {
             .expect("constructed limitations array")
             .push(json!("Freshness is stale-advisory: impact derives from the committed snapshot, not the current working tree, and must never gate."));
     }
-    Ok(result)
+    debug_assert_eq!(stale, freshness["status"] == "stale-advisory");
+    Ok(ChangeImpactResult { value: result })
 }
 
 fn normalize_relative(path: &str) -> Result<String, ImpactError> {
@@ -249,14 +310,14 @@ fn normalize_relative(path: &str) -> Result<String, ImpactError> {
     Ok(path)
 }
 
-fn map_evidence(error: EvidenceError) -> ImpactError {
+pub(crate) fn map_evidence(error: EvidenceError) -> ImpactError {
     match error {
         EvidenceError::Contract(message) => ImpactError::Contract(message),
         EvidenceError::HostIo(message) => ImpactError::HostIo(message),
     }
 }
 
-enum ImpactError {
+pub(crate) enum ImpactError {
     Contract(String),
     HostIo(String),
 }

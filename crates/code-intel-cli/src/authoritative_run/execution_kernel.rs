@@ -1,12 +1,9 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
 use crate::dag_coordinator::RunOutcome;
 use crate::dag_run::{self, DagExecutionRequest};
-use crate::execution_policy::ExecutionPolicy;
-use crate::run_commit;
 use crate::run_error::RunError;
 
 pub(crate) struct RunRequest {
@@ -16,7 +13,7 @@ pub(crate) struct RunRequest {
     pub(crate) final_name: String,
     pub(crate) manifest: Option<PathBuf>,
     pub(crate) max_concurrency: usize,
-    pub(crate) policy: ExecutionPolicy,
+    pub(crate) policy: crate::execution_policy::ExecutionPolicy,
     pub(crate) session_evidence: Option<PathBuf>,
 }
 
@@ -110,7 +107,7 @@ pub(crate) fn execute(request: RunRequest) -> Result<ExecutionResult, RunError> 
     // `main.rs` — keeps the write side and the query side agreeing on the
     // path without changing either reader.
     let repo_name = resolve_repo_name(&request.repo)?;
-    let dag = dag_run::execute_dag(DagExecutionRequest {
+    let mut dag = dag_run::execute_dag(DagExecutionRequest {
         repo: request.repo,
         out: request.staging_root,
         manifest: request.manifest,
@@ -120,8 +117,14 @@ pub(crate) fn execute(request: RunRequest) -> Result<ExecutionResult, RunError> 
         seed_artifact_root: None,
         session_evidence: request.session_evidence,
     })?;
+    super::completion::bind_repository_iteration(
+        &dag.run_root,
+        &mut dag.manifest,
+        &repo_name,
+        &request.final_name,
+    )?;
     let publication_root = nest_authority_root(&request.authority_root, &repo_name)?;
-    let publication = run_commit::publish_existing(
+    let publication = crate::run_commit::publish_existing(
         &dag.run_root,
         &publication_root,
         &dag.run_root.join("run-manifest-ref.json"),
@@ -174,17 +177,17 @@ fn nest_authority_root(authority_root: &Path, repo_name: &str) -> Result<PathBuf
     } else {
         authority_root.join(repo_name)
     };
-    fs::create_dir_all(&nested)
+    std::fs::create_dir_all(&nested)
         .map_err(|error| RunError::io(format!("create repository authority root: {error}")))?;
     Ok(nested)
 }
 
-fn map_commit_error(error: run_commit::CommitError) -> RunError {
+fn map_commit_error(error: crate::run_commit::CommitError) -> RunError {
     match error {
-        run_commit::CommitError::Contract(message)
-        | run_commit::CommitError::Collision(message) => RunError::contract(message),
-        run_commit::CommitError::HostIo(message) => RunError::io(message),
-        run_commit::CommitError::Interrupted(phase) => RunError {
+        crate::run_commit::CommitError::Contract(message)
+        | crate::run_commit::CommitError::Collision(message) => RunError::contract(message),
+        crate::run_commit::CommitError::HostIo(message) => RunError::io(message),
+        crate::run_commit::CommitError::Interrupted(phase) => RunError {
             exit_code: 75,
             message: format!("publication interrupted before {phase:?}"),
         },
@@ -233,7 +236,7 @@ mod tests {
     fn resolve_repo_name_takes_the_final_path_component_of_the_resolved_repo() {
         let root = unique_temp_dir("resolve-name");
         let repo = root.join("widget-repo");
-        fs::create_dir_all(&repo).expect("fixture repo dir");
+        std::fs::create_dir_all(&repo).expect("fixture repo dir");
 
         let name = resolve_repo_name(&repo).expect("resolvable repo path");
         assert_eq!(name, "widget-repo");
@@ -246,7 +249,7 @@ mod tests {
         let name_via_dot = resolve_repo_name(&dotted).expect("resolvable dotted repo path");
         assert_eq!(name_via_dot, "widget-repo");
 
-        fs::remove_dir_all(&root).ok();
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
@@ -258,13 +261,13 @@ mod tests {
     #[test]
     fn nest_authority_root_appends_the_repo_name_exactly_once() {
         let root = unique_temp_dir("nest-once");
-        fs::create_dir_all(&root).expect("fixture authority root");
+        std::fs::create_dir_all(&root).expect("fixture authority root");
 
         let nested = nest_authority_root(&root, "widget-repo").expect("nest under authority root");
         assert_eq!(nested, root.join("widget-repo"));
         assert!(nested.is_dir());
 
-        fs::remove_dir_all(&root).ok();
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
@@ -274,7 +277,7 @@ mod tests {
         // that and publish there directly, not append a second
         // widget-repo/widget-repo layer.
         let root = unique_temp_dir("nest-workaround").join("widget-repo");
-        fs::create_dir_all(&root).expect("fixture pre-nested authority root");
+        std::fs::create_dir_all(&root).expect("fixture pre-nested authority root");
 
         let nested = nest_authority_root(&root, "widget-repo").expect("reuse pre-nested root");
         assert_eq!(
@@ -282,6 +285,6 @@ mod tests {
             "must not append the repo name a second time: {nested:?}"
         );
 
-        fs::remove_dir_all(root.parent().unwrap()).ok();
+        std::fs::remove_dir_all(root.parent().unwrap()).ok();
     }
 }

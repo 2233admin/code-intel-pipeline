@@ -9,11 +9,9 @@ use super::{enums::DepartmentRunStatus, model::AuditReport, registry::Department
 /// Rendering requires `--repo` and runs the same fail-closed validate
 /// pipeline before producing output (ai-safety-003, issue #34): a report
 /// that does not pass registry/evidence/shape validation must never be
-/// turned into human-facing markdown or HTML. Mirrors the least-invasive
-/// `RAW_ROUTES` pattern already used by `change_impact`, `decision_record`,
-/// and friends: this module owns its own tiny argument parser and prints
-/// its own JSON, so `main.rs` only ever gains one table entry (see the
-/// `"audit"` route).
+/// turned into human-facing markdown or HTML. The private command catalog
+/// registers the typed `audit` route while this module owns its small
+/// compatibility parser and output, matching the other Phase-2 adapters.
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
     match parse(raw) {
         Ok(Operation::Validate { repo, report }) => match validate(&repo, &report) {

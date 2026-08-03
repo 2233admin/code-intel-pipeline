@@ -24,7 +24,6 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde_json::{json, Value};
 
@@ -35,9 +34,11 @@ use crate::impact_graph::{impacted_files, reverse_import_graph, select_tests, te
 mod hardened_git;
 
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
-    match Cli::parse(raw).and_then(execute) {
+    // Leaf adapter only — WorkspaceAdvisoryController wraps `execute` for the
+    // typed authority surface and must not be imported here (import cycle).
+    match EditImpactRequest::parse(raw).and_then(execute) {
         Ok(result) => {
-            println!("{}", serde_json::to_string(&result).unwrap());
+            println!("{}", serde_json::to_string(result.value()).unwrap());
             0
         }
         Err(EditImpactError::Contract(message)) => {
@@ -57,14 +58,14 @@ pub(crate) enum EditImpactError {
     HostIo(String),
 }
 
-struct Cli {
-    repo_path: PathBuf,
+pub(crate) struct EditImpactRequest {
+    pub(crate) repo_path: PathBuf,
     changed: Vec<String>,
     scopes: Vec<String>,
 }
 
-impl Cli {
-    fn parse(raw: &[String]) -> Result<Self, EditImpactError> {
+impl EditImpactRequest {
+    pub(crate) fn parse(raw: &[String]) -> Result<Self, EditImpactError> {
         let mut repo_path: Option<PathBuf> = None;
         let mut changed = Vec::new();
         let mut scopes = Vec::new();
@@ -112,7 +113,22 @@ impl Cli {
     }
 }
 
-fn execute(cli: Cli) -> Result<Value, EditImpactError> {
+pub(crate) struct EditImpactResult {
+    value: Value,
+    repo_root: PathBuf,
+}
+
+impl EditImpactResult {
+    pub(crate) fn value(&self) -> &Value {
+        &self.value
+    }
+
+    pub(crate) fn repo_root(&self) -> &Path {
+        &self.repo_root
+    }
+}
+
+pub(crate) fn execute(cli: EditImpactRequest) -> Result<EditImpactResult, EditImpactError> {
     let repo = cli.repo_path.canonicalize().map_err(|error| {
         EditImpactError::Contract(format!(
             "cannot resolve --repo-path {}: {error}",
@@ -180,32 +196,36 @@ fn execute(cli: Cli) -> Result<Value, EditImpactError> {
         )));
     }
 
-    Ok(json!({
-        "schema":"code-intel-edit-impact.v1",
-        "authority":"none",
-        "source":"working-tree",
-        "repoPath":repo.display().to_string(),
-        "scopes":cli.scopes,
-        "inventoryFiles":inventory.len(),
-        "changed":changed_rows,
-        "impact":{
-            "files":impact_rows,
-            "resolvedImportEdges":resolved,
-            "unresolvedImportEdges":unresolved,
-        },
-        "testSelection":{
-            "status":if tests.is_empty() { "none" } else { "candidates" },
-            "files":tests,
-            "commands":commands,
-            "advisoryOnly":true,
-            "rationale":"Select impacted test files reachable through the working-tree reverse import graph; use same-module test co-location only as a fallback.",
-        },
-        // Named rather than inferred from an empty result: an agent that
-        // cannot tell "no impact" from "this language is not modelled" learns
-        // the tool is useless and stops calling it.
-        "languagesWithoutExtractedImports":unsupported.into_iter().collect::<Vec<_>>(),
-        "limitations":limitations,
-    }))
+    let repo_path = repo.display().to_string();
+    Ok(EditImpactResult {
+        repo_root: repo,
+        value: json!({
+            "schema":"code-intel-edit-impact.v1",
+            "authority":"none",
+            "source":"working-tree",
+            "repoPath":repo_path,
+            "scopes":cli.scopes,
+            "inventoryFiles":inventory.len(),
+            "changed":changed_rows,
+            "impact":{
+                "files":impact_rows,
+                "resolvedImportEdges":resolved,
+                "unresolvedImportEdges":unresolved,
+            },
+            "testSelection":{
+                "status":if tests.is_empty() { "none" } else { "candidates" },
+                "files":tests,
+                "commands":commands,
+                "advisoryOnly":true,
+                "rationale":"Select impacted test files reachable through the working-tree reverse import graph; use same-module test co-location only as a fallback.",
+            },
+            // Named rather than inferred from an empty result: an agent that
+            // cannot tell "no impact" from "this language is not modelled" learns
+            // the tool is useless and stops calling it.
+            "languagesWithoutExtractedImports":unsupported.into_iter().collect::<Vec<_>>(),
+            "limitations":limitations,
+        }),
+    })
 }
 
 /// Tracked files plus untracked-but-not-ignored ones, in a single Git call.

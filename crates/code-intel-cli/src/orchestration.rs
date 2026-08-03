@@ -282,7 +282,7 @@ const PRODUCTION_PARTICIPANTS: [ProductionParticipant; 12] = [
     },
     ProductionParticipant {
         capability_id: "artifact.index-committed-only",
-        source: "crates/code-intel-cli/src/main.rs",
+        source: "crates/code-intel-cli/src/authoritative_run/completion.rs",
         marker: "artifact_index::write_index(&artifact_root.join(\"index.json\"), &index)",
     },
 ];

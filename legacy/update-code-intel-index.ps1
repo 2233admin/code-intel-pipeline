@@ -128,7 +128,7 @@ function Test-JsonCount {
     return [decimal]$Value -ge 0 -and [decimal]$Value -le [int]::MaxValue
 }
 
-function Test-RunCommit {
+function Test-LegacyReportCommit {
     param([string]$RunPath)
 
     if ((Split-Path -Leaf $RunPath) -match '\.staging-') { return $false }
@@ -180,7 +180,7 @@ $rows = New-Object System.Collections.Generic.List[object]
 $repoDirs = @(Get-ChildItem -LiteralPath $ArtifactRoot -Directory -ErrorAction SilentlyContinue)
 foreach ($repoDir in $repoDirs) {
     $latestRun = Get-ChildItem -LiteralPath $repoDir.FullName -Directory -ErrorAction SilentlyContinue |
-        Where-Object { Test-RunCommit -RunPath $_.FullName } |
+        Where-Object { Test-LegacyReportCommit -RunPath $_.FullName } |
         Sort-Object Name -Descending |
         Select-Object -First 1
     if ($null -eq $latestRun) { continue }
@@ -206,6 +206,7 @@ foreach ($repoDir in $repoDirs) {
     elseif ($report.summary.failed -gt 0) { $category = "failed" }
 
     $rows.Add([pscustomobject][ordered]@{
+        authority = "legacy_advisory"
         repo = $repoDir.Name
         run = $latestRun.Name
         category = $category
@@ -222,8 +223,9 @@ $jsonPath = [System.IO.Path]::ChangeExtension($OutputPath, ".json")
 $rows | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
 
 $lines = @(
-    "# Code Intel Artifact Index",
+    "# Code Intel Legacy Compatibility Index (Non-authoritative)",
     "",
+    "- Authority: legacy advisory only; production reads use the compiled CLI completed-only index",
     "- Updated: $((Get-Date).ToString("o"))",
     "- Artifact root: $ArtifactRoot",
     "",

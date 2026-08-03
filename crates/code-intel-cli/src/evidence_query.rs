@@ -3,16 +3,22 @@ use std::path::PathBuf;
 
 use serde_json::{json, Value};
 
-use crate::committed_evidence::{self, EvidenceError};
+use crate::committed_evidence::{self, CommittedEvidence, EvidenceError};
 
 const DEFAULT_LIMIT: usize = 20;
 const MAX_LIMIT: usize = 100;
 const PREVIEW_CHARS: usize = 400;
 
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
-    match Cli::parse(raw).and_then(execute) {
+    // Leaf adapter: load completed evidence then query. Controllers wrap the
+    // same path with typed receipts; importing them here creates a cycle.
+    match EvidenceQueryRequest::parse(raw).and_then(|request| {
+        let evidence = committed_evidence::load(&request.artifact_root, &request.repo)
+            .map_err(map_evidence_error)?;
+        execute(request, &evidence)
+    }) {
         Ok(result) => {
-            println!("{}", serde_json::to_string(&result).unwrap());
+            println!("{}", serde_json::to_string(result.value()).unwrap());
             0
         }
         Err(QueryError::Contract(message)) => {
@@ -26,18 +32,18 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
     }
 }
 
-struct Cli {
-    artifact_root: PathBuf,
-    repo: String,
-    repo_path: Option<PathBuf>,
+pub(crate) struct EvidenceQueryRequest {
+    pub(crate) artifact_root: PathBuf,
+    pub(crate) repo: String,
+    pub(crate) repo_path: Option<PathBuf>,
     artifact_schema: Option<String>,
     artifact_type: Option<String>,
     contains: Option<String>,
     limit: usize,
 }
 
-impl Cli {
-    fn parse(raw: &[String]) -> Result<Self, QueryError> {
+impl EvidenceQueryRequest {
+    pub(crate) fn parse(raw: &[String]) -> Result<Self, QueryError> {
         if raw.first().map(String::as_str) != Some("query") {
             return Err(QueryError::Contract("usage: artifact query --artifact-root <root> --repo <name> [--repo-path <path>] [--artifact-schema <schema>] [--type <artifact-type>] [--contains <text>] [--limit <1..100>]".into()));
         }
@@ -132,9 +138,20 @@ fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<(), QueryEr
     }
 }
 
-fn execute(cli: Cli) -> Result<Value, QueryError> {
-    let evidence =
-        committed_evidence::load(&cli.artifact_root, &cli.repo).map_err(map_evidence_error)?;
+pub(crate) struct EvidenceQueryResult {
+    value: Value,
+}
+
+impl EvidenceQueryResult {
+    pub(crate) fn value(&self) -> &Value {
+        &self.value
+    }
+}
+
+pub(crate) fn execute(
+    cli: EvidenceQueryRequest,
+    evidence: &CommittedEvidence,
+) -> Result<EvidenceQueryResult, QueryError> {
     let entry = &evidence.entry;
     let run = entry["run"].as_str().expect("A08 entry run");
     let snapshot_identity = evidence.snapshot_identity();
@@ -219,33 +236,35 @@ fn execute(cli: Cli) -> Result<Value, QueryError> {
     } else {
         "limited"
     };
-    Ok(json!({
-        "schema":"code-intel-evidence-query.v1",
-        "repo":cli.repo,
-        "run":run,
-        "runIdentity":entry["runIdentity"],
-        "runOutcome":run_outcome,
-        "authority":{"status":"committed","indexSchema":"code-intel-artifact-index.v1"},
-        "snapshotIdentity":snapshot_identity,
-        "freshness":freshness,
-        "coverage":{
-            "status":coverage_status,
-            "availableArtifactTypes":available_artifact_types,
-            "requestedEvidenceStatus":requested_evidence_status,
-            "unknowns":unknowns,
-        },
-        "confidence":confidence,
-        "query":{
-            "artifactSchema":cli.artifact_schema,
-            "type":cli.artifact_type,
-            "contains":cli.contains,
-            "limit":cli.limit,
-        },
-        "matches":matches,
-    }))
+    Ok(EvidenceQueryResult {
+        value: json!({
+            "schema":"code-intel-evidence-query.v1",
+            "repo":cli.repo,
+            "run":run,
+            "runIdentity":entry["runIdentity"],
+            "runOutcome":run_outcome,
+            "authority":{"status":"committed","indexSchema":"code-intel-artifact-index.v1"},
+            "snapshotIdentity":snapshot_identity,
+            "freshness":freshness,
+            "coverage":{
+                "status":coverage_status,
+                "availableArtifactTypes":available_artifact_types,
+                "requestedEvidenceStatus":requested_evidence_status,
+                "unknowns":unknowns,
+            },
+            "confidence":confidence,
+            "query":{
+                "artifactSchema":cli.artifact_schema,
+                "type":cli.artifact_type,
+                "contains":cli.contains,
+                "limit":cli.limit,
+            },
+            "matches":matches,
+        }),
+    })
 }
 
-fn matched_by(cli: &Cli) -> Vec<&'static str> {
+fn matched_by(cli: &EvidenceQueryRequest) -> Vec<&'static str> {
     let mut values = Vec::new();
     if cli.artifact_schema.is_some() {
         values.push("artifact_schema");
@@ -275,14 +294,14 @@ fn preview(text: &str) -> String {
         .collect()
 }
 
-fn map_evidence_error(error: EvidenceError) -> QueryError {
+pub(crate) fn map_evidence_error(error: EvidenceError) -> QueryError {
     match error {
         EvidenceError::Contract(message) => QueryError::Contract(message),
         EvidenceError::HostIo(message) => QueryError::HostIo(message),
     }
 }
 
-enum QueryError {
+pub(crate) enum QueryError {
     Contract(String),
     HostIo(String),
 }

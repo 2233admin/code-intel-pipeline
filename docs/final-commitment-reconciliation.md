@@ -3,8 +3,10 @@
 This is the human-readable projection of `orchestration/evidence/final-commitment-reconciliation.json`.
 The JSON is authoritative; this table must be regenerated or updated in the same change and is checked byte-for-byte after newline normalization.
 
-Source plan: `docs/plans/adr-0010-execution-plan.md`  
-Source SHA-256: `d1ae95c344bc8604f26b49324c317c399cb80a16088a61c2f80f94f446044124`  
+Source plan: `docs/plans/adr-0010-execution-plan.md`
+
+Source SHA-256: `e1869945cb4a75cdad465572cfb2754a68ccb7c204500cb333f2bdae0fcaf3a7`
+
 Tickets: **69**
 
 ## Status totals

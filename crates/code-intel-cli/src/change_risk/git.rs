@@ -80,9 +80,10 @@ pub(super) fn tip_token(revspec: &str) -> &str {
     }
 }
 
-pub(super) fn diff_stats(repo: &Path, range: &str) -> Option<Vec<FileDiff>> {
-    if let Some(files) = run_git_diff_numstat(repo, range) {
-        return Some(files);
+pub(super) fn diff_stats(repo: &Path, range: &str) -> Result<Vec<FileDiff>, RiskError> {
+    let primary = run_git_diff_numstat(repo, range);
+    if primary.is_ok() {
+        return primary;
     }
     // Likely a root commit with no parent on the left side of "X^..X";
     // retry against the empty tree so the very first commit in a
@@ -95,10 +96,10 @@ pub(super) fn diff_stats(repo: &Path, range: &str) -> Option<Vec<FileDiff>> {
             }
         }
     }
-    None
+    primary
 }
 
-fn run_git_diff_numstat(repo: &Path, range: &str) -> Option<Vec<FileDiff>> {
+fn run_git_diff_numstat(repo: &Path, range: &str) -> Result<Vec<FileDiff>, RiskError> {
     let output = crate::hardened_git::command(repo)
         .args([
             // Git C-quotes non-ASCII paths by default ("\346\226\207..."),
@@ -113,16 +114,19 @@ fn run_git_diff_numstat(repo: &Path, range: &str) -> Option<Vec<FileDiff>> {
             range,
         ])
         .output()
-        .ok()?;
+        .map_err(|error| RiskError::HostIo(format!("cannot launch Git: {error}")))?;
     if !output.status.success() {
-        return None;
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(RiskError::Contract(if stderr.is_empty() {
+            format!("cannot resolve change-risk revspec: {range}")
+        } else {
+            format!("cannot resolve change-risk revspec {range}: {stderr}")
+        }));
     }
-    Some(
-        String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter_map(parse_numstat_line)
-            .collect(),
-    )
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(parse_numstat_line)
+        .collect())
 }
 
 fn parse_numstat_line(line: &str) -> Option<FileDiff> {

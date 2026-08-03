@@ -173,7 +173,7 @@ contract, which stays binary.
 | `<runDir>/surgery-plan.json` / `.md` (via `Convert-SurgeryPlanToMarkdown`, `New-CodeIntelSurgeryPlan`) | fn defs `:1676-1801` | `code-intel-surgery-plan.v1` (Rust side confirms this name empirically — see §5) | none found isolating this file directly | port | |
 | `<runDir>/sentrux-evolution.json`, `sentrux-hotspots.json`, `sentrux-dsm.json`, `sentrux-what-if.json`, `codenexus-context.json` (paths built around `:3931-4134`) | variable names `sentruxEvolutionPath` etc., confirmed via searchable-terms sweep of the file; exact `Join-Path` lines not individually re-verified for each — `?` | none | none found | port | |
 | `<runDir>/model-assistance-dossier.json` | `:3426` (`$dossierPath`) | `code-intel-model-assistance-dossier.v1.schema.json` | `test-model-request-synthesis-and-handle.ps1` | port | |
-| `<runDir>/run-complete.json` (publish marker) | `:4700-4706` | none (PS1-local schema `code-intel-run-commit.v1`, distinct from the Rust authority-root's own `run-complete.json`) | `test-transactional-publication.ps1` | port | Rust also writes a `run-complete.json` (different shape — publication marker under the authority root, not a run-report digest). Same filename, unrelated schema; a naming collision worth flagging for T2-T5, not a bug in either side individually. |
+| no canonical marker in `<runDir>` | final promotion block after the staging-path rewrite | compiled `code-intel run execute` exclusively owns `code-intel-run-commit.v1` under the authority root | `test-transactional-publication.ps1` | retired | The PowerShell path atomically promotes a legacy report directory but deliberately does not write `run-complete.json`; its `report.json` and markdown are advisory compatibility output and cannot enter normal index authority. |
 
 ### 1.6 Side effects
 
@@ -507,13 +507,11 @@ inventorying, record it in the doc's gap section — do not fix it here").
    `$githubResearch` unconditionally set to a hardcoded "not applicable"
    stub at `:3919` regardless of the flag; `Test-GitHubSolutionResearchRequired`
    (`:531`) has zero call sites.
-2. **`run-manifest.json` naming collision.** Both PS1's `run-complete.json`
-   (`:4700-4706`, schema `code-intel-run-commit.v1`) and Rust's
-   authority-root `run-complete.json` (confirmed empirically this session:
-   `<authority-root>/<final-name>/run-complete.json`) share a filename with
-   unrelated schemas. Not a bug today (the two never coexist in the same
-   directory), but a trap for anyone writing tooling that globs for
-   `run-complete.json` across both pipelines.
+2. **Legacy publication is intentionally non-authoritative.** PowerShell still promotes its
+   staging report directory atomically, but it no longer writes a report-digest
+   `run-complete.json`. The compiled `code-intel run execute` controller is the only producer of
+   the canonical marker under `<authority-root>/<repo>/<final-name>/run-complete.json`; consumers
+   must not infer authority from the presence of a legacy `report.json`.
 3. **`$defaultRustCli` inconsistency.** Of the ~11 call sites that resolve
    `target/debug/<exe>`, only one (Sentrux DSM, `:3945-3948`) honors
    `$env:CODE_INTEL_RUST_CLI`; the rest hardcode the debug-build path with

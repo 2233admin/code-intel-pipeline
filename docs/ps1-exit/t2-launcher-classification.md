@@ -1,5 +1,12 @@
 # T2 launcher classification (issue #47)
 
+Status: historical classification; the compiled Rust authority described below is implemented.
+
+This document preserves measurements and retirement reasoning from `origin/main` at `02f0444`.
+Statements phrased as “today”, “current”, or “to port” describe that historical checkpoint, not
+the living runtime contract. The current production path is `code-intel run execute`; retained
+PowerShell is compatibility/advisory only and does not create repository-run authority.
+
 Working document for retiring `legacy/run-code-intel.ps1` (4742 lines, 90
 function definitions, 72 parameters) into `code-intel run` plus a ≤50-line
 thin forwarder.
@@ -138,18 +145,20 @@ policy. Deciding this before writing code matters, because collapsing the
 two axes is the kind of mistake that is expensive to reverse once the flag
 is public.
 
-## 3. Known contract divergences to resolve during the port
+## 3. Contract divergences recorded for the port
 
-Carried from T1 §5 and §7, all still true at `02f0444`:
+The following were carried from T1 §5 and §7 at `02f0444`. Current-state annotations distinguish
+resolved behavior from historical evidence:
 
 1. **Exit codes.** `run execute` distinguishes `10` (architecture/domain
    gate) from `70` (process failure). The launcher only ever exits `0` or
    `1`. The forwarder must decide whether to propagate the richer code or
    collapse it; propagating is preferable but is a behaviour change for
    anything parsing the old binary outcome.
-2. **`run-complete.json` name collision.** Both sides write a file with that
-   name under different schemas. They never coexist in one directory today,
-   but tooling that globs for it across both pipelines will mis-parse.
+2. **Publication authority (resolved).** At the measured checkpoint, both paths wrote
+   `run-complete.json` with unrelated shapes. That is no longer current behavior: only the
+   compiled Run Commit path writes canonical `code-intel-run-commit.v1`. The PowerShell report
+   path atomically promotes an advisory compatibility directory and writes no canonical marker.
 3. **Hospital shape drift.** Both producers claim schema
    `code-intel-hospital.v1`; PS1 nests its verdict under `triage`, Rust under
    `diagnosis` + `domainVerdict`. The schema string is not currently a

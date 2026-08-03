@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-repository-iteration-provenance.v1.schema.json",
+  "title": "Code Intel repository iteration provenance v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "purpose",
+    "runIdentity",
+    "snapshotIdentity",
+    "repositoryKey",
+    "publicationName",
+    "producer"
+  ],
+  "properties": {
+    "schema": {
+      "const": "code-intel-repository-iteration-provenance.v1"
+    },
+    "purpose": {
+      "const": "repository_intelligence_iteration"
+    },
+    "runIdentity": {
+      "type": "string",
+      "pattern": "^dag-v1:[0-9a-f]+$"
+    },
+    "snapshotIdentity": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "repositoryKey": {
+      "type": "string",
+      "minLength": 1
+    },
+    "publicationName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component", "contract", "version"],
+      "properties": {
+        "component": {
+          "const": "code-intel.authoritative-run"
+        },
+        "contract": {
+          "const": "repository-iteration-producer"
+        },
+        "version": {
+          "const": "1"
+        }
+      }
+    }
+  }
+}

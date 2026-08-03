@@ -113,9 +113,12 @@ const WEIGHT_BUG_MAGNET: f64 = 25.0;
 const WEIGHT_CHURN: f64 = 20.0;
 
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
-    match Cli::parse(raw).and_then(run) {
-        Ok((value, format)) => {
-            print_result(&value, format);
+    // Leaf adapter: parse + compute + render. Controllers wrap execute_request
+    // for typed authority results; they must not be imported here or the
+    // workspace-advisory layer forms an import cycle with this module.
+    match ChangeRiskRequest::parse(raw).and_then(execute_request) {
+        Ok(result) => {
+            print_result(result.value(), result.format());
             0
         }
         Err(RiskError::Contract(message)) => {
@@ -130,18 +133,18 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
 }
 
 #[derive(Debug)]
-enum RiskError {
+pub(crate) enum RiskError {
     Contract(String),
     HostIo(String),
 }
 
 #[derive(Clone, Copy)]
-enum Format {
+pub(crate) enum Format {
     Json,
     Text,
 }
 
-struct Cli {
+pub(crate) struct ChangeRiskRequest {
     revspec: String,
     sample: u32,
     format: Format,
@@ -151,8 +154,8 @@ struct Cli {
     repo: Option<PathBuf>,
 }
 
-impl Cli {
-    fn parse(raw: &[String]) -> Result<Self, RiskError> {
+impl ChangeRiskRequest {
+    pub(crate) fn parse(raw: &[String]) -> Result<Self, RiskError> {
         if raw.first().map(String::as_str) != Some("risk") {
             return Err(RiskError::Contract(USAGE.into()));
         }
@@ -225,6 +228,10 @@ impl Cli {
             repo,
         })
     }
+
+    pub(crate) fn format(&self) -> Format {
+        self.format
+    }
 }
 
 fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<(), RiskError> {
@@ -235,13 +242,43 @@ fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<(), RiskErr
     }
 }
 
-fn run(cli: Cli) -> Result<(Value, Format), RiskError> {
+pub(crate) struct ChangeRiskResult {
+    value: Value,
+    format: Format,
+    repo_root: PathBuf,
+    revspec: String,
+}
+
+impl ChangeRiskResult {
+    pub(crate) fn value(&self) -> &Value {
+        &self.value
+    }
+
+    pub(crate) fn format(&self) -> Format {
+        self.format
+    }
+
+    pub(crate) fn repo_root(&self) -> &Path {
+        &self.repo_root
+    }
+
+    pub(crate) fn revspec(&self) -> &str {
+        &self.revspec
+    }
+}
+
+pub(crate) fn execute_request(cli: ChangeRiskRequest) -> Result<ChangeRiskResult, RiskError> {
     let repo = match &cli.repo {
         Some(path) => git::resolve_repo_root_from(path)?,
         None => git::resolve_repo_root()?,
     };
     let value = execute(&repo, &cli.revspec, cli.sample)?;
-    Ok((value, cli.format))
+    Ok(ChangeRiskResult {
+        value,
+        format: cli.format,
+        repo_root: repo,
+        revspec: cli.revspec,
+    })
 }
 
 fn print_result(value: &Value, format: Format) {
@@ -313,7 +350,7 @@ struct Endpoint {
 
 fn execute(repo: &Path, revspec: &str, sample_requested: u32) -> Result<Value, RiskError> {
     let endpoint = git::resolve_endpoint(revspec);
-    let files = git::diff_stats(repo, &endpoint.range).unwrap_or_default();
+    let files = git::diff_stats(repo, &endpoint.range)?;
     if files.is_empty() {
         return Ok(render::build_report(
             repo,

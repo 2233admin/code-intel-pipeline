@@ -73,6 +73,19 @@
       }
     },
     {
+      "schemaPath": "orchestration/schemas/code-intel-repository-iteration-provenance.v1.schema.json",
+      "schemaId": "code-intel-repository-iteration-provenance.v1.schema.json",
+      "logicalSchemas": ["code-intel-repository-iteration-provenance.v1"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/artifact_ref.rs",
+        "symbols": ["validate_repository_iteration_provenance", "REPOSITORY_ITERATION_SCHEMA"],
+        "tests": ["crates/code-intel-cli/tests/artifact_index.rs", "crates/code-intel-cli/tests/run_execute_publication.rs"]
+      }
+    },
+    {
       "schemaPath": "orchestration/schemas/code-intel-staged-artifact-set.v1.schema.json",
       "schemaId": "code-intel-staged-artifact-set.v1",
       "logicalSchemas": ["code-intel-staged-artifact-set.v1"],
