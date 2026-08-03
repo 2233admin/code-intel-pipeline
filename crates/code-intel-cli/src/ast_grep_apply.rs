@@ -2,10 +2,28 @@
 //! (#96 item 2, charter gate G4 in #139).
 //!
 //! The model issues the instruction; this capability performs every byte
-//! transformation. There is no option through which a caller can hand over
-//! rewritten file contents: what crosses the boundary is a list of spans,
-//! the sha256 each span had when the plan was made, and the replacement
-//! ast-grep computed for it.
+//! transformation. What crosses the boundary is a list of spans, the sha256
+//! each span had when the plan was made, and the replacement ast-grep
+//! computed for it.
+//!
+//! What that does and does not guarantee, stated exactly, because the
+//! difference is the whole point of the tool. A `--plan` is a JSON file on
+//! disk: `schema`, `capability` and `snapshotIdentity` are strings whoever
+//! writes the file chooses. Nothing here proves a plan came from a real
+//! `edit.ast-grep-plan` run, and nothing could — a caller able to hand-author
+//! a plan is equally able to just run the plan capability. So this stage does
+//! not claim authenticity.
+//!
+//! The property it *does* enforce is narrower and mechanical: **a caller can
+//! only write where it has already read.** Every edit carries the bytes it
+//! claims to replace (`text`), and that text must hash to the `sha256` it
+//! declares; at apply time the bytes actually at the span must hash to that
+//! same value, and the line they sit on must hash to `lineSha256`. An edit
+//! therefore lands only on bytes its author had in hand and that have not
+//! moved since. Replacement size is capped at `MAX_EDIT_BYTES` — the same
+//! ceiling the plan stage applies — so a hand-authored plan cannot smuggle a
+//! file's worth of new content through a field a real plan would have kept
+//! small. `snapshotIdentity` is reported as provenance and is not trusted.
 //!
 //! A plan applies as a **unit**. Every span in every file is resolved and
 //! digest-checked before a single byte is written, and one drifted span
@@ -387,10 +405,16 @@ fn publish(
     })
 }
 
-/// Accept only a document `edit.ast-grep-plan` could have produced, and only
-/// one it marked applicable. Everything a caller could otherwise smuggle in —
-/// a file's new contents, an unbounded replacement, two spans that overlap —
-/// is refused here rather than discovered mid-write.
+/// Accept only the *shape* `edit.ast-grep-plan` publishes, and only a plan it
+/// marked applicable.
+///
+/// This is a shape check, not an authentication: `schema` and `capability`
+/// are strings in a file, so passing them proves nothing about where the
+/// document came from. What the checks here do rule out is a plan whose edits
+/// overlap, whose paths escape the repository or point at generated content,
+/// whose recorded text does not hash to the digest it claims, or whose
+/// replacement is larger than the plan stage would ever have produced —
+/// refused here rather than discovered mid-write.
 fn parse_plan(plan: &Value) -> Result<Vec<PlannedEdit>, AdapterError> {
     if plan["schema"] != PLAN_SCHEMA || plan["capability"] != "edit.ast-grep-plan" {
         return Err(AdapterError::InvalidOptions(format!(
@@ -503,6 +527,13 @@ fn parse_edit(value: &Value) -> Result<PlannedEdit, AdapterError> {
             "plan edit {index} is internally inconsistent: sha256 does not hash its own recorded text"
         )));
     }
+    if text.len() > span_patch::MAX_EDIT_BYTES {
+        return Err(AdapterError::InvalidOptions(format!(
+            "plan edit {index} replaces {} bytes; an applicable edit replaces at most {}",
+            text.len(),
+            span_patch::MAX_EDIT_BYTES
+        )));
+    }
     let replacement = object
         .get("replacement")
         .and_then(Value::as_str)
@@ -510,6 +541,18 @@ fn parse_edit(value: &Value) -> Result<PlannedEdit, AdapterError> {
             AdapterError::InvalidOptions(format!("plan edit {index} has no replacement"))
         })?
         .to_string();
+    // The plan stage already refuses to *emit* a replacement wider than this.
+    // Re-checking it here is not redundant: the plan the apply stage receives
+    // is a file, and this is the field through which an oversized write would
+    // otherwise pass — the digest guards only where the write lands, never how
+    // much is written.
+    if replacement.len() > span_patch::MAX_EDIT_BYTES {
+        return Err(AdapterError::InvalidOptions(format!(
+            "plan edit {index} writes a {} byte replacement; an applicable edit writes at most {}",
+            replacement.len(),
+            span_patch::MAX_EDIT_BYTES
+        )));
+    }
     Ok(PlannedEdit {
         index,
         file,
@@ -598,6 +641,37 @@ mod tests {
         let error = parse_plan(&document).unwrap_err();
         assert!(
             matches!(&error, AdapterError::Contract(message) if message.contains("internally inconsistent")),
+            "{error:?}"
+        );
+    }
+
+    /// Where the line between "reported" and "enforced" actually falls.
+    ///
+    /// `snapshotIdentity` is provenance: forging it is not refused, because
+    /// nothing here could tell a forged one from a real one. The replacement
+    /// ceiling *is* enforced, and it is enforced here rather than trusted from
+    /// the plan stage, because the plan is a file the caller wrote.
+    #[test]
+    fn provenance_is_not_a_gate_but_the_edit_size_ceiling_is() {
+        let mut forged = plan(json!([edit(0, "a.rs", 1, "alpha")]));
+        forged["snapshotIdentity"] = json!("forged-not-a-real-snapshot-identity");
+        assert_eq!(parse_plan(&forged).unwrap().len(), 1);
+
+        let mut oversized = forged.clone();
+        oversized["apply"]["edits"][0]["replacement"] =
+            json!("x".repeat(span_patch::MAX_EDIT_BYTES + 1));
+        let error = parse_plan(&oversized).unwrap_err();
+        assert!(
+            matches!(&error, AdapterError::InvalidOptions(message) if message.contains("writes at most")),
+            "{error:?}"
+        );
+
+        // A span wider than a real plan would have recorded is refused for the
+        // same reason, even though its digest hashes its own text.
+        let wide = "y".repeat(span_patch::MAX_EDIT_BYTES + 1);
+        let error = parse_plan(&plan(json!([edit(0, "a.rs", 1, &wide)]))).unwrap_err();
+        assert!(
+            matches!(&error, AdapterError::InvalidOptions(message) if message.contains("replaces at most")),
             "{error:?}"
         );
     }

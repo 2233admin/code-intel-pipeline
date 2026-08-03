@@ -10,8 +10,8 @@
 //! Like `edit apply`, this module owns argument shape and rendering and
 //! nothing else. The write goes through the `edit.ast-grep-apply` capability
 //! envelope, with `implementation` and `allowedEffects` read from the
-//! registered declaration through `ExecutionPolicy`. There is no filesystem
-//! write in this file.
+//! registered declaration through `ExecutionPolicy`. No repository byte is
+//! written in this file.
 //!
 //! The snapshot is built fresh, over exactly the files the plan names —
 //! deliberately not pinned to the plan's own snapshot. Pinning would refuse a
@@ -25,7 +25,7 @@ use std::path::PathBuf;
 
 use serde_json::{json, Value};
 
-use crate::edit_apply::Staging;
+use crate::edit_apply::{refuse, Staging};
 use crate::{capability, capability_inventory, execution_policy, snapshot};
 
 const CAPABILITY: &str = "edit.ast-grep-apply";
@@ -34,10 +34,7 @@ const USAGE: &str = "usage: edit apply-plan --repo-path <checkout> --plan <struc
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
     let cli = match Cli::parse(raw) {
         Ok(cli) => cli,
-        Err(message) => {
-            eprintln!("{message}");
-            return 64;
-        }
+        Err(message) => return refuse(CAPABILITY, 64, "arguments", &message),
     };
     match execute(&cli) {
         Ok((exit_code, document)) => {
@@ -47,10 +44,11 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
             );
             exit_code
         }
-        Err((exit_code, message)) => {
-            eprintln!("{message}");
-            exit_code
-        }
+        // Same rule as `edit apply`: an exit the route contract declares must
+        // not be answered with zero stdout bytes. `refuse` publishes the
+        // shared `code-intel-edit-failure.v1` document and keeps the
+        // actionable sentence on stderr.
+        Err((exit_code, stage, message)) => refuse(CAPABILITY, exit_code, stage, &message),
     }
 }
 
@@ -106,10 +104,11 @@ impl Cli {
     }
 }
 
-fn execute(cli: &Cli) -> Result<(i32, Value), (i32, String)> {
+fn execute(cli: &Cli) -> Result<(i32, Value), (i32, &'static str, String)> {
     let repo = fs::canonicalize(&cli.repo_path).map_err(|error| {
         (
             65,
+            "repository",
             format!(
                 "cannot resolve --repo-path {}: {error}",
                 cli.repo_path.display()
@@ -119,11 +118,17 @@ fn execute(cli: &Cli) -> Result<(i32, Value), (i32, String)> {
     let bytes = fs::read(&cli.plan).map_err(|error| {
         (
             74,
+            "plan",
             format!("cannot read --plan {}: {error}", cli.plan.display()),
         )
     })?;
-    let plan: Value = serde_json::from_slice(&bytes)
-        .map_err(|error| (64, format!("--plan is not one JSON document: {error}")))?;
+    let plan: Value = serde_json::from_slice(&bytes).map_err(|error| {
+        (
+            64,
+            "plan",
+            format!("--plan is not one JSON document: {error}"),
+        )
+    })?;
     let plan_sha256 = capability::sha256_hex(&bytes);
     let scope = plan_scope(&plan)?;
     // Scope the snapshot to exactly the files the plan touches. A
@@ -132,11 +137,12 @@ fn execute(cli: &Cli) -> Result<(i32, Value), (i32, String)> {
     let snapshot = snapshot::build_for_dag(&repo, "explicit_overlay", &scope).map_err(|error| {
         (
             65,
+            "snapshot",
             format!("snapshot identity for the planned files: {error}"),
         )
     })?;
     let declaration = capability::declaration_for(CAPABILITY, cli.manifest.as_deref())
-        .map_err(|error| (69, error))?;
+        .map_err(|error| (69, "registry", error))?;
     let policy =
         execution_policy::ExecutionPolicy::for_profile(execution_policy::RunProfile::Default);
     let request = json!({
@@ -150,7 +156,7 @@ fn execute(cli: &Cli) -> Result<(i32, Value), (i32, String)> {
         "effectPolicy": {"allowedEffects": policy.allowed_effects(&declaration)},
     });
 
-    let staging = Staging::open(cli.out.clone()).map_err(|error| (74, error))?;
+    let staging = Staging::open(cli.out.clone()).map_err(|error| (74, "staging", error))?;
     let outcome = capability::exec_in_process(
         CAPABILITY,
         &request,
@@ -169,11 +175,13 @@ fn execute(cli: &Cli) -> Result<(i32, Value), (i32, String)> {
 
 /// The files the plan names, deduplicated — also the proof that a plan with
 /// no applicable edits never reaches the capability.
-fn plan_scope(plan: &Value) -> Result<Vec<String>, (i32, String)> {
+fn plan_scope(plan: &Value) -> Result<Vec<String>, (i32, &'static str, String)> {
     let edits = plan["apply"]["edits"].as_array().ok_or_else(|| {
         (
             64,
-            "--plan carries no apply.edits; it was not produced by edit.ast-grep-plan".to_string(),
+            "plan",
+            "--plan carries no apply.edits; it does not have the shape edit.ast-grep-plan publishes"
+                .to_string(),
         )
     })?;
     let scope = edits
@@ -184,6 +192,7 @@ fn plan_scope(plan: &Value) -> Result<Vec<String>, (i32, String)> {
     if scope.is_empty() {
         return Err((
             64,
+            "plan",
             format!(
                 "--plan has no applicable edits: {}",
                 plan["apply"]["reason"]
@@ -274,8 +283,9 @@ mod tests {
         let plan = json!({
             "apply": {"applicable": false, "reason": "plan matched nothing", "edits": []}
         });
-        let (exit_code, message) = plan_scope(&plan).unwrap_err();
+        let (exit_code, stage, message) = plan_scope(&plan).unwrap_err();
         assert_eq!(exit_code, 64);
+        assert_eq!(stage, "plan");
         assert!(message.contains("plan matched nothing"), "{message}");
     }
 

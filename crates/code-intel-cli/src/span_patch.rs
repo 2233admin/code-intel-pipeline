@@ -29,6 +29,17 @@ use super::AdapterError;
 /// span covering half a file cannot turn one refusal into a megabyte artifact.
 pub(super) const MAX_EVIDENCE_BYTES: usize = 256;
 
+/// The widest span a plan may replace, and the largest replacement it may
+/// write.
+///
+/// `edit.ast-grep-plan` refuses to mark a wider match applicable, and
+/// `edit.ast-grep-apply` enforces the same ceiling again on the plan it is
+/// handed. Both, not one: a `--plan` is a JSON file on disk, so the apply
+/// stage cannot assume the numbers in front of it came from a plan run that
+/// had already checked them. Stating the constant once is what keeps the two
+/// halves of that claim from drifting apart.
+pub(super) const MAX_EDIT_BYTES: usize = 4096;
+
 const GENERATED_COMPONENTS: [&str; 9] = [
     ".git",
     ".next",

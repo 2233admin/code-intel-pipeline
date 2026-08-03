@@ -369,12 +369,18 @@ fn observable_contracts_pin_exact_schemas_composites_and_exit_sets() {
         raw("edit", Some("apply")).exit_contract.codes(),
         &[0, 10, 64, 65, 69, 70, 74]
     );
-    match raw("edit", Some("apply")).output_contract {
-        OutputContract::Stdout { identities } => assert!(
-            identities.contains(&"code-intel-edit-failure.v1"),
-            "edit apply must declare the pre-envelope failure document: {identities:?}"
-        ),
-        other => panic!("edit apply has wrong output contract: {other:?}"),
+    assert_eq!(
+        raw("edit", Some("apply-plan")).exit_contract.codes(),
+        &[0, 10, 64, 65, 69, 70, 74]
+    );
+    for route in ["apply", "apply-plan"] {
+        match raw("edit", Some(route)).output_contract {
+            OutputContract::Stdout { identities } => assert!(
+                identities.contains(&"code-intel-edit-failure.v1"),
+                "edit {route} must declare the pre-envelope failure document: {identities:?}"
+            ),
+            other => panic!("edit {route} has wrong output contract: {other:?}"),
+        }
     }
 
     for (adapter, outer_schema, nested_schema) in [

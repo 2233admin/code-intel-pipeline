@@ -42,9 +42,11 @@ const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_PATHS: usize = 64;
 /// Bounds on what may become an *applicable* plan. A preview may report any
 /// number of matches of any size; an instruction that rewrites bytes stays
-/// small enough to read, to hash, and to refuse as a unit.
+/// small enough to read, to hash, and to refuse as a unit. The per-edit byte
+/// ceiling lives in `span_patch` because `edit.ast-grep-apply` re-checks it
+/// against whatever plan document it is handed.
 const MAX_PLAN_EDITS: usize = 256;
-const MAX_PLAN_SPAN_BYTES: usize = 4096;
+use span_patch::MAX_EDIT_BYTES;
 
 pub(crate) fn execute(
     request: &Value,
@@ -362,18 +364,18 @@ fn planned_edit(
             source.len()
         ));
     }
-    if end - start > MAX_PLAN_SPAN_BYTES {
+    if end - start > MAX_EDIT_BYTES {
         return Err(format!(
-            "match spans {} bytes; an applicable edit spans at most {MAX_PLAN_SPAN_BYTES}",
+            "match spans {} bytes; an applicable edit spans at most {MAX_EDIT_BYTES}",
             end - start
         ));
     }
     let replacement = item["replacement"]
         .as_str()
         .ok_or("ast-grep reported no replacement for this match")?;
-    if replacement.len() > MAX_PLAN_SPAN_BYTES {
+    if replacement.len() > MAX_EDIT_BYTES {
         return Err(format!(
-            "replacement is {} bytes; an applicable edit replaces with at most {MAX_PLAN_SPAN_BYTES}",
+            "replacement is {} bytes; an applicable edit replaces with at most {MAX_EDIT_BYTES}",
             replacement.len()
         ));
     }

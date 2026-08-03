@@ -47,7 +47,9 @@ pub(super) const APPLY: super::RawRoute = super::RawRoute {
 /// different unit of failure: `edit apply` writes the spans one caller
 /// addressed in one file, while this route executes a whole ast-grep plan
 /// across every file it names — verifying every span's digest before writing
-/// any of them. Exit 10 is that refusal.
+/// any of them. Exit 10 is that refusal. As with `edit apply`, the exits
+/// reached before the envelope exists answer with `code-intel-edit-failure.v1`
+/// rather than with zero stdout bytes.
 pub(super) const APPLY_PLAN: super::RawRoute = super::RawRoute {
     command: "edit",
     subcommand: Some("apply-plan"),
@@ -65,6 +67,7 @@ pub(super) const APPLY_PLAN: super::RawRoute = super::RawRoute {
         output_contract: super::OutputContract::Stdout {
             identities: &[
                 "code-intel-edit-apply-plan.v1",
+                "code-intel-edit-failure.v1",
                 "code-intel-capability-result.v1",
                 "code-intel-structured-edit-apply-result.v1",
             ],

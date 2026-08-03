@@ -1342,8 +1342,8 @@
           "id": "edit.ast-grep-plan.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "729ec1210627cc78d32b5b1c0d8f3853ad627e3a6c7352ed29e552920ce3d056",
-            "cfb8c7f742b1d9974ac2ba5e17797e133427ef665563b15e373ba888d508328b"
+            "86f72b37a5f7185645bd95b18b2f37841a88f27382c16641fa1f6c022457994e",
+            "0d723b09efc01c4ef4aae200ce66b4f668d8eb9010c3ab826b30f54fc804eaa2"
           ]
         },
         "determinism": "external_nondeterministic",
@@ -1389,8 +1389,8 @@
           "id": "edit.ast-grep-apply.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "259b0f3a877b1e2fba61643453bc6b408b8b0b73914ae28b681118b27f869542",
-            "cfb8c7f742b1d9974ac2ba5e17797e133427ef665563b15e373ba888d508328b"
+            "d33239bf68536f544f1a330714c025a061a66cd18468a3a7d4ecff401c3d1d2c",
+            "0d723b09efc01c4ef4aae200ce66b4f668d8eb9010c3ab826b30f54fc804eaa2"
           ]
         },
         "determinism": "deterministic",
@@ -1408,7 +1408,7 @@
       "artifactContract": [
         "ast-grep-apply-result.json"
       ],
-      "extensionPoint": "Executes an edit.ast-grep-plan as one unit: every planned span in every file is resolved and checked against both digests the plan recorded — the span's own bytes and the line they sit on — before any byte is written, and one drifted span refuses the whole plan while naming which matches drifted. It performs every byte transformation itself — no option carries rewritten file contents — and it never decides what to change; that stays with the plan."
+      "extensionPoint": "Executes an edit.ast-grep-plan as one unit: every planned span in every file is resolved and checked against both digests the plan recorded — the span's own bytes and the line they sit on — before any byte is written, and one drifted span refuses the whole plan while naming which matches drifted. The guarantee is bounded and worth stating exactly: a plan is a JSON file, so its schema, capability and snapshotIdentity are author-supplied strings and this capability does not claim a plan came from a real edit.ast-grep-plan run. What it enforces is that a caller may only write where it has already read — the recorded text must hash to the sha256 it declares and to the bytes actually at the span — with every replacement capped at the same 4096-byte per-edit ceiling the plan stage applies. It never decides what to change; that stays with the plan."
     },
     {
       "id": "edit.span-apply",
@@ -1436,7 +1436,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "13397e51d9dd65f3e68afce4a1ccfb76c268261a90e0be44a08048be9c1cce50",
-            "cfb8c7f742b1d9974ac2ba5e17797e133427ef665563b15e373ba888d508328b"
+            "0d723b09efc01c4ef4aae200ce66b4f668d8eb9010c3ab826b30f54fc804eaa2"
           ]
         },
         "determinism": "deterministic",
