@@ -116,6 +116,69 @@ struct CliOutcome {
     exit_code: i32,
 }
 
+/// One envelope execution, without the process framing.
+///
+/// The in-repo front doors (`edit apply` today) use this so they can render
+/// their own stdout while still going through *this* validator, this
+/// registry lookup, and this effect coherence check. A front door that built
+/// its own path here would be exactly the raw write path the capability
+/// envelope exists to prevent.
+pub(crate) struct ExecOutcome {
+    pub(crate) result: Option<Value>,
+    pub(crate) diagnostic: Option<String>,
+    pub(crate) exit_code: i32,
+}
+
+pub(crate) fn exec_in_process(
+    capability: &str,
+    request: &Value,
+    out_dir: &Path,
+    manifest: Option<&Path>,
+    execute_adapter: AdapterExecutor,
+) -> ExecOutcome {
+    let outcome = execute_request(
+        capability,
+        request.clone(),
+        out_dir,
+        None,
+        manifest,
+        execute_adapter,
+    );
+    if let Some(result) = &outcome.result {
+        if let Err(message) = validate_result_envelope(result) {
+            return ExecOutcome {
+                result: None,
+                diagnostic: Some(format!(
+                    "executor refused to emit an invalid result envelope: {message}"
+                )),
+                exit_code: 70,
+            };
+        }
+    }
+    ExecOutcome {
+        result: outcome.result,
+        diagnostic: outcome.stderr,
+        exit_code: outcome.exit_code,
+    }
+}
+
+/// Read the registered declaration for one capability id.
+///
+/// Front doors need `implementation` and `allowedEffects` to compose a
+/// coherent request; reading them from the same registry the executor
+/// consults is what keeps the two from drifting apart.
+pub(crate) fn declaration_for(capability: &str, manifest: Option<&Path>) -> Result<Value, String> {
+    let registry = match load_registry(manifest) {
+        Ok(registry) => registry,
+        Err(RegistryError::Unavailable(message) | RegistryError::Invalid(message)) => {
+            return Err(message)
+        }
+    };
+    find_declaration(&registry, capability)?
+        .map(|(declaration, _)| declaration)
+        .ok_or_else(|| format!("capability has no registered declaration: {capability}"))
+}
+
 fn execute_cli(
     cli_capability: &str,
     request_file: &Path,
@@ -128,6 +191,24 @@ fn execute_cli(
         Ok(request) => request,
         Err((code, message)) => return pre_envelope(code, &message),
     };
+    execute_request(
+        cli_capability,
+        request,
+        out_dir,
+        artifact_root,
+        manifest,
+        execute_adapter,
+    )
+}
+
+fn execute_request(
+    cli_capability: &str,
+    request: Value,
+    out_dir: &Path,
+    artifact_root: Option<&Path>,
+    manifest: Option<&Path>,
+    execute_adapter: AdapterExecutor,
+) -> CliOutcome {
     if let Err(message) = validate_request(&request) {
         return failure_from(&request, 64, &message);
     }

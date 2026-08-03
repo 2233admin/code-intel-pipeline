@@ -380,6 +380,36 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
         ),
     },
     raw_route! {
+        // The write half of the edit surface (#96, charter gate G4 in #139).
+        // It is a raw route rather than a controller because it owns no
+        // authority of its own: the write goes through the `edit.span-apply`
+        // capability envelope, which is what declares `repo_mutation` and
+        // what refuses on a digest mismatch. Exit 10 is a *refusal*, not a
+        // malfunction — the envelope's domain-fail code, reached when the
+        // bytes at the addressed span are not the bytes the caller hashed.
+        command: "edit",
+        subcommand: Some("apply"),
+        argument_offset: 2,
+        id: CompatibilityRoute::EditApply,
+        contract: command_contract!(
+            Public,
+            Internal,
+            Internal,
+            &[
+                CommandEffect::RepoRead,
+                CommandEffect::LocalWrite,
+                CommandEffect::RepoMutation
+            ],
+            stdout!(
+                "code-intel-edit-apply.v1",
+                "code-intel-capability-result.v1",
+                "code-intel-span-edit-result.v1",
+            ),
+            exits!(0, 10, 64, 65, 69, 70, 74),
+            "retire only with the span-addressed edit capability it fronts"
+        ),
+    },
+    raw_route! {
         // Working-tree sibling of `change impact`. Separate command because
         // it answers without authority; folding it into `change impact` as a
         // flag would have made one command sometimes admissible and sometimes

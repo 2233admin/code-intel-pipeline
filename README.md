@@ -564,7 +564,18 @@ code-intel change impact --artifact-root <root> --repo <name> --repo-path C:\pat
 code-intel capability exec edit.ast-grep-plan --request <request.json> --out <staging-dir>
 ```
 
-计划只预览（`repositoryMutation=false`），不会改文件。确认后再动手改，改完 `session_end` 收门禁。
+计划只预览（`repositoryMutation=false`），不会改文件。
+
+改一个标识符不必重写整行——按 span 下指令，工具执行：
+
+```powershell
+code-intel edit apply --repo-path C:\path\to\repo --file src/module/file.rs `
+  --span 12:21-12:33 --expect-sha256 <该 span 当前字节的 sha256> --replacement retryBudget
+```
+
+`--expect-sha256` 由调用方给出（来自索引或先前读到的字节），工具在写之前拿它跟 span 现在的字节比对：不一致就拒绝，退出码 10，并回报"期望什么 / 实际是什么"（含 `foundSha256` 与一段有界原文），文件一个字节不动。这是索引漂移时不误伤的唯一机械保证。同一次调用可带多个 `--span`（同一文件，互不重叠），全部按改动前的字节定位、整文件原子替换，要么全落要么全不落。
+
+改完 `session_end` 收门禁。
 
 可用工具：
 

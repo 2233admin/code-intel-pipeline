@@ -134,7 +134,20 @@ code-intel capability exec edit.ast-grep-plan --request <request.json> --out <st
 
 The plan is preview-only (`repositoryMutation=false`); it never rewrites files.
 
-4. Edit, run the selected tests, then close the gate:
+4. Apply a change you can address by span, instead of rewriting the line around it:
+
+```powershell
+code-intel edit apply --repo-path <checkout> --file <repo-relative-path> --span <startLine:startColumn-endLine:endColumn> --expect-sha256 <sha256-of-the-span-current-bytes> --replacement <text>
+```
+
+Lines and columns are 1-based and the end column is exclusive, so `12:21-12:33` is twelve bytes on
+line 12. The digest is yours to supply — it is what the tool compares against the bytes actually at
+that address before writing. On a mismatch it exits 10 with `applied:false` and reports the expected
+digest, the found digest, and a bounded literal of what is really there, leaving the file untouched.
+Repeat the `--span`/`--expect-sha256`/`--replacement` triple for several disjoint spans in one file;
+they are all resolved against the pre-edit bytes and land as one atomic file replacement.
+
+5. Edit, run the selected tests, then close the gate:
 
 ```powershell
 & "$env:CODE_INTEL_HOME/legacy/Invoke-SentruxAgentTool.ps1" session_end "<scope-path>"

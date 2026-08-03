@@ -37,6 +37,8 @@ pub(crate) mod native_code_evidence;
 mod project_orientation;
 #[path = "project_orientation_benchmark.rs"]
 mod project_orientation_benchmark;
+#[path = "span_apply.rs"]
+mod span_apply;
 #[path = "structured_edit.rs"]
 mod structured_edit;
 #[path = "tool_path.rs"]
@@ -84,6 +86,7 @@ pub(crate) fn execute(
             native_code_evidence::execute(request, verified_inputs, out)
         }
         "edit.ast-grep-plan.compat" => structured_edit::execute(request, verified_inputs, out),
+        "edit.span-apply.compat" => span_apply::execute(request, verified_inputs, out),
         "project.orientation.compat" => project_orientation::execute(request, verified_inputs, out),
         "understanding.quadrant.compat" => {
             understanding_quadrant::execute(request, verified_inputs, out)

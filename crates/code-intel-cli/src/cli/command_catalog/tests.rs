@@ -260,6 +260,21 @@ fn command_authority_and_effect_contracts_cover_conditional_and_mutating_routes(
         raw("model", None).contract.effects,
         &[CommandEffect::LocalWrite]
     );
+    // `edit apply` is the only agent-facing route that rewrites source bytes.
+    // Its declared effects must say so, and `edit impact` — the read-shaped
+    // sibling one word away — must keep saying it does not.
+    assert_eq!(
+        raw("edit", Some("apply")).contract.effects,
+        &[
+            CommandEffect::RepoRead,
+            CommandEffect::LocalWrite,
+            CommandEffect::RepoMutation
+        ]
+    );
+    assert_eq!(
+        raw("edit", Some("impact")).contract.effects,
+        &[CommandEffect::RepoRead, CommandEffect::ProcessSpawn]
+    );
     for adapter in [
         "repowise-adapt",
         "graph-adapt",

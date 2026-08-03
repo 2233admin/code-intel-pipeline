@@ -1342,7 +1342,7 @@
           "id": "edit.ast-grep-plan.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "6f481d582dc0301fb438bcd18b9ab5704fc72f81b7044635140d4b99c4fae0ac"
+            "74e21715c584392f0955e797817f2ef87e3fa9f21045f53c0d4c1ad8f9c70119"
           ]
         },
         "determinism": "external_nondeterministic",
@@ -1358,6 +1358,48 @@
         "structured-edit-plan.json"
       ],
       "extensionPoint": "Preview-only structural search and rewrite planning through ast-grep. Repository mutation is deliberately excluded and requires a separate explicitly authorized capability."
+    },
+    {
+      "id": "edit.span-apply",
+      "stage": "localization",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-adapter",
+      "required": false,
+      "entrypoint": "target/debug/code-intel.exe",
+      "capabilities": [
+        "span_addressed_patch",
+        "digest_verified_write",
+        "atomic_file_replace",
+        "snapshot_bound"
+      ],
+      "commands": {
+        "capabilityExec": "target/debug/code-intel.exe capability exec edit.span-apply --request <request.json|-> --out <staging-dir>",
+        "frontDoor": "target/debug/code-intel.exe edit apply --repo-path <checkout> --file <repo-relative-path> --span <startLine:startColumn-endLine:endColumn> --expect-sha256 <sha256> --replacement <text>"
+      },
+      "capabilityDeclaration": {
+        "schema": "code-intel-capability-declaration.v1",
+        "id": "edit.span-apply",
+        "contractVersion": 1,
+        "implementation": {
+          "id": "edit.span-apply.compat",
+          "version": "1.0.0",
+          "toolchainDigests": [
+            "7850c6a25fbe79312ba5ceba84a6b0b1afdbfef44de0621539660b2f378b979c"
+          ]
+        },
+        "determinism": "deterministic",
+        "allowedEffects": ["repo_read", "local_write", "repo_mutation"],
+        "dependencies": ["repo.snapshot"]
+      },
+      "runtimeAdapter": "edit.span-apply.compat",
+      "toolchainDigestEvidence": {
+        "algorithm": "sha256",
+        "inputs": ["crates/code-intel-cli/src/span_apply.rs"]
+      },
+      "artifactContract": [
+        "span-apply-result.json"
+      ],
+      "extensionPoint": "The only capability in this registry that rewrites repository source bytes. It writes exactly the addressed spans of exactly one file, after verifying each span's current bytes against a caller-supplied sha256, and publishes the expected/found digests as evidence when it refuses. Structural planning stays in edit.ast-grep-plan; this capability never decides what to change."
     },
     {
       "id": "memory.repowise",

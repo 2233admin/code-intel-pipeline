@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 const IMPLEMENTATION_DIGEST: &str =
     "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568";
 const STRUCTURED_EDIT_DIGEST: &str =
-    "6f481d582dc0301fb438bcd18b9ab5704fc72f81b7044635140d4b99c4fae0ac";
+    "74e21715c584392f0955e797817f2ef87e3fa9f21045f53c0d4c1ad8f9c70119";
 static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn temp_dir(name: &str) -> PathBuf {
