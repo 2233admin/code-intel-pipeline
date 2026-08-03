@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::{json, Map, Value};
+use crate::i18n::{Language, Messages};
 
 const FAILURE_CATEGORIES: [&str; 9] = [
     "consent_required",
@@ -420,9 +421,23 @@ pub(crate) fn route(request: &Value) -> Result<Value, String> {
         "deterministic_degraded" => Value::String("provide_or_enable_model_channel".into()),
         _ => Value::Null,
     };
+
+    let lang = Language::from_env();
+    let msgs = Messages::new(lang);
+    let translated_status = if lang == Language::Chinese {
+        match status {
+            "ready" => "已就绪",
+            "consent_required" => msgs.consent_required(),
+            "deterministic_degraded" => "确定性降级",
+            _ => status,
+        }
+    } else {
+        status
+    };
+
     Ok(json!({
         "schema": "code-intel-model-routing-result.v1",
-        "status": status,
+        "status": translated_status,
         "selected": selected,
         "authorization": {
             "consumptionAuthorization": {
@@ -515,12 +530,44 @@ fn evaluate_candidate<'a>(
 
 fn attempt(id: &str, state: &str, eligible: bool, category: Option<&str>, reason: &str) -> Value {
     debug_assert!(category.map_or(true, |value| FAILURE_CATEGORIES.contains(&value)));
+
+    let lang = Language::from_env();
+    let msgs = Messages::new(lang);
+
+    let translated_state = if lang == Language::Chinese {
+        match state {
+            "ready" => msgs.ready(),
+            "discovered" => "已发现",
+            "executable_verified" => "可执行已验证",
+            "auth_present" => "认证存在",
+            "model_available" => "模型可用",
+            "egress_allowed" => "出口允许",
+            "spend_allowed" => "支出允许",
+            _ => state,
+        }
+    } else {
+        state
+    };
+
+    let translated_reason = if lang == Language::Chinese {
+        match reason {
+            "provider_unavailable" => msgs.provider_unavailable(),
+            "model_unavailable" => msgs.model_unavailable(),
+            "config_error" => msgs.config_error(),
+            "endpoint_not_configured" => msgs.endpoint_not_configured(),
+            "authentication_absent" => msgs.authentication_absent(),
+            _ => reason,
+        }
+    } else {
+        reason
+    };
+
     json!({
         "candidateId": id,
-        "readinessState": state,
+        "readinessState": translated_state,
         "eligible": eligible,
         "failureCategory": category,
-        "reason": reason
+        "reason": translated_reason
     })
 }
 
