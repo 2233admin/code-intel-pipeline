@@ -89,7 +89,7 @@ jobs:
           New-Item -ItemType Directory -Force $authority | Out-Null
           ./target/release/code-intel.exe run execute --repo . --out $staging --authority-root $authority --final-name release-self-scan --manifest orchestration/integrations.json --doctor-require-repowise false
           if ($LASTEXITCODE -ne 0) {
-            throw "release candidate failed its own scan (exit ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure). A failing self-scan must never publish."
+            throw "release candidate failed its own scan (exit ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure, 73 = --final-name already published under the authority root). A failing self-scan must never publish."
           }
 
       - name: Validate any produced audit report (ai-safety-003)
@@ -298,7 +298,7 @@ jobs:
           New-Item -ItemType Directory -Force $authority | Out-Null
           ./target/release/code-intel run execute --repo . --out $staging --authority-root $authority --final-name release-self-scan --manifest orchestration/integrations.json --doctor-require-repowise false
           if ($LASTEXITCODE -ne 0) {
-            throw "release candidate failed its own scan (exit ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure). A failing self-scan must never publish."
+            throw "release candidate failed its own scan (exit ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure, 73 = --final-name already published under the authority root). A failing self-scan must never publish."
           }
 
       - name: Package

@@ -24,6 +24,14 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
             result.exit_code
         }
         Err(error) => {
+            // A failure that already owns a run manifest prints it, so stdout
+            // stays parseable instead of going silent after a full analysis.
+            if let Some(report) = &error.report {
+                println!(
+                    "{}",
+                    serde_json::to_string(report).expect("run failure report serializes")
+                );
+            }
             eprintln!("{}", error.message);
             error.exit_code
         }

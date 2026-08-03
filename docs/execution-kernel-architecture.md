@@ -35,6 +35,13 @@ the only runtime source for:
 - `domain_unknown` -> exit 20;
 - `process_failed` or `incomplete` -> exit 70.
 
+A run that completes but cannot be published is not an outcome — nothing was published. When
+`--final-name` is already taken under the authority root, `run execute` exits `73`
+(`EX_CANTCREAT`), names the run, the destination path, and the remedy on stderr, and prints the
+completed manifest on stdout as `code-intel-execution-failure.v1` so ~90s of analysis is not
+discarded silently. `73` is distinct from `65` (malformed input) precisely because the caller's
+arguments were well-formed and the run itself succeeded.
+
 The existing `code-intel-run-manifest.v1` schema and Artifact Ref envelope remain unchanged.
 Immediately after DAG completion, the private controller adds exactly one
 `repository.iteration` Artifact Ref. Its payload uses

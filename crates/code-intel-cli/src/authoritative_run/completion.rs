@@ -150,14 +150,19 @@ fn map_index_error(error: crate::artifact_index::IndexError) -> crate::run_error
 
 fn map_commit_error(error: crate::run_commit::CommitError) -> crate::run_error::RunError {
     match error {
-        crate::run_commit::CommitError::Contract(message)
-        | crate::run_commit::CommitError::Collision(message) => {
+        crate::run_commit::CommitError::Contract(message) => {
             crate::run_error::RunError::contract(message)
         }
+        // Revalidating an already-committed handoff has no reachable collision
+        // today, but folding it into the `Contract` arm is exactly the mistake
+        // that made a taken publication name report as exit 65 on the kernel
+        // side. Keep the classification honest on both mappers.
+        crate::run_commit::CommitError::Collision(message) => {
+            crate::run_error::RunError::publication_collision(message)
+        }
         crate::run_commit::CommitError::HostIo(message) => crate::run_error::RunError::io(message),
-        crate::run_commit::CommitError::Interrupted(phase) => crate::run_error::RunError {
-            exit_code: 75,
-            message: format!("publication interrupted before {phase:?}"),
-        },
+        crate::run_commit::CommitError::Interrupted(phase) => {
+            crate::run_error::RunError::new(75, format!("publication interrupted before {phase:?}"))
+        }
     }
 }
