@@ -28,6 +28,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+#[path = "file_gate/mod.rs"]
+mod file_gate;
 #[path = "hardened_git.rs"]
 mod hardened_git;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -64,11 +66,7 @@ const GATED_METRIC_KEYS: [&str; 4] = [
     "god_file_count",
 ];
 
-const CODE_EXTENSIONS: &[&str] = &[
-    "ps1", "psm1", "py", "rs", "go", "ts", "tsx", "js", "jsx", "mjs", "cjs", "java", "cs", "cpp",
-    "c", "h", "hpp", "v",
-];
-// Subset of CODE_EXTENSIONS whose dependency declarations `is_import_line`
+// Subset of `file_gate::CODE_EXTENSIONS` whose dependency declarations `is_import_line`
 // recognises. Everything measured except coupling (size, functions,
 // complexity, god files) still covers the full CODE_EXTENSIONS set — a
 // PowerShell god file is still a god file.
@@ -83,36 +81,6 @@ const IMPORT_MODELED_EXTENSIONS: &[&str] = &[
 // average. Adding either form to `is_import_line` is the prerequisite for
 // moving these into IMPORT_MODELED_EXTENSIONS.
 const IMPORT_UNMODELED_EXTENSIONS: &[&str] = &["ps1", "psm1"];
-const SKIP_DIRECTORIES: &[&str] = &[
-    ".git",
-    ".repowise",
-    ".understand-anything",
-    ".sentrux",
-    "tools",
-    "vendor",
-    "vendors",
-    "third_party",
-    "third-party",
-    "external",
-    "node_modules",
-    ".pnpm",
-    ".yarn",
-    "target",
-    "dist",
-    "build",
-    "out",
-    "coverage",
-    ".venv",
-    "venv",
-    "env",
-    ".tox",
-    "__pycache__",
-    ".next",
-    ".nuxt",
-    ".turbo",
-    ".cache",
-];
-const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_VIOLATION_TARGETS: usize = 8;
 // The god-file rule, single source for both measurement (`measure_file`) and
 // reporting (`god_rule_label`) so the printed rule branch can never drift
@@ -185,7 +153,7 @@ struct ProjectMetrics {
 }
 
 pub(crate) fn run_check(repo: &Path) -> Result<EngineRun, String> {
-    let metrics = measure_project(repo)?;
+    let (metrics, _file_gate) = measure_project(repo)?;
     let mut out = String::new();
     resolve_header(&mut out, &metrics);
     let rules_path = repo.join(".sentrux").join("rules.toml");
@@ -229,7 +197,7 @@ pub(crate) fn run_check(repo: &Path) -> Result<EngineRun, String> {
 }
 
 pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
-    let metrics = measure_project(repo)?;
+    let (metrics, _file_gate) = measure_project(repo)?;
     let baseline_path = repo.join(".sentrux").join("baseline.json");
     if save {
         let baseline = baseline_document(repo, &metrics)?;
@@ -494,8 +462,12 @@ pub(crate) fn run_check_aligned(repo: &Path, ratchet: bool) -> Result<EngineRun,
 }
 
 pub(crate) fn scan_json(repo: &Path) -> Result<Value, String> {
-    let metrics = measure_project(repo)?;
-    Ok(metrics_json(repo, &metrics))
+    let (metrics, file_gate) = measure_project(repo)?;
+    let mut value = metrics_json(repo, &metrics);
+    if let Value::Object(ref mut map) = value {
+        map.insert("file_gate".to_string(), file_gate.to_json());
+    }
+    Ok(value)
 }
 
 fn baseline_document(repo: &Path, metrics: &ProjectMetrics) -> Result<Value, String> {
@@ -743,13 +715,13 @@ fn cycle_targets(metrics: &ProjectMetrics) -> Vec<String> {
     targets
 }
 
-fn measure_project(repo: &Path) -> Result<ProjectMetrics, String> {
+fn measure_project(repo: &Path) -> Result<(ProjectMetrics, file_gate::GateReport), String> {
     let repo = repo
         .canonicalize()
         .map_err(|error| format!("resolve repository path: {error}"))?;
-    let mut paths = Vec::new();
-    collect_files(&repo, &repo, &mut paths)?;
-    paths.sort();
+    let config = file_gate::GateConfig::built_in();
+    let report = file_gate::evaluate(&repo, &config)?;
+    let paths = report.included.clone();
     let mut files = Vec::new();
     for relative in &paths {
         let content = fs::read(repo.join(relative)).unwrap_or_default();
@@ -784,7 +756,7 @@ fn measure_project(repo: &Path) -> Result<ProjectMetrics, String> {
         - ((max_complexity - 15).max(0) as f64) * 10.0)
         .max(0.0) as i64;
     let cycles = rust_import_cycles(&repo, &paths);
-    Ok(ProjectMetrics {
+    let metrics = ProjectMetrics {
         cycle_count: cycles.len() as i64,
         cycles,
         files,
@@ -798,78 +770,8 @@ fn measure_project(repo: &Path) -> Result<ProjectMetrics, String> {
         max_complexity,
         coupling_score,
         quality_signal,
-    })
-}
-
-fn collect_files(root: &Path, directory: &Path, paths: &mut Vec<String>) -> Result<(), String> {
-    let entries = fs::read_dir(directory)
-        .map_err(|error| format!("read {}: {error}", directory.display()))?;
-    for entry in entries {
-        let entry = entry.map_err(|error| format!("read {}: {error}", directory.display()))?;
-        let path = entry.path();
-        let name = entry.file_name().to_string_lossy().to_string();
-        let file_type = entry
-            .file_type()
-            .map_err(|error| format!("inspect {}: {error}", path.display()))?;
-        if file_type.is_symlink() {
-            continue;
-        }
-        if file_type.is_dir() {
-            if SKIP_DIRECTORIES.contains(&name.as_str())
-                || (name.starts_with('.') && name.len() > 1)
-                || name.starts_with(".venv-")
-                || name.starts_with("venv-")
-                || name.starts_with("env-")
-            {
-                continue;
-            }
-            collect_files(root, &path, paths)?;
-            continue;
-        }
-        let extension = path
-            .extension()
-            .and_then(|value| value.to_str())
-            .map(str::to_ascii_lowercase)
-            .unwrap_or_default();
-        if !CODE_EXTENSIONS.contains(&extension.as_str()) {
-            continue;
-        }
-        if entry
-            .metadata()
-            .map(|metadata| metadata.len() > MAX_FILE_BYTES)
-            .unwrap_or(true)
-        {
-            continue;
-        }
-        let relative = path
-            .strip_prefix(root)
-            .map_err(|error| format!("relativize {}: {error}", path.display()))?
-            .to_string_lossy()
-            .replace('\\', "/");
-        if is_skipped_relative(&relative) {
-            continue;
-        }
-        paths.push(relative);
-    }
-    Ok(())
-}
-
-fn is_skipped_relative(relative: &str) -> bool {
-    let lowered = relative.to_ascii_lowercase();
-    if lowered.starts_with("static/")
-        || lowered.starts_with("public/")
-        || lowered.starts_with("wwwroot/")
-        || lowered.contains("/static/")
-        || lowered.contains("/public/")
-        || lowered.contains("/wwwroot/")
-    {
-        return true;
-    }
-    let leaf = lowered.rsplit('/').next().unwrap_or(&lowered);
-    if leaf.ends_with(".min.js") || leaf.ends_with(".bundle.js") {
-        return true;
-    }
-    false
+    };
+    Ok((metrics, report))
 }
 
 fn measure_file(relative: &str, content: &str) -> FileMetrics {
@@ -1451,10 +1353,11 @@ mod tests {
 
     #[test]
     fn every_code_extension_is_classified_as_import_modeled_or_not() {
-        // A new extension added to CODE_EXTENSIONS without a decision here
-        // would silently land in the coupling denominator with zero imports,
-        // which is the exact defect this split exists to prevent.
-        for extension in CODE_EXTENSIONS {
+        // A new extension added to file_gate::CODE_EXTENSIONS without a
+        // decision here would silently land in the coupling denominator
+        // with zero imports, which is the exact defect this split exists
+        // to prevent.
+        for extension in file_gate::CODE_EXTENSIONS {
             let modeled = IMPORT_MODELED_EXTENSIONS.contains(extension);
             let unmodeled = IMPORT_UNMODELED_EXTENSIONS.contains(extension);
             assert!(
@@ -1467,7 +1370,7 @@ mod tests {
             .chain(IMPORT_UNMODELED_EXTENSIONS)
         {
             assert!(
-                CODE_EXTENSIONS.contains(extension),
+                file_gate::CODE_EXTENSIONS.contains(extension),
                 "{extension} is classified but never collected"
             );
         }
@@ -1481,7 +1384,7 @@ mod tests {
             "use std::fs;\nuse std::io;\npub fn f() {}\n",
         )
         .expect("write rust fixture");
-        let rust_only = measure_project(&root).expect("measure rust-only tree");
+        let (rust_only, _) = measure_project(&root).expect("measure rust-only tree");
         assert_eq!(rust_only.import_modeled_file_count, 1);
         assert_eq!(rust_only.coupling_score, 20.0);
 
@@ -1495,7 +1398,7 @@ mod tests {
             )
             .expect("write powershell fixture");
         }
-        let mixed = measure_project(&root).expect("measure mixed tree");
+        let (mixed, _) = measure_project(&root).expect("measure mixed tree");
         assert_eq!(mixed.file_count, 11);
         assert_eq!(mixed.import_modeled_file_count, 1);
         assert_eq!(mixed.coupling_score, rust_only.coupling_score);
@@ -1503,7 +1406,7 @@ mod tests {
         // Deleting PowerShell — the whole point of the migration — must not
         // register as a coupling regression either.
         fs::remove_file(root.join("helper0.ps1")).expect("remove one powershell fixture");
-        let after_deletion = measure_project(&root).expect("measure tree after deletion");
+        let (after_deletion, _) = measure_project(&root).expect("measure tree after deletion");
         assert_eq!(after_deletion.coupling_score, mixed.coupling_score);
         fs::remove_dir_all(&root).expect("remove fixture");
     }
