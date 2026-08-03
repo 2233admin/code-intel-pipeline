@@ -90,6 +90,37 @@ class GoldenAnchorTests(unittest.TestCase):
         self.assertEqual(shifted_span, (4 + shift, 5 + shift))
         self.assertNotEqual(shifted_span, original_span)
 
+    def test_static_anchor_resolves_bare_pub_and_mut_declarations(self):
+        # Regression: "static " is both a modifier _strip_modifiers strips
+        # (Java-style `private static void method()`) and a valid
+        # symbol_kind in its own right (Rust's `static NAME: Type = ...`).
+        # Stripping it unconditionally before checking for it meant a
+        # symbol_kind="static" anchor could never resolve, even a bare one
+        # with no other modifier -- exactly the kind of silent broken
+        # capability this whole mechanism exists to catch.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_repo(
+                root,
+                "static BARE: u32 = 1;\n"
+                "pub static VISIBLE: u32 = 2;\n"
+                "pub(crate) static mut COUNTER: u32 = 3;\n",
+            )
+            bare = golden_anchors.resolve_anchor(
+                root, "target.py", {"kind": "symbol", "symbol_kind": "static", "name": "BARE"}
+            )
+            self.assertEqual(bare, (1, 1))
+
+            visible = golden_anchors.resolve_anchor(
+                root, "target.py", {"kind": "symbol", "symbol_kind": "static", "name": "VISIBLE"}
+            )
+            self.assertEqual(visible, (2, 2))
+
+            counter = golden_anchors.resolve_anchor(
+                root, "target.py", {"kind": "symbol", "symbol_kind": "static", "name": "COUNTER"}
+            )
+            self.assertEqual(counter, (3, 3))
+
     def test_snippet_anchor_resolves_by_literal_text_not_position(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

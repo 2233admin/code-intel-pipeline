@@ -69,11 +69,26 @@ class AnchorError(ValueError):
     """A golden anchor could not be resolved against the current tree."""
 
 
-def _strip_modifiers(line: str) -> str:
+def _strip_modifiers(line: str, skip_prefix: Optional[str] = None) -> str:
+    """Strip every modifier prefix repeatedly, except `skip_prefix` itself.
+
+    `skip_prefix` exists because "static " is both a modifier this strips
+    (Java-style `private static void method()`) and a valid declaration
+    keyword in its own right (Rust's `static NAME: Type = ...`). Without
+    the exclusion, resolving a `symbol_kind="static"` anchor would strip
+    the very keyword `_declares_symbol` is about to look for, so a real
+    `static` declaration -- even a bare one with no other modifier --
+    could never match. Every other declaration keyword this module knows
+    about (`fn`/`def`/`function`/`const`/`struct`) has no such name
+    collision with `_MODIFIER_PREFIXES`, so passing `skip_prefix` never
+    changes their resolution.
+    """
     changed = True
     while changed:
         changed = False
         for prefix in _MODIFIER_PREFIXES:
+            if prefix == skip_prefix:
+                continue
             if line.startswith(prefix):
                 line = line[len(prefix) :]
                 changed = True
@@ -81,12 +96,17 @@ def _strip_modifiers(line: str) -> str:
 
 
 def _declares_symbol(line: str, symbol_kind: str, name: str) -> bool:
-    stripped = _strip_modifiers(line.lstrip())
+    raw = line.lstrip()
     keywords = _FUNCTION_KEYWORDS if symbol_kind == "function" else (f"{symbol_kind} ",)
     for keyword in keywords:
+        stripped = _strip_modifiers(raw, skip_prefix=keyword)
         if not stripped.startswith(keyword):
             continue
         rest = stripped[len(keyword) :]
+        if symbol_kind == "static" and rest.startswith("mut "):
+            # `static mut NAME: Type = ...` -- also strip the `mut` that
+            # can sit between the keyword and the name.
+            rest = rest[len("mut ") :]
         if not rest.startswith(name):
             continue
         boundary = rest[len(name) : len(name) + 1]
