@@ -347,6 +347,20 @@ fn missing_list(
     if options.require_understand && !flag("/graphProvider/cargoFound") {
         missing.push("code-intel Rust runtime".to_string());
     }
+    // The two checks above only prove the *internal* graph provider ships in
+    // this checkout; inside the pipeline repo they are trivially true, which
+    // left `--require-understand` a fail-open no-op that never once consulted
+    // the `understandAnything` block it computes. The retired PowerShell probe
+    // had the same hole. Understand Anything ships either as an agent skill or
+    // as a plugin directory, so either one satisfies the requirement — this is
+    // the same "skill/plugin" wording the installer's own RequireUnderstand
+    // check remediates with.
+    if options.require_understand
+        && !flag("/understandAnything/skillFound")
+        && !flag("/understandAnything/pluginFound")
+    {
+        missing.push("Understand Anything skill or plugin".to_string());
+    }
     if checks["repo"].is_object() && !flag("/repo/exists") {
         missing.push("repo path".to_string());
     }
@@ -690,6 +704,7 @@ mod tests {
                 "sentrux pro auto-activation".to_string(),
                 "internal graph provider source".to_string(),
                 "code-intel Rust runtime".to_string(),
+                "Understand Anything skill or plugin".to_string(),
                 "repo path".to_string(),
                 "CODE_INTEL_HOME: directory does not exist (C:/nope)".to_string(),
             ]

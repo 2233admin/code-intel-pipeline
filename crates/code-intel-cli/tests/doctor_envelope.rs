@@ -308,3 +308,111 @@ fn doctor_cli_reports_nonconforming_provider_and_manifest_drift_as_domain_failur
     assert!(!observation_text.contains(root.to_string_lossy().as_ref()));
     fs::remove_dir_all(root).ok();
 }
+
+/// A pipeline checkout shaped like the real one: `legacy/` plus the crate
+/// files `graphProvider` probes for, so `sourceFound`/`cargoFound` are both
+/// true. That is the whole point — those two are the only things
+/// `--require-understand` used to check, and inside a checkout they are
+/// trivially satisfied.
+fn pipeline_scratch(root: &Path) {
+    let crate_src = root.join("crates").join("code-intel-cli").join("src");
+    fs::create_dir_all(&crate_src).unwrap();
+    fs::create_dir_all(root.join("legacy")).unwrap();
+    fs::write(crate_src.join("graph.rs"), "// graph provider\n").unwrap();
+    fs::write(
+        root.join("crates")
+            .join("code-intel-cli")
+            .join("Cargo.toml"),
+        "[package]\n",
+    )
+    .unwrap();
+}
+
+fn doctor_bootstrap(pipeline_root: &Path, home: &Path) -> Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["doctor", "bootstrap", "--pipeline-root"])
+        .arg(pipeline_root)
+        .args(["--no-require-repowise", "--require-understand", "--json"])
+        // The probe derives the Understand Anything candidates from the home
+        // directory, so pinning it is what makes this test independent of
+        // whatever the developer or CI runner happens to have installed.
+        .env("USERPROFILE", home)
+        .env("HOME", home)
+        .output()
+        .expect("doctor bootstrap");
+    serde_json::from_slice(&output.stdout).expect("bootstrap JSON")
+}
+
+/// Regression: `--require-understand` was a fail-open no-op. It gated only on
+/// `/graphProvider/{sourceFound,cargoFound}` — both trivially true in a
+/// checkout — and never once read the `understandAnything` block the very same
+/// document publishes, so the flag answered `ok: true, missing: []` on a
+/// machine reporting `skillFound: false, pluginFound: false`.
+#[test]
+fn require_understand_reports_missing_understand_anything() {
+    let root = temp_dir();
+    let pipeline = root.join("pipeline");
+    let home = root.join("home");
+    pipeline_scratch(&pipeline);
+    fs::create_dir_all(&home).unwrap();
+
+    let absent = doctor_bootstrap(&pipeline, &home);
+    // Precondition: the checks the flag *used* to rely on are both satisfied,
+    // so nothing but the Understand Anything check can fail this run.
+    assert_eq!(
+        absent["checks"]["graphProvider"]["sourceFound"],
+        json!(true)
+    );
+    assert_eq!(absent["checks"]["graphProvider"]["cargoFound"], json!(true));
+    assert_eq!(
+        absent["checks"]["understandAnything"]["skillFound"],
+        json!(false)
+    );
+    assert_eq!(
+        absent["checks"]["understandAnything"]["pluginFound"],
+        json!(false)
+    );
+    assert_eq!(absent["strict"]["requireUnderstand"], json!(true));
+
+    // An installed skill satisfies the requirement, so the check cannot be a
+    // blanket failure that merely looks like enforcement.
+    let skill = home.join(".claude").join("skills").join("understand");
+    fs::create_dir_all(&skill).unwrap();
+    fs::write(skill.join("SKILL.md"), "# understand\n").unwrap();
+    let present = doctor_bootstrap(&pipeline, &home);
+    assert_eq!(
+        present["checks"]["understandAnything"]["skillFound"],
+        json!(true)
+    );
+
+    // A differential rather than a bare membership check: the scratch root is
+    // deliberately incomplete in other ways (no pipeline script, no config),
+    // so the honest claim is that installing Understand Anything removes
+    // exactly one entry and changes nothing else.
+    let entries = |observation: &Value| {
+        observation["missing"]
+            .as_array()
+            .expect("missing array")
+            .iter()
+            .map(|entry| entry.as_str().expect("missing entry").to_string())
+            .collect::<Vec<_>>()
+    };
+    let (before, after) = (entries(&absent), entries(&present));
+    let removed = before
+        .iter()
+        .filter(|entry| !after.contains(entry))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert_eq!(
+        removed,
+        vec!["Understand Anything skill or plugin".to_string()],
+        "installing the skill must clear exactly the understand requirement\n\
+         before={before:?}\nafter={after:?}"
+    );
+    assert!(
+        after.iter().all(|entry| before.contains(entry)),
+        "installing the skill must not introduce new missing entries"
+    );
+
+    fs::remove_dir_all(root).ok();
+}
