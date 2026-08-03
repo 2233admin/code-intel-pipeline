@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Breaking (exit code semantics, #130):** `run-code-intel.ps1` no longer exits `1` when Sentrux's architecture/quality gate reports findings (debt) in the target repo. A parseable `sentrux gate` finding was previously indistinguishable from a genuine tool crash — both forced exit `1` with `FAILED` as the last line, even though every artifact (`report.json`, `summary.md`, `hospital.md`, `sentrux-debt-register.json`, ...) was produced intact. Exit codes are now layered: `0` clean, `1` pipeline genuinely did not complete, `2` pipeline completed with gate findings (success-with-findings). `report.summary.gateFindings` is a new counter. `invoke-code-intel.ps1` and `test-code-intel-pipeline.ps1` treat exit `2` as success by default (`test-code-intel-pipeline.ps1` gains an opt-in `-RequireCleanGates` switch for callers that need the old strict behavior). On non-zero exits, artifact paths are restated as the last thing printed. See `docs/artifact-data-contract.md#exit-code-contract-issue-130`.
+
 ## [0.2.0] — 2026-07-02
 
 The "understand any repo, cheaply" release. Docs generation now runs on any

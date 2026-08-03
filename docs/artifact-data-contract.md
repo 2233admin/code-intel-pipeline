@@ -16,6 +16,16 @@ An artifact run is one timestamped directory for one target repository:
 
 Do not hand-edit artifact runs. Regenerate them with `invoke-code-intel.ps1` or `run-code-intel.ps1`.
 
+## Exit Code Contract (issue #130)
+
+`run-code-intel.ps1` and `invoke-code-intel.ps1` use a layered exit code, not a binary success/failure signal:
+
+- `0` -- clean run: no effective failures, no gate findings.
+- `1` -- the pipeline genuinely did not complete (tool crash, missing artifacts, an unrecoverable step, or any categorized failure other than a parseable sentrux gate finding). Treat as failed.
+- `2` -- the pipeline completed successfully and Sentrux's architecture/quality gate reported findings (debt) in the target repo -- see `sentrux-debt-register.json`. This is the gate doing its job and must be treated as success-with-findings, not failure. `report.summary.gateFindings` carries the count.
+
+Consumers must branch on the exit code, not just `-ne 0`: exit `2` still means every artifact (`report.json`, `summary.md`, `understanding.md`, `hospital.md`, `sentrux-debt-register.json`, etc.) was produced intact and should be read. On both non-zero exit paths, the artifact paths are restated as the last lines printed, specifically so a terminal-tail read (or an agent that only inspects the last line) does not mistake artifact-bearing gate findings for a bare crash.
+
 ## Files
 
 Machine-authoritative files:
@@ -92,6 +102,7 @@ Artifact consumers must preserve these fields:
 
 - `report.summary.failed`
 - `report.summary.effectiveFailed`
+- `report.summary.gateFindings`
 - `report.summary.manualRequired`
 - `report.summary.failureCategories.providerQuota`
 - `report.summary.failureCategories.localToolError`
