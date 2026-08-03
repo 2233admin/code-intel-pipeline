@@ -1153,7 +1153,8 @@
         "orchestration/schemas/code-intel-run-manifest.v1.schema.json",
         "orchestration/schemas/code-intel-repository-iteration-provenance.v1.schema.json",
         "orchestration/schemas/code-intel-run-commit.v1.schema.json",
-        "orchestration/schemas/code-intel-execution-result.v1.schema.json"
+        "orchestration/schemas/code-intel-execution-result.v1.schema.json",
+        "orchestration/schemas/code-intel-execution-failure.v1.schema.json"
       ],
       "extensionPoint": "Run profiles compile into one immutable ExecutionPolicy. Capability adapters execute behind A01 envelopes; the private controller alone binds repository.iteration provenance to the run, snapshot, repository key, and publication name before marker-last publication."
     },

@@ -16,7 +16,7 @@ use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_code-intel"))
@@ -108,8 +108,21 @@ fn run_execute(root: &Path, repo: &Path, authority: &Path, final_name: &str) -> 
 }
 
 fn run_execute_output(root: &Path, repo: &Path, authority: &Path, final_name: &str) -> Output {
+    run_execute_staged(root, repo, authority, final_name, final_name)
+}
+
+/// Same as `run_execute_output` but with the staging directory named
+/// independently of `--final-name`, so a test can publish the *same* name
+/// twice without the second attempt tripping over the first one's staging.
+fn run_execute_staged(
+    root: &Path,
+    repo: &Path,
+    authority: &Path,
+    final_name: &str,
+    staging_label: &str,
+) -> Output {
     let doctor_tools = doctor_tool_fixture(root);
-    let staging = root.join(format!("stage-{final_name}"));
+    let staging = root.join(format!("stage-{staging_label}"));
     Command::new(binary())
         .args(["run", "execute", "--repo"])
         .arg(repo)
@@ -273,6 +286,120 @@ fn run_execute_does_not_double_nest_when_authority_root_already_ends_with_repo_n
     );
 
     fs::remove_dir_all(&root).ok();
+}
+
+/// Dogfood finding F2-publish-collision-no-json. CI's self-scan hard-codes
+/// `--final-name ci-self-scan`, so re-running it into an authority root that
+/// already holds that publication is the ordinary case, not an exotic one. It
+/// used to exit **65** — the same code a malformed argument gets — after ~90s
+/// of full analysis, print **zero bytes** on stdout, and put a bare
+/// `promote staged run without replacement: <localized OS error>` on stderr:
+/// no run name, no destination path, no remedy, and on a non-English host not
+/// even English. The completed manifest was simply discarded.
+#[test]
+fn republishing_a_taken_final_name_reports_a_distinct_code_and_a_parseable_envelope() {
+    let root = temp_dir("republish-collision");
+    let repo = fixture_repo(&root);
+    let authority = root.join("authority");
+    fs::create_dir_all(&authority).expect("fixture authority root");
+
+    let (first, _) = run_execute(&root, &repo, &authority, "ci-self-scan");
+    assert_eq!(
+        first.status.code(),
+        Some(0),
+        "first publication must succeed: stderr={}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let published = authority.join("fixture-repo").join("ci-self-scan");
+
+    let second = run_execute_staged(&root, &repo, &authority, "ci-self-scan", "second-attempt");
+    assert_eq!(
+        second.status.code(),
+        Some(73),
+        "a taken publication name must not share exit 65 with malformed input: stdout={} stderr={}",
+        String::from_utf8_lossy(&second.stdout),
+        String::from_utf8_lossy(&second.stderr)
+    );
+
+    // stdout stays machine-readable: the run really did complete, and its
+    // manifest is the expensive part that used to be thrown away.
+    let report: Value = serde_json::from_slice(&second.stdout).unwrap_or_else(|error| {
+        panic!(
+            "collision printed nothing parseable on stdout: {error}\nstdout={}\nstderr={}",
+            String::from_utf8_lossy(&second.stdout),
+            String::from_utf8_lossy(&second.stderr)
+        )
+    });
+    assert_eq!(report["schema"], "code-intel-execution-failure.v1");
+    assert_eq!(report["exitCode"], 73);
+    assert_eq!(report["publication"]["status"], "failed");
+    assert_eq!(report["publication"]["name"], "ci-self-scan");
+    assert_eq!(report["publication"]["repo"], "fixture-repo");
+    assert_eq!(
+        report["publication"]["path"],
+        Value::String(published.display().to_string())
+    );
+    assert_eq!(report["manifest"]["outcome"], "completed");
+    let process = report["failures"]["process"]
+        .as_array()
+        .expect("failures.process array");
+    assert_eq!(process.len(), 1, "report={report}");
+    assert_eq!(process[0]["node"], "run.publication");
+
+    // The operator-facing message must name what collided, where, and what to
+    // do — not just relay the host's localized rename errno.
+    let diagnostic = process[0]["diagnostic"]
+        .as_str()
+        .expect("publication diagnostic");
+    let stderr = String::from_utf8_lossy(&second.stderr).to_string();
+    for expected in [
+        "ci-self-scan",
+        &published.display().to_string(),
+        "--final-name",
+    ] {
+        assert!(
+            diagnostic.contains(expected),
+            "diagnostic omits {expected}: {diagnostic}"
+        );
+        assert!(
+            stderr.contains(expected),
+            "stderr omits {expected}: {stderr}"
+        );
+    }
+
+    // The publication that was already there is untouched.
+    assert!(published.join("run-complete.json").is_file());
+
+    fs::remove_dir_all(&root).ok();
+}
+
+/// The stdout envelope above is a declared contract, not an ad hoc blob: it
+/// must validate against the checked-in closed schema the route advertises.
+#[test]
+fn checked_in_execution_failure_schema_is_closed_and_pins_the_collision_exit_code() {
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../../orchestration/schemas/code-intel-execution-failure.v1.schema.json"
+    ))
+    .expect("execution failure schema JSON");
+    assert_eq!(schema["$id"], "code-intel-execution-failure.v1.schema.json");
+    assert_eq!(schema["additionalProperties"], false);
+    assert_eq!(
+        schema["properties"]["schema"]["const"],
+        "code-intel-execution-failure.v1"
+    );
+    assert_eq!(schema["properties"]["exitCode"]["enum"], json!([73]));
+    assert_eq!(
+        schema["properties"]["publication"]["additionalProperties"],
+        false
+    );
+    assert_eq!(
+        schema["properties"]["publication"]["properties"]["status"]["const"],
+        "failed"
+    );
+    assert_eq!(
+        schema["properties"]["failures"]["additionalProperties"],
+        false
+    );
 }
 
 #[test]

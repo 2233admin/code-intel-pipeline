@@ -130,7 +130,15 @@ pub(crate) fn execute(request: RunRequest) -> Result<ExecutionResult, RunError> 
         &dag.run_root.join("run-manifest-ref.json"),
         &request.final_name,
     )
-    .map_err(map_commit_error)?;
+    .map_err(|error| {
+        publication_failure(
+            error,
+            &dag.manifest,
+            &publication_root,
+            &repo_name,
+            &request.final_name,
+        )
+    })?;
     Ok(ExecutionResult {
         outcome: dag.outcome,
         manifest: dag.manifest,
@@ -182,15 +190,76 @@ fn nest_authority_root(authority_root: &Path, repo_name: &str) -> Result<PathBuf
     Ok(nested)
 }
 
+/// Schema identity of the envelope printed on stdout when the run finished but
+/// could not be published. Deliberately *not* `code-intel-execution-result.v1`:
+/// that schema is closed around a committed publication and binds each outcome
+/// to its exit code, and nothing published is nothing published.
+pub(crate) const EXECUTION_FAILURE_SCHEMA: &str = "code-intel-execution-failure.v1";
+
+/// The publication step runs after the DAG has already done the entire
+/// analysis, so a failure here throws away a complete, valid run manifest.
+///
+/// Re-running the CI self-scan into an authority root that already held that
+/// `--final-name` used to exit 65 with zero bytes on stdout and a bare
+/// `promote staged run without replacement: <localized OS error>` on stderr —
+/// no run name, no destination, no remedy, and on a non-English host not even
+/// English. Two things are fixed here: the collision gets its own exit code and
+/// an actionable message, and the manifest survives as a parseable envelope
+/// instead of being discarded.
+fn publication_failure(
+    error: crate::run_commit::CommitError,
+    manifest: &Value,
+    publication_root: &Path,
+    repo: &str,
+    final_name: &str,
+) -> RunError {
+    let destination = publication_root.join(final_name);
+    let failed = match error {
+        crate::run_commit::CommitError::Collision(detail) => RunError::publication_collision(
+            format!(
+                "run \"{final_name}\" is already published at {}; choose a different --final-name or remove the existing publication ({detail})",
+                destination.display()
+            ),
+        ),
+        other => map_commit_error(other),
+    };
+    let mut failures = failures(manifest);
+    if let Some(process) = failures["process"].as_array_mut() {
+        process.push(json!({
+            "node":PUBLICATION_FAILURE_NODE,
+            "diagnostic":failed.message,
+        }));
+    }
+    let report = json!({
+        "schema":EXECUTION_FAILURE_SCHEMA,
+        "exitCode":failed.exit_code,
+        "failures":failures,
+        "manifest":manifest,
+        "publication":{
+            "status":"failed",
+            "name":final_name,
+            "repo":repo,
+            "path":destination,
+            "diagnostic":failed.message,
+        },
+    });
+    failed.with_report(report)
+}
+
+/// Reported in `failures.process` alongside real DAG node failures. Namespaced
+/// like a node id but deliberately not one: publication happens after the DAG.
+const PUBLICATION_FAILURE_NODE: &str = "run.publication";
+
 fn map_commit_error(error: crate::run_commit::CommitError) -> RunError {
     match error {
-        crate::run_commit::CommitError::Contract(message)
-        | crate::run_commit::CommitError::Collision(message) => RunError::contract(message),
+        crate::run_commit::CommitError::Contract(message) => RunError::contract(message),
+        crate::run_commit::CommitError::Collision(message) => {
+            RunError::publication_collision(message)
+        }
         crate::run_commit::CommitError::HostIo(message) => RunError::io(message),
-        crate::run_commit::CommitError::Interrupted(phase) => RunError {
-            exit_code: 75,
-            message: format!("publication interrupted before {phase:?}"),
-        },
+        crate::run_commit::CommitError::Interrupted(phase) => {
+            RunError::new(75, format!("publication interrupted before {phase:?}"))
+        }
     }
 }
 
