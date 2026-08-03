@@ -101,7 +101,15 @@ from reporting import aggregate, render_markdown  # noqa: E402
 # --------------------------------------------------------------------------
 
 SCHEMA = "code-intel-eval-baseline.v1"
-WINDOW = 10  # Arm A: fixed +/-N line window around a resolved pointer.
+# Arm A: fixed +/-N line window around a resolved pointer. Widened from 10
+# (issue #93 why-class-coverage fix): a resolved pointer is often a
+# declaration line sitting some distance from the rationale/logic the golden
+# span actually covers (a module doc comment above a const, or a check
+# nested deeper in the same function as an already-found symbol) -- 10 lines
+# was too tight to reach either. This applies uniformly to every pointer
+# regardless of question or kind; it can only ever gain coverage, never lose
+# it, since a wider window is a strict superset of a narrower one.
+WINDOW = 25
 FILE_CAP = 5  # Arm B: read at most this many ranked, matched files in full.
 
 DEFAULT_ARTIFACT_DIRNAME = "artifacts"
