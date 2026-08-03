@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0-beta.5] — 2026-08-04
+
+两件都关于「把 review 该做什么交出去」：管线第一次能回答「这件事我答不了，谁能答」，也第一次把变更排成有序议程而不是一个标量分。之前 gap 只存在于操作者脑子里，靠现场想起某个 plugin 存在；现在它是一次可执行、可复现、只出提案的查询。
+
+### Added
+
+- **`code-intel change agenda <revspec>`（PR #150）**：纯 git、免索引、免网络、免 LLM 的 review 议程。变更文件按 co-change 历史并查集聚成 review unit，每个 unit 走 `change_risk::score_subset`——和 `change risk` 完全同一把尺子、同一次 history walk 的子集，不新造第二套风险公式——最坏优先排序。Schema `code-intel-change-agenda.v1`，authority 为 WorkspaceAdvisory/GitHistory。`testSelection` 与 `structuralRules` 需要已提交 run 的证据，一律报 `status: "unavailable"` 并给出产出它的命令，绝不近似；单次碰超过 50 个文件的 commit 判为 sweep，从耦合证据剔除并计入 `wideCommitsSkipped`，不静默丢弃。时间窗锚在被评 commit 自己的 committer date，不读墙上时钟。
+- **`assistance.discovery` 上线（PR #160）**：gap 进，dossier 出，`proposalOnly=true`、零 effect、零 authority event、零 adoption decision。实现是激活仓里早就写好、有测试、却从没接进 `main.rs` 的 `assistance_discovery.rs`——决策核保持不碰 adapter 和文件系统类型，好让它自己的测试能单独 `#[path]` include；adapter 单独成 `assistance_adapter.rs`，不塞进已经 1266 行的 `capability_inventory.rs`。
+- **`orchestration/agent-assistance-catalog.v1.json`**：6 个官方 plugin（`code-review` / `pr-review-toolkit` / `code-simplifier` / `feature-dev` / `code-modernization` / `claude-security`）按引用绑定，一个文件都不 vendor。每条候选带一次性评审过的 fit / license / security / integration / reversibility 与证据引用。候选**只能**从目录解析——call time 现编评级等于把评审本身废掉。目录进了 registry 的 `toolchainDigestEvidence.inputs`，改一条评级就动 digest，逼一次 repin。
+- **doctor 探测路由目标**：`checks.assistancePlugins` 与 `assistance:<candidate-id>` provider 行。缺失是观察不是失败——未安装的路由目标是操作者该看见的事实，不是坏掉的安装，所以 `--require-provider-conformance` 不会因此挂掉。
+- **`SKILL.md` 路由表**：管线证据 → plugin 入口的直连映射，走 `change risk` / `change impact` / `diagnosis.hospital-view` / `code_evidence.agent_slice` 这些已有信号。
+
+### Notes
+
+- `claude-security` 的 LICENSE 不是 Apache-2.0，是 Anthropic 专有授权，明文禁止分发 plugin 或其修改版。它的 dossier 报 `license: review_required`：「管线路由式使用是否还在 internal-use 授权内」是操作者的判断，不在代码里替他拍板。这也是整条路线「只引用不搬运」的硬理由，不是风格偏好。
+- 加候选 = 加一条目录条目，不加运行时分支。
+
 ## [0.7.0-beta.4] — 2026-08-04
 
 诚实批次：把 CLI 收敛成单一权威迭代，把基准从「代码一重构就烂」修成内容锚定，并第一次让「我没查」在类型层面无法伪装成「我查过了」。判据本身写进了纲领 issue #139。
