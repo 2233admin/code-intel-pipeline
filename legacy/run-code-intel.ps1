@@ -519,12 +519,29 @@ function Get-StepFailureCategory {
 function Get-CodeIntelEffectiveFailedSteps {
     param(
         [object[]]$FailedSteps,
-        [int]$BlockingSentruxDebt
+        [int]$BlockingSentruxDebt,
+        # Issue #130: a "sentrux gate" step that failed/manual_required because it found
+        # architecture/quality debt (god_files, coupling, quality, cycles, ...) is a FINDING,
+        # not a process failure -- it is the gate doing its job. A "sentrux check" step keeps
+        # its prior blocking-debt-gated behavior; this exemption is scoped to gate only.
+        # $Failures (the code-intel-sentrux-failures.v1 object from New-CodeIntelSentruxFailures)
+        # is optional so existing callers that only pass -FailedSteps/-BlockingSentruxDebt keep
+        # their old behavior unchanged. When it is supplied, $Failures.gate is the discriminator:
+        # non-null means a gate:* record was actually parsed from "sentrux gate" stdout (a real
+        # finding); null means the gate step failed without producing any recognizable output at
+        # all (a genuine crash), which must still count as an effective failure.
+        [object]$Failures = $null
     )
+
+    $gateHasParsedRecord = ($null -ne $Failures -and $null -ne $Failures.gate)
 
     return @($FailedSteps | Where-Object {
         $category = [string](Get-StepFailureCategory $_)
-        $category -ne "sentrux_fail" -or $BlockingSentruxDebt -gt 0
+        if ($category -ne "sentrux_fail") { return $true }
+        if ([string]$_.name -like "sentrux gate*") {
+            return -not $gateHasParsedRecord
+        }
+        return $BlockingSentruxDebt -gt 0
     })
 }
 
@@ -3104,6 +3121,19 @@ function Get-CodeIntelSentruxDebtSummary {
     }
 }
 
+function Get-CodeIntelSentruxGateFindingsCount {
+    # Issue #130: count of blocking sentrux-gate-sourced debt entries (new_debt/worsened_debt
+    # architecture/quality regressions such as god_files, coupling, quality, cycles). These are
+    # gate output, not pipeline failures -- Get-CodeIntelEffectiveFailedSteps excludes them from
+    # effectiveFailed; this counter is how callers still see that they happened.
+    param([object]$DebtRegister)
+
+    if ($null -eq $DebtRegister) { return 0 }
+    return @($DebtRegister.entries | Where-Object {
+        [bool]$_.blocking -and [string]$_.source -eq "sentrux gate"
+    }).Count
+}
+
 $configData = $null
 if ([string]::IsNullOrWhiteSpace($Config)) {
     $Config = Join-Path (Split-Path -Parent $PSScriptRoot) "pipeline.config.json"
@@ -3923,17 +3953,22 @@ $preliminarySentruxDebtRegister = New-CodeIntelSentruxDebtRegister `
     -Failures $preliminarySentruxFailures `
     -RepoPath $repoPath `
     -RunTimestamp $timestamp
+# Issue #130: exclude gate-sourced blocking debt from the process-decision "sentruxFail"
+# counter too, so it stays consistent with effectiveFailed (a gate-only finding must not
+# show up as an "effective" sentrux failure in one field but not the other).
+$preliminaryGateFindings = Get-CodeIntelSentruxGateFindingsCount -DebtRegister $preliminarySentruxDebtRegister
 $effectiveFailureCounts = [ordered]@{
     providerQuota = [int]$failureCounts.providerQuota
     providerUnavailable = [int]$failureCounts.providerUnavailable
     configError = [int]$failureCounts.configError
     localToolError = [int]$failureCounts.localToolError
     graphMissing = [int]$failureCounts.graphMissing
-    sentruxFail = [int]$preliminarySentruxDebtRegister.summary.blocking
+    sentruxFail = [int]$preliminarySentruxDebtRegister.summary.blocking - $preliminaryGateFindings
 }
 $effectiveFailed = @(Get-CodeIntelEffectiveFailedSteps `
     -FailedSteps $failed `
-    -BlockingSentruxDebt ([int]$preliminarySentruxDebtRegister.summary.blocking))
+    -BlockingSentruxDebt ([int]$preliminarySentruxDebtRegister.summary.blocking) `
+    -Failures $preliminarySentruxFailures)
 # R08 reviewed retirement: the representative authenticated blocker query was not
 # reproducible. Production runs remain local-only and expose no GitHub call site.
 $githubResearch = New-GitHubSolutionResearchNotApplicable
@@ -4223,10 +4258,15 @@ $followUpAutomation = New-CodeIntelFollowUpAutomation `
     -AutomaticPullRequests $AutomaticPullRequests `
     -BugSkill $BugSkill
 $followUpAutomationPath = Join-Path $runDir "follow-up-automation.json"
-$effectiveFailureCounts["sentruxFail"] = [int]$sentruxDebtRegister.summary.blocking
+# Issue #130: same gate-exclusion adjustment as the preliminary pass above, computed
+# against the final debt register so report.json's effectiveFailureCategories.sentruxFail
+# and report.json's effectiveFailed agree on whether a gate-only finding counts.
+$gateFindings = Get-CodeIntelSentruxGateFindingsCount -DebtRegister $sentruxDebtRegister
+$effectiveFailureCounts["sentruxFail"] = [int]$sentruxDebtRegister.summary.blocking - $gateFindings
 $effectiveFailed = @(Get-CodeIntelEffectiveFailedSteps `
     -FailedSteps $failed `
-    -BlockingSentruxDebt ([int]$sentruxDebtRegister.summary.blocking))
+    -BlockingSentruxDebt ([int]$sentruxDebtRegister.summary.blocking) `
+    -Failures $sentruxFailures)
 $sentruxInsight["failures"] = Get-CodeIntelSentruxFailureSummary -Failures $sentruxFailures -Path $sentruxFailuresPath
 $sentruxInsight["debtRegister"] = Get-CodeIntelSentruxDebtSummary -DebtRegister $sentruxDebtRegister -Path $sentruxDebtRegisterPath
 $sentruxInsight["authoritativePrimaryTarget"] = Get-CodeIntelSentruxPrimaryTargetText -Failures $sentruxFailures
@@ -4404,6 +4444,7 @@ researchRequired = $hospitalReport.triage.research_required
         effectiveFailureCategories = $effectiveFailureCounts
         blockingSentruxDebt = [int]$sentruxDebtRegister.summary.blocking
         knownSentruxDebt = [int]$sentruxDebtRegister.summary.knownDebt
+        gateFindings = $gateFindings
     }
 }
 
@@ -4470,6 +4511,7 @@ $summaryLines = @(
     "- Sentrux fail: $($failureCounts.sentruxFail)",
     "- Blocking Sentrux debt: $($sentruxDebtRegister.summary.blocking)",
     "- Known Sentrux debt: $($sentruxDebtRegister.summary.knownDebt)",
+    "- Gate findings (informational, not counted as failures): $gateFindings",
     "- Hospital status: $($hospitalReport.triage.status)",
     "- Hospital disposition: $($hospitalReport.triage.disposition)",
 "- Hospital state: $($hospitalReport.state_machine.current_state)",
@@ -4671,11 +4713,13 @@ $understandingLines = @(
     "- sentrux_fail: $($failureCounts.sentruxFail)",
     "- effective_sentrux_fail: $($effectiveFailureCounts.sentruxFail)",
     "- effective_failed: $($effectiveFailed.Count)",
+    "- gate_findings: $gateFindings",
     "",
     "## Human Inspection Required",
     "- If Repomix status is ``ok``, read ``repomix-output.*`` first for whole-repo orientation; otherwise read ``summary.md`` first.",
     "- If `graph_missing > 0`, run: ``$understandCommand``",
     "- If ``sentrux_fail > 0``, inspect Sentrux output in ``report.json`` before saving a new baseline.",
+    "- If ``gate_findings > 0``, that is Sentrux's architecture/quality gate reporting debt in the target repo (see ``sentrux-debt-register.json``) -- expected gate output, not a pipeline failure; it does not raise ``effective_failed`` or the process exit code past 2.",
     "- If ``provider_quota > 0``, treat it as an upstream quota/rate issue, not a local indexing failure.",
     "- If ``provider_unavailable > 0``, verify the upstream model catalog/route; do not repair the local toolchain for an upstream 404.",
     "- If ``config_error > 0``, correct endpoint/model/credential configuration without writing secrets into repository files.",
@@ -4726,9 +4770,36 @@ Write-CodeIntelFollowUpPrompt -Automation $followUpAutomation -RunDirectory $run
 if ($manual.Count -gt 0) {
     Write-Host "Manual step required: $understandCommand"
 }
+# Exit-code semantics (issue #130):
+#   0 = clean -- no failures, no gate findings.
+#   1 = the pipeline genuinely did not complete (tool crash, missing artifacts, an
+#       unrecoverable step, or a "sentrux gate" step that failed without producing any
+#       parseable output at all -- see Get-CodeIntelEffectiveFailedSteps).
+#   2 = the pipeline completed; "sentrux gate" reported architecture/quality debt
+#       (god_files, coupling, quality, cycles, ...) in the target repo -- that is gate
+#       output, not a pipeline failure. See $gateFindings / report.summary.gateFindings.
+# On both non-zero paths, artifact paths are restated last so a terminal-tail read does
+# not stop at "FAILED"/a bare word count without also seeing where the artifacts are.
 if ($effectiveFailed.Count -gt 0) {
     Write-Host "Failed steps: $($failed.Count)"
     Write-Host "Effective failed steps: $($effectiveFailed.Count)"
+    Write-Host "Gate findings (informational, not counted as failures): $gateFindings"
+    Write-Host ""
+    Write-Host "PIPELINE DID NOT COMPLETE (exit 1) -- inspect the failed step(s) above, not just the gate findings. Artifacts produced so far:"
+    Write-Host "Report: $reportPath"
+    Write-Host "Summary: $summaryPath"
+    Write-Host "Understanding: $understandingPath"
+    Write-Host "Hospital: $hospitalMarkdownPath"
     exit 1
+}
+if ($gateFindings -gt 0) {
+    Write-Host "Gate findings: $gateFindings"
+    Write-Host ""
+    Write-Host "PIPELINE COMPLETED WITH GATE FINDINGS (exit 2) -- Sentrux reported architecture/quality debt in sentrux-debt-register.json; this is expected gate output, not a failure. Artifacts:"
+    Write-Host "Report: $reportPath"
+    Write-Host "Summary: $summaryPath"
+    Write-Host "Understanding: $understandingPath"
+    Write-Host "Hospital: $hospitalMarkdownPath"
+    exit 2
 }
 exit 0

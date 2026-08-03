@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **execution-result schema declared `additionalProperties: false` yet omitted the `failures` field it always emits (#168)**: every `run execute` output was invalid by its own schema; nothing caught it because the pwsh `Test-Json` validation step does not enforce the closed-world bit. The schema now declares `failures` (`{process: [{node, diagnostic}], domain: [{node, verdict}]}`, shapes taken from `to_execution_json()` / `execution_kernel::failures()`, not invented) and lists it as required. A strict in-process key check now runs against a real `run execute` output in `dag_run.rs`, with a negative control proving an undeclared extra field turns it red. The 88-schema emitter sweep from #168 remains open.
+- **Exit-code semantics conflated gate findings with process failure (#130)**: `legacy/run-code-intel.ps1` exited `1` whenever `sentrux gate` reported architecture/quality debt (e.g. `god_files 23 -> 25`) in the target repo — identical to a genuine tool crash, even though every artifact was produced intact. Exit codes are now layered: `0` clean, `2` pipeline completed with Sentrux gate findings (see new `report.summary.gateFindings`), `1` the pipeline genuinely did not complete. Scoped to `sentrux gate` only; `sentrux check` keeps its prior behavior. See `docs/artifact-data-contract.md#exit-code-contract-issue-130`.
 
 ## [0.7.0-beta.5] — 2026-08-04
 

@@ -84,18 +84,46 @@ try {
         (New-TestStep "sentrux gate" "failed" "Complex functions increased: 7 -> 11`nComplex functions increased: 11 → 12")
     )
     $worsenedDebt = New-CodeIntelSentruxDebtRegister -Failures $worsened -RepoPath $root
+    # Issue #130: a "sentrux gate" step that produced a parseable gate:* finding is gate
+    # OUTPUT (architecture/quality debt reporting), not a process failure -- it must NOT
+    # remain an effective failure regardless of its blocking/worsened classification. Pass
+    # -Failures so Get-CodeIntelEffectiveFailedSteps can use $worsened.gate as the
+    # finding-vs-crash discriminator (see the companion crash-path test below).
     $blockingEffectiveFailures = @(Get-CodeIntelEffectiveFailedSteps `
         -FailedSteps @((New-TestStep "sentrux gate" "failed" "Complex functions increased: 7 -> 11")) `
-        -BlockingSentruxDebt ([int]$worsenedDebt.summary.blocking))
+        -BlockingSentruxDebt ([int]$worsenedDebt.summary.blocking) `
+        -Failures $worsened)
     if ([string]$worsened.gate.target.status -ne "aggregate") { throw "Gate regression should be aggregate." }
     if ([int]$worsenedDebt.summary.worsenedDebt -lt 1) { throw "Gate increase should be worsened debt." }
     if ([int]$worsenedDebt.summary.blocking -lt 1) { throw "Worsened debt should block." }
-    if ($blockingEffectiveFailures.Count -ne 1) { throw "Blocking Sentrux debt should remain an effective failure." }
+    if ($blockingEffectiveFailures.Count -ne 0) { throw "A sentrux gate finding (even blocking/worsened debt) must not remain an effective failure -- it is gate output, not a process failure." }
+
+    # Crash path: a "sentrux gate" step that failed WITHOUT producing any parseable gate:*
+    # record at all (stdout matched no known regression format) has $Failures.gate -eq $null
+    # -- that is a genuine tool crash, not a finding, and must still count as an effective
+    # failure so it is not silently swallowed alongside real gate findings.
+    $gateCrash = New-CodeIntelSentruxFailures -Steps @(
+        (New-TestStep "sentrux gate" "failed" "sentrux.exe: unhandled panic, no structured output produced")
+    )
+    $gateCrashDebt = New-CodeIntelSentruxDebtRegister -Failures $gateCrash -RepoPath $root
+    $gateCrashEffectiveFailures = @(Get-CodeIntelEffectiveFailedSteps `
+        -FailedSteps @((New-TestStep "sentrux gate" "failed" "sentrux.exe: unhandled panic, no structured output produced")) `
+        -BlockingSentruxDebt ([int]$gateCrashDebt.summary.blocking) `
+        -Failures $gateCrash)
+    if ($null -ne $gateCrash.gate) { throw "Unparseable gate crash should not produce a gate record." }
+    if ($gateCrashEffectiveFailures.Count -ne 1) { throw "A sentrux gate step that crashed without a parseable finding must remain an effective failure." }
 
     $localToolEffectiveFailures = @(Get-CodeIntelEffectiveFailedSteps `
         -FailedSteps @((New-TestStep "inventory" "failed" "" "tool failed")) `
         -BlockingSentruxDebt 0)
     if ($localToolEffectiveFailures.Count -ne 1) { throw "Non-Sentrux failures must remain effective." }
+
+    # Backward compatibility: callers that omit -Failures entirely (old call shape) must
+    # keep the pre-#130 behavior for a "sentrux gate" step -- gated purely by blocking debt.
+    $legacyShapeEffectiveFailures = @(Get-CodeIntelEffectiveFailedSteps `
+        -FailedSteps @((New-TestStep "sentrux gate" "failed" "Complex functions increased: 7 -> 11")) `
+        -BlockingSentruxDebt ([int]$worsenedDebt.summary.blocking))
+    if ($legacyShapeEffectiveFailures.Count -ne 1) { throw "Omitting -Failures must preserve the pre-#130 blocking-debt-gated behavior." }
 
     $mixedDirection = New-CodeIntelSentruxFailures -Steps @(
         (New-TestStep "sentrux gate" "failed" "Quality: 4726 -> 5389`nComplex functions increased: 20 -> 22")
