@@ -32,7 +32,9 @@ A graph file merely being present is not evidence of current anatomy. Wrong-HEAD
 
 ## Payload boundary
 
-The referenced evidence payload carries `data.architectureGraph` with schema `code-intel-architecture-graph-evidence.v1`. Its snapshot, provider identity, completeness, and provenance must equal the translated port. Current evidence must contain an Understand-compatible graph document; missing evidence must contain `null`; partial evidence may contain either.
+The referenced evidence payload carries `data.architectureGraph` with schema `code-intel-architecture-graph-evidence.v1`. Its snapshot, provider identity, and completeness must equal the translated port, and its `provenance.sourceRevision` must equal the port's. Current evidence must contain an Understand-compatible graph document; missing evidence must contain `null`; partial evidence may contain either.
+
+The payload is content-addressed, so its bytes are a function of the snapshot alone: `provenance` carries `sourceRevision` and nothing else, and the embedded graph document is unstamped. Collection time is not payload content — `observedAt` lives in the native result, the port's provenance, and the A04 observation, which is where the freshness policy reads it. Stamping it into the payload instead gave an unchanged tree a new `payload.sha256`, and therefore a new `admissionIdentity`, on every run.
 
 The route deliberately emits `engineeringFacts: []`. Fact promotion belongs to the A04/A05 authority path and later diagnosis atoms, not this adapter.
 

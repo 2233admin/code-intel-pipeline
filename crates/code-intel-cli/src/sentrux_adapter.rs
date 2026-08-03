@@ -143,10 +143,19 @@ pub(crate) fn validate_admitted_payload(payload: &Value, adapter: &Value) -> Res
         ],
         "Sentrux structural evidence",
     )?;
+    // The payload is content-addressed, so its bytes must be a function of the
+    // snapshot alone; the collection wall-clock lives in the port and in the
+    // A04 observation instead. See `builtin_provider_evidence::payload_provenance`.
+    exact(
+        &evidence["provenance"],
+        &["sourceRevision"],
+        "Sentrux structural evidence provenance",
+    )?;
     if evidence["schema"] != "code-intel-structural-evidence-payload.v1"
         || evidence["snapshotIdentity"] != adapter["port"]["sourceSnapshotIdentity"]
         || evidence["provider"] != adapter["port"]["provider"]
-        || evidence["provenance"] != adapter["port"]["provenance"]
+        || evidence["provenance"]["sourceRevision"]
+            != adapter["port"]["provenance"]["sourceRevision"]
         || evidence["effects"] != adapter["port"]["effects"]
         || evidence["completeness"] != adapter["port"]["completeness"]
         || evidence["rules"] != adapter["port"]["rules"]

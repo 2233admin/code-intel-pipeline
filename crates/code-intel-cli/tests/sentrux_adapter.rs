@@ -80,7 +80,7 @@ fn build_case(root: &Path, fixture: &Value) -> Value {
         "schema":"code-intel-structural-evidence-payload.v1",
         "snapshotIdentity":CURRENT,
         "provider":first["port"]["provider"],
-        "provenance":first["port"]["provenance"],
+        "provenance":{"sourceRevision":first["port"]["provenance"]["sourceRevision"]},
         "effects":first["port"]["effects"],
         "completeness":first["port"]["completeness"],
         "rules":first["port"]["rules"]
