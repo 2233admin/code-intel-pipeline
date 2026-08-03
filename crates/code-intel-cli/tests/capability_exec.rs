@@ -12,6 +12,24 @@ const STRUCTURED_EDIT_DIGEST: &str =
     "74e21715c584392f0955e797817f2ef87e3fa9f21045f53c0d4c1ad8f9c70119";
 static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+/// The registered declaration for one capability, read from the shipped
+/// registry rather than restated here. `edit.ast-grep-plan` now shares
+/// `span_patch` with the apply stages, so its implementation identity spans
+/// more than one file; a hand-copied digest list in this file would be one
+/// more pin to forget.
+fn registered_declaration(capability: &str) -> Value {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../orchestration/integrations.json");
+    let registry: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    registry["integrations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == capability)
+        .unwrap_or_else(|| panic!("{capability} is registered"))["capabilityDeclaration"]
+        .clone()
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1830,11 +1848,9 @@ fn structured_edit_plan_is_scope_bound_and_preview_only() {
     fs::write(repo.join("src/example.py"), "print(\"hello\")\n").unwrap();
 
     let mut value = request(&repo, "edit.ast-grep-plan");
-    value["implementation"] = json!({
-        "id":"edit.ast-grep-plan.compat",
-        "version":"1.0.0",
-        "toolchainDigests":[STRUCTURED_EDIT_DIGEST]
-    });
+    value["implementation"] =
+        registered_declaration("edit.ast-grep-plan")["implementation"].clone();
+    assert_eq!(value["implementation"]["id"], "edit.ast-grep-plan.compat");
     value["options"] = json!({
         "repoPath":repo,
         "language":"python",

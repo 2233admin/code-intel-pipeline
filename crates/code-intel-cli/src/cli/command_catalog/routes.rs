@@ -381,6 +381,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
         ),
     },
     CommandRoute::Raw(edit_routes::APPLY),
+    CommandRoute::Raw(edit_routes::APPLY_PLAN),
     raw_route! {
         // Working-tree sibling of `change impact`. Separate command because
         // it answers without authority; folding it into `change impact` as a

@@ -15,6 +15,8 @@ use crate::snapshot;
 mod assistance_adapter;
 #[path = "assistance_discovery.rs"]
 mod assistance_discovery;
+#[path = "ast_grep_apply.rs"]
+mod ast_grep_apply;
 #[path = "builtin_provider_evidence.rs"]
 mod builtin_provider_evidence;
 #[path = "compatibility_retirement_gate.rs"]
@@ -39,6 +41,10 @@ mod project_orientation;
 mod project_orientation_benchmark;
 #[path = "span_apply.rs"]
 mod span_apply;
+// The address arithmetic, path policy and staged write that the plan stage
+// and both apply stages must agree on byte-for-byte.
+#[path = "span_patch.rs"]
+mod span_patch;
 #[path = "structured_edit.rs"]
 mod structured_edit;
 #[path = "tool_path.rs"]
@@ -86,6 +92,7 @@ pub(crate) fn execute(
             native_code_evidence::execute(request, verified_inputs, out)
         }
         "edit.ast-grep-plan.compat" => structured_edit::execute(request, verified_inputs, out),
+        "edit.ast-grep-apply.compat" => ast_grep_apply::execute(request, verified_inputs, out),
         "edit.span-apply.compat" => span_apply::execute(request, verified_inputs, out),
         "project.orientation.compat" => project_orientation::execute(request, verified_inputs, out),
         "understanding.quadrant.compat" => {

@@ -1342,7 +1342,8 @@
           "id": "edit.ast-grep-plan.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "74e21715c584392f0955e797817f2ef87e3fa9f21045f53c0d4c1ad8f9c70119"
+            "729ec1210627cc78d32b5b1c0d8f3853ad627e3a6c7352ed29e552920ce3d056",
+            "cfb8c7f742b1d9974ac2ba5e17797e133427ef665563b15e373ba888d508328b"
           ]
         },
         "determinism": "external_nondeterministic",
@@ -1352,12 +1353,62 @@
       "runtimeAdapter": "edit.ast-grep-plan.compat",
       "toolchainDigestEvidence": {
         "algorithm": "sha256",
-        "inputs": ["crates/code-intel-cli/src/structured_edit.rs"]
+        "inputs": [
+          "crates/code-intel-cli/src/structured_edit.rs",
+          "crates/code-intel-cli/src/span_patch.rs"
+        ]
       },
       "artifactContract": [
         "structured-edit-plan.json"
       ],
-      "extensionPoint": "Preview-only structural search and rewrite planning through ast-grep. Repository mutation is deliberately excluded and requires a separate explicitly authorized capability."
+      "extensionPoint": "Preview-only structural search and rewrite planning through ast-grep. It never writes: what it publishes is an instruction — every match's span, the sha256 of exactly those bytes, and the replacement ast-grep computed — which edit.ast-grep-apply may execute under its own explicitly authorized capability."
+    },
+    {
+      "id": "edit.ast-grep-apply",
+      "stage": "localization",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-adapter",
+      "required": false,
+      "entrypoint": "target/debug/code-intel.exe",
+      "capabilities": [
+        "plan_addressed_patch",
+        "digest_verified_write",
+        "all_or_nothing_multi_file_apply",
+        "atomic_file_replace",
+        "snapshot_bound"
+      ],
+      "commands": {
+        "capabilityExec": "target/debug/code-intel.exe capability exec edit.ast-grep-apply --request <request.json|-> --out <staging-dir>",
+        "frontDoor": "target/debug/code-intel.exe edit apply-plan --repo-path <checkout> --plan <structured-edit-plan.json>"
+      },
+      "capabilityDeclaration": {
+        "schema": "code-intel-capability-declaration.v1",
+        "id": "edit.ast-grep-apply",
+        "contractVersion": 1,
+        "implementation": {
+          "id": "edit.ast-grep-apply.compat",
+          "version": "1.0.0",
+          "toolchainDigests": [
+            "259b0f3a877b1e2fba61643453bc6b408b8b0b73914ae28b681118b27f869542",
+            "cfb8c7f742b1d9974ac2ba5e17797e133427ef665563b15e373ba888d508328b"
+          ]
+        },
+        "determinism": "deterministic",
+        "allowedEffects": ["repo_read", "local_write", "repo_mutation"],
+        "dependencies": ["repo.snapshot", "edit.ast-grep-plan"]
+      },
+      "runtimeAdapter": "edit.ast-grep-apply.compat",
+      "toolchainDigestEvidence": {
+        "algorithm": "sha256",
+        "inputs": [
+          "crates/code-intel-cli/src/ast_grep_apply.rs",
+          "crates/code-intel-cli/src/span_patch.rs"
+        ]
+      },
+      "artifactContract": [
+        "ast-grep-apply-result.json"
+      ],
+      "extensionPoint": "Executes an edit.ast-grep-plan as one unit: every planned span in every file is resolved and checked against both digests the plan recorded — the span's own bytes and the line they sit on — before any byte is written, and one drifted span refuses the whole plan while naming which matches drifted. It performs every byte transformation itself — no option carries rewritten file contents — and it never decides what to change; that stays with the plan."
     },
     {
       "id": "edit.span-apply",
@@ -1384,7 +1435,8 @@
           "id": "edit.span-apply.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "4d59570dfe4266e3dbd89f4e7fdd917f81c3c7b5c8bab47716383488bc45d0a3"
+            "13397e51d9dd65f3e68afce4a1ccfb76c268261a90e0be44a08048be9c1cce50",
+            "cfb8c7f742b1d9974ac2ba5e17797e133427ef665563b15e373ba888d508328b"
           ]
         },
         "determinism": "deterministic",
@@ -1394,12 +1446,15 @@
       "runtimeAdapter": "edit.span-apply.compat",
       "toolchainDigestEvidence": {
         "algorithm": "sha256",
-        "inputs": ["crates/code-intel-cli/src/span_apply.rs"]
+        "inputs": [
+          "crates/code-intel-cli/src/span_apply.rs",
+          "crates/code-intel-cli/src/span_patch.rs"
+        ]
       },
       "artifactContract": [
         "span-apply-result.json"
       ],
-      "extensionPoint": "The only capability in this registry that rewrites repository source bytes. It writes exactly the addressed spans of exactly one file, after verifying each span's current bytes against a caller-supplied sha256, and publishes the expected/found digests as evidence when it refuses. Structural planning stays in edit.ast-grep-plan; this capability never decides what to change."
+      "extensionPoint": "The hand-addressed half of the write surface: it writes exactly the addressed spans of exactly one file, after verifying each span's current bytes against a caller-supplied sha256, and publishes the expected/found digests as evidence when it refuses. Structural planning stays in edit.ast-grep-plan; this capability never decides what to change."
     },
     {
       "id": "memory.repowise",
