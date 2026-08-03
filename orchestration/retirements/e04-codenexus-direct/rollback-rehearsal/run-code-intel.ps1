@@ -938,13 +938,14 @@ if ([string]::IsNullOrWhiteSpace($path)) { continue }
 
 $reasons = New-Object System.Collections.Generic.List[string]
 $score = 0
-if ($path -match '(^|/)(index|main|app|server|cli)\.') {
+$isTestFile = ($path -match '(test|spec)\.' -or $path -match '(^|/)(tests?|spec)/')
+$isSupportFile = ($path -match '(^|/)(examples?|fixtures?|demos?|benchmarks?)/')
+if (-not $isTestFile -and -not $isSupportFile -and $path -match '(^|/)(index|main|app|server|cli)\.') {
 $reasons.Add("entrypoint")
 $score += 40
 }
-if ($path -match '(test|spec)\.' -or $path -match '(^|/)(tests?|spec)/') {
+if ($isTestFile) {
 $reasons.Add("test")
-$score += 35
 }
 if ($symbolsByFile.ContainsKey($path) -and $symbolsByFile[$path].Count -gt 0) {
 $reasons.Add("symbols")
@@ -1028,7 +1029,7 @@ $topRanked = @($ranking.files | Select-Object -First 20)
 "- $($_.path) score=$($_.score) reasons=$(@($_.reasons) -join ',')"
 }) | Set-Content -LiteralPath (Join-Path $SliceDir "native-retrieval.md") -Encoding UTF8
 
-$entrypoints = @($Files | Where-Object { $_.path -match '(^|/)(index|main|app|server|cli)\.' } | Select-Object -First 20)
+$entrypoints = @($Files | Where-Object { $_.path -match '(^|/)(index|main|app|server|cli)\.' -and -not ($_.path -match '(test|spec)\.' -or $_.path -match '(^|/)(tests?|spec)/') -and -not ($_.path -match '(^|/)(examples?|fixtures?|demos?|benchmarks?)/') } | Select-Object -First 20)
 @("# Entrypoints", "") + @($entrypoints | ForEach-Object { "- $($_.path) ($($_.language))" }) | Set-Content -LiteralPath (Join-Path $SliceDir "entrypoints.md") -Encoding UTF8
 
 $tests = @($Files | Where-Object { $_.path -match '(test|spec)\.' -or $_.path -match '(^|/)(tests?|spec)/' } | Select-Object -First 30)
