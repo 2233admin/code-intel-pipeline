@@ -42,12 +42,12 @@
 //! that ties the submodules together, plus the shared types and the
 //! documented scoring constants every submodule draws from.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-mod git;
+pub(crate) mod git;
 mod render;
 mod scoring;
 mod signals;
@@ -138,7 +138,7 @@ pub(crate) enum RiskError {
     HostIo(String),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum Format {
     Json,
     Text,
@@ -293,7 +293,11 @@ fn print_result(value: &Value, format: Format) {
 // ---------------------------------------------------------------------
 
 /// (insertions, deletions, repository-relative path)
-type FileDiff = (i64, i64, String);
+pub(crate) type FileDiff = (i64, i64, String);
+
+/// Repository-relative path -> the (committer date, subject) of every commit
+/// touching it inside the bug-magnet window.
+pub(crate) type FileHistory = BTreeMap<String, Vec<(i64, String)>>;
 
 #[derive(Default)]
 struct DiffShape {
@@ -343,9 +347,39 @@ struct Scored {
 /// The two things every scored item (a target revspec or one baseline
 /// sample) needs: the exact string handed to `git diff --numstat`, and the
 /// tip commit that anchors its time windows.
-struct Endpoint {
-    range: String,
-    tip: String,
+pub(crate) struct Endpoint {
+    pub(crate) range: String,
+    pub(crate) tip: String,
+}
+
+/// One scored subset of a change, for consumers that need a score over
+/// *part* of a diff on the same scale `change risk` reports for the whole
+/// of it.
+///
+/// `change agenda` (issue #150) scores every review unit through this, so a
+/// unit's number and the PR gate's number come out of one scorer and cannot
+/// disagree. Two independently-derived numbers over one tree is exactly the
+/// defect issue #148 C2 records (277 vs 315 files, unreconcilable); a
+/// second risk formula for units would have reproduced it.
+pub(crate) struct SubsetScore {
+    pub(crate) score: f64,
+    pub(crate) signals: Value,
+    pub(crate) files: Vec<Value>,
+}
+
+/// Scores `files` — a subset of an already-walked diff — against a history
+/// map the caller fetched once for the whole diff. No git, no I/O.
+pub(crate) fn score_subset(
+    files: &[FileDiff],
+    history: &FileHistory,
+    anchor_unix: i64,
+) -> SubsetScore {
+    let scored = signals::score_files_with_history(files, history, anchor_unix);
+    SubsetScore {
+        score: scored.score,
+        signals: render::signals_value(&scored),
+        files: scored.files,
+    }
 }
 
 fn execute(repo: &Path, revspec: &str, sample_requested: u32) -> Result<Value, RiskError> {

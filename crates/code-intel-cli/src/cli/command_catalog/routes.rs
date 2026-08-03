@@ -359,6 +359,27 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
         ),
     },
     raw_route! {
+        // Git-only review agenda for the PR gate (issue #150): the changed
+        // files partitioned into co-change units, each scored by the same
+        // scorer `change risk` scores the whole change with, ranked worst
+        // first. Same namespace, offset, and index-free contract as `change
+        // risk`; test selection and structural-rule hits stay in the
+        // committed-evidence commands rather than being approximated here.
+        command: "change",
+        subcommand: Some("agenda"),
+        argument_offset: 1,
+        id: CompatibilityRoute::ChangeAgenda,
+        contract: command_contract!(
+            Public,
+            WorkspaceAdvisory,
+            Advisory,
+            &[CommandEffect::RepoRead, CommandEffect::ProcessSpawn],
+            stdout!("code-intel-change-agenda.v1", "text-format:change-agenda-text.v1"),
+            exits!(0, 65, 74),
+            "retire only through a versioned workspace agenda replacement"
+        ),
+    },
+    raw_route! {
         // Working-tree sibling of `change impact`. Separate command because
         // it answers without authority; folding it into `change impact` as a
         // flag would have made one command sometimes admissible and sometimes

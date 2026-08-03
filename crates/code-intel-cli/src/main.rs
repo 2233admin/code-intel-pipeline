@@ -12,6 +12,7 @@ mod authoritative_run;
 mod authority;
 mod capability;
 mod capability_inventory;
+mod change_agenda;
 mod change_impact;
 mod change_risk;
 mod cli;
