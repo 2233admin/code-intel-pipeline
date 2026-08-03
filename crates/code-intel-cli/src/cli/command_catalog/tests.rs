@@ -352,6 +352,22 @@ fn observable_contracts_pin_exact_schemas_composites_and_exit_sets() {
     );
     assert_eq!(legacy("help").exit_contract.codes(), &[0, 1]);
 
+    // Every exit `edit apply` declares has to answer on stdout, including the
+    // ones reached before the capability envelope exists. Pinning the failure
+    // identity next to the exit set is what keeps a later exit from being
+    // added without a document to answer it with.
+    assert_eq!(
+        raw("edit", Some("apply")).exit_contract.codes(),
+        &[0, 10, 64, 65, 69, 70, 74]
+    );
+    match raw("edit", Some("apply")).output_contract {
+        OutputContract::Stdout { identities } => assert!(
+            identities.contains(&"code-intel-edit-failure.v1"),
+            "edit apply must declare the pre-envelope failure document: {identities:?}"
+        ),
+        other => panic!("edit apply has wrong output contract: {other:?}"),
+    }
+
     for (adapter, outer_schema, nested_schema) in [
         (
             "repowise-adapt",

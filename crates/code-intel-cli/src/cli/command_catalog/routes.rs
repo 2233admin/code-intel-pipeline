@@ -387,6 +387,8 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
         // what refuses on a digest mismatch. Exit 10 is a *refusal*, not a
         // malfunction — the envelope's domain-fail code, reached when the
         // bytes at the addressed span are not the bytes the caller hashed.
+        // The exits reached before the envelope exists (64/65/69/74) answer
+        // with `code-intel-edit-failure.v1`, so no declared exit is silent.
         command: "edit",
         subcommand: Some("apply"),
         argument_offset: 2,
@@ -402,6 +404,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             ],
             stdout!(
                 "code-intel-edit-apply.v1",
+                "code-intel-edit-failure.v1",
                 "code-intel-capability-result.v1",
                 "code-intel-span-edit-result.v1",
             ),

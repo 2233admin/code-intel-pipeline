@@ -358,6 +358,165 @@ fn a_span_past_the_end_of_the_file_is_refused_with_the_line_count() {
     assert_eq!(fixture.source(), before, "a refusal must not write");
 }
 
+/// Every exit the route contract declares must answer with something a caller
+/// can parse — the anti-pattern #145 removed from `run execute` one commit
+/// earlier, where a real failure exited with zero stdout bytes and a bare
+/// sentence on stderr. These four exits are reached before there is a
+/// capability envelope to report, which is exactly why they used to print
+/// nothing at all.
+#[test]
+fn every_pre_envelope_exit_answers_with_a_parseable_document() {
+    let fixture = Fixture::create("stdout");
+    let before = fixture.source();
+    let (line, start, end, digest) = span_of(&before, "retry_budget");
+    let good_span = format!("{line}:{start}-{line}:{end}");
+    let repo = fixture.root.display().to_string();
+    let manifest_path = manifest().display().to_string();
+    let missing_manifest = fixture.root.join("no-such-manifest.json");
+    let missing_manifest = missing_manifest.display().to_string();
+
+    let cases: [(&str, i32, &str, Vec<String>); 5] = [
+        (
+            "malformed --span",
+            64,
+            "arguments",
+            vec![
+                "--repo-path".into(),
+                repo.clone(),
+                "--file".into(),
+                "src/lib.rs".into(),
+                "--span".into(),
+                "12:21".into(),
+                "--expect-sha256".into(),
+                digest.clone(),
+                "--replacement".into(),
+                "x".into(),
+            ],
+        ),
+        (
+            "--file escaping the repository",
+            64,
+            "arguments",
+            vec![
+                "--repo-path".into(),
+                repo.clone(),
+                "--file".into(),
+                "../outside.txt".into(),
+                "--span".into(),
+                good_span.clone(),
+                "--expect-sha256".into(),
+                digest.clone(),
+                "--replacement".into(),
+                "x".into(),
+            ],
+        ),
+        (
+            "--repo-path that does not resolve",
+            65,
+            "repository",
+            vec![
+                "--repo-path".into(),
+                fixture.root.join("no-such-checkout").display().to_string(),
+                "--file".into(),
+                "src/lib.rs".into(),
+                "--span".into(),
+                good_span.clone(),
+                "--expect-sha256".into(),
+                digest.clone(),
+                "--replacement".into(),
+                "x".into(),
+            ],
+        ),
+        (
+            "--file that is not in the checkout",
+            65,
+            "target",
+            vec![
+                "--repo-path".into(),
+                repo.clone(),
+                "--file".into(),
+                "src/absent.rs".into(),
+                "--span".into(),
+                good_span.clone(),
+                "--expect-sha256".into(),
+                digest.clone(),
+                "--replacement".into(),
+                "x".into(),
+            ],
+        ),
+        (
+            "unreadable --manifest",
+            69,
+            "registry",
+            vec![
+                "--repo-path".into(),
+                repo.clone(),
+                "--file".into(),
+                "src/lib.rs".into(),
+                "--manifest".into(),
+                missing_manifest.clone(),
+                "--span".into(),
+                good_span.clone(),
+                "--expect-sha256".into(),
+                digest.clone(),
+                "--replacement".into(),
+                "x".into(),
+            ],
+        ),
+    ];
+
+    for (name, expected_exit, stage, arguments) in cases {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_code-intel"));
+        command.args(["edit", "apply"]).args(&arguments);
+        // Only the registry case is about a missing manifest; every other
+        // case must reach the real one.
+        if !arguments.iter().any(|value| value == "--manifest") {
+            command.args(["--manifest", &manifest_path]);
+        }
+        let output = command.output().expect("run edit apply");
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        assert_eq!(
+            output.status.code(),
+            Some(expected_exit),
+            "{name}: stdout={stdout} stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let document: Value = serde_json::from_str(stdout.trim())
+            .unwrap_or_else(|error| panic!("{name}: {error}: stdout was {stdout:?}"));
+        assert_eq!(document["schema"], "code-intel-edit-failure.v1", "{name}");
+        assert_eq!(document["capability"], "edit.span-apply", "{name}");
+        assert_eq!(document["exitCode"], json!(expected_exit), "{name}");
+        assert_eq!(document["applied"], json!(false), "{name}");
+        assert_eq!(document["stage"], json!(stage), "{name}");
+        assert!(
+            !document["diagnostic"]
+                .as_str()
+                .unwrap_or_default()
+                .is_empty(),
+            "{name}: {document}"
+        );
+        assert!(
+            !String::from_utf8_lossy(&output.stderr).trim().is_empty(),
+            "{name}: the human sentence stays on stderr"
+        );
+    }
+
+    // The traversal used to be answered with raw git porcelain from the
+    // snapshot builder; it must name the flag the caller got wrong instead.
+    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["edit", "apply", "--repo-path"])
+        .arg(&fixture.root)
+        .args(["--file", "../outside.txt", "--span", &good_span])
+        .args(["--expect-sha256", &digest, "--replacement", "x"])
+        .args(["--manifest", &manifest_path])
+        .output()
+        .expect("run edit apply");
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    assert!(stderr.contains("--file"), "{stderr}");
+    assert!(!stderr.contains("git"), "{stderr}");
+    assert_eq!(fixture.source(), before, "an argument error must not write");
+}
+
 /// The front door owns no write path of its own. Driving the capability
 /// directly through `capability exec` reaches the same adapter and the same
 /// guard, which is what makes "route through the envelope" checkable rather

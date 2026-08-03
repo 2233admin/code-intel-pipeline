@@ -7,8 +7,11 @@
 //! `allowedEffects` from the registered declaration (through
 //! `ExecutionPolicy`, so the effect policy is registry-declared rather than
 //! route-declared), and hands it to the same executor `capability exec`
-//! uses. There is deliberately no filesystem write anywhere in this file —
-//! a second write path would make the envelope's guarantees optional.
+//! uses. No repository byte is written anywhere in this file — a second write
+//! path would make the envelope's guarantees optional. The one filesystem
+//! mutation it owns is removing the ephemeral staging directory it created
+//! for the envelope's artifacts (`Staging::drop`), which touches nothing
+//! under the repository.
 //!
 //! The digest is supplied by the caller and is never computed here. Computing
 //! it would make verification a tautology: the point is to compare the bytes
@@ -18,7 +21,7 @@
 
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -26,14 +29,14 @@ use serde_json::{json, Value};
 use crate::{capability, capability_inventory, execution_policy, snapshot};
 
 const CAPABILITY: &str = "edit.span-apply";
+/// Identity of the document every exit reached *before* there is a capability
+/// envelope answers with. See `refuse`.
+pub(crate) const FAILURE_SCHEMA: &str = "code-intel-edit-failure.v1";
 
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
     let cli = match Cli::parse(raw) {
         Ok(cli) => cli,
-        Err(message) => {
-            eprintln!("{message}");
-            return 64;
-        }
+        Err(message) => return refuse(CAPABILITY, 64, "arguments", &message),
     };
     match execute(&cli) {
         Ok((exit_code, document)) => {
@@ -43,11 +46,35 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
             );
             exit_code
         }
-        Err((exit_code, message)) => {
-            eprintln!("{message}");
-            exit_code
-        }
+        Err((exit_code, stage, message)) => refuse(CAPABILITY, exit_code, stage, &message),
     }
+}
+
+/// Answer a pre-envelope failure on stdout as well as stderr.
+///
+/// The route contract declares a stdout identity for exits 64/65/69/74, and
+/// until this existed those exits printed nothing at all: a caller had to
+/// scrape a human sentence off stderr to learn whether any byte had been
+/// written. That is the exact anti-pattern #145 removed from `run execute`
+/// one commit earlier, so this follows the shape it established — a closed
+/// document on stdout carrying the machine-checkable part (`applied`, the
+/// exit code, which stage refused), with the actionable sentence still on
+/// stderr for a human reading the terminal.
+pub(crate) fn refuse(capability: &str, exit_code: i32, stage: &str, diagnostic: &str) -> i32 {
+    println!(
+        "{}",
+        serde_json::to_string(&json!({
+            "schema": FAILURE_SCHEMA,
+            "capability": capability,
+            "exitCode": exit_code,
+            "applied": false,
+            "stage": stage,
+            "diagnostic": diagnostic,
+        }))
+        .expect("edit failure document serializes")
+    );
+    eprintln!("{diagnostic}");
+    exit_code
 }
 
 struct Pending {
@@ -97,7 +124,7 @@ impl Cli {
                 .ok_or_else(|| format!("{flag} requires exactly one value"))?;
             match flag {
                 "--repo-path" => set_once(&mut repo_path, PathBuf::from(value), flag)?,
-                "--file" => set_once(&mut file, value.replace('\\', "/"), flag)?,
+                "--file" => set_once(&mut file, repo_relative(value)?, flag)?,
                 "--out" => set_once(&mut out, PathBuf::from(value), flag)?,
                 "--manifest" => set_once(&mut manifest, PathBuf::from(value), flag)?,
                 "--span" => pending.push(parse_span_token(value)?),
@@ -163,6 +190,38 @@ fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<(), String>
     Ok(())
 }
 
+/// `--file` names a path *inside* `--repo-path`, so a traversal is an argument
+/// mistake and is reported as one here.
+///
+/// Letting `../outside.txt` through pushed the failure down into the snapshot
+/// builder, which surfaced it as raw git porcelain about a plumbing command —
+/// a diagnostic that says nothing about the flag the caller actually got
+/// wrong. This is a check on the *shape* of the argument; whether the path
+/// resolves to a regular file inside the repository (symlinks included) stays
+/// with the capability, which owns that policy for every front door.
+fn repo_relative(value: &str) -> Result<String, String> {
+    let normalized = value.replace('\\', "/");
+    let mut parts = Vec::new();
+    for component in Path::new(&normalized).components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(part) => parts.push(
+                part.to_str()
+                    .ok_or_else(|| format!("--file must be UTF-8: {value}"))?,
+            ),
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(format!(
+                    "--file must be relative to --repo-path and must not escape it: {value}"
+                ))
+            }
+        }
+    }
+    if parts.is_empty() {
+        return Err(format!("--file must name a file: {value}"));
+    }
+    Ok(parts.join("/"))
+}
+
 fn open_span<'a>(pending: &'a mut [Pending], flag: &str) -> Result<&'a mut Pending, String> {
     pending
         .last_mut()
@@ -193,10 +252,11 @@ fn parse_span_token(token: &str) -> Result<Pending, String> {
     })
 }
 
-fn execute(cli: &Cli) -> Result<(i32, Value), (i32, String)> {
+fn execute(cli: &Cli) -> Result<(i32, Value), (i32, &'static str, String)> {
     let repo = fs::canonicalize(&cli.repo_path).map_err(|error| {
         (
             65,
+            "repository",
             format!(
                 "cannot resolve --repo-path {}: {error}",
                 cli.repo_path.display()
@@ -209,6 +269,7 @@ fn execute(cli: &Cli) -> Result<(i32, Value), (i32, String)> {
     if !repo.join(&cli.file).is_file() {
         return Err((
             65,
+            "target",
             format!("--file is not a file in --repo-path: {}", cli.file),
         ));
     }
@@ -216,9 +277,15 @@ fn execute(cli: &Cli) -> Result<(i32, Value), (i32, String)> {
     // scope would make every keystroke-sized edit pay for a full-tree digest,
     // which is how a correct primitive becomes one nobody calls.
     let snapshot = snapshot::build_for_dag(&repo, "explicit_overlay", &[cli.file.clone()])
-        .map_err(|error| (65, format!("snapshot identity for {}: {error}", cli.file)))?;
+        .map_err(|error| {
+            (
+                65,
+                "snapshot",
+                format!("snapshot identity for {}: {error}", cli.file),
+            )
+        })?;
     let declaration = capability::declaration_for(CAPABILITY, cli.manifest.as_deref())
-        .map_err(|error| (69, error))?;
+        .map_err(|error| (69, "registry", error))?;
     let policy =
         execution_policy::ExecutionPolicy::for_profile(execution_policy::RunProfile::Default);
     let request = json!({
@@ -236,7 +303,7 @@ fn execute(cli: &Cli) -> Result<(i32, Value), (i32, String)> {
         "effectPolicy": {"allowedEffects": policy.allowed_effects(&declaration)},
     });
 
-    let staging = Staging::open(cli.out.clone()).map_err(|error| (74, error))?;
+    let staging = Staging::open(cli.out.clone()).map_err(|error| (74, "staging", error))?;
     let outcome = capability::exec_in_process(
         CAPABILITY,
         &request,
@@ -382,6 +449,21 @@ mod tests {
             &"a".repeat(64)
         ]))
         .is_err());
+    }
+
+    /// A traversal used to reach the snapshot builder and come back as git
+    /// porcelain about a plumbing command. It is an argument mistake, and the
+    /// caller is told which argument.
+    #[test]
+    fn a_file_argument_that_escapes_the_repository_is_an_argument_error() {
+        for escaping in ["../outside.txt", "src/../../outside.txt", "..\\outside.txt"] {
+            let error = repo_relative(escaping).expect_err("{escaping} must not parse");
+            assert!(error.contains("--file"), "{escaping}: {error}");
+            assert!(error.contains("escape"), "{escaping}: {error}");
+        }
+        assert!(repo_relative("").is_err());
+        assert_eq!(repo_relative("./src\\lib.rs").unwrap(), "src/lib.rs");
+        assert_eq!(repo_relative("src/lib.rs").unwrap(), "src/lib.rs");
     }
 
     #[test]
