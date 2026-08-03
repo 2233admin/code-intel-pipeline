@@ -1,12 +1,16 @@
 #[path = "../src/content_contract.rs"]
 mod content_contract;
+#[path = "../src/evidence_outcome.rs"]
+mod evidence_outcome;
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde_json::Value;
+use serde_json::{json, Value};
+
+use evidence_outcome::EvidenceOutcome;
 
 struct TempTree(PathBuf);
 
@@ -528,5 +532,176 @@ fn human_output_reports_ambiguous_skipped_and_summary_counts() {
     assert!(
         stdout.contains("0 orphaned pin(s), 1 ambiguous digest(s), 1 skipped file(s)"),
         "summary line must surface both counts: {stdout}"
+    );
+}
+
+// --- Gate G1 (#139 / #138): the honesty bit is computed, not asserted. ---
+//
+// Before this change, `--exclude`-ing every tracked file out of the scan
+// surface (or pointing `--repo` at a tree with none at all) still printed
+// `"clean": true, "filesChanged": 0` -- the exact same shape #133 reported
+// as a real production bug: a report that is indistinguishable from a
+// genuine clean pass, over a surface it never actually looked at.
+
+#[test]
+fn empty_scan_surface_is_reported_not_computed_not_clean() {
+    let tree = TempTree::new("repin-empty-surface");
+    init_repo(&tree.0);
+    fs::write(tree.0.join("only.rs"), "fn a() {}\n").unwrap();
+    commit_all(&tree.0, "init the only tracked file");
+
+    // Excluding the only tracked file leaves nothing to scan at all --
+    // previously reported as a vacuous "clean".
+    let output = repin(&tree.0, &["--exclude", "only.rs"]);
+    let report = json(&output);
+    assert_eq!(
+        report["scanCoverage"]["status"], "not-computed",
+        "an empty scan surface must not claim any completeness status: {report}"
+    );
+    assert_eq!(
+        report["clean"], false,
+        "a scan that covered nothing must not be reported clean: {report}"
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "an uncomputed scan coverage must fail the gate, not exit 0: stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn real_scan_reports_complete_with_its_scope() {
+    let tree = TempTree::new("repin-complete-scope");
+    init_repo(&tree.0);
+    fs::write(tree.0.join("source.rs"), "fn a() {}\n").unwrap();
+    commit_all(&tree.0, "init");
+
+    let report = json(&repin(&tree.0, &[]));
+    assert_eq!(report["clean"], true);
+    assert_eq!(report["scanCoverage"]["status"], "complete");
+    let scanned: Vec<String> = report["scanCoverage"]["scope"]["scannedPaths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        scanned.contains(&"source.rs".to_string()),
+        "a genuine complete scan must name the paths it covered: {report}"
+    );
+    assert_eq!(
+        report["scanCoverage"]["scope"]["artifactTypes"][0],
+        "tracked-text-file"
+    );
+}
+
+#[test]
+fn oversized_input_reports_partial_coverage_not_complete() {
+    let tree = TempTree::new("repin-partial-scope");
+    init_repo(&tree.0);
+    fs::write(tree.0.join("source.rs"), "fn a() {}\n").unwrap();
+    let source_head = sha256_of(&tree.0.join("source.rs"));
+    let padding = "x".repeat(5 * 1024 * 1024);
+    fs::write(
+        tree.0.join("record.json"),
+        format!(
+            r#"{{"padding":"{padding}","source":{{"path":"source.rs","sha256":"{source_head}"}}}}"#
+        ),
+    )
+    .unwrap();
+    commit_all(&tree.0, "init source and an oversized record");
+
+    fs::write(tree.0.join("source.rs"), "fn a() { changed(); }\n").unwrap();
+
+    let report = json(&repin(&tree.0, &[]));
+    assert_eq!(report["scanCoverage"]["status"], "partial", "{report}");
+    assert_eq!(
+        report["scanCoverage"]["partialReason"], "unreadable_input",
+        "{report}"
+    );
+    let unreadable: Vec<String> = report["scanCoverage"]["paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    assert!(unreadable.contains(&"record.json".to_string()), "{report}");
+}
+
+/// The acceptance condition for G1, not a nice-to-have: take a report the
+/// system honestly produced as `not-computed`, forge only its `status`
+/// field to `"complete"` -- exactly what a careless writer, or a bad actor
+/// hand-editing a handed-off artifact, would do to make an unchecked
+/// surface look checked -- and prove parsing it back is rejected because
+/// no `scope` was supplied. If this test failed to fail on the forgery,
+/// G1 would not be built, no matter how the type looks.
+#[test]
+fn forged_complete_claim_without_scope_is_rejected() {
+    let tree = TempTree::new("repin-forged-complete");
+    init_repo(&tree.0);
+    fs::write(tree.0.join("only.rs"), "fn a() {}\n").unwrap();
+    commit_all(&tree.0, "init the only tracked file");
+
+    // A real, honestly produced `not-computed` outcome (same setup as
+    // `empty_scan_surface_is_reported_not_computed_not_clean`).
+    let report = json(&repin(&tree.0, &["--exclude", "only.rs"]));
+    let honest = report["scanCoverage"].clone();
+    assert_eq!(honest["status"], "not-computed");
+
+    // The system's own honest value parses back fine.
+    assert!(
+        EvidenceOutcome::from_json(&honest).is_ok(),
+        "the honestly produced outcome must itself parse: {honest}"
+    );
+
+    // Forge: flip only `status` to `"complete"`, exactly as a bug (or a
+    // careless hand-edit) that only ever touches a boolean/status field
+    // would. No `scope` is added -- because the whole point is that
+    // nothing on this path actually computed one.
+    let forged = json!({ "status": "complete" });
+    assert!(
+        EvidenceOutcome::from_json(&forged).is_err(),
+        "a complete claim forged without a scope must be rejected, not accepted"
+    );
+
+    // Also forge from a genuinely partial report the same way, to prove
+    // this is not an artifact of the not-computed case specifically.
+    let tree2 = TempTree::new("repin-forged-complete-from-partial");
+    init_repo(&tree2.0);
+    fs::write(tree2.0.join("source.rs"), "fn a() {}\n").unwrap();
+    let source_head = sha256_of(&tree2.0.join("source.rs"));
+    let padding = "x".repeat(5 * 1024 * 1024);
+    fs::write(
+        tree2.0.join("record.json"),
+        format!(
+            r#"{{"padding":"{padding}","source":{{"path":"source.rs","sha256":"{source_head}"}}}}"#
+        ),
+    )
+    .unwrap();
+    commit_all(&tree2.0, "init source and an oversized record");
+    fs::write(tree2.0.join("source.rs"), "fn a() { changed(); }\n").unwrap();
+
+    let partial_report = json(&repin(&tree2.0, &[]));
+    let partial = partial_report["scanCoverage"].clone();
+    assert_eq!(partial["status"], "partial");
+    assert!(EvidenceOutcome::from_json(&partial).is_ok());
+
+    // Forge by copying the real scope's *shape* but dropping one required
+    // field -- the kind of partial refactor that would slip through review
+    // if the parser were not strict about it.
+    // The minimal, realistic forgery: flip *only* `status`. Leave the
+    // Partial's real (well-formed) `scope` and its `partialReason`/`paths`
+    // fields completely untouched -- this is the shape #133's own bug took
+    // (one field changed, nothing else), and it is the case a naive
+    // "does `scope` exist?" check would miss: the scope object is right
+    // there, fully populated, just borrowed from a claim that never
+    // actually achieved completeness.
+    let mut forged_from_partial = partial.clone();
+    forged_from_partial["status"] = json!("complete");
+    assert!(
+        EvidenceOutcome::from_json(&forged_from_partial).is_err(),
+        "a `partial` report relabeled `complete` by touching only `status` \
+         must be rejected even though its (borrowed) scope object is well-formed: {forged_from_partial}"
     );
 }

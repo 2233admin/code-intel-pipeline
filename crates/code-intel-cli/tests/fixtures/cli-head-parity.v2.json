@@ -23,7 +23,7 @@
     },
     "missingRepository": "__code_intel_parity_missing_repository_v1__"
   },
-  "exactParityCaseCount": 51,
+  "exactParityCaseCount": 50,
   "cases": [
     {
       "name": "version --version",
@@ -545,18 +545,6 @@
       "exitCode": 0,
       "stdoutUtf8": "{\"dirtyOverlay\":{\"digest\":null,\"ignoredPolicy\":\"excluded_by_git_ignore\",\"members\":{\"renamed\":[],\"staged\":[],\"trackedDeleted\":[],\"trackedModified\":[],\"typeChanged\":[],\"untracked\":[]},\"paths\":[],\"present\":false},\"repository\":{\"kind\":\"git\"},\"schema\":\"code-intel-repository-snapshot.v1\",\"snapshot\":{\"head\":\"8809d42490ea7764fac55d786a7161d3d78a0671\",\"identity\":\"ac651ecf1275d6739f4916a6d4b85eb60c0931a680fa4640e3ee3e75f4a0b752\",\"inputDigest\":\"5b9ad901925acc05311b75806b25b49b5cf119fd014540350c097892a2ce459b\",\"repoIdentity\":\"git-lineage-v1:010d9051cf8d01d08a92fcb2227c435bece1652f726ab7ef1087a7bfecd852c1\",\"scope\":[\".\"],\"workingTreePolicy\":\"head_only\"}}\n",
       "stderrUtf8": ""
-    },
-    {
-      "name": "repin clean success",
-      "argv": [
-        "repin",
-        "--repo",
-        "@fixture-repo@",
-        "--json"
-      ],
-      "exitCode": 0,
-      "stdoutUtf8": "{\n  \"ambiguousSources\": [],\n  \"clean\": true,\n  \"filesChanged\": 0,\n  \"mode\": \"report\",\n  \"orphanedPins\": [],\n  \"passes\": 1,\n  \"schema\": \"code-intel-repin-report.v1\",\n  \"skipped\": [],\n  \"stalePins\": [],\n  \"totalSubstitutions\": 0\n}\n",
-      "stderrUtf8": ""
     }
   ],
   "trailingHelpParity": {
@@ -608,6 +596,28 @@
       "new": {
         "exitCode": 0,
         "stdoutUtf8": "code-intel <command> [options]\n\nCommands:\n  --version|-V [--json]\n  help|--help|-h [--all]\n  resume --repo <path> [--artifact-root <path>] [--json]\n  classify --report <path> [--json]\n  sentrux-normalize --steps <report.json> [--out <sentrux-failures.json>]\n  sentrux-debt-register --failures <sentrux-failures.json> [--repo <path>] [--out <sentrux-debt-register.json>]\n  doctor [--artifact-root <path>] [--json]\n  doctor bootstrap [--repo <alias>] [--repo-path <path>] [--config <pipeline.config.json>] [--platform auto|windows|macos|linux] [--no-require-repowise] [--require-understand] [--json]\n  graph|understand --repo <path> [--language zh] [--full] [--write] [--json]\n  provider|providers [--action List|Plan|Validate|Invoke] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--language zh] [--write] [--json]\n  provider repowise-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>\n  provider graph-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>\n  provider sentrux-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>\n  provider session-adapt --repo <repo> --trace <mindwalk-trace.json> [--hotspots <sentrux-hotspots-or-dsm.json>] [--out <session-evidence.json>] [--working-tree-policy head_only|explicit_overlay]\n  provider codenexus-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>\n  provider file-boundary --request <request.json> --out <result.json>\n  provider runtime-ci-evidence --artifact-root <directory> --request <request.json> --out <summary.json>\n  compatibility retirement-ticket lint --ticket <ticket.json> --evaluated-at <unix-seconds>\n  route|routes [--action List|Plan|Validate] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--json]\n  sentrux <dsm|scan|health|check|gate|check_rules|gate_save> <path> [--no-ratchet]\n    (--no-ratchet: `check` only, skip the .sentrux/baseline.json ratchet)\n  capability exec <id> --request <request.json|-> --out <staging-dir> [--artifact-root <directory>] [--manifest <integrations.json>]\n  model inventory-validate --request <inventory.json> [--out <validated.json>]\n  model route --request <routing-request.json> [--out <routing-result.json>]\n  snapshot identity --repo <root> --working-tree-policy <head_only|explicit_overlay> [--scope <relative-path>]...\n  repin [--repo <root>] [--write] [--json] [--exclude <path-prefix>]...\n  evidence validate --request <request.json> --artifact-root <directory>\n  repository survival-scan --request <request.json|-> --artifact-root <directory>\n  audit --operation validate|render --repo <root> --report <report.json> [--format markdown|html]\n  audit --operation scope --repo <root> --since <git-ref>\n  artifact index --artifact-root <root> [--output <index.json>] [--operation rebuild|incremental] [--existing <index.json>]\n  artifact query --artifact-root <root> --repo <name> [--repo-path <path>] [--artifact-schema <schema>] [--type <artifact-type>] [--contains <text>] [--limit <1..100>]\n  change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--staleness current|advisory]\n  change risk <revspec> [--repo <path>] [--sample <N>] [--format json|text] (git-only defect-risk score, no prior run, no index)\n  edit impact --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--scope <directory>]... (working tree, no prior run, authority: none)\n  decision request-response --request <request.json|-> [--response <response.json>|--cancel <cancellation.json>] --now <unix-seconds> --branch <branch-id>...\n  decision record --resolution <resolution.json> --store <record-directory>\n  decision replay --query <query.json> --store <record-directory>\n  run execute --repo <repo-root> --out <run-staging-directory> --authority-root <publication-root> --final-name <name> [--profile default|strict|offline] [--manifest <integrations.json>] [--max-concurrency <n>] [--session-evidence <session-evidence.json>]\n  run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--manifest <integrations.json>] [--max-concurrency <n>] [--session-evidence <session-evidence.json>]\n  run commit --source-root <A09-artifact-root> --authority-root <publication-root> --manifest-ref <artifact-ref.json> --final-name <name>\n  benchmark orientation --out <directory> [--repetitions <2..10>]\n  benchmark tools --corpus <corpus.json> --runs <runs.json> --artifact-root <directory> --out <directory>\n  governance ponytail-gate --request <request.json|->\n  orchestrate|orchestration [--action Validate|List|Plan] [--repo <path>] [--mode lite|normal|full] [--capability <name>] [--manifest <path>] [--json]\n",
+        "stderrUtf8": ""
+      }
+    },
+    {
+      "name": "repin clean success",
+      "argv": [
+        "repin",
+        "--repo",
+        "@fixture-repo@",
+        "--json"
+      ],
+      "reason": "Gate G1 (issue #139, tracked in #138): repin's completeness claim is now computed, not asserted -- \"complete\" cannot be reported without stating the scope it covers. #133 showed why: repin --write printed clean/filesChanged 0 while digests it never scanned were stale, and nothing in the report said what had (or had not) actually been looked at. `scanCoverage` makes that scope explicit (artifact types consumed, paths scanned, excluded prefixes) instead of the bare `clean` boolean alone.",
+      "oldContractId": "json-format:repin-report.v1",
+      "newContractId": "json-format:repin-report.v2",
+      "old": {
+        "exitCode": 0,
+        "stdoutUtf8": "{\n  \"ambiguousSources\": [],\n  \"clean\": true,\n  \"filesChanged\": 0,\n  \"mode\": \"report\",\n  \"orphanedPins\": [],\n  \"passes\": 1,\n  \"schema\": \"code-intel-repin-report.v1\",\n  \"skipped\": [],\n  \"stalePins\": [],\n  \"totalSubstitutions\": 0\n}\n",
+        "stderrUtf8": ""
+      },
+      "new": {
+        "exitCode": 0,
+        "stdoutUtf8": "{\n  \"ambiguousSources\": [],\n  \"clean\": true,\n  \"filesChanged\": 0,\n  \"mode\": \"report\",\n  \"orphanedPins\": [],\n  \"passes\": 1,\n  \"scanCoverage\": {\n    \"scope\": {\n      \"artifactTypes\": [\n        \"tracked-text-file\"\n      ],\n      \"excludedPrefixes\": [\n        \"orchestration/retirements/\"\n      ],\n      \"scannedPaths\": [\n        \"src/lib.rs\"\n      ]\n    },\n    \"status\": \"complete\"\n  },\n  \"schema\": \"code-intel-repin-report.v1\",\n  \"skipped\": [],\n  \"stalePins\": [],\n  \"totalSubstitutions\": 0\n}\n",
         "stderrUtf8": ""
       }
     }

@@ -25,6 +25,7 @@ mod decision_port;
 mod decision_record;
 mod doctor_bootstrap;
 mod edit_impact;
+mod evidence_outcome;
 mod evidence_query;
 mod execution_policy;
 mod file_boundary;
