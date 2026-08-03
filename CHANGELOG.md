@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0-beta.4] — 2026-08-04
+
+诚实批次：把 CLI 收敛成单一权威迭代，把基准从「代码一重构就烂」修成内容锚定，并第一次让「我没查」在类型层面无法伪装成「我查过了」。判据本身写进了纲领 issue #139。
+
+### Added
+
+- **G1 诚实位（#141）**：`EvidenceOutcome::Complete(EvidenceScope) / Partial{reason,scope} / NotComputed{reason}`。`Complete` 没有跳过 scope 的构造路径——不给出扫描面就构造不出「查过了」。首个落地面是 `repin` 的扫描覆盖声明。验收是反向测试：把 `partial` 只改 `status` 字段伪装成 `complete`（scope 仍然真实合法）必须被拒绝；关掉校验该测试会红，证明它不是空的。
+- **架构收敛（#134）**：`main.rs` 收到 73 行的进程壳；`cli/` 统一 parse → dispatch → render；`authoritative_run::{execution_kernel, completion}` 成为单一权威迭代；`CommittedEvidenceController`（已提交证据、可门禁）与 `WorkspaceAdvisoryController`（工作树建议、不可门禁）分权。
+- **golden 内容锚（#137）**：`eval/golden_anchors.py` 按符号名或字面片段在评分时解析 golden span，不再钉死行号。锚解析不了的题标记为 **broken**——两臂都不评、不进任何覆盖率与胜负统计，单独列出。以前这类题被静默记成「A 臂答不出」。
+
+### Fixed
+
+- **`--require-understand` 是 fail-open 空转（#144）**：`doctor bootstrap --require-understand --json` 在 `understandAnything` 的 skill 与 plugin 皆为 false 时仍返回 `ok:true, missing:[]`。
+- **doctor 看不见 ast-grep（#143）**：`edit.ast-grep-plan` 会 shell out 到 ast-grep，但 doctor 从不探测它，于是在跑不动该能力的机器上照样报 `ok:true`。
+- **发布名撞车报错不可用（#145）**：重跑同名自扫时 exit 65、stdout 零字节、stderr 只有一条本地化 OS 错误（os error 183）。现在给出独立退出码与可解析的 stdout 信封。
+- **墙上时钟进了摘要（#147）**：`observedAt` 被哈希进 evidence payload，导致未变更的树每次运行都重新发布 22 个对象中的 6 个。时间戳保留在外层信封供新鲜度判断，不再进 `payload.sha256`。
+- **static 锚永远解析不了（#137）**：`_strip_modifiers` 无条件剥掉 `"static "` 前缀，而 `symbol_kind="static"` 要匹配的正是它——文档声称支持的能力静默失效。
+- **repin 边界安全（#91）**、**silent git/child death 不再产出空诊断（#131）**、**CI 死引用清理（#136）**、**曝光面与 agent 地图排序（#126）**。
+
+### Changed
+
+- **Arm A 读取窗口 10 → 25（#146）**：实测只翻转一题（q12，why 类），每覆盖题边际成本约 1,296 字节。与之捆绑的另一条杠杆（Rust 符号抽取扩到 const/static/struct）单独收益为零、语料 +17.6%，**未合入**——理由见 #142。
+
+### 明确的负结果（不合并，保留为证据）
+
+- **symbol-bounded chunks（#140）**：把 `code_evidence.chunks` 从整文件 chunk 改成符号级行区间。实现者动手前写下预测「q03 不会动」，理由是 `arm_a_answer` 在 `symbols → imports → chunks` 中命中第一个即 break，而目标关键词在 symbols 层就命中——chunks 层永远走不到。跑完与预测完全一致：零题状态变化，而 chunks 产物 ×3.56，Arm A 每覆盖题字节 +24.7%。三个独立验伪全部复现该结论。
+- 由此得到 #142：**Arm A 的开销 99.8% 是产物全量扫描**，源码窗口仅占 775 字节；让产物更精确只会让它更贵。北极星闸门 G0 的真实距离是 why 1/4（需 ≥3/4）与 11.5× Arm B 字节（需 ≤2×）。
+
+### 已知问题
+
+`sentrux --help` / `doctor --help` 静默绿灯、巨石门禁只报数量不报文件名、`sentrux dsm` 边矩阵结构性为空、149 条 rustc 警告直通发布、`fallbackChunkRate: 1.0`、`ranking.json` 按字母序而非分数——完整清单见 #148。
+
 ## [0.7.0-beta.3] — 2026-08-02
 
 北极星落地批次：占 chokepoint（PR 门禁）、立裁判（eval 基准）、砍概念债（docs 生命周期首扫）、出自举圈（第二仓冷启动）。工作流第一性原理与全部方向决策见 issue #55 及其评论。
