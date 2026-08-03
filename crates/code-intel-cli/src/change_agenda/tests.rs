@@ -231,8 +231,14 @@ fn text_render_names_files_and_the_evidence_that_joined_them() {
     let text = render_text(&sample_report(&[unit(&["a.rs", "b.rs"], 61.4)]));
     assert!(text.contains("unit-1 score 61"), "{text}");
     assert!(text.contains("a.rs +4/-1"), "{text}");
-    assert!(text.contains("joined: a.rs + b.rs (3 co-commits: deadbeef)"), "{text}");
-    assert!(text.contains("testSelection: unavailable -> code-intel change impact"), "{text}");
+    assert!(
+        text.contains("joined: a.rs + b.rs (3 co-commits: deadbeef)"),
+        "{text}"
+    );
+    assert!(
+        text.contains("testSelection: unavailable -> code-intel change impact"),
+        "{text}"
+    );
 }
 
 #[test]
@@ -267,9 +273,8 @@ fn parse_rejects_unknown_flags_duplicates_and_a_second_revspec() {
         contract_message(unknown.unwrap_err()),
         "unknown change agenda argument: --sample"
     );
-    let duplicate = ChangeAgendaRequest::parse(&args(&[
-        "agenda", "HEAD", "--repo", "one", "--repo", "two",
-    ]));
+    let duplicate =
+        ChangeAgendaRequest::parse(&args(&["agenda", "HEAD", "--repo", "one", "--repo", "two"]));
     assert_eq!(contract_message(duplicate.unwrap_err()), "duplicate --repo");
     let two_revspecs = ChangeAgendaRequest::parse(&args(&["agenda", "HEAD", "HEAD~1"]));
     assert_eq!(

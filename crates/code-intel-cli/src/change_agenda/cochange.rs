@@ -77,7 +77,9 @@ pub(super) fn build_edges(commits: &[LogCommit], min_commits: usize) -> (Vec<Edg
             // Newest evidence first — that is the commit a reviewer will
             // actually open — with the hash as tiebreak so two commits
             // sharing a committer second still order deterministically.
-            hits.sort_by(|first, second| second.0.cmp(&first.0).then_with(|| first.1.cmp(second.1)));
+            hits.sort_by(|first, second| {
+                second.0.cmp(&first.0).then_with(|| first.1.cmp(second.1))
+            });
             Some(Edge {
                 left: left.to_string(),
                 right: right.to_string(),
