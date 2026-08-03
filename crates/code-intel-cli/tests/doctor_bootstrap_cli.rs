@@ -248,6 +248,60 @@ fn the_pipeline_root_defaults_to_the_checkout_the_caller_stands_in() {
     fs::remove_dir_all(root).ok();
 }
 
+/// Regression (F4): `orchestration/integrations.json` ships
+/// `edit.ast-grep-plan` with a `runtimeAdapter`, and that adapter resolves
+/// `ast-grep` through `tool_path` before shelling out to it. The doctor's
+/// probe list was hardcoded without it, so a machine with no ast-grep got
+/// `ok: true, missing: []` and only learned the truth at capability-exec
+/// time as `Unavailable("start ast-grep: ...")`.
+///
+/// The manifest read is the point: this asserts the probe list against the
+/// capability that actually needs the tool, so retiring `edit.ast-grep-plan`
+/// relaxes the test instead of leaving a restated constant behind.
+#[test]
+fn the_probe_list_covers_the_external_tool_a_shipped_capability_shells_out_to() {
+    let manifest: Value = serde_json::from_str(
+        &fs::read_to_string(pipeline_root().join("orchestration/integrations.json"))
+            .expect("read integrations manifest"),
+    )
+    .expect("integrations manifest is JSON");
+    let ships_ast_grep_plan = manifest["integrations"]
+        .as_array()
+        .expect("integrations array")
+        .iter()
+        .any(|entry| entry["id"] == "edit.ast-grep-plan" && entry["runtimeAdapter"].is_string());
+    assert!(
+        ships_ast_grep_plan,
+        "edit.ast-grep-plan is no longer a shipped runtime capability; drop this test rather than weakening it"
+    );
+
+    let repo = temp_dir("ast-grep");
+    let (_, observation, _) = doctor(&[
+        "--repo-path",
+        repo.to_str().unwrap(),
+        "--no-require-repowise",
+        "--json",
+    ]);
+    let probed = observation["checks"]["tools"]
+        .as_array()
+        .expect("tools array")
+        .iter()
+        .find(|tool| tool["name"] == "ast-grep")
+        .unwrap_or_else(|| {
+            panic!(
+                "doctor bootstrap never probes ast-grep: {}",
+                observation["checks"]["tools"]
+            )
+        })
+        .clone();
+    // Optional, matching the `required: false` that
+    // `orchestration/toolchain-versions.v1.json` already declares for it — the
+    // fix is that the doctor reports on the tool, not that it starts failing.
+    assert_eq!(probed["required"], json!(false));
+    assert!(probed["found"].is_boolean());
+    fs::remove_dir_all(repo).ok();
+}
+
 #[test]
 fn an_unknown_flag_fails_closed_without_emitting_an_observation() {
     let (code, observation, stderr) = doctor(&["--not-a-flag"]);
