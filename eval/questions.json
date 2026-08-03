@@ -5,10 +5,10 @@
     "category": "how",
     "golden": {
       "paths": ["crates/code-intel-cli/src/main.rs"],
-      "spans": [{"path": "crates/code-intel-cli/src/main.rs", "start_line": 265, "end_line": 274}],
+      "spans": [{"path": "crates/code-intel-cli/src/main.rs", "anchor": {"kind": "symbol", "symbol_kind": "function", "name": "is_primary_invocation", "before": 0, "after": 9}}],
       "keywords": ["is_primary_invocation"]
     },
-    "notes": "is_primary_invocation (declared at line 265) treats a first argument as a repo path unless it starts with '-', matches a registered raw route, or names a legacy subcommand (is_named_command); the disambiguation logic is inline in this ~10-line function body."
+    "notes": "is_primary_invocation treats a first argument as a repo path unless it starts with '-', matches a registered raw route, or names a legacy subcommand (is_named_command); the disambiguation logic is inline in this ~10-line function body. Known-broken anchor as of issue #93 golden-symbol-anchors: PR #134 removed this function from main.rs entirely (moved/absorbed elsewhere during the CLI-to-typed-controllers convergence), so the anchor correctly fails to resolve rather than silently pointing at the wrong file's current line 265-274 -- this is a real code move, not line rot, and needs a human to re-author the question against wherever the logic actually lives now."
   },
   {
     "id": "q02",
@@ -16,10 +16,10 @@
     "category": "where",
     "golden": {
       "paths": ["crates/code-intel-cli/src/main.rs"],
-      "spans": [{"path": "crates/code-intel-cli/src/main.rs", "start_line": 695, "end_line": 700}],
+      "spans": [{"path": "crates/code-intel-cli/src/main.rs", "anchor": {"kind": "snippet", "text": "repin::run_raw", "before": 4, "after": 1}}],
       "keywords": ["RAW_ROUTES", "repin"]
     },
-    "notes": "repin is wired via a RAW_ROUTES table entry (routing to repin::run_raw) at lines 695-700, inside the 558-725 RAW_ROUTES const. Expected artifact-guided miss: consts are never indexed as symbols, and repin::run_raw's own declaration is one of several RAW_ROUTES handler functions the native-minimal scanner fails to capture at all (verified absent from code_evidence.symbols)."
+    "notes": "repin was wired via a RAW_ROUTES table entry (routing to repin::run_raw). Expected artifact-guided miss: consts are never indexed as symbols, and repin::run_raw's own declaration is one of several RAW_ROUTES handler functions the native-minimal scanner fails to capture at all (verified absent from code_evidence.symbols). Known-broken anchor as of issue #93 golden-symbol-anchors: PR #134 removed RAW_ROUTES from main.rs entirely -- a real code move, not line rot; needs a human to re-author against the new routing table's location."
   },
   {
     "id": "q03",
@@ -27,10 +27,10 @@
     "category": "why",
     "golden": {
       "paths": ["crates/code-intel-cli/src/sentrux_gate.rs"],
-      "spans": [{"path": "crates/code-intel-cli/src/sentrux_gate.rs", "start_line": 16, "end_line": 25}],
+      "spans": [{"path": "crates/code-intel-cli/src/sentrux_gate.rs", "anchor": {"kind": "snippet", "text": "inverted the gate", "before": 6, "after": 3}}],
       "keywords": ["coupling_limit"]
     },
-    "notes": "The rationale (PowerShell has no modeled import syntax, so counting .ps1 files in the coupling denominator inverted the gate during the Rust migration -- every correct migration step registered as a structural regression) sits in the module's //! doc comment at the top of the file. The nearest real symbol a keyword search can anchor on is the coupling_limit function at line 1147, roughly 1100 lines away."
+    "notes": "The rationale (PowerShell has no modeled import syntax, so counting .ps1 files in the coupling denominator inverted the gate during the Rust migration -- every correct migration step registered as a structural regression) sits in the module's //! doc comment at the top of the file. The nearest real symbol a keyword search can anchor on is the coupling_limit function, well over 1000 lines away -- deliberately not a symbol anchor, since the rationale is prose, not a declaration."
   },
   {
     "id": "q04",
@@ -38,10 +38,10 @@
     "category": "how",
     "golden": {
       "paths": ["crates/code-intel-cli/src/sentrux_gate.rs"],
-      "spans": [{"path": "crates/code-intel-cli/src/sentrux_gate.rs", "start_line": 481, "end_line": 491}],
+      "spans": [{"path": "crates/code-intel-cli/src/sentrux_gate.rs", "anchor": {"kind": "symbol", "symbol_kind": "function", "name": "evaluate_rules", "before": 0, "after": 10}}],
       "keywords": ["evaluate_rules"]
     },
-    "notes": "evaluate_rules (line 481) reads the configured max_cc threshold via integer_rule, compares it against metrics.max_complexity, and on breach pushes a Violation carrying rule/message/targets (complexity_targets(metrics))."
+    "notes": "evaluate_rules reads the configured max_cc threshold via integer_rule, compares it against metrics.max_complexity, and on breach pushes a Violation carrying rule/message/targets (complexity_targets(metrics)). This is the issue #93 golden-symbol-anchors proof case: an unrelated commit added lines earlier in this file and pushed evaluate_rules from line 481 to line 537; the symbol anchor follows it there instead of grading against a now-meaningless absolute line number."
   },
   {
     "id": "q05",
@@ -49,10 +49,10 @@
     "category": "where",
     "golden": {
       "paths": ["crates/code-intel-cli/src/capability_inventory.rs"],
-      "spans": [{"path": "crates/code-intel-cli/src/capability_inventory.rs", "start_line": 76, "end_line": 86}],
+      "spans": [{"path": "crates/code-intel-cli/src/capability_inventory.rs", "anchor": {"kind": "snippet", "text": "edit.ast-grep-plan.compat", "before": 6, "after": 4}}],
       "keywords": ["edit.ast-grep-plan.compat"]
     },
-    "notes": "The match arm at line 82 hands off to structured_edit::execute. capability_inventory::execute itself has a multi-line signature and is absent from the symbol index entirely; the match-arm string literal never appears in any structured artifact field (symbols/imports/chunks store no raw source text), so this is unreachable from artifacts regardless of keyword choice."
+    "notes": "The match arm hands off to structured_edit::execute. capability_inventory::execute itself has a multi-line signature and is absent from the symbol index entirely; the match-arm string literal never appears in any structured artifact field (symbols/imports/chunks store no raw source text), so this is unreachable from artifacts regardless of keyword choice. Anchored on the match-arm literal itself (a snippet, not a symbol) since a match arm is not a declaration."
   },
   {
     "id": "q06",
@@ -60,10 +60,10 @@
     "category": "how",
     "golden": {
       "paths": ["crates/code-intel-cli/src/capability_inventory.rs"],
-      "spans": [{"path": "crates/code-intel-cli/src/capability_inventory.rs", "start_line": 248, "end_line": 256}],
+      "spans": [{"path": "crates/code-intel-cli/src/capability_inventory.rs", "anchor": {"kind": "symbol", "symbol_kind": "function", "name": "pipeline_root", "before": 4, "after": 4}}],
       "keywords": ["pipeline_root", "capability_inventory"]
     },
-    "notes": "pipeline_root() (line 252) mirrors doctor_adapter::pipeline_root: it discovers the installed integrations manifest and walks up two parents, falling back to the compile-time CARGO_MANIFEST_DIR only as a dev-mode default. Directly relevant to the CODE_INTEL_HOME worktree-resolution behavior this task's environment rules warn about."
+    "notes": "pipeline_root() mirrors doctor_adapter::pipeline_root: it discovers the installed integrations manifest and walks up two parents, falling back to the compile-time CARGO_MANIFEST_DIR only as a dev-mode default. Directly relevant to the CODE_INTEL_HOME worktree-resolution behavior this task's environment rules warn about. Anchor resolution is scoped to this file's own path, so the same function name existing in doctor_adapter.rs/doctor_bootstrap/mod.rs elsewhere in the repo cannot make this ambiguous."
   },
   {
     "id": "q07",
@@ -71,10 +71,10 @@
     "category": "why",
     "golden": {
       "paths": ["crates/code-intel-cli/src/repin.rs"],
-      "spans": [{"path": "crates/code-intel-cli/src/repin.rs", "start_line": 13, "end_line": 20}],
+      "spans": [{"path": "crates/code-intel-cli/src/repin.rs", "anchor": {"kind": "snippet", "text": "New-*RetirementPacket.ps1", "before": 7, "after": 0}}],
       "keywords": ["DEFAULT_EXCLUDES"]
     },
-    "notes": "Retirement packets freeze a working-tree overlay captured at generation time, not a commit, so there is no 'current' digest to resync them to; only their own New-*RetirementPacket.ps1 generator can produce a valid one. This lives in the module's //! doc comment; DEFAULT_EXCLUDES is a const, never indexed as a symbol."
+    "notes": "Retirement packets freeze a working-tree overlay captured at generation time, not a commit, so there is no 'current' digest to resync them to; only their own New-*RetirementPacket.ps1 generator can produce a valid one. This lives in the module's //! doc comment; DEFAULT_EXCLUDES is a const, so anchored on the doc comment's own distinctive closing sentence (a snippet) rather than the const declaration itself, which is a different location from the rationale."
   },
   {
     "id": "q08",
@@ -82,10 +82,10 @@
     "category": "how",
     "golden": {
       "paths": ["crates/code-intel-cli/src/repin.rs"],
-      "spans": [{"path": "crates/code-intel-cli/src/repin.rs", "start_line": 341, "end_line": 350}],
+      "spans": [{"path": "crates/code-intel-cli/src/repin.rs", "anchor": {"kind": "symbol", "symbol_kind": "function", "name": "scan", "before": 9, "after": 0}}],
       "keywords": ["scan", "repin"]
     },
-    "notes": "scan() (line 341) builds its exclude list from DEFAULT_EXCLUDES plus extra_excludes, defines an is_excluded prefix-match closure, then fetches head/worktree digest maps from snapshot::repin_digests, immediately before building the digest->paths index used to detect digests shared by more than one path (ambiguous, never rewritten)."
+    "notes": "scan() builds its exclude list from DEFAULT_EXCLUDES plus extra_excludes, defines an is_excluded prefix-match closure, then fetches head/worktree digest maps from snapshot::repin_digests, immediately before building the digest->paths index used to detect digests shared by more than one path (ambiguous, never rewritten). Span is anchored 9 lines before the declaration through the declaration line itself (matching the original hand-authored span shape); resolution is scoped to this file, so `scan` also existing in artifact_index.rs/survival_scan.rs elsewhere cannot make this ambiguous."
   },
   {
     "id": "q09",
@@ -93,10 +93,10 @@
     "category": "why",
     "golden": {
       "paths": ["crates/code-intel-cli/src/compatibility_retirement_ticket.rs"],
-      "spans": [{"path": "crates/code-intel-cli/src/compatibility_retirement_ticket.rs", "start_line": 79, "end_line": 85}],
+      "spans": [{"path": "crates/code-intel-cli/src/compatibility_retirement_ticket.rs", "anchor": {"kind": "snippet", "text": "decision_value[\"authorityBoundary\"]", "before": 1, "after": 5}}],
       "keywords": ["authorityBoundary"]
     },
-    "notes": "The check enforces that an E00 retirement decision can only ever be an approval to retire, never a deletion authorization itself; deletion remains a separate, later, explicitly authorized act. execute() has a multi-line signature and is absent from the symbol index; authorityBoundary is a JSON field name, never a source symbol, so no structured artifact field ever carries it."
+    "notes": "The check enforces that an E00 retirement decision can only ever be an approval to retire, never a deletion authorization itself; deletion remains a separate, later, explicitly authorized act. execute() has a multi-line signature and is absent from the symbol index; authorityBoundary is a JSON field name, never a source symbol, so no structured artifact field ever carries it. The bare literal 'authorityBoundary' appears 3 times in this file (also in a schema field list and a second, differently-gated check further down), so the anchor snippet includes the `decision_value[...]` prefix that is unique to this specific check."
   },
   {
     "id": "q10",
@@ -104,10 +104,10 @@
     "category": "where",
     "golden": {
       "paths": [".github/workflows/ci.yml"],
-      "spans": [{"path": ".github/workflows/ci.yml", "start_line": 1, "end_line": 11}],
+      "spans": [{"path": ".github/workflows/ci.yml", "anchor": {"kind": "snippet", "text": "name: code-intel-ci", "before": 0, "after": 10}}],
       "keywords": ["ci.yml"]
     },
-    "notes": "ci.yml triggers on push to main, on every pull_request, and on workflow_dispatch, and requests only contents: read. YAML is an unsupported language for symbol extraction (0 indexed symbols for this file), so the only artifact pointer available is the whole-file chunk anchored at line 1 -- which happens to reach this top-of-file span."
+    "notes": "ci.yml triggers on push to main, on every pull_request, and on workflow_dispatch, and requests only contents: read. YAML is an unsupported language for symbol extraction (0 indexed symbols for this file), so the only artifact pointer available is the whole-file chunk anchored at line 1 -- which happens to reach this top-of-file span. Anchored on the workflow's own name line (line 1), which by construction never moves relative to itself."
   },
   {
     "id": "q11",
@@ -115,10 +115,10 @@
     "category": "how",
     "golden": {
       "paths": ["skills/code-intel-pipeline/scripts/bootstrap.py"],
-      "spans": [{"path": "skills/code-intel-pipeline/scripts/bootstrap.py", "start_line": 227, "end_line": 237}],
+      "spans": [{"path": "skills/code-intel-pipeline/scripts/bootstrap.py", "anchor": {"kind": "symbol", "symbol_kind": "function", "name": "validated_archive_members", "before": 0, "after": 10}}],
       "keywords": ["validated_archive_members"]
     },
-    "notes": "validated_archive_members (line 227) rejects archives with more than MAX_ARCHIVE_MEMBERS entries before doing any per-member work."
+    "notes": "validated_archive_members rejects archives with more than MAX_ARCHIVE_MEMBERS entries before doing any per-member work."
   },
   {
     "id": "q12",
@@ -126,9 +126,9 @@
     "category": "why",
     "golden": {
       "paths": ["skills/code-intel-pipeline/scripts/bootstrap.py"],
-      "spans": [{"path": "skills/code-intel-pipeline/scripts/bootstrap.py", "start_line": 239, "end_line": 251}],
+      "spans": [{"path": "skills/code-intel-pipeline/scripts/bootstrap.py", "anchor": {"kind": "snippet", "text": "relative.is_absolute()", "before": 7, "after": 5}}],
       "keywords": ["validated_archive_members"]
     },
-    "notes": "Rejecting '..'/absolute members prevents a malicious release archive from writing outside the install destination (zip-slip). The nearest indexed pointer is the same validated_archive_members declaration that answers q11 (line 227); its +-10 window (217-237) stops just short of this check at lines 239-251 -- the identical symbol hit that satisfies q11 is not enough to reach q12."
+    "notes": "Rejecting '..'/absolute members prevents a malicious release archive from writing outside the install destination (zip-slip). The nearest indexed pointer is the same validated_archive_members declaration that answers q11; its +-N window stops short of this check, which sits well inside the function body -- the identical symbol hit that satisfies q11 is not enough to reach q12. Anchored on the absolute-path check itself (a snippet) rather than the function symbol, since that's a second, deeper location within the same function q11 already anchors on."
   }
 ]
