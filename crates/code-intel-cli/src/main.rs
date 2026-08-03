@@ -40,6 +40,7 @@ mod ponytail_gate;
 mod project_orientation_benchmark;
 mod providers;
 mod repin;
+mod repowise_i18n_proxy;
 mod routes;
 mod run_cli;
 mod run_commit;
