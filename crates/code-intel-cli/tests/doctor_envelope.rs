@@ -318,7 +318,12 @@ fn pipeline_scratch(root: &Path) {
     let crate_src = root.join("crates").join("code-intel-cli").join("src");
     fs::create_dir_all(&crate_src).unwrap();
     fs::create_dir_all(root.join("legacy")).unwrap();
-    fs::write(crate_src.join("graph.rs"), "// graph provider\n").unwrap();
+    // graph.rs is a directory module (mod.rs + tests.rs, issue #155's
+    // god-file split): the probe's sourceFound check looks for
+    // src/graph/mod.rs.
+    let graph_dir = crate_src.join("graph");
+    fs::create_dir_all(&graph_dir).unwrap();
+    fs::write(graph_dir.join("mod.rs"), "// graph provider\n").unwrap();
     fs::write(
         root.join("crates")
             .join("code-intel-cli")

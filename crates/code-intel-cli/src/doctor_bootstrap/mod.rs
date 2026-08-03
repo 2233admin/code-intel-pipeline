@@ -103,7 +103,7 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
         .join("legacy")
         .join("run-code-intel.ps1");
     let cli_root = options.pipeline_root.join("crates").join("code-intel-cli");
-    let graph_source = cli_root.join("src").join("graph.rs");
+    let graph_source = cli_root.join("src").join("graph").join("mod.rs");
     let graph_cargo = cli_root.join("Cargo.toml");
     let binary_candidates = binary_candidates(&options.pipeline_root, &platform);
     let graph_binary = binary_candidates

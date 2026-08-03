@@ -1282,9 +1282,12 @@ function New-DoctorScratchRoot {
     # crates/ and target/ stay at the repository root
     New-Item -ItemType Directory -Force -Path (Join-Path $Dir "legacy") | Out-Null
     $crateDir = Join-Path (Join-Path $Dir "crates") "code-intel-cli"
-    New-Item -ItemType Directory -Force -Path (Join-Path $crateDir "src") | Out-Null
+    $graphDir = Join-Path (Join-Path $crateDir "src") "graph"
+    New-Item -ItemType Directory -Force -Path $graphDir | Out-Null
     Set-Content -LiteralPath (Join-Path $crateDir "Cargo.toml") -Value "[package]" -Encoding UTF8
-    Set-Content -LiteralPath (Join-Path (Join-Path $crateDir "src") "graph.rs") -Value "// graph provider" -Encoding UTF8
+    # graph.rs is a directory module (mod.rs + tests.rs, issue #155's god-file
+    # split): the doctor probe's sourceFound check looks for src/graph/mod.rs.
+    Set-Content -LiteralPath (Join-Path $graphDir "mod.rs") -Value "// graph provider" -Encoding UTF8
 }
 
 function Invoke-DoctorScratch {
@@ -1318,7 +1321,7 @@ Test-Case "doctor graph provider: a target/release platform binary satisfies the
         Set-Content -LiteralPath $releaseBinary -Value "fake binary" -Encoding UTF8
 
         $json = Invoke-DoctorScratch $dir @("--require-understand")
-        Assert-True $json.checks.graphProvider.sourceFound "chained Join-Path must find crates/code-intel-cli/src/graph.rs"
+        Assert-True $json.checks.graphProvider.sourceFound "chained Join-Path must find crates/code-intel-cli/src/graph/mod.rs"
         Assert-True $json.checks.graphProvider.cargoFound "chained Join-Path must find crates/code-intel-cli/Cargo.toml"
         Assert-True $json.checks.graphProvider.binaryFound "a target/release build must satisfy the binary check (regression: only target\debug\code-intel.exe was probed)"
         Assert-Equal $releaseBinary $json.checks.graphProvider.binaryPath "binaryPath must report the discovered release binary"
