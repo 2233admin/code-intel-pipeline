@@ -50,10 +50,7 @@ pub(super) fn graph_admission(
                 "implementationId":"architecture-graph.internal-rust",
                 "fallbackIdentity":Value::Null
             },
-            "provenance":{
-                "sourceRevision":source_revision(request),
-                "observedAt":observed_at
-            },
+            "provenance":payload_provenance(request),
             "completeness":"complete",
             "graph":document
         }}
@@ -183,7 +180,7 @@ pub(super) fn sentrux_admission(
             "schema":"code-intel-structural-evidence-payload.v1",
             "snapshotIdentity":identity,
             "provider":first["port"]["provider"],
-            "provenance":first["port"]["provenance"],
+            "provenance":payload_provenance(request),
             "effects":first["port"]["effects"],
             "completeness":first["port"]["completeness"],
             "rules":first["port"]["rules"]
@@ -527,6 +524,22 @@ fn snapshot_identity(request: &Value) -> Result<&str, AdapterError> {
 
 fn source_revision(request: &Value) -> &str {
     request["snapshot"]["head"].as_str().unwrap_or("unknown")
+}
+
+/// Provenance for the *content-addressed evidence payload*, which is not the
+/// same thing as the port/admission provenance.
+///
+/// The payload's bytes are its identity: `payload.sha256` is what the
+/// admission envelope references and what the publication layer dedupes on.
+/// Stamping the collection wall-clock into those bytes made every payload a
+/// fresh object on every run -- a 1.9 MB architecture-graph payload was
+/// re-published unchanged once per second-of-difference, and its digest churn
+/// propagated into `admissionIdentity`. So the payload carries only what the
+/// snapshot determines, and `observedAt` stays in the native result, the
+/// provider port and the A04 observation, which is where the freshness policy
+/// actually reads it (`admissibility::validate_sealed`).
+fn payload_provenance(request: &Value) -> Value {
+    json!({"sourceRevision": source_revision(request)})
 }
 
 fn now() -> Result<u64, AdapterError> {

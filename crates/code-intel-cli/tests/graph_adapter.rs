@@ -113,8 +113,7 @@ fn build_case(
                     "fallbackIdentity":fallback_identity
                 },
                 "provenance":{
-                    "sourceRevision":fixture["sourceRevision"],
-                    "observedAt":observed_at
+                    "sourceRevision":fixture["sourceRevision"]
                 },
                 "completeness":completeness,
                 "graph":graph

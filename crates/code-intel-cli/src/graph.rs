@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -92,11 +91,16 @@ fn build_graph(repo: &Path, language: &str, full: bool) -> Result<Value> {
         symbols.extend(extract_symbols(file, full));
     }
 
+    // Deliberately unstamped. This document is embedded verbatim in the
+    // content-addressed `observed.evidence.payload`, so a wall-clock field
+    // here gave every run a new payload digest for an unchanged tree. Nothing
+    // read the stamp; the graph is a pure function of the scanned files, and
+    // `.understand-anything/knowledge-graph.json` reports its own write time
+    // through the filesystem.
     Ok(json!({
         "schema": "code-intel-understand-graph.v1",
         "provider": "code-intel-rust-graph",
         "repo": normalize_path(repo),
-        "generatedAtUnix": now_unix(),
         "language": language,
         "full": full,
         "summary": {
@@ -495,13 +499,6 @@ fn normalize_path(path: impl AsRef<Path>) -> String {
     path.as_ref().to_string_lossy().replace('\\', "/")
 }
 
-fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -523,6 +520,22 @@ mod tests {
         assert!(graph["summary"]["edges"].as_u64().unwrap_or(0) >= 1);
         assert!(graph["summary"]["symbols"].as_u64().unwrap_or(0) >= 2);
 
+        // This document is embedded verbatim in the content-addressed
+        // `observed.evidence.payload`, so no field may carry a wall clock:
+        // that hands an unchanged tree a new payload digest every run.
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        for (key, value) in graph.as_object().unwrap() {
+            assert!(
+                !value
+                    .as_u64()
+                    .is_some_and(|seconds| seconds.abs_diff(now) < 86_400),
+                "graph document field {key} carries a wall clock"
+            );
+        }
+
         fs::remove_dir_all(repo).unwrap();
     }
 
@@ -536,6 +549,8 @@ mod tests {
     }
 
     fn unique_temp_dir() -> std::path::PathBuf {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
         let mut dir = std::env::temp_dir();
         dir.push(format!(
             "code-intel-graph-test-{}",
