@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code Intel Pipeline — live run against expressjs/express</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1f24; --muted: #5b6570; --line: #e3e7ea;
+    --card: #f6f8f9; --accent: #0969da; --ok: #1a7f37; --bar: #d0e2ff;
+    --mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --line: #21262d;
+      --card: #161b22; --accent: #58a6ff; --ok: #3fb950; --bar: #1f3a5f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-size: 1.7rem; margin: 0 0 4px; }
+  h2 { font-size: 1.15rem; margin: 44px 0 12px; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 16px 18px; overflow-x: auto;
+  }
+  pre {
+    margin: 0; font-family: var(--mono); font-size: 0.85rem; line-height: 1.55;
+    white-space: pre;
+  }
+  .pass { color: var(--ok); font-weight: 600; }
+  .stats { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0 0; }
+  .stat {
+    flex: 1 1 120px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .stat b { display: block; font-size: 1.35rem; }
+  .stat span { color: var(--muted); font-size: 0.82rem; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.87rem; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
+  td.score { font-family: var(--mono); white-space: nowrap; }
+  .bar { display: inline-block; height: 10px; background: var(--bar); border-radius: 3px; margin-right: 8px; vertical-align: baseline; }
+  code, .mono { font-family: var(--mono); font-size: 0.85em; }
+  .sym { color: var(--muted); font-family: var(--mono); font-size: 0.78rem; }
+  ul.nodes { list-style: none; padding: 0; margin: 0; columns: 2; }
+  ul.nodes li { padding: 3px 0; font-family: var(--mono); font-size: 0.85rem; }
+  ul.nodes li::before { content: "✓ "; color: var(--ok); font-weight: 700; }
+  .note { color: var(--muted); font-size: 0.85rem; }
+  a { color: var(--accent); }
+  footer { margin-top: 56px; border-top: 1px solid var(--line); padding-top: 16px; }
+  @media (max-width: 640px) { ul.nodes { columns: 1; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Code Intel Pipeline</h1>
+  <p class="sub">
+    One real run against a fresh clone of
+    <a href="https://github.com/expressjs/express">expressjs/express</a>
+    (<span class="mono">a3714473</span>) — unedited output.
+    把陌生仓库摊成一张地图，再让 Agent 动手。
+  </p>
+
+  <div class="card"><pre>$ git clone https://github.com/expressjs/express.git
+$ code-intel ./express
+
+<span class="pass">[PASS]</span> ./express
+  Outcome: completed
+  Run evidence: &lt;data-root&gt;/artifacts/express/&lt;run-id&gt;/run-complete.json</pre></div>
+
+  <div class="stats">
+    <div class="stat"><b>213</b><span>files inventoried</span></div>
+    <div class="stat"><b>124</b><span>symbols extracted</span></div>
+    <div class="stat"><b>504</b><span>imports resolved</span></div>
+    <div class="stat"><b>7 / 7</b><span>pipeline nodes passed</span></div>
+    <div class="stat"><b>~15 s</b><span>wall clock, local, no network</span></div>
+  </div>
+
+  <h2>Agent code map — where should an agent start reading?</h2>
+  <p class="note">
+    Every file is scored by entrypoint, symbol, and import evidence
+    (<span class="mono">agent-code-slice-ranking.v1</span>). Test, example, and
+    fixture paths are tagged but never outrank the production sources they
+    exercise. Top of the ranking:
+  </p>
+  <div class="card">
+  <table>
+    <tr><th>score</th><th>file</th><th>evidence</th></tr>
+    <tr><td class="score"><span class="bar" style="width:90px"></span>45</td><td class="mono">index.js</td><td class="sym">entrypoint, imports</td></tr>
+    <tr><td class="score"><span class="bar" style="width:70px"></span>35</td><td class="mono">lib/response.js</td><td class="sym">sendfile, onaborted, ondirectory, onerror…</td></tr>
+    <tr><td class="score"><span class="bar" style="width:70px"></span>35</td><td class="mono">examples/view-locals/index.js</td><td class="sym">demoted: example dir — no entrypoint bonus</td></tr>
+    <tr><td class="score"><span class="bar" style="width:70px"></span>35</td><td class="mono">test/app.router.js</td><td class="sym">tagged test — no rank bonus</td></tr>
+    <tr><td class="score"><span class="bar" style="width:60px"></span>30</td><td class="mono">lib/utils.js</td><td class="sym">acceptParams, createETagGenerator, parseExtendedQuery…</td></tr>
+    <tr><td class="score"><span class="bar" style="width:60px"></span>30</td><td class="mono">lib/application.js</td><td class="sym">symbols, imports</td></tr>
+  </table>
+  </div>
+
+  <h2>What one run commits</h2>
+  <div class="card">
+  <ul class="nodes">
+    <li>repo.snapshot</li>
+    <li>inventory.rg</li>
+    <li>evidence.native-code</li>
+    <li>evidence.graph</li>
+    <li>evidence.sentrux</li>
+    <li>diagnosis.hospital</li>
+    <li>doctor</li>
+  </ul>
+  </div>
+  <p class="note">
+    Artifacts land in a content-addressed store and are committed atomically —
+    a run is either fully published or not indexed at all. Read it back with
+    <code>code-intel resume --repo ./express</code>.
+  </p>
+
+  <h2>Governance verdict</h2>
+  <div class="card"><pre># Code Intel Hospital Report
+
+- Status: <span class="pass">green</span>
+- Disposition: observe
+- Primary diagnosis: clean snapshot
+- Next protocol: post_op
+
+## Treatment
+- Keep this admitted evidence set as the clean comparison baseline.</pre></div>
+  <p class="note">
+    On repositories with structural damage the same node emits a surgery plan;
+    Sentrux rule and baseline gates fail the run on structural regression
+    instead of letting an agent pile speed onto debt.
+  </p>
+
+  <h2>Reproduce it</h2>
+  <div class="card"><pre>$ git clone https://github.com/expressjs/express.git   # full history; unshallow if --depth 1
+$ code-intel ./express
+$ code-intel resume --repo ./express --json</pre></div>
+
+  <footer class="note">
+    Generated 2026-08-02 from real, unedited pipeline artifacts ·
+    code-intel 0.7.0-beta.3-dev (Windows, source build) ·
+    <a href="https://github.com/2233admin/code-intel-pipeline">GitHub repository</a> ·
+    <a href="https://github.com/2233admin/code-intel-pipeline/blob/main/README.en.md">English README</a>
+  </footer>
+</main>
+</body>
+</html>

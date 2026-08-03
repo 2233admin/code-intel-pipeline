@@ -333,7 +333,11 @@ fn render_agent_views(ranking: &Value, files: &[Value]) -> Vec<(&'static str, St
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let entrypoints = file_lines(files, entrypoint, 20);
+    let entrypoints = file_lines(
+        files,
+        |path| entrypoint(path) && !test_file(path) && !support_file(path),
+        20,
+    );
     let tests = file_lines(files, test_file, 30);
     vec![
         (
@@ -629,13 +633,17 @@ fn ranking(files: &[Value], symbols: &[Value], imports: &[Value]) -> Value {
             let path = file["path"].as_str().unwrap();
             let mut score = 0u64;
             let mut reasons = Vec::new();
-            if entrypoint(path) {
+            // Test and example/fixture files never count as entrypoints and
+            // tests carry no rank bonus: the ranking answers "where should an
+            // agent start reading", and test/example paths were outranking the
+            // production sources they exercise (express: every test/app.*.js
+            // and examples/*/index.js beat lib/).
+            if entrypoint(path) && !test_file(path) && !support_file(path) {
                 reasons.push("entrypoint");
                 score += 40;
             }
             if test_file(path) {
                 reasons.push("test");
-                score += 35;
             }
             let file_symbols = symbols_by_file.get(path).cloned().unwrap_or_default();
             let file_imports = imports_by_file.get(path).cloned().unwrap_or_default();
@@ -686,6 +694,29 @@ fn entrypoint(path: &str) -> bool {
     ["index.", "main.", "app.", "server.", "cli."]
         .iter()
         .any(|prefix| file.starts_with(prefix))
+}
+
+fn support_file(path: &str) -> bool {
+    let mut segments = path.split('/').peekable();
+    while let Some(segment) = segments.next() {
+        if segments.peek().is_none() {
+            break;
+        }
+        if matches!(
+            segment,
+            "example"
+                | "examples"
+                | "fixture"
+                | "fixtures"
+                | "demo"
+                | "demos"
+                | "benchmark"
+                | "benchmarks"
+        ) {
+            return true;
+        }
+    }
+    false
 }
 
 fn test_file(path: &str) -> bool {
