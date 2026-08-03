@@ -1,0 +1,350 @@
+{
+  "schema": "code-intel-agent-assistance-catalog.v1",
+  "source": {
+    "repository": "https://github.com/anthropics/claude-plugins-official",
+    "pinnedCommit": "892bf62a0d8d0de53025fe8b2a3d35e45cc10c55",
+    "marketplace": "claude-plugins-official",
+    "reviewedAt": "2026-08-04"
+  },
+  "entries": [
+    {
+      "candidate": {
+        "id": "official-plugin-code-review",
+        "kind": "external_tool",
+        "name": "code-review@claude-plugins-official",
+        "fit": {
+          "status": "partial",
+          "basis": "Covers line-level review of a pull request, which no code-intel provider emits. `change risk` scores a revspec and `change impact` selects tests, but neither reads the diff for defects, so the two compose rather than overlap."
+        },
+        "license": {
+          "status": "acceptable",
+          "basis": "Apache License 2.0 in plugins/code-review/LICENSE at the pinned commit; installation is by reference, so no file is redistributed from this repository."
+        },
+        "security": {
+          "status": "acceptable",
+          "basis": "Component inventory reports one skill and zero agents, hooks, and MCP servers; it reads the diff and writes review text, declaring no repository mutation."
+        },
+        "integration": {
+          "effort": "low",
+          "basis": "Skill-only surface costing about 20 always-on tokens; no repository file and no pipeline node change."
+        },
+        "reversibility": {
+          "status": "high",
+          "basis": "`claude plugin uninstall code-review@claude-plugins-official` removes it; the catalog entry is the only trace left in this repository."
+        },
+        "evidenceRefs": [
+          "plugin:code-review@claude-plugins-official/.claude-plugin/plugin.json",
+          "observation:claude-plugin-details/code-review/2026-08-04",
+          "license:plugins/code-review/LICENSE@892bf62a0d8d0de53025fe8b2a3d35e45cc10c55"
+        ]
+      },
+      "install": {
+        "plugin": "code-review",
+        "marketplace": "claude-plugins-official",
+        "command": "claude plugin install code-review@claude-plugins-official"
+      },
+      "entrypoints": [{ "kind": "skill", "name": "code-review" }],
+      "alwaysOnTokens": 20,
+      "routing": [
+        {
+          "signal": "change-risk-review-priority",
+          "trigger": "`code-intel change risk <base>..<head> --format json` reports a high or critical `review_priority` and the diff has not been read line by line.",
+          "entrypoint": "code-review"
+        }
+      ]
+    },
+    {
+      "candidate": {
+        "id": "official-plugin-pr-review-toolkit",
+        "kind": "external_tool",
+        "name": "pr-review-toolkit@claude-plugins-official",
+        "fit": {
+          "status": "strong",
+          "basis": "Six single-axis reviewers, of which silent-failure-hunter, pr-test-analyzer, and type-design-analyzer answer questions the pipeline records evidence for but never adjudicates: swallowed errors, missing tests behind a changed file, and new type shape."
+        },
+        "license": {
+          "status": "acceptable",
+          "basis": "Apache License 2.0 in plugins/pr-review-toolkit/LICENSE at the pinned commit; installation is by reference, so no file is redistributed from this repository."
+        },
+        "security": {
+          "status": "acceptable",
+          "basis": "Component inventory reports one skill and six agents with zero hooks and zero MCP servers; the agents report findings and declare no repository mutation."
+        },
+        "integration": {
+          "effort": "medium",
+          "basis": "About 2,033 always-on tokens, the highest of the five, because six agent descriptions load into every session; its code-simplifier agent duplicates the standalone code-simplifier plugin."
+        },
+        "reversibility": {
+          "status": "high",
+          "basis": "`claude plugin uninstall pr-review-toolkit@claude-plugins-official` removes it; the catalog entry is the only trace left in this repository."
+        },
+        "evidenceRefs": [
+          "plugin:pr-review-toolkit@claude-plugins-official/.claude-plugin/plugin.json",
+          "observation:claude-plugin-details/pr-review-toolkit/2026-08-04",
+          "license:plugins/pr-review-toolkit/LICENSE@892bf62a0d8d0de53025fe8b2a3d35e45cc10c55"
+        ]
+      },
+      "install": {
+        "plugin": "pr-review-toolkit",
+        "marketplace": "claude-plugins-official",
+        "command": "claude plugin install pr-review-toolkit@claude-plugins-official"
+      },
+      "entrypoints": [
+        { "kind": "skill", "name": "review-pr" },
+        { "kind": "agent", "name": "silent-failure-hunter" },
+        { "kind": "agent", "name": "pr-test-analyzer" },
+        { "kind": "agent", "name": "type-design-analyzer" },
+        { "kind": "agent", "name": "comment-analyzer" },
+        { "kind": "agent", "name": "code-reviewer" },
+        { "kind": "agent", "name": "code-simplifier" }
+      ],
+      "alwaysOnTokens": 2033,
+      "routing": [
+        {
+          "signal": "change-impact-missing-tests",
+          "trigger": "`code-intel change impact --changed <path> --staleness advisory` returns an empty or partial test selection for a changed file.",
+          "entrypoint": "pr-test-analyzer"
+        },
+        {
+          "signal": "hospital-error-path-finding",
+          "trigger": "`artifact query --type diagnosis.hospital-view` names a changed file whose finding is about error handling or fallback behaviour.",
+          "entrypoint": "silent-failure-hunter"
+        },
+        {
+          "signal": "new-public-type",
+          "trigger": "The diff introduces a new type, enum, or struct that crosses a module boundary in `code_evidence.agent_slice`.",
+          "entrypoint": "type-design-analyzer"
+        },
+        {
+          "signal": "full-pull-request-sweep",
+          "trigger": "A pull request needs every review axis at once instead of one targeted reviewer.",
+          "entrypoint": "review-pr"
+        }
+      ]
+    },
+    {
+      "candidate": {
+        "id": "official-plugin-code-simplifier",
+        "kind": "external_tool",
+        "name": "code-simplifier@claude-plugins-official",
+        "fit": {
+          "status": "partial",
+          "basis": "Answers the monolith rule the Sentrux gate can only detect: a file over 800 lines, or a function count over 25 in a file over 400 lines, is reported but never reduced. Every instruction line of this agent except its frontmatter description also appears in the pr-review-toolkit agent of the same name, which adds 22 more, so installing both is redundant."
+        },
+        "license": {
+          "status": "acceptable",
+          "basis": "Apache License 2.0 in plugins/code-simplifier/LICENSE at the pinned commit; installation is by reference, so no file is redistributed from this repository."
+        },
+        "security": {
+          "status": "acceptable",
+          "basis": "Component inventory reports one agent and zero skills, hooks, and MCP servers; it rewrites code it is pointed at, so the Sentrux session gate must bracket its edits."
+        },
+        "integration": {
+          "effort": "low",
+          "basis": "About 64 always-on tokens for a single agent description."
+        },
+        "reversibility": {
+          "status": "high",
+          "basis": "`claude plugin uninstall code-simplifier@claude-plugins-official` removes it; edits it proposes are ordinary working-tree changes."
+        },
+        "evidenceRefs": [
+          "plugin:code-simplifier@claude-plugins-official/.claude-plugin/plugin.json",
+          "observation:claude-plugin-details/code-simplifier/2026-08-04",
+          "license:plugins/code-simplifier/LICENSE@892bf62a0d8d0de53025fe8b2a3d35e45cc10c55"
+        ]
+      },
+      "install": {
+        "plugin": "code-simplifier",
+        "marketplace": "claude-plugins-official",
+        "command": "claude plugin install code-simplifier@claude-plugins-official"
+      },
+      "entrypoints": [{ "kind": "agent", "name": "code-simplifier" }],
+      "alwaysOnTokens": 64,
+      "routing": [
+        {
+          "signal": "monolith-rule-breach",
+          "trigger": "A file the session touched exceeds 800 lines, or exceeds 25 functions in over 400 lines, and the Sentrux gate reports it without reducing it.",
+          "entrypoint": "code-simplifier"
+        }
+      ]
+    },
+    {
+      "candidate": {
+        "id": "official-plugin-feature-dev",
+        "kind": "external_tool",
+        "name": "feature-dev@claude-plugins-official",
+        "fit": {
+          "status": "partial",
+          "basis": "Its code-explorer duplicates what `code_evidence.agent_slice` and repowise already serve, but code-architect fills a real blank: the pipeline scores risk and selects tests and never proposes an implementation shape before the first edit."
+        },
+        "license": {
+          "status": "acceptable",
+          "basis": "Apache License 2.0 in plugins/feature-dev/LICENSE at the pinned commit; installation is by reference, so no file is redistributed from this repository."
+        },
+        "security": {
+          "status": "acceptable",
+          "basis": "Component inventory reports one skill and three agents with zero hooks and zero MCP servers."
+        },
+        "integration": {
+          "effort": "low",
+          "basis": "About 238 always-on tokens; its code-reviewer agent name collides with the pr-review-toolkit agent of the same name, so invocations must be qualified by plugin."
+        },
+        "reversibility": {
+          "status": "high",
+          "basis": "`claude plugin uninstall feature-dev@claude-plugins-official` removes it; the catalog entry is the only trace left in this repository."
+        },
+        "evidenceRefs": [
+          "plugin:feature-dev@claude-plugins-official/.claude-plugin/plugin.json",
+          "observation:claude-plugin-details/feature-dev/2026-08-04",
+          "license:plugins/feature-dev/LICENSE@892bf62a0d8d0de53025fe8b2a3d35e45cc10c55"
+        ]
+      },
+      "install": {
+        "plugin": "feature-dev",
+        "marketplace": "claude-plugins-official",
+        "command": "claude plugin install feature-dev@claude-plugins-official"
+      },
+      "entrypoints": [
+        { "kind": "skill", "name": "feature-dev" },
+        { "kind": "agent", "name": "code-architect" },
+        { "kind": "agent", "name": "code-explorer" },
+        { "kind": "agent", "name": "code-reviewer" }
+      ],
+      "alwaysOnTokens": 238,
+      "routing": [
+        {
+          "signal": "pre-edit-architecture-blank",
+          "trigger": "A new feature must land in a module `get_risk` marks a hotspot and no implementation shape has been proposed yet.",
+          "entrypoint": "code-architect"
+        },
+        {
+          "signal": "guided-feature-flow",
+          "trigger": "A feature needs the full explore, design, implement, review loop rather than a single reviewer.",
+          "entrypoint": "feature-dev"
+        }
+      ]
+    },
+    {
+      "candidate": {
+        "id": "official-plugin-code-modernization",
+        "kind": "external_tool",
+        "name": "code-modernization@claude-plugins-official",
+        "fit": {
+          "status": "partial",
+          "basis": "Its assess and map stages restate what `code_evidence.agent_slice`, `diagnosis.hospital` and `graph.code-intel-understand` already publish, so those overlap rather than compose. The blanks it does fill are real: extract-rules turns undocumented behaviour into Given/When/Then specs, and uplift reads breaking changes between two versions of one stack, neither of which any pipeline artifact carries. Aimed at COBOL, legacy Java/C++/.NET and monolith web apps, which is a wider target than this pipeline's current repositories."
+        },
+        "license": {
+          "status": "acceptable",
+          "basis": "Apache License 2.0 in plugins/code-modernization/LICENSE at the pinned commit; installation is by reference, so no file is redistributed from this repository."
+        },
+        "security": {
+          "status": "acceptable",
+          "basis": "Component inventory reports ten skills and eight agents with zero hooks and zero MCP servers. Its transform, scaffolder and uplift-migrator stages rewrite code, so those edits must be bracketed by the Sentrux session gate."
+        },
+        "integration": {
+          "effort": "medium",
+          "basis": "About 1,273 always-on tokens, the second highest of the six, because ten skill descriptions and eight agent descriptions load into every session; its per-stage on-invoke cost reaches 8.8k for modernize-uplift."
+        },
+        "reversibility": {
+          "status": "high",
+          "basis": "`claude plugin uninstall code-modernization@claude-plugins-official` removes it; its staged artifacts are ordinary working-tree files an operator reviews before keeping."
+        },
+        "evidenceRefs": [
+          "plugin:code-modernization@claude-plugins-official/.claude-plugin/plugin.json",
+          "observation:claude-plugin-details/code-modernization/2026-08-04",
+          "license:plugins/code-modernization/LICENSE@892bf62a0d8d0de53025fe8b2a3d35e45cc10c55"
+        ]
+      },
+      "install": {
+        "plugin": "code-modernization",
+        "marketplace": "claude-plugins-official",
+        "command": "claude plugin install code-modernization@claude-plugins-official"
+      },
+      "entrypoints": [
+        { "kind": "skill", "name": "modernize-preflight" },
+        { "kind": "skill", "name": "modernize-assess" },
+        { "kind": "skill", "name": "modernize-map" },
+        { "kind": "skill", "name": "modernize-extract-rules" },
+        { "kind": "skill", "name": "modernize-brief" },
+        { "kind": "skill", "name": "modernize-transform" },
+        { "kind": "skill", "name": "modernize-uplift" },
+        { "kind": "skill", "name": "modernize-harden" },
+        { "kind": "skill", "name": "modernize-reimagine" },
+        { "kind": "skill", "name": "modernize-status" },
+        { "kind": "agent", "name": "legacy-analyst" },
+        { "kind": "agent", "name": "business-rules-extractor" },
+        { "kind": "agent", "name": "version-delta-analyst" },
+        { "kind": "agent", "name": "architecture-critic" }
+      ],
+      "alwaysOnTokens": 1273,
+      "routing": [
+        {
+          "signal": "hospital-selects-surgery-plan",
+          "trigger": "`artifact query --type diagnosis.hospital-view` selects `surgery_plan` for a module, so the rewrite is agreed and only its shape is open.",
+          "entrypoint": "modernize-transform"
+        },
+        {
+          "signal": "behaviour-has-no-executable-spec",
+          "trigger": "A module must be rewritten or replaced and `change impact` finds no test that pins its current behaviour.",
+          "entrypoint": "modernize-extract-rules"
+        },
+        {
+          "signal": "toolchain-version-drift",
+          "trigger": "`orchestration/toolchain-versions.v1.json` or a dependency manifest pins a runtime or framework major version behind the target, and the move is same-stack rather than a rewrite.",
+          "entrypoint": "modernize-uplift"
+        }
+      ]
+    },
+    {
+      "candidate": {
+        "id": "official-plugin-claude-security",
+        "kind": "external_tool",
+        "name": "claude-security@claude-plugins-official",
+        "fit": {
+          "status": "strong",
+          "basis": "The pipeline publishes no security artifact at all: `diagnosis.hospital` scores defect, maintainability, and performance and has no vulnerability dimension, so this is a blank rather than an overlap."
+        },
+        "license": {
+          "status": "review_required",
+          "basis": "Not Apache 2.0. plugins/claude-security/LICENSE at the pinned commit is a proprietary Anthropic grant limited to internal use with Claude Code, forbidding distribution of the plugin or any modified version and forbidding use with or to develop a non-Anthropic product. Binding it by reference avoids the distribution clause; an operator must still decide whether pipeline-routed use stays inside the internal-use grant."
+        },
+        "security": {
+          "status": "review_required",
+          "basis": "Component inventory reports seven agents plus a UserPromptExpansion hook, and patch-generator writes fixes into a scratch workspace clone staged as a patch, so it is the only one of the five whose default flow produces file mutations."
+        },
+        "integration": {
+          "effort": "medium",
+          "basis": "About 642 always-on tokens and a scan-then-patch workflow whose patch stage must be bracketed by the Sentrux session gate before anything is applied."
+        },
+        "reversibility": {
+          "status": "high",
+          "basis": "`claude plugin uninstall claude-security@claude-plugins-official` removes it; patches are staged for review and are not applied without an operator step."
+        },
+        "evidenceRefs": [
+          "plugin:claude-security@claude-plugins-official/.claude-plugin/plugin.json",
+          "observation:claude-plugin-details/claude-security/2026-08-04",
+          "license:plugins/claude-security/LICENSE@892bf62a0d8d0de53025fe8b2a3d35e45cc10c55"
+        ]
+      },
+      "install": {
+        "plugin": "claude-security",
+        "marketplace": "claude-plugins-official",
+        "command": "claude plugin install claude-security@claude-plugins-official"
+      },
+      "entrypoints": [
+        { "kind": "skill", "name": "claude-security" },
+        { "kind": "agent", "name": "claude-security" },
+        { "kind": "agent", "name": "patch-generator" },
+        { "kind": "agent", "name": "patch-verifier" }
+      ],
+      "alwaysOnTokens": 642,
+      "routing": [
+        {
+          "signal": "no-security-dimension",
+          "trigger": "A release or an externally reachable change needs a vulnerability read that no `diagnosis.*` artifact provides.",
+          "entrypoint": "claude-security"
+        }
+      ]
+    }
+  ]
+}

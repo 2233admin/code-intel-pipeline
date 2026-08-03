@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-agent-assistance-catalog.v1.schema.json",
+  "title": "Code Intel agent assistance catalog",
+  "description": "Reviewed candidates that assistance.discovery may resolve by id. Entries record an assessment made once and committed; the capability still emits proposals only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "source", "entries"],
+  "properties": {
+    "schema": { "const": "code-intel-agent-assistance-catalog.v1" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "pinnedCommit", "marketplace", "reviewedAt"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "pinnedCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "marketplace": { "type": "string", "minLength": 1 },
+        "reviewedAt": { "type": "string", "minLength": 1 }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "x-code-intel-uniqueBy": "candidate.id",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate", "install", "entrypoints", "alwaysOnTokens", "routing"],
+        "properties": {
+          "candidate": { "$ref": "code-intel-assistance-dossier.v1.schema.json#/$defs/candidate" },
+          "install": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["plugin", "marketplace", "command"],
+            "properties": {
+              "plugin": { "type": "string", "minLength": 1 },
+              "marketplace": { "type": "string", "minLength": 1 },
+              "command": { "type": "string", "minLength": 1 }
+            }
+          },
+          "entrypoints": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "name"],
+              "properties": {
+                "kind": { "enum": ["skill", "agent"] },
+                "name": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "alwaysOnTokens": { "type": "integer", "minimum": 0 },
+          "routing": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["signal", "trigger", "entrypoint"],
+              "properties": {
+                "signal": { "type": "string", "minLength": 1 },
+                "trigger": { "type": "string", "minLength": 1 },
+                "entrypoint": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -177,6 +177,14 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
     .into_iter()
     .find(|path| path.is_dir());
 
+    let assistance_plugins = probe::probe_assistance_plugins(
+        &options
+            .pipeline_root
+            .join("orchestration")
+            .join("agent-assistance-catalog.v1.json"),
+        &home_dir,
+    );
+
     let repo_state = repo_state(repo_path.as_deref(), sentrux_scope.as_deref());
     let home = code_intel_home(&options.pipeline_root);
 
@@ -213,6 +221,7 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
                 display(&graph_command_binary)
             )
         },
+        "assistancePlugins": assistance_plugins,
         "repo": repo_state,
         "env": {"codeIntelHome": home.observation()}
     });
@@ -747,6 +756,7 @@ mod tests {
         assert_eq!(
             checks,
             vec![
+                "assistancePlugins".to_string(),
                 "config".to_string(),
                 "env".to_string(),
                 "graphProvider".to_string(),

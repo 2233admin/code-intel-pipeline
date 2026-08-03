@@ -161,6 +161,53 @@ trigger a fresh authoritative scan. Four more commands are CI-grade — visible 
 See README's "全链路命令" section for the access-tier mental model (直查 / 跑管线 / 门禁) and one verified
 invocation each.
 
+## Route to reviewed assistance when the pipeline has no answer
+
+The pipeline answers what changed, what it touches, what is risky, and which tests to run. It does
+not read a diff for defects, judge type shape, hunt swallowed errors, propose an implementation
+shape, or scan for vulnerabilities. Those blanks are filled by external agent assets bound by
+reference in `orchestration/agent-assistance-catalog.v1.json`; nothing is vendored into this
+repository.
+
+Ask for candidates instead of picking one from memory — the catalog carries a fit, license,
+security, integration, and reversibility rating decided once and committed:
+
+```powershell
+code-intel capability exec assistance.discovery --request <request.json> --out <staging-dir>
+```
+
+`options` takes `gap` (a `code-intel-engineering-capability-gap.v1` object) and `candidateIds`.
+The result is `assistance.discovery` — dossiers only, `proposalOnly=true`, zero effects. It never
+installs, adopts, or executes anything; the operator decides. An id that is not in the catalog is
+refused rather than rated on the spot.
+
+Route directly when the signal is unambiguous:
+
+| Pipeline signal | Reach for |
+|---|---|
+| `change risk` reports high/critical `review_priority` and no one has read the diff | `code-review` |
+| `change impact` returns an empty or partial test selection | `pr-test-analyzer` |
+| `diagnosis.hospital-view` names a changed file whose finding is about error handling | `silent-failure-hunter` |
+| The diff adds a type crossing a module boundary in `code_evidence.agent_slice` | `type-design-analyzer` |
+| A touched file breaks the monolith rule (over 800 lines, or over 25 functions in over 400) | `code-simplifier` |
+| A feature must land in a module `get_risk` marks a hotspot, with no shape proposed yet | `code-architect` |
+| `diagnosis.hospital-view` selects `surgery_plan` for a module | `modernize-transform` |
+| A module must be rewritten and no test pins its current behaviour | `modernize-extract-rules` |
+| A runtime or framework major version is behind the target, same stack | `modernize-uplift` |
+| A release needs a vulnerability read no `diagnosis.*` artifact provides | `claude-security` |
+
+Bracket anything that writes — `code-simplifier`, `claude-security` patches — with the Sentrux
+session gate above, and confirm `session_end` passes before reporting the change complete.
+
+`doctor bootstrap` reports each candidate under `checks.assistancePlugins`, and the doctor node
+publishes it as an `assistance:<candidate-id>` provider row. A missing candidate is an observation,
+never a bootstrap failure: install it with the entry's `install.command`.
+
+`claude-security` is the one candidate whose license is not Apache-2.0. It is a proprietary
+Anthropic grant limited to internal use with Claude Code that forbids redistribution — the reason
+it is bound by reference. Its dossier reports `license: review_required`; treat that as a decision
+the operator still owes, not a cleared check.
+
 ## Load detailed contracts only when needed
 
 Read these installed references from `CODE_INTEL_HOME` only for the named task:

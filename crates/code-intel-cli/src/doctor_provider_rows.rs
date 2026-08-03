@@ -70,11 +70,33 @@ pub(crate) fn provider_rows(raw: &Value) -> Vec<Value> {
         .pointer("/checks/graphProvider/binaryFound")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    vec![
+    let mut rows = vec![
         json!({"id":"repowise","presence":if tool_present("repowise") {"present"} else {"missing"},"readiness":if tool_present("repowise") {"ready"} else {"unavailable"},"conformance":"not_evaluated","admissibility":"not_evaluated"}),
         json!({"id":"sentrux","presence":if sentrux_builtin || tool_present("sentrux") {"present"} else {"missing"},"readiness":if sentrux_ready {"ready"} else {"unavailable"},"conformance":if sentrux_ready {"conforming"} else if tool_present("sentrux") {"nonconforming"} else {"not_evaluated"},"admissibility":"not_evaluated"}),
         json!({"id":"graph.code-intel","presence":if graph_source && graph_cargo {"present"} else {"missing"},"readiness":if graph_source && graph_cargo && graph_binary {"ready"} else {"unavailable"},"conformance":if graph_source && graph_cargo {"conforming"} else {"not_evaluated"},"admissibility":"not_evaluated"}),
-    ]
+    ];
+    // Assistance candidates the catalog routes to. Presence is the only claim
+    // made: nothing here reads the plugin's contents, so a present one stays
+    // `not_evaluated` rather than `conforming`, and an absent one can never
+    // make `--require-provider-conformance` fail. An uninstalled routing
+    // target is a fact the operator should see, not a broken installation.
+    rows.extend(
+        raw.pointer("/checks/assistancePlugins")
+            .and_then(Value::as_array)
+            .unwrap_or(&empty)
+            .iter()
+            .map(|plugin| {
+                let found = boolean(plugin, "found");
+                json!({
+                    "id": format!("assistance:{}", string(plugin, "candidateId")),
+                    "presence": if found {"present"} else {"missing"},
+                    "readiness": if found {"ready"} else {"unavailable"},
+                    "conformance": "not_evaluated",
+                    "admissibility": "not_evaluated"
+                })
+            }),
+    );
+    rows
 }
 
 /// Provider ids a doctor bootstrap document reports as `nonconforming`.

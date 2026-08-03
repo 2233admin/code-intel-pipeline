@@ -286,12 +286,12 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "c4379b9fa2d7cbc6b39bd08e200cc2ed685da0eb30e99f86facc49e8040fd4d9",
-            "c3934819ca5d50e4966f80d56f5950bfc56394779eaf02eae050243fedd73885",
+            "2902b97f63439c0b668f41fdafca11e0ed08c6413be7308d3819d7b6af88f4ba",
             "7db9e80857f3c65aada25041986cb5cb3b50b95fa69de794d55ad38fd4a8d8d4",
             "78f88f1aaa3f77d28fbadf2bf8fd1c5e5a6b99a4728457262b19baabff2c8a80",
-            "c9842468b904868391ff0fd2bb5d9627f4d61ab5f39fa01513dc409d0d2b484d",
-            "2b3ad83032ceca7c7e745c4f30dfd45ec50d4cd0a2a5829368c22246ed2d7a5a",
-            "d17d5a5ce8f88f9976efc73857ea0a45336bdce5a899b6da40b527139dd456cb"
+            "7c5cabf7a84fdc2fad9778d45217a66dd3e7f4730ff87012bebc85545b93bf9e",
+            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568",
+            "9918c0d3e9d07e03c708eb895f63ae592ef7602c82bc033b2dd5854b0b255973"
           ]
         },
         "determinism": "external_nondeterministic",
@@ -753,7 +753,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "713daf121490de0eb9e3a94139318da47b46d4368fce5ef09c5719b8d546f403",
-            "2b3ad83032ceca7c7e745c4f30dfd45ec50d4cd0a2a5829368c22246ed2d7a5a"
+            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568"
           ]
         },
         "determinism": "deterministic",
@@ -844,7 +844,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "3ba256f4ca0bf62aca08f688f7ecf31800dd10e68371054e2f1605eff197ea81",
-            "2b3ad83032ceca7c7e745c4f30dfd45ec50d4cd0a2a5829368c22246ed2d7a5a",
+            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568",
             "6ac074d94c384b2e414d909bbc05be62b2f6da2bcb28cb875209c245ade238de",
             "b118ba78ff3ef4a189525c642184cbd320a268d2885681ab153544db554c5965",
             "e3072b6b01a4f692c2ac75c7c4995747f9a0fd1ce4f32e1ab1599f348661f570",
@@ -907,7 +907,7 @@
           "toolchainDigests": [
             "2d2b38c4650795e2bba99e8ec38ca21adcb204042e9289577c535f7087e899d8",
             "6ac074d94c384b2e414d909bbc05be62b2f6da2bcb28cb875209c245ade238de",
-            "2b3ad83032ceca7c7e745c4f30dfd45ec50d4cd0a2a5829368c22246ed2d7a5a"
+            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568"
           ]
         },
         "determinism": "deterministic",
@@ -958,7 +958,7 @@
           "toolchainDigests": [
             "a6da84444e815dd94c15887190c7d6bd48c7bca5975fb5d493eb77ab39f27d80",
             "6ac074d94c384b2e414d909bbc05be62b2f6da2bcb28cb875209c245ade238de",
-            "2b3ad83032ceca7c7e745c4f30dfd45ec50d4cd0a2a5829368c22246ed2d7a5a"
+            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568"
           ]
         },
         "determinism": "deterministic",
@@ -1033,7 +1033,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-            "2b3ad83032ceca7c7e745c4f30dfd45ec50d4cd0a2a5829368c22246ed2d7a5a"
+            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568"
           ]
         },
         "determinism": "deterministic",
@@ -1055,6 +1055,61 @@
       ],
       "effects": [],
       "extensionPoint": "OpenSpec OPSX, spec-kit, gstack, and matt-flow remain candidates. This atom emits proposals only; A05 authority is required before adoption, initialization, or execution."
+    },
+    {
+      "id": "assistance.discovery",
+      "stage": "behavior_specification",
+      "owner": "code-intel-pipeline",
+      "kind": "advisory-atom",
+      "required": false,
+      "entrypoint": "crates/code-intel-cli/src/assistance_discovery.rs",
+      "capabilities": [
+        "capability_gap_to_candidate_dossiers",
+        "reviewed_candidate_resolution",
+        "zero_effect_recommendation",
+        "authority_separated_adoption"
+      ],
+      "commands": {
+        "catalog": "orchestration/agent-assistance-catalog.v1.json",
+        "capabilityExec": "target/debug/code-intel.exe capability exec assistance.discovery --request <request.json|-> --out <staging-dir>"
+      },
+      "capabilityDeclaration": {
+        "schema": "code-intel-capability-declaration.v1",
+        "id": "assistance.discovery",
+        "contractVersion": 1,
+        "implementation": {
+          "id": "assistance.discovery.compat",
+          "version": "1.0.0",
+          "toolchainDigests": [
+            "208cc2f9f09f6d586bb4d7ebf1797ac00de8431147121369a8a0e70a853a1d74",
+            "eb77a30abb4fb9891f0328ac26a7b50c21a1ada75aff52b88c39cf4184e25ba8",
+            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568",
+            "85e964c401d62917ca11bc3f1c7ad6e56832f72da71b44d1c6a15cc261298449"
+          ]
+        },
+        "determinism": "deterministic",
+        "allowedEffects": [],
+        "dependencies": []
+      },
+      "runtimeAdapter": "assistance.discovery.compat",
+      "toolchainDigestEvidence": {
+        "algorithm": "sha256",
+        "inputs": [
+          "crates/code-intel-cli/src/assistance_adapter.rs",
+          "crates/code-intel-cli/src/assistance_discovery.rs",
+          "crates/code-intel-cli/src/capability_inventory.rs",
+          "orchestration/agent-assistance-catalog.v1.json"
+        ]
+      },
+      "artifactContract": [
+        "orchestration/schemas/code-intel-capability-envelope.v1.schema.json",
+        "orchestration/schemas/code-intel-assistance-discovery-request.v1.schema.json",
+        "orchestration/schemas/code-intel-assistance-discovery-result.v1.schema.json",
+        "orchestration/schemas/code-intel-assistance-dossier.v1.schema.json",
+        "orchestration/schemas/code-intel-agent-assistance-catalog.v1.schema.json"
+      ],
+      "effects": [],
+      "extensionPoint": "The catalog binds external agent assets by reference; nothing is vendored into this repository. Candidates carry a committed fit, license, security, integration, and reversibility rating, and this atom emits proposals only; A05 authority is required before adoption, installation, or execution. Adding a candidate means adding a catalog entry, not a runtime branch."
     },
     {
       "id": "decision.request-response-port",
@@ -1201,7 +1256,7 @@
           "id": "inventory.rg.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "2b3ad83032ceca7c7e745c4f30dfd45ec50d4cd0a2a5829368c22246ed2d7a5a"
+            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568"
           ]
         },
         "determinism": "deterministic",
