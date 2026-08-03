@@ -1,143 +1,139 @@
 {
   "aggregate": {
     "arm_a": {
-      "coverage_rate": 0.5,
+      "coverage_rate": 0.6,
       "covered_count": 6,
-      "mean_bytes_when_covered": 1078896.17,
-      "total_bytes_all_questions": 14959835,
-      "total_bytes_when_covered": 6473377
+      "mean_bytes_when_covered": 1141622.0,
+      "total_bytes_all_questions": 13068506,
+      "total_bytes_when_covered": 6849732
     },
     "arm_a_failure_reasons": {
-      "no_pointer_found": 4,
-      "pointer_found_window_excludes_golden_span": 2
+      "no_pointer_found": 3,
+      "pointer_found_window_excludes_golden_span": 1
     },
     "arm_b": {
-      "coverage_rate": 0.8333,
-      "covered_count": 10,
-      "mean_bytes_when_covered": 108150.8,
-      "total_bytes_all_questions": 3414038,
-      "total_bytes_when_covered": 1081508
+      "coverage_rate": 0.8,
+      "covered_count": 8,
+      "mean_bytes_when_covered": 100792.62,
+      "total_bytes_all_questions": 3093834,
+      "total_bytes_when_covered": 806341
     },
     "arm_b_failure_reasons": {
       "golden_file_outside_top_cap": 2
     },
+    "broken_count": 2,
+    "broken_questions": [
+      {
+        "category": "how",
+        "id": "q01",
+        "reason": "q01 span (crates/code-intel-cli/src/main.rs): no function declaration named 'is_primary_invocation' found"
+      },
+      {
+        "category": "where",
+        "id": "q02",
+        "reason": "q02 span (crates/code-intel-cli/src/main.rs): snippet 'repin::run_raw' not found"
+      }
+    ],
     "by_category": {
       "how": {
-        "arm_a_covered": 5,
-        "arm_b_covered": 4,
-        "count": 5
+        "arm_a_covered": 4,
+        "arm_b_covered": 3,
+        "count": 4
       },
       "where": {
         "arm_a_covered": 1,
-        "arm_b_covered": 2,
-        "count": 3
+        "arm_b_covered": 1,
+        "count": 2
       },
       "why": {
-        "arm_a_covered": 0,
+        "arm_a_covered": 1,
         "arm_b_covered": 4,
         "count": 4
       }
     },
+    "graded_questions": 10,
     "total_questions": 12,
     "win_loss": {
       "a_wins": 2,
-      "b_wins": 10,
+      "b_wins": 8,
       "neither_covered": 0,
       "ties": 0
     },
     "win_loss_table": [
       {
-        "arm_a_bytes": 966752,
-        "arm_a_covered": true,
-        "arm_b_bytes": 65650,
-        "arm_b_covered": true,
-        "category": "how",
-        "id": "q01",
-        "winner": "B"
-      },
-      {
-        "arm_a_bytes": 1637879,
+        "arm_a_bytes": 1023851,
         "arm_a_covered": false,
-        "arm_b_bytes": 230665,
-        "arm_b_covered": true,
-        "category": "where",
-        "id": "q02",
-        "winner": "B"
-      },
-      {
-        "arm_a_bytes": 967873,
-        "arm_a_covered": false,
-        "arm_b_bytes": 76264,
+        "arm_b_bytes": 82888,
         "arm_b_covered": true,
         "category": "why",
         "id": "q03",
         "winner": "B"
       },
       {
-        "arm_a_bytes": 966927,
+        "arm_a_bytes": 1021915,
         "arm_a_covered": true,
-        "arm_b_bytes": 53768,
+        "arm_b_bytes": 60392,
         "arm_b_covered": true,
         "category": "how",
         "id": "q04",
         "winner": "B"
       },
       {
-        "arm_a_bytes": 1637879,
+        "arm_a_bytes": 1731641,
         "arm_a_covered": false,
-        "arm_b_bytes": 197759,
+        "arm_b_bytes": 198172,
         "arm_b_covered": true,
         "category": "where",
         "id": "q05",
         "winner": "B"
       },
       {
-        "arm_a_bytes": 967658,
+        "arm_a_bytes": 1023588,
         "arm_a_covered": true,
-        "arm_b_bytes": 177933,
+        "arm_b_bytes": 178346,
         "arm_b_covered": true,
         "category": "how",
         "id": "q06",
         "winner": "B"
       },
       {
-        "arm_a_bytes": 1637879,
+        "arm_a_bytes": 1731641,
         "arm_a_covered": false,
-        "arm_b_bytes": 22102,
+        "arm_b_bytes": 26509,
         "arm_b_covered": true,
         "category": "why",
         "id": "q07",
         "winner": "B"
       },
       {
-        "arm_a_bytes": 966964,
+        "arm_a_bytes": 1027250,
         "arm_a_covered": true,
-        "arm_b_bytes": 2206906,
+        "arm_b_bytes": 2206091,
         "arm_b_covered": false,
         "category": "how",
         "id": "q08",
         "winner": "A"
       },
       {
-        "arm_a_bytes": 1637879,
+        "arm_a_bytes": 1731641,
         "arm_a_covered": false,
-        "arm_b_bytes": 203127,
+        "arm_b_bytes": 205794,
         "arm_b_covered": true,
         "category": "why",
         "id": "q09",
         "winner": "B"
       },
       {
-        "arm_a_bytes": 1638007,
+        "arm_a_bytes": 1732149,
         "arm_a_covered": true,
-        "arm_b_bytes": 125624,
+        "arm_b_bytes": 81402,
         "arm_b_covered": false,
         "category": "where",
         "id": "q10",
         "winner": "A"
       },
       {
-        "arm_a_bytes": 967069,
+        "arm_a_bytes": 1022415,
         "arm_a_covered": true,
         "arm_b_bytes": 27120,
         "arm_b_covered": true,
@@ -146,8 +142,8 @@
         "winner": "B"
       },
       {
-        "arm_a_bytes": 967069,
-        "arm_a_covered": false,
+        "arm_a_bytes": 1022415,
+        "arm_a_covered": true,
         "arm_b_bytes": 27120,
         "arm_b_covered": true,
         "category": "why",
@@ -157,121 +153,61 @@
     ]
   },
   "meta": {
-    "artifact_run_dir": "artifacts/t3-cut/1785612676552-89404-core",
-    "baseline_file": "eval/baseline-d889b39.json",
-    "generated_at": "2026-08-01T19:31:30Z",
+    "artifact_run_dir": "artifacts/eval-window-lever-only/1785770713528-26180-core",
+    "baseline_file": "eval/baseline-b1dddcf.json",
+    "generated_at": "2026-08-03T15:25:21Z",
     "platform": "win32",
-    "python_version": "3.13.14",
-    "repo_head_sha": "d889b39",
+    "python_version": "3.12.10",
+    "repo_head_sha": "b1dddcf",
     "timing": {
-      "build_seconds": 0.0,
-      "build_skipped": true,
-      "pipeline_run_seconds": 13.635
+      "build_seconds": 83.636,
+      "build_skipped": false,
+      "pipeline_run_seconds": 6.782
     }
   },
   "questions": [
     {
-      "arm_a": {
-        "artifact_bytes": 966241,
-        "artifact_kinds_consulted": [
-          "code_evidence.symbols"
-        ],
-        "bytes_to_answer": 966752,
-        "covered": true,
-        "files_touched": [
-          "code_evidence.symbols",
-          "crates/code-intel-cli/src/main.rs (lines 255-275)"
-        ],
-        "pointers": [
-          {
-            "file": "crates/code-intel-cli/src/main.rs",
-            "line": 265
-          }
-        ],
-        "reason": null,
-        "span_bytes": 511,
-        "stopped_at_kind": "code_evidence.symbols"
-      },
-      "arm_b": {
-        "bytes_to_answer": 65650,
-        "covered": true,
-        "files_matched_total": 1,
-        "files_touched": [
-          "crates/code-intel-cli/src/main.rs (3 hits)"
-        ],
-        "reason": null
-      },
+      "broken": true,
+      "broken_reason": "q01 span (crates/code-intel-cli/src/main.rs): no function declaration named 'is_primary_invocation' found",
       "category": "how",
       "id": "q01",
-      "question": "In crates/code-intel-cli/src/main.rs, how does the CLI decide whether the first argument to `code-intel` is a repository path (primary invocation) versus a named subcommand?",
-      "winner": "B"
+      "question": "In crates/code-intel-cli/src/main.rs, how does the CLI decide whether the first argument to `code-intel` is a repository path (primary invocation) versus a named subcommand?"
     },
     {
-      "arm_a": {
-        "artifact_bytes": 1637879,
-        "artifact_kinds_consulted": [
-          "code_evidence.symbols",
-          "code_evidence.imports",
-          "code_evidence.chunks"
-        ],
-        "bytes_to_answer": 1637879,
-        "covered": false,
-        "files_touched": [
-          "code_evidence.symbols",
-          "code_evidence.imports",
-          "code_evidence.chunks"
-        ],
-        "pointers": [],
-        "reason": "no_pointer_found",
-        "span_bytes": 0,
-        "stopped_at_kind": null
-      },
-      "arm_b": {
-        "bytes_to_answer": 230665,
-        "covered": true,
-        "files_matched_total": 6,
-        "files_touched": [
-          "crates/code-intel-cli/tests/repin.rs (28 hits)",
-          "crates/code-intel-cli/src/repin.rs (18 hits)",
-          "crates/code-intel-cli/src/main.rs (9 hits)",
-          "crates/code-intel-cli/src/snapshot.rs (6 hits)",
-          "legacy/install-code-intel-pipeline.ps1 (2 hits)"
-        ],
-        "reason": null
-      },
+      "broken": true,
+      "broken_reason": "q02 span (crates/code-intel-cli/src/main.rs): snippet 'repin::run_raw' not found",
       "category": "where",
       "id": "q02",
-      "question": "Where in crates/code-intel-cli/src/main.rs is the `code-intel repin` subcommand registered, and which function runs when it is invoked?",
-      "winner": "B"
+      "question": "Where in crates/code-intel-cli/src/main.rs is the `code-intel repin` subcommand registered, and which function runs when it is invoked?"
     },
     {
       "arm_a": {
-        "artifact_bytes": 966241,
+        "artifact_bytes": 1020167,
         "artifact_kinds_consulted": [
           "code_evidence.symbols"
         ],
-        "bytes_to_answer": 967873,
+        "bytes_to_answer": 1023851,
         "covered": false,
         "files_touched": [
           "code_evidence.symbols",
-          "crates/code-intel-cli/src/sentrux_gate.rs (lines 1137-1157,1368-1388)"
+          "crates/code-intel-cli/src/sentrux_gate.rs (lines 1178-1228,1409-1459)"
         ],
         "pointers": [
           {
             "file": "crates/code-intel-cli/src/sentrux_gate.rs",
-            "line": 1147
+            "line": 1203
           },
           {
             "file": "crates/code-intel-cli/src/sentrux_gate.rs",
-            "line": 1378
+            "line": 1434
           }
         ],
         "reason": "pointer_found_window_excludes_golden_span",
-        "span_bytes": 1632,
+        "span_bytes": 3684,
         "stopped_at_kind": "code_evidence.symbols"
       },
       "arm_b": {
-        "bytes_to_answer": 76264,
+        "bytes_to_answer": 82888,
         "covered": true,
         "files_matched_total": 2,
         "files_touched": [
@@ -280,6 +216,7 @@
         ],
         "reason": null
       },
+      "broken": false,
       "category": "why",
       "id": "q03",
       "question": "Why does sentrux_gate.rs's coupling metric only count files in IMPORT_MODELED_EXTENSIONS instead of every file in CODE_EXTENSIONS?",
@@ -287,28 +224,28 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 966241,
+        "artifact_bytes": 1020167,
         "artifact_kinds_consulted": [
           "code_evidence.symbols"
         ],
-        "bytes_to_answer": 966927,
+        "bytes_to_answer": 1021915,
         "covered": true,
         "files_touched": [
           "code_evidence.symbols",
-          "crates/code-intel-cli/src/sentrux_gate.rs (lines 471-491)"
+          "crates/code-intel-cli/src/sentrux_gate.rs (lines 512-562)"
         ],
         "pointers": [
           {
             "file": "crates/code-intel-cli/src/sentrux_gate.rs",
-            "line": 481
+            "line": 537
           }
         ],
         "reason": null,
-        "span_bytes": 686,
+        "span_bytes": 1748,
         "stopped_at_kind": "code_evidence.symbols"
       },
       "arm_b": {
-        "bytes_to_answer": 53768,
+        "bytes_to_answer": 60392,
         "covered": true,
         "files_matched_total": 1,
         "files_touched": [
@@ -316,6 +253,7 @@
         ],
         "reason": null
       },
+      "broken": false,
       "category": "how",
       "id": "q04",
       "question": "How does sentrux_gate.rs's evaluate_rules turn a `max_cc` rule breach into a reported Violation?",
@@ -323,13 +261,13 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 1637879,
+        "artifact_bytes": 1731641,
         "artifact_kinds_consulted": [
           "code_evidence.symbols",
           "code_evidence.imports",
           "code_evidence.chunks"
         ],
-        "bytes_to_answer": 1637879,
+        "bytes_to_answer": 1731641,
         "covered": false,
         "files_touched": [
           "code_evidence.symbols",
@@ -342,7 +280,7 @@
         "stopped_at_kind": null
       },
       "arm_b": {
-        "bytes_to_answer": 197759,
+        "bytes_to_answer": 198172,
         "covered": true,
         "files_matched_total": 4,
         "files_touched": [
@@ -353,6 +291,7 @@
         ],
         "reason": null
       },
+      "broken": false,
       "category": "where",
       "id": "q05",
       "question": "Where does capability_inventory::execute route the `edit.ast-grep-plan.compat` adapter id, and which module does it hand off to?",
@@ -360,15 +299,15 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 966241,
+        "artifact_bytes": 1020167,
         "artifact_kinds_consulted": [
           "code_evidence.symbols"
         ],
-        "bytes_to_answer": 967658,
+        "bytes_to_answer": 1023588,
         "covered": true,
         "files_touched": [
           "code_evidence.symbols",
-          "crates/code-intel-cli/src/capability_inventory.rs (lines 242-262,1141-1161)"
+          "crates/code-intel-cli/src/capability_inventory.rs (lines 227-277,1126-1176)"
         ],
         "pointers": [
           {
@@ -381,13 +320,13 @@
           }
         ],
         "reason": null,
-        "span_bytes": 1417,
+        "span_bytes": 3421,
         "stopped_at_kind": "code_evidence.symbols"
       },
       "arm_b": {
-        "bytes_to_answer": 177933,
+        "bytes_to_answer": 178346,
         "covered": true,
-        "files_matched_total": 26,
+        "files_matched_total": 28,
         "files_touched": [
           "crates/code-intel-cli/src/doctor_bootstrap/mod.rs (24 hits)",
           "orchestration/integrations.json (7 hits)",
@@ -397,6 +336,7 @@
         ],
         "reason": null
       },
+      "broken": false,
       "category": "how",
       "id": "q06",
       "question": "How does capability_inventory.rs resolve the pipeline's own root directory when it needs to invoke the workflow-recommendation PowerShell script?",
@@ -404,13 +344,13 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 1637879,
+        "artifact_bytes": 1731641,
         "artifact_kinds_consulted": [
           "code_evidence.symbols",
           "code_evidence.imports",
           "code_evidence.chunks"
         ],
-        "bytes_to_answer": 1637879,
+        "bytes_to_answer": 1731641,
         "covered": false,
         "files_touched": [
           "code_evidence.symbols",
@@ -423,7 +363,7 @@
         "stopped_at_kind": null
       },
       "arm_b": {
-        "bytes_to_answer": 22102,
+        "bytes_to_answer": 26509,
         "covered": true,
         "files_matched_total": 1,
         "files_touched": [
@@ -431,6 +371,7 @@
         ],
         "reason": null
       },
+      "broken": false,
       "category": "why",
       "id": "q07",
       "question": "Why does `code-intel repin`'s DEFAULT_EXCLUDES list exclude orchestration/retirements/ from its stale sha256 pin rewriting?",
@@ -438,30 +379,43 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 966241,
+        "artifact_bytes": 1020167,
         "artifact_kinds_consulted": [
           "code_evidence.symbols"
         ],
-        "bytes_to_answer": 966964,
+        "bytes_to_answer": 1027250,
         "covered": true,
         "files_touched": [
           "code_evidence.symbols",
-          "crates/code-intel-cli/src/repin.rs (lines 331-351)"
+          "crates/code-intel-cli/src/repin.rs (lines 338-388,580-630)",
+          "crates/code-intel-cli/tests/repin.rs (lines 522-599)"
         ],
         "pointers": [
           {
             "file": "crates/code-intel-cli/src/repin.rs",
-            "line": 341
+            "line": 363
+          },
+          {
+            "file": "crates/code-intel-cli/src/repin.rs",
+            "line": 605
+          },
+          {
+            "file": "crates/code-intel-cli/tests/repin.rs",
+            "line": 547
+          },
+          {
+            "file": "crates/code-intel-cli/tests/repin.rs",
+            "line": 574
           }
         ],
         "reason": null,
-        "span_bytes": 723,
+        "span_bytes": 7083,
         "stopped_at_kind": "code_evidence.symbols"
       },
       "arm_b": {
-        "bytes_to_answer": 2206906,
+        "bytes_to_answer": 2206091,
         "covered": false,
-        "files_matched_total": 136,
+        "files_matched_total": 151,
         "files_touched": [
           "orchestration/retirements/e02-recommender/compatibility-retirement-deletion-diff.json (102 hits)",
           "orchestration/retirements/e04-codenexus-direct/compatibility-retirement-deletion-diff.json (102 hits)",
@@ -471,6 +425,7 @@
         ],
         "reason": "golden_file_outside_top_cap"
       },
+      "broken": false,
       "category": "how",
       "id": "q08",
       "question": "How does repin.rs's scan() combine DEFAULT_EXCLUDES with any caller-supplied excludes before it starts comparing HEAD and worktree digests?",
@@ -478,13 +433,13 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 1637879,
+        "artifact_bytes": 1731641,
         "artifact_kinds_consulted": [
           "code_evidence.symbols",
           "code_evidence.imports",
           "code_evidence.chunks"
         ],
-        "bytes_to_answer": 1637879,
+        "bytes_to_answer": 1731641,
         "covered": false,
         "files_touched": [
           "code_evidence.symbols",
@@ -497,7 +452,7 @@
         "stopped_at_kind": null
       },
       "arm_b": {
-        "bytes_to_answer": 203127,
+        "bytes_to_answer": 205794,
         "covered": true,
         "files_matched_total": 32,
         "files_touched": [
@@ -509,6 +464,7 @@
         ],
         "reason": null
       },
+      "broken": false,
       "category": "why",
       "id": "q09",
       "question": "Why does compatibility_retirement_ticket::execute require the E00 decision's authorityBoundary to equal `approval_only_no_deletion_authority`?",
@@ -516,19 +472,19 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 1637879,
+        "artifact_bytes": 1731641,
         "artifact_kinds_consulted": [
           "code_evidence.symbols",
           "code_evidence.imports",
           "code_evidence.chunks"
         ],
-        "bytes_to_answer": 1638007,
+        "bytes_to_answer": 1732149,
         "covered": true,
         "files_touched": [
           "code_evidence.symbols",
           "code_evidence.imports",
           "code_evidence.chunks",
-          ".github/workflows/ci.yml (lines 1-11)"
+          ".github/workflows/ci.yml (lines 1-26)"
         ],
         "pointers": [
           {
@@ -537,22 +493,23 @@
           }
         ],
         "reason": null,
-        "span_bytes": 128,
+        "span_bytes": 508,
         "stopped_at_kind": "code_evidence.chunks"
       },
       "arm_b": {
-        "bytes_to_answer": 125624,
+        "bytes_to_answer": 81402,
         "covered": false,
-        "files_matched_total": 13,
+        "files_matched_total": 17,
         "files_touched": [
           "crates/code-intel-cli/tests/toolchain_versions.rs (4 hits)",
+          ".github/workflows/pr-gate.yml (3 hits)",
           ".github/workflows/parity-observe.yml (2 hits)",
           ".github/workflows/release.yml (2 hits)",
-          "docs/ps1-exit/contract-inventory.md (2 hits)",
-          "README.md (1 hits)"
+          "README.md (2 hits)"
         ],
         "reason": "golden_file_outside_top_cap"
       },
+      "broken": false,
       "category": "where",
       "id": "q10",
       "question": "What events trigger the code-intel-ci GitHub Actions workflow, and what repository permission scope does it request?",
@@ -560,15 +517,15 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 966241,
+        "artifact_bytes": 1020167,
         "artifact_kinds_consulted": [
           "code_evidence.symbols"
         ],
-        "bytes_to_answer": 967069,
+        "bytes_to_answer": 1022415,
         "covered": true,
         "files_touched": [
           "code_evidence.symbols",
-          "skills/code-intel-pipeline/scripts/bootstrap.py (lines 217-237)"
+          "skills/code-intel-pipeline/scripts/bootstrap.py (lines 202-252)"
         ],
         "pointers": [
           {
@@ -577,7 +534,7 @@
           }
         ],
         "reason": null,
-        "span_bytes": 828,
+        "span_bytes": 2248,
         "stopped_at_kind": "code_evidence.symbols"
       },
       "arm_b": {
@@ -589,6 +546,7 @@
         ],
         "reason": null
       },
+      "broken": false,
       "category": "how",
       "id": "q11",
       "question": "How does the skill installer's bootstrap.py guard against an oversized or archive-bomb-like release zip before extracting it?",
@@ -596,15 +554,15 @@
     },
     {
       "arm_a": {
-        "artifact_bytes": 966241,
+        "artifact_bytes": 1020167,
         "artifact_kinds_consulted": [
           "code_evidence.symbols"
         ],
-        "bytes_to_answer": 967069,
-        "covered": false,
+        "bytes_to_answer": 1022415,
+        "covered": true,
         "files_touched": [
           "code_evidence.symbols",
-          "skills/code-intel-pipeline/scripts/bootstrap.py (lines 217-237)"
+          "skills/code-intel-pipeline/scripts/bootstrap.py (lines 202-252)"
         ],
         "pointers": [
           {
@@ -612,8 +570,8 @@
             "line": 227
           }
         ],
-        "reason": "pointer_found_window_excludes_golden_span",
-        "span_bytes": 828,
+        "reason": null,
+        "span_bytes": 2248,
         "stopped_at_kind": "code_evidence.symbols"
       },
       "arm_b": {
@@ -625,6 +583,7 @@
         ],
         "reason": null
       },
+      "broken": false,
       "category": "why",
       "id": "q12",
       "question": "Why does bootstrap.py's validated_archive_members reject an archive member whose normalized path is absolute or contains a `..` segment?",
@@ -641,8 +600,8 @@
     "file_cap": 5,
     "pipeline_mode": "lite",
     "pipeline_outcome": "completed",
-    "repo_file_count": 822,
-    "setup_bytes": 2824738,
-    "window_lines": 10
+    "repo_file_count": 857,
+    "setup_bytes": 2981370,
+    "window_lines": 25
   }
 }
