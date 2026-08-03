@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 
+use crate::change_agenda::{self, ChangeAgendaRequest};
 use crate::change_impact::{self, ChangeImpactRequest, ImpactError};
 use crate::change_risk::{self, ChangeRiskRequest, RiskError};
 use crate::committed_evidence;
@@ -96,6 +97,23 @@ impl WorkspaceAdvisoryController {
         request: ChangeRiskRequest,
     ) -> Result<WorkspaceAdvisoryResult, RiskError> {
         let result = change_risk::execute_request(request)?;
+        let authority = WorkspaceAuthority::Advisory(AdvisoryBasis::GitHistory {
+            repo_root: result.repo_root().to_path_buf(),
+            revspec: result.revspec().to_string(),
+        });
+        Ok(WorkspaceAdvisoryResult {
+            value: result.value().clone(),
+            authority,
+        })
+    }
+
+    /// Same git-history basis as [`Self::change_risk`]: the agenda is
+    /// derived from commit history alone, so it carries advisory authority
+    /// and can never be promoted into a committed receipt (issue #150).
+    pub(crate) fn change_agenda(
+        request: ChangeAgendaRequest,
+    ) -> Result<WorkspaceAdvisoryResult, RiskError> {
+        let result = change_agenda::execute_request(request)?;
         let authority = WorkspaceAuthority::Advisory(AdvisoryBasis::GitHistory {
             repo_root: result.repo_root().to_path_buf(),
             revspec: result.revspec().to_string(),

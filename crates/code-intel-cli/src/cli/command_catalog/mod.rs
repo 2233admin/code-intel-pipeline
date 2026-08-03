@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
 
 use crate::{
-    admissibility, artifact_index, audit_report, change_impact, change_risk,
+    admissibility, artifact_index, audit_report, change_agenda, change_impact, change_risk,
     compatibility_retirement_ticket, decision_port, decision_record, doctor_bootstrap, edit_impact,
     evidence_query, model_channels, ponytail_gate, providers, repin, run_cli, run_commit,
     session_evidence, snapshot, survival_scan,
@@ -70,6 +70,7 @@ enum CompatibilityRoute {
     ArtifactQuery,
     ChangeImpact,
     ChangeRisk,
+    ChangeAgenda,
     EditImpact,
     DecisionRecord,
     DecisionReplay,
@@ -427,6 +428,7 @@ fn execute_compatibility(command: CompatibilityCommand) -> i32 {
         CompatibilityRoute::ArtifactQuery => evidence_query::run_raw(raw),
         CompatibilityRoute::ChangeImpact => change_impact::run_raw(raw),
         CompatibilityRoute::ChangeRisk => change_risk::run_raw(raw),
+        CompatibilityRoute::ChangeAgenda => change_agenda::run_raw(raw),
         CompatibilityRoute::EditImpact => edit_impact::run_raw(raw),
         CompatibilityRoute::DecisionRecord | CompatibilityRoute::DecisionReplay => {
             decision_record::run_raw(raw)

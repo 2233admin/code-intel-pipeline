@@ -30,7 +30,36 @@ pub(super) fn build_report(
     // once and can never drift between the scored and unscored paths.
     let default_scored = Scored::default();
     let scored = scored.unwrap_or(&default_scored);
-    let signals = json!({
+    let mut signals = signals_value(scored);
+    signals["sampleRequested"] = json!(sample_requested);
+    signals["sampleUsed"] = json!(sample_used);
+    let mut result = json!({
+        "schema": "code-intel-change-risk.v1",
+        // Resolved Git root the score was computed against — always
+        // present, whether it came from `--repo <path>` or (absent that
+        // flag) the current directory, so a caller never has to guess which
+        // repository a saved report was scored from (issue #114).
+        "repo": repo.display().to_string(),
+        "revspec": revspec,
+        "score": score,
+        "risk_percentile": percentile,
+        "level": level,
+        "signals": signals,
+        "files": files_value,
+    });
+    if let Some(warning) = warning {
+        result["warning"] = json!(warning);
+    }
+    result
+}
+
+/// The four signal breakdowns and their weights, without the percentile
+/// sampling fields — those belong to a whole-change report, not to a score
+/// as such. Shared with `change_risk::score_subset`, which reports the same
+/// breakdown per review unit (issue #150); one writer keeps the two shapes
+/// from drifting.
+pub(super) fn signals_value(scored: &Scored) -> Value {
+    json!({
         "diff": {
             "filesTouched": scored.diff.files_touched,
             "insertions": scored.diff.insertions,
@@ -62,27 +91,7 @@ pub(super) fn build_report(
             "bugMagnet": WEIGHT_BUG_MAGNET,
             "churn": WEIGHT_CHURN,
         },
-        "sampleRequested": sample_requested,
-        "sampleUsed": sample_used,
-    });
-    let mut result = json!({
-        "schema": "code-intel-change-risk.v1",
-        // Resolved Git root the score was computed against — always
-        // present, whether it came from `--repo <path>` or (absent that
-        // flag) the current directory, so a caller never has to guess which
-        // repository a saved report was scored from (issue #114).
-        "repo": repo.display().to_string(),
-        "revspec": revspec,
-        "score": score,
-        "risk_percentile": percentile,
-        "level": level,
-        "signals": signals,
-        "files": files_value,
-    });
-    if let Some(warning) = warning {
-        result["warning"] = json!(warning);
-    }
-    result
+    })
 }
 
 /// Derived strictly from the same JSON `Value` the JSON output serializes —
