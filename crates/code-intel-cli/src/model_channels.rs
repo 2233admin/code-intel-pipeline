@@ -1,5 +1,7 @@
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde_json::{json, Map, Value};
 
@@ -233,13 +235,69 @@ fn validate_inventory(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
+fn merge_cc_switch_candidates(inventory: &mut Value) -> Result<(), String> {
+    let cc_switch_endpoint = match env::var("CODE_INTEL_CC_SWITCH_ENDPOINT") {
+        Ok(endpoint) => endpoint,
+        Err(_) => return Ok(()),
+    };
+
+    let url = format!("{}/api/channels", cc_switch_endpoint.trim_end_matches('/'));
+    let cc_switch_api_key = env::var("CODE_INTEL_CC_SWITCH_API_KEY").ok();
+
+    let client = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(5))
+        .build();
+
+    let mut req = client.get(&url);
+    if let Some(key) = cc_switch_api_key {
+        req = req.set("Authorization", &format!("Bearer {}", key));
+    }
+
+    let response = req.call().map_err(|e| format!("CC Switch request failed: {}", e))?;
+
+    if response.status() != 200 {
+        return Err(format!("CC Switch returned status {}", response.status()));
+    }
+
+    let cc_data: Value = response.into_json()
+        .map_err(|e| format!("CC Switch response parse failed: {}", e))?;
+
+    let channels = cc_data.get("channels")
+        .and_then(Value::as_array)
+        .ok_or("CC Switch response missing 'channels' array")?;
+
+    let candidates = inventory
+        .get_mut("candidates")
+        .and_then(Value::as_array_mut)
+        .ok_or("inventory missing candidates array")?;
+
+    for channel in channels {
+        let mut candidate = channel.clone();
+        if !candidate.is_object() {
+            continue;
+        }
+        if candidate.get("source").is_none() {
+            candidate["source"] = json!("cc_switch");
+        }
+        if candidate.get("diagnostics").is_none() {
+            candidate["diagnostics"] = json!([]);
+        }
+        candidates.push(candidate);
+    }
+
+    Ok(())
+}
+
 pub(crate) fn route(request: &Value) -> Result<Value, String> {
     let object = exact_object(request, &["schema", "inventory", "policy", "workload"])?;
     exact_string(object, "schema", "code-intel-model-routing-request.v1")?;
-    let inventory = object
+    let mut inventory = object
         .get("inventory")
-        .expect("exact object contains inventory");
-    validate_inventory(inventory)?;
+        .expect("exact object contains inventory")
+        .clone();
+
+    merge_cc_switch_candidates(&mut inventory)?;
+    validate_inventory(&inventory)?;
     let policy = exact_object(
         object.get("policy").expect("exact object contains policy"),
         &[
@@ -273,7 +331,10 @@ pub(crate) fn route(request: &Value) -> Result<Value, String> {
     )?;
     let requires_external = bool_field(workload, "requiresExternalData")?;
 
-    let candidates = inventory["candidates"].as_array().expect("validated array");
+    let candidates = inventory["candidates"]
+        .as_array()
+        .expect("validated array")
+        .clone();
     let mut ordered: Vec<&Value> = Vec::with_capacity(candidates.len());
     if let Some(pinned_id) = pinned {
         if let Some(candidate) = candidates
