@@ -175,9 +175,9 @@ struct AmbiguousSource {
 }
 
 /// A scan target repin could not read at all. `gates_clean` is false only
-/// for binary files, which structurally cannot hold a pin in this repo's
-/// convention; anything else (too large, unreadable) means real text went
-/// uninspected and must not be reported as "clean".
+/// for binary files and symlinks, which structurally cannot hold a pin in
+/// this repo's convention; anything else (too large, unreadable) means real
+/// text went uninspected and must not be reported as "clean".
 struct SkippedFile {
     path: String,
     reason: String,
@@ -304,11 +304,13 @@ fn print_human(report: &RepinReport, write: bool) {
     }
     let action = if write { "rewrote" } else { "found" };
     println!(
-        "repin: {action} {} substitution(s) across {} file(s) in {} pass(es); {} orphaned pin(s)",
+        "repin: {action} {} substitution(s) across {} file(s) in {} pass(es); {} orphaned pin(s), {} ambiguous digest(s), {} skipped file(s)",
         report.total_substitutions(),
         report.findings.len(),
         report.passes,
-        report.orphaned.len()
+        report.orphaned.len(),
+        report.ambiguous.len(),
+        report.skipped.len()
     );
 }
 
@@ -330,6 +332,13 @@ fn flush(repo: &Path, report: &RepinReport) -> Result<(), String> {
             let _ = fs::remove_file(&temporary);
             return Err(format!("write {path}: {error}"));
         }
+        // Best-effort: `fs::write` creates `temporary` with default
+        // permissions, which would silently drop the original file's mode
+        // (e.g. an executable bit) across the rename below. A failure to
+        // read or set permissions is not fatal to the rewrite itself.
+        if let Ok(metadata) = fs::metadata(&target) {
+            let _ = fs::set_permissions(&temporary, metadata.permissions());
+        }
         if let Err(error) = fs::rename(&temporary, &target) {
             let _ = fs::remove_file(&temporary);
             return Err(format!("replace {path}: {error}"));
@@ -342,9 +351,13 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
     let mut excludes: Vec<String> = DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect();
     excludes.extend(extra_excludes.iter().cloned());
     let is_excluded = |path: &str| {
-        excludes
-            .iter()
-            .any(|prefix| path.starts_with(prefix.as_str()))
+        excludes.iter().any(|prefix| {
+            let prefix = prefix.trim_end_matches('/');
+            path == prefix
+                || path
+                    .strip_prefix(prefix)
+                    .is_some_and(|rest| rest.starts_with('/'))
+        })
     };
 
     let digests = snapshot::repin_digests(repo)?;
@@ -565,6 +578,7 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
 /// uninspected, which the report must never fold into a silent "clean".
 enum LoadError {
     Binary,
+    Symlink,
     TooLarge,
     Unreadable(String),
 }
@@ -573,19 +587,28 @@ impl LoadError {
     fn message(&self) -> String {
         match self {
             LoadError::Binary => "not valid UTF-8 (binary file)".to_string(),
+            LoadError::Symlink => "symbolic link (target is not scanned for pins)".to_string(),
             LoadError::TooLarge => format!("exceeds {MAX_FILE_BYTES} byte scan limit"),
             LoadError::Unreadable(detail) => format!("unreadable: {detail}"),
         }
     }
 
     fn gates_clean(&self) -> bool {
-        !matches!(self, LoadError::Binary)
+        !matches!(self, LoadError::Binary | LoadError::Symlink)
     }
 }
 
 fn load_text(repo: &Path, path: &str) -> Result<Vec<u8>, LoadError> {
     let full = repo.join(path);
-    let metadata = fs::metadata(&full).map_err(|error| LoadError::Unreadable(error.to_string()))?;
+    // `symlink_metadata` (unlike `metadata`) does not follow a symlink, so a
+    // tracked symlink is caught here instead of falling through to `is_file`
+    // on its *target*: if it were loaded and later rewritten, `flush` would
+    // rename a regular file on top of the link path, destroying the symlink.
+    let metadata =
+        fs::symlink_metadata(&full).map_err(|error| LoadError::Unreadable(error.to_string()))?;
+    if metadata.is_symlink() {
+        return Err(LoadError::Symlink);
+    }
     if !metadata.is_file() {
         return Err(LoadError::Unreadable("not a regular file".to_string()));
     }
