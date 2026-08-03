@@ -122,6 +122,14 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
         probe::probe_tool("repowise", options.require_repowise, prefix),
         probe::probe_tool("repomix", false, prefix),
         probe::probe_tool("sentrux", !builtin_sentrux, prefix),
+        // `edit.ast-grep-plan` ships as a production capability whose runtime
+        // adapter resolves `ast-grep` through `tool_path`, so a machine
+        // without it only finds out at capability-exec time, as
+        // `Unavailable("start ast-grep: ...")`. Optional because
+        // `orchestration/toolchain-versions.v1.json` declares ast-grep
+        // `required: false` — but observed, so the doctor stops omitting a
+        // tool a shipped capability cannot run without.
+        probe::probe_tool("ast-grep", false, prefix),
     ];
 
     let sentrux_core = probe::probe_command_output(
@@ -742,7 +750,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             names,
-            vec!["rg", "git", "python", "repowise", "repomix", "sentrux"]
+            vec!["rg", "git", "python", "repowise", "repomix", "sentrux", "ast-grep"]
         );
         fs::remove_dir_all(root).ok();
     }
