@@ -1114,10 +1114,41 @@ textHash = $hash
 source = "native-minimal"
 })
 
-foreach ($symbol in $fileSymbols) {
+# Symbol-bounded chunks: declaration line through the line before the next
+# declaration (last one runs to end of file). Mirrors
+# crates/code-intel-cli/src/native_code_evidence.rs::symbol_region_chunks --
+# tests/native_code_evidence.rs compares both producers' chunks.json
+# byte-for-byte after canonical sorting, so any drift here fails that test.
+$symbolStarts = @($fileSymbols | ForEach-Object { [int]$_.startLine })
+$lastLine = [Math]::Max(1, $lines.Count)
+for ($symbolIndex = 0; $symbolIndex -lt $fileSymbols.Count; $symbolIndex++) {
+$symbol = $fileSymbols[$symbolIndex]
+$chunkStart = $symbolStarts[$symbolIndex]
+$chunkEnd = if ($symbolIndex + 1 -lt $symbolStarts.Count) { [Math]::Max($chunkStart, $symbolStarts[$symbolIndex + 1] - 1) } else { [Math]::Max($chunkStart, $lastLine) }
+$sliceEnd = [Math]::Min($chunkEnd, $lines.Count)
+$sliceText = if ($sliceEnd -ge $chunkStart) { [string]::Join("`n", @($lines[($chunkStart - 1)..($sliceEnd - 1)])) } else { "" }
+$sliceBytes = [System.Text.Encoding]::UTF8.GetBytes($sliceText)
+$sliceHash = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::HashData($sliceBytes)).Replace("-", "").ToLowerInvariant()
+$symbolChunkId = "$relativePath#symbol:$chunkStart" + ":" + $symbol.kind + ":" + $symbol.name
+$chunks.Add([ordered]@{
+id = $symbolChunkId
+file = $relativePath
+startLine = $chunkStart
+endLine = $chunkEnd
+kind = "symbol"
+containsSymbols = @($symbol.id)
+textHash = $sliceHash
+source = "native-minimal"
+})
 $symbolChunks.Add([ordered]@{
 symbolId = $symbol.id
 chunkId = $chunkId
+relation = "contained_by"
+confidence = 0.55
+})
+$symbolChunks.Add([ordered]@{
+symbolId = $symbol.id
+chunkId = $symbolChunkId
 relation = "contained_by"
 confidence = 0.55
 })
@@ -1168,7 +1199,9 @@ symbols = $symbolsArray.Count
 chunks = $chunksArray.Count
 imports = $importsArray.Count
 symbolContainmentRate = if ($symbolsArray.Count -gt 0) { 1.0 } else { $null }
-fallbackChunkRate = 1.0
+# Share of chunks that are whole-file fallbacks rather than symbol-bounded
+# regions; was hardcoded 1.0 when whole-file chunks were the only kind.
+fallbackChunkRate = if ($chunksArray.Count -gt 0) { (@($chunksArray | Where-Object { $_.kind -eq "file" }).Count) / $chunksArray.Count } else { 1.0 }
 }
 }
 $scorecardPath = Join-Path $root "merged\scorecard.json"

@@ -53,7 +53,8 @@
       "required": ["id", "file", "startLine", "endLine", "kind", "containsSymbols", "textHash", "source"],
       "properties": {
         "id": { "type": "string", "minLength": 1 }, "file": { "$ref": "#/$defs/path" },
-        "startLine": { "type": "integer", "minimum": 1 }, "endLine": { "type": "integer", "minimum": 1 }, "kind": { "const": "file" },
+        "startLine": { "type": "integer", "minimum": 1 }, "endLine": { "type": "integer", "minimum": 1 },
+        "kind": { "enum": ["file", "symbol"] },
         "containsSymbols": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "textHash": { "$ref": "#/$defs/digest" }, "source": { "const": "native-minimal" }
       }

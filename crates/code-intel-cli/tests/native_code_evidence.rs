@@ -281,7 +281,12 @@ fn native_atom_preserves_representative_v1_artifacts_through_a01_a03_a09() {
         .any(|import| import["target"] == "./index"));
     assert_eq!(scorecard["schema"], "code-evidence-scorecard.v1");
     assert_eq!(scorecard["metrics"]["files"], 2);
-    assert_eq!(scorecard["metrics"]["chunks"], 2);
+    // 2 whole-file chunks + 1 symbol chunk (index.js's `greet`; index.test.js
+    // has no extracted symbol). Was 2 before symbol-bounded chunks existed.
+    assert_eq!(scorecard["metrics"]["chunks"], 3);
+    // ... so exactly two thirds of the chunks are still whole-file fallbacks.
+    // This metric was hardcoded 1.0 while whole-file chunks were the only kind.
+    assert_eq!(scorecard["metrics"]["fallbackChunkRate"], 2.0 / 3.0);
     assert_eq!(ranking["schema"], "agent-code-slice-ranking.v1");
     assert!(ranking["files"].as_array().unwrap().iter().any(|file| {
         file["path"] == "index.js"
@@ -295,6 +300,84 @@ fn native_atom_preserves_representative_v1_artifacts_through_a01_a03_a09() {
     assert!(root
         .join("merged/agent/slices/native-retrieval.md")
         .is_file());
+}
+
+#[test]
+fn symbol_chunks_bound_a_declaration_while_the_whole_file_chunk_is_retained() {
+    let temp = Temp::new("symbol-chunks");
+    let repo = temp.0.join("repo");
+    let out = temp.0.join("run");
+    fs::create_dir_all(&repo).unwrap();
+    // 6 lines + trailing newline: `lines()` splits on '\n', so the file has a
+    // 7th (empty) element and endLine 7 for the whole-file chunk.
+    fs::write(
+        repo.join("lib.py"),
+        "import os\n\n\ndef first():\n    return os\n\n\ndef second():\n    return 2\n",
+    )
+    .unwrap();
+    // No extracted symbol at all: this file must still get its whole-file
+    // chunk, which is the only pointer a consumer can ever resolve for it.
+    fs::write(repo.join("notes.txt"), "prose only\n").unwrap();
+
+    run(&repo, &out);
+    let chunks = read_json(
+        out.join("evidence.native-code/code-evidence/merged/full/chunks.json"),
+    );
+    let rows = chunks["chunks"].as_array().unwrap();
+
+    let bounds = |id: &str| {
+        let row = rows
+            .iter()
+            .find(|row| row["id"] == id)
+            .unwrap_or_else(|| panic!("no chunk {id}; got {rows:#?}"));
+        (
+            row["kind"].as_str().unwrap().to_string(),
+            row["startLine"].as_u64().unwrap(),
+            row["endLine"].as_u64().unwrap(),
+        )
+    };
+
+    // `first` runs from its own declaration to the line before `second`'s,
+    // and `second` runs to end of file -- neither starts at line 1, which is
+    // the whole point: a chunk hit now resolves near the thing it names.
+    assert_eq!(bounds("lib.py#symbol:4:function:first"), ("symbol".into(), 4, 7));
+    assert_eq!(
+        bounds("lib.py#symbol:8:function:second"),
+        ("symbol".into(), 8, 10)
+    );
+    // Whole-file chunks survive for both files: consumers that resolve a
+    // pointer through a file-level chunk (the only option for a language with
+    // no symbol extraction at all) must not lose it.
+    assert_eq!(bounds("lib.py#file"), ("file".into(), 1, 10));
+    assert_eq!(bounds("notes.txt#file"), ("file".into(), 1, 2));
+    assert!(
+        !rows.iter().any(|row| row["file"] == "notes.txt" && row["kind"] == "symbol"),
+        "a file with no extracted symbols must gain no symbol chunks"
+    );
+
+    // Every symbol chunk names exactly the symbol it bounds, and each symbol
+    // is mapped to both the whole-file chunk and its own symbol chunk.
+    let symbols = read_json(
+        out.join("evidence.native-code/code-evidence/merged/full/symbols.json"),
+    );
+    let mappings = read_json(
+        out.join("evidence.native-code/code-evidence/merged/full/symbol-chunks.json"),
+    );
+    for symbol in symbols["symbols"].as_array().unwrap() {
+        let id = symbol["id"].as_str().unwrap();
+        let targets = mappings["mappings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["symbolId"] == id)
+            .map(|row| row["chunkId"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(targets.len(), 2, "{id} must map to file chunk and symbol chunk");
+        assert!(targets.contains(&"lib.py#file"));
+    }
+    for row in rows.iter().filter(|row| row["kind"] == "symbol") {
+        assert_eq!(row["containsSymbols"].as_array().unwrap().len(), 1);
+    }
 }
 
 #[test]

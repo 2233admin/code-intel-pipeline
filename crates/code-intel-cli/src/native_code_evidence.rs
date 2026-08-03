@@ -123,14 +123,22 @@ pub(crate) fn execute(
             "textHash":hash,
             "source":"native-minimal"
         }));
-        for symbol in &file_symbols {
+        let symbol_regions = symbol_region_chunks(&relative, &lines, &file_symbols);
+        for (symbol, region) in file_symbols.iter().zip(&symbol_regions) {
             mappings.push(json!({
                 "symbolId":symbol["id"],
                 "chunkId":chunk_id,
                 "relation":"contained_by",
                 "confidence":0.55
             }));
+            mappings.push(json!({
+                "symbolId":symbol["id"],
+                "chunkId":region["id"],
+                "relation":"contained_by",
+                "confidence":0.55
+            }));
         }
+        chunks.extend(symbol_regions);
         symbols.extend(file_symbols);
         imports.extend(extract_imports(&relative, language, &lines));
     }
@@ -181,7 +189,12 @@ pub(crate) fn execute(
             "chunks":chunks.len(),
             "imports":imports.len(),
             "symbolContainmentRate":if symbols.is_empty() { Value::Null } else { json!(1.0) },
-            "fallbackChunkRate":1.0
+            // Share of chunks that are whole-file fallbacks rather than
+            // symbol-bounded regions. This was hardcoded 1.0 back when every
+            // chunk really was one whole-file fallback; leaving it at 1.0 now
+            // that symbol_region_chunks exists would be a false claim about
+            // the very thing the metric names.
+            "fallbackChunkRate":fallback_chunk_rate(&chunks)
         }
     });
     let agent_views = render_agent_views(&ranking, &files);
@@ -266,6 +279,74 @@ pub(crate) fn execute(
     })
 }
 
+/// One chunk per extracted symbol, bounded by that symbol's declaration line
+/// through the line before the next declaration in the same file (last symbol
+/// runs to end of file).
+///
+/// Why this exists: every file used to emit exactly one chunk, `startLine: 1`
+/// to `endLine: <file length>`. A consumer that matched a chunk therefore got
+/// line 1 of the file as its pointer no matter which symbol the chunk's
+/// `containsSymbols` had actually named -- a chunk hit could not tell you
+/// *where* in the file the named thing was, only that it was somewhere in it.
+/// These chunks resolve to the declaration itself.
+///
+/// Declaration-to-next-declaration is a deliberate approximation, not a parsed
+/// body: this producer is a line heuristic (`parserKind: "line-heuristic"`),
+/// it has no brace/indent tracking, and inventing a "real" body range would be
+/// exactly the kind of precision inflation `coverage.json` promises not to
+/// claim. The range is a superset of the body -- it also swallows any trailing
+/// comments, attributes, or blank lines between one declaration and the next.
+///
+/// `extract_symbols` walks lines in order and emits at most one symbol per
+/// line, so `startLine` is strictly increasing here and doubles as the
+/// within-file uniquifier in the chunk id: `{kind}:{name}` alone collides
+/// (this repository has 31 such collisions today, e.g. 9 `from_value`
+/// functions in audit_report/model.rs), and a chunk id that is not unique is
+/// not an id.
+///
+/// `textHash` covers the region's newline-joined lines, not raw file bytes:
+/// `lines()` has already normalized CRLF away and dropped byte offsets, so a
+/// region hash is defined on the normalized text both this producer and the
+/// legacy PowerShell producer see. It is deliberately NOT comparable to the
+/// whole-file `textHash`, which hashes the file's raw bytes.
+fn symbol_region_chunks(path: &str, lines: &[&str], file_symbols: &[Value]) -> Vec<Value> {
+    let starts = file_symbols
+        .iter()
+        .map(|symbol| u64_field(symbol, "startLine") as usize)
+        .collect::<Vec<_>>();
+    let last_line = lines.len().max(1);
+    starts
+        .iter()
+        .enumerate()
+        .map(|(index, &start)| {
+            let end = starts
+                .get(index + 1)
+                .map(|next| next.saturating_sub(1))
+                .unwrap_or(last_line)
+                .max(start);
+            let symbol = &file_symbols[index];
+            let text = lines
+                .get(start.saturating_sub(1)..end.min(lines.len()))
+                .unwrap_or_default()
+                .join("\n");
+            json!({
+                "id":format!(
+                    "{path}#symbol:{start}:{}:{}",
+                    string_field(symbol, "kind"),
+                    string_field(symbol, "name")
+                ),
+                "file":path,
+                "startLine":start,
+                "endLine":end,
+                "kind":"symbol",
+                "containsSymbols":[symbol["id"].clone()],
+                "textHash":sha256_hex(text.as_bytes()),
+                "source":"native-minimal"
+            })
+        })
+        .collect()
+}
+
 fn canonicalize_evidence_arrays(
     files: &mut [Value],
     symbols: &mut [Value],
@@ -301,6 +382,17 @@ fn canonicalize_evidence_arrays(
             .then_with(|| string_field(left, "target").cmp(string_field(right, "target")))
     });
     unsupported_files.sort();
+}
+
+fn fallback_chunk_rate(chunks: &[Value]) -> Value {
+    if chunks.is_empty() {
+        return json!(1.0);
+    }
+    let fallback = chunks
+        .iter()
+        .filter(|chunk| string_field(chunk, "kind") == "file")
+        .count();
+    json!(fallback as f64 / chunks.len() as f64)
 }
 
 fn string_field<'a>(value: &'a Value, field: &str) -> &'a str {
@@ -358,7 +450,7 @@ fn render_agent_views(ranking: &Value, files: &[Value]) -> Vec<(&'static str, St
         ),
         (
             "code-evidence/merged/agent/slices/risk-hotspots.md",
-            "# Risk Hotspots\n\n- Native minimal layer does not calculate complexity.\n- Treat file-sized chunks as fallback evidence.\n- Call graph and cross-file relationship precision are unknown.\n".into(),
+            "# Risk Hotspots\n\n- Native minimal layer does not calculate complexity.\n- Treat file-sized chunks (kind: file) as fallback evidence.\n- Symbol chunks (kind: symbol) span a declaration to the next declaration, not a parsed body.\n- Call graph and cross-file relationship precision are unknown.\n".into(),
         ),
     ]
 }
