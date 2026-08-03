@@ -31,6 +31,7 @@ mod file_boundary;
 mod graph;
 mod hardened_git;
 mod hospital_score;
+mod i18n;
 mod impact_graph;
 mod method_catalog;
 mod model_channels;
