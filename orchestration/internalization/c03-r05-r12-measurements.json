@@ -23,7 +23,7 @@
       "unsupportedLanguageRelationshipPrecision": "unknown",
       "suiteElapsedMs": 27110,
       "sourceSha256": "ca31464e618725044ba7e28a6e62eb429cb26eb8ecd8b84f1f4839bbd758ccbf",
-      "testSha256": "ad8107fdcb593632aabe1b37f823b0707b4b1359cdc1882a19d700c0e7696ae6",
+      "testSha256": "ce88eae3bda64d667036d8ddb58bce10ffbf12031cfe0e68c2d1170ae35ddfdc",
       "labeledCorpus": {
         "fixture": "orchestration/internalization/fixtures/r06-native-labeled-corpus.json",
         "samples": 12,

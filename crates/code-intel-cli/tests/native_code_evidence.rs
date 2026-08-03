@@ -320,9 +320,7 @@ fn symbol_chunks_bound_a_declaration_while_the_whole_file_chunk_is_retained() {
     fs::write(repo.join("notes.txt"), "prose only\n").unwrap();
 
     run(&repo, &out);
-    let chunks = read_json(
-        out.join("evidence.native-code/code-evidence/merged/full/chunks.json"),
-    );
+    let chunks = read_json(out.join("evidence.native-code/code-evidence/merged/full/chunks.json"));
     let rows = chunks["chunks"].as_array().unwrap();
 
     let bounds = |id: &str| {
@@ -340,7 +338,10 @@ fn symbol_chunks_bound_a_declaration_while_the_whole_file_chunk_is_retained() {
     // `first` runs from its own declaration to the line before `second`'s,
     // and `second` runs to end of file -- neither starts at line 1, which is
     // the whole point: a chunk hit now resolves near the thing it names.
-    assert_eq!(bounds("lib.py#symbol:4:function:first"), ("symbol".into(), 4, 7));
+    assert_eq!(
+        bounds("lib.py#symbol:4:function:first"),
+        ("symbol".into(), 4, 7)
+    );
     assert_eq!(
         bounds("lib.py#symbol:8:function:second"),
         ("symbol".into(), 8, 10)
@@ -351,18 +352,18 @@ fn symbol_chunks_bound_a_declaration_while_the_whole_file_chunk_is_retained() {
     assert_eq!(bounds("lib.py#file"), ("file".into(), 1, 10));
     assert_eq!(bounds("notes.txt#file"), ("file".into(), 1, 2));
     assert!(
-        !rows.iter().any(|row| row["file"] == "notes.txt" && row["kind"] == "symbol"),
+        !rows
+            .iter()
+            .any(|row| row["file"] == "notes.txt" && row["kind"] == "symbol"),
         "a file with no extracted symbols must gain no symbol chunks"
     );
 
     // Every symbol chunk names exactly the symbol it bounds, and each symbol
     // is mapped to both the whole-file chunk and its own symbol chunk.
-    let symbols = read_json(
-        out.join("evidence.native-code/code-evidence/merged/full/symbols.json"),
-    );
-    let mappings = read_json(
-        out.join("evidence.native-code/code-evidence/merged/full/symbol-chunks.json"),
-    );
+    let symbols =
+        read_json(out.join("evidence.native-code/code-evidence/merged/full/symbols.json"));
+    let mappings =
+        read_json(out.join("evidence.native-code/code-evidence/merged/full/symbol-chunks.json"));
     for symbol in symbols["symbols"].as_array().unwrap() {
         let id = symbol["id"].as_str().unwrap();
         let targets = mappings["mappings"]
@@ -372,7 +373,11 @@ fn symbol_chunks_bound_a_declaration_while_the_whole_file_chunk_is_retained() {
             .filter(|row| row["symbolId"] == id)
             .map(|row| row["chunkId"].as_str().unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(targets.len(), 2, "{id} must map to file chunk and symbol chunk");
+        assert_eq!(
+            targets.len(),
+            2,
+            "{id} must map to file chunk and symbol chunk"
+        );
         assert!(targets.contains(&"lib.py#file"));
     }
     for row in rows.iter().filter(|row| row["kind"] == "symbol") {
