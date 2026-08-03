@@ -17,7 +17,7 @@ evidence, so the engine emits diagnostics and keeps `productionEnabled=false`.
 | `internalization.graph-record` | B02 adapter and conformance SHA-256 plus separately traced internal and external implementations | external revision/license/runtime/conformance, maintenance/security, representative utility/cost, exit and retirement proof |
 | `internalization.sentrux-record` | B03 adapter and conformance SHA-256 plus registered adapter/runtime operations | upstream revision/license, Windows/plugin conformance, maintenance/security, representative value/cost, shim retirement proof |
 | `internalization.codenexus-record` | B04 adapter and conformance SHA-256 plus full/lite swap and registered production operations | full-provider revision/license/runtime/security/maintenance, measured localization value/cost, exit and lite retirement proof |
-| `internalization.openspec-record` | 5 `openspec-opsx` occurrences in the current advisory atom | upstream revision, license, update, security |
+| `internalization.openspec-record` | 5 `openspec-opsx` occurrences in the current advisory atom | update, security (upstream revision and license admitted 2026-08-04, issue #156) |
 | `internalization.spec-kit-record` | 8 `spec-kit` occurrences in the current advisory atom | upstream revision, license, update, security |
 | `internalization.matt-flow-record` | 1 matt-flow candidate branch | upstream revision, license, update, security |
 | `internalization.gstack-record` | 1 gstack candidate branch | canonical source, upstream revision, license, update, security |
