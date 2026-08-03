@@ -1430,11 +1430,61 @@ fn stable_unversioned_snapshot(
     Ok((first, after_paths))
 }
 
+/// Longest slice of a failed command's stream that a diagnostic will carry.
+/// Node diagnostics travel through run manifests and JSON result envelopes,
+/// so the evidence must stay bounded rather than embedding an arbitrarily
+/// verbose Git complaint.
+const GIT_FAILURE_STREAM_LIMIT: usize = 512;
+
+fn bounded_stream_text(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    let trimmed = text.trim();
+    if trimmed.chars().count() <= GIT_FAILURE_STREAM_LIMIT {
+        return trimmed.to_string();
+    }
+    let mut bounded: String = trimmed.chars().take(GIT_FAILURE_STREAM_LIMIT).collect();
+    bounded.push_str(" [truncated]");
+    bounded
+}
+
+/// A failed Git invocation reports the command, where it ran, and how it
+/// exited — never stderr alone. A `git` that dies without running (wrapper
+/// spawn failure, DLL load failure, stack overflow) exits nonzero with empty
+/// stderr, and a diagnostic built from stderr alone then trails off into
+/// nothing — the undiagnosable `cannot enumerate untracked snapshot inputs: `
+/// of issue #123. The exit status is the one piece of evidence such a death
+/// always leaves; stdout stands in when stderr is empty because wrappers can
+/// misroute their complaint.
+fn git_failure_detail(repo: &Path, args: &[&str], output: &std::process::Output) -> String {
+    let stderr = bounded_stream_text(&output.stderr);
+    let stdout = bounded_stream_text(&output.stdout);
+    let evidence = if !stderr.is_empty() {
+        format!("stderr: {stderr}")
+    } else if !stdout.is_empty() {
+        format!("no stderr output; stdout: {stdout}")
+    } else {
+        "no stderr output".to_string()
+    };
+    format!(
+        "`git {}` in {} failed with {}; {}",
+        args.join(" "),
+        repo.display(),
+        output.status,
+        evidence
+    )
+}
+
 fn git_output(repo: &Path, args: &[&str]) -> Result<std::process::Output, SnapshotError> {
     hardened_git::command(repo)
         .args(args)
         .output()
-        .map_err(|error| SnapshotError::Unavailable(format!("cannot launch Git: {error}")))
+        .map_err(|error| {
+            SnapshotError::Unavailable(format!(
+                "cannot launch Git for `git {}` in {}: {error}",
+                args.join(" "),
+                repo.display()
+            ))
+        })
 }
 
 fn git_required(repo: &Path, args: &[&str], action: &str) -> Result<Vec<u8>, SnapshotError> {
@@ -1442,7 +1492,7 @@ fn git_required(repo: &Path, args: &[&str], action: &str) -> Result<Vec<u8>, Sna
     if !output.status.success() {
         return Err(SnapshotError::Unavailable(format!(
             "cannot {action}: {}",
-            String::from_utf8_lossy(&output.stderr)
+            git_failure_detail(repo, args, &output)
         )));
     }
     Ok(output.stdout)
@@ -1497,7 +1547,7 @@ fn batch_read_blobs(
     if !output.status.success() {
         return Err(SnapshotError::Unavailable(format!(
             "cannot read Git tree blobs: {}",
-            String::from_utf8_lossy(&output.stderr)
+            git_failure_detail(repo, &["cat-file", "--batch"], &output)
         )));
     }
 
@@ -1710,5 +1760,82 @@ mod tests {
             let mut overlay = Overlay::default();
             assert!(classify_status(&mut overlay, status, "file").is_err());
         }
+    }
+
+    fn exit_status(code: i32) -> std::process::ExitStatus {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::ExitStatusExt;
+            std::process::ExitStatus::from_raw(code as u32)
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            // Unix from_raw takes a wait status; the exit code sits in the
+            // high byte.
+            std::process::ExitStatus::from_raw(code << 8)
+        }
+    }
+
+    fn failed_git(code: i32, stdout: &[u8], stderr: &[u8]) -> std::process::Output {
+        std::process::Output {
+            status: exit_status(code),
+            stdout: stdout.to_vec(),
+            stderr: stderr.to_vec(),
+        }
+    }
+
+    /// The issue #123 shape: git exits nonzero having written nothing. The
+    /// detail must still name the command, the repository, and the exit
+    /// status instead of trailing off after a colon.
+    #[test]
+    fn silent_git_death_still_names_command_and_exit_status() {
+        let args = ["ls-files", "--others", "-z", "--", "."];
+        let detail =
+            git_failure_detail(Path::new("fixture-repo"), &args, &failed_git(127, b"", b""));
+        assert!(detail.contains("git ls-files --others -z -- ."), "{detail}");
+        assert!(detail.contains("fixture-repo"), "{detail}");
+        assert!(detail.contains("127"), "{detail}");
+        assert!(detail.contains("no stderr output"), "{detail}");
+    }
+
+    #[test]
+    fn stderr_when_present_is_the_evidence() {
+        let detail = git_failure_detail(
+            Path::new("repo"),
+            &["status"],
+            &failed_git(128, b"", b"fatal: not a git repository\n"),
+        );
+        assert!(detail.contains("fatal: not a git repository"), "{detail}");
+        assert!(!detail.contains("no stderr output"), "{detail}");
+    }
+
+    #[test]
+    fn stdout_stands_in_when_stderr_is_empty() {
+        let detail = git_failure_detail(
+            Path::new("repo"),
+            &["status"],
+            &failed_git(1, b"error text on the wrong stream\n", b""),
+        );
+        assert!(detail.contains("no stderr output"), "{detail}");
+        assert!(
+            detail.contains("error text on the wrong stream"),
+            "{detail}"
+        );
+    }
+
+    #[test]
+    fn failure_streams_are_bounded_in_diagnostics() {
+        let noisy = "x".repeat(GIT_FAILURE_STREAM_LIMIT * 4);
+        let detail = git_failure_detail(
+            Path::new("repo"),
+            &["status"],
+            &failed_git(128, b"", noisy.as_bytes()),
+        );
+        assert!(detail.contains("[truncated]"), "{detail}");
+        assert!(
+            detail.len() < noisy.len(),
+            "diagnostic must not embed the whole stream"
+        );
     }
 }
