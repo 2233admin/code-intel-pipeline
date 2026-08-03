@@ -4,6 +4,7 @@ use std::process;
 
 mod adapter_contract;
 mod admissibility;
+mod anchor_verification;
 mod artifact_index;
 mod artifact_ref;
 mod artifacts;
