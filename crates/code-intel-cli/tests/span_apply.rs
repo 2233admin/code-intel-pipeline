@@ -111,12 +111,22 @@ struct Applied {
 }
 
 fn apply(repo: &Path, file: &str, spans: &[(usize, usize, usize, &str, &str)]) -> Applied {
+    apply_with(repo, file, spans, &["--envelope"])
+}
+
+fn apply_with(
+    repo: &Path,
+    file: &str,
+    spans: &[(usize, usize, usize, &str, &str)],
+    extra: &[&str],
+) -> Applied {
     let mut command = Command::new(env!("CARGO_BIN_EXE_code-intel"));
     command
         .args(["edit", "apply", "--repo-path"])
         .arg(repo)
         .args(["--file", file, "--manifest"])
-        .arg(manifest());
+        .arg(manifest())
+        .args(extra);
     for (line, start, end, digest, replacement) in spans {
         command.args([
             "--span",
@@ -270,6 +280,54 @@ fn two_spans_on_one_line_are_applied_against_the_same_pre_edit_bytes() {
     // The untouched line keeps the old identifier: this primitive replaces
     // spans, it does not rename symbols.
     assert!(after.contains("let _ = retry_budget;"), "{after}");
+}
+
+/// A primitive that exists to make a small change cheap must not spend the
+/// saving on its own answer. The default reply carries the evidence and
+/// nothing else; the capability envelope is opt-in.
+#[test]
+fn the_default_reply_stays_small_and_still_carries_the_refusal_evidence() {
+    let fixture = Fixture::create("terse");
+    let before = fixture.source();
+    let (line, start, end, digest) = span_of(&before, "retry_budget");
+
+    let applied = apply_with(
+        &fixture.root,
+        "src/lib.rs",
+        &[(line, start, end, &digest, "retry_budget_ms")],
+        &[],
+    );
+    assert_eq!(applied.exit_code, 0, "stderr={}", applied.stderr);
+    assert_eq!(applied.document["envelope"], Value::Null);
+    assert_eq!(applied.document["applied"], json!(true));
+    let rendered = serde_json::to_string(&applied.document).unwrap();
+    assert!(
+        rendered.len() < 1024,
+        "a one-identifier edit answered in {} bytes: {rendered}",
+        rendered.len()
+    );
+
+    // The same terseness must not cost the refusal its evidence. The span now
+    // holds `retry_budget` again — the first twelve bytes of the identifier
+    // just written — so a digest of anything else is a genuine mismatch.
+    let refused = apply_with(
+        &fixture.root,
+        "src/lib.rs",
+        &[(
+            line,
+            start,
+            end,
+            &sha256_hex(b"something else entirely"),
+            "wrecked",
+        )],
+        &[],
+    );
+    assert_eq!(refused.exit_code, 10);
+    assert_eq!(refused.document["envelope"], Value::Null);
+    assert_eq!(
+        refused.document["spanEdit"]["spans"][0]["foundText"],
+        json!("retry_budget")
+    );
 }
 
 /// Coordinates rot in the other direction too: an index that points past the

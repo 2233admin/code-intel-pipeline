@@ -65,6 +65,7 @@ struct Cli {
     spans: Vec<Value>,
     out: Option<PathBuf>,
     manifest: Option<PathBuf>,
+    envelope: bool,
 }
 
 impl Cli {
@@ -73,10 +74,23 @@ impl Cli {
         let mut file: Option<String> = None;
         let mut out: Option<PathBuf> = None;
         let mut manifest: Option<PathBuf> = None;
+        let mut envelope = false;
         let mut pending: Vec<Pending> = Vec::new();
         let mut index = 0;
         while index < raw.len() {
             let flag = raw[index].as_str();
+            // The whole point of this route is that a small change costs few
+            // tokens. Echoing a ~1.5 KB capability envelope on every one-
+            // identifier edit would spend on the answer what the span address
+            // saved on the question, so the envelope is opt-in.
+            if flag == "--envelope" {
+                if envelope {
+                    return Err("duplicate --envelope".into());
+                }
+                envelope = true;
+                index += 1;
+                continue;
+            }
             let value = raw
                 .get(index + 1)
                 .filter(|value| !value.starts_with("--"))
@@ -135,11 +149,12 @@ impl Cli {
             spans,
             out,
             manifest,
+            envelope,
         })
     }
 }
 
-const USAGE: &str = "usage: edit apply --repo-path <checkout> --file <repo-relative-path> (--span <startLine:startColumn-endLine:endColumn> --expect-sha256 <sha256-of-current-span-bytes> --replacement <text>|--replacement-file <path>)... [--out <staging-dir>] [--manifest <integrations.json>]";
+const USAGE: &str = "usage: edit apply --repo-path <checkout> --file <repo-relative-path> (--span <startLine:startColumn-endLine:endColumn> --expect-sha256 <sha256-of-current-span-bytes> --replacement <text>|--replacement-file <path>)... [--out <staging-dir>] [--manifest <integrations.json>] [--envelope]";
 
 fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<(), String> {
     if slot.replace(value).is_some() {
@@ -245,7 +260,7 @@ fn execute(cli: &Cli) -> Result<(i32, Value), (i32, String)> {
                 .as_ref()
                 .and_then(|value| value["applied"].as_bool())
                 .unwrap_or(false),
-            "envelope": outcome.result,
+            "envelope": if cli.envelope { outcome.result } else { None },
             "spanEdit": span_edit,
             "diagnostic": outcome.diagnostic,
         }),
