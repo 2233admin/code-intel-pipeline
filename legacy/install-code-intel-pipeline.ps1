@@ -7,6 +7,12 @@ param(
     [string]$ArtifactRoot = "",
     [ValidateSet("auto", "windows", "macos", "linux")]
     [string]$Platform = "auto",
+    # Documentation language preference (issue #155). Explicit and always
+    # wins; never triggers the interactive prompt below. Actual precedence
+    # resolution and persistence live in Rust (`language_pref`/`language
+    # set`) -- this script only collects the value and passes it through.
+    [ValidateSet("", "zh", "en")]
+    [string]$Language = "",
     [switch]$RepairSkillLinks,
     [switch]$CheckProvider,
     [switch]$InstallMissing,
@@ -1288,6 +1294,43 @@ if (-not [string]::IsNullOrWhiteSpace($Repo) -or -not [string]::IsNullOrWhiteSpa
     }
     catch {
         Add-Check $checks "doctor:$Repo" "doctor" $true $false $_.Exception.Message "Run check-code-intel-tools.ps1 manually for details."
+    }
+
+    # Issue #155: persist a documentation language preference for this one
+    # target repo. All resolution/precedence/persistence logic lives in the
+    # Rust `language_pref` module and its `language set` command; this
+    # script only decides *whether to ask* and *what value to pass through*.
+    try {
+        $languageRepoPath = [string]$doctorResult.checks.repo.path
+        $resolvedLanguage = $Language
+        # Skill/agent installs (`$code-intel-pipeline 为 <path> 安装并运行稳定版`)
+        # run unattended with nobody at a keyboard, so a prompt here must
+        # never be reached. [Console]::IsInputRedirected is true whenever
+        # stdin is not a live console -- piped, redirected, or a
+        # non-interactive agent host -- which is exactly the deterministic
+        # signal to gate on: no guessing, no other file or history consulted.
+        if ([string]::IsNullOrWhiteSpace($resolvedLanguage) -and -not [Console]::IsInputRedirected) {
+            $response = Read-Host "Preferred documentation language? [zh/en, Enter to skip]"
+            if ($response -match '^\s*(zh|en)\s*$') {
+                $resolvedLanguage = $Matches[1]
+            }
+        }
+        if (-not [string]::IsNullOrWhiteSpace($resolvedLanguage) -and -not [string]::IsNullOrWhiteSpace($languageRepoPath)) {
+            $languageBinaryName = if ($script:EffectivePlatform -eq "windows") { "code-intel.exe" } else { "code-intel" }
+            $languageBinary = Join-Path $paths.bin $languageBinaryName
+            if (Test-Path -LiteralPath $languageBinary -PathType Leaf) {
+                $languageResult = Invoke-CodeIntelNative -Command $languageBinary -Arguments @("language", "set", "--language", $resolvedLanguage, "--repo", $languageRepoPath, "--json")
+                $languageStatus = if ($languageResult.exitCode -eq 0) { "installed" } else { "install_failed" }
+                Add-InstallAction $installActions "language:$languageRepoPath" $languageStatus $languageResult.output "Run '$languageBinary language set --language $resolvedLanguage --repo $languageRepoPath' manually." "repo-local" $false
+            }
+        }
+    }
+    catch {
+        # Never let a language-preference hiccup fail or block the install;
+        # it is a convenience, not a requirement (--language on any later
+        # command, project config, or the resolver's own fallbacks all still
+        # work without this step having run).
+        Add-InstallAction $installActions "language" "install_failed" $_.Exception.Message "Run 'code-intel language set --language <zh|en> --repo <path>' manually." "repo-local" $false
     }
 }
 

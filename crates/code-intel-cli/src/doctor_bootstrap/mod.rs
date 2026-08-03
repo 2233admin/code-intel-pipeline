@@ -30,6 +30,11 @@ mod probe;
 mod doctor_provider_rows;
 
 use paths::display;
+// Re-exported so `language_pref` derives the user-level config root from the
+// same OS/`CODE_INTEL_DATA_ROOT` switch this probe already ported from
+// `Get-CodeIntelDataRoot` in `code-intel-platform.psm1`, instead of a third
+// independent copy of that logic.
+pub(crate) use paths::{data_root, home_directory, resolve_platform};
 
 /// Marker the doctor capability adapter matches on. Kept as a constant so the
 /// probe and the adapter's contract check cannot drift.
@@ -216,6 +221,17 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
             "cargoFound": graph_cargo.is_file(),
             "binaryFound": graph_binary.is_some(),
             "binaryPath": graph_binary.as_deref().map(display).unwrap_or_default(),
+            // Deliberately not wired to `language_pref::resolve` (issue
+            // #155): this module's source is `#[path]`-included as its own
+            // independent compilation root by roughly a dozen integration
+            // test files (each pulling it in transitively through
+            // `capability_inventory::doctor_adapter`), none of which declare
+            // a `language_pref` module. A `crate::language_pref` reference
+            // here compiles in the real binary but fails every one of those
+            // test targets with `cannot find language_pref in crate`. The
+            // command below is illustrative only (this probe never writes),
+            // so it stays a static example rather than gaining a fragile
+            // cross-module dependency for a cosmetic string.
             "command": format!(
                 "{} graph --repo <repo-path> --language zh --write --json",
                 display(&graph_command_binary)

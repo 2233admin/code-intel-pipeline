@@ -11,7 +11,7 @@ use std::path::{Component, Path, PathBuf};
 use serde_json::{json, Value};
 
 /// `Get-CodeIntelPlatform`. `auto` resolves from the compile target.
-pub(super) fn resolve_platform(requested: &str) -> Result<String, String> {
+pub(crate) fn resolve_platform(requested: &str) -> Result<String, String> {
     match requested {
         "windows" | "macos" | "linux" => Ok(requested.to_string()),
         "auto" => {
@@ -61,8 +61,11 @@ pub(super) fn platform_paths(platform: &str, pipeline_root: &Path) -> Value {
 }
 
 /// `Get-CodeIntelDataRoot`: `CODE_INTEL_DATA_ROOT`, else the platform's
-/// conventional per-user data location.
-fn data_root(platform: &str, home: &Path) -> PathBuf {
+/// conventional per-user data location. `pub(crate)` so `language_pref` can
+/// derive the user-level config path from the same platform switch instead
+/// of restating it a third time (PowerShell's `code-intel-platform.psm1` and
+/// this module are already the first two copies).
+pub(crate) fn data_root(platform: &str, home: &Path) -> PathBuf {
     if let Ok(value) = env::var("CODE_INTEL_DATA_ROOT") {
         if !value.trim().is_empty() {
             return resolve_code_intel_path(Path::new(&value));
@@ -86,7 +89,7 @@ fn data_root(platform: &str, home: &Path) -> PathBuf {
     }
 }
 
-pub(super) fn home_directory() -> PathBuf {
+pub(crate) fn home_directory() -> PathBuf {
     let raw = if cfg!(windows) {
         env::var_os("USERPROFILE").or_else(|| env::var_os("HOME"))
     } else {

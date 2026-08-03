@@ -539,6 +539,38 @@ mod tests {
         fs::remove_dir_all(repo).unwrap();
     }
 
+    /// Issue #155 acceptance: switching the resolved documentation language
+    /// must never change machine-readable shape. `language` is the only
+    /// field this document lets vary with the setting (issue #101: schema,
+    /// `kind`/`language`-as-a-detected-source-language-tag on nodes, and
+    /// every other field are machine-first and language-invariant) -- so a
+    /// zh run and an en run must be byte-identical everywhere else.
+    #[test]
+    fn switching_documentation_language_changes_only_the_language_field() {
+        let repo = unique_temp_dir();
+        fs::create_dir_all(repo.join("src")).unwrap();
+        fs::write(
+            repo.join("src").join("lib.rs"),
+            "mod graph;\npub fn run() {}\n",
+        )
+        .unwrap();
+        fs::write(repo.join("src").join("graph.rs"), "pub struct Node;\n").unwrap();
+
+        let mut zh = build_graph(&repo, "zh", true).unwrap();
+        let mut en = build_graph(&repo, "en", true).unwrap();
+
+        assert_eq!(zh["language"], "zh");
+        assert_eq!(en["language"], "en");
+        zh["language"] = Value::Null;
+        en["language"] = Value::Null;
+        assert_eq!(
+            zh, en,
+            "graph JSON must be identical outside the language field itself"
+        );
+
+        fs::remove_dir_all(repo).unwrap();
+    }
+
     #[test]
     fn truncates_unicode_on_a_character_boundary() {
         let value = "交易账户与行情连接是两个独立概念";

@@ -747,6 +747,20 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             "retain while this major CLI contract is supported"
         ),
     },
+    legacy_route! {
+        command: "language",
+        aliases: &[],
+        id: LegacyRouteId::Language,
+        contract: command_contract!(
+            Public,
+            ProviderAdmin,
+            Administrative,
+            &[CommandEffect::RepoRead, CommandEffect::LocalWrite],
+            stdout!("code-intel-language-preference.v1", "text-format:language-human.v1"),
+            exits!(0, 1),
+            "retire only through a versioned language administration replacement"
+        ),
+    },
     CommandRoute::Primary(command_contract!(
         Public,
         AuthoritativeRun,
