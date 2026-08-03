@@ -1384,7 +1384,7 @@
           "id": "edit.span-apply.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "7850c6a25fbe79312ba5ceba84a6b0b1afdbfef44de0621539660b2f378b979c"
+            "4d59570dfe4266e3dbd89f4e7fdd917f81c3c7b5c8bab47716383488bc45d0a3"
           ]
         },
         "determinism": "deterministic",

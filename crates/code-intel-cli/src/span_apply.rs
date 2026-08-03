@@ -218,10 +218,20 @@ pub(crate) fn execute(
     // and a false success is worse than a publication failure that names the
     // mutation it is reporting on.
     atomic_replace(&target, &after).map_err(AdapterError::Io)?;
+    let after_sha256 = sha256_hex(&after);
     artifact["applied"] = json!(true);
     artifact["file"]["bytesAfter"] = json!(after.len());
-    artifact["file"]["sha256After"] = json!(sha256_hex(&after));
-    publish(out, artifact, true, None)
+    artifact["file"]["sha256After"] = json!(after_sha256);
+    // If publication fails now, the repository has already changed. Say so in
+    // the diagnostic and name the resulting digest: a caller who only saw
+    // "publish failed" would have no way to tell an aborted call from a
+    // completed edit whose receipt went missing.
+    publish(out, artifact, true, None).map_err(|error| match error {
+        AdapterError::Io(message) => AdapterError::Io(format!(
+            "{message}; {relative} was already rewritten and is now sha256 {after_sha256}"
+        )),
+        other => other,
+    })
 }
 
 fn publish(
