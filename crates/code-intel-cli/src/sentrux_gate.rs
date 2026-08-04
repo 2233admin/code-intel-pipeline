@@ -42,12 +42,17 @@ pub(crate) const ENGINE_VERSION: &str = "2.2.0";
 //   v4 (2.2.0): `complexity_terms` stopped counting comments and string
 //               bodies, which raises `quality_signal` on any tree that had
 //               prose in it.
-// Both moves make an older baseline describe a tree this engine cannot
+//   v5 (2.2.0): baselines record the `godFiles` identity list. A v4 count
+//               ratchet left slack a brand-new god file could hide in, and
+//               a fix+regress swap kept the count flat while a new monolith
+//               appeared (#165) — the ratchet now compares file identities,
+//               which a count-only baseline cannot express.
+// These moves make an older baseline describe a tree this engine cannot
 // reproduce. Comparing anyway is worse than refusing: v2 would have reported
 // a fabricated coupling regression, and v3 would silently pocket a quality
 // gain instead of re-anchoring the ratchet. The mismatch turns either case
 // into `baseline_engine_mismatch` with the re-baseline instruction.
-pub(crate) const BASELINE_SCHEMA: &str = "code-intel-sentrux-baseline.v4";
+pub(crate) const BASELINE_SCHEMA: &str = "code-intel-sentrux-baseline.v5";
 
 // Metric keys the gate comparisons in `run_gate` read from the baseline.
 // `number()` defaults an absent key to 0.0, so a baseline missing any of
@@ -109,6 +114,13 @@ const SKIP_DIRECTORIES: &[&str] = &[
 ];
 const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_VIOLATION_TARGETS: usize = 8;
+// The god-file rule, single source for both measurement (`measure_file`) and
+// reporting (`god_rule_label`) so the printed rule branch can never drift
+// from the judged one. Function counting deliberately includes test
+// functions; the decision and its rationale live in `.sentrux/rules.toml`.
+const GOD_FILE_LOC_LIMIT: i64 = 800;
+const GOD_FILE_FN_LIMIT: i64 = 25;
+const GOD_FILE_FN_LOC_LIMIT: i64 = 400;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Violation {
@@ -270,9 +282,10 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
         || GATED_METRIC_KEYS
             .iter()
             .any(|key| baseline["metrics"][*key].as_f64().is_none())
+        || baseline["godFiles"].as_array().is_none()
     {
         let message = format!(
-            "baseline engine mismatch: {} requires schema {BASELINE_SCHEMA} with engine {ENGINE_ID} and numeric {} metrics; found schema {} engine {}",
+            "baseline engine mismatch: {} requires schema {BASELINE_SCHEMA} with engine {ENGINE_ID}, numeric {} metrics, and a godFiles identity list; found schema {} engine {}",
             baseline_path.display(),
             GATED_METRIC_KEYS.join("/"),
             baseline["schema"].as_str().unwrap_or("unknown"),
@@ -295,6 +308,33 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
     }
     let before = &baseline["metrics"];
     gate_pairs_values(&mut out, before, &metrics);
+    let baseline_god_paths: std::collections::BTreeSet<String> = baseline["godFiles"]
+        .as_array()
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| entry["path"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    // A baseline that still lists files no longer over threshold grandfathers
+    // a regression back into them silently. The gate cannot rewrite the
+    // baseline itself — a scan must not mutate the repository — so it says
+    // out loud that the ratchet has slack to reclaim.
+    let resolved_since_baseline = baseline_god_paths
+        .iter()
+        .filter(|path| {
+            !metrics
+                .files
+                .iter()
+                .any(|file| file.god_file && &file.path == *path)
+        })
+        .count();
+    if resolved_since_baseline > 0 {
+        out.push_str(&format!(
+            "Baseline lists {resolved_since_baseline} god file(s) no longer over threshold; tighten with: code-intel sentrux --operation save_baseline\n"
+        ));
+    }
     let mut violations = Vec::new();
     let quality_before = number(before, "quality_signal");
     if (metrics.quality_signal as f64) < quality_before {
@@ -326,15 +366,54 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
             targets: cycle_targets(&metrics),
         });
     }
-    if (metrics.god_file_count as f64) > number(before, "god_file_count") {
+    // Ratchet by identity, not by count (#165). The count comparison this
+    // replaces had two leaks: a loose baseline count left slack a brand-new
+    // god file could ship inside, and a same-change fix+regress swap kept the
+    // count flat while a new monolith appeared. Any current god file whose
+    // path the baseline does not list is a regression; listed files are
+    // tolerated standing debt. A rename reads as a new path and trips this —
+    // re-baselining after a rename is a deliberate operator decision.
+    let mut new_gods: Vec<&FileMetrics> = metrics
+        .files
+        .iter()
+        .filter(|file| file.god_file && !baseline_god_paths.contains(&file.path))
+        .collect();
+    new_gods.sort_by(|left, right| {
+        right
+            .loc
+            .cmp(&left.loc)
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    if !new_gods.is_empty() {
+        let mut described: Vec<String> = new_gods
+            .iter()
+            .take(MAX_VIOLATION_TARGETS)
+            .map(|file| {
+                format!(
+                    "{} (loc {}, functions {}; rule: {})",
+                    file.path,
+                    file.loc,
+                    file.functions,
+                    god_rule_label(file.loc, file.functions)
+                )
+            })
+            .collect();
+        if new_gods.len() > MAX_VIOLATION_TARGETS {
+            described.push(format!("+{} more", new_gods.len() - MAX_VIOLATION_TARGETS));
+        }
         violations.push(Violation {
             rule: "god_files_increased".into(),
             message: format!(
-                "God files: {} -> {}",
+                "God files: {} -> {}; new since baseline: {}",
                 number(before, "god_file_count"),
-                metrics.god_file_count
+                metrics.god_file_count,
+                described.join(", ")
             ),
-            targets: god_file_targets(&metrics),
+            targets: new_gods
+                .iter()
+                .take(MAX_VIOLATION_TARGETS)
+                .map(|file| file.path.clone())
+                .collect(),
         });
     }
     if violations.is_empty() {
@@ -443,7 +522,8 @@ fn baseline_document(repo: &Path, metrics: &ProjectMetrics) -> Result<Value, Str
             "files": metrics.file_count,
             "import_modeled_files": metrics.import_modeled_file_count,
             "functions": metrics.function_count,
-        }
+        },
+        "godFiles": god_file_entries(metrics),
     }))
 }
 
@@ -607,6 +687,40 @@ fn god_file_targets(metrics: &ProjectMetrics) -> Vec<String> {
         .into_iter()
         .take(MAX_VIOLATION_TARGETS)
         .map(|(_, path)| path)
+        .collect()
+}
+
+/// Which branch of the god-file rule a file trips — gate output names the
+/// rule and the measured values, never just a count (#165, #148 C1).
+fn god_rule_label(loc: i64, functions: i64) -> String {
+    let mut parts = Vec::new();
+    if loc > GOD_FILE_LOC_LIMIT {
+        parts.push(format!("loc>{GOD_FILE_LOC_LIMIT}"));
+    }
+    if functions > GOD_FILE_FN_LIMIT && loc > GOD_FILE_FN_LOC_LIMIT {
+        parts.push(format!(
+            "functions>{GOD_FILE_FN_LIMIT}&&loc>{GOD_FILE_FN_LOC_LIMIT}"
+        ));
+    }
+    parts.join("; ")
+}
+
+/// Per-file identity for every current god file, recorded in the baseline so
+/// the ratchet can tell a brand-new god file from tolerated standing debt.
+/// Sorted by path so a saved baseline is deterministic for the same tree.
+fn god_file_entries(metrics: &ProjectMetrics) -> Vec<Value> {
+    let mut files: Vec<&FileMetrics> = metrics.files.iter().filter(|file| file.god_file).collect();
+    files.sort_by(|left, right| left.path.cmp(&right.path));
+    files
+        .into_iter()
+        .map(|file| {
+            json!({
+                "path": file.path,
+                "loc": file.loc,
+                "functions": file.functions,
+                "rule": god_rule_label(file.loc, file.functions),
+            })
+        })
         .collect()
 }
 
@@ -791,7 +905,8 @@ fn measure_file(relative: &str, content: &str) -> FileMetrics {
         max_complexity,
         imports,
         calls,
-        god_file: loc > 800 || (functions > 25 && loc > 400),
+        god_file: loc > GOD_FILE_LOC_LIMIT
+            || (functions > GOD_FILE_FN_LIMIT && loc > GOD_FILE_FN_LOC_LIMIT),
         complex_file: max_complexity > 25,
         import_modeled: imports_modeled(relative),
     }
@@ -1611,6 +1726,157 @@ mod tests {
             no_ratchet.stdout
         );
 
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn ratchet_names_a_new_god_file_even_when_the_count_has_slack() {
+        // The #165 leak: three real branches each added a god file while the
+        // authoritative self-scan stayed green, because the ratchet compared
+        // a count against a stale baseline with slack. The sharpest version
+        // is a fix+regress swap — count flat, yet a brand-new monolith
+        // appeared. Identity comparison must catch it and must name the file.
+        let root = fixture_root("sentrux-native-god-swap");
+        fs::create_dir_all(root.join("src")).expect("create fixture");
+        let mut old_god = String::from("pub fn old_entry() {}\n");
+        for line in 0..850 {
+            old_god.push_str(&format!("// padding {line}\n"));
+        }
+        fs::write(root.join("src/old_god.rs"), &old_god).expect("write old god file");
+        fs::write(root.join("src/small.rs"), "pub fn small() {}\n").expect("write small file");
+
+        let saved = run_gate(&root, true).expect("save baseline");
+        assert!(saved.success, "stdout: {}", saved.stdout);
+
+        // Fix the tolerated god file and introduce a brand-new one: the god
+        // count stays exactly flat, which the old count ratchet waved green.
+        fs::write(root.join("src/old_god.rs"), "pub fn old_entry() {}\n")
+            .expect("shrink old god file");
+        let mut new_god = String::from("pub fn new_entry() {}\n");
+        for line in 0..900 {
+            new_god.push_str(&format!("// padding {line}\n"));
+        }
+        fs::write(root.join("src/new_god.rs"), &new_god).expect("write new god file");
+
+        let gate = run_gate(&root, false).expect("gate runs");
+        assert!(!gate.success, "stdout: {}", gate.stdout);
+        let violation = gate
+            .violations
+            .iter()
+            .find(|violation| violation.rule == "god_files_increased")
+            .expect("god_files_increased fires on a new identity");
+        assert!(
+            violation
+                .message
+                .contains("src/new_god.rs (loc 901, functions 1; rule: loc>800)"),
+            "message must name the new file with its measured values: {}",
+            violation.message
+        );
+        assert!(
+            !violation.message.contains("old_god"),
+            "the fixed file is not part of the regression: {}",
+            violation.message
+        );
+        assert_eq!(violation.targets, vec!["src/new_god.rs".to_string()]);
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn ratchet_reports_the_functions_branch_and_counts_test_functions() {
+        // Decision recorded in .sentrux/rules.toml (#165 item 3, option B):
+        // `functions` counts every recognised function, test functions
+        // included. The repository convention — tests live in a module
+        // directory's own tests.rs — is what keeps production files under
+        // the limit, so the count stays honest instead of needing cfg-aware
+        // parsing. This test pins both the branch label and the inclusive
+        // count.
+        let root = fixture_root("sentrux-native-god-functions");
+        fs::create_dir_all(root.join("src")).expect("create fixture");
+        fs::write(root.join("src/small.rs"), "pub fn small() {}\n").expect("write small file");
+        let saved = run_gate(&root, true).expect("save baseline");
+        assert!(saved.success, "stdout: {}", saved.stdout);
+
+        let mut dense = String::new();
+        for index in 0..20 {
+            dense.push_str(&format!("pub fn production_{index}() {{}}\n"));
+        }
+        dense.push_str("#[cfg(test)]\nmod tests {\n");
+        for index in 0..6 {
+            dense.push_str(&format!("    fn test_case_{index}() {{}}\n"));
+        }
+        dense.push_str("}\n");
+        for line in 0..380 {
+            dense.push_str(&format!("// padding {line}\n"));
+        }
+        fs::write(root.join("src/dense.rs"), &dense).expect("write dense file");
+
+        let gate = run_gate(&root, false).expect("gate runs");
+        assert!(!gate.success, "stdout: {}", gate.stdout);
+        let violation = gate
+            .violations
+            .iter()
+            .find(|violation| violation.rule == "god_files_increased")
+            .expect("god_files_increased fires");
+        assert!(
+            violation
+                .message
+                .contains("src/dense.rs (loc 409, functions 26; rule: functions>25&&loc>400)"),
+            "message must name the functions branch with measured values: {}",
+            violation.message
+        );
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn green_gate_advises_tightening_when_baseline_god_entries_resolved() {
+        // The gate must not rewrite the baseline (a scan does not mutate the
+        // repository), but a baseline still listing resolved files is slack a
+        // regression could hide in — the gate says so on an otherwise green
+        // run instead of staying silent.
+        let root = fixture_root("sentrux-native-god-resolved");
+        fs::create_dir_all(root.join("src")).expect("create fixture");
+        let mut god = String::from("pub fn entry() {}\n");
+        for line in 0..850 {
+            god.push_str(&format!("// padding {line}\n"));
+        }
+        fs::write(root.join("src/was_god.rs"), &god).expect("write god file");
+        let saved = run_gate(&root, true).expect("save baseline");
+        assert!(saved.success, "stdout: {}", saved.stdout);
+
+        fs::write(root.join("src/was_god.rs"), "pub fn entry() {}\n").expect("shrink god file");
+        let gate = run_gate(&root, false).expect("gate runs");
+        assert!(gate.success, "stdout: {}", gate.stdout);
+        assert!(
+            gate.stdout.contains("no longer over threshold"),
+            "green run must surface reclaimable ratchet slack: {}",
+            gate.stdout
+        );
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn gate_rejects_a_baseline_without_god_file_identities() {
+        // A v5-schema baseline that carries counts but no godFiles list can
+        // only support the count ratchet #165 retired — refusing it keeps the
+        // identity comparison from silently degrading to the leaky one.
+        let root = fixture_root("sentrux-native-god-identities");
+        fs::create_dir_all(root.join(".sentrux")).expect("create fixture");
+        fs::write(root.join("lib.rs"), "pub fn fixture() {}\n").expect("write fixture source");
+        fs::write(
+            root.join(".sentrux/baseline.json"),
+            format!(
+                "{{\"schema\":\"{BASELINE_SCHEMA}\",\"engine\":{{\"id\":\"{ENGINE_ID}\",\"version\":\"{ENGINE_VERSION}\"}},\"metrics\":{{\"quality_signal\":1.0,\"coupling_score\":0.0,\"cycle_count\":0,\"god_file_count\":0}}}}"
+            ),
+        )
+        .expect("write baseline");
+        let run = run_gate(&root, false).expect("gate runs");
+        assert!(!run.success);
+        assert_eq!(run.violations[0].rule, "baseline_engine_mismatch");
+        assert!(
+            run.violations[0].message.contains("godFiles"),
+            "{}",
+            run.violations[0].message
+        );
         fs::remove_dir_all(&root).expect("remove fixture");
     }
 }

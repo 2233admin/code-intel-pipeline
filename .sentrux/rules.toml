@@ -103,9 +103,35 @@
 # the first honest self-scan of v0.5.0 already failed all three, so restoring
 # them would guarantee a permanently red release gate, not protection.
 #
-# no_god_files stays false here because the god-file count is enforced as
-# monotonic non-increase (29 -> never higher) by the no-degradation gate
-# against .sentrux/baseline.json, together with quality/coupling/cycles.
+# no_god_files stays false here because god files are gated by the baseline
+# ratchet, not this static rule. How that ratchet works (since #165):
+#
+# - The rule: a file is a god file when loc > 800, or functions > 25 with
+#   loc > 400. loc counts non-empty lines; functions counts recognised
+#   function/class heads.
+# - The ratchet compares IDENTITIES, not counts. `.sentrux/baseline.json`
+#   (schema v5) records every tolerated god file by path with its measured
+#   loc/functions and the rule branch it trips. Any god file whose path the
+#   baseline does not list fails `god_files_increased`, and the violation
+#   names the file, the branch (`loc>800` or `functions>25&&loc>400`), and
+#   the measured values. Counts alone proved un-gateable: a stale baseline
+#   count left slack three real branches shipped new god files inside, all
+#   self-scans green (#165), and a fix+regress swap keeps a count flat while
+#   a brand-new monolith appears.
+# - Files already in the baseline are standing debt, tolerated but tracked;
+#   fixing one makes the next green gate print a reminder to re-save the
+#   baseline, because the gate itself never rewrites repository state. A
+#   rename shows up as a new path and trips the ratchet — re-baselining
+#   after a rename is a deliberate operator decision, same as loosening.
+#
+# Test functions COUNT toward the functions limit (decision #165 item 3,
+# option B). The considered alternative — excluding #[cfg(test)] functions so
+# the rule never punishes adding tests — is a real concern (a file sitting at
+# functions == 25 crossed the threshold by gaining one required test, #155),
+# but it needs cfg-aware parsing this scanner does not have, and the repo
+# already solves it structurally: tests live in the module directory's own
+# tests.rs (see change_risk/, change_agenda/). Keep production files and
+# their tests in separate files and the inclusive count stays honest.
 #
 # max_cycles stays absolute and zero: resolved Rust module import cycles are
 # real defects (dag_run <-> execution_kernel and artifact_ref <-> capability
