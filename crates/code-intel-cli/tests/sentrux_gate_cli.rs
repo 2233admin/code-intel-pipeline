@@ -53,7 +53,13 @@ fn save_baseline_records_the_v5_god_file_identity_list() {
     write_rules(&root);
 
     let root_arg = root.to_string_lossy().to_string();
-    let saved = code_intel(&["sentrux", "--operation", "save_baseline", "--repo", &root_arg]);
+    let saved = code_intel(&[
+        "sentrux",
+        "--operation",
+        "save_baseline",
+        "--repo",
+        &root_arg,
+    ]);
     assert!(
         saved.status.success(),
         "stdout={} stderr={}",
@@ -82,7 +88,13 @@ fn cli_check_fails_naming_a_new_god_file_and_its_rule_branch() {
     write_rules(&root);
 
     let root_arg = root.to_string_lossy().to_string();
-    let saved = code_intel(&["sentrux", "--operation", "save_baseline", "--repo", &root_arg]);
+    let saved = code_intel(&[
+        "sentrux",
+        "--operation",
+        "save_baseline",
+        "--repo",
+        &root_arg,
+    ]);
     assert!(saved.status.success());
 
     fs::write(root.join("src/new_god.rs"), god_file_body(900)).expect("write new god file");
@@ -113,7 +125,13 @@ fn cli_check_stays_green_for_grandfathered_god_files_and_reports_slack() {
     write_rules(&root);
 
     let root_arg = root.to_string_lossy().to_string();
-    let saved = code_intel(&["sentrux", "--operation", "save_baseline", "--repo", &root_arg]);
+    let saved = code_intel(&[
+        "sentrux",
+        "--operation",
+        "save_baseline",
+        "--repo",
+        &root_arg,
+    ]);
     assert!(saved.status.success());
 
     // Standing debt stays tolerated: same tree, green verdict.
