@@ -1766,7 +1766,9 @@ mod tests {
             .find(|violation| violation.rule == "god_files_increased")
             .expect("god_files_increased fires on a new identity");
         assert!(
-            violation.message.contains("src/new_god.rs (loc 901, functions 1; rule: loc>800)"),
+            violation
+                .message
+                .contains("src/new_god.rs (loc 901, functions 1; rule: loc>800)"),
             "message must name the new file with its measured values: {}",
             violation.message
         );
