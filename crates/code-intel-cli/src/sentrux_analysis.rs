@@ -2,18 +2,12 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[path = "file_gate/mod.rs"]
+mod file_gate;
 #[path = "hardened_git.rs"]
 mod hardened_git;
-#[path = "tool_path.rs"]
-mod tool_path;
-
-const SOURCE_EXTENSIONS: [&str; 14] = [
-    ".ps1", ".psm1", ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".rs", ".go", ".java",
-    ".cs", ".v",
-];
 
 #[derive(Clone, Default)]
 struct GitSignal {
@@ -48,6 +42,10 @@ struct ModuleMetrics {
 struct Inventory {
     files: Vec<String>,
     scope: Value,
+    /// Full per-candidate decision record from `file_gate::evaluate` (issue
+    /// #152), covering every file under the tree -- not just the recognised
+    /// source extensions `scope` accounts for. See `source_inventory`.
+    file_gate: Value,
 }
 
 pub fn analyze(target: &Path) -> Result<Value, String> {
@@ -107,6 +105,7 @@ pub fn analyze(target: &Path) -> Result<Value, String> {
         "tool": "dsm",
         "path": cli_path(&target),
         "scope": inventory.scope,
+        "file_gate": inventory.file_gate,
         "default_color_mode": "Risk",
         "color_modes": color_modes(),
         "modules": module_output(&modules),
@@ -116,203 +115,75 @@ pub fn analyze(target: &Path) -> Result<Value, String> {
     }))
 }
 
+/// Builds the DSM file inventory from the shared [`file_gate::evaluate`]
+/// decision record (issue #152) instead of a separately maintained walk.
+/// Before #152, this function's own `inventory_files` walked the tree and
+/// its own `excluded_reason` matched `tools`/`vendor`/`third_party`/
+/// `external` only against the first path segment, so `legacy/tools/*` was
+/// invisible to it and silently counted as included -- the majority
+/// contributor to issue #148 C2's 277/315 split against `sentrux scan`'s
+/// count on this repository's own tree. `sentrux_gate::measure_project` now
+/// calls the exact same [`file_gate::evaluate`] on the exact same tree, so
+/// the two commands' file counts are one computation, not two.
+///
+/// `scope.*` below keeps its pre-#152 shape and numbers: it stays scoped to
+/// candidates that already carry a supported source extension, exactly the
+/// universe this function always reported over (the old code applied
+/// `SOURCE_EXTENSIONS` filtering first and unconditionally, so a file with
+/// an unrecognised extension -- `README.md`, `.gitignore`, a build-config
+/// file -- was never part of `included_files`/`excluded_files`/
+/// `excluded_by_reason` at all: not included, not excluded, invisible).
+/// `Inventory::file_gate` is the new, additive surface that accounts for
+/// every candidate the walker actually saw, including those -- so nothing
+/// this contract used to report changes shape, while the full accounting
+/// issue #152 asks for exists alongside it rather than replacing it.
 fn source_inventory(target: &Path) -> Result<Inventory, String> {
-    let listed = inventory_files(target)?;
-    let governed_visible = governed_visible_files(target);
+    let config = file_gate::GateConfig::built_in();
+    let report = file_gate::evaluate(target, &config)?;
 
-    let mut included = Vec::new();
-    let mut excluded: BTreeMap<String, (usize, Vec<String>)> = BTreeMap::new();
-    for relative in listed {
-        let extension = extension(&relative);
-        if !SOURCE_EXTENSIONS.contains(&extension.as_str()) {
+    let mut excluded_by_gate: BTreeMap<&'static str, (usize, Vec<String>)> = BTreeMap::new();
+    for decision in &report.decisions {
+        if decision.gate == file_gate::GATE_UNSUPPORTED_EXT
+            || decision.decision == file_gate::Decision::Included
+        {
             continue;
         }
-        let mut reason = excluded_reason(&relative);
-        if reason.is_none()
-            && matches!(extension.as_str(), ".js" | ".jsx" | ".mjs" | ".cjs")
-            && fs::metadata(target.join(&relative))
-                .map(|metadata| metadata.len() > 2_097_152)
-                .unwrap_or(false)
-        {
-            reason = Some("oversized_generated_or_bundle".to_string());
-        }
-        if reason.is_none()
-            && governed_visible
-                .as_ref()
-                .is_some_and(|visible| !visible.contains(&relative))
-        {
-            reason = Some("repository_ignored".to_string());
-        }
-        if let Some(reason) = reason {
-            let entry = excluded.entry(reason).or_default();
-            entry.0 += 1;
-            if entry.1.len() < 8 {
-                entry.1.push(relative);
-            }
-        } else {
-            included.push(relative);
+        let entry = excluded_by_gate.entry(decision.gate).or_default();
+        entry.0 += 1;
+        if entry.1.len() < 8 {
+            entry.1.push(decision.path.clone());
         }
     }
-    included.sort();
-    included.dedup();
-    let excluded_total = excluded.values().map(|entry| entry.0).sum::<usize>();
-    let mut excluded_by_reason = excluded
+    let excluded_total = excluded_by_gate
+        .values()
+        .map(|(count, _)| *count)
+        .sum::<usize>();
+    let mut excluded_by_reason = excluded_by_gate
         .into_iter()
-        .map(|(reason, (files, samples))| json!({"reason": reason, "files": files, "samples": samples}))
+        .map(|(gate, (files, samples))| json!({"reason": gate, "files": files, "samples": samples}))
         .collect::<Vec<_>>();
     excluded_by_reason.sort_by(|left, right| {
         integer(right, "files")
             .cmp(&integer(left, "files"))
             .then_with(|| string(left, "reason").cmp(string(right, "reason")))
     });
-    let included_count = included.len();
+    let included_count = report.included.len();
+
     Ok(Inventory {
-        files: included,
+        files: report.included.clone(),
         scope: json!({
             "mode": "auto_governed_source",
             "included_files": included_count,
             "excluded_files": excluded_total,
             "excluded_by_reason": excluded_by_reason,
-            "source_extensions": SOURCE_EXTENSIONS,
+            "source_extensions": file_gate::CODE_EXTENSIONS
+                .iter()
+                .map(|extension| format!(".{extension}"))
+                .collect::<Vec<_>>(),
             "note": "Root paths are allowed. Dependency, build-output, cache, and bundled static-asset code is excluded from governed source metrics."
         }),
+        file_gate: report.to_json(),
     })
-}
-
-fn governed_visible_files(target: &Path) -> Option<BTreeSet<String>> {
-    let output = Command::new(tool_path::resolve("rg"))
-        .arg("--files")
-        .args([
-            "--hidden",
-            "--no-require-git",
-            "--no-ignore-parent",
-            "--no-ignore-global",
-            "--no-ignore-exclude",
-        ])
-        .env_remove("RIPGREP_CONFIG_PATH")
-        .current_dir(target)
-        .output()
-        .ok()?;
-    if !output.status.success() && output.status.code() != Some(1) {
-        return None;
-    }
-    let mut visible = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(normalize_path)
-        .collect::<BTreeSet<_>>();
-
-    if let Ok(output) = hardened_git::command(target)
-        .args(["ls-files", "-z"])
-        .output()
-    {
-        if output.status.success() {
-            for relative in String::from_utf8_lossy(&output.stdout).split('\0') {
-                if !relative.is_empty() {
-                    visible.insert(normalize_path(relative));
-                }
-            }
-        }
-    }
-    Some(visible)
-}
-
-fn inventory_files(root: &Path) -> Result<Vec<String>, String> {
-    fn visit(root: &Path, current: &Path, out: &mut Vec<String>) -> Result<(), String> {
-        let entries = fs::read_dir(current)
-            .map_err(|error| format!("read inventory directory {}: {error}", current.display()))?;
-        for entry in entries {
-            let entry = entry.map_err(|error| {
-                format!("read inventory entry in {}: {error}", current.display())
-            })?;
-            let file_type = entry
-                .file_type()
-                .map_err(|error| format!("read file type {}: {error}", entry.path().display()))?;
-            if file_type.is_symlink() {
-                continue;
-            }
-            let path = entry.path();
-            if file_type.is_dir() {
-                if entry.file_name() != ".git" {
-                    visit(root, &path, out)?;
-                }
-            } else if file_type.is_file() {
-                let relative = path
-                    .strip_prefix(root)
-                    .map_err(|error| format!("relativize {}: {error}", path.display()))?;
-                out.push(normalize_path(&relative.to_string_lossy()));
-            }
-        }
-        Ok(())
-    }
-
-    let mut files = Vec::new();
-    visit(root, root, &mut files)?;
-    files.sort();
-    files.dedup();
-    Ok(files)
-}
-
-fn excluded_reason(relative: &str) -> Option<String> {
-    let lower = relative.to_ascii_lowercase();
-    let parts = lower
-        .split('/')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>();
-    if let Some(top) = parts.first() {
-        if ["tools", "vendor", "third_party", "external"].contains(top) {
-            return Some(format!("external_tooling_dir:{top}"));
-        }
-    }
-    let excluded = [
-        ".git",
-        ".repowise",
-        ".understand-anything",
-        ".sentrux",
-        "node_modules",
-        ".pnpm",
-        ".yarn",
-        "target",
-        "dist",
-        "build",
-        "out",
-        "coverage",
-        ".venv",
-        "venv",
-        "env",
-        ".tox",
-        "__pycache__",
-        ".next",
-        ".nuxt",
-        ".turbo",
-        ".cache",
-    ];
-    if let Some(part) = parts.iter().find(|part| excluded.contains(part)) {
-        return Some(format!("excluded_dir:{part}"));
-    }
-    if lower.starts_with("static/assets/")
-        || lower.starts_with("public/assets/")
-        || lower.starts_with("wwwroot/assets/")
-    {
-        return Some("bundled_static_assets".to_string());
-    }
-    let leaf = relative.rsplit('/').next().unwrap_or(relative);
-    let leaf_lower = leaf.to_ascii_lowercase();
-    if [
-        ".min.js",
-        ".bundle.js",
-        ".min.jsx",
-        ".bundle.jsx",
-        ".min.mjs",
-        ".bundle.mjs",
-        ".min.cjs",
-        ".bundle.cjs",
-    ]
-    .iter()
-    .any(|suffix| leaf_lower.ends_with(suffix))
-    {
-        return Some("bundled_or_minified_file".to_string());
-    }
-    None
 }
 
 fn git_signals(target: &Path, files: &[String]) -> BTreeMap<String, GitSignal> {
