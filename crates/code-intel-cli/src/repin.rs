@@ -25,6 +25,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
+use crate::declared_pins;
 use crate::evidence_outcome::{EvidenceOutcome, EvidenceScope, PartialReason};
 use crate::snapshot;
 
@@ -47,10 +48,35 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
             return 65;
         }
     };
+    // Digests an internalization record declares about itself are invisible to
+    // the scan above: it only sees a pin as stale while HEAD and the worktree
+    // disagree, which stops being true the moment the edit is committed. The
+    // record carries the pinned path next to the digest, so those are resolved
+    // from that declaration instead. See `declared_pins`.
+    let declared = match declared_pins::audit(&cli.repo) {
+        Ok(findings) => findings,
+        Err(message) => {
+            eprintln!("error: auditing declared pins: {message}");
+            return 65;
+        }
+    };
+
     if cli.write {
         if let Err(error) = flush(&cli.repo, &report) {
             eprintln!("error: {error}");
             return 74;
+        }
+        match declared_pins::resync(&cli.repo, &declared) {
+            Ok(records) if !records.is_empty() => {
+                for record in &records {
+                    println!("repin: resynced declared pins in {record}");
+                }
+            }
+            Err(message) => {
+                eprintln!("error: resyncing declared pins: {message}");
+                return 74;
+            }
+            Ok(_) => {}
         }
         match scan(&cli.repo, &cli.excludes) {
             Ok(verify) if !verify.findings.is_empty() => {
@@ -66,7 +92,29 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
             }
             Ok(_) => {}
         }
+        match declared_pins::audit(&cli.repo) {
+            Ok(verify) => {
+                let unresolved: Vec<_> = verify
+                    .iter()
+                    .filter(|finding| {
+                        matches!(finding.state, declared_pins::PinState::Stale { .. })
+                    })
+                    .collect();
+                if !unresolved.is_empty() {
+                    eprintln!(
+                        "error: repin left {} declared pin(s) stale after write \u{2014} internal inconsistency, please report",
+                        unresolved.len()
+                    );
+                    return 65;
+                }
+            }
+            Err(message) => {
+                eprintln!("error: verifying declared pins after write: {message}");
+                return 65;
+            }
+        }
     }
+    print_declared(&declared, cli.write);
     if cli.json {
         println!(
             "{}",
@@ -76,12 +124,76 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
     } else {
         print_human(&report, cli.write);
     }
+    // A declared pin that `--write` refused to touch (ambiguous, or its source
+    // is gone) is unresolved in exactly the sense `has_unresolved` already
+    // means: the tree is not consistent and no further `repin` run will make
+    // it so.
+    let declared_unresolved = declared
+        .iter()
+        .any(|finding| matches!(finding.state, declared_pins::PinState::Ambiguous | declared_pins::PinState::SourceMissing));
+    let declared_dirty = declared.iter().any(PinFindingExt::needs_attention);
+
     if cli.write {
-        i32::from(report.has_unresolved())
-    } else if report.is_clean() {
+        i32::from(report.has_unresolved() || declared_unresolved)
+    } else if report.is_clean() && !declared_dirty {
         0
     } else {
         1
+    }
+}
+
+/// Local extension so the exit-code expression above reads the same way for
+/// both pin kinds.
+trait PinFindingExt {
+    fn needs_attention(&self) -> bool;
+}
+
+impl PinFindingExt for declared_pins::PinFinding {
+    fn needs_attention(&self) -> bool {
+        declared_pins::PinFinding::needs_attention(self)
+    }
+}
+
+fn print_declared(findings: &[declared_pins::PinFinding], wrote: bool) {
+    let noteworthy: Vec<&declared_pins::PinFinding> = findings
+        .iter()
+        .filter(|finding| finding.needs_attention())
+        .collect();
+    if noteworthy.is_empty() {
+        return;
+    }
+    for finding in noteworthy {
+        let pin = &finding.pin;
+        match &finding.state {
+            declared_pins::PinState::Stale { actual } => {
+                if wrote {
+                    println!(
+                        "repin: {} declared {} -> {} ({})",
+                        pin.record,
+                        &pin.declared[..12],
+                        &actual[..12],
+                        pin.path
+                    );
+                } else {
+                    println!(
+                        "repin: STALE declared pin {} in {} (declares {}, file is {}) \u{2014} rerun with --write",
+                        pin.path,
+                        pin.record,
+                        &pin.declared[..12],
+                        &actual[..12]
+                    );
+                }
+            }
+            declared_pins::PinState::SourceMissing => println!(
+                "repin: UNRESOLVED {} pins {} which no longer exists \u{2014} decide what the record now claims",
+                pin.record, pin.path
+            ),
+            declared_pins::PinState::Ambiguous => println!(
+                "repin: UNRESOLVED {} states one digest for several paths ({}) \u{2014} never rewritten",
+                pin.record, pin.path
+            ),
+            declared_pins::PinState::Fresh => {}
+        }
     }
 }
 

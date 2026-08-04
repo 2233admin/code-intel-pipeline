@@ -23,6 +23,7 @@ mod committed_evidence_controller;
 mod compatibility_retirement_ticket;
 mod dag_coordinator;
 mod dag_run;
+mod declared_pins;
 mod decision_port;
 mod decision_record;
 mod doctor_bootstrap;
