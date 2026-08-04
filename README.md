@@ -564,7 +564,15 @@ code-intel change impact --artifact-root <root> --repo <name> --repo-path C:\pat
 code-intel capability exec edit.ast-grep-plan --request <request.json> --out <staging-dir>
 ```
 
-计划只预览（`repositoryMutation=false`），不会改文件。
+计划只预览（`repositoryMutation=false`），不会改文件。它给出的是一份**指令**：每个匹配的 span、这些字节当时的 sha256、以及 ast-grep 算出的替换文本。
+
+计划直接整体执行——一个 pattern 进去，所有调用点一起动，模型一行字节都不用重写：
+
+```powershell
+code-intel edit apply-plan --repo-path C:\path\to\repo --plan <staging-dir>\structured-edit-plan.json
+```
+
+写任何一个字节之前，先逐一比对每个文件里每个 span 的两个 digest：span 自身的字节、以及它所在那一行。只要有一个 span 的字节变了、或它那行变了，整份计划拒绝：退出码 10、`applied:false`，并点名是哪几个匹配漂移了（期望 digest / 实际 digest / 现在那里是什么）。行级校验专治"只是把匹配加长"这类改动——手工把 `commit` 改成 `commit_now`，span 那几个字节还是 `commit`，光看 span 会照写成 `commit_change_now`。**没有部分应用**，所以拒绝不会留下一棵改了一半的树；重新出计划再应用即可。
 
 改一个标识符不必重写整行——按 span 下指令，工具执行：
 

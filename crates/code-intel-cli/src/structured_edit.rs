@@ -1,31 +1,52 @@
-use std::collections::BTreeSet;
+//! `edit.ast-grep-plan` — structural search and rewrite *planning* (#96 item
+//! 2, charter gate G4 in #139).
+//!
+//! This capability never writes. What it publishes is an instruction: for
+//! every match, the span it occupies in the current bytes, the sha256 of
+//! exactly those bytes, the sha256 of the line they sit on, and the
+//! replacement ast-grep computed. `apply.edits` is that instruction in the
+//! coordinate system `span_patch` defines, which is what lets
+//! `edit.ast-grep-apply` execute a rename without the model ever regenerating
+//! a line — and lets it refuse, per match, when the bytes under a recorded
+//! span have moved on.
+//!
+//! The line digest is not redundant with the span digest. A match is derived
+//! from a *parse* of that line, and an identifier can change while the
+//! planned bytes do not: renaming `commit` to `commit_now` leaves
+//! `271:5-271:11` reading `commit`. Recording the line is what lets the apply
+//! stage notice.
+//!
+//! The digest is recorded here rather than recomputed at apply time on
+//! purpose. A digest computed at apply time would be a tautology: it would
+//! only prove the file equals itself. Recorded at plan time, it is a claim
+//! about the world that the apply stage can find false.
+
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::{Component, Path};
+use std::path::Path;
 use std::process::Command;
 
 use serde_json::{json, Value};
 
+use super::span_patch::{self, LineIndex, SpanAddress};
 use super::{
     publish_named, snapshot_adapter_error, tool_path, AdapterArtifact, AdapterError, AdapterOutput,
 };
 use crate::adapter_contract::AdapterDomainVerdict;
 use crate::artifact_ref::VerifiedArtifact;
+use crate::capability::sha256_hex;
 use crate::snapshot;
 
 const MAX_PATTERN_BYTES: usize = 16 * 1024;
 const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_PATHS: usize = 64;
-const GENERATED_COMPONENTS: [&str; 9] = [
-    ".git",
-    ".next",
-    ".venv",
-    "__pycache__",
-    "build",
-    "dist",
-    "node_modules",
-    "target",
-    "vendor",
-];
+/// Bounds on what may become an *applicable* plan. A preview may report any
+/// number of matches of any size; an instruction that rewrites bytes stays
+/// small enough to read, to hash, and to refuse as a unit. The per-edit byte
+/// ceiling lives in `span_patch` because `edit.ast-grep-apply` re-checks it
+/// against whatever plan document it is handed.
+const MAX_PLAN_EDITS: usize = 256;
+use span_patch::MAX_EDIT_BYTES;
 
 pub(crate) fn execute(
     request: &Value,
@@ -77,7 +98,7 @@ pub(crate) fn execute(
         .expect("validated snapshot scope")
         .iter()
         .map(|value| {
-            normalize_relative(
+            span_patch::normalize_relative(
                 value.as_str().expect("validated snapshot scope item"),
                 false,
             )
@@ -128,6 +149,7 @@ pub(crate) fn execute(
         item["file"] = Value::String(file.clone());
         files.insert(file);
     }
+    let apply = apply_block(&canonical_repo, &matches, rewrite.is_some())?;
     lease.verify_after(repo).map_err(snapshot_adapter_error)?;
 
     let artifact = json!({
@@ -148,9 +170,11 @@ pub(crate) fn execute(
         "summary": {
             "matches": matches.len(),
             "files": files.len(),
-            "hasRewrite": rewrite.is_some()
+            "hasRewrite": rewrite.is_some(),
+            "applicableEdits": apply["edits"].as_array().map_or(0, Vec::len)
         },
         "matches": matches,
+        "apply": apply,
         "authority": {
             "mode": "preview_only",
             "repositoryMutation": false
@@ -214,16 +238,199 @@ fn requested_paths(value: Option<&Value>) -> Result<Vec<&str>, AdapterError> {
     }
 }
 
+/// One match, reduced to the instruction the apply stage executes.
+struct PlannedEdit {
+    index: usize,
+    file: String,
+    start: usize,
+    end: usize,
+    address: SpanAddress,
+    sha256: String,
+    line_sha256: String,
+    text: String,
+    replacement: String,
+}
+
+/// Turn ast-grep's matches into instructions, or say plainly why they cannot
+/// become one.
+///
+/// `applicable:false` is not a failure — a plan without a rewrite is a
+/// legitimate search preview. It is a refusal to hand the apply stage
+/// something it would have to guess about, and the reason travels with it so
+/// the caller does not have to re-derive it.
+fn apply_block(
+    canonical_repo: &Path,
+    matches: &[Value],
+    has_rewrite: bool,
+) -> Result<Value, AdapterError> {
+    if !has_rewrite {
+        return Ok(inapplicable(
+            "plan carries no rewrite, so it is a search preview rather than an instruction",
+            Vec::new(),
+        ));
+    }
+    if matches.is_empty() {
+        return Ok(inapplicable("plan matched nothing", Vec::new()));
+    }
+    if matches.len() > MAX_PLAN_EDITS {
+        return Ok(inapplicable(
+            &format!(
+                "plan has {} matches; an applicable plan carries at most {MAX_PLAN_EDITS}",
+                matches.len()
+            ),
+            Vec::new(),
+        ));
+    }
+    let mut sources: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let mut edits = Vec::new();
+    let mut exclusion: Option<String> = None;
+    for (index, item) in matches.iter().enumerate() {
+        let file = item["file"]
+            .as_str()
+            .expect("match file normalized above")
+            .to_string();
+        if !sources.contains_key(&file) {
+            let bytes = fs::read(canonical_repo.join(&file))
+                .map_err(|error| AdapterError::Io(format!("read {file}: {error}")))?;
+            sources.insert(file.clone(), bytes);
+        }
+        let source = &sources[&file];
+        match planned_edit(index, &file, source, item) {
+            Ok(edit) => edits.push(edit),
+            Err(reason) => {
+                exclusion.get_or_insert(format!("match {index} in {file}: {reason}"));
+            }
+        }
+    }
+    edits.sort_by(|left, right| {
+        left.file
+            .cmp(&right.file)
+            .then_with(|| left.start.cmp(&right.start))
+    });
+    for pair in edits.windows(2) {
+        if pair[0].file == pair[1].file && pair[1].start < pair[0].end {
+            exclusion.get_or_insert(format!(
+                "matches {} and {} overlap in {}",
+                pair[0].index, pair[1].index, pair[0].file
+            ));
+        }
+    }
+    let rows = edits
+        .iter()
+        .map(|edit| {
+            json!({
+                "match": edit.index,
+                "file": edit.file,
+                "span": edit.address.as_json(),
+                "byteRange": {"start": edit.start, "end": edit.end},
+                "sha256": edit.sha256,
+                "lineSha256": edit.line_sha256,
+                "bytes": edit.end - edit.start,
+                "text": edit.text,
+                "replacement": edit.replacement,
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(match exclusion {
+        Some(reason) => inapplicable(&reason, rows),
+        None => json!({
+            "capability": "edit.ast-grep-apply",
+            "applicable": true,
+            "reason": Value::Null,
+            "edits": rows,
+        }),
+    })
+}
+
+fn inapplicable(reason: &str, edits: Vec<Value>) -> Value {
+    json!({
+        "capability": "edit.ast-grep-apply",
+        "applicable": false,
+        "reason": reason,
+        "edits": edits,
+    })
+}
+
+fn planned_edit(
+    index: usize,
+    file: &str,
+    source: &[u8],
+    item: &Value,
+) -> Result<PlannedEdit, String> {
+    let (start, end) = replacement_range(item)?;
+    if end > source.len() {
+        return Err(format!(
+            "byte range {start}..{end} is beyond the {} byte file",
+            source.len()
+        ));
+    }
+    if end - start > MAX_EDIT_BYTES {
+        return Err(format!(
+            "match spans {} bytes; an applicable edit spans at most {MAX_EDIT_BYTES}",
+            end - start
+        ));
+    }
+    let replacement = item["replacement"]
+        .as_str()
+        .ok_or("ast-grep reported no replacement for this match")?;
+    if replacement.len() > MAX_EDIT_BYTES {
+        return Err(format!(
+            "replacement is {} bytes; an applicable edit replaces with at most {MAX_EDIT_BYTES}",
+            replacement.len()
+        ));
+    }
+    let index_of_lines = LineIndex::build(source);
+    let address = index_of_lines.address(start, end)?;
+    let (line_start, line_end) = index_of_lines.line_span(&address)?;
+    let text = std::str::from_utf8(&source[start..end])
+        .map_err(|error| format!("matched bytes are not UTF-8: {error}"))?;
+    Ok(PlannedEdit {
+        index,
+        file: file.to_string(),
+        start,
+        end,
+        address,
+        sha256: sha256_hex(&source[start..end]),
+        line_sha256: sha256_hex(&source[line_start..line_end]),
+        text: text.to_string(),
+        replacement: replacement.to_string(),
+    })
+}
+
+/// The byte range ast-grep would actually replace. It reports
+/// `replacementOffsets` alongside the match range; taking that when present
+/// keeps the edit as narrow as the tool made it, which is the whole point of
+/// G4 — a rewrite that only alters part of a match must not rewrite the rest.
+fn replacement_range(item: &Value) -> Result<(usize, usize), String> {
+    let offsets = if item["replacementOffsets"].is_object() {
+        &item["replacementOffsets"]
+    } else {
+        &item["range"]["byteOffset"]
+    };
+    let bound = |key: &str| -> Result<usize, String> {
+        offsets[key]
+            .as_u64()
+            .filter(|value| *value <= u32::MAX as u64)
+            .map(|value| value as usize)
+            .ok_or_else(|| format!("ast-grep match has no usable byte offset {key}"))
+    };
+    let (start, end) = (bound("start")?, bound("end")?);
+    if start >= end {
+        return Err(format!("byte range {start}..{end} is empty or inverted"));
+    }
+    Ok((start, end))
+}
+
 fn validate_path(
     repo: &Path,
     canonical_repo: &Path,
     snapshot_scopes: &[String],
     path: &str,
 ) -> Result<String, AdapterError> {
-    let normalized = normalize_relative(path, true)?;
+    let normalized = span_patch::normalize_relative(path, true)?;
     if !snapshot_scopes
         .iter()
-        .any(|scope| within_scope(&normalized, scope))
+        .any(|scope| span_patch::within_scope(&normalized, scope))
     {
         return Err(AdapterError::Contract(format!(
             "edit path is outside the requested snapshot scope: {path}"
@@ -238,60 +445,6 @@ fn validate_path(
         )));
     }
     Ok(normalized)
-}
-
-/// Shared with `edit.span-apply` rather than restated there: the plan stage
-/// and the apply stage must agree byte-for-byte on which paths are editable,
-/// or a plan could name a target the writer would then refuse (or worse,
-/// accept under looser rules).
-pub(super) fn normalize_relative(
-    path: &str,
-    reject_generated: bool,
-) -> Result<String, AdapterError> {
-    let path = Path::new(path);
-    if path.is_absolute() {
-        return Err(AdapterError::InvalidOptions(format!(
-            "edit path must be repository-relative: {}",
-            path.display()
-        )));
-    }
-    let mut parts = Vec::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::Normal(value) => {
-                let value = value.to_str().ok_or_else(|| {
-                    AdapterError::InvalidOptions("edit path must be UTF-8".into())
-                })?;
-                if reject_generated
-                    && GENERATED_COMPONENTS
-                        .iter()
-                        .any(|generated| value.eq_ignore_ascii_case(generated))
-                {
-                    return Err(AdapterError::InvalidOptions(format!(
-                        "edit path targets excluded generated content: {}",
-                        path.display()
-                    )));
-                }
-                parts.push(value);
-            }
-            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
-                return Err(AdapterError::InvalidOptions(format!(
-                    "edit path escapes repository: {}",
-                    path.display()
-                )))
-            }
-        }
-    }
-    Ok(if parts.is_empty() {
-        ".".into()
-    } else {
-        parts.join("/")
-    })
-}
-
-pub(super) fn within_scope(path: &str, scope: &str) -> bool {
-    scope == "." || path == scope || path.starts_with(&format!("{scope}/"))
 }
 
 fn normalize_match_file(
@@ -313,7 +466,7 @@ fn normalize_match_file(
             full.display()
         ))
     })?;
-    normalize_relative(&relative.to_string_lossy(), true)
+    span_patch::normalize_relative(&relative.to_string_lossy(), true)
 }
 
 /// A command that launches `ast-grep` by absolute path, resolved through
@@ -364,7 +517,14 @@ fn bounded_diagnostic(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::capability::sha256_hex;
+
+    fn match_at(file: &str, start: usize, end: usize, replacement: &str) -> Value {
+        json!({
+            "file": file,
+            "range": {"byteOffset": {"start": start, "end": end}},
+            "replacement": replacement,
+        })
+    }
 
     #[test]
     fn registry_digest_and_path_guards_are_bound_to_this_adapter() {
@@ -378,12 +538,71 @@ mod tests {
             .find(|item| item["id"] == "edit.ast-grep-plan")
             .unwrap();
         assert_eq!(
-            integration["capabilityDeclaration"]["implementation"]["toolchainDigests"][0],
-            sha256_hex(include_bytes!("structured_edit.rs"))
+            integration["capabilityDeclaration"]["implementation"]["toolchainDigests"],
+            json!([
+                sha256_hex(include_bytes!("structured_edit.rs")),
+                sha256_hex(include_bytes!("span_patch.rs"))
+            ])
         );
-        assert!(normalize_relative("src/../secret.py", true).is_err());
-        assert!(normalize_relative("node_modules/pkg/index.js", true).is_err());
-        assert!(within_scope("backend/api.py", "backend"));
-        assert!(!within_scope("frontend/api.ts", "backend"));
+        // The plan stage still declares no write authority. What it gained is
+        // the ability to *describe* one.
+        assert_eq!(
+            integration["capabilityDeclaration"]["allowedEffects"],
+            json!(["repo_read", "local_write", "process_spawn"])
+        );
+    }
+
+    /// A rewrite that only changes part of a match must plan only that part —
+    /// this is G4's exit condition expressed at the planning stage.
+    #[test]
+    fn a_narrower_replacement_range_wins_over_the_match_range() {
+        let mut item = match_at("a.rs", 0, 20, "x");
+        item["replacementOffsets"] = json!({"start": 4, "end": 9});
+        assert_eq!(replacement_range(&item).unwrap(), (4, 9));
+        item["replacementOffsets"] = Value::Null;
+        assert_eq!(replacement_range(&item).unwrap(), (0, 20));
+    }
+
+    /// Two matches that overlap have no single well-defined result, so the
+    /// plan says so instead of handing the apply stage a coin flip.
+    #[test]
+    fn overlapping_matches_make_the_whole_plan_inapplicable() {
+        let source = "let alpha = alpha_beta;\n";
+        let directory = std::env::temp_dir().join(format!(
+            "code-intel-plan-overlap-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("a.rs"), source).unwrap();
+
+        let disjoint = apply_block(
+            &directory,
+            &[
+                match_at("a.rs", 4, 9, "beta"),
+                match_at("a.rs", 12, 22, "x"),
+            ],
+            true,
+        )
+        .unwrap();
+        assert_eq!(disjoint["applicable"], json!(true));
+        assert_eq!(disjoint["edits"][0]["sha256"], json!(sha256_hex(b"alpha")));
+        assert_eq!(disjoint["edits"][0]["text"], json!("alpha"));
+        assert_eq!(disjoint["edits"][0]["span"]["startColumn"], json!(5));
+
+        let overlapping = apply_block(
+            &directory,
+            &[match_at("a.rs", 4, 9, "beta"), match_at("a.rs", 6, 12, "x")],
+            true,
+        )
+        .unwrap();
+        assert_eq!(overlapping["applicable"], json!(false));
+        assert!(overlapping["reason"].as_str().unwrap().contains("overlap"));
+
+        // A search preview is legitimately inapplicable rather than broken.
+        let preview = apply_block(&directory, &[match_at("a.rs", 4, 9, "beta")], false).unwrap();
+        assert_eq!(preview["applicable"], json!(false));
+        assert_eq!(preview["edits"], json!([]));
+        let _ = fs::remove_dir_all(&directory);
     }
 }

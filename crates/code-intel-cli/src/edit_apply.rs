@@ -338,13 +338,16 @@ fn execute(cli: &Cli) -> Result<(i32, Value), (i32, &'static str, String)> {
 /// caller who wants the envelope and artifact bytes kept passes `--out`;
 /// otherwise they land in a per-process staging directory that is removed
 /// once the payload has been read back.
-struct Staging {
+///
+/// Shared with `edit apply-plan` so both front doors keep the same promise
+/// about where bytes land and when they are cleaned up.
+pub(crate) struct Staging {
     path: PathBuf,
     ephemeral: bool,
 }
 
 impl Staging {
-    fn open(explicit: Option<PathBuf>) -> Result<Self, String> {
+    pub(crate) fn open(explicit: Option<PathBuf>) -> Result<Self, String> {
         match explicit {
             Some(path) => Ok(Self {
                 path,
@@ -366,7 +369,7 @@ impl Staging {
         }
     }
 
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.path
     }
 }

@@ -208,7 +208,7 @@ fn unified_route_inventory_owns_version_primary_raw_and_legacy_dispatch() {
             .iter()
             .filter(|route| matches!(route, CommandRoute::Raw(_)))
             .count(),
-        31
+        32
     );
     assert_eq!(
         COMMAND_ROUTES
@@ -260,11 +260,20 @@ fn command_authority_and_effect_contracts_cover_conditional_and_mutating_routes(
         raw("model", None).contract.effects,
         &[CommandEffect::LocalWrite]
     );
-    // `edit apply` is the only agent-facing route that rewrites source bytes.
-    // Its declared effects must say so, and `edit impact` — the read-shaped
-    // sibling one word away — must keep saying it does not.
+    // `edit apply` and `edit apply-plan` are the agent-facing routes that
+    // rewrite source bytes. Their declared effects must say so, and `edit
+    // impact` — the read-shaped sibling one word away — must keep saying it
+    // does not.
     assert_eq!(
         raw("edit", Some("apply")).contract.effects,
+        &[
+            CommandEffect::RepoRead,
+            CommandEffect::LocalWrite,
+            CommandEffect::RepoMutation
+        ]
+    );
+    assert_eq!(
+        raw("edit", Some("apply-plan")).contract.effects,
         &[
             CommandEffect::RepoRead,
             CommandEffect::LocalWrite,
@@ -360,12 +369,18 @@ fn observable_contracts_pin_exact_schemas_composites_and_exit_sets() {
         raw("edit", Some("apply")).exit_contract.codes(),
         &[0, 10, 64, 65, 69, 70, 74]
     );
-    match raw("edit", Some("apply")).output_contract {
-        OutputContract::Stdout { identities } => assert!(
-            identities.contains(&"code-intel-edit-failure.v1"),
-            "edit apply must declare the pre-envelope failure document: {identities:?}"
-        ),
-        other => panic!("edit apply has wrong output contract: {other:?}"),
+    assert_eq!(
+        raw("edit", Some("apply-plan")).exit_contract.codes(),
+        &[0, 10, 64, 65, 69, 70, 74]
+    );
+    for route in ["apply", "apply-plan"] {
+        match raw("edit", Some(route)).output_contract {
+            OutputContract::Stdout { identities } => assert!(
+                identities.contains(&"code-intel-edit-failure.v1"),
+                "edit {route} must declare the pre-envelope failure document: {identities:?}"
+            ),
+            other => panic!("edit {route} has wrong output contract: {other:?}"),
+        }
     }
 
     for (adapter, outer_schema, nested_schema) in [

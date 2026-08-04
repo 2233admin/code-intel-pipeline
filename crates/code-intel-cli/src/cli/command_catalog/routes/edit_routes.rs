@@ -40,3 +40,39 @@ pub(super) const APPLY: super::RawRoute = super::RawRoute {
         retirement_condition: "retire only with the span-addressed edit capability it fronts",
     },
 };
+
+/// The plan-to-apply chain (#96 item 2, charter gate G4 in #139).
+///
+/// Separate from `edit apply` because it fronts a different capability with a
+/// different unit of failure: `edit apply` writes the spans one caller
+/// addressed in one file, while this route executes a whole ast-grep plan
+/// across every file it names — verifying every span's digest before writing
+/// any of them. Exit 10 is that refusal. As with `edit apply`, the exits
+/// reached before the envelope exists answer with `code-intel-edit-failure.v1`
+/// rather than with zero stdout bytes.
+pub(super) const APPLY_PLAN: super::RawRoute = super::RawRoute {
+    command: "edit",
+    subcommand: Some("apply-plan"),
+    argument_offset: 2,
+    id: super::CompatibilityRoute::EditApplyPlan,
+    contract: super::CommandContract {
+        stability: super::CommandStability::Public,
+        controller: super::ControllerOwnership::Internal,
+        authority: super::CommandAuthority::Internal,
+        effects: &[
+            super::CommandEffect::RepoRead,
+            super::CommandEffect::LocalWrite,
+            super::CommandEffect::RepoMutation,
+        ],
+        output_contract: super::OutputContract::Stdout {
+            identities: &[
+                "code-intel-edit-apply-plan.v1",
+                "code-intel-edit-failure.v1",
+                "code-intel-capability-result.v1",
+                "code-intel-structured-edit-apply-result.v1",
+            ],
+        },
+        exit_contract: super::ExitContract::Exact(&[0, 10, 64, 65, 69, 70, 74]),
+        retirement_condition: "retire only with the structural edit apply capability it fronts",
+    },
+};

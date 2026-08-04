@@ -1082,6 +1082,7 @@ Commands:
   change agenda <revspec> [--repo <path>] [--min-cochange <N>] [--format json|text] (git-only review units clustered by co-change, ranked worst first)
   edit impact --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--scope <directory>]... (working tree, no prior run, authority: none)
   edit apply --repo-path <checkout> --file <repo-relative-path> (--span <startLine:startColumn-endLine:endColumn> --expect-sha256 <sha256-of-current-span-bytes> --replacement <text>|--replacement-file <path>)... [--out <staging-dir>] [--manifest <integrations.json>] [--envelope] (span-addressed patch; refuses with evidence on digest drift, exit 10)
+  edit apply-plan --repo-path <checkout> --plan <structured-edit-plan.json> [--out <staging-dir>] [--manifest <integrations.json>] [--envelope] (applies one edit.ast-grep-plan as a unit; one drifted span refuses the whole plan, exit 10)
   decision request-response --request <request.json|-> [--response <response.json>|--cancel <cancellation.json>] --now <unix-seconds> --branch <branch-id>...
   decision record --resolution <resolution.json> --store <record-directory>
   decision replay --query <query.json> --store <record-directory>

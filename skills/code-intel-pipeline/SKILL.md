@@ -132,9 +132,25 @@ files and test selection while the working tree is dirty.
 code-intel capability exec edit.ast-grep-plan --request <request.json> --out <staging-dir>
 ```
 
-The plan is preview-only (`repositoryMutation=false`); it never rewrites files.
+The plan is preview-only (`repositoryMutation=false`); it never rewrites files. What it publishes is
+an instruction: for every match, the span, the sha256 of exactly those bytes, and the replacement
+ast-grep computed.
 
-4. Apply a change you can address by span, instead of rewriting the line around it:
+4. Apply that plan as a unit — one pattern in, every call site moved, no line restated:
+
+```powershell
+code-intel edit apply-plan --repo-path <checkout> --plan <staging-dir>/structured-edit-plan.json
+```
+
+Every planned span in every file is checked against the digests the plan recorded *before* any byte
+is written — the span's own bytes and the line they sit on. One span whose bytes moved, or whose
+line changed, refuses the whole plan: exit 10, `applied:false`, and the answer names which matches
+drifted with the expected digest, the found digest, and what is there now. The line check is what
+catches a rename that only *extends* a match (`commit` to `commit_now` leaves the planned bytes
+intact). Nothing is partially applied, so a refusal never leaves a half-renamed tree. Re-run the
+plan against the current tree and apply again.
+
+5. Apply a change you can address by span yourself, instead of rewriting the line around it:
 
 ```powershell
 code-intel edit apply --repo-path <checkout> --file <repo-relative-path> --span <startLine:startColumn-endLine:endColumn> --expect-sha256 <sha256-of-the-span-current-bytes> --replacement <text>
@@ -147,7 +163,7 @@ digest, the found digest, and a bounded literal of what is really there, leaving
 Repeat the `--span`/`--expect-sha256`/`--replacement` triple for several disjoint spans in one file;
 they are all resolved against the pre-edit bytes and land as one atomic file replacement.
 
-5. Edit, run the selected tests, then close the gate:
+6. Edit, run the selected tests, then close the gate:
 
 ```powershell
 & "$env:CODE_INTEL_HOME/legacy/Invoke-SentruxAgentTool.ps1" session_end "<scope-path>"

@@ -26,6 +26,7 @@ mod decision_port;
 mod decision_record;
 mod doctor_bootstrap;
 mod edit_apply;
+mod edit_apply_plan;
 mod edit_impact;
 mod evidence_outcome;
 mod evidence_query;

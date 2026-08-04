@@ -3483,7 +3483,7 @@ if (-not $SkipOpenSpec) {
             version = "1.0.0"
             toolchainDigests = @(
                 "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-                "bcc8622f544022998f9d74d7671fd4f375ef31ae7f02c82321213f02de75a853"
+                "291f6f55eb3bd761ea60f2d8966454c50bf7ea0818c6954d528d82f6d50160c2"
             )
         }
         snapshot = $workflowSnapshot.snapshot

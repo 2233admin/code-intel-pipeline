@@ -6,8 +6,8 @@ use serde_json::{json, Value};
 use crate::{
     admissibility, artifact_index, audit_report, change_agenda, change_impact, change_risk,
     compatibility_retirement_ticket, decision_port, decision_record, doctor_bootstrap, edit_apply,
-    edit_impact, evidence_query, model_channels, ponytail_gate, providers, repin, run_cli,
-    run_commit, session_evidence, snapshot, survival_scan,
+    edit_apply_plan, edit_impact, evidence_query, model_channels, ponytail_gate, providers, repin,
+    run_cli, run_commit, session_evidence, snapshot, survival_scan,
 };
 
 use super::legacy::{
@@ -72,6 +72,7 @@ enum CompatibilityRoute {
     ChangeRisk,
     ChangeAgenda,
     EditApply,
+    EditApplyPlan,
     EditImpact,
     DecisionRecord,
     DecisionReplay,
@@ -431,6 +432,7 @@ fn execute_compatibility(command: CompatibilityCommand) -> i32 {
         CompatibilityRoute::ChangeRisk => change_risk::run_raw(raw),
         CompatibilityRoute::ChangeAgenda => change_agenda::run_raw(raw),
         CompatibilityRoute::EditApply => edit_apply::run_raw(raw),
+        CompatibilityRoute::EditApplyPlan => edit_apply_plan::run_raw(raw),
         CompatibilityRoute::EditImpact => edit_impact::run_raw(raw),
         CompatibilityRoute::DecisionRecord | CompatibilityRoute::DecisionReplay => {
             decision_record::run_raw(raw)
