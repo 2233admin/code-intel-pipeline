@@ -23,8 +23,8 @@
       "rule": "loc>800; functions>25&&loc>400"
     },
     {
-      "functions": 63,
-      "loc": 1187,
+      "functions": 73,
+      "loc": 1346,
       "path": "crates/code-intel-cli/src/cli/legacy.rs",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -54,7 +54,7 @@
     },
     {
       "functions": 25,
-      "loc": 803,
+      "loc": 819,
       "path": "crates/code-intel-cli/src/doctor_bootstrap/mod.rs",
       "rule": "loc>800"
     },
@@ -137,8 +137,8 @@
       "rule": "loc>800; functions>25&&loc>400"
     },
     {
-      "functions": 19,
-      "loc": 1197,
+      "functions": 21,
+      "loc": 1286,
       "path": "crates/code-intel-cli/tests/dag_run.rs",
       "rule": "loc>800"
     },
@@ -162,25 +162,25 @@
     },
     {
       "functions": 42,
-      "loc": 1256,
+      "loc": 1298,
       "path": "legacy/install-code-intel-pipeline.ps1",
       "rule": "loc>800; functions>25&&loc>400"
     },
     {
-      "functions": 90,
-      "loc": 4359,
+      "functions": 91,
+      "loc": 4427,
       "path": "legacy/run-code-intel.ps1",
       "rule": "loc>800; functions>25&&loc>400"
     },
     {
       "functions": 13,
-      "loc": 1272,
+      "loc": 1275,
       "path": "legacy/scripts/tests/test-regression-fixes.ps1",
       "rule": "loc>800"
     },
     {
-      "functions": 90,
-      "loc": 4359,
+      "functions": 91,
+      "loc": 4427,
       "path": "orchestration/retirements/e04-codenexus-direct/rollback-rehearsal/run-code-intel.ps1",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -191,8 +191,8 @@
       "rule": "loc>800; functions>25&&loc>400"
     },
     {
-      "functions": 90,
-      "loc": 4359,
+      "functions": 91,
+      "loc": 4427,
       "path": "orchestration/retirements/e07-native-code/rollback-rehearsal/run-code-intel.ps1",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -204,21 +204,21 @@
     }
   ],
   "metrics": {
-    "branch_density_per_fn": 156,
+    "branch_density_per_fn": 81,
     "complex_fn_count": 7,
-    "coupling_score": 67.9,
-    "cross_module_edges": 1324,
+    "coupling_score": 67.09,
+    "cross_module_edges": 1335,
     "cycle_count": 0,
-    "files": 290,
-    "functions": 3977,
+    "files": 294,
+    "functions": 4021,
     "god_file_count": 33,
-    "import_modeled_files": 195,
-    "max_complexity": 156,
-    "quality_signal": 3666,
-    "total_import_edges": 1324
+    "import_modeled_files": 199,
+    "max_complexity": 81,
+    "quality_signal": 4423,
+    "total_import_edges": 1335
   },
-  "savedAt": 1785824555,
+  "savedAt": 1785827258,
   "schema": "code-intel-sentrux-baseline.v5",
   "scope": ".",
-  "sourceCommit": "d80c0f3b764b1837158b2e5d246e1da32e2881e5"
+  "sourceCommit": "5b8082b719bb8ff34ddae8f7c6eddb87ebcdf7f9"
 }
