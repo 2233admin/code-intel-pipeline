@@ -139,6 +139,59 @@ fn is_test_file_does_not_credit_names_that_merely_contain_tests() {
     }
 }
 
+/// Contract-level guard on the emitted signal, not just the predicate that
+/// feeds it. The defect this fixes lived in what `testAsymmetry` reported,
+/// so a green `is_test_file` alone would not have caught it — and would not
+/// catch a future rewiring that leaves the predicate correct but stops
+/// consulting it.
+#[test]
+fn a_change_touching_an_inline_tests_module_is_not_scored_as_asymmetric() {
+    let files = vec![
+        (
+            40,
+            2,
+            "crates/code-intel-cli/src/change_risk/signals.rs".to_string(),
+        ),
+        (
+            30,
+            0,
+            "crates/code-intel-cli/src/change_risk/tests.rs".to_string(),
+        ),
+    ];
+    let scored = score_subset(&files, &FileHistory::new(), 1_700_000_000);
+
+    let asymmetry = &scored.signals["testAsymmetry"];
+    assert_eq!(asymmetry["testFilesChanged"].as_u64(), Some(1));
+    assert_eq!(asymmetry["asymmetric"], false);
+    assert_eq!(asymmetry["subscore"], 0.0);
+
+    let tests_row = scored
+        .files
+        .iter()
+        .find(|file| file["path"] == "crates/code-intel-cli/src/change_risk/tests.rs")
+        .expect("the tests.rs row must be reported");
+    assert_eq!(tests_row["isTestFile"], true);
+}
+
+/// The complementary half: the signal must still fire when a change really
+/// does touch source without touching any test. A fix that made every change
+/// look symmetric would pass the test above and silently disarm the largest
+/// weight in the formula.
+#[test]
+fn a_source_only_change_is_still_scored_as_asymmetric() {
+    let files = vec![(
+        40,
+        2,
+        "crates/code-intel-cli/src/change_risk/signals.rs".to_string(),
+    )];
+    let scored = score_subset(&files, &FileHistory::new(), 1_700_000_000);
+
+    let asymmetry = &scored.signals["testAsymmetry"];
+    assert_eq!(asymmetry["testFilesChanged"].as_u64(), Some(0));
+    assert_eq!(asymmetry["asymmetric"], true);
+    assert_eq!(asymmetry["subscore"], 1.0);
+}
+
 #[test]
 fn looks_like_fix_subject_matches_english_and_chinese_markers() {
     assert!(looks_like_fix_subject("fix(gate): correct off-by-one"));
