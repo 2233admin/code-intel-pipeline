@@ -166,3 +166,33 @@ jobs:
         run: |
           echo "::error::change risk percentile ${{ steps.gate.outputs.percentile }} is at or above the ${RISK_PERCENTILE_BLOCK} threshold, and this PR does not carry the 'risk-accepted' label."
           exit 1
+
+  agent-gate:
+    # 编排 agent 推的分支(grok/**、agent/**、codex/**)必须由人点上
+    # `agent-approved` label 这个检查才绿。此前「agent PR 一律开 draft」只是
+    # 口头约定,合并权全靠记性;这里把它变成机制——label 是显式的人审动作,
+    # 配合 branch protection 的 required check 生效。labeled/unlabeled 已在
+    # 本 workflow 的触发类型里,点 label 即重跑。
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate agent label gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          case "$HEAD_REF" in
+            grok/*|agent/*|codex/*) ;;
+            *)
+              echo "non-agent branch ($HEAD_REF) — gate not applicable"
+              exit 0
+              ;;
+          esac
+          APPROVED=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json labels \
+            --jq '[.labels[].name] | any(. == "agent-approved")')
+          if [ "$APPROVED" != "true" ]; then
+            echo "::error::agent branch '$HEAD_REF' needs the 'agent-approved' label (human review) before merge."
+            exit 1
+          fi
+          echo "agent-approved label present — gate green"
