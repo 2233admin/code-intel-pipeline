@@ -101,16 +101,31 @@ pub(super) fn is_source_file(path: &str) -> bool {
         .is_some_and(|index| index + 1 < parts.len())
 }
 
-/// `tests/**`, `*_test.*`, or `test_*`, matched on path segments and
-/// filename rather than a literal glob engine (no new dependency for three
-/// simple patterns).
+/// `tests/**`, `*_test.*`, `test_*`, or a module's own `tests.<ext>` file,
+/// matched on path segments and filename rather than a literal glob engine
+/// (no new dependency for four simple patterns).
+///
+/// The last pattern is this crate's own convention for inline test modules
+/// — `change_risk/tests.rs`, `change_agenda/tests.rs`, `file_gate/tests.rs`
+/// — and all three of the others miss it: the final path segment is
+/// `tests.rs` rather than a `tests` directory, the name does not start with
+/// `test_`, and the stem `tests` does not end with `_test`. Without it every
+/// PR that follows the convention scored as "source changed, no tests
+/// touched", which carries the largest single weight in this file's formula
+/// (`WEIGHT_TEST_ASYMMETRY`). The monolith rule pushes test modules into
+/// their own file and this signal then refused to see them — two of the
+/// repository's own rules working against each other.
 pub(super) fn is_test_file(path: &str) -> bool {
     let parts: Vec<&str> = path.split('/').collect();
     if parts.contains(&"tests") {
         return true;
     }
     let filename = parts.last().copied().unwrap_or("");
-    filename.starts_with("test_") || file_stem(filename).ends_with("_test")
+    let stem = file_stem(filename);
+    // Whole-stem equality, not a substring or suffix match: `latest.rs` and
+    // `contests.rs` are ordinary source files and must not be credited as
+    // tests.
+    stem == "tests" || filename.starts_with("test_") || stem.ends_with("_test")
 }
 
 fn file_stem(filename: &str) -> &str {
