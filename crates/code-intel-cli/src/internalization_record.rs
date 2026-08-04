@@ -770,7 +770,10 @@ fn exact_with_optional(
     let actual = object.keys().map(String::as_str).collect::<BTreeSet<_>>();
     let required_set = required.iter().copied().collect::<BTreeSet<_>>();
     let optional_set = optional.iter().copied().collect::<BTreeSet<_>>();
-    if required_set.is_subset(&actual) && actual.difference(&required_set).all(|key| optional_set.contains(key))
+    if required_set.is_subset(&actual)
+        && actual
+            .difference(&required_set)
+            .all(|key| optional_set.contains(key))
     {
         Ok(())
     } else {

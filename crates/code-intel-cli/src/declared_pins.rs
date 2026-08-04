@@ -68,7 +68,10 @@ impl PinFinding {
 }
 
 fn is_sha256(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
 /// Collect every `{ path, sha256 }` pair anywhere in `value`.
@@ -106,7 +109,9 @@ pub(crate) fn discover(repo: &Path) -> Result<Vec<DeclaredPin>, String> {
 
     let mut records: Vec<PathBuf> = Vec::new();
     for entry in entries {
-        let path = entry.map_err(|err| format!("read dir entry: {err}"))?.path();
+        let path = entry
+            .map_err(|err| format!("read dir entry: {err}"))?
+            .path();
         if path.extension().is_some_and(|ext| ext == "json") {
             records.push(path);
         }
@@ -171,8 +176,7 @@ pub(crate) fn audit(repo: &Path) -> Result<Vec<PinFinding>, String> {
             });
             continue;
         }
-        let bytes =
-            fs::read(&target).map_err(|err| format!("read {}: {err}", target.display()))?;
+        let bytes = fs::read(&target).map_err(|err| format!("read {}: {err}", target.display()))?;
         let actual = sha256_hex(&bytes);
         let state = if actual == pin.declared {
             PinState::Fresh

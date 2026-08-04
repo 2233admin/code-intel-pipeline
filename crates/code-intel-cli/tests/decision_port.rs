@@ -570,10 +570,7 @@ fn production_cli_exit_policy_distinguishes_pending_timeout_and_cancelled() {
             "--branch".to_string(),
             "publication".to_string(),
         ]);
-        let output = common::cli()
-            .args(args)
-            .output()
-            .unwrap();
+        let output = common::cli().args(args).output().unwrap();
         assert_eq!(output.status.code(), Some(exit));
         let envelope: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(envelope["status"], status);

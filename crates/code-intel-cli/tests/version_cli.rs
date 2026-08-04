@@ -13,12 +13,8 @@
 //! non-zero-exit answer is a contract break, not a soft failure.
 mod common;
 
-
 fn run(args: &[&str]) -> (String, String, i32) {
-    let output = common::cli()
-        .args(args)
-        .output()
-        .expect("run code-intel");
+    let output = common::cli().args(args).output().expect("run code-intel");
     (
         String::from_utf8_lossy(&output.stdout).to_string(),
         String::from_utf8_lossy(&output.stderr).to_string(),

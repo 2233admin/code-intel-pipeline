@@ -64,12 +64,19 @@ fn every_environment_variable_the_binary_reads_is_registered() {
     let src = crate_root().join("src");
     let mut sources = Vec::new();
     rust_sources(&src, &mut sources);
-    assert!(!sources.is_empty(), "no sources found under {}", src.display());
+    assert!(
+        !sources.is_empty(),
+        "no sources found under {}",
+        src.display()
+    );
 
     let mut unregistered: BTreeSet<String> = BTreeSet::new();
     for path in &sources {
         // The registry names the variables; reading it as data would report itself.
-        if path.file_name().is_some_and(|name| name == "env_contract.rs") {
+        if path
+            .file_name()
+            .is_some_and(|name| name == "env_contract.rs")
+        {
             continue;
         }
         let source = fs::read_to_string(path).expect("read source");
@@ -170,7 +177,10 @@ fn a_hostile_ambient_environment_does_not_reach_the_child() {
         // environment looks like from the child's point of view.
         command.env(name, value);
     }
-    let hostile = command.arg("--version").output().expect("run hostile --version");
+    let hostile = command
+        .arg("--version")
+        .output()
+        .expect("run hostile --version");
 
     assert_eq!(
         hermetic.status.code(),

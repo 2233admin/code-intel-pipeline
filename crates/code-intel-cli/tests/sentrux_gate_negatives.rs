@@ -99,8 +99,7 @@ fn growth_that_stays_under_the_threshold_is_not_a_regression() {
     write_rules(&root);
     save_baseline(&root);
 
-    fs::write(root.join("src/lib.rs"), padded("pub fn entry() {}\n", 700))
-        .expect("grow the file");
+    fs::write(root.join("src/lib.rs"), padded("pub fn entry() {}\n", 700)).expect("grow the file");
 
     assert_not_flagged(
         &root,
@@ -114,8 +113,7 @@ fn a_grandfathered_god_file_that_shrinks_is_not_a_regression() {
     // Debt paid down must never read as debt added. This is the case that
     // breaks if the ratchet ever compares counts instead of identities.
     let root = fixture_root("shrinking-god");
-    fs::write(root.join("src/big.rs"), padded("pub fn entry() {}\n", 900))
-        .expect("write god file");
+    fs::write(root.join("src/big.rs"), padded("pub fn entry() {}\n", 900)).expect("write god file");
     write_rules(&root);
     save_baseline(&root);
 
@@ -135,8 +133,7 @@ fn deleting_a_god_file_and_adding_a_small_one_is_not_a_regression() {
     // It is not, so this is a strict improvement that a count-based rule with a
     // sloppy identity check could still report as churn.
     let root = fixture_root("god-replaced-small");
-    fs::write(root.join("src/big.rs"), padded("pub fn entry() {}\n", 900))
-        .expect("write god file");
+    fs::write(root.join("src/big.rs"), padded("pub fn entry() {}\n", 900)).expect("write god file");
     write_rules(&root);
     save_baseline(&root);
 
@@ -220,8 +217,7 @@ fn an_unchanged_tree_is_never_a_regression() {
     // The floor. If this ever fails the gate is non-deterministic, and every
     // other negative here is unreadable noise.
     let root = fixture_root("unchanged");
-    fs::write(root.join("src/big.rs"), padded("pub fn entry() {}\n", 900))
-        .expect("write god file");
+    fs::write(root.join("src/big.rs"), padded("pub fn entry() {}\n", 900)).expect("write god file");
     fs::write(root.join("src/small.rs"), "pub fn small() {}\n").expect("write small file");
     write_rules(&root);
     save_baseline(&root);

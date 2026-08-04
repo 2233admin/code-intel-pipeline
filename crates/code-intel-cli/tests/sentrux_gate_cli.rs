@@ -23,10 +23,7 @@ fn fixture_root(tag: &str) -> PathBuf {
 }
 
 fn code_intel(args: &[&str]) -> std::process::Output {
-    common::cli()
-        .args(args)
-        .output()
-        .expect("run code-intel")
+    common::cli().args(args).output().expect("run code-intel")
 }
 
 fn write_rules(root: &PathBuf) {

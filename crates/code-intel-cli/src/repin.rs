@@ -128,9 +128,12 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
     // is gone) is unresolved in exactly the sense `has_unresolved` already
     // means: the tree is not consistent and no further `repin` run will make
     // it so.
-    let declared_unresolved = declared
-        .iter()
-        .any(|finding| matches!(finding.state, declared_pins::PinState::Ambiguous | declared_pins::PinState::SourceMissing));
+    let declared_unresolved = declared.iter().any(|finding| {
+        matches!(
+            finding.state,
+            declared_pins::PinState::Ambiguous | declared_pins::PinState::SourceMissing
+        )
+    });
     let declared_dirty = declared.iter().any(PinFindingExt::needs_attention);
 
     if cli.write {

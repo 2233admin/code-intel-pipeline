@@ -875,10 +875,7 @@ fn capability_parser_rejects_missing_unknown_duplicate_and_conflicting_arguments
         ],
     ];
     for args in cases {
-        let output = common::cli()
-            .args(&args)
-            .output()
-            .unwrap();
+        let output = common::cli().args(&args).output().unwrap();
         assert_eq!(output.status.code(), Some(64), "args={args:?}");
         assert!(output.stdout.is_empty(), "args={args:?}");
         assert!(!output.stderr.is_empty(), "args={args:?}");

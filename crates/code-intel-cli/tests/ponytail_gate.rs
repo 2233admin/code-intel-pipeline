@@ -1,6 +1,6 @@
-mod common;
 #[path = "../src/authority.rs"]
 mod authority;
+mod common;
 #[path = "../src/ponytail_gate.rs"]
 mod ponytail_gate;
 
