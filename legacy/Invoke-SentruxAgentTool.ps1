@@ -74,6 +74,21 @@ function Invoke-Native {
     }
 }
 
+function Invoke-SentruxCli {
+    param([string[]]$Arguments)
+
+    # Prefer the repository's own shim over whatever `sentrux` resolves to on
+    # PATH: installed launchers are copies frozen at install time, and a stale
+    # lite core clobbers the native engine's .sentrux/baseline.json with the
+    # legacy flat format (issue #182). The shim itself still prefers a real
+    # external core, so accelerator semantics are unchanged.
+    $repoShim = Join-Path $PSScriptRoot (Join-Path "tools" (Join-Path "sentrux-shim" "sentrux-shim.ps1"))
+    if (Test-Path -LiteralPath $repoShim -PathType Leaf) {
+        return (Invoke-Native "pwsh" (@("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $repoShim) + $Arguments))
+    }
+    return (Invoke-Native "sentrux" $Arguments)
+}
+
 function ConvertTo-NullableDouble {
     param([object]$Value)
 
@@ -218,8 +233,22 @@ function Parse-SentruxOutput {
 function Get-BaselineMetrics {
     param([string]$TargetPath)
 
-    $baselinePath = Join-Path (Join-Path $TargetPath ".sentrux") "baseline.json"
+    # The lite gate keeps its baseline in .sentrux/cache/lite-baseline.json
+    # (see tools/sentrux-shim/sentrux-lite-core.ps1). `.sentrux/baseline.json`
+    # is the native engine's (nested code-intel-sentrux-baseline.v2+ schema on
+    # a different measurement scale) and is only accepted here in its
+    # pre-split flat `tool = "sentrux-lite"` form — backfilling native numbers
+    # into the lite-scale session compare would fabricate deltas.
+    $baselinePath = Join-Path (Join-Path (Join-Path $TargetPath ".sentrux") "cache") "lite-baseline.json"
     $baseline = Read-JsonFileSafe $baselinePath
+    if ($null -eq $baseline) {
+        $legacyPath = Join-Path (Join-Path $TargetPath ".sentrux") "baseline.json"
+        $legacy = Read-JsonFileSafe $legacyPath
+        if ($null -ne $legacy -and "$(Get-JsonProperty $legacy 'tool')" -eq "sentrux-lite") {
+            $baselinePath = $legacyPath
+            $baseline = $legacy
+        }
+    }
     if ($null -eq $baseline) { return $null }
 
     return [ordered]@{
@@ -403,7 +432,7 @@ function Invoke-Gate {
     $args = @("gate")
     if ($Save) { $args += "--save" }
     $args += $TargetPath
-    $native = Invoke-Native "sentrux" $args
+    $native = Invoke-SentruxCli $args
     $metrics = Parse-SentruxOutput $native.output
     $baseline = Get-BaselineMetrics $TargetPath
 
@@ -451,14 +480,15 @@ function Invoke-ScanTool {
         [string]$ToolName = "scan"
     )
 
-    $baselinePath = Join-Path (Join-Path $TargetPath ".sentrux") "baseline.json"
     $rulesPath = Join-Path (Join-Path $TargetPath ".sentrux") "rules.toml"
     $gate = Invoke-Gate $TargetPath
     $metrics = $gate["metrics"]
     $inventory = Get-SourceFileInventory $TargetPath
     $pollutionSignals = @(Get-PollutionSignals $TargetPath)
     $scopeCandidates = @(Find-ScopeCandidates $TargetPath)
-    $baselineExists = Test-Path -LiteralPath $baselinePath -PathType Leaf
+    # Existence must track the lite baseline the gate actually compares
+    # against, not the native engine's .sentrux/baseline.json.
+    $baselineExists = ($null -ne (Get-BaselineMetrics $TargetPath))
     $rulesExists = Test-Path -LiteralPath $rulesPath -PathType Leaf
     $status = if (-not $baselineExists) { "baseline_missing" } else { $gate["status"] }
 
@@ -560,7 +590,16 @@ function Invoke-SessionEndTool {
 
     if ($metricsObserved -eq 0) {
         $pass = $false
-        $summary = "sentrux output unparseable - gate cannot evaluate"
+        # A missing lite baseline also yields zero observed metrics (the gate
+        # exits before printing any); name that case instead of calling it
+        # unparseable so the transition from native-owned baseline.json to
+        # .sentrux/cache/lite-baseline.json reads as "run session_start".
+        $summary = if ("$($gate["raw_output"])" -match "Sentrux baseline missing") {
+            "lite baseline missing - run session_start to save one"
+        }
+        else {
+            "sentrux output unparseable - gate cannot evaluate"
+        }
     }
     else {
         $pass = ($gate["pass"] -and ($null -eq $delta -or $delta -ge 0) -and $rulesPass)
@@ -613,7 +652,7 @@ function Invoke-CheckRulesTool {
         }
     }
 
-    $native = Invoke-Native "sentrux" @("check", $TargetPath)
+    $native = Invoke-SentruxCli @("check", $TargetPath)
     $metrics = Parse-SentruxOutput $native.output
     return [ordered]@{
         tool = "check_rules"
