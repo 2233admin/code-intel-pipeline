@@ -77,16 +77,79 @@ fn truncates_unicode_on_a_character_boundary() {
     assert_eq!(truncated, "交易账...");
 }
 
+/// A scratch directory unique per (process, call), not merely per instant.
+///
+/// This module is `#[path]`-included into 12 separate integration-test
+/// binaries and `cargo test` runs those binaries as parallel *processes*,
+/// so up to 12 independent callers share this naming scheme at once. Naming
+/// the directory from `SystemTime::now()` alone made the name a function of
+/// nothing but the clock: any two processes observing the same instant get
+/// the *identical* path, and whichever finishes first deletes the tree the
+/// other is still reading. That is the mechanism behind
+/// `switching_documentation_language_changes_only_the_language_field`
+/// failing intermittently on `windows-latest` (issue #175) — a shared
+/// mutable path with no owner.
+///
+/// The race itself was not reproduced locally: on this machine the clock
+/// does advance between consecutive calls, so a same-instant collision is
+/// rare rather than routine. The fix is therefore structural — the process
+/// id makes cross-process collision impossible instead of improbable —
+/// rather than a repair of an observed local failure. `NEXT_ID` does the
+/// same for repeated calls inside one process. The timestamp is kept only
+/// so leftover directories from a killed run stay sortable by age.
 fn unique_temp_dir() -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 
     let mut dir = std::env::temp_dir();
     dir.push(format!(
-        "code-intel-graph-test-{}",
+        "code-intel-graph-test-{}-{}-{}",
+        std::process::id(),
+        NEXT_ID.fetch_add(1, Ordering::Relaxed),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos()
     ));
     dir
+}
+
+/// Guards `NEXT_ID`: a burst tighter than the clock could plausibly resolve
+/// must still produce distinct names.
+///
+/// Honest limitation — this test does **not** reproduce #175. Run against
+/// the old clock-only implementation on this machine it still passes,
+/// because the clock does advance between consecutive calls here. It guards
+/// the in-process half of the property and would catch a regression on a
+/// platform with a coarser clock; the cross-process half, which is what
+/// #175 actually was, is pinned by the test below.
+#[test]
+fn scratch_directories_stay_unique_within_a_single_clock_tick() {
+    let mut seen = std::collections::BTreeSet::new();
+    for _ in 0..1000 {
+        let dir = unique_temp_dir();
+        assert!(
+            seen.insert(dir.clone()),
+            "unique_temp_dir returned a duplicate inside one burst: {}",
+            dir.display()
+        );
+    }
+}
+
+/// The counter above only separates calls *within* one process. Cross-process
+/// separation rests entirely on the pid being part of the name, so pin that
+/// rather than leave it to be refactored away.
+#[test]
+fn scratch_directory_names_carry_the_process_id() {
+    let dir = unique_temp_dir();
+    let name = dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("scratch directory name");
+    assert!(
+        name.contains(&std::process::id().to_string()),
+        "the name must carry the process id or parallel test binaries can collide: {name}"
+    );
 }
