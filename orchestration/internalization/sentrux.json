@@ -65,7 +65,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux_analysis.rs",
-        "sha256": "bae17f2206cb15b63e63f5899f227349d5bbb7f27110de6f2f3993c37cfdf148"
+        "sha256": "7b48d4d32702539ec625e547130c889ee7430f9b5267e37c690887903ec1d590"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_analysis.rs",
@@ -331,7 +331,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux_gate.rs",
-        "sha256": "af9ae2fdea5b514a59769259ba9b2f4d3678a59354ca9896edd7729d29c60d09"
+        "sha256": "e4a641630fe293cf7cbc5cb21a464cc0a16f29e3e8491d4c19eb0813b7b9c2b2"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
@@ -411,7 +411,7 @@
       "path": "crates/code-intel-cli/src/sentrux_analysis.rs",
       "description": "native Rust governed-source, file/function metric, module graph, and DSM risk kernel",
       "evidenceIds": [
-        "local:sentrux:rust-dsm-source-sha256:bae17f2206cb15b63e63f5899f227349d5bbb7f27110de6f2f3993c37cfdf148",
+        "local:sentrux:rust-dsm-source-sha256:7b48d4d32702539ec625e547130c889ee7430f9b5267e37c690887903ec1d590",
         "local:sentrux:rust-dsm-conformance-sha256:9501b59fbe40f7aa76cf82d1bb5f75ed0cc45bd5f2fa9dae1acb735d0b66f266"
       ]
     },
@@ -427,7 +427,7 @@
       "path": "crates/code-intel-cli/src/sentrux_gate.rs",
       "description": "Pipeline-owned built-in structural gate engine (metrics, rules check, no-degradation gate, cycle detection)",
       "evidenceIds": [
-        "local:b03:native-gate-source-sha256:af9ae2fdea5b514a59769259ba9b2f4d3678a59354ca9896edd7729d29c60d09",
+        "local:b03:native-gate-source-sha256:e4a641630fe293cf7cbc5cb21a464cc0a16f29e3e8491d4c19eb0813b7b9c2b2",
         "local:b03:native-gate-conformance:ece31b4fbf1692c582d6bacee7b7beed770d27dc6811fb783e668914984210a0"
       ]
     }
