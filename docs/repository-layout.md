@@ -5,6 +5,12 @@ This repository is converging toward a smaller public surface.
 ## Repository Root
 
 - `README.md`, `CHANGELOG.md`, `CONTEXT.md`: operator-facing docs.
+- `changelog.d/`: per-PR changelog fragments (see `changelog.d/README.md`). Do not
+  edit `CHANGELOG.md`'s `[Unreleased]` section from ordinary PRs — write a
+  fragment instead. Release aggregation: `tools/aggregate_changelog.py`.
+- `tools/`: small maintainer scripts (Python). `aggregate_changelog.py` folds
+  `changelog.d/` fragments into `CHANGELOG.md` at release time (`--dry-run`
+  previews; `--check-pr` is the CI advisory for missing fragments).
 - `Cargo.toml`, `Cargo.lock`, `crates/code-intel-cli`: primary compiled CLI and execution kernel.
 
 No PowerShell entry point lives at the repository root. Every `.ps1` surface is
