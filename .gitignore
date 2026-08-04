@@ -43,3 +43,9 @@ Thumbs.db
 # Local command scratch
 -o
 .gstack/
+
+# cargo-mutants working output (issue #179). Left untracked it also perturbs
+# the repo's own measurements: `sentrux scan` counted 32769 file-gate
+# candidates before a mutation run and 32839 during one.
+mutants.out/
+mutants.out.old/
