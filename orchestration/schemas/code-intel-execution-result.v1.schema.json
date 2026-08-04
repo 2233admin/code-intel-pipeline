@@ -3,7 +3,7 @@
   "$id": "code-intel-execution-result.v1.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "outcome", "exitCode", "manifest", "publication"],
+  "required": ["schema", "outcome", "exitCode", "failures", "manifest", "publication"],
   "oneOf": [
     {
       "properties": {
@@ -36,6 +36,37 @@
       "enum": ["completed", "domain_failed", "domain_unknown", "process_failed", "incomplete"]
     },
     "exitCode": { "enum": [0, 10, 20, 70] },
+    "failures": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["process", "domain"],
+      "properties": {
+        "process": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["node", "diagnostic"],
+            "properties": {
+              "node": { "type": "string", "minLength": 1 },
+              "diagnostic": { "type": "string" }
+            }
+          }
+        },
+        "domain": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["node", "verdict"],
+            "properties": {
+              "node": { "type": "string", "minLength": 1 },
+              "verdict": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
     "manifest": {
       "$ref": "code-intel-run-manifest.v1.schema.json"
     },
