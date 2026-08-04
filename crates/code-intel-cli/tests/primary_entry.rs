@@ -425,16 +425,17 @@ fn write_fake_sentrux(fake_bin: &std::path::Path) {
             "goto args\r\n",
             ":args_done\r\n",
             "if \"%save%\"==\"1\" (\r\n",
-            "  if not exist \"%repo%\\.sentrux\" mkdir \"%repo%\\.sentrux\"\r\n",
-            "  > \"%repo%\\.sentrux\\baseline.json\" echo {\r\n",
-            "  >> \"%repo%\\.sentrux\\baseline.json\" echo   \"quality_signal\": 100,\r\n",
-            "  >> \"%repo%\\.sentrux\\baseline.json\" echo   \"coupling_score\": 1,\r\n",
-            "  >> \"%repo%\\.sentrux\\baseline.json\" echo   \"cycle_count\": 0,\r\n",
-            "  >> \"%repo%\\.sentrux\\baseline.json\" echo   \"god_file_count\": 0,\r\n",
-            "  >> \"%repo%\\.sentrux\\baseline.json\" echo   \"complex_fn_count\": 0,\r\n",
-            "  >> \"%repo%\\.sentrux\\baseline.json\" echo   \"cross_module_edges\": 1,\r\n",
-            "  >> \"%repo%\\.sentrux\\baseline.json\" echo   \"total_import_edges\": 10\r\n",
-            "  >> \"%repo%\\.sentrux\\baseline.json\" echo }\r\n",
+            "  if not exist \"%repo%\\.sentrux\\cache\" mkdir \"%repo%\\.sentrux\\cache\"\r\n",
+            "  > \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo {\r\n",
+            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"tool\": \"sentrux-lite\",\r\n",
+            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"quality_signal\": 100,\r\n",
+            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"coupling_score\": 1,\r\n",
+            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"cycle_count\": 0,\r\n",
+            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"god_file_count\": 0,\r\n",
+            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"complex_fn_count\": 0,\r\n",
+            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"cross_module_edges\": 1,\r\n",
+            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"total_import_edges\": 10\r\n",
+            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo }\r\n",
             ")\r\n",
             "set \"quality=100\"\r\n",
             "if exist \"%repo%\\src\\regression.marker\" set \"quality=99\"\r\n",
@@ -462,8 +463,8 @@ fn write_fake_sentrux(fake_bin: &std::path::Path) {
             "  repo=$arg\n",
             "done\n",
             "if [ \"$save\" = 1 ]; then\n",
-            "  mkdir -p \"$repo/.sentrux\"\n",
-            "  printf '%s\\n' '{' '  \"quality_signal\": 100,' '  \"coupling_score\": 1,' '  \"cycle_count\": 0,' '  \"god_file_count\": 0,' '  \"complex_fn_count\": 0,' '  \"cross_module_edges\": 1,' '  \"total_import_edges\": 10' '}' > \"$repo/.sentrux/baseline.json\"\n",
+            "  mkdir -p \"$repo/.sentrux/cache\"\n",
+            "  printf '%s\\n' '{' '  \"tool\": \"sentrux-lite\",' '  \"quality_signal\": 100,' '  \"coupling_score\": 1,' '  \"cycle_count\": 0,' '  \"god_file_count\": 0,' '  \"complex_fn_count\": 0,' '  \"cross_module_edges\": 1,' '  \"total_import_edges\": 10' '}' > \"$repo/.sentrux/cache/lite-baseline.json\"\n",
             "fi\n",
             "quality=100\n",
             "[ -f \"$repo/src/regression.marker\" ] && quality=99\n",
@@ -500,6 +501,14 @@ fn invoke_legacy_session(
         )),
     )
     .expect("compose hermetic PATH");
+    // The agent tool pins the session gate to the repository's lite core and
+    // honors SENTRUX_CORE_EXE as the explicit override (issue #182), so the
+    // fake CLI is injected through that seam; the PATH prepend stays for the
+    // last-resort `sentrux` lookup.
+    #[cfg(windows)]
+    let fake_cli = tree.fake_bin().join("sentrux.cmd");
+    #[cfg(not(windows))]
+    let fake_cli = tree.fake_bin().join("sentrux");
     let output = Command::new("pwsh")
         .args(["-NoLogo", "-NoProfile", "-File"])
         .arg(legacy_session_script())
@@ -507,6 +516,7 @@ fn invoke_legacy_session(
         .arg(tree.repo())
         .args(["-SessionId", session_id])
         .env("PATH", path)
+        .env("SENTRUX_CORE_EXE", &fake_cli)
         .output()
         .expect("invoke real legacy session gate");
     (output.status.code(), output.stdout, output.stderr)
@@ -592,8 +602,12 @@ fn real_session_start_change_end_pass_contract_is_stable() {
     assert_eq!(persisted_start["session_id"], session_id);
     assert_eq!(persisted_start["quality_signal"], 100);
     assert_eq!(
-        read_json(&tree.repo().join(".sentrux/baseline.json"))["quality_signal"],
+        read_json(&tree.repo().join(".sentrux/cache/lite-baseline.json"))["quality_signal"],
         100
+    );
+    assert!(
+        !tree.repo().join(".sentrux/baseline.json").exists(),
+        "session gate must not create the native engine's .sentrux/baseline.json (issue #182)"
     );
 
     std::fs::write(
@@ -663,5 +677,9 @@ fn real_session_start_change_end_failure_is_json_with_zero_process_exit() {
         read_json(&records.join(format!("{session_id}.end.json"))),
         end_json,
         "persisted failure-case end differs from stdout"
+    );
+    assert!(
+        !tree.repo().join(".sentrux/baseline.json").exists(),
+        "session gate must not create the native engine's .sentrux/baseline.json (issue #182)"
     );
 }

@@ -77,14 +77,22 @@ function Invoke-Native {
 function Invoke-SentruxCli {
     param([string[]]$Arguments)
 
-    # Prefer the repository's own shim over whatever `sentrux` resolves to on
-    # PATH: installed launchers are copies frozen at install time, and a stale
-    # lite core clobbers the native engine's .sentrux/baseline.json with the
-    # legacy flat format (issue #182). The shim itself still prefers a real
-    # external core, so accelerator semantics are unchanged.
-    $repoShim = Join-Path $PSScriptRoot (Join-Path "tools" (Join-Path "sentrux-shim" "sentrux-shim.ps1"))
-    if (Test-Path -LiteralPath $repoShim -PathType Leaf) {
-        return (Invoke-Native "pwsh" (@("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $repoShim) + $Arguments))
+    # The session gate runs on lite semantics: the engine executed here must
+    # be the same one whose baseline layer Get-BaselineMetrics reads
+    # (.sentrux/cache/lite-baseline.json), so this calls the repository's own
+    # lite core directly instead of whatever `sentrux` resolves to on PATH —
+    # installed launchers are copies frozen at install time, and a stale lite
+    # core clobbers the native engine's .sentrux/baseline.json with the
+    # legacy flat format (issue #182). SENTRUX_CORE_EXE (the shim's existing
+    # override convention) stays the explicit escape hatch for tests and
+    # rollouts; bare `sentrux` on PATH is the last resort for layouts that
+    # ship this script without the shim directory.
+    if (-not [string]::IsNullOrWhiteSpace($env:SENTRUX_CORE_EXE) -and (Test-Path -LiteralPath $env:SENTRUX_CORE_EXE -PathType Leaf)) {
+        return (Invoke-Native $env:SENTRUX_CORE_EXE $Arguments)
+    }
+    $liteCore = Join-Path $PSScriptRoot (Join-Path "tools" (Join-Path "sentrux-shim" "sentrux-lite-core.ps1"))
+    if (Test-Path -LiteralPath $liteCore -PathType Leaf) {
+        return (Invoke-Native "pwsh" (@("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $liteCore) + $Arguments))
     }
     return (Invoke-Native "sentrux" $Arguments)
 }
