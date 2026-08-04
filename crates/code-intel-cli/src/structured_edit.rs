@@ -240,7 +240,14 @@ fn validate_path(
     Ok(normalized)
 }
 
-fn normalize_relative(path: &str, reject_generated: bool) -> Result<String, AdapterError> {
+/// Shared with `edit.span-apply` rather than restated there: the plan stage
+/// and the apply stage must agree byte-for-byte on which paths are editable,
+/// or a plan could name a target the writer would then refuse (or worse,
+/// accept under looser rules).
+pub(super) fn normalize_relative(
+    path: &str,
+    reject_generated: bool,
+) -> Result<String, AdapterError> {
     let path = Path::new(path);
     if path.is_absolute() {
         return Err(AdapterError::InvalidOptions(format!(
@@ -283,7 +290,7 @@ fn normalize_relative(path: &str, reject_generated: bool) -> Result<String, Adap
     })
 }
 
-fn within_scope(path: &str, scope: &str) -> bool {
+pub(super) fn within_scope(path: &str, scope: &str) -> bool {
     scope == "." || path == scope || path.starts_with(&format!("{scope}/"))
 }
 

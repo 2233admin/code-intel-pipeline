@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`code-intel edit apply` + `edit.span-apply` 能力：span 寻址补丁，终结"改一个字重写整行"**（#96 item 1、charter gate G4 #139）。`--span <startLine:startColumn-endLine:endColumn> --expect-sha256 <该 span 当前字节的 sha256> --replacement <text>`，行列 1-based、结束列开区间；同一文件可带多个互不重叠的 span，全部对改动前字节定位、写临时同级文件后 rename，整文件原子替换。写之前逐 span 比对 digest：不一致即拒绝（退出码 10、`applied:false`），产物给出 `expectedSha256` / `foundSha256` / 有界原文，且信封 `observedEffects` 不含 `repo_mutation`——"没写"是机器可校验的，不是自报的。写路径全程走既有 capability envelope（`edit.span-apply.compat`，`allowedEffects` 含 `repo_mutation`），能力自身在动手前先检查请求的 effectPolicy，把事后审计变成事前门。不含 ast-grep 接线（下一档）。
+
 ## [0.7.0-beta.5] — 2026-08-04
 
 两件都关于「把 review 该做什么交出去」：管线第一次能回答「这件事我答不了，谁能答」，也第一次把变更排成有序议程而不是一个标量分。之前 gap 只存在于操作者脑子里，靠现场想起某个 plugin 存在；现在它是一次可执行、可复现、只出提案的查询。

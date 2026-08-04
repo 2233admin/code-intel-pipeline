@@ -5,6 +5,7 @@ use super::contract::{
 use super::{matches_primary_pattern, CompatibilityRoute, LegacyRouteId};
 use crate::cli::help_contract::{HELP_ALIASES, HELP_COMMAND};
 
+mod edit_routes;
 mod run_routes;
 
 macro_rules! command_contract {
@@ -379,6 +380,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             "retire only through a versioned workspace agenda replacement"
         ),
     },
+    CommandRoute::Raw(edit_routes::APPLY),
     raw_route! {
         // Working-tree sibling of `change impact`. Separate command because
         // it answers without authority; folding it into `change impact` as a

@@ -290,7 +290,7 @@
             "7db9e80857f3c65aada25041986cb5cb3b50b95fa69de794d55ad38fd4a8d8d4",
             "78f88f1aaa3f77d28fbadf2bf8fd1c5e5a6b99a4728457262b19baabff2c8a80",
             "7c5cabf7a84fdc2fad9778d45217a66dd3e7f4730ff87012bebc85545b93bf9e",
-            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568",
+            "bcc8622f544022998f9d74d7671fd4f375ef31ae7f02c82321213f02de75a853",
             "9918c0d3e9d07e03c708eb895f63ae592ef7602c82bc033b2dd5854b0b255973"
           ]
         },
@@ -753,7 +753,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "713daf121490de0eb9e3a94139318da47b46d4368fce5ef09c5719b8d546f403",
-            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568"
+            "bcc8622f544022998f9d74d7671fd4f375ef31ae7f02c82321213f02de75a853"
           ]
         },
         "determinism": "deterministic",
@@ -844,7 +844,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "3ba256f4ca0bf62aca08f688f7ecf31800dd10e68371054e2f1605eff197ea81",
-            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568",
+            "bcc8622f544022998f9d74d7671fd4f375ef31ae7f02c82321213f02de75a853",
             "6ac074d94c384b2e414d909bbc05be62b2f6da2bcb28cb875209c245ade238de",
             "b118ba78ff3ef4a189525c642184cbd320a268d2885681ab153544db554c5965",
             "e3072b6b01a4f692c2ac75c7c4995747f9a0fd1ce4f32e1ab1599f348661f570",
@@ -907,7 +907,7 @@
           "toolchainDigests": [
             "2d2b38c4650795e2bba99e8ec38ca21adcb204042e9289577c535f7087e899d8",
             "6ac074d94c384b2e414d909bbc05be62b2f6da2bcb28cb875209c245ade238de",
-            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568"
+            "bcc8622f544022998f9d74d7671fd4f375ef31ae7f02c82321213f02de75a853"
           ]
         },
         "determinism": "deterministic",
@@ -958,7 +958,7 @@
           "toolchainDigests": [
             "a6da84444e815dd94c15887190c7d6bd48c7bca5975fb5d493eb77ab39f27d80",
             "6ac074d94c384b2e414d909bbc05be62b2f6da2bcb28cb875209c245ade238de",
-            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568"
+            "bcc8622f544022998f9d74d7671fd4f375ef31ae7f02c82321213f02de75a853"
           ]
         },
         "determinism": "deterministic",
@@ -1033,7 +1033,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568"
+            "bcc8622f544022998f9d74d7671fd4f375ef31ae7f02c82321213f02de75a853"
           ]
         },
         "determinism": "deterministic",
@@ -1083,7 +1083,7 @@
           "toolchainDigests": [
             "56ddff826de649523a12e706ff3d1cad10db305b799135363e91e09ffd6a203a",
             "eb77a30abb4fb9891f0328ac26a7b50c21a1ada75aff52b88c39cf4184e25ba8",
-            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568",
+            "bcc8622f544022998f9d74d7671fd4f375ef31ae7f02c82321213f02de75a853",
             "85e964c401d62917ca11bc3f1c7ad6e56832f72da71b44d1c6a15cc261298449"
           ]
         },
@@ -1256,7 +1256,7 @@
           "id": "inventory.rg.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "8a2e6853e91af781ebc7b1438627386f83b2c5fe0365866bbd06025c3083c568"
+            "bcc8622f544022998f9d74d7671fd4f375ef31ae7f02c82321213f02de75a853"
           ]
         },
         "determinism": "deterministic",
@@ -1342,7 +1342,7 @@
           "id": "edit.ast-grep-plan.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "6f481d582dc0301fb438bcd18b9ab5704fc72f81b7044635140d4b99c4fae0ac"
+            "74e21715c584392f0955e797817f2ef87e3fa9f21045f53c0d4c1ad8f9c70119"
           ]
         },
         "determinism": "external_nondeterministic",
@@ -1358,6 +1358,48 @@
         "structured-edit-plan.json"
       ],
       "extensionPoint": "Preview-only structural search and rewrite planning through ast-grep. Repository mutation is deliberately excluded and requires a separate explicitly authorized capability."
+    },
+    {
+      "id": "edit.span-apply",
+      "stage": "localization",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-adapter",
+      "required": false,
+      "entrypoint": "target/debug/code-intel.exe",
+      "capabilities": [
+        "span_addressed_patch",
+        "digest_verified_write",
+        "atomic_file_replace",
+        "snapshot_bound"
+      ],
+      "commands": {
+        "capabilityExec": "target/debug/code-intel.exe capability exec edit.span-apply --request <request.json|-> --out <staging-dir>",
+        "frontDoor": "target/debug/code-intel.exe edit apply --repo-path <checkout> --file <repo-relative-path> --span <startLine:startColumn-endLine:endColumn> --expect-sha256 <sha256> --replacement <text>"
+      },
+      "capabilityDeclaration": {
+        "schema": "code-intel-capability-declaration.v1",
+        "id": "edit.span-apply",
+        "contractVersion": 1,
+        "implementation": {
+          "id": "edit.span-apply.compat",
+          "version": "1.0.0",
+          "toolchainDigests": [
+            "4d59570dfe4266e3dbd89f4e7fdd917f81c3c7b5c8bab47716383488bc45d0a3"
+          ]
+        },
+        "determinism": "deterministic",
+        "allowedEffects": ["repo_read", "local_write", "repo_mutation"],
+        "dependencies": ["repo.snapshot"]
+      },
+      "runtimeAdapter": "edit.span-apply.compat",
+      "toolchainDigestEvidence": {
+        "algorithm": "sha256",
+        "inputs": ["crates/code-intel-cli/src/span_apply.rs"]
+      },
+      "artifactContract": [
+        "span-apply-result.json"
+      ],
+      "extensionPoint": "The only capability in this registry that rewrites repository source bytes. It writes exactly the addressed spans of exactly one file, after verifying each span's current bytes against a caller-supplied sha256, and publishes the expected/found digests as evidence when it refuses. Structural planning stays in edit.ast-grep-plan; this capability never decides what to change."
     },
     {
       "id": "memory.repowise",

@@ -1,11 +1,13 @@
 use std::fs;
 use std::path::Path;
 
+#[allow(dead_code)]
 pub(crate) fn sha256(path: &Path) -> String {
     sha256_hex(&fs::read(path).unwrap())
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+#[allow(dead_code)]
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     const K: [u32; 64] = [
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
         0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
