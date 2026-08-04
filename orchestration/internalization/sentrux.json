@@ -278,7 +278,7 @@
       },
       "conformance": {
         "path": "legacy/scripts/tests/test-sentrux-failure-normalization.ps1",
-        "sha256": "0ea4c890c5f75c5c9eec94acf74e38550ff87179da7c4258dac0432625620cb4",
+        "sha256": "fee9666670084fdd8f339dd785514ed54976c87ca20d3d4ec7ddc0c30c73e7c0",
         "testName": "Sentrux failure normalization tests passed"
       }
     },
@@ -297,7 +297,7 @@
       },
       "conformance": {
         "path": "legacy/scripts/tests/test-sentrux-failure-normalization.ps1",
-        "sha256": "0ea4c890c5f75c5c9eec94acf74e38550ff87179da7c4258dac0432625620cb4",
+        "sha256": "fee9666670084fdd8f339dd785514ed54976c87ca20d3d4ec7ddc0c30c73e7c0",
         "testName": "Sentrux failure normalization tests passed"
       }
     },
@@ -316,7 +316,7 @@
       },
       "conformance": {
         "path": "legacy/scripts/tests/test-sentrux-failure-normalization.ps1",
-        "sha256": "0ea4c890c5f75c5c9eec94acf74e38550ff87179da7c4258dac0432625620cb4",
+        "sha256": "fee9666670084fdd8f339dd785514ed54976c87ca20d3d4ec7ddc0c30c73e7c0",
         "testName": "Sentrux failure normalization tests passed"
       }
     },
