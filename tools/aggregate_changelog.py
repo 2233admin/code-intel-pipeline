@@ -22,6 +22,17 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+# Force UTF-8 on stdio so Chinese fragments and Keep-a-Changelog em-dashes
+# (U+2014) never get re-encoded as the host locale (cp1252 on en-US Windows
+# runners). Without this, a child Python writing to a pipe uses the console
+# code page and the parent dies with UnicodeDecodeError on 0x97.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, OSError, ValueError):
+        # Older Python / closed streams / non-TextIO wrappers: leave alone.
+        pass
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_FRAGMENTS_DIR = ROOT / "changelog.d"

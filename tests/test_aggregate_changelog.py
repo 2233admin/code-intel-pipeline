@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,27 @@ def load_module():
     sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
     return mod
+
+
+def run_script(args: list[str]) -> subprocess.CompletedProcess[str]:
+    """Invoke aggregate_changelog with UTF-8 stdio on every host locale.
+
+    en-US Windows runners default child Python pipes to cp1252; without
+    PYTHONUTF8=1 the child emits 0x97 for U+2014 and the parent (encoding=
+    utf-8) raises UnicodeDecodeError before tests can assert on stdout.
+    """
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        env=env,
+        check=False,
+    )
 
 
 AGG = load_module()
@@ -196,10 +218,8 @@ class CliDryRunTests(unittest.TestCase):
             original = SAMPLE_CHANGELOG
             cl.write_text(original, encoding="utf-8")
 
-            proc = subprocess.run(
+            proc = run_script(
                 [
-                    sys.executable,
-                    str(SCRIPT),
                     "--repo",
                     str(d),
                     "--version",
@@ -207,13 +227,10 @@ class CliDryRunTests(unittest.TestCase):
                     "--date",
                     "2026-08-04",
                     "--dry-run",
-                ],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                check=False,
+                ]
             )
             self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIsNotNone(proc.stdout)
             self.assertIn("## [9.9.9]", proc.stdout)
             self.assertIn("**dry**", proc.stdout)
             self.assertTrue(frag.is_file(), "dry-run must not delete fragments")
@@ -232,37 +249,58 @@ class CliDryRunTests(unittest.TestCase):
             cl = d / "CHANGELOG.md"
             cl.write_text(SAMPLE_CHANGELOG, encoding="utf-8")
 
-            proc = subprocess.run(
+            proc = run_script(
                 [
-                    sys.executable,
-                    str(SCRIPT),
                     "--repo",
                     str(d),
                     "--version",
                     "0.3.0",
                     "--date",
                     "2026-08-04",
-                ],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                check=False,
+                ]
             )
-            self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+            self.assertEqual(proc.returncode, 0, (proc.stderr or "") + (proc.stdout or ""))
             self.assertFalse(frag.exists())
             text = cl.read_text(encoding="utf-8")
             self.assertIn("## [0.3.0] — 2026-08-04", text)
             self.assertIn("**applied**", text)
+
+    def test_dry_run_emits_non_ascii_utf8(self) -> None:
+        """Regression: Chinese + em-dash must survive the child→parent pipe."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            frag_dir = d / "changelog.d"
+            frag_dir.mkdir()
+            (frag_dir / "7.md").write_text(
+                "type: feat\n\n- **中文** (#7)：em—dash and 碎片.\n",
+                encoding="utf-8",
+            )
+            (d / "CHANGELOG.md").write_text(SAMPLE_CHANGELOG, encoding="utf-8")
+
+            proc = run_script(
+                [
+                    "--repo",
+                    str(d),
+                    "--version",
+                    "1.2.3",
+                    "--date",
+                    "2026-08-04",
+                    "--dry-run",
+                ]
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIsNotNone(proc.stdout)
+            self.assertIn("中文", proc.stdout)
+            self.assertIn("em—dash", proc.stdout)
+            self.assertIn("碎片", proc.stdout)
 
 
 class CheckPrTests(unittest.TestCase):
     def test_check_pr_advisory_exits_zero(self) -> None:
         # Against this real repo: our own branch should either have a fragment
         # (pass quietly) or emit advisory — either way exit 0.
-        proc = subprocess.run(
+        proc = run_script(
             [
-                sys.executable,
-                str(SCRIPT),
                 "--check-pr",
                 "--repo",
                 str(ROOT),
@@ -270,13 +308,9 @@ class CheckPrTests(unittest.TestCase):
                 "origin/main",
                 "--head-ref",
                 "HEAD",
-            ],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=False,
+            ]
         )
-        self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+        self.assertEqual(proc.returncode, 0, (proc.stderr or "") + (proc.stdout or ""))
 
 
 if __name__ == "__main__":
