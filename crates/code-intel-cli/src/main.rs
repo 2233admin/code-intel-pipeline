@@ -28,6 +28,7 @@ mod decision_record;
 mod doctor_bootstrap;
 mod edit_apply;
 mod edit_impact;
+mod env_contract;
 mod evidence_outcome;
 mod evidence_query;
 mod execution_policy;

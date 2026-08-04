@@ -1,11 +1,8 @@
+mod common;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 const SOURCE_REVISION: &str = "a56ad2c39a617ebb72447a98c0087a765758c296";
-
-fn binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_code-intel"))
-}
 
 fn head_parity_fixture() -> serde_json::Value {
     let path =
@@ -50,7 +47,7 @@ impl Drop for FixtureRepository {
 fn execute(argv: &[serde_json::Value], fixture_repo: &Path) -> Output {
     let missing_repo = "__code_intel_parity_missing_repository_v1__";
     assert!(!Path::new(missing_repo).exists());
-    let mut command = Command::new(binary());
+    let mut command = common::cli();
     for argument in argv {
         let argument = argument.as_str().expect("argv item must be a string");
         match argument {

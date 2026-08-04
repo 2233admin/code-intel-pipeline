@@ -1,3 +1,4 @@
+mod common;
 #[path = "../src/repowise_adapter.rs"]
 mod repowise_adapter;
 
@@ -42,7 +43,7 @@ fn admit(entry: &Value, artifact_root: &Path) -> (i32, Value) {
         serde_json::to_vec(&entry["request"]).unwrap(),
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args([
             "evidence",
             "validate",

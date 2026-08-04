@@ -3,6 +3,7 @@
 //! holds through the shipped CLI surface (`sentrux --operation save_baseline`
 //! / `--operation check`), which is what the authoritative self-scan and CI
 //! actually invoke.
+mod common;
 
 use std::fs;
 use std::path::PathBuf;
@@ -22,7 +23,7 @@ fn fixture_root(tag: &str) -> PathBuf {
 }
 
 fn code_intel(args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    common::cli()
         .args(args)
         .output()
         .expect("run code-intel")

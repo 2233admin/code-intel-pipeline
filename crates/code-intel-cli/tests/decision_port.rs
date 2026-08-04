@@ -1,6 +1,6 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -418,7 +418,7 @@ fn schemas_docs_and_registry_binding_exist() {
 fn production_cli_routes_through_the_native_structured_adapter() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let fixtures = root.join("tests/fixtures/decision-port");
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args([
             "decision",
             "request-response",
@@ -459,7 +459,7 @@ fn production_cli_rejects_duplicate_keys_with_a_machine_envelope() {
     );
     let request_path = root.join("duplicate-request.json");
     fs::write(&request_path, duplicate).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args([
             "decision",
             "request-response",
@@ -570,7 +570,7 @@ fn production_cli_exit_policy_distinguishes_pending_timeout_and_cancelled() {
             "--branch".to_string(),
             "publication".to_string(),
         ]);
-        let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        let output = common::cli()
             .args(args)
             .output()
             .unwrap();

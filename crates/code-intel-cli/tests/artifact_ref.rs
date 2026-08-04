@@ -1,3 +1,4 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -35,7 +36,7 @@ impl Drop for TempTree {
 }
 
 fn snapshot(repo: &Path) -> Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args([
             "snapshot",
             "identity",
@@ -105,7 +106,7 @@ fn run(
         out.file_name().unwrap().to_string_lossy()
     ));
     fs::write(&request_path, serde_json::to_vec(request).unwrap()).unwrap();
-    let mut command = Command::new(env!("CARGO_BIN_EXE_code-intel"));
+    let mut command = common::cli();
     command
         .args(["capability", "exec", "inventory.rg", "--request"])
         .arg(&request_path)
@@ -525,7 +526,7 @@ fn artifact_ref_rejects_hardlink_aliases_and_duplicate_root_authority() {
         .unwrap(),
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["capability", "exec", "inventory.rg", "--request"])
         .arg(&request_path)
         .arg("--out")

@@ -1,3 +1,4 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -109,7 +110,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 fn representative_corpus_measures_quality_latency_and_rejects_fast_provenance_free_output() {
     let temp = Temp::new();
     let out = temp.0.join("benchmark");
-    let measured = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let measured = common::cli()
         .args([
             "benchmark",
             "orientation",
@@ -268,7 +269,7 @@ fn representative_corpus_measures_quality_latency_and_rejects_fast_provenance_fr
     let valid_request_path = temp.0.join("valid-request.json");
     fs::write(&valid_request_path, serde_json::to_vec(&request).unwrap()).unwrap();
     let valid_out = temp.0.join("a01-valid");
-    let valid = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let valid = common::cli()
         .args([
             "capability",
             "exec",
@@ -313,7 +314,7 @@ fn representative_corpus_measures_quality_latency_and_rejects_fast_provenance_fr
     )
     .unwrap();
     let wrong_count_out = temp.0.join("wrong-count-out");
-    let wrong_count = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let wrong_count = common::cli()
         .args([
             "capability",
             "exec",
@@ -353,7 +354,7 @@ fn representative_corpus_measures_quality_latency_and_rejects_fast_provenance_fr
     let request_path = temp.0.join("forged-request.json");
     fs::write(&request_path, serde_json::to_vec(&forged_request).unwrap()).unwrap();
     let rejected_out = temp.0.join("rejected");
-    let rejected = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let rejected = common::cli()
         .args([
             "capability",
             "exec",
