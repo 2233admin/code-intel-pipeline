@@ -136,6 +136,7 @@ fn primary_result(args: &PrimaryArgs, result: &authoritative_run::ProductionRunR
         "failureNode": failure_node,
         "diagnostic": diagnostic,
         "failures": result.failures(),
+        "anchors": result.anchors(),
     })
 }
 

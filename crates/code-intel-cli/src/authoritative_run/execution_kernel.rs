@@ -40,6 +40,7 @@ pub(crate) struct ExecutionResult {
     pub(crate) outcome: RunOutcome,
     pub(crate) manifest: Value,
     pub(crate) publication: Publication,
+    pub(crate) anchors: crate::anchor_verification::AnchorCounts,
 }
 
 impl ExecutionResult {
@@ -55,6 +56,10 @@ impl ExecutionResult {
             "failures":failures(&self.manifest),
             "manifest":self.manifest,
             "publication":self.publication.to_json(),
+            // Issue #151: hoisted here so `dropped > 0` is visible in the
+            // top-level CLI summary without opening the manifest or the
+            // `verification.anchors` artifact it references.
+            "anchors":self.anchors.to_json(),
         })
     }
 }
@@ -107,6 +112,11 @@ pub(crate) fn execute(request: RunRequest) -> Result<ExecutionResult, RunError> 
     // `main.rs` — keeps the write side and the query side agreeing on the
     // path without changing either reader.
     let repo_name = resolve_repo_name(&request.repo)?;
+    // Cloned before `request.repo` moves into the DAG request below: the
+    // anchor-verification gate (issue #151) re-resolves each claim against
+    // the same live repository the DAG scanned, after the DAG has already
+    // consumed the original.
+    let repo_root = request.repo.clone();
     let mut dag = dag_run::execute_dag(DagExecutionRequest {
         repo: request.repo,
         out: request.staging_root,
@@ -123,6 +133,8 @@ pub(crate) fn execute(request: RunRequest) -> Result<ExecutionResult, RunError> 
         &repo_name,
         &request.final_name,
     )?;
+    let anchors =
+        super::completion::bind_anchor_verification(&dag.run_root, &repo_root, &mut dag.manifest)?;
     let publication_root = nest_authority_root(&request.authority_root, &repo_name)?;
     let publication = crate::run_commit::publish_existing(
         &dag.run_root,
@@ -147,6 +159,7 @@ pub(crate) fn execute(request: RunRequest) -> Result<ExecutionResult, RunError> 
             repo: repo_name,
             path: publication.final_path,
         },
+        anchors,
     })
 }
 
@@ -286,6 +299,11 @@ mod tests {
                 repo: "widget-repo".into(),
                 path: PathBuf::from("authority/widget-repo/run-001"),
             },
+            anchors: crate::anchor_verification::AnchorCounts {
+                verified: 3,
+                approximate: 1,
+                dropped: 1,
+            },
         };
 
         assert_eq!(result.exit_code(), 20);
@@ -299,6 +317,12 @@ mod tests {
         // repo key `artifact query --repo` needs, not just the path.
         assert_eq!(json["publication"]["repo"], "widget-repo");
         assert_eq!(json["publication"]["path"], "authority/widget-repo/run-001");
+        // Issue #151: anchors must be visible at the top level, not only
+        // inside the manifest or a nested artifact.
+        assert_eq!(
+            json["anchors"],
+            json!({"verified":3,"approximate":1,"dropped":1})
+        );
     }
 
     #[test]

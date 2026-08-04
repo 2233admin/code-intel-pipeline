@@ -22,7 +22,7 @@
       "parserKind": "line-heuristic",
       "unsupportedLanguageRelationshipPrecision": "unknown",
       "suiteElapsedMs": 27110,
-      "sourceSha256": "5bce5edaccb1a9ad3ce7c53d8e3c3d383dc6a984fa508a661caba76b4505a116",
+      "sourceSha256": "38e165ad6fb351a27c8187838e71b3a1526408105c4efb8bcfd64672ff2f6064",
       "testSha256": "83eec5e8dff23026b9edb477ba41d5e577dfb8c4b9b5b812854a3f5174e24046",
       "labeledCorpus": {
         "fixture": "orchestration/internalization/fixtures/r06-native-labeled-corpus.json",
