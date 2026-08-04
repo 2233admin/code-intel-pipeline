@@ -188,6 +188,41 @@ pub(crate) fn audit(repo: &Path) -> Result<Vec<PinFinding>, String> {
     Ok(findings)
 }
 
+/// Report the findings a human needs to act on. Fresh pins say nothing.
+///
+/// `wrote` selects the tense: after `--write` these are things that were
+/// fixed, before it they are things that need fixing.
+pub(crate) fn print_findings(findings: &[PinFinding], wrote: bool) {
+    for finding in findings.iter().filter(|finding| finding.needs_attention()) {
+        let pin = &finding.pin;
+        match &finding.state {
+            PinState::Stale { actual } if wrote => println!(
+                "repin: {} declared {} -> {} ({})",
+                pin.record,
+                &pin.declared[..12],
+                &actual[..12],
+                pin.path
+            ),
+            PinState::Stale { actual } => println!(
+                "repin: STALE declared pin {} in {} (declares {}, file is {}) \u{2014} rerun with --write",
+                pin.path,
+                pin.record,
+                &pin.declared[..12],
+                &actual[..12]
+            ),
+            PinState::SourceMissing => println!(
+                "repin: UNRESOLVED {} pins {} which no longer exists \u{2014} decide what the record now claims",
+                pin.record, pin.path
+            ),
+            PinState::Ambiguous => println!(
+                "repin: UNRESOLVED {} states one digest for several paths ({}) \u{2014} never rewritten",
+                pin.record, pin.path
+            ),
+            PinState::Fresh => {}
+        }
+    }
+}
+
 /// Rewrite every stale declared pin in place.
 ///
 /// The digest is replaced textually across the whole record, which is what

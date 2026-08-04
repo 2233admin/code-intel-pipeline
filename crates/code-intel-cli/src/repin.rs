@@ -114,7 +114,7 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
             }
         }
     }
-    print_declared(&declared, cli.write);
+    declared_pins::print_findings(&declared, cli.write);
     if cli.json {
         println!(
             "{}",
@@ -134,7 +134,9 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
             declared_pins::PinState::Ambiguous | declared_pins::PinState::SourceMissing
         )
     });
-    let declared_dirty = declared.iter().any(PinFindingExt::needs_attention);
+    let declared_dirty = declared
+        .iter()
+        .any(declared_pins::PinFinding::needs_attention);
 
     if cli.write {
         i32::from(report.has_unresolved() || declared_unresolved)
@@ -142,61 +144,6 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
         0
     } else {
         1
-    }
-}
-
-/// Local extension so the exit-code expression above reads the same way for
-/// both pin kinds.
-trait PinFindingExt {
-    fn needs_attention(&self) -> bool;
-}
-
-impl PinFindingExt for declared_pins::PinFinding {
-    fn needs_attention(&self) -> bool {
-        declared_pins::PinFinding::needs_attention(self)
-    }
-}
-
-fn print_declared(findings: &[declared_pins::PinFinding], wrote: bool) {
-    let noteworthy: Vec<&declared_pins::PinFinding> = findings
-        .iter()
-        .filter(|finding| finding.needs_attention())
-        .collect();
-    if noteworthy.is_empty() {
-        return;
-    }
-    for finding in noteworthy {
-        let pin = &finding.pin;
-        match &finding.state {
-            declared_pins::PinState::Stale { actual } => {
-                if wrote {
-                    println!(
-                        "repin: {} declared {} -> {} ({})",
-                        pin.record,
-                        &pin.declared[..12],
-                        &actual[..12],
-                        pin.path
-                    );
-                } else {
-                    println!(
-                        "repin: STALE declared pin {} in {} (declares {}, file is {}) \u{2014} rerun with --write",
-                        pin.path,
-                        pin.record,
-                        &pin.declared[..12],
-                        &actual[..12]
-                    );
-                }
-            }
-            declared_pins::PinState::SourceMissing => println!(
-                "repin: UNRESOLVED {} pins {} which no longer exists \u{2014} decide what the record now claims",
-                pin.record, pin.path
-            ),
-            declared_pins::PinState::Ambiguous => println!(
-                "repin: UNRESOLVED {} states one digest for several paths ({}) \u{2014} never rewritten",
-                pin.record, pin.path
-            ),
-            declared_pins::PinState::Fresh => {}
-        }
     }
 }
 
