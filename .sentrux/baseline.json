@@ -11,20 +11,20 @@
       "rule": "loc>800; functions>25&&loc>400"
     },
     {
-      "functions": 34,
-      "loc": 979,
+      "functions": 37,
+      "loc": 1056,
       "path": "crates/code-intel-cli/src/capability.rs",
       "rule": "loc>800; functions>25&&loc>400"
     },
     {
       "functions": 46,
-      "loc": 1217,
+      "loc": 1220,
       "path": "crates/code-intel-cli/src/capability_inventory.rs",
       "rule": "loc>800; functions>25&&loc>400"
     },
     {
       "functions": 63,
-      "loc": 1186,
+      "loc": 1187,
       "path": "crates/code-intel-cli/src/cli/legacy.rs",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -102,7 +102,7 @@
     },
     {
       "functions": 60,
-      "loc": 1786,
+      "loc": 1788,
       "path": "crates/code-intel-cli/src/sentrux_gate.rs",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -150,7 +150,7 @@
     },
     {
       "functions": 80,
-      "loc": 2106,
+      "loc": 2162,
       "path": "crates/code-intel-cli/tests/internalization_record.rs",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -206,19 +206,19 @@
   "metrics": {
     "branch_density_per_fn": 156,
     "complex_fn_count": 7,
-    "coupling_score": 67.84,
-    "cross_module_edges": 1289,
+    "coupling_score": 67.9,
+    "cross_module_edges": 1324,
     "cycle_count": 0,
-    "files": 285,
-    "functions": 3910,
+    "files": 290,
+    "functions": 3977,
     "god_file_count": 33,
-    "import_modeled_files": 190,
+    "import_modeled_files": 195,
     "max_complexity": 156,
-    "quality_signal": 3667,
-    "total_import_edges": 1289
+    "quality_signal": 3666,
+    "total_import_edges": 1324
   },
-  "savedAt": 1785819221,
+  "savedAt": 1785824555,
   "schema": "code-intel-sentrux-baseline.v5",
   "scope": ".",
-  "sourceCommit": "868c289ffa80edee9d39e526022f97a96c6ea7cc"
+  "sourceCommit": "d80c0f3b764b1837158b2e5d246e1da32e2881e5"
 }
