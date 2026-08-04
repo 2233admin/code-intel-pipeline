@@ -32,7 +32,7 @@
 
 | 工具 | 来源 | 特点 | 适合场景 |
 |------|------|------|----------|
-| **OpenSpec OPSX** | Fission-AI/OpenSpec | 流动迭代式 spec 工作流，actions 非 phases（propose/explore/apply/sync/archive），artifact 链 proposal→specs→design→tasks→implement，`openspec init` 生成 `.claude/skills` | 存量 (brownfield) 项目做持续变更管理 |
+| **OpenSpec OPSX** | Fission-AI/OpenSpec | 流动迭代式 spec 工作流，artifact 链 proposal→specs→design→tasks→implement；入口是 `/opsx:propose "your idea"` slash command，需 `openspec init --tools <list>`（约 30 种可选值，如 claude/codex/cursor，或 `all`）显式安装才落地工具文件，`--tools none` 实测（v1.7.0）不生成任何工具文件；`propose/explore/apply/sync` 是 OPSX 叠加在 1.7.0 CLI 命令面（`change/archive/spec/validate/status/instructions` 等）之上的 slash-command 命名而非独立子命令，其中只有 `archive` 同时也是 CLI 子命令 | 存量 (brownfield) 项目做持续变更管理 |
 | **spec-kit** | github/spec-kit | `.specify/` 结构 + `/specify /plan /tasks` + `constitution.md`，Spec-Driven Development 起步套件 | 从零起步 (greenfield) 的 0→1 构建 |
 
 **选型规则**：
