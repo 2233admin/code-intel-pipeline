@@ -114,6 +114,32 @@ fn is_test_file_matches_the_documented_heuristics() {
 }
 
 #[test]
+fn is_test_file_credits_this_crates_own_inline_test_module_convention() {
+    // Every multi-part module here keeps its tests in a sibling `tests.rs`.
+    // Before this was recognized, a PR adding one scored as "no tests
+    // touched" — the heaviest single signal in the formula.
+    for path in [
+        "crates/code-intel-cli/src/change_risk/tests.rs",
+        "crates/code-intel-cli/src/change_agenda/tests.rs",
+        "crates/code-intel-cli/src/file_gate/tests.rs",
+    ] {
+        assert!(is_test_file(path), "{path}");
+    }
+}
+
+#[test]
+fn is_test_file_does_not_credit_names_that_merely_contain_tests() {
+    // Whole-stem equality, not substring: these are ordinary source files.
+    for path in [
+        "crates/code-intel-cli/src/latest.rs",
+        "crates/code-intel-cli/src/contests.rs",
+        "crates/code-intel-cli/src/testsuite_helpers.rs",
+    ] {
+        assert!(!is_test_file(path), "{path}");
+    }
+}
+
+#[test]
 fn looks_like_fix_subject_matches_english_and_chinese_markers() {
     assert!(looks_like_fix_subject("fix(gate): correct off-by-one"));
     assert!(looks_like_fix_subject("Fix regression in parser"));
