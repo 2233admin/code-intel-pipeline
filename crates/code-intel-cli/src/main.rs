@@ -35,6 +35,7 @@ mod graph;
 mod hardened_git;
 mod hospital_score;
 mod impact_graph;
+mod language_pref;
 mod method_catalog;
 mod model_channels;
 mod orchestration;

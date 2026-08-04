@@ -46,12 +46,19 @@ fn list_routes(provider: Option<&str>) -> Value {
 }
 
 fn plan_route(options: &Options<'_>) -> Result<Value> {
+    // `route plan` has no `--language` flag of its own; resolve through the
+    // same project/user/locale chain `graph`/`provider` use rather than the
+    // literal `"zh"` this used to hardcode (issue #155). `providers::plan`
+    // does not read this field into its output today, but hardcoding a
+    // language here was still a second, un-resolved copy of a value the
+    // pipeline now treats as configurable.
+    let language = crate::language_pref::resolve(None, options.repo);
     let provider_plan = providers::plan(&providers::Options {
         action: "Plan",
         provider: options.provider,
         operation: options.operation,
         repo: options.repo,
-        language: "zh",
+        language: &language.language,
         full: false,
         write: true,
         json: true,

@@ -7,6 +7,9 @@ use crate::cli::help_contract::{HELP_ALIASES, HELP_COMMAND};
 
 mod edit_routes;
 mod run_routes;
+mod types;
+
+pub(super) use types::{CommandRoute, LegacyRoute, RawRoute, VersionRoute};
 
 macro_rules! command_contract {
     ($stability:ident, $controller:ident, Conditional($condition:ident), $effects:expr, $output:expr, $exit:expr, $retirement:literal) => {
@@ -67,36 +70,6 @@ macro_rules! exits {
     ($($code:literal),+ $(,)?) => {
         ExitContract::Exact(&[$($code),+])
     };
-}
-
-pub(super) struct RawRoute {
-    pub(super) command: &'static str,
-    pub(super) subcommand: Option<&'static str>,
-    pub(super) argument_offset: usize,
-    pub(super) id: CompatibilityRoute,
-    #[allow(dead_code)]
-    pub(super) contract: CommandContract,
-}
-
-pub(super) struct LegacyRoute {
-    pub(super) command: &'static str,
-    pub(super) aliases: &'static [&'static str],
-    pub(super) id: LegacyRouteId,
-    #[allow(dead_code)]
-    pub(super) contract: CommandContract,
-}
-
-pub(super) struct VersionRoute {
-    pub(super) command: &'static str,
-    pub(super) aliases: &'static [&'static str],
-    pub(super) contract: CommandContract,
-}
-
-pub(super) enum CommandRoute {
-    Version(VersionRoute),
-    Primary(CommandContract),
-    Raw(RawRoute),
-    Legacy(LegacyRoute),
 }
 
 macro_rules! raw_route {
@@ -745,6 +718,20 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             stdout!("text-format:help-quick.v1", "text-format:help-full.v2"),
             exits!(0, 1),
             "retain while this major CLI contract is supported"
+        ),
+    },
+    legacy_route! {
+        command: "language",
+        aliases: &[],
+        id: LegacyRouteId::Language,
+        contract: command_contract!(
+            Public,
+            ProviderAdmin,
+            Administrative,
+            &[CommandEffect::RepoRead, CommandEffect::LocalWrite],
+            stdout!("code-intel-language-preference.v1", "text-format:language-human.v1"),
+            exits!(0, 1),
+            "retire only through a versioned language administration replacement"
         ),
     },
     CommandRoute::Primary(command_contract!(

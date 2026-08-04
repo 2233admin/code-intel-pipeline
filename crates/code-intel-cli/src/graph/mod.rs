@@ -4,6 +4,9 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 
+#[cfg(test)]
+mod tests;
+
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 pub struct Options<'a> {
@@ -497,68 +500,4 @@ fn truncate(value: &str, max: usize) -> String {
 
 fn normalize_path(path: impl AsRef<Path>) -> String {
     path.as_ref().to_string_lossy().replace('\\', "/")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn builds_graph_from_local_sources() {
-        let repo = unique_temp_dir();
-        fs::create_dir_all(repo.join("src")).unwrap();
-        fs::write(
-            repo.join("src").join("lib.rs"),
-            "mod graph;\npub fn run() {}\n",
-        )
-        .unwrap();
-        fs::write(repo.join("src").join("graph.rs"), "pub struct Node;\n").unwrap();
-
-        let graph = build_graph(&repo, "zh", false).unwrap();
-
-        assert_eq!(graph["summary"]["files"].as_u64(), Some(2));
-        assert!(graph["summary"]["edges"].as_u64().unwrap_or(0) >= 1);
-        assert!(graph["summary"]["symbols"].as_u64().unwrap_or(0) >= 2);
-
-        // This document is embedded verbatim in the content-addressed
-        // `observed.evidence.payload`, so no field may carry a wall clock:
-        // that hands an unchanged tree a new payload digest every run.
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        for (key, value) in graph.as_object().unwrap() {
-            assert!(
-                !value
-                    .as_u64()
-                    .is_some_and(|seconds| seconds.abs_diff(now) < 86_400),
-                "graph document field {key} carries a wall clock"
-            );
-        }
-
-        fs::remove_dir_all(repo).unwrap();
-    }
-
-    #[test]
-    fn truncates_unicode_on_a_character_boundary() {
-        let value = "交易账户与行情连接是两个独立概念";
-
-        let truncated = truncate(value, 10);
-
-        assert_eq!(truncated, "交易账...");
-    }
-
-    fn unique_temp_dir() -> std::path::PathBuf {
-        use std::time::{SystemTime, UNIX_EPOCH};
-
-        let mut dir = std::env::temp_dir();
-        dir.push(format!(
-            "code-intel-graph-test-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        dir
-    }
 }

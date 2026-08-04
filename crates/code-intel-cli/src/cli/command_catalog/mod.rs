@@ -11,9 +11,9 @@ use crate::{
 };
 
 use super::legacy::{
-    cmd_classify, cmd_doctor, cmd_graph, cmd_help, cmd_orchestrate, cmd_provider, cmd_resume,
-    cmd_route, cmd_sentrux, cmd_sentrux_debt_register, cmd_sentrux_normalize, parse_args,
-    run_benchmark, run_capability, run_file_boundary_raw, run_runtime_ci_raw, Args,
+    cmd_classify, cmd_doctor, cmd_graph, cmd_help, cmd_language, cmd_orchestrate, cmd_provider,
+    cmd_resume, cmd_route, cmd_sentrux, cmd_sentrux_debt_register, cmd_sentrux_normalize,
+    parse_args, run_benchmark, run_capability, run_file_boundary_raw, run_runtime_ci_raw, Args,
 };
 use super::primary::{execute_primary, matches_primary_pattern, parse_primary_args, PrimaryArgs};
 
@@ -101,6 +101,7 @@ enum LegacyRouteId {
     Route,
     Sentrux,
     Help,
+    Language,
 }
 
 #[derive(Debug)]
@@ -463,6 +464,7 @@ fn execute_legacy(command: &LegacyCommand) -> std::result::Result<(), Box<dyn Er
         LegacyRouteId::Route => cmd_route(&command.arguments),
         LegacyRouteId::Sentrux => cmd_sentrux(&command.arguments),
         LegacyRouteId::Help => cmd_help(&command.arguments),
+        LegacyRouteId::Language => cmd_language(&command.arguments),
     }
 }
 

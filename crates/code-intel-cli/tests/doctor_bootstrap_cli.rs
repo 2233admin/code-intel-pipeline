@@ -208,7 +208,12 @@ fn the_pipeline_root_defaults_to_the_checkout_the_caller_stands_in() {
     fs::write(checkout.join("pipeline.config.json"), b"{}").unwrap();
     let crate_src = checkout.join("crates").join("code-intel-cli").join("src");
     fs::create_dir_all(&crate_src).unwrap();
-    fs::write(crate_src.join("graph.rs"), b"").unwrap();
+    // graph.rs is a directory module (mod.rs + tests.rs, issue #155's
+    // god-file split): the probe's sourceFound check looks for
+    // src/graph/mod.rs.
+    let graph_dir = crate_src.join("graph");
+    fs::create_dir_all(&graph_dir).unwrap();
+    fs::write(graph_dir.join("mod.rs"), b"").unwrap();
     fs::write(
         checkout
             .join("crates")

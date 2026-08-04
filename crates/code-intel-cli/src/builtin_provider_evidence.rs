@@ -13,7 +13,7 @@ use crate::snapshot;
 
 #[path = "admissibility.rs"]
 mod admissibility;
-#[path = "graph.rs"]
+#[path = "graph/mod.rs"]
 mod graph;
 #[path = "graph_adapter.rs"]
 mod graph_adapter;
@@ -68,7 +68,7 @@ pub(super) fn graph_admission(
         "implementation":{
             "id":"architecture-graph.internal-rust",
             "version":"1.0.0",
-            "digest":sha256_hex(include_bytes!("graph.rs"))
+            "digest":sha256_hex(include_bytes!("graph/mod.rs"))
         },
         "sourceRevision":source_revision(request),
         "expectedSnapshotIdentity":identity,
