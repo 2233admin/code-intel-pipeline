@@ -54,8 +54,7 @@ impl FakeRepowise {
     fn new() -> Self {
         let dir = TempTree::new("repowise-hooks-stub");
         let log = dir.0.join("invocations.log");
-        let script = "@echo off\r\necho CWD=%CD%>>\"%REPOWISE_STUB_LOG%\"\r\necho ARGS=%*>>\"%REPOWISE_STUB_LOG%\"\r\nexit /b 0\r\n";
-        fs::write(dir.0.join("repowise.cmd"), script).unwrap();
+        write_stub(&dir.0);
         Self { dir, log }
     }
 
@@ -71,6 +70,25 @@ impl FakeRepowise {
             .map(str::to_string)
             .collect()
     }
+}
+
+/// `tool_path::locate` only tries `{name}.exe`/`.cmd`/`.bat`/bare on
+/// Windows and only the bare name elsewhere, so the stub's own extension
+/// and script dialect must match whichever platform is running the test.
+#[cfg(windows)]
+fn write_stub(dir: &Path) {
+    let script = "@echo off\r\necho CWD=%CD%>>\"%REPOWISE_STUB_LOG%\"\r\necho ARGS=%*>>\"%REPOWISE_STUB_LOG%\"\r\nexit /b 0\r\n";
+    fs::write(dir.join("repowise.cmd"), script).unwrap();
+}
+
+#[cfg(unix)]
+fn write_stub(dir: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let script = "#!/bin/sh\necho \"CWD=$(pwd)\" >> \"$REPOWISE_STUB_LOG\"\necho \"ARGS=$*\" >> \"$REPOWISE_STUB_LOG\"\nexit 0\n";
+    let path = dir.join("repowise");
+    fs::write(&path, script).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
 }
 
 fn run(repo: &Path, home: &Path, stub: &FakeRepowise, extra_args: &[&str]) -> Output {
@@ -104,11 +122,20 @@ fn detects_missing_hooks_without_write() {
     let output = run(&repo.0, &home.0, &stub, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(stdout.contains("post-commit auto-sync hook not installed"));
     assert!(stdout.contains("distill rewrite hook not installed"));
     assert!(
-        !repo.0.join(".git").join("hooks").join("post-commit").exists(),
+        !repo
+            .0
+            .join(".git")
+            .join("hooks")
+            .join("post-commit")
+            .exists(),
         "detection alone must never write a hook"
     );
     assert!(
@@ -200,7 +227,11 @@ fn resolves_hooks_dir_through_linked_worktree_commondir() {
     let output = run(&worktree.0, &home.0, &stub, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(stdout.contains("post-commit auto-sync hook installed"));
 }
 
@@ -224,7 +255,11 @@ fn write_installs_both_missing_hooks_scoped_to_this_repo_only() {
     let stub = FakeRepowise::new();
 
     let output = run(&repo.0, &home.0, &stub, &["--write"]);
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let invocations = stub.invocations();
     assert_eq!(
@@ -233,13 +268,15 @@ fn write_installs_both_missing_hooks_scoped_to_this_repo_only() {
         "expected exactly one call per missing hook: {invocations:?}"
     );
     assert!(invocations.iter().any(|args| {
-        args.contains("hook") && args.contains("install") && args.contains("--no-workspace")
+        args.contains("hook")
+            && args.contains("install")
+            && args.contains("--no-workspace")
             && !args.contains("rewrite")
     }));
-    assert!(invocations
-        .iter()
-        .any(|args| args.contains("hook") && args.contains("rewrite")
-            && args.contains("install") && args.contains("--no-workspace")));
+    assert!(invocations.iter().any(|args| args.contains("hook")
+        && args.contains("rewrite")
+        && args.contains("install")
+        && args.contains("--no-workspace")));
 }
 
 #[test]
