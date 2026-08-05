@@ -1,4 +1,6 @@
 use super::*;
+use std::collections::HashMap;
+use std::fs;
 
 fn overrides_with_gitea() -> HashMap<String, HostOverride> {
     let mut m = HashMap::new();
