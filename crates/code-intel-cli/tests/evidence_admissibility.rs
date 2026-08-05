@@ -1,3 +1,4 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -61,7 +62,7 @@ fn run_with_payload(root: &Path, request: &Value, payload: &[u8]) -> (i32, Value
     fs::write(root.join("payload.json"), payload).unwrap();
     let request_path = root.join("request.json");
     fs::write(&request_path, serde_json::to_vec(request).unwrap()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args([
             "evidence",
             "validate",
@@ -296,7 +297,7 @@ fn checked_in_provider_protocol_fixture_is_executable() {
     .unwrap();
     let request_path = request_copy.0.join("request.json");
     fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args([
             "evidence",
             "validate",
@@ -325,7 +326,7 @@ fn duplicate_key_malformed_request_returns_unknown_without_fact() {
         br#"{"schema":"code-intel-evidence-admissibility-request.v1","schema":"duplicate"}"#,
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args([
             "evidence",
             "validate",

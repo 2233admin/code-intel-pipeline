@@ -1,3 +1,4 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -122,7 +123,7 @@ fn committed_runs(root: &Path) -> Vec<PathBuf> {
 }
 
 fn spawn_record(resolution: &Path, store: &Path) -> std::process::Child {
-    Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    common::cli()
         .args(["decision", "record", "--resolution"])
         .arg(resolution)
         .arg("--store")
@@ -487,7 +488,7 @@ fn production_cli_registry_and_schema_are_wired() {
     let store_path = root.0.join("records");
     fs::write(&resolution_path, serde_json::to_vec(&resolution()).unwrap()).unwrap();
     fs::write(&query_path, serde_json::to_vec(&replay_query()).unwrap()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args([
             "decision",
             "record",
@@ -508,7 +509,7 @@ fn production_cli_registry_and_schema_are_wired() {
         serde_json::from_slice::<Value>(&output.stdout).unwrap()["status"],
         "recorded"
     );
-    let replay = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let replay = common::cli()
         .args([
             "decision",
             "replay",

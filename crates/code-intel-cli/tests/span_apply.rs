@@ -4,6 +4,7 @@
 //! The load-bearing test here is `a_drifted_span_is_refused_with_evidence`.
 //! Everything else describes the primitive; that one is the reason it is
 //! allowed to write at all.
+mod common;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -120,7 +121,7 @@ fn apply_with(
     spans: &[(usize, usize, usize, &str, &str)],
     extra: &[&str],
 ) -> Applied {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_code-intel"));
+    let mut command = common::cli();
     command
         .args(["edit", "apply", "--repo-path"])
         .arg(repo)
@@ -466,7 +467,7 @@ fn every_pre_envelope_exit_answers_with_a_parseable_document() {
     ];
 
     for (name, expected_exit, stage, arguments) in cases {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_code-intel"));
+        let mut command = common::cli();
         command.args(["edit", "apply"]).args(&arguments);
         // Only the registry case is about a missing manifest; every other
         // case must reach the real one.
@@ -503,7 +504,7 @@ fn every_pre_envelope_exit_answers_with_a_parseable_document() {
 
     // The traversal used to be answered with raw git porcelain from the
     // snapshot builder; it must name the flag the caller got wrong instead.
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["edit", "apply", "--repo-path"])
         .arg(&fixture.root)
         .args(["--file", "../outside.txt", "--span", &good_span])
@@ -527,7 +528,7 @@ fn the_capability_envelope_is_the_only_write_path() {
     let before = fixture.source();
     let (line, start, end, digest) = span_of(&before, "retry_budget");
 
-    let snapshot_output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let snapshot_output = common::cli()
         .args(["snapshot", "identity", "--repo"])
         .arg(&fixture.root)
         .args([
@@ -572,7 +573,7 @@ fn the_capability_envelope_is_the_only_write_path() {
     let staging = fixture.root.join("staging-allowed");
     let request_path = fixture.root.join("request.json");
     fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["capability", "exec", "edit.span-apply", "--request"])
         .arg(&request_path)
         .arg("--out")
@@ -603,7 +604,7 @@ fn the_capability_envelope_is_the_only_write_path() {
     }]);
     let unarmed_path = fixture.root.join("unarmed-request.json");
     fs::write(&unarmed_path, serde_json::to_vec(&unarmed).unwrap()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["capability", "exec", "edit.span-apply", "--request"])
         .arg(&unarmed_path)
         .arg("--out")

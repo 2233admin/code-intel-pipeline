@@ -1,13 +1,10 @@
+mod common;
 use std::path::PathBuf;
 use std::process::Command;
 
-fn binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_code-intel"))
-}
-
 #[test]
 fn root_help_leads_with_the_compiled_primary_entry() {
-    let output = Command::new(binary())
+    let output = common::cli()
         .arg("--help")
         .output()
         .expect("run code-intel --help");
@@ -23,7 +20,7 @@ fn root_help_leads_with_the_compiled_primary_entry() {
 fn root_entry_rejects_a_missing_repository_with_usage_exit_code() {
     let missing =
         std::env::temp_dir().join(format!("code-intel-missing-repo-{}", std::process::id()));
-    let output = Command::new(binary())
+    let output = common::cli()
         .arg(&missing)
         .arg("--mode")
         .arg("lite")
@@ -45,7 +42,7 @@ fn root_entry_keeps_json_machine_readable_on_usage_errors() {
         "code-intel-json-missing-repo-{}",
         std::process::id()
     ));
-    let output = Command::new(binary())
+    let output = common::cli()
         .arg(&missing)
         .args(["--mode", "lite", "--json"])
         .output()
@@ -65,7 +62,7 @@ fn root_entry_keeps_json_machine_readable_on_usage_errors() {
 
 #[test]
 fn named_commands_are_not_misclassified_as_repository_paths() {
-    let output = Command::new(binary())
+    let output = common::cli()
         .args(["orchestrate", "--action", "List", "--json"])
         .output()
         .expect("run an existing named command");
@@ -112,7 +109,7 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
     // gates with; a PATH-resolved external Sentrux writes a foreign baseline
     // identity and trips the engine-mismatch check.
     for operation in ["save_baseline", "check"] {
-        let output = Command::new(binary())
+        let output = common::cli()
             .args(["sentrux", "--operation", operation, "--repo"])
             .arg(&repo)
             .output()
@@ -196,7 +193,7 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
         .to_string();
     assert_single_index_entry(&artifacts, &name);
 
-    let query = Command::new(binary())
+    let query = common::cli()
         .args(["artifact", "query", "--artifact-root"])
         .arg(&artifacts)
         .args(["--repo", "fixture-repo", "--repo-path"])
@@ -313,7 +310,7 @@ fn commit_fixture(repo: &std::path::Path, message: &str) {
 /// The wrapper takes the repository from the working directory, which is the
 /// route a user actually types.
 fn run_wrapper(repo: &std::path::Path, artifacts: &std::path::Path) -> (Option<i32>, String) {
-    let output = Command::new(binary())
+    let output = common::cli()
         .arg("--artifact-root")
         .arg(artifacts)
         .current_dir(repo)

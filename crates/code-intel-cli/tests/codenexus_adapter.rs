@@ -1,3 +1,4 @@
+mod common;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -156,7 +157,7 @@ fn keys(value: &Value) -> BTreeSet<&str> {
 fn route(root: &Path, native: &Value) -> (i32, Vec<u8>, String) {
     let request = root.join("native.json");
     fs::write(&request, serde_json::to_vec(native).unwrap()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args([
             "provider",
             "codenexus-adapt",
@@ -452,7 +453,7 @@ fn production_route_rejects_secret_fields_wrong_snapshot_and_bad_usage() {
     assert_eq!(result["status"], "rejected");
     assert_eq!(result["engineeringFacts"], json!([]));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["provider", "codenexus-adapt"])
         .output()
         .unwrap();

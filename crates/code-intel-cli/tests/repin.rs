@@ -1,3 +1,4 @@
+mod common;
 #[path = "../src/content_contract.rs"]
 mod content_contract;
 #[path = "../src/evidence_outcome.rs"]
@@ -69,7 +70,7 @@ fn sha256_of(path: &Path) -> String {
 }
 
 fn repin(repo: &Path, extra_args: &[&str]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_code-intel"));
+    let mut command = common::cli();
     command.arg("repin").arg("--repo").arg(repo).arg("--json");
     for arg in extra_args {
         command.arg(arg);
@@ -80,7 +81,7 @@ fn repin(repo: &Path, extra_args: &[&str]) -> Output {
 /// Like `repin`, but without `--json` — for asserting on `print_human`'s
 /// output, which the JSON-only `repin` helper never exercises.
 fn repin_text(repo: &Path, extra_args: &[&str]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_code-intel"));
+    let mut command = common::cli();
     command.arg("repin").arg("--repo").arg(repo);
     for arg in extra_args {
         command.arg(arg);

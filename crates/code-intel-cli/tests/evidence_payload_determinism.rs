@@ -12,6 +12,7 @@
 //! Freshness is not lost: `observedAt` still rides in the native result, the
 //! provider port and the A04 observation, which is where
 //! `admissibility::validate_sealed` reads it.
+mod common;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -83,7 +84,7 @@ fn manifest_path() -> PathBuf {
 }
 
 fn dag_run(repo: &Path, out: &Path, doctor_tools: &Path) -> Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(repo)
         .arg("--out")

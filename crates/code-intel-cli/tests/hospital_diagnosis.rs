@@ -1,3 +1,4 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -224,7 +225,7 @@ fn run(root: &Path, inputs: Vec<Value>, out_name: &str) -> (i32, Value, PathBuf,
     let request_path = root.join(format!("{out_name}-request.json"));
     fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
     let out = root.join(out_name);
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["capability", "exec", "diagnosis.hospital", "--request"])
         .arg(&request_path)
         .arg("--out")
@@ -827,7 +828,7 @@ fn a09_seeded_path_executes_hospital_through_a01_and_rejects_snapshot_mismatch()
     fs::create_dir_all(&repo).unwrap();
     fs::create_dir_all(&seed).unwrap();
     fs::write(repo.join("source.txt"), "stable fixture\n").unwrap();
-    let snapshot_output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let snapshot_output = common::cli()
         .args([
             "snapshot",
             "identity",
@@ -862,7 +863,7 @@ fn a09_seeded_path_executes_hospital_through_a01_and_rejects_snapshot_mismatch()
     let inputs_path = temp.0.join("diagnosis-inputs.json");
     fs::write(&inputs_path, serde_json::to_vec(&inputs).unwrap()).unwrap();
     let out = temp.0.join("a09-run");
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&repo)
         .arg("--out")
@@ -889,7 +890,7 @@ fn a09_seeded_path_executes_hospital_through_a01_and_rejects_snapshot_mismatch()
     let mismatched_path = temp.0.join("mismatched-inputs.json");
     fs::write(&mismatched_path, serde_json::to_vec(&mismatched).unwrap()).unwrap();
     let failed_out = temp.0.join("a09-failed");
-    let failed = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let failed = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&repo)
         .arg("--out")

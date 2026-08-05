@@ -11,14 +11,10 @@
 //! token on stdout, exit 0, and a stable `--json` schema id. The gate treats an
 //! unreadable version as "unknown", never as "matches", so an empty or
 //! non-zero-exit answer is a contract break, not a soft failure.
-
-use std::process::Command;
+mod common;
 
 fn run(args: &[&str]) -> (String, String, i32) {
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
-        .args(args)
-        .output()
-        .expect("run code-intel");
+    let output = common::cli().args(args).output().expect("run code-intel");
     (
         String::from_utf8_lossy(&output.stdout).to_string(),
         String::from_utf8_lossy(&output.stderr).to_string(),
