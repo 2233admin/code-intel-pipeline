@@ -34,9 +34,11 @@ mod evidence_outcome;
 mod evidence_query;
 mod execution_policy;
 mod file_boundary;
+mod git_remote_registry;
 mod graph;
 mod hardened_git;
 mod hospital_score;
+mod i18n;
 mod impact_graph;
 mod invocation_identity;
 mod language_pref;
@@ -48,6 +50,8 @@ mod ponytail_gate;
 mod project_orientation_benchmark;
 mod providers;
 mod repin;
+mod repowise_i18n_proxy;
+mod repowise_proxy_server;
 mod routes;
 mod run_cli;
 mod run_commit;
@@ -71,6 +75,15 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() {
     let raw: Vec<String> = env::args().skip(1).collect();
+
+    if raw.first().is_some_and(|arg| arg == "repowise-proxy") {
+        let upstream_port: u16 = raw.get(1).and_then(|s| s.parse().ok()).unwrap_or(9000);
+        let proxy_port: u16 = raw.get(2).and_then(|s| s.parse().ok()).unwrap_or(3000);
+        let lang = env::var("CODE_INTEL_LANG").unwrap_or_else(|_| "en".to_string());
+
+        repowise_proxy_server::start_proxy(upstream_port, proxy_port, &lang);
+    }
+
     let rendered = cli::run(&raw);
     io::stdout()
         .write_all(rendered.stdout.as_bytes())
