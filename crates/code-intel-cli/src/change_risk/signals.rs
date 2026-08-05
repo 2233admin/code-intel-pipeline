@@ -4,7 +4,7 @@
 //! is the entry point the parent module's `execute` calls once per scored
 //! item (the target and each `--sample` baseline commit).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use serde_json::{json, Value};
@@ -12,8 +12,8 @@ use serde_json::{json, Value};
 use super::git::file_commit_history;
 use super::scoring::combine;
 use super::{
-    BugMagnet, Churn, DiffShape, FileDiff, Scored, TestAsymmetry, BUG_MAGNET_CAP, CHURN_CAP,
-    CHURN_WINDOW_DAYS, FILES_TOUCHED_CAP, LINES_CHANGED_CAP,
+    BugMagnet, Churn, DiffShape, FileDiff, FileHistory, Scored, TestAsymmetry, BUG_MAGNET_CAP,
+    CHURN_CAP, CHURN_WINDOW_DAYS, FILES_TOUCHED_CAP, LINES_CHANGED_CAP,
 };
 
 pub(super) fn score_files(
@@ -22,14 +22,28 @@ pub(super) fn score_files(
     anchor_unix: i64,
     exclude: &BTreeSet<String>,
 ) -> Scored {
+    let paths: Vec<String> = files.iter().map(|(_, _, path)| path.clone()).collect();
+    let history = file_commit_history(repo, &paths, anchor_unix, exclude);
+    score_files_with_history(files, &history, anchor_unix)
+}
+
+/// The scoring half of [`score_files`], split out so a caller that already
+/// walked the history once can score several subsets of the same diff
+/// without paying for one `git log` per subset. `change agenda` (issue
+/// #150) scores every review unit through this, which is what keeps a
+/// unit's number and the PR gate's number products of one scorer.
+pub(super) fn score_files_with_history(
+    files: &[FileDiff],
+    history: &FileHistory,
+    anchor_unix: i64,
+) -> Scored {
     let diff = diff_shape(files);
     let asymmetry = test_asymmetry_signal(files);
     let paths: Vec<String> = files.iter().map(|(_, _, path)| path.clone()).collect();
-    let history = file_commit_history(repo, &paths, anchor_unix, exclude);
-    let bug_magnet = bug_magnet_signal(&paths, &history);
-    let churn = churn_signal(&paths, &history, anchor_unix);
+    let bug_magnet = bug_magnet_signal(&paths, history);
+    let churn = churn_signal(&paths, history, anchor_unix);
     let score = combine(&diff, &asymmetry, &bug_magnet, &churn);
-    let scored_files = build_scored_files(files, &history, anchor_unix);
+    let scored_files = build_scored_files(files, history, anchor_unix);
     Scored {
         score,
         diff,
@@ -87,16 +101,31 @@ pub(super) fn is_source_file(path: &str) -> bool {
         .is_some_and(|index| index + 1 < parts.len())
 }
 
-/// `tests/**`, `*_test.*`, or `test_*`, matched on path segments and
-/// filename rather than a literal glob engine (no new dependency for three
-/// simple patterns).
+/// `tests/**`, `*_test.*`, `test_*`, or a module's own `tests.<ext>` file,
+/// matched on path segments and filename rather than a literal glob engine
+/// (no new dependency for four simple patterns).
+///
+/// The last pattern is this crate's own convention for inline test modules
+/// — `change_risk/tests.rs`, `change_agenda/tests.rs`, `file_gate/tests.rs`
+/// — and all three of the others miss it: the final path segment is
+/// `tests.rs` rather than a `tests` directory, the name does not start with
+/// `test_`, and the stem `tests` does not end with `_test`. Without it every
+/// PR that follows the convention scored as "source changed, no tests
+/// touched", which carries the largest single weight in this file's formula
+/// (`WEIGHT_TEST_ASYMMETRY`). The monolith rule pushes test modules into
+/// their own file and this signal then refused to see them — two of the
+/// repository's own rules working against each other.
 pub(super) fn is_test_file(path: &str) -> bool {
     let parts: Vec<&str> = path.split('/').collect();
     if parts.contains(&"tests") {
         return true;
     }
     let filename = parts.last().copied().unwrap_or("");
-    filename.starts_with("test_") || file_stem(filename).ends_with("_test")
+    let stem = file_stem(filename);
+    // Whole-stem equality, not a substring or suffix match: `latest.rs` and
+    // `contests.rs` are ordinary source files and must not be credited as
+    // tests.
+    stem == "tests" || filename.starts_with("test_") || stem.ends_with("_test")
 }
 
 fn file_stem(filename: &str) -> &str {
@@ -131,10 +160,7 @@ pub(super) fn looks_like_fix_subject(subject: &str) -> bool {
     subject.to_lowercase().contains("fix") || subject.contains("修复") || subject.contains("修正")
 }
 
-fn bug_magnet_signal(
-    paths: &[String],
-    history: &BTreeMap<String, Vec<(i64, String)>>,
-) -> BugMagnet {
+fn bug_magnet_signal(paths: &[String], history: &FileHistory) -> BugMagnet {
     let mut total_fix_commits = 0usize;
     let mut files_with_history = 0usize;
     for path in paths {
@@ -159,11 +185,7 @@ fn bug_magnet_signal(
     }
 }
 
-fn churn_signal(
-    paths: &[String],
-    history: &BTreeMap<String, Vec<(i64, String)>>,
-    anchor_unix: i64,
-) -> Churn {
+fn churn_signal(paths: &[String], history: &FileHistory, anchor_unix: i64) -> Churn {
     let since = anchor_unix - CHURN_WINDOW_DAYS * 86_400;
     let mut total_commits = 0usize;
     for path in paths {
@@ -180,11 +202,7 @@ fn churn_signal(
     }
 }
 
-fn build_scored_files(
-    files: &[FileDiff],
-    history: &BTreeMap<String, Vec<(i64, String)>>,
-    anchor_unix: i64,
-) -> Vec<Value> {
+fn build_scored_files(files: &[FileDiff], history: &FileHistory, anchor_unix: i64) -> Vec<Value> {
     let since_churn = anchor_unix - CHURN_WINDOW_DAYS * 86_400;
     files
         .iter()

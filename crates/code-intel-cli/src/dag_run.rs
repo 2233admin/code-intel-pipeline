@@ -443,12 +443,39 @@ impl CapabilityEnvelopeExecutor {
                 format!("persist A01 result envelope: {error}"),
             )
         })?;
-        let result: Value = serde_json::from_slice(&output.stdout).map_err(|error| {
-            (
-                ExecutionFailure::Contract,
-                format!("A01 executor emitted invalid result JSON: {error}"),
-            )
-        })?;
+        let result: Value = match serde_json::from_slice(&output.stdout) {
+            Ok(result) => result,
+            Err(error) => {
+                // A child that dies without writing a result envelope reaches
+                // this branch with empty stdout, and "EOF at line 1 column 0"
+                // says nothing about the death that produced it. Report the
+                // child's exit status and stderr alongside the parse error so
+                // a killed or crashed executor is distinguishable from one
+                // that wrote malformed JSON (the diagnosability gap of issue
+                // #123).
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stderr: String = stderr.trim().chars().take(512).collect();
+                let evidence = if stderr.is_empty() {
+                    "no stderr output".to_string()
+                } else {
+                    format!("stderr: {stderr}")
+                };
+                return Err(if output.status.success() {
+                    (
+                        ExecutionFailure::Contract,
+                        format!("A01 executor emitted invalid result JSON: {error}; {evidence}"),
+                    )
+                } else {
+                    (
+                        failure_for_exit(output.status.code()),
+                        format!(
+                            "A01 capability executor exited without a result envelope: {}; result parse error: {error}; {evidence}",
+                            output.status
+                        ),
+                    )
+                });
+            }
+        };
         let result_verdict = result["verdict"].as_str().unwrap_or("");
         if !output.status.success() && result_verdict != "fail" {
             return Err((

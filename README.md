@@ -1,10 +1,30 @@
-# Code Intel Pipeline
+<h1 align="center">Code Intel Pipeline</h1>
 
-> **语言方向：** 停止新增 PowerShell。现有 `.ps1` 只作为兼容入口维护，不再承载新产品逻辑；生产能力默认使用 Rust。MoonBit 可用于隔离实验，只有通过 artifact 契约一致性、跨平台构建和测试后才进入正式路径。迁移不做一次性重写，按入口逐个替换和退休。Agent 规则见 [AGENTS.md](AGENTS.md)。
+<p align="center">
+  <a href="README.en.md">English</a> · 简体中文
+</p>
 
-Workflow-stack guidance is emitted by the read-only `advisory.workflow-recommend` atom. See [docs/advisory-workflow-recommendation.md](docs/advisory-workflow-recommendation.md); recommendations are proposals with zero effects and never authorize tool initialization or adoption.
+<p align="center">
+  <b>Hand your coding agent a map of the repo before it edits.</b>
+</p>
 
-Follow-up automation can proactively propose `/investigate` for actionable scan failures and can ask whether to enter the exact draft-PR flow. The one-command orchestrator composes proposal → user decision → C07 record/replay → fail-closed executor. It defaults to suggestion-on and PR-consent-required; neither path silently executes a skill or creates a PR. See [docs/follow-up-automation.md](docs/follow-up-automation.md).
+<p align="center">
+  Local code-intelligence pipeline for AI coding agents — architecture maps, hotspots,
+  change impact, and structural regression gates, produced entirely on your machine.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
+  <a href="https://github.com/2233admin/code-intel-pipeline/releases"><img src="https://img.shields.io/github/v/release/2233admin/code-intel-pipeline?include_prereleases" alt="Latest release"></a>
+</p>
+
+<p align="center">
+  <a href="#30-秒开始">Quick start</a> ·
+  <a href="https://2233admin.github.io/code-intel-pipeline/demo/">Live demo</a> ·
+  <a href="#这是什么">What is this</a> ·
+  <a href="#适合谁">Who it's for</a> ·
+  <a href="docs/public-beta.md">Public beta guide</a>
+</p>
 
 <p align="center">
   <img src="assets/gpt-musume.png" alt="GPT娘正在给代码仓库画结构地图" width="760">
@@ -91,6 +111,14 @@ echo 'source "$HOME/.config/code-intel/env.sh"' >> ~/.zshrc
 ```bash
 code-intel ~/src/your-repo
 ```
+
+## 语言方向与治理
+
+> **语言方向：** 停止新增 PowerShell。现有 `.ps1` 只作为兼容入口维护，不再承载新产品逻辑；生产能力默认使用 Rust。MoonBit 可用于隔离实验，只有通过 artifact 契约一致性、跨平台构建和测试后才进入正式路径。迁移不做一次性重写，按入口逐个替换和退休。Agent 规则见 [AGENTS.md](AGENTS.md)。
+
+Workflow-stack guidance is emitted by the read-only `advisory.workflow-recommend` atom. See [docs/advisory-workflow-recommendation.md](docs/advisory-workflow-recommendation.md); recommendations are proposals with zero effects and never authorize tool initialization or adoption.
+
+Follow-up automation can proactively propose `/investigate` for actionable scan failures and can ask whether to enter the exact draft-PR flow. The one-command orchestrator composes proposal → user decision → C07 record/replay → fail-closed executor. It defaults to suggestion-on and PR-consent-required; neither path silently executes a skill or creates a PR. See [docs/follow-up-automation.md](docs/follow-up-automation.md).
 
 ## 仓库入口
 
@@ -536,7 +564,18 @@ code-intel change impact --artifact-root <root> --repo <name> --repo-path C:\pat
 code-intel capability exec edit.ast-grep-plan --request <request.json> --out <staging-dir>
 ```
 
-计划只预览（`repositoryMutation=false`），不会改文件。确认后再动手改，改完 `session_end` 收门禁。
+计划只预览（`repositoryMutation=false`），不会改文件。
+
+改一个标识符不必重写整行——按 span 下指令，工具执行：
+
+```powershell
+code-intel edit apply --repo-path C:\path\to\repo --file src/module/file.rs `
+  --span 12:21-12:33 --expect-sha256 <该 span 当前字节的 sha256> --replacement retryBudget
+```
+
+`--expect-sha256` 由调用方给出（来自索引或先前读到的字节），工具在写之前拿它跟 span 现在的字节比对：不一致就拒绝，退出码 10，并回报"期望什么 / 实际是什么"（含 `foundSha256` 与一段有界原文），文件一个字节不动。这是索引漂移时不误伤的唯一机械保证。同一次调用可带多个 `--span`（同一文件，互不重叠），全部按改动前的字节定位、整文件原子替换，要么全落要么全不落。
+
+改完 `session_end` 收门禁。
 
 可用工具：
 

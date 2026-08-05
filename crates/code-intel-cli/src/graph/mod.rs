@@ -3,7 +3,9 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(test)]
+mod tests;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -92,11 +94,16 @@ fn build_graph(repo: &Path, language: &str, full: bool) -> Result<Value> {
         symbols.extend(extract_symbols(file, full));
     }
 
+    // Deliberately unstamped. This document is embedded verbatim in the
+    // content-addressed `observed.evidence.payload`, so a wall-clock field
+    // here gave every run a new payload digest for an unchanged tree. Nothing
+    // read the stamp; the graph is a pure function of the scanned files, and
+    // `.understand-anything/knowledge-graph.json` reports its own write time
+    // through the filesystem.
     Ok(json!({
         "schema": "code-intel-understand-graph.v1",
         "provider": "code-intel-rust-graph",
         "repo": normalize_path(repo),
-        "generatedAtUnix": now_unix(),
         "language": language,
         "full": full,
         "summary": {
@@ -493,57 +500,4 @@ fn truncate(value: &str, max: usize) -> String {
 
 fn normalize_path(path: impl AsRef<Path>) -> String {
     path.as_ref().to_string_lossy().replace('\\', "/")
-}
-
-fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn builds_graph_from_local_sources() {
-        let repo = unique_temp_dir();
-        fs::create_dir_all(repo.join("src")).unwrap();
-        fs::write(
-            repo.join("src").join("lib.rs"),
-            "mod graph;\npub fn run() {}\n",
-        )
-        .unwrap();
-        fs::write(repo.join("src").join("graph.rs"), "pub struct Node;\n").unwrap();
-
-        let graph = build_graph(&repo, "zh", false).unwrap();
-
-        assert_eq!(graph["summary"]["files"].as_u64(), Some(2));
-        assert!(graph["summary"]["edges"].as_u64().unwrap_or(0) >= 1);
-        assert!(graph["summary"]["symbols"].as_u64().unwrap_or(0) >= 2);
-
-        fs::remove_dir_all(repo).unwrap();
-    }
-
-    #[test]
-    fn truncates_unicode_on_a_character_boundary() {
-        let value = "交易账户与行情连接是两个独立概念";
-
-        let truncated = truncate(value, 10);
-
-        assert_eq!(truncated, "交易账...");
-    }
-
-    fn unique_temp_dir() -> std::path::PathBuf {
-        let mut dir = std::env::temp_dir();
-        dir.push(format!(
-            "code-intel-graph-test-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        dir
-    }
 }

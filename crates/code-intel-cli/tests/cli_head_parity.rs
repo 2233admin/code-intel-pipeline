@@ -119,7 +119,10 @@ fn every_ordinary_case_matches_old_head_exactly() {
             .as_u64()
             .expect("exact parity case count") as usize
     );
-    assert_eq!(cases.len(), 51);
+    // One case ("repin clean success") moved from here into
+    // `intentionalDeltas` when gate G1 added `scanCoverage` to repin's
+    // report -- see `every_intentional_delta_is_documented_and_reproduced`.
+    assert_eq!(cases.len(), 50);
 
     let repo = FixtureRepository::create();
     for case in cases {
@@ -152,27 +155,63 @@ fn every_legacy_command_spelling_honors_trailing_help() {
     }
 }
 
+/// Every intentional CLI-output change since `sourceRevision` must be
+/// enumerated here by contract id pair, not just left to accumulate in the
+/// fixture: an unexpected third entry (or a missing expected one) fails
+/// this list before it can fail silently. Each entry's `new` bytes must
+/// also actually reproduce against a live run, the same guarantee
+/// `assert_exact_process_result` gives the plain (non-delta) cases.
+const EXPECTED_INTENTIONAL_DELTAS: &[(&str, &str)] = &[
+    ("text-format:help-full.v1", "text-format:help-full.v2"),
+    ("json-format:repin-report.v1", "json-format:repin-report.v2"),
+];
+
 #[test]
-fn full_help_v2_is_the_only_intentional_delta() {
+fn every_intentional_delta_is_documented_and_reproduced() {
     let fixture = head_parity_fixture();
     let deltas = fixture["intentionalDeltas"]
         .as_array()
         .expect("intentional deltas");
-    assert_eq!(deltas.len(), 1);
-    let delta = &deltas[0];
-    assert_eq!(delta["oldContractId"], "text-format:help-full.v1");
-    assert_eq!(delta["newContractId"], "text-format:help-full.v2");
-    assert_ne!(delta["old"]["stdoutUtf8"], delta["new"]["stdoutUtf8"]);
-    assert_eq!(delta["old"]["exitCode"], delta["new"]["exitCode"]);
-    assert_eq!(delta["old"]["stderrUtf8"], delta["new"]["stderrUtf8"]);
+    let seen: Vec<(String, String)> = deltas
+        .iter()
+        .map(|delta| {
+            (
+                delta["oldContractId"]
+                    .as_str()
+                    .expect("oldContractId")
+                    .to_string(),
+                delta["newContractId"]
+                    .as_str()
+                    .expect("newContractId")
+                    .to_string(),
+            )
+        })
+        .collect();
+    let expected: Vec<(String, String)> = EXPECTED_INTENTIONAL_DELTAS
+        .iter()
+        .map(|(old, new)| (old.to_string(), new.to_string()))
+        .collect();
+    assert_eq!(
+        seen, expected,
+        "intentionalDeltas must exactly match the documented, reviewed set \
+         (add to EXPECTED_INTENTIONAL_DELTAS alongside the fixture when a new one is intentional)"
+    );
 
     let repo = FixtureRepository::create();
-    assert_exact_process_result(
-        delta["name"].as_str().expect("delta name"),
-        delta["argv"].as_array().expect("delta argv"),
-        &delta["new"],
-        repo.path(),
-    );
+    for delta in deltas {
+        assert_ne!(
+            delta["old"]["stdoutUtf8"], delta["new"]["stdoutUtf8"],
+            "a delta whose bytes didn't actually change isn't a delta: {delta}"
+        );
+        assert_eq!(delta["old"]["exitCode"], delta["new"]["exitCode"]);
+        assert_eq!(delta["old"]["stderrUtf8"], delta["new"]["stderrUtf8"]);
+        assert_exact_process_result(
+            delta["name"].as_str().expect("delta name"),
+            delta["argv"].as_array().expect("delta argv"),
+            &delta["new"],
+            repo.path(),
+        );
+    }
 }
 
 fn commit_fixture(repo: &Path, message: &str) {

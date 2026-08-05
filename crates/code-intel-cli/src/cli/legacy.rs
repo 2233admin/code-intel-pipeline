@@ -44,7 +44,13 @@ pub(super) struct Args {
     operation: Option<String>,
     action: String,
     mode: String,
-    language: String,
+    /// `None` means "no explicit `--language <code>`" -- distinct from any
+    /// particular value, so the precedence chain in `language_pref::resolve`
+    /// can tell "the flag was not given" apart from "the flag was given
+    /// `zh`". Do not default this to a language here; a hardcoded default
+    /// would always win tier 1 of the chain and make project/user config and
+    /// system locale unreachable.
+    language: Option<String>,
     write: bool,
     full: bool,
     json: bool,
@@ -245,7 +251,6 @@ fn command_args(command: String) -> Args {
         command,
         action: "Validate".to_string(),
         mode: "normal".to_string(),
-        language: "zh".to_string(),
         ..Args::default()
     }
 }
@@ -262,6 +267,9 @@ fn parse_next_arg(raw: &[String], index: usize, args: &mut Args) -> Result<usize
         return Ok(1);
     }
     if set_sentrux_positional(args, token) {
+        return Ok(1);
+    }
+    if set_language_positional(args, token) {
         return Ok(1);
     }
     Err(format!("unknown argument for {}: {token}", args.command).into())
@@ -321,7 +329,7 @@ fn set_string_arg(raw: &[String], index: usize, args: &mut Args, flag: &str) -> 
         return Ok(true);
     }
     if flag == "--language" {
-        args.language = required_value(raw, index + 1, flag)?;
+        args.language = Some(required_value(raw, index + 1, flag)?);
         return Ok(true);
     }
     Ok(false)
@@ -353,6 +361,22 @@ fn set_sentrux_positional(args: &mut Args, value: &str) -> bool {
     }
     if args.repo.is_none() {
         args.repo = Some(PathBuf::from(value));
+        return true;
+    }
+    false
+}
+
+/// `language set --language <code> --repo <path>`: only the operation word
+/// is positional, mirroring `sentrux`'s first positional. The language code
+/// itself reuses the existing `--language` flag rather than a second
+/// positional, so `language` needs no parsing this module does not already
+/// have.
+fn set_language_positional(args: &mut Args, value: &str) -> bool {
+    if args.command != "language" {
+        return false;
+    }
+    if args.operation.is_none() {
+        args.operation = Some(value.to_string());
         return true;
     }
     false
@@ -976,9 +1000,10 @@ pub(super) fn cmd_doctor(args: &Args) -> Result<()> {
 
 pub(super) fn cmd_graph(args: &Args) -> Result<()> {
     let repo = args.repo.as_ref().ok_or("graph requires --repo <path>")?;
+    let language = crate::language_pref::resolve(args.language.as_deref(), Some(repo));
     graph::run(&graph::Options {
         repo,
-        language: &args.language,
+        language: &language.language,
         full: args.full,
         write: args.write,
         json: args.json,
@@ -997,12 +1022,13 @@ pub(super) fn cmd_orchestrate(args: &Args) -> Result<()> {
 }
 
 pub(super) fn cmd_provider(args: &Args) -> Result<()> {
+    let language = crate::language_pref::resolve(args.language.as_deref(), args.repo.as_deref());
     providers::run(&providers::Options {
         action: &args.action,
         provider: args.provider.as_deref(),
         operation: args.operation.as_deref(),
         repo: args.repo.as_deref(),
-        language: &args.language,
+        language: &language.language,
         full: args.full,
         write: args.write || args.operation.as_deref().unwrap_or("") == "graph",
         json: args.json,
@@ -1025,6 +1051,48 @@ pub(super) fn cmd_sentrux(args: &Args) -> Result<()> {
         repo: args.repo.as_deref(),
         no_ratchet: args.no_ratchet,
     })
+}
+
+/// `language set --language <zh|en> --repo <path> [--json]`: the one
+/// deliberate action that persists a project's default documentation
+/// language (issue #155). Distinct on purpose from an ordinary `--language`
+/// override on `graph`/`provider`, which must affect only that one run.
+pub(super) fn cmd_language(args: &Args) -> Result<()> {
+    match args.operation.as_deref().unwrap_or_default() {
+        "set" => cmd_language_set(args),
+        "" => Err("language requires an operation: set".into()),
+        other => Err(format!("unknown language operation: {other}").into()),
+    }
+}
+
+fn cmd_language_set(args: &Args) -> Result<()> {
+    let repo = args
+        .repo
+        .as_ref()
+        .ok_or("language set requires --repo <path>")?;
+    let language = args
+        .language
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or("language set requires --language <code>")?;
+    let config_path = crate::language_pref::write_project_config(repo, language)?;
+
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "ok": true,
+                "schema": "code-intel-language-preference.v1",
+                "language": language,
+                "repo": repo.display().to_string(),
+                "configPath": config_path.display().to_string(),
+            }))?
+        );
+    } else {
+        println!("language: {language} -> {}", config_path.display());
+    }
+    Ok(())
 }
 
 const HELP_TEXT: &str = r#"Code Intel Pipeline
@@ -1079,7 +1147,9 @@ Commands:
   artifact query --artifact-root <root> --repo <name> [--repo-path <path>] [--artifact-schema <schema>] [--type <artifact-type>] [--contains <text>] [--limit <1..100>]
   change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--staleness current|advisory]
   change risk <revspec> [--repo <path>] [--sample <N>] [--format json|text] (git-only defect-risk score, no prior run, no index)
+  change agenda <revspec> [--repo <path>] [--min-cochange <N>] [--format json|text] (git-only review units clustered by co-change, ranked worst first)
   edit impact --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--scope <directory>]... (working tree, no prior run, authority: none)
+  edit apply --repo-path <checkout> --file <repo-relative-path> (--span <startLine:startColumn-endLine:endColumn> --expect-sha256 <sha256-of-current-span-bytes> --replacement <text>|--replacement-file <path>)... [--out <staging-dir>] [--manifest <integrations.json>] [--envelope] (span-addressed patch; refuses with evidence on digest drift, exit 10)
   decision request-response --request <request.json|-> [--response <response.json>|--cancel <cancellation.json>] --now <unix-seconds> --branch <branch-id>...
   decision record --resolution <resolution.json> --store <record-directory>
   decision replay --query <query.json> --store <record-directory>
@@ -1089,7 +1159,8 @@ Commands:
   benchmark orientation --out <directory> [--repetitions <2..10>]
   benchmark tools --corpus <corpus.json> --runs <runs.json> --artifact-root <directory> --out <directory>
   governance ponytail-gate --request <request.json|->
-  orchestrate|orchestration [--action Validate|List|Plan] [--repo <path>] [--mode lite|normal|full] [--capability <name>] [--manifest <path>] [--json]"#;
+  orchestrate|orchestration [--action Validate|List|Plan] [--repo <path>] [--mode lite|normal|full] [--capability <name>] [--manifest <path>] [--json]
+  language set --language <zh|en> --repo <path> [--json]"#;
 
 fn print_help(full: bool) {
     println!("{}", if full { FULL_HELP_TEXT } else { HELP_TEXT });
@@ -1099,8 +1170,10 @@ fn print_help(full: bool) {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{classify_report_policy, int_at, parse_args, FULL_HELP_TEXT, HELP_TEXT};
-    use serde_json::json;
+    use super::{
+        classify_report_policy, cmd_language, int_at, parse_args, Args, FULL_HELP_TEXT, HELP_TEXT,
+    };
+    use serde_json::{json, Value};
 
     fn cli_args(args: &[&str]) -> Vec<String> {
         args.iter().map(|arg| arg.to_string()).collect()
@@ -1141,7 +1214,7 @@ mod tests {
 
         assert_eq!(args.command, "graph");
         assert_eq!(args.repo, Some(PathBuf::from("D:/repo")));
-        assert_eq!(args.language, "en");
+        assert_eq!(args.language.as_deref(), Some("en"));
         assert!(args.write);
         assert!(args.full);
         assert!(args.json);
@@ -1171,7 +1244,7 @@ mod tests {
         assert_eq!(args.provider.as_deref(), Some("understand"));
         assert_eq!(args.operation.as_deref(), Some("graph"));
         assert_eq!(args.repo, Some(PathBuf::from("D:/repo")));
-        assert_eq!(args.language, "zh");
+        assert_eq!(args.language.as_deref(), Some("zh"));
         assert!(args.write);
         assert!(args.json);
     }
@@ -1197,6 +1270,113 @@ mod tests {
         assert_eq!(args.operation.as_deref(), Some("check"));
         assert_eq!(args.repo, Some(PathBuf::from("D:/repo")));
         assert!(args.no_ratchet);
+    }
+
+    #[test]
+    fn parse_args_leaves_language_unset_without_an_explicit_flag() {
+        // Issue #155: an unset `--language` must stay distinguishable from
+        // an explicit one, or the precedence chain's flag tier would always
+        // win with whatever this parser defaulted to.
+        let args = parse_args(cli_args(&["graph", "--repo", "D:/repo"]))
+            .expect("graph CLI should parse without --language");
+
+        assert_eq!(args.language, None);
+    }
+
+    #[test]
+    fn parse_args_preserves_language_set_positional_and_flags() {
+        let args = parse_args(cli_args(&[
+            "language",
+            "set",
+            "--language",
+            "zh",
+            "--repo",
+            "D:/repo",
+            "--json",
+        ]))
+        .expect("language set CLI should parse");
+
+        assert_eq!(args.command, "language");
+        assert_eq!(args.operation.as_deref(), Some("set"));
+        assert_eq!(args.language.as_deref(), Some("zh"));
+        assert_eq!(args.repo, Some(PathBuf::from("D:/repo")));
+        assert!(args.json);
+    }
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let mut dir = std::env::temp_dir();
+        dir.push(format!(
+            "code-intel-cli-legacy-test-{label}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn cmd_language_set_persists_the_project_config() {
+        let repo = unique_temp_dir("language-set");
+        let args = Args {
+            command: "language".to_string(),
+            operation: Some("set".to_string()),
+            language: Some("zh".to_string()),
+            repo: Some(repo.clone()),
+            json: true,
+            ..Args::default()
+        };
+
+        cmd_language(&args).expect("language set should succeed");
+
+        let saved = std::fs::read_to_string(crate::language_pref::project_config_path(&repo))
+            .expect("project config should be written");
+        let document: Value = serde_json::from_str(&saved).unwrap();
+        assert_eq!(document["language"], "zh");
+        std::fs::remove_dir_all(repo).ok();
+    }
+
+    #[test]
+    fn cmd_language_requires_a_recognized_operation() {
+        let args = Args {
+            command: "language".to_string(),
+            ..Args::default()
+        };
+
+        let error = cmd_language(&args).expect_err("no operation should fail");
+        assert!(error.to_string().contains("requires an operation"));
+    }
+
+    #[test]
+    fn cmd_language_set_requires_repo() {
+        let args = Args {
+            command: "language".to_string(),
+            operation: Some("set".to_string()),
+            language: Some("zh".to_string()),
+            ..Args::default()
+        };
+
+        let error = cmd_language(&args).expect_err("missing --repo should fail");
+        assert!(error.to_string().contains("--repo"));
+    }
+
+    #[test]
+    fn cmd_language_set_requires_language() {
+        let repo = unique_temp_dir("language-set-missing-language");
+        let args = Args {
+            command: "language".to_string(),
+            operation: Some("set".to_string()),
+            repo: Some(repo.clone()),
+            ..Args::default()
+        };
+
+        let error = cmd_language(&args).expect_err("missing --language should fail");
+        assert!(error.to_string().contains("--language"));
+        std::fs::remove_dir_all(repo).ok();
     }
 
     #[test]

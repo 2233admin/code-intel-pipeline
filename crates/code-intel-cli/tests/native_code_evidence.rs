@@ -450,6 +450,18 @@ fn a01_a09_artifacts_match_the_real_legacy_producer_on_the_same_fixture() {
     )
     .unwrap();
     fs::write(repo.join("plain.txt"), "plain text only\n").unwrap();
+    fs::create_dir_all(repo.join("test")).unwrap();
+    fs::write(
+        repo.join("test/index.test.js"),
+        "import target from \"../main.js\";\nfunction check() {}\n",
+    )
+    .unwrap();
+    fs::create_dir_all(repo.join("examples/demo-app")).unwrap();
+    fs::write(
+        repo.join("examples/demo-app/index.js"),
+        "import lib from \"../../main.js\";\nfunction demoMain() {}\n",
+    )
+    .unwrap();
 
     run(&repo, &out);
     let native = out.join("evidence.native-code");
@@ -512,26 +524,46 @@ fn a01_a09_artifacts_match_the_real_legacy_producer_on_the_same_fixture() {
             .iter()
             .map(|file| file["path"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        ["main.js", "plain.txt", "single.js"]
+        [
+            "examples/demo-app/index.js",
+            "main.js",
+            "plain.txt",
+            "single.js",
+            "test/index.test.js"
+        ]
     );
-    assert_eq!(ranked_files[0]["score"], 60);
+    assert_eq!(ranked_files[0]["score"], 10);
     assert_eq!(
         ranked_files[0]["reasons"],
-        serde_json::json!(["entrypoint", "symbols", "imports"])
-    );
-    assert_eq!(ranked_files[0]["symbols"].as_array().unwrap().len(), 2);
-    assert_eq!(ranked_files[0]["imports"].as_array().unwrap().len(), 2);
-    assert!(ranked_files[1]["symbols"].is_null());
-    assert!(ranked_files[1]["imports"].is_null());
-    assert_eq!(ranked_files[1]["score"], 1);
-    assert_eq!(ranked_files[1]["reasons"], serde_json::json!(["inventory"]));
-    assert!(ranked_files[2]["symbols"].is_string());
-    assert!(ranked_files[2]["imports"].is_string());
-    assert_eq!(ranked_files[2]["score"], 10);
-    assert_eq!(
-        ranked_files[2]["reasons"],
         serde_json::json!(["symbols", "imports"])
     );
+    assert!(ranked_files[0]["symbols"].is_string());
+    assert!(ranked_files[0]["imports"].is_string());
+    assert_eq!(ranked_files[1]["score"], 60);
+    assert_eq!(
+        ranked_files[1]["reasons"],
+        serde_json::json!(["entrypoint", "symbols", "imports"])
+    );
+    assert_eq!(ranked_files[1]["symbols"].as_array().unwrap().len(), 2);
+    assert_eq!(ranked_files[1]["imports"].as_array().unwrap().len(), 2);
+    assert!(ranked_files[2]["symbols"].is_null());
+    assert!(ranked_files[2]["imports"].is_null());
+    assert_eq!(ranked_files[2]["score"], 1);
+    assert_eq!(ranked_files[2]["reasons"], serde_json::json!(["inventory"]));
+    assert!(ranked_files[3]["symbols"].is_string());
+    assert!(ranked_files[3]["imports"].is_string());
+    assert_eq!(ranked_files[3]["score"], 10);
+    assert_eq!(
+        ranked_files[3]["reasons"],
+        serde_json::json!(["symbols", "imports"])
+    );
+    assert_eq!(ranked_files[4]["score"], 10);
+    assert_eq!(
+        ranked_files[4]["reasons"],
+        serde_json::json!(["test", "symbols", "imports"])
+    );
+    assert!(ranked_files[4]["symbols"].is_string());
+    assert!(ranked_files[4]["imports"].is_string());
     let coverage = read_json(native.join("code-evidence/coverage.json"));
     assert_eq!(coverage["relationshipPrecision"], "unknown");
     assert_eq!(coverage["callGraph"], "unknown");

@@ -413,6 +413,14 @@ pub(crate) fn registered_contract(artifact: &Value) -> Result<ArtifactContract, 
                 validate_payload: validate_session_evidence,
             })
         }
+        (Some("code-intel-anchor-verification.v1"), Some("verification.anchors")) => {
+            Ok(ArtifactContract {
+                artifact_schema: "code-intel-anchor-verification.v1",
+                artifact_type: "verification.anchors",
+                max_bytes: MAX_ARTIFACT_BYTES,
+                validate_payload: validate_anchor_verification,
+            })
+        }
         (Some("code-intel-method-catalog.v1"), Some("method.catalog")) => Ok(ArtifactContract {
             artifact_schema: "code-intel-method-catalog.v1",
             artifact_type: "method.catalog",
@@ -2181,6 +2189,110 @@ fn validate_session_evidence_value(value: &Value) -> Result<(), String> {
         || !value["signals"].is_array()
     {
         return Err("session evidence contract is invalid".into());
+    }
+    Ok(())
+}
+
+/// Issue #151. Deliberately self-contained (no `crate::anchor_verification`
+/// reference) rather than delegating to that module's own `AnchorState`
+/// parsing, matching how this file already keeps its simple payload
+/// validators independent of the modules that produce them -- several
+/// integration tests compile this file as a stand-alone `#[path = ...]`
+/// module (see `validate_session_evidence_value`'s `#[cfg(test)]` variant
+/// above) where a sibling crate module would not resolve.
+///
+/// Beyond per-field shape, this re-tallies every anchor's `state` and
+/// requires it to match the report's own `counts` object exactly: a
+/// `counts` claiming `dropped: 0` while an anchor entry underneath it is
+/// actually `"state":"dropped"` is rejected here, not merely well-formed.
+fn validate_anchor_verification(bytes: &[u8]) -> Result<(), String> {
+    let value = parse_contract_json(bytes, "anchor verification report")?;
+    exact_object_keys(
+        &value,
+        &["schema", "counts", "sources"],
+        "anchor verification report",
+    )?;
+    if value["schema"] != "code-intel-anchor-verification.v1" {
+        return Err("anchor verification report has the wrong schema".into());
+    }
+    let counts = value
+        .get("counts")
+        .ok_or("anchor verification report missing \"counts\"")?;
+    exact_object_keys(
+        counts,
+        &["verified", "approximate", "dropped"],
+        "anchor verification counts",
+    )?;
+    if !counts["verified"].is_u64()
+        || !counts["approximate"].is_u64()
+        || !counts["dropped"].is_u64()
+    {
+        return Err("anchor verification counts must be non-negative integers".into());
+    }
+    let sources = value["sources"]
+        .as_array()
+        .ok_or("anchor verification report \"sources\" must be an array")?;
+    let (mut verified, mut approximate, mut dropped) = (0u64, 0u64, 0u64);
+    for source in sources {
+        exact_object_keys(
+            source,
+            &["artifactType", "artifactPath", "anchorKind", "anchors"],
+            "an anchor verification source",
+        )?;
+        let anchor_kind = source["anchorKind"].as_str();
+        if !source["artifactType"].is_string()
+            || !source["artifactPath"].is_string()
+            || !matches!(anchor_kind, Some("file" | "symbol"))
+        {
+            return Err("an anchor verification source has invalid fields".into());
+        }
+        let anchors = source["anchors"]
+            .as_array()
+            .ok_or("an anchor verification source's \"anchors\" must be an array")?;
+        if anchors.is_empty() {
+            return Err("an anchor verification source must not report zero anchors".into());
+        }
+        for anchor in anchors {
+            let has_location = match anchor_kind {
+                Some("file") => anchor["path"].is_string(),
+                Some("symbol") => {
+                    anchor["file"].is_string()
+                        && anchor["name"].is_string()
+                        && anchor["claimedLine"].is_u64()
+                }
+                _ => false,
+            };
+            if !has_location {
+                return Err("an anchor entry is missing its location fields".into());
+            }
+            match anchor["state"].as_str() {
+                Some("verified") => verified += 1,
+                Some("approximate") => {
+                    if !anchor["resolvedLine"].is_u64() {
+                        return Err(
+                            "an \"approximate\" anchor is missing a numeric resolvedLine".into(),
+                        );
+                    }
+                    approximate += 1;
+                }
+                Some("dropped") => {
+                    if !anchor["reason"]
+                        .as_str()
+                        .is_some_and(|reason| !reason.is_empty())
+                    {
+                        return Err("a \"dropped\" anchor is missing a reason".into());
+                    }
+                    dropped += 1;
+                }
+                _ => return Err("an anchor has an unrecognized state".into()),
+            }
+        }
+    }
+    if counts["verified"].as_u64() != Some(verified)
+        || counts["approximate"].as_u64() != Some(approximate)
+        || counts["dropped"].as_u64() != Some(dropped)
+    {
+        return Err("anchor verification counts do not match the tallied anchors".into());
     }
     Ok(())
 }

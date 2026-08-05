@@ -11,6 +11,10 @@ use crate::adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterErro
 use crate::artifact_ref::VerifiedArtifact;
 use crate::snapshot;
 
+#[path = "assistance_adapter.rs"]
+mod assistance_adapter;
+#[path = "assistance_discovery.rs"]
+mod assistance_discovery;
 #[path = "builtin_provider_evidence.rs"]
 mod builtin_provider_evidence;
 #[path = "compatibility_retirement_gate.rs"]
@@ -33,6 +37,8 @@ pub(crate) mod native_code_evidence;
 mod project_orientation;
 #[path = "project_orientation_benchmark.rs"]
 mod project_orientation_benchmark;
+#[path = "span_apply.rs"]
+mod span_apply;
 #[path = "structured_edit.rs"]
 mod structured_edit;
 #[path = "tool_path.rs"]
@@ -80,6 +86,7 @@ pub(crate) fn execute(
             native_code_evidence::execute(request, verified_inputs, out)
         }
         "edit.ast-grep-plan.compat" => structured_edit::execute(request, verified_inputs, out),
+        "edit.span-apply.compat" => span_apply::execute(request, verified_inputs, out),
         "project.orientation.compat" => project_orientation::execute(request, verified_inputs, out),
         "understanding.quadrant.compat" => {
             understanding_quadrant::execute(request, verified_inputs, out)
@@ -107,6 +114,7 @@ pub(crate) fn execute(
         "advisory.workflow-recommend.compat" => {
             workflow_recommendation(request, verified_inputs, out)
         }
+        "assistance.discovery.compat" => assistance_adapter::execute(request, verified_inputs, out),
         other => Err(AdapterError::Unavailable(format!(
             "runtime adapter is not installed: {other}"
         ))),

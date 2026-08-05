@@ -318,6 +318,11 @@ class CorpusExclusionTests(unittest.TestCase):
 
 
 class QuestionSchemaTests(unittest.TestCase):
+    """Basic golden.* schema shape. Anchor-specific shape and live-tree
+    resolution of the real question set are eval/test_golden_anchors.py's
+    job (RealQuestionsAnchorTests) -- split out for the same god-file-ratchet
+    reason eval/golden_anchors.py's own resolver tests live there."""
+
     def test_real_questions_file_has_twelve_valid_entries(self):
         questions = harness.load_questions(EVAL_DIR / "questions.json")
         self.assertEqual(len(questions), 12)
@@ -327,8 +332,6 @@ class QuestionSchemaTests(unittest.TestCase):
             self.assertIn(q["category"], {"how", "where", "why"})
             self.assertTrue(q["golden"]["keywords"])
             self.assertTrue(q["golden"]["spans"])
-            for span in q["golden"]["spans"]:
-                self.assertLessEqual(span["start_line"], span["end_line"])
 
     def test_duplicate_question_id_is_rejected(self):
         fixture_questions = json.loads((FIXTURES_DIR / "questions.json").read_text(encoding="utf-8"))

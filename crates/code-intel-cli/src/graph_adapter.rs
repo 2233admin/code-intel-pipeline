@@ -127,14 +127,15 @@ pub(crate) fn validate_admitted_payload(payload: &Value, adapter: &Value) -> Res
     if graph["provider"] != adapter["port"]["provider"] {
         return Err("architecture graph provider/fallback identity mismatch".to_string());
     }
+    // The payload is content-addressed, so its bytes must be a function of the
+    // snapshot alone; the collection wall-clock lives in the port and in the
+    // A04 observation instead. See `builtin_provider_evidence::payload_provenance`.
     exact(
         &graph["provenance"],
-        &["sourceRevision", "observedAt"],
+        &["sourceRevision"],
         "architecture graph provenance",
     )?;
-    if graph["provenance"]["sourceRevision"] != adapter["port"]["provenance"]["sourceRevision"]
-        || graph["provenance"]["observedAt"] != adapter["port"]["provenance"]["observedAt"]
-    {
+    if graph["provenance"]["sourceRevision"] != adapter["port"]["provenance"]["sourceRevision"] {
         return Err("architecture graph provenance mismatch".to_string());
     }
     match adapter["port"]["status"].as_str().unwrap() {

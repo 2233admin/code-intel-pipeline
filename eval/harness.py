@@ -93,6 +93,7 @@ from arms import (  # noqa: E402
     search_kind,
     span_fully_covered,
 )
+from golden_anchors import resolve_question_spans  # noqa: E402
 from reporting import aggregate, render_markdown  # noqa: E402
 
 # --------------------------------------------------------------------------
@@ -100,7 +101,15 @@ from reporting import aggregate, render_markdown  # noqa: E402
 # --------------------------------------------------------------------------
 
 SCHEMA = "code-intel-eval-baseline.v1"
-WINDOW = 10  # Arm A: fixed +/-N line window around a resolved pointer.
+# Arm A: fixed +/-N line window around a resolved pointer. Widened from 10
+# (issue #93 why-class-coverage fix): a resolved pointer is often a
+# declaration line sitting some distance from the rationale/logic the golden
+# span actually covers (a module doc comment above a const, or a check
+# nested deeper in the same function as an already-found symbol) -- 10 lines
+# was too tight to reach either. This applies uniformly to every pointer
+# regardless of question or kind; it can only ever gain coverage, never lose
+# it, since a wider window is a strict superset of a narrower one.
+WINDOW = 25
 FILE_CAP = 5  # Arm B: read at most this many ranked, matched files in full.
 
 DEFAULT_ARTIFACT_DIRNAME = "artifacts"
@@ -128,6 +137,17 @@ def load_questions(path: Path) -> List[Dict[str, Any]]:
             raise ValueError(f"question {q['id']}: golden.keywords must be non-empty")
         if not golden["spans"]:
             raise ValueError(f"question {q['id']}: golden.spans must be non-empty")
+        for span in golden["spans"]:
+            if "path" not in span:
+                raise ValueError(f"question {q['id']}: span missing 'path': {span}")
+            has_anchor = "anchor" in span
+            has_absolute = "start_line" in span and "end_line" in span
+            if has_anchor == has_absolute:
+                raise ValueError(
+                    f"question {q['id']}: span must carry exactly one of "
+                    f"'anchor' (resolved at grading time) or 'start_line'/'end_line' "
+                    f"(legacy, absolute): {span}"
+                )
         if q["id"] in seen_ids:
             raise ValueError(f"duplicate question id {q['id']!r}")
         seen_ids.add(q["id"])
@@ -292,6 +312,41 @@ def _clean_stale_eval_outputs(eval_dir: Path) -> None:
         baseline_md.unlink()
 
 
+def resolve_and_answer(
+    question: Dict[str, Any],
+    artifact_index: Dict[str, Path],
+    repo_root: Path,
+    file_universe: Sequence[str],
+) -> Dict[str, Any]:
+    """Resolve `question`'s golden spans against the live tree, then grade
+    it -- or, if any span's anchor fails to resolve, report the question as
+    broken instead of grading it.
+
+    This is the one seam between golden-anchor resolution (eval/golden_
+    anchors.py) and arm search/grading (eval/arms.py): arms.py never sees an
+    anchor, only the concrete spans resolve_question_spans produces, so its
+    search logic and coverage criteria are completely unchanged by this.
+    A broken question is graded by neither arm -- see reporting.aggregate,
+    which keeps it out of (and separately visible alongside) the coverage
+    numbers, per the explicit requirement that an unresolvable golden
+    target must never be silently scored as a miss.
+    """
+    resolved_spans, error = resolve_question_spans(repo_root, question)
+    if error:
+        return {
+            "id": question["id"],
+            "category": question["category"],
+            "question": question["question"],
+            "broken": True,
+            "broken_reason": error,
+        }
+    resolved_question = dict(question)
+    resolved_question["golden"] = dict(question["golden"], spans=resolved_spans)
+    result = answer_question(resolved_question, artifact_index, repo_root, file_universe)
+    result["broken"] = False
+    return result
+
+
 def build_baseline(
     repo_root: Path,
     eval_dir: Path,
@@ -313,7 +368,7 @@ def build_baseline(
     file_universe = git_ls_files(repo_root)
 
     results = [
-        answer_question(q, artifact_index, repo_root, file_universe) for q in questions
+        resolve_and_answer(q, artifact_index, repo_root, file_universe) for q in questions
     ]
     agg = aggregate(results)
 

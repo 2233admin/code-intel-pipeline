@@ -30,6 +30,11 @@ mod probe;
 mod doctor_provider_rows;
 
 use paths::display;
+// Re-exported so `language_pref` derives the user-level config root from the
+// same OS/`CODE_INTEL_DATA_ROOT` switch this probe already ported from
+// `Get-CodeIntelDataRoot` in `code-intel-platform.psm1`, instead of a third
+// independent copy of that logic.
+pub(crate) use paths::{data_root, home_directory, resolve_platform};
 
 /// Marker the doctor capability adapter matches on. Kept as a constant so the
 /// probe and the adapter's contract check cannot drift.
@@ -98,7 +103,7 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
         .join("legacy")
         .join("run-code-intel.ps1");
     let cli_root = options.pipeline_root.join("crates").join("code-intel-cli");
-    let graph_source = cli_root.join("src").join("graph.rs");
+    let graph_source = cli_root.join("src").join("graph").join("mod.rs");
     let graph_cargo = cli_root.join("Cargo.toml");
     let binary_candidates = binary_candidates(&options.pipeline_root, &platform);
     let graph_binary = binary_candidates
@@ -122,6 +127,14 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
         probe::probe_tool("repowise", options.require_repowise, prefix),
         probe::probe_tool("repomix", false, prefix),
         probe::probe_tool("sentrux", !builtin_sentrux, prefix),
+        // `edit.ast-grep-plan` ships as a production capability whose runtime
+        // adapter resolves `ast-grep` through `tool_path`, so a machine
+        // without it only finds out at capability-exec time, as
+        // `Unavailable("start ast-grep: ...")`. Optional because
+        // `orchestration/toolchain-versions.v1.json` declares ast-grep
+        // `required: false` — but observed, so the doctor stops omitting a
+        // tool a shipped capability cannot run without.
+        probe::probe_tool("ast-grep", false, prefix),
     ];
 
     let sentrux_core = probe::probe_command_output(
@@ -169,6 +182,14 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
     .into_iter()
     .find(|path| path.is_dir());
 
+    let assistance_plugins = probe::probe_assistance_plugins(
+        &options
+            .pipeline_root
+            .join("orchestration")
+            .join("agent-assistance-catalog.v1.json"),
+        &home_dir,
+    );
+
     let repo_state = repo_state(repo_path.as_deref(), sentrux_scope.as_deref());
     let home = code_intel_home(&options.pipeline_root);
 
@@ -200,11 +221,23 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
             "cargoFound": graph_cargo.is_file(),
             "binaryFound": graph_binary.is_some(),
             "binaryPath": graph_binary.as_deref().map(display).unwrap_or_default(),
+            // Deliberately not wired to `language_pref::resolve` (issue
+            // #155): this module's source is `#[path]`-included as its own
+            // independent compilation root by roughly a dozen integration
+            // test files (each pulling it in transitively through
+            // `capability_inventory::doctor_adapter`), none of which declare
+            // a `language_pref` module. A `crate::language_pref` reference
+            // here compiles in the real binary but fails every one of those
+            // test targets with `cannot find language_pref in crate`. The
+            // command below is illustrative only (this probe never writes),
+            // so it stays a static example rather than gaining a fragile
+            // cross-module dependency for a cosmetic string.
             "command": format!(
                 "{} graph --repo <repo-path> --language zh --write --json",
                 display(&graph_command_binary)
             )
         },
+        "assistancePlugins": assistance_plugins,
         "repo": repo_state,
         "env": {"codeIntelHome": home.observation()}
     });
@@ -338,6 +371,20 @@ fn missing_list(
     }
     if options.require_understand && !flag("/graphProvider/cargoFound") {
         missing.push("code-intel Rust runtime".to_string());
+    }
+    // The two checks above only prove the *internal* graph provider ships in
+    // this checkout; inside the pipeline repo they are trivially true, which
+    // left `--require-understand` a fail-open no-op that never once consulted
+    // the `understandAnything` block it computes. The retired PowerShell probe
+    // had the same hole. Understand Anything ships either as an agent skill or
+    // as a plugin directory, so either one satisfies the requirement — this is
+    // the same "skill/plugin" wording the installer's own RequireUnderstand
+    // check remediates with.
+    if options.require_understand
+        && !flag("/understandAnything/skillFound")
+        && !flag("/understandAnything/pluginFound")
+    {
+        missing.push("Understand Anything skill or plugin".to_string());
     }
     if checks["repo"].is_object() && !flag("/repo/exists") {
         missing.push("repo path".to_string());
@@ -682,6 +729,7 @@ mod tests {
                 "sentrux pro auto-activation".to_string(),
                 "internal graph provider source".to_string(),
                 "code-intel Rust runtime".to_string(),
+                "Understand Anything skill or plugin".to_string(),
                 "repo path".to_string(),
                 "CODE_INTEL_HOME: directory does not exist (C:/nope)".to_string(),
             ]
@@ -724,6 +772,7 @@ mod tests {
         assert_eq!(
             checks,
             vec![
+                "assistancePlugins".to_string(),
                 "config".to_string(),
                 "env".to_string(),
                 "graphProvider".to_string(),
@@ -742,7 +791,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             names,
-            vec!["rg", "git", "python", "repowise", "repomix", "sentrux"]
+            vec!["rg", "git", "python", "repowise", "repomix", "sentrux", "ast-grep"]
         );
         fs::remove_dir_all(root).ok();
     }

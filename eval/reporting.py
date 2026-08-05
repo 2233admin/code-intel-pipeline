@@ -15,14 +15,23 @@ from typing import Any, Dict, List, Sequence
 
 def aggregate(results: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     total = len(results)
+    # A broken question (its golden anchor failed to resolve -- see
+    # eval/golden_anchors.py) was never graded by either arm: it must never
+    # be silently counted as "not covered". It's excluded from every
+    # coverage/win-loss computation below and reported separately instead,
+    # so a rotted golden target is loud in the output, not a quiet dip in
+    # the miss count.
+    broken = [r for r in results if r.get("broken")]
+    graded = [r for r in results if not r.get("broken")]
+    graded_total = len(graded)
 
     def arm_summary(key: str) -> Dict[str, Any]:
-        covered = [r for r in results if r[key]["covered"]]
-        total_bytes = sum(r[key]["bytes_to_answer"] for r in results)
+        covered = [r for r in graded if r[key]["covered"]]
+        total_bytes = sum(r[key]["bytes_to_answer"] for r in graded)
         covered_bytes = sum(r[key]["bytes_to_answer"] for r in covered)
         return {
             "covered_count": len(covered),
-            "coverage_rate": round(len(covered) / total, 4) if total else 0.0,
+            "coverage_rate": round(len(covered) / graded_total, 4) if graded_total else 0.0,
             "total_bytes_all_questions": total_bytes,
             "total_bytes_when_covered": covered_bytes,
             "mean_bytes_when_covered": (
@@ -30,10 +39,10 @@ def aggregate(results: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
             ),
         }
 
-    categories = sorted({r["category"] for r in results})
+    categories = sorted({r["category"] for r in graded})
     by_category = {}
     for cat in categories:
-        rows = [r for r in results if r["category"] == cat]
+        rows = [r for r in graded if r["category"] == cat]
         by_category[cat] = {
             "count": len(rows),
             "arm_a_covered": sum(1 for r in rows if r["arm_a"]["covered"]),
@@ -41,25 +50,31 @@ def aggregate(results: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         }
 
     reasons_a: Dict[str, int] = {}
-    for r in results:
+    for r in graded:
         reason = r["arm_a"]["reason"]
         if reason:
             reasons_a[reason] = reasons_a.get(reason, 0) + 1
     reasons_b: Dict[str, int] = {}
-    for r in results:
+    for r in graded:
         reason = r["arm_b"]["reason"]
         if reason:
             reasons_b[reason] = reasons_b.get(reason, 0) + 1
 
     win_loss = {
-        "a_wins": sum(1 for r in results if r["winner"] == "A"),
-        "b_wins": sum(1 for r in results if r["winner"] == "B"),
-        "ties": sum(1 for r in results if r["winner"] == "tie"),
-        "neither_covered": sum(1 for r in results if r["winner"] == "neither"),
+        "a_wins": sum(1 for r in graded if r["winner"] == "A"),
+        "b_wins": sum(1 for r in graded if r["winner"] == "B"),
+        "ties": sum(1 for r in graded if r["winner"] == "tie"),
+        "neither_covered": sum(1 for r in graded if r["winner"] == "neither"),
     }
 
     return {
         "total_questions": total,
+        "graded_questions": graded_total,
+        "broken_count": len(broken),
+        "broken_questions": [
+            {"id": r["id"], "category": r["category"], "reason": r["broken_reason"]}
+            for r in broken
+        ],
         "arm_a": arm_summary("arm_a"),
         "arm_b": arm_summary("arm_b"),
         "by_category": by_category,
@@ -76,7 +91,7 @@ def aggregate(results: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
                 "arm_b_bytes": r["arm_b"]["bytes_to_answer"],
                 "winner": r["winner"],
             }
-            for r in results
+            for r in graded
         ],
     }
 
@@ -85,6 +100,7 @@ def render_markdown(baseline: Dict[str, Any]) -> str:
     agg = baseline["aggregate"]
     a, b = agg["arm_a"], agg["arm_b"]
     total = agg["total_questions"]
+    graded_total = agg["graded_questions"]
 
     lines: List[str] = []
     lines.append("# Eval v1 baseline -- artifact-guided (A) vs naive (B)")
@@ -94,8 +110,19 @@ def render_markdown(baseline: Dict[str, Any]) -> str:
         f"`{baseline['meta']['baseline_file']}`. Do not hand-edit; re-run harness.py instead."
     )
     lines.append("")
-    lines.append(f"HEAD: `{baseline['meta']['repo_head_sha']}` | questions: {total}")
+    lines.append(
+        f"HEAD: `{baseline['meta']['repo_head_sha']}` | questions: {total} "
+        f"({graded_total} graded, {agg['broken_count']} broken)"
+    )
     lines.append("")
+    if agg["broken_questions"]:
+        lines.append(
+            "**BROKEN -- golden anchor did not resolve, graded by neither arm "
+            "(never scored as a miss):**"
+        )
+        for broken in agg["broken_questions"]:
+            lines.append(f"- `{broken['id']}` ({broken['category']}): {broken['reason']}")
+        lines.append("")
     lines.append("| id | category | A covered | A bytes | B covered | B bytes | winner |")
     lines.append("|---|---|---|---|---|---|---|")
     for row in agg["win_loss_table"]:
@@ -118,16 +145,16 @@ def render_markdown(baseline: Dict[str, Any]) -> str:
     )
 
     lines.append(
-        f"1. Arm A covered {a['covered_count']}/{total} questions "
+        f"1. Arm A covered {a['covered_count']}/{graded_total} graded questions "
         f"({a['total_bytes_when_covered']:,} bytes over those, "
         f"{a['total_bytes_all_questions']:,} bytes total including failed searches); "
-        f"Arm B covered {b['covered_count']}/{total} "
+        f"Arm B covered {b['covered_count']}/{graded_total} "
         f"({b['total_bytes_when_covered']:,} bytes over those, "
         f"{b['total_bytes_all_questions']:,} bytes total)."
     )
     lines.append(
         f"2. Head-to-head: A wins {wl['a_wins']}, B wins {wl['b_wins']}, "
-        f"ties {wl['ties']}, neither covered {wl['neither_covered']} (out of {total})."
+        f"ties {wl['ties']}, neither covered {wl['neither_covered']} (out of {graded_total} graded)."
     )
     lines.append(f"3. Arm A failure reasons: {a_reasons}. Arm B failure reasons: {b_reasons}.")
     lines.append(f"4. By category (covered/total): {cat_bits}.")

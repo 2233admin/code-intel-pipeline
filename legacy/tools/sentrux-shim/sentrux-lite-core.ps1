@@ -251,8 +251,33 @@ function Measure-Project {
 }
 
 function Get-BaselinePath {
+    # Lite's own gate baseline. `.sentrux/baseline.json` belongs to the native
+    # engine (schema code-intel-sentrux-baseline.v2+, nested metrics) and the
+    # two engines measure on different scales, so lite neither reads that file
+    # as its own baseline nor ever writes it. `.sentrux/cache/` is git-ignored.
     param([string]$TargetPath)
-    return (Join-Path (Join-Path $TargetPath ".sentrux") "baseline.json")
+    return (Join-Path (Join-Path (Join-Path $TargetPath ".sentrux") "cache") "lite-baseline.json")
+}
+
+function Read-LiteBaseline {
+    # Returns the lite flat-format baseline, or $null when none exists. The
+    # only `.sentrux/baseline.json` accepted here is the pre-split flat form
+    # stamped `tool = "sentrux-lite"` (read-only migration path); a native
+    # baseline in that location means lite simply has no baseline yet.
+    param([string]$TargetPath)
+
+    $litePath = Get-BaselinePath $TargetPath
+    if (Test-Path -LiteralPath $litePath -PathType Leaf) {
+        return (Get-Content -LiteralPath $litePath -Raw | ConvertFrom-Json)
+    }
+    $legacyPath = Join-Path (Join-Path $TargetPath ".sentrux") "baseline.json"
+    if (Test-Path -LiteralPath $legacyPath -PathType Leaf) {
+        $legacy = Get-Content -LiteralPath $legacyPath -Raw | ConvertFrom-Json
+        if ($null -ne $legacy -and $null -ne $legacy.PSObject.Properties["tool"] -and "$($legacy.tool)" -eq "sentrux-lite") {
+            return $legacy
+        }
+    }
+    return $null
 }
 
 function Write-Baseline {
@@ -398,13 +423,13 @@ function Invoke-Gate {
         exit 0
     }
 
-    if (-not (Test-Path -LiteralPath $baselinePath -PathType Leaf)) {
+    $baseline = Read-LiteBaseline $target
+    if ($null -eq $baseline) {
         Write-Output "Sentrux baseline missing at $baselinePath"
         Write-Output "Run sentrux gate --save $target"
         exit 1
     }
 
-    $baseline = Get-Content -LiteralPath $baselinePath -Raw | ConvertFrom-Json
     Write-GateOutput $baseline $metrics $false $baselinePath
     $regressed = $false
     if ([double]$metrics.quality_signal -lt [double]$baseline.quality_signal) { $regressed = $true }

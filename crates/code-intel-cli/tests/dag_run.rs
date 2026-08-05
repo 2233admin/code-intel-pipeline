@@ -714,6 +714,87 @@ fn checked_in_execution_result_schema_is_closed_and_binds_outcomes_to_exit_codes
         pair["properties"]["outcome"]["enum"] == json!(["process_failed", "incomplete"])
             && pair["properties"]["exitCode"]["const"] == 70
     }));
+
+    // #168: `to_execution_json()` emits `failures` on every run; a closed
+    // schema that omits it declares its own output invalid.
+    assert!(schema["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|key| key == "failures"));
+    let failures = &schema["properties"]["failures"];
+    assert_eq!(failures["additionalProperties"], false);
+    assert_eq!(failures["required"], json!(["process", "domain"]));
+    assert_eq!(
+        failures["properties"]["process"]["items"]["required"],
+        json!(["node", "diagnostic"])
+    );
+    assert_eq!(
+        failures["properties"]["domain"]["items"]["required"],
+        json!(["node", "verdict"])
+    );
+}
+
+/// Collects instance keys that a closed (`additionalProperties: false`)
+/// schema node does not declare. Recurses through declared objects and
+/// array items; stops at `$ref` boundaries (those subtrees carry their own
+/// schema files). #168: the pwsh `Test-Json` step does not enforce the
+/// closed-world bit, so the strict half of the contract is asserted here.
+fn undeclared_keys(instance: &Value, schema_node: &Value, at: &str, out: &mut Vec<String>) {
+    let Some(fields) = instance.as_object() else {
+        return;
+    };
+    if schema_node["additionalProperties"] != Value::Bool(false) {
+        return;
+    }
+    let declared = &schema_node["properties"];
+    for (key, child) in fields {
+        let child_schema = &declared[key];
+        if child_schema.is_null() {
+            out.push(format!("{at}/{key}"));
+            continue;
+        }
+        if let Some(items) = child.as_array() {
+            let item_schema = &child_schema["items"];
+            for (index, item) in items.iter().enumerate() {
+                undeclared_keys(item, item_schema, &format!("{at}/{key}/{index}"), out);
+            }
+        } else {
+            undeclared_keys(child, child_schema, &format!("{at}/{key}"), out);
+        }
+    }
+}
+
+#[test]
+fn strict_key_check_rejects_fields_the_schema_does_not_declare() {
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../../orchestration/schemas/code-intel-execution-result.v1.schema.json"
+    ))
+    .unwrap();
+    let mut doc = json!({
+        "schema": "code-intel-execution-result.v1",
+        "outcome": "completed",
+        "exitCode": 0,
+        "failures": {"process": [], "domain": []},
+        "manifest": {},
+        "publication": {
+            "status": "committed",
+            "name": "run-001",
+            "repo": "fixture",
+            "path": "authority/fixture/run-001",
+            "marker": "run-complete.json",
+        },
+    });
+    let mut extras = Vec::new();
+    undeclared_keys(&doc, &schema, "", &mut extras);
+    assert!(extras.is_empty(), "baseline must be clean: {extras:?}");
+
+    doc["sneaky"] = json!(true);
+    doc["failures"]["domain"] = json!([{"node": "evidence.rg", "verdict": "fail", "extra": 1}]);
+    let mut extras = Vec::new();
+    undeclared_keys(&doc, &schema, "", &mut extras);
+    extras.sort();
+    assert_eq!(extras, vec!["/failures/domain/0/extra", "/sneaky"]);
 }
 
 #[test]
@@ -749,6 +830,20 @@ fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
         String::from_utf8_lossy(&output.stderr)
     );
     let execution: Value = serde_json::from_slice(&output.stdout).unwrap();
+
+    // #168: a real run's output must not carry keys its own closed schema
+    // omits — `Test-Json` below is blind to `additionalProperties: false`.
+    let execution_schema: Value = serde_json::from_str(include_str!(
+        "../../../orchestration/schemas/code-intel-execution-result.v1.schema.json"
+    ))
+    .unwrap();
+    let mut extras = Vec::new();
+    undeclared_keys(&execution, &execution_schema, "", &mut extras);
+    assert!(
+        extras.is_empty(),
+        "execution result emits keys its schema does not declare: {extras:?}"
+    );
+
     let nodes = execution["manifest"]["nodes"].as_object().unwrap();
     assert!(!nodes.contains_key("evidence.graph"));
     assert!(!nodes.contains_key("evidence.sentrux"));
@@ -1173,5 +1268,100 @@ fn out_and_artifact_root_cannot_both_name_the_staging_directory() {
         String::from_utf8_lossy(&output.stderr)
     );
 
+    let _ = fs::remove_dir_all(root);
+}
+
+fn git(repo: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git fixture command");
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Regression for issue #123: the production DAG must complete when the
+/// repository is a linked worktree, where `.git` is a pointer file rather
+/// than a directory. `evidence.sentrux` is the interesting node — it
+/// re-derives the snapshot (`begin_consumption`, untracked enumeration)
+/// inside its own capability process, so a worktree-hostile Git invocation
+/// surfaces here while `repo.snapshot` still passes in the parent.
+#[test]
+fn production_run_completes_on_a_linked_worktree_checkout() {
+    let root = temp_dir();
+    let primary = root.join("primary");
+    let linked = root.join("linked");
+    let out = root.join("run");
+    fs::create_dir_all(primary.join("src")).unwrap();
+    fs::write(primary.join("README.md"), "fixture\n").unwrap();
+    fs::write(primary.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
+    git(&primary, &["init", "--quiet"]);
+    git(&primary, &["config", "user.name", "Worktree Fixture"]);
+    git(
+        &primary,
+        &["config", "user.email", "worktree@example.invalid"],
+    );
+    git(&primary, &["add", "."]);
+    git(&primary, &["commit", "--quiet", "-m", "baseline"]);
+    git(
+        &primary,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "--detach",
+            linked.to_str().expect("fixture path is UTF-8"),
+            "HEAD",
+        ],
+    );
+    assert!(
+        linked.join(".git").is_file(),
+        "linked worktree must expose .git as a pointer file"
+    );
+    // Untracked content in the worktree keeps the enumeration path
+    // (`ls-files --others`) load-bearing rather than trivially empty.
+    fs::write(linked.join("untracked.txt"), "scratch\n").unwrap();
+    let doctor_tools = doctor_tool_fixture(&root, true);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        .args(["run", "dag-coordinate", "--repo"])
+        .arg(&linked)
+        .arg("--out")
+        .arg(&out)
+        .arg("--doctor-tool-path-prefix")
+        .arg(&doctor_tools)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let manifest: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(manifest["outcome"], "completed", "manifest={manifest}");
+    assert_eq!(
+        manifest["nodes"]["evidence.sentrux"]["status"], "succeeded",
+        "manifest={manifest}"
+    );
+    assert_eq!(manifest["nodes"]["evidence.sentrux"]["verdict"], "pass");
+    assert_eq!(manifest["nodes"]["repo.snapshot"]["status"], "succeeded");
+
+    // Release the worktree registration before deleting the fixture so the
+    // primary repository's admin area never points at a vanished directory.
+    git(
+        &primary,
+        &[
+            "worktree",
+            "remove",
+            "--force",
+            linked.to_str().expect("fixture path is UTF-8"),
+        ],
+    );
     let _ = fs::remove_dir_all(root);
 }

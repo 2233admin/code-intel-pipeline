@@ -208,14 +208,14 @@ fn unified_route_inventory_owns_version_primary_raw_and_legacy_dispatch() {
             .iter()
             .filter(|route| matches!(route, CommandRoute::Raw(_)))
             .count(),
-        29
+        31
     );
     assert_eq!(
         COMMAND_ROUTES
             .iter()
             .filter(|route| matches!(route, CommandRoute::Legacy(_)))
             .count(),
-        11
+        12
     );
 }
 
@@ -259,6 +259,21 @@ fn command_authority_and_effect_contracts_cover_conditional_and_mutating_routes(
     assert_eq!(
         raw("model", None).contract.effects,
         &[CommandEffect::LocalWrite]
+    );
+    // `edit apply` is the only agent-facing route that rewrites source bytes.
+    // Its declared effects must say so, and `edit impact` — the read-shaped
+    // sibling one word away — must keep saying it does not.
+    assert_eq!(
+        raw("edit", Some("apply")).contract.effects,
+        &[
+            CommandEffect::RepoRead,
+            CommandEffect::LocalWrite,
+            CommandEffect::RepoMutation
+        ]
+    );
+    assert_eq!(
+        raw("edit", Some("impact")).contract.effects,
+        &[CommandEffect::RepoRead, CommandEffect::ProcessSpawn]
     );
     for adapter in [
         "repowise-adapt",
@@ -336,6 +351,22 @@ fn observable_contracts_pin_exact_schemas_composites_and_exit_sets() {
         &[0, 64, 65, 74]
     );
     assert_eq!(legacy("help").exit_contract.codes(), &[0, 1]);
+
+    // Every exit `edit apply` declares has to answer on stdout, including the
+    // ones reached before the capability envelope exists. Pinning the failure
+    // identity next to the exit set is what keeps a later exit from being
+    // added without a document to answer it with.
+    assert_eq!(
+        raw("edit", Some("apply")).exit_contract.codes(),
+        &[0, 10, 64, 65, 69, 70, 74]
+    );
+    match raw("edit", Some("apply")).output_contract {
+        OutputContract::Stdout { identities } => assert!(
+            identities.contains(&"code-intel-edit-failure.v1"),
+            "edit apply must declare the pre-envelope failure document: {identities:?}"
+        ),
+        other => panic!("edit apply has wrong output contract: {other:?}"),
+    }
 
     for (adapter, outer_schema, nested_schema) in [
         (

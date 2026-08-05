@@ -85,7 +85,7 @@ jobs:
           New-Item -ItemType Directory -Force $authority | Out-Null
           ./target/release/code-intel.exe run execute --repo . --out $staging --authority-root $authority --final-name ci-self-scan --manifest orchestration/integrations.json --doctor-require-repowise false
           if ($LASTEXITCODE -ne 0) {
-            throw "self-scan failed with exit code ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure; read the run manifest failures block"
+            throw "self-scan failed with exit code ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure, 73 = --final-name already published under the authority root; read the run manifest failures block"
           }
 
       - name: Validate any produced audit report (ai-safety-003)
@@ -135,7 +135,6 @@ jobs:
             "legacy/scripts/tests/test-primary-launchers.ps1",
             "legacy/scripts/tests/test-github-solution-research.ps1",
             "legacy/scripts/tests/test-hospital-trust-contract.ps1",
-            "legacy/scripts/tests/test-dag-facade.ps1",
             "legacy/scripts/tests/test-atomic-capability-contract.ps1",
             "legacy/scripts/tests/test-project-discovery.ps1",
             "legacy/scripts/tests/test-project-management-support.ps1",
@@ -425,7 +424,7 @@ jobs:
           New-Item -ItemType Directory -Force $authority | Out-Null
           & $binary run execute --repo . --out $staging --authority-root $authority --final-name ci-self-scan --manifest orchestration/integrations.json --doctor-require-repowise false
           if ($LASTEXITCODE -ne 0) {
-            throw "self-scan failed with exit code ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure; read the run manifest failures block"
+            throw "self-scan failed with exit code ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure, 73 = --final-name already published under the authority root; read the run manifest failures block"
           }
 
       - name: Validate any produced audit report (ai-safety-003)
@@ -472,7 +471,6 @@ jobs:
             "legacy/scripts/tests/test-primary-launchers.ps1",
             "legacy/scripts/tests/test-github-solution-research.ps1",
             "legacy/scripts/tests/test-hospital-trust-contract.ps1",
-            "legacy/scripts/tests/test-dag-facade.ps1",
             "legacy/scripts/tests/test-atomic-capability-contract.ps1",
             "legacy/scripts/tests/test-project-discovery.ps1",
             "legacy/scripts/tests/test-project-management-support.ps1",

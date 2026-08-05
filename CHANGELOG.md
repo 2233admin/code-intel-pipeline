@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`code-intel edit apply` + `edit.span-apply` 能力：span 寻址补丁，终结"改一个字重写整行"**（#96 item 1、charter gate G4 #139）。`--span <startLine:startColumn-endLine:endColumn> --expect-sha256 <该 span 当前字节的 sha256> --replacement <text>`，行列 1-based、结束列开区间；同一文件可带多个互不重叠的 span，全部对改动前字节定位、写临时同级文件后 rename，整文件原子替换。写之前逐 span 比对 digest：不一致即拒绝（退出码 10、`applied:false`），产物给出 `expectedSha256` / `foundSha256` / 有界原文，且信封 `observedEffects` 不含 `repo_mutation`——"没写"是机器可校验的，不是自报的。写路径全程走既有 capability envelope（`edit.span-apply.compat`，`allowedEffects` 含 `repo_mutation`），能力自身在动手前先检查请求的 effectPolicy，把事后审计变成事前门。不含 ast-grep 接线（下一档）。
+
+### Fixed
+
+- **execution-result schema declared `additionalProperties: false` yet omitted the `failures` field it always emits (#168)**: every `code-intel run execute` output was invalid by its own schema; nothing caught it because the existing schema validation step does not enforce the closed-world bit. The schema now declares `failures` (`{process: [{node, diagnostic}], domain: [{node, verdict}]}`, shapes taken from `to_execution_json()` / `execution_kernel::failures()`, not invented) and lists it as required. A strict in-process key check now runs against a real `code-intel run execute` output in `dag_run.rs`, with a negative control proving an undeclared extra field turns it red. The 88-schema emitter sweep from #168 remains open.
+- **Exit-code semantics conflated gate findings with process failure (#130)**: `legacy/run-code-intel.ps1` exited `1` whenever `sentrux gate` reported architecture/quality debt (e.g. `god_files 23 -> 25`) in the target repo — identical to a genuine tool crash, even though every artifact was produced intact. Exit codes are now layered: `0` clean, `2` pipeline completed with Sentrux gate findings (see new `report.summary.gateFindings`), `1` the pipeline genuinely did not complete. Scoped to `sentrux gate` only; `sentrux check` keeps its prior behavior. See `docs/artifact-data-contract.md#exit-code-contract-issue-130`.
+- **God-file ratchet compared counts against a stale baseline — three real branches each shipped a new god file with every self-scan green (#165)**: the ratchet now compares file *identities*. `.sentrux/baseline.json` moves to schema v5 and records every tolerated god file by path with its measured loc/functions and the rule branch it trips; any god file the baseline does not list fails `god_files_increased`, and the violation names the file, the branch (`loc>800` or `functions>25&&loc>400`), and the measured values — files, not counts (#148 C1). Count slack and fix+regress swaps can no longer hide a new monolith. Baselines without the identity list fail closed as `baseline_engine_mismatch`. A green gate now also reports reclaimable slack ("N god file(s) no longer over threshold") since the gate itself never rewrites repository state. Decision recorded in `.sentrux/rules.toml`: test functions count toward the functions limit (option B) — the convention that tests live in a module directory's own `tests.rs` is what keeps production files under the limit; the cfg-aware alternative is explicitly rebutted there. The repository's 33 standing god files are grandfathered by identity, not amnestied.
+
+## [0.7.0-beta.5] — 2026-08-04
+
+两件都关于「把 review 该做什么交出去」：管线第一次能回答「这件事我答不了，谁能答」，也第一次把变更排成有序议程而不是一个标量分。之前 gap 只存在于操作者脑子里，靠现场想起某个 plugin 存在；现在它是一次可执行、可复现、只出提案的查询。
+
+### Added
+
+- **`code-intel change agenda <revspec>`（PR #150）**：纯 git、免索引、免网络、免 LLM 的 review 议程。变更文件按 co-change 历史并查集聚成 review unit，每个 unit 走 `change_risk::score_subset`——和 `change risk` 完全同一把尺子、同一次 history walk 的子集，不新造第二套风险公式——最坏优先排序。Schema `code-intel-change-agenda.v1`，authority 为 WorkspaceAdvisory/GitHistory。`testSelection` 与 `structuralRules` 需要已提交 run 的证据，一律报 `status: "unavailable"` 并给出产出它的命令，绝不近似；单次碰超过 50 个文件的 commit 判为 sweep，从耦合证据剔除并计入 `wideCommitsSkipped`，不静默丢弃。时间窗锚在被评 commit 自己的 committer date，不读墙上时钟。
+- **`assistance.discovery` 上线（PR #160）**：gap 进，dossier 出，`proposalOnly=true`、零 effect、零 authority event、零 adoption decision。实现是激活仓里早就写好、有测试、却从没接进 `main.rs` 的 `assistance_discovery.rs`——决策核保持不碰 adapter 和文件系统类型，好让它自己的测试能单独 `#[path]` include；adapter 单独成 `assistance_adapter.rs`，不塞进已经 1266 行的 `capability_inventory.rs`。
+- **`orchestration/agent-assistance-catalog.v1.json`**：6 个官方 plugin（`code-review` / `pr-review-toolkit` / `code-simplifier` / `feature-dev` / `code-modernization` / `claude-security`）按引用绑定，一个文件都不 vendor。每条候选带一次性评审过的 fit / license / security / integration / reversibility 与证据引用。候选**只能**从目录解析——call time 现编评级等于把评审本身废掉。目录进了 registry 的 `toolchainDigestEvidence.inputs`，改一条评级就动 digest，逼一次 repin。
+- **doctor 探测路由目标**：`checks.assistancePlugins` 与 `assistance:<candidate-id>` provider 行。缺失是观察不是失败——未安装的路由目标是操作者该看见的事实，不是坏掉的安装，所以 `--require-provider-conformance` 不会因此挂掉。
+- **`SKILL.md` 路由表**：管线证据 → plugin 入口的直连映射，走 `change risk` / `change impact` / `diagnosis.hospital-view` / `code_evidence.agent_slice` 这些已有信号。
+
+### Notes
+
+- `claude-security` 的 LICENSE 不是 Apache-2.0，是 Anthropic 专有授权，明文禁止分发 plugin 或其修改版。它的 dossier 报 `license: review_required`：「管线路由式使用是否还在 internal-use 授权内」是操作者的判断，不在代码里替他拍板。这也是整条路线「只引用不搬运」的硬理由，不是风格偏好。
+- 加候选 = 加一条目录条目，不加运行时分支。
+
+## [0.7.0-beta.4] — 2026-08-04
+
+诚实批次：把 CLI 收敛成单一权威迭代，把基准从「代码一重构就烂」修成内容锚定，并第一次让「我没查」在类型层面无法伪装成「我查过了」。判据本身写进了纲领 issue #139。
+
+### Added
+
+- **G1 诚实位（#141）**：`EvidenceOutcome::Complete(EvidenceScope) / Partial{reason,scope} / NotComputed{reason}`。`Complete` 没有跳过 scope 的构造路径——不给出扫描面就构造不出「查过了」。首个落地面是 `repin` 的扫描覆盖声明。验收是反向测试：把 `partial` 只改 `status` 字段伪装成 `complete`（scope 仍然真实合法）必须被拒绝；关掉校验该测试会红，证明它不是空的。
+- **架构收敛（#134）**：`main.rs` 收到 73 行的进程壳；`cli/` 统一 parse → dispatch → render；`authoritative_run::{execution_kernel, completion}` 成为单一权威迭代；`CommittedEvidenceController`（已提交证据、可门禁）与 `WorkspaceAdvisoryController`（工作树建议、不可门禁）分权。
+- **golden 内容锚（#137）**：`eval/golden_anchors.py` 按符号名或字面片段在评分时解析 golden span，不再钉死行号。锚解析不了的题标记为 **broken**——两臂都不评、不进任何覆盖率与胜负统计，单独列出。以前这类题被静默记成「A 臂答不出」。
+
+### Fixed
+
+- **`--require-understand` 是 fail-open 空转（#144）**：`doctor bootstrap --require-understand --json` 在 `understandAnything` 的 skill 与 plugin 皆为 false 时仍返回 `ok:true, missing:[]`。
+- **doctor 看不见 ast-grep（#143）**：`edit.ast-grep-plan` 会 shell out 到 ast-grep，但 doctor 从不探测它，于是在跑不动该能力的机器上照样报 `ok:true`。
+- **发布名撞车报错不可用（#145）**：重跑同名自扫时 exit 65、stdout 零字节、stderr 只有一条本地化 OS 错误（os error 183）。现在给出独立退出码与可解析的 stdout 信封。
+- **墙上时钟进了摘要（#147）**：`observedAt` 被哈希进 evidence payload，导致未变更的树每次运行都重新发布 22 个对象中的 6 个。时间戳保留在外层信封供新鲜度判断，不再进 `payload.sha256`。
+- **static 锚永远解析不了（#137）**：`_strip_modifiers` 无条件剥掉 `"static "` 前缀，而 `symbol_kind="static"` 要匹配的正是它——文档声称支持的能力静默失效。
+- **repin 边界安全（#91）**、**silent git/child death 不再产出空诊断（#131）**、**CI 死引用清理（#136）**、**曝光面与 agent 地图排序（#126）**。
+
+### Changed
+
+- **Arm A 读取窗口 10 → 25（#146）**：实测只翻转一题（q12，why 类），每覆盖题边际成本约 1,296 字节。与之捆绑的另一条杠杆（Rust 符号抽取扩到 const/static/struct）单独收益为零、语料 +17.6%，**未合入**——理由见 #142。
+
+### 明确的负结果（不合并，保留为证据）
+
+- **symbol-bounded chunks（#140）**：把 `code_evidence.chunks` 从整文件 chunk 改成符号级行区间。实现者动手前写下预测「q03 不会动」，理由是 `arm_a_answer` 在 `symbols → imports → chunks` 中命中第一个即 break，而目标关键词在 symbols 层就命中——chunks 层永远走不到。跑完与预测完全一致：零题状态变化，而 chunks 产物 ×3.56，Arm A 每覆盖题字节 +24.7%。三个独立验伪全部复现该结论。
+- 由此得到 #142：**Arm A 的开销 99.8% 是产物全量扫描**，源码窗口仅占 775 字节；让产物更精确只会让它更贵。北极星闸门 G0 的真实距离是 why 1/4（需 ≥3/4）与 11.5× Arm B 字节（需 ≤2×）。
+
+### 已知问题
+
+`sentrux --help` / `doctor --help` 静默绿灯、巨石门禁只报数量不报文件名、`sentrux dsm` 边矩阵结构性为空、149 条 rustc 警告直通发布、`fallbackChunkRate: 1.0`、`ranking.json` 按字母序而非分数——完整清单见 #148。
+
 ## [0.7.0-beta.3] — 2026-08-02
 
 北极星落地批次：占 chokepoint（PR 门禁）、立裁判（eval 基准）、砍概念债（docs 生命周期首扫）、出自举圈（第二仓冷启动）。工作流第一性原理与全部方向决策见 issue #55 及其评论。

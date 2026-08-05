@@ -733,52 +733,64 @@ Test-Case "update-code-intel-index.ps1 skips unparseable report.json and still i
 }
 
 # ---------------------------------------------------------------------------
-# Fix 7: baseline save backs up the previous baseline.json to baseline.prev.json
-# before overwriting, and prints an old->new quality_signal comparison. We
-# exercise the actual backup+diff logic extracted from run-code-intel.ps1's
-# inline block by re-running the same steps against scratch files (the block
-# itself is inline script, not a named function, so we assert the on-disk
-# side effect contract directly using the sentrux-lite-core CLI, which is
-# what run-code-intel.ps1 shells out to).
+# Fix 7 (contract moved by issue #182): baseline save backs up the previous
+# lite baseline before overwriting so an old->new quality_signal comparison
+# stays possible. Since #182 the lite gate owns .sentrux/cache/lite-baseline.json
+# and never reads or writes the native engine's .sentrux/baseline.json, so the
+# backup contract moves with the lite file and a native baseline must stay
+# byte-identical across lite saves. run-code-intel.ps1's inline backup block
+# still points at the legacy .sentrux/baseline.json location; that step is
+# vestigial (it now protects a file lite no longer overwrites) and retires
+# with the facade under #78.
 # ---------------------------------------------------------------------------
-Test-Case "sentrux-lite-core gate --save + manual backup step preserves baseline.prev.json with old quality_signal" {
+Test-Case "sentrux-lite-core gate --save + manual backup step preserves the previous lite baseline and never touches .sentrux/baseline.json" {
     $dir = New-ScratchDir "baseline-backup"
     try {
         $liteCore = Join-Path $root "tools\sentrux-shim\sentrux-lite-core.ps1"
         $file = Join-Path $dir "sample.ps1"
         Set-Content -LiteralPath $file -Value "function A { return 1 }" -Encoding UTF8
 
-        # First save: establishes baseline.json (v1).
-        & $liteCore gate --save $dir | Out-Null
+        # A native-engine baseline occupies .sentrux/baseline.json; lite saves
+        # must leave it byte-identical (regression: #182 flat-format clobber).
         $sentruxDir = Join-Path $dir ".sentrux"
-        $baselinePath = Join-Path $sentruxDir "baseline.json"
-        Assert-True (Test-Path -LiteralPath $baselinePath) "first save must create baseline.json"
+        New-Item -ItemType Directory -Force -Path $sentruxDir | Out-Null
+        $nativeBaselinePath = Join-Path $sentruxDir "baseline.json"
+        Set-Content -LiteralPath $nativeBaselinePath -Value '{"schema":"code-intel-sentrux-baseline.v5","engine":{"id":"sentrux-native"},"metrics":{"quality_signal":1}}' -Encoding UTF8
+        $nativeHashBefore = (Get-FileHash -LiteralPath $nativeBaselinePath -Algorithm SHA256).Hash
+
+        # First save: establishes the lite baseline (v1).
+        & $liteCore gate --save $dir | Out-Null
+        $baselinePath = Join-Path (Join-Path $sentruxDir "cache") "lite-baseline.json"
+        Assert-True (Test-Path -LiteralPath $baselinePath) "first save must create .sentrux/cache/lite-baseline.json"
         $baselineV1 = Get-Content -LiteralPath $baselinePath -Raw | ConvertFrom-Json
         $qualityV1 = $baselineV1.quality_signal
 
         # Mutate the target so the second save produces a different quality_signal,
-        # then replicate the exact backup-then-save sequence run-code-intel.ps1 performs
-        # (Copy-Item baseline.json -> baseline.prev.json BEFORE invoking gate --save).
+        # then replicate the backup-then-save sequence (Copy-Item the lite baseline
+        # to its .prev sibling BEFORE invoking gate --save).
         Add-Content -LiteralPath $file -Value "function B { if (1) { if (2) { if (3) { return 2 } } } }"
-        $baselinePrevPath = Join-Path $sentruxDir "baseline.prev.json"
+        $baselinePrevPath = Join-Path (Join-Path $sentruxDir "cache") "lite-baseline.prev.json"
         Copy-Item -LiteralPath $baselinePath -Destination $baselinePrevPath -Force
         & $liteCore gate --save $dir | Out-Null
 
-        Assert-True (Test-Path -LiteralPath $baselinePrevPath) "baseline.prev.json must exist after a second save (regression: da46886 fix 7)"
+        Assert-True (Test-Path -LiteralPath $baselinePrevPath) "lite-baseline.prev.json must exist after a second save (regression: da46886 fix 7)"
         $prevContent = Get-Content -LiteralPath $baselinePrevPath -Raw | ConvertFrom-Json
-        Assert-Equal $qualityV1 $prevContent.quality_signal "baseline.prev.json must preserve the PRE-save (old) quality_signal, not the new one"
+        Assert-Equal $qualityV1 $prevContent.quality_signal "the prev file must preserve the PRE-save (old) quality_signal, not the new one"
 
         $baselineV2 = Get-Content -LiteralPath $baselinePath -Raw | ConvertFrom-Json
         # Not asserting the values differ (that depends on heuristic sensitivity),
         # only that both old and new are available for the old->new comparison print.
-        Assert-True ($null -ne $baselineV2.quality_signal) "baseline.json after second save must have a quality_signal for the new-value side of the comparison"
+        Assert-True ($null -ne $baselineV2.quality_signal) "lite-baseline.json after second save must have a quality_signal for the new-value side of the comparison"
+
+        $nativeHashAfter = (Get-FileHash -LiteralPath $nativeBaselinePath -Algorithm SHA256).Hash
+        Assert-Equal $nativeHashBefore $nativeHashAfter ".sentrux/baseline.json must stay byte-identical across lite saves (regression: issue #182)"
     }
     finally {
         Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
     }
 }
 
-Test-Case "baseline backup: first-ever save (no prior baseline.json) must not fail and must not fabricate a prev file" {
+Test-Case "baseline backup: first-ever save (no prior lite baseline) must not fail and must not fabricate a prev file" {
     $dir = New-ScratchDir "baseline-firstsave"
     try {
         $liteCore = Join-Path $root "tools\sentrux-shim\sentrux-lite-core.ps1"
@@ -786,17 +798,18 @@ Test-Case "baseline backup: first-ever save (no prior baseline.json) must not fa
         Set-Content -LiteralPath $file -Value "function A { return 1 }" -Encoding UTF8
 
         $sentruxDir = Join-Path $dir ".sentrux"
-        $baselinePath = Join-Path $sentruxDir "baseline.json"
-        $baselinePrevPath = Join-Path $sentruxDir "baseline.prev.json"
+        $baselinePath = Join-Path (Join-Path $sentruxDir "cache") "lite-baseline.json"
+        $baselinePrevPath = Join-Path (Join-Path $sentruxDir "cache") "lite-baseline.prev.json"
 
-        # Mirror run-code-intel.ps1's guard: only copy to .prev if baseline.json already exists.
+        # Mirror the backup guard: only copy to .prev if a lite baseline already exists.
         if (Test-Path -LiteralPath $baselinePath -PathType Leaf) {
             Copy-Item -LiteralPath $baselinePath -Destination $baselinePrevPath -Force
         }
         & $liteCore gate --save $dir | Out-Null
 
-        Assert-True (Test-Path -LiteralPath $baselinePath) "baseline.json must be created on first save"
-        Assert-False (Test-Path -LiteralPath $baselinePrevPath) "baseline.prev.json must NOT be fabricated when there was no prior baseline to back up"
+        Assert-True (Test-Path -LiteralPath $baselinePath) "lite-baseline.json must be created on first save"
+        Assert-False (Test-Path -LiteralPath $baselinePrevPath) "lite-baseline.prev.json must NOT be fabricated when there was no prior baseline to back up"
+        Assert-False (Test-Path -LiteralPath (Join-Path $sentruxDir "baseline.json")) "lite must not create the native engine's .sentrux/baseline.json (issue #182)"
     }
     finally {
         Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
@@ -1282,9 +1295,12 @@ function New-DoctorScratchRoot {
     # crates/ and target/ stay at the repository root
     New-Item -ItemType Directory -Force -Path (Join-Path $Dir "legacy") | Out-Null
     $crateDir = Join-Path (Join-Path $Dir "crates") "code-intel-cli"
-    New-Item -ItemType Directory -Force -Path (Join-Path $crateDir "src") | Out-Null
+    $graphDir = Join-Path (Join-Path $crateDir "src") "graph"
+    New-Item -ItemType Directory -Force -Path $graphDir | Out-Null
     Set-Content -LiteralPath (Join-Path $crateDir "Cargo.toml") -Value "[package]" -Encoding UTF8
-    Set-Content -LiteralPath (Join-Path (Join-Path $crateDir "src") "graph.rs") -Value "// graph provider" -Encoding UTF8
+    # graph.rs is a directory module (mod.rs + tests.rs, issue #155's god-file
+    # split): the doctor probe's sourceFound check looks for src/graph/mod.rs.
+    Set-Content -LiteralPath (Join-Path $graphDir "mod.rs") -Value "// graph provider" -Encoding UTF8
 }
 
 function Invoke-DoctorScratch {
@@ -1318,7 +1334,7 @@ Test-Case "doctor graph provider: a target/release platform binary satisfies the
         Set-Content -LiteralPath $releaseBinary -Value "fake binary" -Encoding UTF8
 
         $json = Invoke-DoctorScratch $dir @("--require-understand")
-        Assert-True $json.checks.graphProvider.sourceFound "chained Join-Path must find crates/code-intel-cli/src/graph.rs"
+        Assert-True $json.checks.graphProvider.sourceFound "chained Join-Path must find crates/code-intel-cli/src/graph/mod.rs"
         Assert-True $json.checks.graphProvider.cargoFound "chained Join-Path must find crates/code-intel-cli/Cargo.toml"
         Assert-True $json.checks.graphProvider.binaryFound "a target/release build must satisfy the binary check (regression: only target\debug\code-intel.exe was probed)"
         Assert-Equal $releaseBinary $json.checks.graphProvider.binaryPath "binaryPath must report the discovered release binary"

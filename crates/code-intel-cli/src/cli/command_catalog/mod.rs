@@ -4,16 +4,16 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
 
 use crate::{
-    admissibility, artifact_index, audit_report, change_impact, change_risk,
-    compatibility_retirement_ticket, decision_port, decision_record, doctor_bootstrap, edit_impact,
-    evidence_query, model_channels, ponytail_gate, providers, repin, run_cli, run_commit,
-    session_evidence, snapshot, survival_scan,
+    admissibility, artifact_index, audit_report, change_agenda, change_impact, change_risk,
+    compatibility_retirement_ticket, decision_port, decision_record, doctor_bootstrap, edit_apply,
+    edit_impact, evidence_query, model_channels, ponytail_gate, providers, repin, run_cli,
+    run_commit, session_evidence, snapshot, survival_scan,
 };
 
 use super::legacy::{
-    cmd_classify, cmd_doctor, cmd_graph, cmd_help, cmd_orchestrate, cmd_provider, cmd_resume,
-    cmd_route, cmd_sentrux, cmd_sentrux_debt_register, cmd_sentrux_normalize, parse_args,
-    run_benchmark, run_capability, run_file_boundary_raw, run_runtime_ci_raw, Args,
+    cmd_classify, cmd_doctor, cmd_graph, cmd_help, cmd_language, cmd_orchestrate, cmd_provider,
+    cmd_resume, cmd_route, cmd_sentrux, cmd_sentrux_debt_register, cmd_sentrux_normalize,
+    parse_args, run_benchmark, run_capability, run_file_boundary_raw, run_runtime_ci_raw, Args,
 };
 use super::primary::{execute_primary, matches_primary_pattern, parse_primary_args, PrimaryArgs};
 
@@ -70,6 +70,8 @@ enum CompatibilityRoute {
     ArtifactQuery,
     ChangeImpact,
     ChangeRisk,
+    ChangeAgenda,
+    EditApply,
     EditImpact,
     DecisionRecord,
     DecisionReplay,
@@ -99,6 +101,7 @@ enum LegacyRouteId {
     Route,
     Sentrux,
     Help,
+    Language,
 }
 
 #[derive(Debug)]
@@ -427,6 +430,8 @@ fn execute_compatibility(command: CompatibilityCommand) -> i32 {
         CompatibilityRoute::ArtifactQuery => evidence_query::run_raw(raw),
         CompatibilityRoute::ChangeImpact => change_impact::run_raw(raw),
         CompatibilityRoute::ChangeRisk => change_risk::run_raw(raw),
+        CompatibilityRoute::ChangeAgenda => change_agenda::run_raw(raw),
+        CompatibilityRoute::EditApply => edit_apply::run_raw(raw),
         CompatibilityRoute::EditImpact => edit_impact::run_raw(raw),
         CompatibilityRoute::DecisionRecord | CompatibilityRoute::DecisionReplay => {
             decision_record::run_raw(raw)
@@ -459,6 +464,7 @@ fn execute_legacy(command: &LegacyCommand) -> std::result::Result<(), Box<dyn Er
         LegacyRouteId::Route => cmd_route(&command.arguments),
         LegacyRouteId::Sentrux => cmd_sentrux(&command.arguments),
         LegacyRouteId::Help => cmd_help(&command.arguments),
+        LegacyRouteId::Language => cmd_language(&command.arguments),
     }
 }
 

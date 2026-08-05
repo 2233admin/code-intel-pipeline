@@ -333,7 +333,11 @@ fn render_agent_views(ranking: &Value, files: &[Value]) -> Vec<(&'static str, St
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let entrypoints = file_lines(files, entrypoint, 20);
+    let entrypoints = file_lines(
+        files,
+        |path| entrypoint(path) && !test_file(path) && !support_file(path),
+        20,
+    );
     let tests = file_lines(files, test_file, 30);
     vec![
         (
@@ -390,7 +394,11 @@ fn inventory_paths(bytes: &[u8]) -> Result<Vec<String>, AdapterError> {
     Ok(paths)
 }
 
-fn safe_join(repo: &Path, relative: &str) -> Result<PathBuf, AdapterError> {
+// Crate-visible so the anchor-verification gate (issue #151) can resolve a
+// claimed repo-relative path the exact same traversal-safe way this adapter
+// itself does, instead of a second copy of the same escape check drifting
+// out of sync with this one.
+pub(crate) fn safe_join(repo: &Path, relative: &str) -> Result<PathBuf, AdapterError> {
     let path = Path::new(relative);
     if path.is_absolute()
         || path.components().any(|component| {
@@ -407,7 +415,11 @@ fn safe_join(repo: &Path, relative: &str) -> Result<PathBuf, AdapterError> {
     Ok(repo.join(path))
 }
 
-fn lines(content: &str) -> Vec<&str> {
+// Crate-visible for the same reason as `safe_join` above: the
+// anchor-verification gate re-reads a file to re-resolve a claimed symbol
+// and must split it into lines the exact same way this adapter did when it
+// produced the claim, so line numbers agree.
+pub(crate) fn lines(content: &str) -> Vec<&str> {
     if content.is_empty() {
         Vec::new()
     } else {
@@ -502,6 +514,41 @@ fn symbol_candidate<'a>(language: &str, line: &'a str) -> Option<(&'static str, 
         }
         _ => None,
     }
+}
+
+/// Re-resolves a claimed symbol `name` within one file's already-read
+/// `lines`, using the exact same per-language declaration heuristic
+/// [`symbol_candidate`] that [`extract_symbols`] used to produce the claim
+/// in the first place -- so a caller re-checking a claim it received from
+/// this module never has its own, possibly-drifted copy of that heuristic.
+///
+/// `claimed_line` (1-based) is checked first: if the name is still declared
+/// there, that line is returned even when an earlier, unrelated declaration
+/// of the same name also exists in the file. Only when the claimed line no
+/// longer matches does this fall back to the first matching line anywhere
+/// in `lines`. Returns `None` if `name` is not declared anywhere in these
+/// lines -- there is no repository-wide variant of this function; it never
+/// looks beyond the lines it was given.
+pub(crate) fn find_symbol_line(
+    language: &str,
+    lines: &[&str],
+    name: &str,
+    claimed_line: usize,
+) -> Option<usize> {
+    let matches_at = |index: usize| -> bool {
+        lines
+            .get(index)
+            .and_then(|line| symbol_candidate(language, line))
+            .is_some_and(|(_, candidate_name)| candidate_name == name)
+    };
+    if claimed_line >= 1 && matches_at(claimed_line - 1) {
+        return Some(claimed_line);
+    }
+    lines.iter().enumerate().find_map(|(index, line)| {
+        symbol_candidate(language, line)
+            .filter(|(_, candidate_name)| *candidate_name == name)
+            .map(|_| index + 1)
+    })
 }
 
 fn word_after<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
@@ -629,13 +676,17 @@ fn ranking(files: &[Value], symbols: &[Value], imports: &[Value]) -> Value {
             let path = file["path"].as_str().unwrap();
             let mut score = 0u64;
             let mut reasons = Vec::new();
-            if entrypoint(path) {
+            // Test and example/fixture files never count as entrypoints and
+            // tests carry no rank bonus: the ranking answers "where should an
+            // agent start reading", and test/example paths were outranking the
+            // production sources they exercise (express: every test/app.*.js
+            // and examples/*/index.js beat lib/).
+            if entrypoint(path) && !test_file(path) && !support_file(path) {
                 reasons.push("entrypoint");
                 score += 40;
             }
             if test_file(path) {
                 reasons.push("test");
-                score += 35;
             }
             let file_symbols = symbols_by_file.get(path).cloned().unwrap_or_default();
             let file_imports = imports_by_file.get(path).cloned().unwrap_or_default();
@@ -686,6 +737,29 @@ fn entrypoint(path: &str) -> bool {
     ["index.", "main.", "app.", "server.", "cli."]
         .iter()
         .any(|prefix| file.starts_with(prefix))
+}
+
+fn support_file(path: &str) -> bool {
+    let mut segments = path.split('/').peekable();
+    while let Some(segment) = segments.next() {
+        if segments.peek().is_none() {
+            break;
+        }
+        if matches!(
+            segment,
+            "example"
+                | "examples"
+                | "fixture"
+                | "fixtures"
+                | "demo"
+                | "demos"
+                | "benchmark"
+                | "benchmarks"
+        ) {
+            return true;
+        }
+    }
+    false
 }
 
 fn test_file(path: &str) -> bool {

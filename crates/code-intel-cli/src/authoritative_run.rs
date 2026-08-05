@@ -69,6 +69,7 @@ pub(crate) struct ProductionRunResult {
     outcome: crate::dag_coordinator::RunOutcome,
     manifest: serde_json::Value,
     publication: Publication,
+    anchors: crate::anchor_verification::AnchorCounts,
 }
 
 impl ProductionRunResult {
@@ -92,6 +93,14 @@ impl ProductionRunResult {
         execution_kernel::failures(&self.manifest)
     }
 
+    /// Issue #151: the aggregate `{verified, approximate, dropped}` anchor
+    /// counts for this run, so callers other than `to_execution_json` (e.g.
+    /// the `primary` entry point) can surface `dropped > 0` without parsing
+    /// it back out of the manifest.
+    pub(crate) fn anchors(&self) -> serde_json::Value {
+        self.anchors.to_json()
+    }
+
     pub(crate) fn to_execution_json(&self) -> serde_json::Value {
         serde_json::json!({
             "schema":"code-intel-execution-result.v1",
@@ -106,6 +115,7 @@ impl ProductionRunResult {
                 "path":self.publication.path,
                 "marker":"run-complete.json",
             },
+            "anchors":self.anchors(),
         })
     }
 }
@@ -147,6 +157,7 @@ pub(crate) fn execute(
             repo: result.publication.repo,
             path: result.publication.path,
         },
+        anchors: result.anchors,
     })
 }
 

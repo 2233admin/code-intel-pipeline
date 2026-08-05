@@ -129,7 +129,7 @@ When enrichment conflicts with check/gate stdout, producers emit a `metric_confl
 - `worsened_debt`: a known or aggregate structural metric worsened in this run; blocking.
 - `informational`: manual-required, skipped, unparsed, or aggregate-only output that lacks an authoritative target; reported only.
 
-`report.summary.failed` and `report.summary.failureCategories.sentruxFail` preserve raw tool state. `report.summary.effectiveFailed`, `report.summary.effectiveFailureCategories`, `report.summary.blockingSentruxDebt`, and `report.summary.knownSentruxDebt` are the process-decision counters.
+`report.summary.failed` and `report.summary.failureCategories.sentruxFail` preserve raw tool state. `report.summary.effectiveFailed`, `report.summary.effectiveFailureCategories`, `report.summary.blockingSentruxDebt`, `report.summary.knownSentruxDebt`, and `report.summary.gateFindings` are the process-decision counters.
 
 Debt register producers must not invent symbols from aggregate-only stdout. When enrichment conflicts with stdout, `metric_conflict` stays on `sentrux-failures.json`; the register classifies the authoritative normalized record and preserves stdout-wins semantics.
 
@@ -141,6 +141,22 @@ code-intel sentrux-debt-register --failures sentrux-failures.json --repo <repo> 
 ```
 
 Shell wrappers may still orchestrate tools, but normalized Sentrux JSON and debt classification should converge on these CLI commands.
+
+## Exit Code Contract (issue #130)
+
+`legacy/run-code-intel.ps1` (and the legacy `check-code-intel-tools.ps1`/`code-intel.ps1`/`invoke-code-intel.ps1` compatibility chain, which forwards its exit code unchanged) uses a three-value exit code, not a binary one:
+
+| Exit | Meaning |
+|---|---|
+| `0` | Clean: no failures, no gate findings. |
+| `1` | The pipeline genuinely did not complete: a tool crash, missing artifacts, an unrecoverable step, or a `sentrux gate` step that failed without producing any parseable `gate:*` output at all. |
+| `2` | The pipeline completed. `sentrux gate` reported architecture/quality debt (`god_files`, `coupling`, `quality`, `cycles`, ...) for the target repo. This is gate **output**, not a process failure. |
+
+Before this fix, any blocking `sentrux gate` finding was folded into the same `effectiveFailed`/exit-1 path as a genuine crash: a repo with real architecture debt made the pipeline look like it had failed to run at all, even though every artifact was produced. The discriminator is `sentrux-failures.json`'s `gate` field (from `New-CodeIntelSentruxFailures`): non-null means a `gate:*` record was actually parsed from `sentrux gate` stdout (a finding); null means the step failed without producing any recognizable output (a genuine crash), which still counts as an effective failure.
+
+This exemption is scoped to `sentrux gate` only. `sentrux check` (`check:*`, max_cc) keeps its prior blocking-debt-gated behavior.
+
+`report.summary.gateFindings` is the count of blocking `sentrux gate`-sourced debt entries. It is informational — it does not raise `effectiveFailed`, `effectiveFailureCategories.sentruxFail`, or the process exit code past `2`. Consumers that read the legacy exit code directly must treat `2` the same as success unless they specifically want to gate on any Sentrux architecture/quality finding.
 
 ## Hospital Trust Contract
 
@@ -177,6 +193,7 @@ Artifact consumers must preserve these fields:
 - `report.summary.effectiveFailureCategories`
 - `report.summary.blockingSentruxDebt`
 - `report.summary.knownSentruxDebt`
+- `report.summary.gateFindings`
 - `report.sentruxFailures.path`
 - `report.sentruxDebtRegister.path`
 - `report.githubResearch.status`

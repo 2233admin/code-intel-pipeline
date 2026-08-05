@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-execution-failure.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "exitCode", "failures", "manifest", "publication"],
+  "properties": {
+    "schema": { "const": "code-intel-execution-failure.v1" },
+    "exitCode": { "enum": [73] },
+    "failures": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["process", "domain"],
+      "properties": {
+        "process": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["node", "diagnostic"],
+            "properties": {
+              "node": { "type": "string", "minLength": 1 },
+              "diagnostic": { "type": "string" }
+            }
+          }
+        },
+        "domain": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["node", "verdict"],
+            "properties": {
+              "node": { "type": "string", "minLength": 1 },
+              "verdict": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "manifest": {
+      "$ref": "code-intel-run-manifest.v1.schema.json"
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "name", "repo", "path", "diagnostic"],
+      "properties": {
+        "status": { "const": "failed" },
+        "name": { "type": "string", "minLength": 1 },
+        "repo": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "diagnostic": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

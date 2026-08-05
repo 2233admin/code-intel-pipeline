@@ -25,6 +25,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
+use crate::evidence_outcome::{EvidenceOutcome, EvidenceScope, PartialReason};
 use crate::snapshot;
 
 const DEFAULT_EXCLUDES: [&str; 1] = ["orchestration/retirements/"];
@@ -175,9 +176,9 @@ struct AmbiguousSource {
 }
 
 /// A scan target repin could not read at all. `gates_clean` is false only
-/// for binary files, which structurally cannot hold a pin in this repo's
-/// convention; anything else (too large, unreadable) means real text went
-/// uninspected and must not be reported as "clean".
+/// for binary files and symlinks, which structurally cannot hold a pin in
+/// this repo's convention; anything else (too large, unreadable) means real
+/// text went uninspected and must not be reported as "clean".
 struct SkippedFile {
     path: String,
     reason: String,
@@ -191,16 +192,24 @@ pub(crate) struct RepinReport {
     ambiguous: Vec<AmbiguousSource>,
     skipped: Vec<SkippedFile>,
     rewritten: BTreeMap<String, Vec<u8>>,
+    /// Gate G1 (issue #139 / #138): whether the pin-staleness scan itself
+    /// covered its whole surface, computed once here from the same
+    /// `scan_targets` / `skipped` data every other field on this struct is
+    /// built from. `is_clean()` and the JSON `scanCoverage` field both read
+    /// this single value, so they cannot drift apart the way the charter
+    /// warns against (a pass/fail decision reading different data than the
+    /// interval it is supposed to be judging).
+    outcome: EvidenceOutcome,
 }
 
 impl RepinReport {
-    /// Orphaned pins, ambiguous digests, and gating skips are never touched
-    /// by `--write` — they need a human, not a resync — so they stay
-    /// "unresolved" even after a successful write.
+    /// Orphaned pins and ambiguous digests are never touched by `--write`
+    /// — they need a human, not a resync — so they stay "unresolved" even
+    /// after a successful write. An incomplete scan (`outcome` is not
+    /// `Complete`) is unresolved for the same reason a stale pin is: the
+    /// report cannot back up a "clean" claim over ground it never covered.
     fn has_unresolved(&self) -> bool {
-        !self.orphaned.is_empty()
-            || !self.ambiguous.is_empty()
-            || self.skipped.iter().any(|skip| skip.gates_clean)
+        !self.orphaned.is_empty() || !self.ambiguous.is_empty() || !self.outcome.is_complete()
     }
 
     fn is_clean(&self) -> bool {
@@ -220,6 +229,7 @@ impl RepinReport {
             "mode": if write { "write" } else { "report" },
             "passes": self.passes,
             "clean": self.is_clean(),
+            "scanCoverage": self.outcome.to_json(),
             "filesChanged": self.findings.len(),
             "totalSubstitutions": self.total_substitutions(),
             "stalePins": self.findings.iter().map(|finding| json!({
@@ -302,13 +312,18 @@ fn print_human(report: &RepinReport, write: bool) {
         );
         return;
     }
+    if !report.outcome.is_complete() {
+        println!("scan coverage: {}", report.outcome.describe());
+    }
     let action = if write { "rewrote" } else { "found" };
     println!(
-        "repin: {action} {} substitution(s) across {} file(s) in {} pass(es); {} orphaned pin(s)",
+        "repin: {action} {} substitution(s) across {} file(s) in {} pass(es); {} orphaned pin(s), {} ambiguous digest(s), {} skipped file(s)",
         report.total_substitutions(),
         report.findings.len(),
         report.passes,
-        report.orphaned.len()
+        report.orphaned.len(),
+        report.ambiguous.len(),
+        report.skipped.len()
     );
 }
 
@@ -330,6 +345,13 @@ fn flush(repo: &Path, report: &RepinReport) -> Result<(), String> {
             let _ = fs::remove_file(&temporary);
             return Err(format!("write {path}: {error}"));
         }
+        // Best-effort: `fs::write` creates `temporary` with default
+        // permissions, which would silently drop the original file's mode
+        // (e.g. an executable bit) across the rename below. A failure to
+        // read or set permissions is not fatal to the rewrite itself.
+        if let Ok(metadata) = fs::metadata(&target) {
+            let _ = fs::set_permissions(&temporary, metadata.permissions());
+        }
         if let Err(error) = fs::rename(&temporary, &target) {
             let _ = fs::remove_file(&temporary);
             return Err(format!("replace {path}: {error}"));
@@ -342,9 +364,13 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
     let mut excludes: Vec<String> = DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect();
     excludes.extend(extra_excludes.iter().cloned());
     let is_excluded = |path: &str| {
-        excludes
-            .iter()
-            .any(|prefix| path.starts_with(prefix.as_str()))
+        excludes.iter().any(|prefix| {
+            let prefix = prefix.trim_end_matches('/');
+            path == prefix
+                || path
+                    .strip_prefix(prefix)
+                    .is_some_and(|rest| rest.starts_with('/'))
+        })
     };
 
     let digests = snapshot::repin_digests(repo)?;
@@ -549,6 +575,8 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
         })
         .collect();
 
+    let outcome = scan_coverage(&scan_targets, &skipped, &excludes);
+
     Ok(RepinReport {
         passes,
         findings: file_findings,
@@ -556,7 +584,61 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
         ambiguous,
         skipped,
         rewritten,
+        outcome,
     })
+}
+
+/// Gate G1 (#139 / #138): compute the honesty bit for this scan from
+/// exactly the data every other part of the report is built from --
+/// `scan_targets` (what a full scan would have covered after exclusions)
+/// and `skipped` (what actually failed to load). No separate tally is
+/// kept anywhere else, so this can never drift from the report it
+/// describes.
+///
+/// An empty `scan_targets` is deliberately treated as `NotComputed`, not
+/// vacuously `Complete`: `--exclude`-ing away every tracked file (or
+/// pointing `--repo` at a tree with none) previously made `is_clean()`
+/// return `true` on zero files inspected, printing the same
+/// `clean: true, filesChanged: 0` shape as the #133 bug this type exists
+/// to prevent -- a scan that covered nothing must not read the same as a
+/// scan that covered everything and found it clean.
+fn scan_coverage(
+    scan_targets: &[String],
+    skipped: &[SkippedFile],
+    excludes: &[String],
+) -> EvidenceOutcome {
+    if scan_targets.is_empty() {
+        return EvidenceOutcome::NotComputed {
+            reason: "scan surface empty: no tracked file remained after exclusions".to_string(),
+        };
+    }
+    let scanned_paths: Vec<String> = scan_targets
+        .iter()
+        .filter(|path| !skipped.iter().any(|skip| &skip.path == *path))
+        .cloned()
+        .collect();
+    let scope = EvidenceScope {
+        artifact_types: vec!["tracked-text-file".to_string()],
+        scanned_paths,
+        excluded_prefixes: excludes.to_vec(),
+    };
+    // Binary/symlink skips are outside the "tracked-text-file" artifact
+    // type this scan declares, so their absence from `scanned_paths` is
+    // not a gap. Only skips that gate `clean` today (too large, unreadable)
+    // represent text this scan should have covered but could not.
+    let unreadable: Vec<String> = skipped
+        .iter()
+        .filter(|skip| skip.gates_clean)
+        .map(|skip| skip.path.clone())
+        .collect();
+    if unreadable.is_empty() {
+        EvidenceOutcome::Complete(scope)
+    } else {
+        EvidenceOutcome::Partial {
+            reason: PartialReason::UnreadableInput(unreadable),
+            scope,
+        }
+    }
 }
 
 /// Why a scan target's content wasn't inspected. `Binary` is routine and
@@ -565,6 +647,7 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
 /// uninspected, which the report must never fold into a silent "clean".
 enum LoadError {
     Binary,
+    Symlink,
     TooLarge,
     Unreadable(String),
 }
@@ -573,19 +656,28 @@ impl LoadError {
     fn message(&self) -> String {
         match self {
             LoadError::Binary => "not valid UTF-8 (binary file)".to_string(),
+            LoadError::Symlink => "symbolic link (target is not scanned for pins)".to_string(),
             LoadError::TooLarge => format!("exceeds {MAX_FILE_BYTES} byte scan limit"),
             LoadError::Unreadable(detail) => format!("unreadable: {detail}"),
         }
     }
 
     fn gates_clean(&self) -> bool {
-        !matches!(self, LoadError::Binary)
+        !matches!(self, LoadError::Binary | LoadError::Symlink)
     }
 }
 
 fn load_text(repo: &Path, path: &str) -> Result<Vec<u8>, LoadError> {
     let full = repo.join(path);
-    let metadata = fs::metadata(&full).map_err(|error| LoadError::Unreadable(error.to_string()))?;
+    // `symlink_metadata` (unlike `metadata`) does not follow a symlink, so a
+    // tracked symlink is caught here instead of falling through to `is_file`
+    // on its *target*: if it were loaded and later rewritten, `flush` would
+    // rename a regular file on top of the link path, destroying the symlink.
+    let metadata =
+        fs::symlink_metadata(&full).map_err(|error| LoadError::Unreadable(error.to_string()))?;
+    if metadata.is_symlink() {
+        return Err(LoadError::Symlink);
+    }
     if !metadata.is_file() {
         return Err(LoadError::Unreadable("not a regular file".to_string()));
     }

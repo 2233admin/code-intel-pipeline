@@ -18,9 +18,15 @@ pub(super) const EXECUTE: super::RawRoute = super::RawRoute {
                 "code-intel-run-manifest.v1",
                 "code-intel-artifact-index.v1",
             ],
-            stdout_identities: &["code-intel-execution-result.v1"],
+            stdout_identities: &[
+                "code-intel-execution-result.v1",
+                "code-intel-execution-failure.v1",
+            ],
         },
-        exit_contract: super::ExitContract::Exact(&[0, 10, 20, 64, 65, 70, 74]),
+        // 73 (EX_CANTCREAT): the run succeeded but `--final-name` is already
+        // published under the authority root. Distinct from 65 so a caller can
+        // tell "your arguments were wrong" from "that name is taken".
+        exit_contract: super::ExitContract::Exact(&[0, 10, 20, 64, 65, 70, 73, 74]),
         retirement_condition:
             "retain as the stable explicit production spelling; retire only by versioned replacement",
     },

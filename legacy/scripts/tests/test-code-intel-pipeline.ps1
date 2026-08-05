@@ -19,7 +19,13 @@ param(
     [switch]$AllowGraphMissing,
     [switch]$SkipSentruxCheck,
     [switch]$SkipSentruxGate,
-    [switch]$SkipGitHubResearch
+    [switch]$SkipGitHubResearch,
+
+    # Issue #130: run-code-intel.ps1 exits 2 when Sentrux's gate reported architecture/
+    # quality debt in the target repo (gate output, not a process failure) and only exits
+    # 1 for a genuine process failure. This smoke test treats exit 2 as passing by default.
+    # Pass -RequireCleanGates for callers that specifically want to fail on any gate finding.
+    [switch]$RequireCleanGates
 )
 
 Set-StrictMode -Version Latest
@@ -139,7 +145,7 @@ foreach ($key in $requiredCategories) {
 if ($missingCategories.Count -gt 0) {
     throw "Missing failure category counters: $($missingCategories -join ', ')"
 }
-$requiredSummaryFields = @("effectiveFailed", "effectiveFailureCategories", "blockingSentruxDebt", "knownSentruxDebt")
+$requiredSummaryFields = @("effectiveFailed", "effectiveFailureCategories", "blockingSentruxDebt", "knownSentruxDebt", "gateFindings")
 $missingSummaryFields = @()
 foreach ($key in $requiredSummaryFields) {
     if ($null -eq $report.summary.PSObject.Properties[$key]) {
@@ -155,8 +161,25 @@ $graphMissingOnly = (
     [int]$report.summary.failureCategories.localToolError -eq 0 -and
     [int]$report.summary.effectiveFailureCategories.sentruxFail -eq 0
 )
+# Issue #130: exit 2 means run-code-intel.ps1 completed and Sentrux's gate reported
+# architecture/quality debt in the target repo -- that is gate output, not a process
+# failure. Only fail this smoke test on exit 2 if the caller explicitly asked for
+# clean-gate enforcement via -RequireCleanGates.
+function Resolve-GateFindingOutcome {
+    param($Report, [string]$Label, [switch]$RequireCleanGates)
+    Write-Host "Pipeline exit code: 2 (completed with Sentrux gate findings)"
+    Write-Host "Gate findings: $($Report.summary.gateFindings)"
+    if ($RequireCleanGates) {
+        return "Pipeline reported $($Report.summary.gateFindings) Sentrux gate finding(s) for repo: $Label (-RequireCleanGates)"
+    }
+    return ""
+}
+
 $pipelineFailureMessage = ""
-if ($pipelineExitCode -ne 0 -and -not ($AllowGraphMissing -and $graphMissingOnly)) {
+if ($pipelineExitCode -eq 2) {
+    $pipelineFailureMessage = Resolve-GateFindingOutcome -Report $report -Label $label -RequireCleanGates:$RequireCleanGates
+}
+elseif ($pipelineExitCode -ne 0 -and -not ($AllowGraphMissing -and $graphMissingOnly)) {
     $failedSteps = @($report.steps | Where-Object { $_.status -eq "failed" } | ForEach-Object {
         [ordered]@{
             name = $_.name
@@ -456,6 +479,7 @@ $result = [ordered]@{
     manualRequired = $report.summary.manualRequired
     failureCategories = $report.summary.failureCategories
     effectiveFailureCategories = $report.summary.effectiveFailureCategories
+    gateFindings = $report.summary.gateFindings
     sentruxDebtRegister = $report.sentruxDebtRegister
 githubResearch = [ordered]@{
 status = [string]$report.githubResearch.status

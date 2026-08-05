@@ -134,7 +134,20 @@ code-intel capability exec edit.ast-grep-plan --request <request.json> --out <st
 
 The plan is preview-only (`repositoryMutation=false`); it never rewrites files.
 
-4. Edit, run the selected tests, then close the gate:
+4. Apply a change you can address by span, instead of rewriting the line around it:
+
+```powershell
+code-intel edit apply --repo-path <checkout> --file <repo-relative-path> --span <startLine:startColumn-endLine:endColumn> --expect-sha256 <sha256-of-the-span-current-bytes> --replacement <text>
+```
+
+Lines and columns are 1-based and the end column is exclusive, so `12:21-12:33` is twelve bytes on
+line 12. The digest is yours to supply — it is what the tool compares against the bytes actually at
+that address before writing. On a mismatch it exits 10 with `applied:false` and reports the expected
+digest, the found digest, and a bounded literal of what is really there, leaving the file untouched.
+Repeat the `--span`/`--expect-sha256`/`--replacement` triple for several disjoint spans in one file;
+they are all resolved against the pre-edit bytes and land as one atomic file replacement.
+
+5. Edit, run the selected tests, then close the gate:
 
 ```powershell
 & "$env:CODE_INTEL_HOME/legacy/Invoke-SentruxAgentTool.ps1" session_end "<scope-path>"
@@ -160,6 +173,53 @@ trigger a fresh authoritative scan. Four more commands are CI-grade — visible 
 
 See README's "全链路命令" section for the access-tier mental model (直查 / 跑管线 / 门禁) and one verified
 invocation each.
+
+## Route to reviewed assistance when the pipeline has no answer
+
+The pipeline answers what changed, what it touches, what is risky, and which tests to run. It does
+not read a diff for defects, judge type shape, hunt swallowed errors, propose an implementation
+shape, or scan for vulnerabilities. Those blanks are filled by external agent assets bound by
+reference in `orchestration/agent-assistance-catalog.v1.json`; nothing is vendored into this
+repository.
+
+Ask for candidates instead of picking one from memory — the catalog carries a fit, license,
+security, integration, and reversibility rating decided once and committed:
+
+```powershell
+code-intel capability exec assistance.discovery --request <request.json> --out <staging-dir>
+```
+
+`options` takes `gap` (a `code-intel-engineering-capability-gap.v1` object) and `candidateIds`.
+The result is `assistance.discovery` — dossiers only, `proposalOnly=true`, zero effects. It never
+installs, adopts, or executes anything; the operator decides. An id that is not in the catalog is
+refused rather than rated on the spot.
+
+Route directly when the signal is unambiguous:
+
+| Pipeline signal | Reach for |
+|---|---|
+| `change risk` reports high/critical `review_priority` and no one has read the diff | `code-review` |
+| `change impact` returns an empty or partial test selection | `pr-test-analyzer` |
+| `diagnosis.hospital-view` names a changed file whose finding is about error handling | `silent-failure-hunter` |
+| The diff adds a type crossing a module boundary in `code_evidence.agent_slice` | `type-design-analyzer` |
+| A touched file breaks the monolith rule (over 800 lines, or over 25 functions in over 400) | `code-simplifier` |
+| A feature must land in a module `get_risk` marks a hotspot, with no shape proposed yet | `code-architect` |
+| `diagnosis.hospital-view` selects `surgery_plan` for a module | `modernize-transform` |
+| A module must be rewritten and no test pins its current behaviour | `modernize-extract-rules` |
+| A runtime or framework major version is behind the target, same stack | `modernize-uplift` |
+| A release needs a vulnerability read no `diagnosis.*` artifact provides | `claude-security` |
+
+Bracket anything that writes — `code-simplifier`, `claude-security` patches — with the Sentrux
+session gate above, and confirm `session_end` passes before reporting the change complete.
+
+`doctor bootstrap` reports each candidate under `checks.assistancePlugins`, and the doctor node
+publishes it as an `assistance:<candidate-id>` provider row. A missing candidate is an observation,
+never a bootstrap failure: install it with the entry's `install.command`.
+
+`claude-security` is the one candidate whose license is not Apache-2.0. It is a proprietary
+Anthropic grant limited to internal use with Claude Code that forbids redistribution — the reason
+it is bound by reference. Its dossier reports `license: review_required`; treat that as a decision
+the operator still owes, not a cleared check.
 
 ## Load detailed contracts only when needed
 

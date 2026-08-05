@@ -99,6 +99,74 @@ fn persist_manifest_handoff(
     })
 }
 
+/// Runs the anchor-verification gate (issue #151) over the terminal
+/// manifest's succeeded/domain-failed nodes, folds the resulting
+/// `verification.anchors` artifact into `manifest` the same way
+/// [`bind_repository_iteration`] folds in its own node, and re-persists --
+/// the same "insert a node, re-persist the whole manifest" step this module
+/// already performs once per post-hoc addition, not a new pattern.
+///
+/// `repo_root` must be the live repository the DAG just scanned (cloned by
+/// the caller before it moved into the DAG request) so re-resolving a
+/// symbol checks the same tree the claim came from.
+pub(super) fn bind_anchor_verification(
+    run_root: &std::path::Path,
+    repo_root: &std::path::Path,
+    manifest: &mut serde_json::Value,
+) -> Result<crate::anchor_verification::AnchorCounts, crate::run_error::RunError> {
+    let (report, counts) =
+        crate::anchor_verification::verify_and_report(run_root, repo_root, manifest)
+            .map_err(crate::run_error::RunError::contract)?;
+    let report_bytes = serde_json::to_vec(&report).map_err(|error| {
+        crate::run_error::RunError::contract(format!(
+            "serialize anchor verification report: {error}"
+        ))
+    })?;
+    let nodes = manifest["nodes"].as_object().ok_or_else(|| {
+        crate::run_error::RunError::contract("terminal run manifest nodes are invalid")
+    })?;
+    if nodes.contains_key("verification.anchors") {
+        return Err(crate::run_error::RunError::contract(
+            "DAG output cannot predeclare authoritative anchor verification",
+        ));
+    }
+    let relative = "verification.anchors/anchor-report.json";
+    let directory = run_root.join("verification.anchors");
+    if directory.exists() {
+        return Err(crate::run_error::RunError::contract(
+            "anchor verification path is already occupied",
+        ));
+    }
+    std::fs::create_dir(&directory).map_err(|error| {
+        crate::run_error::RunError::io(format!("create anchor verification directory: {error}"))
+    })?;
+    std::fs::write(run_root.join(relative), &report_bytes).map_err(|error| {
+        crate::run_error::RunError::io(format!("write anchor verification report: {error}"))
+    })?;
+    let snapshot_identity = manifest["snapshotIdentity"].clone();
+    let reference = serde_json::json!({
+        "schema":"code-intel-artifact-ref.v1",
+        "artifactSchema":crate::anchor_verification::ANCHOR_VERIFICATION_SCHEMA,
+        "type":crate::anchor_verification::ANCHOR_VERIFICATION_TYPE,
+        "path":relative,
+        "sha256":crate::capability::sha256_hex(&report_bytes),
+        "consumedSnapshotIdentity":snapshot_identity,
+    });
+    let nodes = manifest["nodes"]
+        .as_object_mut()
+        .expect("validated as an object above");
+    nodes.insert(
+        "verification.anchors".into(),
+        serde_json::json!({
+            "status":"succeeded",
+            "verdict":"pass",
+            "artifacts":[reference],
+        }),
+    );
+    persist_manifest_handoff(run_root, manifest)?;
+    Ok(counts)
+}
+
 pub(super) fn admit(
     outcome: crate::dag_coordinator::RunOutcome,
     publication: &super::execution_kernel::Publication,
@@ -150,14 +218,19 @@ fn map_index_error(error: crate::artifact_index::IndexError) -> crate::run_error
 
 fn map_commit_error(error: crate::run_commit::CommitError) -> crate::run_error::RunError {
     match error {
-        crate::run_commit::CommitError::Contract(message)
-        | crate::run_commit::CommitError::Collision(message) => {
+        crate::run_commit::CommitError::Contract(message) => {
             crate::run_error::RunError::contract(message)
         }
+        // Revalidating an already-committed handoff has no reachable collision
+        // today, but folding it into the `Contract` arm is exactly the mistake
+        // that made a taken publication name report as exit 65 on the kernel
+        // side. Keep the classification honest on both mappers.
+        crate::run_commit::CommitError::Collision(message) => {
+            crate::run_error::RunError::publication_collision(message)
+        }
         crate::run_commit::CommitError::HostIo(message) => crate::run_error::RunError::io(message),
-        crate::run_commit::CommitError::Interrupted(phase) => crate::run_error::RunError {
-            exit_code: 75,
-            message: format!("publication interrupted before {phase:?}"),
-        },
+        crate::run_commit::CommitError::Interrupted(phase) => {
+            crate::run_error::RunError::new(75, format!("publication interrupted before {phase:?}"))
+        }
     }
 }

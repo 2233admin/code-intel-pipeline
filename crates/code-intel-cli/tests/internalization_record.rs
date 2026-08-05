@@ -1755,7 +1755,67 @@ fn ticket_r12_unverified_greenfield_plugin_is_retired_from_production() {
 #[test]
 fn ticket_r13_openspec_record_is_measured_removable_and_fail_closed() {
     let record = advisory_candidate("openspec");
-    assert_research_candidate(&record, "internalization.openspec-record");
+    assert_eq!(record["id"], "internalization.openspec-record");
+    assert_eq!(record["lifecycle"]["status"], "research");
+    assert_eq!(record["adoption"]["rung"], "reimplement");
+    assert_eq!(record["subject"]["license"]["id"], "MIT");
+    assert!(record["subject"]["source"]["revision"]
+        .as_str()
+        .unwrap()
+        .contains("4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b"));
+
+    // Issue #156 admitted license (MIT), release status (v1.7.0, active),
+    // and the pinned upstream commit, so this record can no longer share
+    // `assert_research_candidate`: that helper hard-asserts the
+    // fully-unverified shape (`UNKNOWN-RESEARCH-ONLY`, `unverified-upstream`,
+    // open license/upstream-revision gaps) that the other 12 research
+    // candidates still have and this one no longer does. `gap:openspec:
+    // update-check` and `gap:openspec:security-review` stay open — no
+    // maintenance-attestation or security/supply-chain evidence was
+    // gathered in this pass — so the record still fails closed for
+    // production, same as before.
+    let evidence_ids = known(&record);
+    let gaps = evidence_ids
+        .iter()
+        .filter(|id| id.starts_with("gap:"))
+        .cloned()
+        .collect::<Vec<_>>();
+    let admitted = evidence_ids
+        .into_iter()
+        .filter(|id| !id.starts_with("gap:"))
+        .collect::<Vec<_>>();
+    let evaluated_at = 1_785_801_600u64; // 2026-08-04, matches the refreshed necessityEvidence.checkedAt
+    let evaluation =
+        internalization_record::evaluate_record(&record, evaluated_at, &admitted, &[]).unwrap();
+    assert_eq!(evaluation["researchAllowed"], true);
+    assert_eq!(evaluation["productionEnabled"], false);
+    assert_eq!(evaluation["consumedAuthorityEventId"], Value::Null);
+    let diagnostics = evaluation["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|diagnostic| diagnostic.as_str().unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(diagnostics.contains("unknown evidence"));
+    assert_eq!(gaps.len(), 2, "{gaps:?}");
+
+    let record_text = serde_json::to_string(&record).unwrap();
+    for closed in ["gap:openspec:license", "gap:openspec:upstream-revision"] {
+        assert!(!record_text.contains(closed), "{closed} must be closed");
+    }
+    for open in ["gap:openspec:update-check", "gap:openspec:security-review"] {
+        assert!(record_text.contains(open), "{open} must stay declared");
+    }
+
+    let reuse = internalization_record::project_reuse_record(&record, &evaluation).unwrap();
+    let notice = internalization_record::project_notice_provenance(&record, &evaluation).unwrap();
+    assert_eq!(reuse["productionEnabled"], false);
+    assert!(notice["noticeText"].as_str().unwrap().contains("MIT"));
+    assert_checked_schema(&record, "code-intel-internalization-record.v1.schema.json");
+    assert_checked_schema(&reuse, "code-intel-reuse-record.v1.schema.json");
+    assert_checked_schema(&notice, "code-intel-notice-provenance.v1.schema.json");
+
     let atom = fs::read_to_string(root().join("legacy/OpenSpec-Detector.ps1")).unwrap();
     assert_eq!(atom.matches("openspec-opsx").count(), 5);
     assert_eq!(record["economics"]["benefit"]["value"], 5);
