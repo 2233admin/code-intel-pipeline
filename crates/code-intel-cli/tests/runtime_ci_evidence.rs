@@ -1,3 +1,4 @@
+mod common;
 #[path = "../src/runtime_ci_evidence.rs"]
 mod runtime_ci_evidence;
 
@@ -216,7 +217,7 @@ fn production_cli_reads_only_the_pinned_local_artifact() {
     let request_path = temp.0.join("request.json");
     let output_path = temp.0.join("summary.json");
     fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["provider", "runtime-ci-evidence", "--artifact-root"])
         .arg(&temp.0)
         .arg("--request")
@@ -257,7 +258,7 @@ fn production_cli_rejects_duplicate_source_keys() {
     let request_path = temp.0.join("request.json");
     let output_path = temp.0.join("summary.json");
     fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["provider", "runtime-ci-evidence", "--artifact-root"])
         .arg(&temp.0)
         .arg("--request")

@@ -6,8 +6,8 @@ use serde_json::{json, Value};
 use crate::{
     admissibility, artifact_index, audit_report, change_agenda, change_impact, change_risk,
     compatibility_retirement_ticket, decision_port, decision_record, doctor_bootstrap, edit_apply,
-    edit_impact, evidence_query, mcp_serve, model_channels, ponytail_gate, providers, repin,
-    run_cli, run_commit, session_evidence, snapshot, survival_scan,
+    edit_impact, evidence_query, invocation_identity, mcp_serve, model_channels, ponytail_gate,
+    providers, repin, run_cli, run_commit, session_evidence, snapshot, survival_scan,
 };
 
 use super::legacy::{
@@ -412,6 +412,9 @@ fn render_primary_summary(output: &Value) -> String {
 /// Private, explicit Phase-2 adapters. No controller can call this with argv;
 /// only a typed route ID and its catalog-sliced compatibility arguments arrive.
 fn execute_compatibility(command: CompatibilityCommand) -> i32 {
+    if let Some(label) = invocation_identity_label(command.route, &command.arguments) {
+        invocation_identity::emit(label);
+    }
     let raw = &command.arguments;
     match command.route {
         CompatibilityRoute::DoctorBootstrap => doctor_bootstrap::run_raw(raw),
@@ -450,6 +453,29 @@ fn execute_compatibility(command: CompatibilityCommand) -> i32 {
         }
         CompatibilityRoute::Serve => mcp_serve::run_raw(raw),
         CompatibilityRoute::Governance => ponytail_gate::run_raw(raw),
+    }
+}
+
+/// Verdict-producing routes echo an anti-replay identity line (#197) before
+/// their own output. Contract probes are catalog introspection, not verdicts,
+/// and the head-parity fixture byte-compares their stderr, so they stay
+/// silent. Doctor is excluded: its envelope contract asserts an empty stderr.
+fn invocation_identity_label(
+    route: CompatibilityRoute,
+    arguments: &[String],
+) -> Option<&'static str> {
+    if arguments
+        .iter()
+        .any(|argument| argument == "--contract-probe")
+    {
+        return None;
+    }
+    match route {
+        CompatibilityRoute::RunExecute => Some("run-execute"),
+        CompatibilityRoute::RunDagCoordinate => Some("run-dag-coordinate"),
+        CompatibilityRoute::Audit => Some("audit"),
+        CompatibilityRoute::Benchmark => Some("benchmark"),
+        _ => None,
     }
 }
 

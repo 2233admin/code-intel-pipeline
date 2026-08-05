@@ -1,3 +1,4 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -319,7 +320,7 @@ fn snapshot_only_admin_commit_cannot_enter_the_repository_authority_index() {
         serde_json::to_vec(&manifest_ref).unwrap(),
     )
     .unwrap();
-    let command = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let command = common::cli()
         .arg("run")
         .arg("commit")
         .arg("--source-root")
@@ -730,7 +731,7 @@ fn production_cli_writes_the_registered_committed_only_schema() {
     let tree = Temp::new("cli");
     committed_repo(&tree.0, "repo-a", "run-001", "dag-v1:aabb");
     let output = tree.0.join("index.json");
-    let command = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let command = common::cli()
         .args([
             "artifact",
             "index",

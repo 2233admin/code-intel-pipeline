@@ -1,6 +1,6 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -47,7 +47,7 @@ fn declaration(id: &str) -> Value {
 }
 
 fn snapshot(repo: &Path) -> Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["snapshot", "identity", "--repo"])
         .arg(repo)
         .args(["--working-tree-policy", "explicit_overlay", "--scope", "."])
@@ -84,7 +84,7 @@ fn exec(
     path_prefix: Option<&Path>,
 ) -> std::process::Output {
     fs::write(request_path, serde_json::to_vec(request).unwrap()).expect("write request");
-    let mut command = Command::new(env!("CARGO_BIN_EXE_code-intel"));
+    let mut command = common::cli();
     command
         .args(["capability", "exec", capability, "--request"])
         .arg(request_path)
@@ -334,7 +334,7 @@ fn pipeline_scratch(root: &Path) {
 }
 
 fn doctor_bootstrap(pipeline_root: &Path, home: &Path) -> Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["doctor", "bootstrap", "--pipeline-root"])
         .arg(pipeline_root)
         .args(["--no-require-repowise", "--require-understand", "--json"])

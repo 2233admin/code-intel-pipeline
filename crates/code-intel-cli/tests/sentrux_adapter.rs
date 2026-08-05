@@ -1,3 +1,4 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -94,7 +95,7 @@ fn build_case(root: &Path, fixture: &Value) -> Value {
 fn route(root: &Path, native: &Value) -> (i32, Value, String) {
     let request = root.join("native.json");
     fs::write(&request, serde_json::to_vec(native).unwrap()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args([
             "provider",
             "sentrux-adapt",

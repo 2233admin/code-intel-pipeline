@@ -18,8 +18,8 @@
         },
         "ownedModifications": {
           "type": "array", "items": {
-            "type": "object", "additionalProperties": false, "required": ["path", "description", "evidenceIds"],
-            "properties": { "path": { "$ref": "#/$defs/id" }, "description": { "$ref": "#/$defs/id" }, "evidenceIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } } }
+            "type": "object", "additionalProperties": false, "required": ["path", "description"],
+            "properties": { "path": { "$ref": "#/$defs/id" }, "description": { "$ref": "#/$defs/id" }, "evidenceIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } }, "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }
           }
         },
         "recordedAt": { "type": "integer", "minimum": 0 }, "recordedBy": { "$ref": "#/$defs/id" }

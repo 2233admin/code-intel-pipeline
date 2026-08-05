@@ -1,3 +1,4 @@
+mod common;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -70,7 +71,7 @@ fn tool_fixture(root: &Path) -> PathBuf {
 
 fn run(repo: &Path, out: &Path) {
     let tools = tool_fixture(out.parent().unwrap());
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(repo)
         .arg("--out")

@@ -1,3 +1,4 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -232,7 +233,7 @@ fn request(inputs: Vec<Value>) -> Value {
 fn run(temp: &Path, request: &Value, out: &str) -> std::process::Output {
     let path = temp.join(format!("{out}-request.json"));
     fs::write(&path, serde_json::to_vec(request).unwrap()).unwrap();
-    Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    common::cli()
         .args([
             "capability",
             "exec",
@@ -251,7 +252,7 @@ fn run(temp: &Path, request: &Value, out: &str) -> std::process::Output {
 fn run_e01(temp: &Path, request: &Value, request_name: &str, out: &str) -> std::process::Output {
     let path = temp.join(request_name);
     fs::write(&path, serde_json::to_vec(request).unwrap()).unwrap();
-    Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    common::cli()
         .args([
             "capability",
             "exec",

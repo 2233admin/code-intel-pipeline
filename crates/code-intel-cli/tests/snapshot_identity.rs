@@ -1,3 +1,4 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -52,7 +53,7 @@ fn init_repo(repo: &Path) {
 }
 
 fn snapshot(repo: &Path, policy: &str, scopes: &[&str]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_code-intel"));
+    let mut command = common::cli();
     command
         .arg("snapshot")
         .arg("identity")
@@ -205,7 +206,7 @@ fn alternate_vcs_contract_fixture_is_fail_closed_and_rolls_back_to_unversioned()
         "$request = [Console]::In.ReadToEnd() | ConvertFrom-Json\nif ($request.schema -ne 'code-intel-alternate-vcs-snapshot-request.v1') { exit 9 }\n'{\"snapshot\":{\"identity\":\"mismatch\"}}'\n",
     )
     .unwrap();
-    let rejected = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let rejected = common::cli()
         .arg("snapshot")
         .arg("identity")
         .arg("--repo")
@@ -504,7 +505,7 @@ fn shallow_lineage_is_rejected_and_symlink_target_is_hashed_without_following() 
 fn missing_git_executable_is_unavailable_not_unversioned() {
     let fixture = TempTree::new("snapshot missing git");
     fs::write(fixture.0.join("file.txt"), "content").unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args([
             "snapshot",
             "identity",

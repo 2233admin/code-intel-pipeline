@@ -1,3 +1,4 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -34,7 +35,7 @@ fn request_with_policy_scopes(
     policy: &str,
     scopes: &[&str],
 ) -> Value {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_code-intel"));
+    let mut command = common::cli();
     command
         .args(["snapshot", "identity", "--repo"])
         .arg(repo)
@@ -79,7 +80,7 @@ fn run_with_request_file(
         serde_json::to_vec(request).expect("serialize request"),
     )
     .expect("write request");
-    Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    common::cli()
         .args(["capability", "exec", cli_capability, "--request"])
         .arg(request_path)
         .arg("--out")
@@ -89,7 +90,7 @@ fn run_with_request_file(
 }
 
 fn base_command(out: &Path, cli_capability: &str) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_code-intel"));
+    let mut command = common::cli();
     command
         .args(["capability", "exec", cli_capability, "--request"])
         .arg("-")
@@ -523,7 +524,7 @@ fn inventory_rejects_simulated_rg_extra_path_without_publication() {
     )
     .unwrap();
     let out = root.join("out");
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["capability", "exec", "inventory.rg", "--request"])
         .arg(&request_path)
         .arg("--out")
@@ -583,7 +584,7 @@ fn stdin_rejects_more_than_one_request_with_one_failure_result() {
     let out = root.join("out");
     let artifact = out.join("files.txt");
     let value = request(&repo, "inventory.rg");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let mut child = common::cli()
         .args([
             "capability",
             "exec",
@@ -620,7 +621,7 @@ fn pre_envelope_failures_have_typed_exit_stderr_and_empty_stdout() {
     let root = temp_dir("pre-envelope");
     let missing = root.join("missing.json");
     let out = root.join("out");
-    let unreadable = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let unreadable = common::cli()
         .args(["capability", "exec", "inventory.rg", "--request"])
         .arg(&missing)
         .arg("--out")
@@ -717,7 +718,7 @@ fn registry_drift_fails_closed_with_schema_shaped_result_and_no_output_tree() {
     let drift_path = root.join("integrations.json");
     fs::write(&drift_path, serde_json::to_vec(&registry).unwrap()).unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["capability", "exec", "inventory.rg", "--request"])
         .arg(&request_path)
         .arg("--out")
@@ -749,7 +750,7 @@ fn unavailable_rg_maps_to_69_without_partial_output() {
         serde_json::to_vec(&request(&repo, "inventory.rg")).unwrap(),
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["capability", "exec", "inventory.rg", "--request"])
         .arg(&request_path)
         .arg("--out")
@@ -874,15 +875,12 @@ fn capability_parser_rejects_missing_unknown_duplicate_and_conflicting_arguments
         ],
     ];
     for args in cases {
-        let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
-            .args(&args)
-            .output()
-            .unwrap();
+        let output = common::cli().args(&args).output().unwrap();
         assert_eq!(output.status.code(), Some(64), "args={args:?}");
         assert!(output.stdout.is_empty(), "args={args:?}");
         assert!(!output.stderr.is_empty(), "args={args:?}");
     }
-    let other_command = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let other_command = common::cli()
         .args(["doctor", "--request", "x"])
         .output()
         .unwrap();
@@ -897,7 +895,7 @@ fn duplicate_json_keys_are_rejected_for_request_and_registry() {
     let out = root.join("out");
     let request_path = root.join("request.json");
     fs::write(&request_path, "\u{feff}{\"schema\":\"code-intel-capability-request.v1\",\"schema\":\"code-intel-capability-request.v1\"}").unwrap();
-    let request_output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let request_output = common::cli()
         .args(["capability", "exec", "inventory.rg", "--request"])
         .arg(&request_path)
         .arg("--out")
@@ -921,7 +919,7 @@ fn duplicate_json_keys_are_rejected_for_request_and_registry() {
         "\u{feff}{\"integrations\":[],\"integrations\":[]}",
     )
     .unwrap();
-    let registry_output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let registry_output = common::cli()
         .args(["capability", "exec", "inventory.rg", "--request"])
         .arg(&request_path)
         .arg("--out")
@@ -969,7 +967,7 @@ fn duplicate_registered_declarations_fail_closed() {
     let registry_path = root.join("registry.json");
     fs::write(&registry_path, serde_json::to_vec(&registry).unwrap()).unwrap();
     let out = root.join("out");
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["capability", "exec", "inventory.rg", "--request"])
         .arg(&request_path)
         .arg("--out")
@@ -1550,7 +1548,7 @@ fn inventory_disables_info_parent_and_ripgrep_config_ignore_sources() {
     let request_path = root.join("request.json");
     fs::write(&request_path, serde_json::to_vec(&value).unwrap()).unwrap();
     let out = root.join("out");
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["capability", "exec", "inventory.rg", "--request"])
         .arg(&request_path)
         .arg("--out")
@@ -1706,7 +1704,7 @@ fn excessive_json_nesting_is_a_pre_envelope_usage_failure() {
         format!("{}0{}", "[".repeat(512), "]".repeat(512)),
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["capability", "exec", "inventory.rg", "--request"])
         .arg(&request_path)
         .arg("--out")
@@ -1725,7 +1723,7 @@ fn oversized_request_is_bounded_and_rejected_before_envelope() {
     fs::create_dir_all(&root).unwrap();
     let request_path = root.join("request.json");
     fs::write(&request_path, vec![b' '; 8 * 1024 * 1024 + 1]).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["capability", "exec", "inventory.rg", "--request"])
         .arg(&request_path)
         .arg("--out")
@@ -1758,7 +1756,7 @@ fn cwd_manifest_shadow_is_ignored() {
     )
     .unwrap();
     let out = root.join("out");
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .current_dir(&cwd)
         .env_remove("CODE_INTEL_HOME")
         .env_remove("CODE_INTEL_INTEGRATIONS_MANIFEST")
@@ -1806,7 +1804,7 @@ fn declaration_determinism_is_used_for_post_declaration_failures() {
     let registry_path = root.join("registry.json");
     fs::write(&registry_path, serde_json::to_vec(&registry).unwrap()).unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["capability", "exec", "inventory.rg", "--request"])
         .arg(&request_path)
         .arg("--out")
