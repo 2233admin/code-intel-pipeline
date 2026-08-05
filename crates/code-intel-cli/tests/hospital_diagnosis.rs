@@ -243,6 +243,48 @@ fn run(root: &Path, inputs: Vec<Value>, out_name: &str) -> (i32, Value, PathBuf,
     )
 }
 
+/// Like `run`, but lets a test supply its own `options`/`effectPolicy`
+/// instead of the empty-options/local-write-only default — needed for R1.4's
+/// `repoPath` guard, which is opt-in and declares `repo_read`.
+fn run_with_options(
+    root: &Path,
+    inputs: Vec<Value>,
+    out_name: &str,
+    options: Value,
+    allowed_effects: Vec<&str>,
+) -> (i32, Value, PathBuf, String) {
+    let integration = registry_integration();
+    let request = json!({
+        "schema":"code-intel-capability-request.v1",
+        "capability":"diagnosis.hospital",
+        "contractVersion":1,
+        "implementation":integration["capabilityDeclaration"]["implementation"],
+        "snapshot":snapshot(),
+        "options":options,
+        "inputs":inputs,
+        "effectPolicy":{"allowedEffects":allowed_effects}
+    });
+    let request_path = root.join(format!("{out_name}-request.json"));
+    fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
+    let out = root.join(out_name);
+    let output = common::cli()
+        .args(["capability", "exec", "diagnosis.hospital", "--request"])
+        .arg(&request_path)
+        .arg("--out")
+        .arg(&out)
+        .arg("--artifact-root")
+        .arg(root)
+        .output()
+        .unwrap();
+    let value = serde_json::from_slice(&output.stdout).unwrap_or(Value::Null);
+    (
+        output.status.code().unwrap(),
+        value,
+        out,
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
 fn graph(root: &Path, current: bool) -> Value {
     admission(
         root,
@@ -626,6 +668,132 @@ fn architecture_gate_failure_names_the_rule_targets_and_smallest_rerun_command()
     assert!(
         !surgery_markdown.trim().is_empty(),
         "a governed architecture-gate failure should plan a surgery"
+    );
+}
+
+/// R1.4: `options.repoPath` is the ghost-path guard's opt-in. Reusing the
+/// same cycle-rule shape as the test above, but pointing the failing rule's
+/// target at a path that is not in the repository this run was told to
+/// check — the historical shape of the bug is a real-looking relative path
+/// that just happens to belong to a different worktree entirely
+/// (`.claude/worktrees/project-bug-investigation-0d24d9/...`). Admitting
+/// this must fail closed instead of writing a surgery-plan that names it.
+#[test]
+fn a_surgery_target_absent_from_the_supplied_repo_path_is_rejected_not_published() {
+    let temp = Temp::new();
+    let repo = temp.0.join("scanned-repo");
+    fs::create_dir_all(&repo).unwrap();
+
+    let ghost_rule = json!({
+        "kind": "max_cycles",
+        "status": "evaluated",
+        "verdict": "fail",
+        "details": {
+            "violations": [{
+                "rule": "max_cycles",
+                "message": "cycles exceeded: 1 > 0",
+                "targets": [
+                    ".claude/worktrees/project-bug-investigation-0d24d9/src/missing.rs"
+                ]
+            }]
+        }
+    });
+    let structural_fail = admission(
+        &temp.0,
+        "structural-ghost-fail",
+        "structural-evidence.sentrux",
+        "observed",
+        "none",
+        json!({"structuralEvidence":{
+            "schema":"code-intel-structural-evidence-payload.v1",
+            "snapshotIdentity":SNAPSHOT,
+            "completeness":"complete",
+            "rules":[ghost_rule]
+        }}),
+    );
+    let (exit, _, out, stderr) = run_with_options(
+        &temp.0,
+        vec![graph(&temp.0, true), structural_fail],
+        "ghost-path-rejected",
+        json!({"repoPath": repo.to_str().unwrap()}),
+        vec!["local_write", "repo_read"],
+    );
+    assert_eq!(exit, 65, "{stderr}");
+    assert!(
+        stderr.contains("does not exist in the scanned repository snapshot"),
+        "{stderr}"
+    );
+    assert!(!out.join("hospital-report.json").exists());
+    assert!(!out.join("hospital.md").exists());
+    assert!(!out.join("surgery-plan.json").exists());
+    assert!(!out.join("surgery-plan.md").exists());
+}
+
+/// Regression guard for the test above: a `repoPath` supplied alongside a
+/// target that genuinely exists must publish exactly as it would have
+/// without the guard. This is what proves the guard is a check, not a
+/// blanket refusal to publish a surgery plan whenever `repoPath` is given.
+#[test]
+fn a_surgery_target_present_in_the_supplied_repo_path_still_publishes() {
+    let temp = Temp::new();
+    let repo = temp.0.join("scanned-repo");
+    fs::create_dir_all(repo.join("crates/code-intel-cli/src")).unwrap();
+    fs::write(
+        repo.join("crates/code-intel-cli/src/dag_run.rs"),
+        b"// present\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join("crates/code-intel-cli/src/execution_kernel.rs"),
+        b"// present\n",
+    )
+    .unwrap();
+
+    let cycle_rule = json!({
+        "kind": "max_cycles",
+        "status": "evaluated",
+        "verdict": "fail",
+        "details": {
+            "violations": [{
+                "rule": "max_cycles",
+                "message": "cycles exceeded: 1 > 0",
+                "targets": [
+                    "crates/code-intel-cli/src/dag_run.rs",
+                    "crates/code-intel-cli/src/execution_kernel.rs"
+                ]
+            }]
+        }
+    });
+    let structural_fail = admission(
+        &temp.0,
+        "structural-real-fail",
+        "structural-evidence.sentrux",
+        "observed",
+        "none",
+        json!({"structuralEvidence":{
+            "schema":"code-intel-structural-evidence-payload.v1",
+            "snapshotIdentity":SNAPSHOT,
+            "completeness":"complete",
+            "rules":[cycle_rule]
+        }}),
+    );
+    let (exit, _, out, stderr) = run_with_options(
+        &temp.0,
+        vec![graph(&temp.0, true), structural_fail],
+        "real-path-accepted",
+        json!({"repoPath": repo.to_str().unwrap()}),
+        vec!["local_write", "repo_read"],
+    );
+    assert_eq!(exit, 10, "{stderr}");
+    let machine: Value =
+        serde_json::from_slice(&fs::read(out.join("hospital-report.json")).unwrap()).unwrap();
+    assert_eq!(
+        machine["triage"]["primary_diagnosis"],
+        "architecture gate failure"
+    );
+    assert_eq!(
+        machine["surgery_plan"]["primary_target"]["file"],
+        "crates/code-intel-cli/src/dag_run.rs"
     );
 }
 

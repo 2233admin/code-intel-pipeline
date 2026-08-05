@@ -5,7 +5,9 @@ use super::contract::{
 use super::{matches_primary_pattern, CompatibilityRoute, LegacyRouteId};
 use crate::cli::help_contract::{HELP_ALIASES, HELP_COMMAND};
 
+mod determinism_routes;
 mod edit_routes;
+mod provider_routes;
 mod run_routes;
 mod serve_routes;
 mod types;
@@ -129,111 +131,13 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             "retire with the last compatibility surface after its recorded parity evidence"
         ),
     },
-    raw_route! {
-        command: "provider",
-        subcommand: Some("repowise-adapt"),
-        argument_offset: 2,
-        id: CompatibilityRoute::ProviderRepowiseAdapt,
-        contract: command_contract!(
-            Internal,
-            Internal,
-            Internal,
-            &[CommandEffect::RepoRead],
-            stdout!("code-intel-repowise-route-result.v1", "code-intel-repowise-adapter-result.v1"),
-            exits!(0, 64, 65),
-            "retire when the DAG exclusively calls the typed repowise adapter seam"
-        ),
-    },
-    raw_route! {
-        command: "provider",
-        subcommand: Some("graph-adapt"),
-        argument_offset: 2,
-        id: CompatibilityRoute::ProviderGraphAdapt,
-        contract: command_contract!(
-            Internal,
-            Internal,
-            Internal,
-            &[CommandEffect::RepoRead],
-            stdout!("code-intel-graph-route-result.v1", "code-intel-graph-adapter-result.v1"),
-            exits!(0, 64, 65),
-            "retire when the DAG exclusively calls the typed graph adapter seam"
-        ),
-    },
-    raw_route! {
-        command: "provider",
-        subcommand: Some("sentrux-adapt"),
-        argument_offset: 2,
-        id: CompatibilityRoute::ProviderSentruxAdapt,
-        contract: command_contract!(
-            Internal,
-            Internal,
-            Internal,
-            &[CommandEffect::RepoRead],
-            stdout!("code-intel-sentrux-route-result.v1", "code-intel-sentrux-adapter-result.v1"),
-            exits!(0, 64, 65),
-            "retire when the DAG exclusively calls the typed sentrux adapter seam"
-        ),
-    },
-    raw_route! {
-        command: "provider",
-        subcommand: Some("session-adapt"),
-        argument_offset: 2,
-        id: CompatibilityRoute::ProviderSessionAdapt,
-        contract: command_contract!(
-            Internal,
-            AgentSession,
-            Internal,
-            &[CommandEffect::RepoRead, CommandEffect::LocalWrite],
-            stdout_with_optional_artifacts!(["code-intel-session-evidence.v1"], ["code-intel-session-evidence.v1", "code-intel-session-adapter-result.v1"]),
-            exits!(0, 64, 65, 74),
-            "retire when session evidence admission has no argv caller"
-        ),
-    },
-    raw_route! {
-        command: "provider",
-        subcommand: Some("codenexus-adapt"),
-        argument_offset: 2,
-        id: CompatibilityRoute::ProviderCodenexusAdapt,
-        contract: command_contract!(
-            Internal,
-            Internal,
-            Internal,
-            &[CommandEffect::RepoRead],
-            stdout!("code-intel-codenexus-route-result.v1", "code-intel-codenexus-adapter-result.v1"),
-            exits!(0, 64, 65),
-            "retire when the DAG exclusively calls the typed codenexus adapter seam"
-        ),
-    },
-    raw_route! {
-        command: "provider",
-        subcommand: Some("file-boundary"),
-        argument_offset: 2,
-        id: CompatibilityRoute::ProviderFileBoundary,
-        contract: command_contract!(
-            Internal,
-            Internal,
-            Internal,
-            &[CommandEffect::RepoRead, CommandEffect::LocalWrite],
-            artifacts!("code-intel-file-boundary-result.v1"),
-            exits!(0, 65),
-            "retire when all file-boundary consumers use the typed capability seam"
-        ),
-    },
-    raw_route! {
-        command: "provider",
-        subcommand: Some("runtime-ci-evidence"),
-        argument_offset: 2,
-        id: CompatibilityRoute::ProviderRuntimeCiEvidence,
-        contract: command_contract!(
-            Internal,
-            Internal,
-            Internal,
-            &[CommandEffect::RepoRead, CommandEffect::LocalWrite],
-            artifacts!("code-intel-runtime-ci-summary.v1"),
-            exits!(0, 65),
-            "retire when all runtime evidence consumers use the typed capability seam"
-        ),
-    },
+    CommandRoute::Raw(provider_routes::REPOWISE_ADAPT),
+    CommandRoute::Raw(provider_routes::GRAPH_ADAPT),
+    CommandRoute::Raw(provider_routes::SENTRUX_ADAPT),
+    CommandRoute::Raw(provider_routes::SESSION_ADAPT),
+    CommandRoute::Raw(provider_routes::CODENEXUS_ADAPT),
+    CommandRoute::Raw(provider_routes::FILE_BOUNDARY),
+    CommandRoute::Raw(provider_routes::RUNTIME_CI_EVIDENCE),
     raw_route! {
         command: "repository",
         subcommand: Some("survival-scan"),
@@ -509,6 +413,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             "retire only after a typed administration replacement preserves literal repinning"
         ),
     },
+    CommandRoute::Raw(determinism_routes::CHECK),
     raw_route! {
         command: "evidence",
         subcommand: None,

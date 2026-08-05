@@ -1559,11 +1559,11 @@
           "id": "diagnosis.hospital.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "15fe44854b79b0b860ad2b63fbd461f358f2b19ec4ac8921eca08978239a9703"
+            "3dae86e0b42761b60c1fd658237769e68e09cac7cccdba8a9595898e9334e58a"
           ]
         },
         "determinism": "deterministic",
-        "allowedEffects": ["local_write"],
+        "allowedEffects": ["local_write", "repo_read"],
         "dependencies": [
           "provider.repowise-adapt",
           "provider.graph-adapt",

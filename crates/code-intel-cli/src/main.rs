@@ -26,6 +26,7 @@ mod dag_run;
 mod decision_port;
 mod decision_record;
 mod declared_pins;
+mod determinism_check;
 mod doctor_bootstrap;
 mod edit_apply;
 mod edit_impact;

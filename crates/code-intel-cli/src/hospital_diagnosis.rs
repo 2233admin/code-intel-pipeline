@@ -1,12 +1,14 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
 use crate::adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterError, AdapterOutput};
 use crate::artifact_ref::VerifiedArtifact;
 use crate::audit_report::AuditReport;
+
+mod surgery_target_guard;
 
 struct Signals {
     local_tool_failure: bool,
@@ -69,22 +71,49 @@ pub(crate) fn execute(
         .get("options")
         .and_then(Value::as_object)
         .ok_or_else(|| AdapterError::InvalidOptions("options must be an object".into()))?;
-    // `structuralEvidenceInScope` is the only option, and it may only ever
-    // narrow: the caller declares that the run never asked for the structural
-    // stage. Anything else is rejected so the option surface cannot grow into
-    // a way to hand-tune a diagnosis.
+    // `structuralEvidenceInScope` may only ever narrow (see above).
+    // `repoPath`, when supplied, is the only way this adapter can tell a
+    // surgery target that names a real path in the scanned repository from
+    // one that does not (R1.4's ghost-path guard: a surgery-plan once named
+    // a path from an unrelated worktree,
+    // `.claude/worktrees/project-bug-investigation-0d24d9/...`, verbatim,
+    // because nothing checked it against the snapshot it was admitted
+    // against). A run that never supplies `repoPath` has declared it cannot
+    // check — a narrower guarantee, not evidence the target is real — so
+    // absence skips the guard instead of failing closed on it, the same
+    // "absence is not a gap" idiom `structuralEvidenceInScope` already uses.
     let mut structural_in_scope = true;
+    let mut repo_path: Option<PathBuf> = None;
     for (key, value) in options {
-        match (key.as_str(), value.as_bool()) {
-            ("structuralEvidenceInScope", Some(in_scope)) => structural_in_scope = in_scope,
-            ("structuralEvidenceInScope", None) => {
-                return Err(AdapterError::InvalidOptions(
-                    "diagnosis.hospital structuralEvidenceInScope must be boolean".into(),
-                ))
+        match key.as_str() {
+            "structuralEvidenceInScope" => {
+                structural_in_scope = value.as_bool().ok_or_else(|| {
+                    AdapterError::InvalidOptions(
+                        "diagnosis.hospital structuralEvidenceInScope must be boolean".into(),
+                    )
+                })?;
+            }
+            "repoPath" => {
+                let value = value
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| {
+                        AdapterError::InvalidOptions(
+                            "diagnosis.hospital repoPath must be a non-empty string".into(),
+                        )
+                    })?;
+                let path = PathBuf::from(value);
+                if !path.is_dir() {
+                    return Err(AdapterError::InvalidOptions(format!(
+                        "diagnosis.hospital repoPath is not a directory: {}",
+                        path.display()
+                    )));
+                }
+                repo_path = Some(path);
             }
             _ => {
                 return Err(AdapterError::InvalidOptions(
-                    "diagnosis.hospital accepts only structuralEvidenceInScope".into(),
+                    "diagnosis.hospital accepts only structuralEvidenceInScope/repoPath".into(),
                 ))
             }
         }
@@ -109,6 +138,11 @@ pub(crate) fn execute(
         consume_admission(input, &mut signals)?;
     }
     let machine = diagnose(request, &signals, None);
+    if let Some(repo) = &repo_path {
+        if let Some(target) = machine["surgery_plan"]["primary_target"]["file"].as_str() {
+            surgery_target_guard::verify_surgery_target_exists(repo, target)?;
+        }
+    }
     let domain_verdict = match machine["domainVerdict"].as_str() {
         Some("pass") => AdapterDomainVerdict::Pass,
         Some("fail") => AdapterDomainVerdict::Fail,
@@ -171,7 +205,11 @@ pub(crate) fn execute(
                 surgery_markdown,
             ),
         ],
-        observed_effects: vec!["local_write".into()],
+        observed_effects: if repo_path.is_some() {
+            vec!["local_write".into(), "repo_read".into()]
+        } else {
+            vec!["local_write".into()]
+        },
         domain_verdict,
         domain_failure,
     })

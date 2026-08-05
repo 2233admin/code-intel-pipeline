@@ -187,7 +187,11 @@ impl ExecutionPolicy {
             // a capability its profile marks Required — so a narrow scope can
             // never be claimed for a run that demanded the gate.
             "diagnosis.hospital" => json!({
-                "structuralEvidenceInScope": self.capability_enabled("provider.sentrux-adapt")
+                "structuralEvidenceInScope": self.capability_enabled("provider.sentrux-adapt"),
+                // R1.4: lets the hospital verify a surgery target against the
+                // repository this run actually scanned, instead of
+                // publishing whatever path admitted evidence claims.
+                "repoPath": repo
             }),
             "doctor" => json!({
                 "repoPath":repo,
