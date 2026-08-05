@@ -48,7 +48,7 @@ never-translated counterparts (see Output Examples below):
 
 ## Adding More Languages
 
-Extend `src/i18n.rs`:
+Extend `crates/code-intel-cli/src/i18n.rs`:
 
 ```rust
 pub enum Language {

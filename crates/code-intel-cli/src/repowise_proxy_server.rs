@@ -112,6 +112,61 @@ fn spawn_git_remote_warmup(upstream_url: Arc<String>, warmup_in_flight: Arc<Atom
     });
 }
 
+/// Request headers safe to forward verbatim to the upstream `ureq` request.
+/// Two exclusion reasons are folded into one predicate:
+///
+/// - Hop-by-hop / connection-specific headers (`Host`, `Content-Length`,
+///   `Connection`, `Transfer-Encoding`): forwarding these verbatim would
+///   either be meaningless to a new connection (`Host` is re-derived from
+///   `upstream_uri`) or wrong once ureq recomputes them for the outgoing
+///   request it actually sends (`Content-Length`, `Transfer-Encoding`).
+/// - Credential headers (`Authorization`, `Cookie`): the upstream listener
+///   (`repowise serve` on `http://localhost:<upstream_port>`) is an
+///   unauthenticated local process, and `localhost` alone doesn't protect
+///   these credentials from another local process bound to that port. This
+///   proxy has no documented need to pass a client's own credentials
+///   through to it, so they're stripped rather than relayed (CodeRabbit
+///   review, PR #194, comment 3718037783).
+fn is_forwardable_request_header(name: &str) -> bool {
+    !matches!(
+        name.to_ascii_lowercase().as_str(),
+        "host" | "content-length" | "connection" | "transfer-encoding" | "authorization" | "cookie"
+    )
+}
+
+/// Response headers safe to relay verbatim from the upstream `ureq::Response`
+/// back to the client via `tiny_http`. Two exclusion reasons:
+///
+/// - The full RFC 7230 §6.1 hop-by-hop set (`Connection`, `Keep-Alive`,
+///   `Proxy-Authenticate`, `Proxy-Authorization`, `TE`, `Trailer`,
+///   `Transfer-Encoding`, `Upgrade`): meaningful only for the single
+///   upstream<->proxy hop, not for the proxy<->client hop this response is
+///   headed to.
+/// - Headers this proxy would otherwise misrepresent, since it may re-encode
+///   or translate the body before resending it (`Content-Length`,
+///   `Content-Encoding`). `Content-Type` is excluded too -- `forward_response`
+///   already sets it separately from the (possibly re-detected) content type.
+///
+/// Everything else -- `Set-Cookie`, `WWW-Authenticate`, `Cache-Control`, etc.
+/// -- passes through unchanged (CodeRabbit review, PR #194, comment
+/// 3718037787).
+fn is_forwardable_response_header(name: &str) -> bool {
+    !matches!(
+        name.to_ascii_lowercase().as_str(),
+        "content-type"
+            | "content-length"
+            | "content-encoding"
+            | "connection"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
+    )
+}
+
 fn handle_request(
     mut request: tiny_http::Request,
     proxy: &RepowiseI18nProxy,
@@ -162,15 +217,7 @@ fn handle_request(
     let mut req = ureq::request(&method, &upstream_uri);
     for header in request.headers() {
         let name = header.field.as_str().as_str();
-        // Hop-by-hop / connection-specific headers: forwarding these
-        // verbatim would either be meaningless to a new connection
-        // (Connection, Host is re-derived from upstream_uri) or wrong once
-        // ureq recomputes them for the outgoing request it actually sends
-        // (Content-Length, Transfer-Encoding).
-        if matches!(
-            name.to_ascii_lowercase().as_str(),
-            "host" | "content-length" | "connection" | "transfer-encoding"
-        ) {
+        if !is_forwardable_request_header(name) {
             continue;
         }
         req = req.set(name, header.value.as_str());
@@ -215,6 +262,23 @@ fn forward_response(
     let content_type = response.content_type().to_string();
     let is_text = content_type.contains("application/json") || content_type.contains("text/html");
 
+    // Collect the safe end-to-end headers before `response` is consumed by
+    // `.into_reader()` below. `headers_names()` can repeat a name when the
+    // upstream sent it multiple times (e.g. `Set-Cookie`), so dedup by name
+    // and pull every value for it via `.all()` rather than just the first.
+    let mut seen_header_names = std::collections::HashSet::new();
+    let mut extra_headers = Vec::new();
+    for name in response.headers_names() {
+        if !is_forwardable_response_header(&name) || !seen_header_names.insert(name.clone()) {
+            continue;
+        }
+        for value in response.all(&name) {
+            if let Ok(header) = tiny_http::Header::from_bytes(name.as_bytes(), value.as_bytes()) {
+                extra_headers.push(header);
+            }
+        }
+    }
+
     if is_text {
         let mut body = String::new();
         let _ = response.into_reader().read_to_string(&mut body);
@@ -233,22 +297,28 @@ fn forward_response(
             )
         };
 
-        let resp = Response::from_string(translated_body)
+        let mut resp = Response::from_string(translated_body)
             .with_status_code(status)
             .with_header(
                 tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes())
                     .unwrap(),
             );
+        for header in extra_headers {
+            resp = resp.with_header(header);
+        }
         let _ = request.respond(resp);
     } else {
         let mut bytes = Vec::new();
         let _ = response.into_reader().read_to_end(&mut bytes);
-        let resp = Response::from_data(bytes)
+        let mut resp = Response::from_data(bytes)
             .with_status_code(status)
             .with_header(
                 tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes())
                     .unwrap(),
             );
+        for header in extra_headers {
+            resp = resp.with_header(header);
+        }
         let _ = request.respond(resp);
     }
 }
@@ -268,5 +338,80 @@ fn inject_before_body_close(html: &str, script: &str) -> String {
         result
     } else {
         format!("{}{}", html, script)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_headers_strip_credentials() {
+        // CodeRabbit PR #194 comment 3718037783: the upstream `repowise
+        // serve` listener is unauthenticated, so a client's own credentials
+        // must never be forwarded to it.
+        assert!(!is_forwardable_request_header("Authorization"));
+        assert!(!is_forwardable_request_header("authorization"));
+        assert!(!is_forwardable_request_header("Cookie"));
+        assert!(!is_forwardable_request_header("cookie"));
+    }
+
+    #[test]
+    fn request_headers_strip_hop_by_hop_and_connection_specific() {
+        assert!(!is_forwardable_request_header("Host"));
+        assert!(!is_forwardable_request_header("Content-Length"));
+        assert!(!is_forwardable_request_header("Connection"));
+        assert!(!is_forwardable_request_header("Transfer-Encoding"));
+    }
+
+    #[test]
+    fn request_headers_pass_through_everything_else() {
+        assert!(is_forwardable_request_header("Accept"));
+        assert!(is_forwardable_request_header("X-Requested-With"));
+        assert!(is_forwardable_request_header("Content-Type"));
+    }
+
+    #[test]
+    fn response_headers_strip_body_shape_and_hop_by_hop() {
+        // These describe the upstream body's exact framing/encoding, which
+        // `forward_response` may have already invalidated by translating or
+        // re-serializing the body before resending it.
+        assert!(!is_forwardable_response_header("Content-Length"));
+        assert!(!is_forwardable_response_header("Content-Encoding"));
+        // Set separately by `forward_response` already -- forwarding it
+        // again here would risk a duplicate/conflicting header.
+        assert!(!is_forwardable_response_header("Content-Type"));
+    }
+
+    #[test]
+    fn response_headers_strip_full_hop_by_hop_set() {
+        // RFC 7230 §6.1's full hop-by-hop category, not just the subset
+        // CodeRabbit named literally -- these are meaningful only for the
+        // upstream<->proxy hop and must not leak onto the proxy<->client one.
+        for name in [
+            "Connection",
+            "Keep-Alive",
+            "Proxy-Authenticate",
+            "Proxy-Authorization",
+            "TE",
+            "Trailer",
+            "Transfer-Encoding",
+            "Upgrade",
+        ] {
+            assert!(
+                !is_forwardable_response_header(name),
+                "{name} should be excluded as hop-by-hop"
+            );
+        }
+    }
+
+    #[test]
+    fn response_headers_relay_everything_else() {
+        // CodeRabbit PR #194 comment 3718037787: these were previously
+        // silently dropped and must now be relayed to the client.
+        assert!(is_forwardable_response_header("Set-Cookie"));
+        assert!(is_forwardable_response_header("WWW-Authenticate"));
+        assert!(is_forwardable_response_header("Cache-Control"));
+        assert!(is_forwardable_response_header("ETag"));
     }
 }
