@@ -467,6 +467,21 @@ mod tests {
         let declared = declaration["capabilityDeclaration"]["implementation"]["toolchainDigests"]
             .as_array()
             .unwrap();
+        let inputs: Vec<&str> = declaration["toolchainDigestEvidence"]["inputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|input| input.as_str().unwrap())
+            .collect();
+        // The CI atomic-capability contract checks inputs[i] <-> digests[i]
+        // pairing; assert the same here so a membership-only local run can no
+        // longer pass a misaligned declaration (PR #200 caught this only in
+        // CI — the local face of #176's checklist blind spot).
+        assert_eq!(
+            inputs.len(),
+            declared.len(),
+            "toolchainDigestEvidence.inputs and toolchainDigests must pair by index"
+        );
         for relative in [
             "crates/code-intel-cli/src/doctor_adapter.rs",
             "crates/code-intel-cli/src/doctor_bootstrap/mod.rs",
@@ -477,9 +492,16 @@ mod tests {
             "crates/code-intel-cli/src/capability_inventory.rs",
             "crates/code-intel-cli/src/doctor_provider_rows.rs",
         ] {
-            let actual = sha256_hex(&fs::read(root.join(relative)).unwrap());
             assert!(
-                declared.iter().any(|digest| digest == &json!(actual)),
+                inputs.contains(&relative),
+                "digest-bound source missing from toolchainDigestEvidence.inputs: {relative}"
+            );
+        }
+        for (index, relative) in inputs.iter().enumerate() {
+            let actual = sha256_hex(&fs::read(root.join(relative)).unwrap());
+            assert_eq!(
+                declared[index],
+                json!(actual),
                 "stale doctor toolchain digest for {relative}"
             );
         }

@@ -56,7 +56,7 @@ verdict integrity when `code-intel` runs under it:
 
   The field is attached only where the CLI prints — the DAG doctor node
   consumes the probe directly and its artifact digests stay replay-stable.
-  `doctor bootstrap --nonce <value>` is the prevention half: a caller that
+  `code-intel doctor bootstrap --nonce <value>` is the prevention half: a caller that
   varies the nonce makes every command line byte-unique, so a byte-keyed
   replay cache can never hit, and the echoed `nonce` proves the value reached
   a live process.
