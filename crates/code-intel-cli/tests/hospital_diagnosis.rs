@@ -738,7 +738,11 @@ fn a_surgery_target_present_in_the_supplied_repo_path_still_publishes() {
     let temp = Temp::new();
     let repo = temp.0.join("scanned-repo");
     fs::create_dir_all(repo.join("crates/code-intel-cli/src")).unwrap();
-    fs::write(repo.join("crates/code-intel-cli/src/dag_run.rs"), b"// present\n").unwrap();
+    fs::write(
+        repo.join("crates/code-intel-cli/src/dag_run.rs"),
+        b"// present\n",
+    )
+    .unwrap();
     fs::write(
         repo.join("crates/code-intel-cli/src/execution_kernel.rs"),
         b"// present\n",

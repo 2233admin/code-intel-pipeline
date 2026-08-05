@@ -92,11 +92,14 @@ pub(crate) fn execute(
                 })?;
             }
             "repoPath" => {
-                let value = value.as_str().filter(|value| !value.is_empty()).ok_or_else(|| {
-                    AdapterError::InvalidOptions(
-                        "diagnosis.hospital repoPath must be a non-empty string".into(),
-                    )
-                })?;
+                let value = value
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| {
+                        AdapterError::InvalidOptions(
+                            "diagnosis.hospital repoPath must be a non-empty string".into(),
+                        )
+                    })?;
                 let path = PathBuf::from(value);
                 if !path.is_dir() {
                     return Err(AdapterError::InvalidOptions(format!(
@@ -867,9 +870,7 @@ mod audit_wiring_tests {
         // absolute candidate replace `repo` outright rather than resolve
         // inside it, so this must fail on shape before that substitution
         // ever happens.
-        assert!(
-            verify_surgery_target_exists(&repo.0, &absolute.to_string_lossy()).is_err()
-        );
+        assert!(verify_surgery_target_exists(&repo.0, &absolute.to_string_lossy()).is_err());
     }
 
     #[test]
