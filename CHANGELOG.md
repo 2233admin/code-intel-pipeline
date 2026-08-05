@@ -5,6 +5,12 @@ All notable changes to **code-intel-pipeline** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`code-intel serve --mcp`：agent 原生查询面上线，管线在写码中途终于能被问一句话**（#54、#58 提案 3）。stdio MCP server，六个工具：`get_gate_verdict`（权威 run 的门禁结论 + 第一条失败规则 + 最小重跑命令）、`get_facts`（按 artifact type/schema/子串查已验证事实）、`get_evidence`（一条 finding 的证据链：产物、sha256、记录时的 snapshot；查不到明说 `unbacked`，不装真）、`get_audit_status`（各科室结论；没跑过 audit 明说 `unavailable`，不装绿）、`get_change_impact`（默认 stale-advisory——CLI 在这里 fail-closed 正是管线写码时隐形的原因，#58 定为 critical）、`plan_structural_edit`（ast-grep 预览，`repositoryMutation=false`）。**只读，不裁决**：门禁判定照旧只走 CLI 与 CI，查询面被 prompt injection 说服也改不了结论；唯一会执行东西的 `plan_structural_edit` 在跑之前拿注册表核对自己的 capability 声明，一旦出现 `repo_mutation` 直接拒绝（有测试为证）。路径参数复用 `change_impact` / `evidence_query` 的既有请求类型，JSON 进来的路径和 `--changed` 打进来的走同一道越界闸。工具拒答走 `isError` 结果而不是 JSON-RPC error——"还没跑过 run"是答案，不是传输故障。声明的 MCP 版本收窄到 `2025-06-18` 一版：更早的修订要求 JSON-RPC 批量支持，本 transport 一行一条消息，宣称就会让客户端发批量后挂死；走错路的批量收到显式 `-32600` 而不是被静默丢弃。仓库 `.mcp.json` 已注册；README 与 SKILL.md 改为主推查询面，全量扫描降为深检模式，并按工具写清数据来源（四个是已提交 run 的投影，`get_change_impact` 是已提交 import 图 × 当前工作树，`plan_structural_edit` 扫的是当前工作树）。
+
 ## [0.7.0-beta.6] — 2026-08-05
 
 这一批的主线是「门禁自己说的话得能被核对」：扫描面、锚点、巨石身份、退出码、schema 五处都从体感口径换成可计算口径——覆盖率不再靠感觉、锚点不再靠猜、巨石不再靠数数、gate finding 不再伪装成崩溃、产物不再违反自家 schema。另一条线是写路径的第一块落地（span 寻址补丁）和文档语言首选项。

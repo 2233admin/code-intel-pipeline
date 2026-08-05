@@ -45,8 +45,21 @@ verdict integrity when `code-intel` runs under it:
   reports, or digests, so artifact determinism contracts are unaffected.
   Contract probes (`--contract-probe`) stay silent: they are catalog
   introspection, and the head-parity fixture byte-compares their streams.
-  `doctor` also stays silent for now — its envelope contract asserts an empty
-  stderr — so its identity has to ride inside the envelope itself (#197).
+
+- **Doctor carries its identity in-band.** `doctor bootstrap` keeps stderr
+  empty (its envelope contract asserts that), so its observation instead
+  gains a CLI-layer `invocationIdentity` object:
+
+  ```json
+  "invocationIdentity": { "id": "<nanos-pid-seq hex>", "nonce": "<echoed --nonce or empty>" }
+  ```
+
+  The field is attached only where the CLI prints — the DAG doctor node
+  consumes the probe directly and its artifact digests stay replay-stable.
+  `code-intel doctor bootstrap --nonce <value>` is the prevention half: a caller that
+  varies the nonce makes every command line byte-unique, so a byte-keyed
+  replay cache can never hit, and the echoed `nonce` proves the value reached
+  a live process.
 
 ## Guidance for proxy hosts
 

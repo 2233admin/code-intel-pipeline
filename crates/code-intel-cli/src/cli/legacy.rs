@@ -1157,6 +1157,7 @@ Commands:
   run execute --repo <repo-root> --out <run-staging-directory> --authority-root <publication-root> --final-name <name> [--profile default|strict|offline] [--manifest <integrations.json>] [--max-concurrency <n>] [--session-evidence <session-evidence.json>]
   run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--manifest <integrations.json>] [--max-concurrency <n>] [--session-evidence <session-evidence.json>]
   run commit --source-root <A09-artifact-root> --authority-root <publication-root> --manifest-ref <artifact-ref.json> --final-name <name>
+  serve --mcp [--repo-path <checkout>] [--repo <name>] [--artifact-root <root>] [--manifest <integrations.json>] (stdio MCP query surface over the committed run; read-only, gates nowhere)
   benchmark orientation --out <directory> [--repetitions <2..10>]
   benchmark tools --corpus <corpus.json> --runs <runs.json> --artifact-root <directory> --out <directory>
   governance ponytail-gate --request <request.json|->

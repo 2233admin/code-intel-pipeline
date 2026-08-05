@@ -107,6 +107,34 @@ Use the Sentrux session wrapper for an Agent coding session:
 Keep `.sentrux/rules.toml` separate from `.sentrux/baseline.json`. Rules define architecture
 boundaries; baselines detect change. Never save a new baseline to hide a regression.
 
+## Prefer the MCP query surface over the CLI for single questions
+
+If the host can register MCP servers, register this one and ask through it instead of shelling out
+per question:
+
+```powershell
+code-intel serve --mcp --repo <name>
+```
+
+It is a stdio server with six tools whose data sources differ — check which one you are reading
+before you trust how fresh it is:
+
+- `get_gate_verdict`, `get_facts`, `get_evidence`, `get_audit_status` project the **last committed
+  run**. Each answer carries the run, the snapshot identity, and a freshness field.
+- `get_change_impact` reads the **committed import graph** but evaluates it against the **current
+  `--repo-path`**. It answers `stale-advisory` by default, naming both the recorded and the current
+  snapshot identity; pass `requireCurrent` to get the fail-closed behaviour instead.
+- `plan_structural_edit` scans the **current working tree**, not the committed run, and writes
+  nothing.
+
+Pass `--repo` explicitly: a worktree's directory name is not the name `run commit` published under.
+The surface is read-only and gates nothing — a verdict read here is not a verdict earned, and the
+CLI and CI paths remain the only places a gate runs.
+
+The CLI spellings below stay correct and are the fallback when no MCP host is available. A full
+`code-intel <path> --mode normal` run is the deep-inspection mode, not the way to answer one
+question.
+
 ## While writing code
 
 Run this loop whenever implementing, refactoring, or fixing code in an analyzed repository:

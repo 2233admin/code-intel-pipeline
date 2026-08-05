@@ -1,6 +1,9 @@
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
+use crate::i18n::{Language, Messages};
 use serde_json::{json, Map, Value};
 
 const FAILURE_CATEGORIES: [&str; 9] = [
@@ -233,13 +236,91 @@ fn validate_inventory(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
+/// An API key is a credential; sending it as a Bearer token over plain HTTP
+/// puts it on the wire in cleartext for anyone on that hop to read. Fail
+/// closed rather than silently downgrade -- an unauthenticated request to an
+/// `http://` endpoint (local dev, no key configured) is still fine, since
+/// there's no secret in flight. Split out as a pure function so the
+/// scheme/key interaction is unit-testable without a real HTTP call.
+fn reject_credentialed_http_endpoint(endpoint: &str, has_api_key: bool) -> Result<(), String> {
+    if has_api_key && !endpoint.starts_with("https://") {
+        return Err(format!(
+            "CODE_INTEL_CC_SWITCH_API_KEY is set but CODE_INTEL_CC_SWITCH_ENDPOINT ({}) is not https:// -- refusing to send the key over an unencrypted connection",
+            endpoint
+        ));
+    }
+    Ok(())
+}
+
+fn merge_cc_switch_candidates(inventory: &mut Value) -> Result<(), String> {
+    let cc_switch_endpoint = match env::var("CODE_INTEL_CC_SWITCH_ENDPOINT") {
+        Ok(endpoint) => endpoint,
+        Err(_) => return Ok(()),
+    };
+
+    let url = format!("{}/api/channels", cc_switch_endpoint.trim_end_matches('/'));
+    let cc_switch_api_key = env::var("CODE_INTEL_CC_SWITCH_API_KEY").ok();
+
+    reject_credentialed_http_endpoint(&cc_switch_endpoint, cc_switch_api_key.is_some())?;
+
+    let client = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(5))
+        .build();
+
+    let mut req = client.get(&url);
+    if let Some(key) = cc_switch_api_key {
+        req = req.set("Authorization", &format!("Bearer {}", key));
+    }
+
+    let response = req
+        .call()
+        .map_err(|e| format!("CC Switch request failed: {}", e))?;
+
+    if response.status() != 200 {
+        return Err(format!("CC Switch returned status {}", response.status()));
+    }
+
+    let cc_data: Value = response
+        .into_json()
+        .map_err(|e| format!("CC Switch response parse failed: {}", e))?;
+
+    let channels = cc_data
+        .get("channels")
+        .and_then(Value::as_array)
+        .ok_or("CC Switch response missing 'channels' array")?;
+
+    let candidates = inventory
+        .get_mut("candidates")
+        .and_then(Value::as_array_mut)
+        .ok_or("inventory missing candidates array")?;
+
+    for channel in channels {
+        let mut candidate = channel.clone();
+        if !candidate.is_object() {
+            continue;
+        }
+        if candidate.get("source").is_none() {
+            candidate["source"] = json!("cc_switch");
+        }
+        if candidate.get("diagnostics").is_none() {
+            candidate["diagnostics"] = json!([]);
+        }
+        candidates.push(candidate);
+    }
+
+    Ok(())
+}
+
 pub(crate) fn route(request: &Value) -> Result<Value, String> {
     let object = exact_object(request, &["schema", "inventory", "policy", "workload"])?;
     exact_string(object, "schema", "code-intel-model-routing-request.v1")?;
-    let inventory = object
+    let mut inventory = object
         .get("inventory")
-        .expect("exact object contains inventory");
-    validate_inventory(inventory)?;
+        .expect("exact object contains inventory")
+        .clone();
+
+    merge_cc_switch_candidates(&mut inventory)?;
+    validate_inventory(&inventory)?;
     let policy = exact_object(
         object.get("policy").expect("exact object contains policy"),
         &[
@@ -273,7 +354,10 @@ pub(crate) fn route(request: &Value) -> Result<Value, String> {
     )?;
     let requires_external = bool_field(workload, "requiresExternalData")?;
 
-    let candidates = inventory["candidates"].as_array().expect("validated array");
+    let candidates = inventory["candidates"]
+        .as_array()
+        .expect("validated array")
+        .clone();
     let mut ordered: Vec<&Value> = Vec::with_capacity(candidates.len());
     if let Some(pinned_id) = pinned {
         if let Some(candidate) = candidates
@@ -359,9 +443,30 @@ pub(crate) fn route(request: &Value) -> Result<Value, String> {
         "deterministic_degraded" => Value::String("provide_or_enable_model_channel".into()),
         _ => Value::Null,
     };
+
+    let lang = Language::from_env();
+    let msgs = Messages::new(lang);
+    // `status` is a machine-readable v1 protocol field -- run_raw's exit
+    // code (and any external caller) matches it against the literal
+    // "consent_required" string, so it must never be translated in place.
+    // `statusDisplay` carries the localized text for anything that wants to
+    // show a human the routing outcome; it's additive, so it doesn't touch
+    // the canonical contract for existing consumers reading `status`.
+    let status_display = if lang == Language::Chinese {
+        match status {
+            "ready" => "已就绪",
+            "consent_required" => msgs.consent_required(),
+            "deterministic_degraded" => "确定性降级",
+            _ => status,
+        }
+    } else {
+        status
+    };
+
     Ok(json!({
         "schema": "code-intel-model-routing-result.v1",
         "status": status,
+        "statusDisplay": status_display,
         "selected": selected,
         "authorization": {
             "consumptionAuthorization": {
@@ -454,12 +559,52 @@ fn evaluate_candidate<'a>(
 
 fn attempt(id: &str, state: &str, eligible: bool, category: Option<&str>, reason: &str) -> Value {
     debug_assert!(category.map_or(true, |value| FAILURE_CATEGORIES.contains(&value)));
+
+    let lang = Language::from_env();
+    let msgs = Messages::new(lang);
+
+    // Same canonical-vs-display split as `route`'s `status` field:
+    // `readinessState`/`reason` are v1 protocol enums other code and
+    // external callers match on verbatim (design doc had no localized
+    // fallback path, so a translated enum here is a silent breaking
+    // change, not a display nicety). `readinessStateDisplay`/
+    // `reasonDisplay` carry the localized text additively.
+    let readiness_state_display = if lang == Language::Chinese {
+        match state {
+            "ready" => msgs.ready(),
+            "discovered" => "已发现",
+            "executable_verified" => "可执行已验证",
+            "auth_present" => "认证存在",
+            "model_available" => "模型可用",
+            "egress_allowed" => "出口允许",
+            "spend_allowed" => "支出允许",
+            _ => state,
+        }
+    } else {
+        state
+    };
+
+    let reason_display = if lang == Language::Chinese {
+        match reason {
+            "provider_unavailable" => msgs.provider_unavailable(),
+            "model_unavailable" => msgs.model_unavailable(),
+            "config_error" => msgs.config_error(),
+            "endpoint_not_configured" => msgs.endpoint_not_configured(),
+            "authentication_absent" => msgs.authentication_absent(),
+            _ => reason,
+        }
+    } else {
+        reason
+    };
+
     json!({
         "candidateId": id,
         "readinessState": state,
+        "readinessStateDisplay": readiness_state_display,
         "eligible": eligible,
         "failureCategory": category,
-        "reason": reason
+        "reason": reason,
+        "reasonDisplay": reason_display
     })
 }
 
@@ -589,6 +734,24 @@ fn enum_string_array<'a>(
 mod tests {
     use super::*;
 
+    #[test]
+    fn https_endpoint_with_api_key_is_allowed() {
+        assert!(reject_credentialed_http_endpoint("https://cc-switch.example.com", true).is_ok());
+    }
+
+    #[test]
+    fn http_endpoint_without_api_key_is_allowed() {
+        assert!(reject_credentialed_http_endpoint("http://localhost:3000", false).is_ok());
+    }
+
+    #[test]
+    fn http_endpoint_with_api_key_is_rejected() {
+        let err = reject_credentialed_http_endpoint("http://cc-switch.example.com", true)
+            .expect_err("http + api key must be rejected");
+        assert!(err.contains("https://"));
+        assert!(err.contains("CODE_INTEL_CC_SWITCH_API_KEY"));
+    }
+
     fn candidate(id: &str, scope: &str) -> Value {
         json!({"id":id,"channelKind":"ollama","provider":"ollama","model":"qwen","costScope":scope,"endpointConfigured":true,"discovered":true,"executableVerified":true,"authPresent":"not_applicable","modelAvailable":"available","externalEgress":false,"source":"local_discovery","diagnostics":[]})
     }
@@ -613,6 +776,35 @@ mod tests {
         .unwrap();
         assert_eq!(result["status"], "consent_required");
         assert_eq!(result["attempts"][0]["readinessState"], "spend_allowed");
+    }
+    #[test]
+    fn chinese_locale_keeps_protocol_fields_canonical_and_adds_display_fields() {
+        // Regression test: `status`/`readinessState`/`reason` are v1
+        // protocol enums that run_raw and external callers match on
+        // verbatim (e.g. run_raw's exit-code branch checks
+        // `status == "consent_required"` literally). Translating them under
+        // CODE_INTEL_LANG=zh used to make that match silently fail. The
+        // canonical fields must stay in English/enum form regardless of
+        // locale; only the *Display companion fields may localize.
+        std::env::set_var("CODE_INTEL_LANG", "zh");
+        let result = route(&request(
+            vec![candidate("ollama", "local_compute")],
+            "unanswered",
+            vec![],
+            Value::Null,
+            "denied",
+        ));
+        std::env::remove_var("CODE_INTEL_LANG");
+        let result = result.unwrap();
+
+        assert_eq!(result["status"], "consent_required");
+        assert_eq!(result["statusDisplay"], "需要确认");
+        assert_eq!(result["attempts"][0]["readinessState"], "spend_allowed");
+        assert_eq!(result["attempts"][0]["readinessStateDisplay"], "支出允许");
+        assert_eq!(
+            result["attempts"][0]["reason"],
+            "consumption_scope_not_authorized"
+        );
     }
     #[test]
     fn authorized_local_channel_is_ready() {
