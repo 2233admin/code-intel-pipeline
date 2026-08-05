@@ -510,6 +510,26 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
         ),
     },
     raw_route! {
+        command: "determinism",
+        subcommand: Some("check"),
+        argument_offset: 1,
+        id: CompatibilityRoute::DeterminismCheck,
+        contract: command_contract!(
+            Public,
+            Governance,
+            Advisory,
+            &[
+                CommandEffect::RepoRead,
+                CommandEffect::LocalWrite,
+                CommandEffect::ProcessSpawn
+            ],
+            stdout!("code-intel-determinism-report.v1"),
+            exits!(0, 20, 64, 65, 70, 74),
+            "retire only once every diagnosis.hospital producer carries its own \
+             per-provider replay-stability test and this cross-run sweep is redundant"
+        ),
+    },
+    raw_route! {
         command: "evidence",
         subcommand: None,
         argument_offset: 1,

@@ -1139,6 +1139,7 @@ Commands:
   model route --request <routing-request.json> [--out <routing-result.json>]
   snapshot identity --repo <root> --working-tree-policy <head_only|explicit_overlay> [--scope <relative-path>]...
   repin [--repo <root>] [--write] [--json] [--exclude <path-prefix>]...
+  determinism check --repo <repo-root> --out <staging-parent-directory> [--runs <n>=3] [--profile default|strict|offline] [--manifest <integrations.json>] [--max-concurrency <n>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>] (runs N `run execute` passes over diagnosis.hospital's reachable evidence chain and byte-compares them after stripping timestamp/run-identity fields; exit 20 on the first divergence)
   evidence validate --request <request.json> --artifact-root <directory>
   repository survival-scan --request <request.json|-> --artifact-root <directory>
   audit --operation validate|render --repo <root> --report <report.json> [--format markdown|html]

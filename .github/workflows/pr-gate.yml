@@ -167,6 +167,73 @@ jobs:
           echo "::error::change risk percentile ${{ steps.gate.outputs.percentile }} is at or above the ${RISK_PERCENTILE_BLOCK} threshold, and this PR does not carry the 'risk-accepted' label."
           exit 1
 
+  determinism-check:
+    # R1.1 (M1 measurement-determinism PRD, 2026-08-06, decision #1): the
+    # `diagnosis.hospital`-reachable structured evidence chain
+    # (evidence.graph + evidence.sentrux + evidence.native-code +
+    # diagnosis.hospital itself) must reproduce byte-for-byte across three
+    # consecutive `run execute` passes over this PR's HEAD commit, once
+    # generatedAt/observedAt/runIdentity/collectionId-class fields are
+    # stripped. `code-intel determinism check` runs the DAG 3x and fails
+    # closed (exit 20) on the first divergence -- see
+    # crates/code-intel-cli/src/determinism_check.rs. This gate is new and
+    # can go red on an otherwise-green PR: known jitter sources (Sentrux
+    # complexity readings, `sentrux check` failed/skipped flips) are R1.2/R1.3
+    # follow-on work, not fixed by this gate's existence.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Rust
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+
+      # Only ripgrep, unlike ci.yml's self-scan: this job never touches
+      # `edit.ast-grep-plan`, so the ast-grep toolchain ci.yml installs for
+      # that capability would be dead weight here.
+      - name: Install ripgrep
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+
+      - name: Build Rust CLI
+        run: cargo build -p code-intel --release --locked
+
+      - name: Run three-run determinism check
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/determinism-check"
+          ./target/release/code-intel determinism check \
+            --repo . \
+            --out "$RUNNER_TEMP/determinism-check" \
+            --runs 3 \
+            --manifest orchestration/integrations.json \
+            --doctor-require-repowise false \
+            | tee determinism-report.json
+
+      - name: Upload determinism report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: determinism-report
+          path: determinism-report.json
+          if-no-files-found: warn
+
+      - name: Annotate first divergence
+        if: failure()
+        run: |
+          if [ -s determinism-report.json ]; then
+            echo "::error::diagnosis.hospital's reachable evidence chain did not reproduce across 3 runs of this commit HEAD. First divergence:"
+            jq '.firstDivergence // .' determinism-report.json
+          else
+            echo "::error::determinism check did not complete far enough to produce a report; see the previous step's log for the run that failed."
+          fi
+
   agent-gate:
     # 编排 agent 推的分支(grok/**、agent/**、codex/**)必须由人点上
     # `agent-approved` label 这个检查才绿。此前「agent PR 一律开 draft」只是
