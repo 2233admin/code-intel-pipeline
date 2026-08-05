@@ -36,6 +36,13 @@ impl RepowiseI18nProxy {
         zh_cn.insert("Needs attention".to_string(), "需要关注".to_string());
         zh_cn.insert("Cross-Repo Graph".to_string(), "跨仓库图".to_string());
         zh_cn.insert("Cross-Repo Intelligence".to_string(), "跨仓库智能".to_string());
+        zh_cn.insert("Workspace Overview".to_string(), "工作区概览".to_string());
+        zh_cn.insert("CO-CHANGE PAIRS".to_string(), "共变对".to_string());
+        zh_cn.insert("PACKAGE DEPS".to_string(), "包依赖".to_string());
+        zh_cn.insert("CONTRACT LINKS".to_string(), "契约链接".to_string());
+        zh_cn.insert("CONTRACTS DETECTED".to_string(), "检测到的契约".to_string());
+        zh_cn.insert("API Contracts".to_string(), "API 契约".to_string());
+        zh_cn.insert("View all".to_string(), "查看全部".to_string());
 
         translations.insert("zh".to_string(), zh_cn);
         translations.insert("zh-CN".to_string(), translations.get("zh").unwrap().clone());
@@ -54,33 +61,34 @@ impl RepowiseI18nProxy {
             None => return value.clone(),
         };
 
-        self.translate_value(value, zh_map)
+        let mut out = value.clone();
+        Self::translate_in_place(&mut out, zh_map);
+        out
     }
 
-    fn translate_value(&self, value: &Value, translations: &HashMap<String, String>) -> Value {
+    /// Mutates in place instead of rebuilding the tree node-by-node: the
+    /// workspace API returns hundreds of repo entries per response, and a
+    /// clone-and-rebuild walk was allocating a fresh Value for every array
+    /// and object on every request even though almost none of that content
+    /// (repo names, paths) is ever in the translation table.
+    fn translate_in_place(value: &mut Value, translations: &HashMap<String, String>) {
         match value {
             Value::String(s) => {
-                if let Some(translated) = translations.get(s) {
-                    Value::String(translated.clone())
-                } else {
-                    Value::String(s.clone())
+                if let Some(translated) = translations.get(s.as_str()) {
+                    *s = translated.clone();
                 }
             }
             Value::Object(obj) => {
-                let mut new_obj = serde_json::Map::new();
-                for (k, v) in obj {
-                    new_obj.insert(k.clone(), self.translate_value(v, translations));
+                for (_, v) in obj.iter_mut() {
+                    Self::translate_in_place(v, translations);
                 }
-                Value::Object(new_obj)
             }
             Value::Array(arr) => {
-                Value::Array(
-                    arr.iter()
-                        .map(|v| self.translate_value(v, translations))
-                        .collect(),
-                )
+                for v in arr.iter_mut() {
+                    Self::translate_in_place(v, translations);
+                }
             }
-            _ => value.clone(),
+            _ => {}
         }
     }
 
@@ -94,11 +102,119 @@ impl RepowiseI18nProxy {
             None => return html.to_string(),
         };
 
-        let mut result = html.to_string();
-        for (en, zh) in zh_map {
-            result = result.replace(en, zh);
+        // Repowise's UI ships as a client-rendered Next.js app: the raw HTML
+        // this proxy fetches has no visible text yet, it only appears after
+        // React hydrates in the browser. A one-shot string replace on the
+        // server HTML can't reach that text, so translation instead runs
+        // client-side via an injected MutationObserver that walks the live
+        // DOM as React (re)renders it.
+        let script = self.build_injection_script(zh_map);
+        if let Some(pos) = html.rfind("</body>") {
+            let mut result = String::with_capacity(html.len() + script.len());
+            result.push_str(&html[..pos]);
+            result.push_str(&script);
+            result.push_str(&html[pos..]);
+            result
+        } else {
+            format!("{}{}", html, script)
         }
-        result
+    }
+
+    fn build_injection_script(&self, zh_map: &HashMap<String, String>) -> String {
+        let pairs: Vec<String> = zh_map
+            .iter()
+            .map(|(en, zh)| format!("[{},{}]", json!(en), json!(zh)))
+            .collect();
+        let table = pairs.join(",");
+
+        format!(
+            r#"<script id="repowise-i18n-injected">
+(function() {{
+  var DICT = new Map([{table}]);
+  // Dedup by content, not by a per-node "done" marker: repowise's repo
+  // list is a large virtualized list, so React recycles DOM nodes and
+  // overwrites textContent directly on scroll. A node-identity marker
+  // would survive the recycle and wrongly suppress re-translation of
+  // reused rows; checking against the set of already-translated VALUES
+  // is robust to that because it only looks at what the text currently is.
+  var TRANSLATED_VALUES = new Set(DICT.values());
+
+  function translateAttrs(el) {{
+    if (!el.hasAttribute) return;
+    ["title", "placeholder", "aria-label"].forEach(function(attr) {{
+      var v = el.getAttribute(attr);
+      if (v && DICT.has(v)) el.setAttribute(attr, DICT.get(v));
+    }});
+  }}
+
+  function translateSubtree(node) {{
+    if (node.nodeType === Node.TEXT_NODE) {{
+      var text = node.nodeValue;
+      var trimmed = text.trim();
+      if (trimmed && !TRANSLATED_VALUES.has(trimmed) && DICT.has(trimmed)) {{
+        node.nodeValue = text.replace(trimmed, DICT.get(trimmed));
+      }}
+      return;
+    }}
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    var tag = node.tagName;
+    if (tag === "SCRIPT" || tag === "STYLE") return;
+    translateAttrs(node);
+    var child = node.firstChild;
+    while (child) {{
+      translateSubtree(child);
+      child = child.nextSibling;
+    }}
+  }}
+
+  // React fires many DOM mutations per tick (list scroll, re-render).
+  // Batch them into one translation pass per animation frame instead of
+  // walking a subtree synchronously for every single mutation record --
+  // that per-mutation walk was the main source of input lag on click.
+  var pending = [];
+  var scheduled = false;
+  function flush() {{
+    scheduled = false;
+    var batch = pending;
+    pending = [];
+    for (var i = 0; i < batch.length; i++) {{
+      translateSubtree(batch[i]);
+    }}
+  }}
+  function schedule(node) {{
+    pending.push(node);
+    if (!scheduled) {{
+      scheduled = true;
+      requestAnimationFrame(flush);
+    }}
+  }}
+
+  var observer = new MutationObserver(function(mutations) {{
+    for (var i = 0; i < mutations.length; i++) {{
+      var m = mutations[i];
+      if (m.type === "characterData") {{
+        schedule(m.target);
+      }} else {{
+        for (var j = 0; j < m.addedNodes.length; j++) {{
+          schedule(m.addedNodes[j]);
+        }}
+      }}
+    }}
+  }});
+
+  function start() {{
+    translateSubtree(document.body);
+    observer.observe(document.body, {{ childList: true, subtree: true, characterData: true }});
+  }}
+  if (document.body) {{
+    start();
+  }} else {{
+    document.addEventListener("DOMContentLoaded", start);
+  }}
+}})();
+</script>"#,
+            table = table
+        )
     }
 }
 
