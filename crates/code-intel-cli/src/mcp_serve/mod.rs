@@ -33,12 +33,20 @@ mod tools;
 #[cfg(test)]
 mod tests;
 
-/// The newest MCP revision this server implements. Clients that ask for an
-/// older supported revision get theirs echoed back; anything else is answered
-/// with this one, which is what the specification prescribes for a version the
-/// server does not speak.
+/// The MCP revisions this server implements — deliberately just one.
+///
+/// `2025-03-26` and earlier require a server to accept JSON-RPC *batches*: a
+/// top-level array of requests answered by an array of responses. This
+/// transport answers one object per line and has no batch dispatch, so
+/// advertising those revisions would promise something a client could hang
+/// waiting for. `2025-06-18` removed batching, which is exactly why it is the
+/// one revision this framing can honestly claim.
+///
+/// A client asking for anything else is answered with this revision, which is
+/// what the specification prescribes: the client then decides whether it can
+/// proceed. That is a visible negotiation failure rather than a silent one.
 const PROTOCOL_VERSION: &str = "2025-06-18";
-const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
+const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[PROTOCOL_VERSION];
 
 const USAGE: &str = "usage: serve --mcp [--repo-path <checkout>] [--repo <name>] [--artifact-root <root>] [--manifest <integrations.json>]";
 
@@ -219,6 +227,18 @@ pub(super) fn handle_line(context: &ServeContext, line: &str) -> Option<Value> {
             ))
         }
     };
+    // A batch is refused out loud. It has no `id` of its own, so falling
+    // through to the notification branch below would drop it silently and
+    // leave the client waiting for responses that are never coming — the exact
+    // hang that advertising a batching revision would have caused.
+    if message.is_array() {
+        return Some(failure(
+            Value::Null,
+            -32600,
+            "invalid request: JSON-RPC batches are not supported; this server speaks MCP \
+             2025-06-18, which sends messages individually",
+        ));
+    }
     let id = message.get("id").filter(|id| !id.is_null()).cloned()?;
     let Some(method) = message["method"].as_str() else {
         return Some(failure(id, -32600, "invalid request: no method"));

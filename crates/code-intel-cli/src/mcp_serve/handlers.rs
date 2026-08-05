@@ -9,7 +9,7 @@
 
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Map, Value};
@@ -22,6 +22,10 @@ use crate::{
 
 const EDIT_PLAN_CAPABILITY: &str = "edit.ast-grep-plan";
 const DEFAULT_LIMIT: usize = 20;
+/// Read from `evidence_query` rather than restated: the tool descriptors, the
+/// `--limit` flag, and this surface must agree on the ceiling, and three copies
+/// of `100` is how they stop agreeing.
+use crate::evidence_query::MAX_LIMIT;
 
 pub(super) fn call(context: &ServeContext, name: &str, arguments: &Value) -> Result<Value, String> {
     if !arguments.is_object() {
@@ -297,15 +301,14 @@ fn structural_edit(context: &ServeContext, arguments: &Value) -> Result<Value, S
         context.manifest.as_deref(),
         capability_inventory::execute,
     );
-    let plan = outcome
-        .result
-        .as_ref()
-        .and_then(|result| result["artifacts"][0]["path"].as_str())
-        .and_then(|relative| fs::read(staging.join(relative)).ok())
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+    // Each step keeps its own failure reason. Collapsing all three through
+    // `.ok()` reported "produced no artifact" for a plan that was produced and
+    // then turned out to be unreadable or malformed — three very different
+    // things for whoever has to work out why.
+    let plan = read_plan_artifact(&outcome, &staging);
     let _ = fs::remove_dir_all(&staging);
     match plan {
-        Some(plan) => Ok(json!({
+        Ok(plan) => Ok(json!({
             "schema": "code-intel-mcp-structural-edit-plan.v1",
             "capability": EDIT_PLAN_CAPABILITY,
             "repo": context.repo,
@@ -314,14 +317,26 @@ fn structural_edit(context: &ServeContext, arguments: &Value) -> Result<Value, S
             "exitCode": outcome.exit_code,
             "plan": plan,
         })),
-        None => Err(format!(
-            "edit plan produced no artifact (exit {}): {}",
+        Err(reason) => Err(format!(
+            "{reason} (exit {}): {}",
             outcome.exit_code,
             outcome
                 .diagnostic
                 .unwrap_or_else(|| "no diagnostic was emitted".into())
         )),
     }
+}
+
+fn read_plan_artifact(outcome: &capability::ExecOutcome, staging: &Path) -> Result<Value, String> {
+    let relative = outcome
+        .result
+        .as_ref()
+        .and_then(|result| result["artifacts"][0]["path"].as_str())
+        .ok_or("edit plan produced no artifact")?;
+    let bytes = fs::read(staging.join(relative))
+        .map_err(|error| format!("edit plan artifact {relative} could not be read: {error}"))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|error| format!("edit plan artifact {relative} is not valid JSON: {error}"))
 }
 
 /// The read-only boundary, enforced against the registry rather than asserted
@@ -431,13 +446,28 @@ fn optional_bool(arguments: &Value, key: &str) -> Result<Option<bool>, String> {
     }
 }
 
+/// The declared `1..=100` bound, enforced here rather than at each call site.
+///
+/// `get_facts` used to be the only bounded caller, because its limit passes
+/// through `EvidenceQueryRequest::new`; `get_evidence` consumed the raw value.
+/// A `limit` of 0 then made `evidence_chain` break on its first match and
+/// report `status: "unbacked"` — a claim that no committed artifact mentions
+/// the identifier — while artifacts that mention it were sitting right there.
+/// A bound that only one of two callers honours is not a bound.
+///
+/// The comparison happens on the `u64` before any cast: `as usize` truncates on
+/// a 32-bit target, which would turn an out-of-range value into an accepted one.
 fn optional_limit(arguments: &Value) -> Result<usize, String> {
+    let out_of_range = || format!("limit must be an integer in 1..={MAX_LIMIT}");
     match arguments.get("limit") {
         None | Some(Value::Null) => Ok(DEFAULT_LIMIT),
-        Some(Value::Number(value)) => value
-            .as_u64()
-            .map(|value| value as usize)
-            .ok_or_else(|| "limit must be a positive integer".to_string()),
+        Some(Value::Number(value)) => {
+            let value = value.as_u64().ok_or_else(out_of_range)?;
+            if !(1..=MAX_LIMIT as u64).contains(&value) {
+                return Err(out_of_range());
+            }
+            Ok(value as usize)
+        }
         Some(_) => Err("limit must be an integer".into()),
     }
 }

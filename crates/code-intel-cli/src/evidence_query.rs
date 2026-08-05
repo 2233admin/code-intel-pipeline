@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use crate::committed_evidence::{self, CommittedEvidence, EvidenceError};
 
 const DEFAULT_LIMIT: usize = 20;
-const MAX_LIMIT: usize = 100;
+pub(crate) const MAX_LIMIT: usize = 100;
 const PREVIEW_CHARS: usize = 400;
 
 pub(crate) fn run_raw(raw: &[String]) -> i32 {

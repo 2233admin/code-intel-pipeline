@@ -127,17 +127,47 @@ fn notifications_are_never_answered() {
     }
 }
 
+/// Only revisions this transport can actually honour are advertised.
+///
+/// `2025-03-26` and earlier mandate JSON-RPC batch support, which this
+/// line-per-message framing does not implement. Echoing one back would let a
+/// client send a batch and wait forever.
 #[test]
-fn initialize_echoes_a_supported_revision_and_substitutes_an_unknown_one() {
+fn only_the_non_batching_revision_is_advertised() {
+    assert_eq!(
+        super::SUPPORTED_PROTOCOL_VERSIONS,
+        &[super::PROTOCOL_VERSION]
+    );
+    for batching_revision in ["2025-03-26", "2024-11-05"] {
+        assert!(
+            !super::SUPPORTED_PROTOCOL_VERSIONS.contains(&batching_revision),
+            "{batching_revision} requires batch dispatch this transport does not have"
+        );
+    }
+}
+
+/// A batch has no `id`, so without an explicit refusal it would fall through
+/// the notification branch and be dropped in silence — the client hangs.
+#[test]
+fn a_json_rpc_batch_is_refused_out_loud() {
+    let fixture = Fixture::create("batch");
+    let context = fixture.context();
+    let batch = json!([
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+        {"jsonrpc": "2.0", "id": 2, "method": "ping", "params": {}},
+    ])
+    .to_string();
+    let response = super::handle_line(&context, &batch).expect("a batch must not be dropped");
+    assert_eq!(response["error"]["code"], json!(-32600));
+    assert!(response["error"]["message"]
+        .as_str()
+        .is_some_and(|message| message.contains("batches are not supported")));
+}
+
+#[test]
+fn initialize_substitutes_an_unsupported_revision() {
     let fixture = Fixture::create("initialize");
     let context = fixture.context();
-    let older = super::handle_line(
-        &context,
-        &request(1, "initialize", json!({"protocolVersion": "2024-11-05"})),
-    )
-    .expect("initialize response");
-    assert_eq!(older["result"]["protocolVersion"], json!("2024-11-05"));
-
     let unknown = super::handle_line(
         &context,
         &request(2, "initialize", json!({"protocolVersion": "1999-01-01"})),
@@ -265,6 +295,49 @@ fn crafted_arguments_are_refused_before_any_evidence_is_read() {
         non_object.err().as_deref(),
         Some("arguments must be a JSON object")
     );
+}
+
+/// The declared `1..=100` bound must hold for every tool that takes a limit,
+/// not just the one whose request type happened to check it.
+///
+/// `limit: 0` used to make `get_evidence` break on its first match and answer
+/// `status: "unbacked"` — asserting that no committed artifact mentions the
+/// identifier while artifacts that mention it were right there. A bound one
+/// caller honours is not a bound.
+#[test]
+fn every_limit_taking_tool_shares_the_declared_bound() {
+    let fixture = Fixture::create("limit");
+    let context = fixture.context();
+    for (tool, arguments) in [
+        ("get_evidence", json!({"findingId": "anything", "limit": 0})),
+        (
+            "get_evidence",
+            json!({"findingId": "anything", "limit": 101}),
+        ),
+        ("get_facts", json!({"limit": 0})),
+        ("get_facts", json!({"limit": 101})),
+    ] {
+        let error = handlers::call(&context, tool, &arguments)
+            .err()
+            .unwrap_or_else(|| panic!("{tool} accepted {arguments}"));
+        assert!(
+            error.contains("1..=100"),
+            "{tool} rejected {arguments} for the wrong reason: {error}"
+        );
+    }
+
+    // The bound is a range, not a rejection of everything: the endpoints and a
+    // missing limit must still get past argument validation and reach the
+    // (absent) committed run.
+    for arguments in [json!({"limit": 1}), json!({"limit": 100}), json!({})] {
+        let error = handlers::call(&context, "get_facts", &arguments)
+            .err()
+            .unwrap_or_default();
+        assert!(
+            !error.contains("1..=100"),
+            "a valid limit was rejected: {arguments} -> {error}"
+        );
+    }
 }
 
 #[test]
