@@ -92,11 +92,12 @@ fn write_stub(dir: &Path) {
 }
 
 fn run(repo: &Path, home: &Path, stub: &FakeRepowise, extra_args: &[&str]) -> Output {
-    let path_with_stub = format!(
-        "{};{}",
-        stub.dir.0.display(),
-        std::env::var("PATH").unwrap_or_default()
-    );
+    // `;`-joining unconditionally would be wrong on Unix, where PATH is
+    // `:`-delimited -- `env::join_paths` picks whichever the running
+    // platform actually uses.
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    let entries = std::iter::once(stub.dir.0.clone()).chain(std::env::split_paths(&existing));
+    let path_with_stub = std::env::join_paths(entries).unwrap();
     let mut command = common::cli();
     command
         .arg("repowise-hooks")
