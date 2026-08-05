@@ -981,7 +981,9 @@ fn now_seconds() -> u64 {
         .map(|v| v.as_secs())
         .unwrap_or(0)
 }
-fn rfc3339_now() -> String {
+// `pub(crate)` so `run_identity` reuses the same clock rendering instead of
+// keeping a second civil-calendar implementation in sync with this one.
+pub(crate) fn rfc3339_now() -> String {
     let s = now_seconds() as i64;
     let days = s.div_euclid(86400);
     let ds = s.rem_euclid(86400);
