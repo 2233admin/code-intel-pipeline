@@ -8,13 +8,11 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use serde_json::{json, Value};
 
-fn binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_code-intel"))
-}
+mod common;
 
 /// A directory that exists but publishes nothing.
 ///
@@ -46,17 +44,16 @@ impl Drop for Fixture {
 
 /// Feed the server a session and collect every response line.
 ///
-/// The environment is not inherited beyond what the OS requires: a host
-/// `CODE_INTEL_ARTIFACT_ROOT` leaking in would silently point this at the
-/// developer's real runs and make the test pass for the wrong reason.
+/// Spawned through `common::cli()` so every pipeline-owned variable is cleared
+/// from the same list the binary declares. Clearing a hand-picked pair here
+/// instead would leave the rest of `PIPELINE_VARS` free to point this at the
+/// developer's real installation and make the test pass for the wrong reason.
 fn session(fixture: &Fixture, requests: &[Value]) -> (Vec<Value>, i32, String) {
-    let mut child = Command::new(binary())
+    let mut child = common::cli()
         .args(["serve", "--mcp", "--repo-path"])
         .arg(&fixture.0)
         .args(["--repo", "serve-fixture", "--artifact-root"])
         .arg(fixture.0.join("artifacts"))
-        .env_remove("CODE_INTEL_ARTIFACT_ROOT")
-        .env_remove("CODE_INTEL_HOME")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -193,7 +190,7 @@ fn tools_refuse_readably_when_no_run_has_been_committed() {
 
 #[test]
 fn serve_without_a_transport_is_a_usage_error() {
-    let output = Command::new(binary())
+    let output = common::cli()
         .arg("serve")
         .output()
         .expect("spawn serve without a transport");

@@ -1,3 +1,4 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -72,7 +73,7 @@ fn production_run_route_executes_snapshot_then_inventory() {
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
     let doctor_tools = doctor_tool_fixture(&root, true);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&repo)
         .arg("--out")
@@ -211,7 +212,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     .unwrap();
     let doctor_tools = doctor_tool_fixture(&root, true);
 
-    let execution = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let execution = common::cli()
         .args(["run", "execute", "--repo"])
         .arg(&repo)
         .arg("--out")
@@ -261,7 +262,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
         "index={index}"
     );
 
-    let query = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let query = common::cli()
         .args(["artifact", "query", "--artifact-root"])
         .arg(&artifact_root)
         .args(["--repo", "fixture-repo", "--repo-path"])
@@ -291,7 +292,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
         "inventory.files"
     );
 
-    let freshness_unknown = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let freshness_unknown = common::cli()
         .args(["artifact", "query", "--artifact-root"])
         .arg(&artifact_root)
         .args(["--repo", "fixture-repo", "--type", "inventory.files"])
@@ -302,7 +303,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     assert_eq!(freshness_unknown["freshness"]["status"], "unknown");
     assert_eq!(freshness_unknown["confidence"], "limited");
 
-    let impact = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let impact = common::cli()
         .args(["change", "impact", "--artifact-root"])
         .arg(&artifact_root)
         .args(["--repo", "fixture-repo", "--repo-path"])
@@ -327,7 +328,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     );
     assert_eq!(impact["testSelection"]["commands"], json!(["cargo test"]));
 
-    let advisory_fresh = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let advisory_fresh = common::cli()
         .args(["change", "impact", "--artifact-root"])
         .arg(&artifact_root)
         .args(["--repo", "fixture-repo", "--repo-path"])
@@ -350,7 +351,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     );
 
     fs::write(repo.join("src/lib.rs"), "pub fn changed() {}\n").unwrap();
-    let stale = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let stale = common::cli()
         .args(["artifact", "query", "--artifact-root"])
         .arg(&artifact_root)
         .args(["--repo", "fixture-repo", "--repo-path"])
@@ -363,7 +364,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     assert_eq!(stale["freshness"]["status"], "stale");
     assert_eq!(stale["confidence"], "limited");
 
-    let stale_impact = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let stale_impact = common::cli()
         .args(["change", "impact", "--artifact-root"])
         .arg(&artifact_root)
         .args(["--repo", "fixture-repo", "--repo-path"])
@@ -375,7 +376,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     assert!(String::from_utf8_lossy(&stale_impact.stderr)
         .contains("change impact requires the committed snapshot to be current"));
 
-    let stale_explicit = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let stale_explicit = common::cli()
         .args(["change", "impact", "--artifact-root"])
         .arg(&artifact_root)
         .args(["--repo", "fixture-repo", "--repo-path"])
@@ -387,7 +388,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     assert!(String::from_utf8_lossy(&stale_explicit.stderr)
         .contains("change impact requires the committed snapshot to be current"));
 
-    let stale_advisory = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let stale_advisory = common::cli()
         .args(["change", "impact", "--artifact-root"])
         .arg(&artifact_root)
         .args(["--repo", "fixture-repo", "--repo-path"])
@@ -430,7 +431,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
             .as_str()
             .is_some_and(|text| text.contains("stale-advisory"))));
 
-    let staleness_rejected = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let staleness_rejected = common::cli()
         .args(["change", "impact", "--artifact-root"])
         .arg(&artifact_root)
         .args(["--repo", "fixture-repo", "--repo-path"])
@@ -460,7 +461,7 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
     let completed_doctor_tools = doctor_tool_fixture(&root, true);
-    let completed = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let completed = common::cli()
         .args(["run", "execute", "--repo"])
         .arg(&repo)
         .arg("--out")
@@ -482,7 +483,7 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
 
     let doctor_tools = doctor_tool_fixture(&root, false);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["run", "execute", "--repo"])
         .arg(&repo)
         .arg("--out")
@@ -564,7 +565,7 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
                 .is_some_and(|reason| reason.contains("domain_failed"))
     }));
 
-    let query = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let query = common::cli()
         .args(["artifact", "query", "--artifact-root"])
         .arg(&artifact_root)
         .args(["--repo", "fixture-repo", "--type", "code_evidence.files"])
@@ -574,7 +575,7 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
     let query: Value = serde_json::from_slice(&query.stdout).unwrap();
     assert_eq!(query["run"], "completed-001");
 
-    let impact = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let impact = common::cli()
         .args(["change", "impact", "--artifact-root"])
         .arg(&artifact_root)
         .args(["--repo", "fixture-repo", "--repo-path"])
@@ -616,7 +617,7 @@ fn optional_session_evidence_is_snapshot_bound_a03_verified_and_manifested() {
         .unwrap(),
     )
     .unwrap();
-    let adapted = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let adapted = common::cli()
         .args(["provider", "session-adapt", "--repo"])
         .arg(&repo)
         .arg("--trace")
@@ -634,7 +635,7 @@ fn optional_session_evidence_is_snapshot_bound_a03_verified_and_manifested() {
     );
 
     let doctor_tools = doctor_tool_fixture(&root, true);
-    let run = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let run = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&repo)
         .arg("--out")
@@ -808,7 +809,7 @@ fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
     let doctor_tools = doctor_tool_fixture(&root, true);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["run", "execute", "--repo"])
         .arg(&repo)
         .arg("--out")
@@ -894,7 +895,7 @@ fn authoritative_execute_rejects_diagnosis_only_runs_before_staging_or_publicati
     fs::create_dir_all(&authority).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["run", "execute", "--repo"])
         .arg(&repo)
         .arg("--out")
@@ -930,7 +931,7 @@ fn strict_profile_cannot_be_weakened_and_keeps_all_provider_nodes_required() {
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
     let doctor_tools = doctor_tool_fixture(&root, true);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["run", "execute", "--repo"])
         .arg(&repo)
         .arg("--out")
@@ -1033,7 +1034,7 @@ fn ungoverned_repository_completes_instead_of_failing_the_architecture_gate() {
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&repo)
         .arg("--out")
@@ -1101,7 +1102,7 @@ fn baselined_repository_that_regresses_still_fails_the_architecture_gate() {
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
 
-    let baseline = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let baseline = common::cli()
         .args(["sentrux", "--operation", "save_baseline", "--repo"])
         .arg(&repo)
         .output()
@@ -1119,7 +1120,7 @@ fn baselined_repository_that_regresses_still_fails_the_architecture_gate() {
     // god_file_count metric from 0 to 1.
     fs::write(repo.join("src/god.rs"), "pub fn wide() {}\n".repeat(900)).unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&repo)
         .arg("--out")
@@ -1188,7 +1189,7 @@ fn artifact_root_routes_runs_where_readers_look_and_matches_the_environment_defa
     fs::write(repo.join("README & 文.md"), "fixture").unwrap();
 
     let run = |base: &Path, explicit: bool| -> PathBuf {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_code-intel"));
+        let mut command = common::cli();
         command.args(["run", "dag-coordinate", "--repo"]).arg(&repo);
         if explicit {
             command.arg("--artifact-root").arg(base);
@@ -1252,7 +1253,7 @@ fn out_and_artifact_root_cannot_both_name_the_staging_directory() {
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&repo)
         .arg("--out")
@@ -1327,7 +1328,7 @@ fn production_run_completes_on_a_linked_worktree_checkout() {
     fs::write(linked.join("untracked.txt"), "scratch\n").unwrap();
     let doctor_tools = doctor_tool_fixture(&root, true);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&linked)
         .arg("--out")

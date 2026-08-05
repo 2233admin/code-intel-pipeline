@@ -98,8 +98,8 @@
       "properties": { "policy": { "$ref": "#/$defs/id" }, "nextCheckAt": { "$ref": "#/$defs/time" }, "evidence": { "$ref": "#/$defs/evidence" } }
     },
     "modification": {
-      "type": "object", "additionalProperties": false, "required": ["path", "description", "evidenceIds"],
-      "properties": { "path": { "$ref": "#/$defs/id" }, "description": { "$ref": "#/$defs/id" }, "evidenceIds": { "$ref": "#/$defs/evidenceIds" } }
+      "type": "object", "additionalProperties": false, "required": ["path", "description"],
+      "properties": { "path": { "$ref": "#/$defs/id" }, "description": { "$ref": "#/$defs/id" }, "evidenceIds": { "$ref": "#/$defs/evidenceIds" }, "sha256": { "$ref": "#/$defs/sha256" } }
     },
     "operationTraceEntry": {
       "type": "object", "additionalProperties": false,

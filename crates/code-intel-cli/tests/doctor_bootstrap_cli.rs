@@ -6,6 +6,7 @@
 //! adapter checks, the `missing`/`ok` pair the installer parses, the
 //! `checks.repo.*` fields the repo-config contract test asserts on, and the
 //! exit code CI gates on.
+mod common;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -40,7 +41,7 @@ fn pipeline_root() -> PathBuf {
 }
 
 fn doctor(args: &[&str]) -> (i32, Value, String) {
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["doctor", "bootstrap", "--pipeline-root"])
         .arg(pipeline_root())
         .args(args)
@@ -226,7 +227,7 @@ fn the_pipeline_root_defaults_to_the_checkout_the_caller_stands_in() {
     // No --pipeline-root, and the working directory is a subdirectory of the
     // checkout so the upward walk is exercised too.
     let nested = checkout.join("crates");
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["doctor", "bootstrap", "--no-require-repowise", "--json"])
         .current_dir(&nested)
         .output()

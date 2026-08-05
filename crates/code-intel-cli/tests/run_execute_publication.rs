@@ -9,6 +9,7 @@
 //! compiled binary, in the `dag_run.rs` / `primary_entry.rs` style: spawn
 //! `run execute`, then spawn `artifact query` against what it reported, and
 //! assert the run is found.
+mod common;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,10 +18,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
-
-fn binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_code-intel"))
-}
 
 fn temp_dir(label: &str) -> PathBuf {
     static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
@@ -123,7 +120,7 @@ fn run_execute_staged(
 ) -> Output {
     let doctor_tools = doctor_tool_fixture(root);
     let staging = root.join(format!("stage-{staging_label}"));
-    Command::new(binary())
+    common::cli()
         .args(["run", "execute", "--repo"])
         .arg(repo)
         .arg("--out")
@@ -138,7 +135,7 @@ fn run_execute_staged(
 }
 
 fn query(artifact_root: &Path, repo_name: &str, repo_path: &Path) -> (Output, Value) {
-    let output = Command::new(binary())
+    let output = common::cli()
         .args(["artifact", "query", "--artifact-root"])
         .arg(artifact_root)
         .args(["--repo", repo_name, "--repo-path"])
@@ -434,7 +431,7 @@ fn completed_index_admission_is_current_and_repairable() {
     assert_eq!(unchanged["entries"][0]["run"], "run-001");
 
     fs::remove_dir(&blocked_backup).unwrap();
-    let repaired = Command::new(binary())
+    let repaired = common::cli()
         .args(["artifact", "index", "--artifact-root"])
         .arg(&artifact_root)
         .output()
