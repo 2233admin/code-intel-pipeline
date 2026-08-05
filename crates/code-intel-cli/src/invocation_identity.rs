@@ -15,8 +15,9 @@
 //! stderr carries the line so no stdout JSON contract changes shape, and
 //! the line never enters manifests, reports, or digests, so artifact
 //! determinism contracts are unaffected. Doctor stays silent here: its
-//! envelope contract asserts an empty stderr, so its identity has to ride
-//! inside the envelope itself (tracked in #197).
+//! envelope contract asserts an empty stderr, so its identity rides inside
+//! its CLI observation instead — see `doctor_bootstrap::run_raw`, which also
+//! explains why it cannot call this module.
 
 use std::process;
 use std::sync::atomic::{AtomicU64, Ordering};
