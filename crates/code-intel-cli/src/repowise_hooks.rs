@@ -31,9 +31,6 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
     };
 
     let Some(repowise_binary) = tool_path::locate("repowise", None) else {
-        println!(
-            "repowise-hooks: repowise not found on PATH \u{2014} optional dependency, nothing to do"
-        );
         return 0;
     };
 
@@ -150,9 +147,12 @@ fn detect(repo: &Path) -> HookStatus {
 }
 
 /// `.git` is a directory in a normal checkout but a pointer file
-/// (`gitdir: <path>`) inside a linked worktree. Hooks always live under the
-/// real git directory the pointer names, never under the worktree's own
-/// `.git` file, so a worktree checkout must resolve the pointer first.
+/// (`gitdir: <path>`) inside a linked worktree, naming that worktree's own
+/// *private* git directory (`<common>/worktrees/<name>`) -- not where hooks
+/// live. `git worktree add` never duplicates hooks per worktree; they stay
+/// under the one shared directory every worktree's private directory points
+/// back to via its own `commondir` file. A normal checkout has no such
+/// indirection, so its `.git` directory is already the shared one.
 fn git_dir(repo: &Path) -> Option<PathBuf> {
     let dot_git = repo.join(".git");
     if dot_git.is_dir() {
@@ -161,11 +161,29 @@ fn git_dir(repo: &Path) -> Option<PathBuf> {
     let contents = std::fs::read_to_string(&dot_git).ok()?;
     let pointer = contents.trim().strip_prefix("gitdir:")?.trim();
     let resolved = PathBuf::from(pointer);
-    Some(if resolved.is_absolute() {
+    let private_dir = if resolved.is_absolute() {
         resolved
     } else {
         repo.join(resolved)
-    })
+    };
+    Some(common_git_dir(&private_dir))
+}
+
+/// Resolve a linked worktree's private git directory to the shared one hooks
+/// actually live under, by following its `commondir` file. No `commondir`
+/// (a plain checkout resolved through some other indirection, or a git
+/// version that predates the file) means `private_dir` already is the
+/// shared directory, so it is returned unchanged.
+fn common_git_dir(private_dir: &Path) -> PathBuf {
+    let Ok(contents) = std::fs::read_to_string(private_dir.join("commondir")) else {
+        return private_dir.to_path_buf();
+    };
+    let pointer = PathBuf::from(contents.trim());
+    if pointer.is_absolute() {
+        pointer
+    } else {
+        private_dir.join(pointer)
+    }
 }
 
 fn print_status(status: &HookStatus) {
