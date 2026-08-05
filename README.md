@@ -536,6 +536,33 @@ code-intel audit --operation scope --repo C:\path\to\repo --since <git-ref>
 
 ## Agent 工作流
 
+### 先接查询面，全量扫描是深检模式
+
+Agent 平时问单点问题走 MCP，不必为一个问题跑一整轮 pipeline：
+
+```powershell
+code-intel serve --mcp --repo <name>
+```
+
+stdio MCP server，按需起、随 session 生灭。注册进 `.mcp.json` 后 Claude Code / Codex 直连可调。**数据来源逐个工具不同**，读答案时按这一列判它有多新：
+
+| 工具 | 回答什么 | 数据来源 |
+|---|---|---|
+| `get_gate_verdict` | 权威 run 的门禁结论、第一条失败规则、最小重跑命令 | 已提交 run；附 freshness |
+| `get_facts` | 按 artifact type / schema / 子串查已验证事实（热点、import 边、scorecard、符号） | 已提交 run（digest 已校验） |
+| `get_evidence` | 一条 finding 的证据链：哪些产物提到它、各自 sha256、记录时的 snapshot | 已提交 run |
+| `get_audit_status` | 各科室审计结论、评分、覆盖；没跑过 audit 会明说"不可用"而不是装绿 | 已提交 run |
+| `get_change_impact` | 改这些文件会波及谁、该先跑哪些测试 | **已提交 import 图 × 当前 `--repo-path`**；默认标 stale-advisory 并同时给出 recorded/current 两个 snapshot identity |
+| `plan_structural_edit` | ast-grep 结构改写预览，只出匹配清单，不落盘 | **当前工作树**（不是已提交 run） |
+
+**这个面只读，不裁决。** 门禁判定照旧只走 CLI 与 CI 路径——查询面被 prompt injection 说服也改不了结论。唯一会执行东西的工具是 `plan_structural_edit`，它在跑之前拿注册表核对自己的 capability 声明，一旦声明里出现 `repo_mutation` 就直接拒绝。
+
+`--repo` 建议显式给：worktree 的目录名不是 `run commit` 发布时用的仓名，不给就会去查错仓的 run。`--repo-path` 默认取工作目录。
+
+全量 `code-intel <path> --mode normal` 留给深检和出证据，不是日常问答的入口。
+
+### 结构门禁
+
 Agent 开始改代码前：
 
 ```powershell

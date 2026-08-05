@@ -7,6 +7,7 @@ use crate::cli::help_contract::{HELP_ALIASES, HELP_COMMAND};
 
 mod edit_routes;
 mod run_routes;
+mod serve_routes;
 mod types;
 
 pub(super) use types::{CommandRoute, LegacyRoute, RawRoute, VersionRoute};
@@ -540,6 +541,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
     },
     CommandRoute::Raw(run_routes::EXECUTE),
     CommandRoute::Raw(run_routes::DAG_COORDINATE),
+    CommandRoute::Raw(serve_routes::MCP),
     raw_route! {
         command: "governance",
         subcommand: None,
