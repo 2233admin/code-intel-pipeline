@@ -236,6 +236,22 @@ fn validate_inventory(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
+/// An API key is a credential; sending it as a Bearer token over plain HTTP
+/// puts it on the wire in cleartext for anyone on that hop to read. Fail
+/// closed rather than silently downgrade -- an unauthenticated request to an
+/// `http://` endpoint (local dev, no key configured) is still fine, since
+/// there's no secret in flight. Split out as a pure function so the
+/// scheme/key interaction is unit-testable without a real HTTP call.
+fn reject_credentialed_http_endpoint(endpoint: &str, has_api_key: bool) -> Result<(), String> {
+    if has_api_key && !endpoint.starts_with("https://") {
+        return Err(format!(
+            "CODE_INTEL_CC_SWITCH_API_KEY is set but CODE_INTEL_CC_SWITCH_ENDPOINT ({}) is not https:// -- refusing to send the key over an unencrypted connection",
+            endpoint
+        ));
+    }
+    Ok(())
+}
+
 fn merge_cc_switch_candidates(inventory: &mut Value) -> Result<(), String> {
     let cc_switch_endpoint = match env::var("CODE_INTEL_CC_SWITCH_ENDPOINT") {
         Ok(endpoint) => endpoint,
@@ -244,6 +260,8 @@ fn merge_cc_switch_candidates(inventory: &mut Value) -> Result<(), String> {
 
     let url = format!("{}/api/channels", cc_switch_endpoint.trim_end_matches('/'));
     let cc_switch_api_key = env::var("CODE_INTEL_CC_SWITCH_API_KEY").ok();
+
+    reject_credentialed_http_endpoint(&cc_switch_endpoint, cc_switch_api_key.is_some())?;
 
     let client = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(5))
@@ -428,7 +446,13 @@ pub(crate) fn route(request: &Value) -> Result<Value, String> {
 
     let lang = Language::from_env();
     let msgs = Messages::new(lang);
-    let translated_status = if lang == Language::Chinese {
+    // `status` is a machine-readable v1 protocol field -- run_raw's exit
+    // code (and any external caller) matches it against the literal
+    // "consent_required" string, so it must never be translated in place.
+    // `statusDisplay` carries the localized text for anything that wants to
+    // show a human the routing outcome; it's additive, so it doesn't touch
+    // the canonical contract for existing consumers reading `status`.
+    let status_display = if lang == Language::Chinese {
         match status {
             "ready" => "已就绪",
             "consent_required" => msgs.consent_required(),
@@ -441,7 +465,8 @@ pub(crate) fn route(request: &Value) -> Result<Value, String> {
 
     Ok(json!({
         "schema": "code-intel-model-routing-result.v1",
-        "status": translated_status,
+        "status": status,
+        "statusDisplay": status_display,
         "selected": selected,
         "authorization": {
             "consumptionAuthorization": {
@@ -538,7 +563,13 @@ fn attempt(id: &str, state: &str, eligible: bool, category: Option<&str>, reason
     let lang = Language::from_env();
     let msgs = Messages::new(lang);
 
-    let translated_state = if lang == Language::Chinese {
+    // Same canonical-vs-display split as `route`'s `status` field:
+    // `readinessState`/`reason` are v1 protocol enums other code and
+    // external callers match on verbatim (design doc had no localized
+    // fallback path, so a translated enum here is a silent breaking
+    // change, not a display nicety). `readinessStateDisplay`/
+    // `reasonDisplay` carry the localized text additively.
+    let readiness_state_display = if lang == Language::Chinese {
         match state {
             "ready" => msgs.ready(),
             "discovered" => "已发现",
@@ -553,7 +584,7 @@ fn attempt(id: &str, state: &str, eligible: bool, category: Option<&str>, reason
         state
     };
 
-    let translated_reason = if lang == Language::Chinese {
+    let reason_display = if lang == Language::Chinese {
         match reason {
             "provider_unavailable" => msgs.provider_unavailable(),
             "model_unavailable" => msgs.model_unavailable(),
@@ -568,10 +599,12 @@ fn attempt(id: &str, state: &str, eligible: bool, category: Option<&str>, reason
 
     json!({
         "candidateId": id,
-        "readinessState": translated_state,
+        "readinessState": state,
+        "readinessStateDisplay": readiness_state_display,
         "eligible": eligible,
         "failureCategory": category,
-        "reason": translated_reason
+        "reason": reason,
+        "reasonDisplay": reason_display
     })
 }
 
@@ -701,6 +734,24 @@ fn enum_string_array<'a>(
 mod tests {
     use super::*;
 
+    #[test]
+    fn https_endpoint_with_api_key_is_allowed() {
+        assert!(reject_credentialed_http_endpoint("https://cc-switch.example.com", true).is_ok());
+    }
+
+    #[test]
+    fn http_endpoint_without_api_key_is_allowed() {
+        assert!(reject_credentialed_http_endpoint("http://localhost:3000", false).is_ok());
+    }
+
+    #[test]
+    fn http_endpoint_with_api_key_is_rejected() {
+        let err = reject_credentialed_http_endpoint("http://cc-switch.example.com", true)
+            .expect_err("http + api key must be rejected");
+        assert!(err.contains("https://"));
+        assert!(err.contains("CODE_INTEL_CC_SWITCH_API_KEY"));
+    }
+
     fn candidate(id: &str, scope: &str) -> Value {
         json!({"id":id,"channelKind":"ollama","provider":"ollama","model":"qwen","costScope":scope,"endpointConfigured":true,"discovered":true,"executableVerified":true,"authPresent":"not_applicable","modelAvailable":"available","externalEgress":false,"source":"local_discovery","diagnostics":[]})
     }
@@ -725,6 +776,35 @@ mod tests {
         .unwrap();
         assert_eq!(result["status"], "consent_required");
         assert_eq!(result["attempts"][0]["readinessState"], "spend_allowed");
+    }
+    #[test]
+    fn chinese_locale_keeps_protocol_fields_canonical_and_adds_display_fields() {
+        // Regression test: `status`/`readinessState`/`reason` are v1
+        // protocol enums that run_raw and external callers match on
+        // verbatim (e.g. run_raw's exit-code branch checks
+        // `status == "consent_required"` literally). Translating them under
+        // CODE_INTEL_LANG=zh used to make that match silently fail. The
+        // canonical fields must stay in English/enum form regardless of
+        // locale; only the *Display companion fields may localize.
+        std::env::set_var("CODE_INTEL_LANG", "zh");
+        let result = route(&request(
+            vec![candidate("ollama", "local_compute")],
+            "unanswered",
+            vec![],
+            Value::Null,
+            "denied",
+        ));
+        std::env::remove_var("CODE_INTEL_LANG");
+        let result = result.unwrap();
+
+        assert_eq!(result["status"], "consent_required");
+        assert_eq!(result["statusDisplay"], "需要确认");
+        assert_eq!(result["attempts"][0]["readinessState"], "spend_allowed");
+        assert_eq!(result["attempts"][0]["readinessStateDisplay"], "支出允许");
+        assert_eq!(
+            result["attempts"][0]["reason"],
+            "consumption_scope_not_authorized"
+        );
     }
     #[test]
     fn authorized_local_channel_is_ready() {

@@ -1,6 +1,6 @@
 # Design: GitHub/GitLab/self-hosted-git remote linkage for repowise-indexed repos
 
-- Status: proposed (research + design only, no implementation)
+- Status: Phases 1-3 (§9) implemented. Phase 0 (confirm open questions #1 and #4) and Phase 4 (automated credential-leak regression test) remain open -- see issue #191.
 - Date: 2026-08-05
 - Scope: proxy-layer enrichment only. No repowise source or binary is modified.
 
@@ -36,7 +36,7 @@ reverse-engineer, since we're not touching repowise's internals regardless).
 Schema (`PRAGMA table_info(repositories)`) on both the workspace-root db and a sampled
 member db (code-intel-pipeline's own):
 
-```
+```text
 id             VARCHAR(32)  PK   -- looks like a random uuid4().hex, NOT derived from local_path
                                   -- (verified: md5/sha1/sha256 of local_path in 4 case/slash
                                   --  variants does not match the stored id)
@@ -83,7 +83,7 @@ sample:
 | `github.com` | 97 | e.g. `code-intel-pipeline`, `browser-bridge`, `WorldMonitor` (owner `2233admin`); `autoresearch` (owner `smallnest`, a fork/upstream); `OpenAlice-latest` (owner `TraderAlice`, remote name `OpenAlice` — repo dir name and repo name diverge) |
 | self-hosted Gitea, `git.xart.top:8418` | 18 | e.g. `k-atana`, `tdxcli-rs`, `workbench-kernel` (remote repo is named `katana-kernel`, workspace alias is `workbench-kernel` — another name/alias divergence) |
 | local git repo, **no `origin` remote configured** | 21 | e.g. `DaHuaCyou_run` — `git remote get-url origin` fails with "No such remote 'origin'" |
-| no `.git` at all (pure local snapshot) | 0 observed here | Not present in this corpus, but repowise's docs and `workspace add` allow indexing a bare directory — the design must still degrode gracefully for this case |
+| no `.git` at all (pure local snapshot) | 0 observed here | Not present in this corpus, but repowise's docs and `workspace add` allow indexing a bare directory — the design must still degrade gracefully for this case |
 
 Sub-findings inside the Gitea group, all real and all load-bearing for the design:
 
@@ -116,7 +116,7 @@ Follows the existing `CODE_INTEL_DATA_ROOT` convention already implemented in
 `CODE_INTEL_DATA_ROOT` env override, else platform default (Windows:
 `%LOCALAPPDATA%\code-intel\code-intel`, else `~/.code-intel`). Proposed location:
 
-```
+```text
 <CODE_INTEL_DATA_ROOT>/remote-links/registry.json
 ```
 
@@ -314,10 +314,12 @@ browser, not by every proxied response. Recommended shape:
 
 - New proxy route, e.g. `GET /__code-intel/remote-links.json`, served directly by
   `repowise_proxy_server` (short-circuited before the upstream forward, the way a reverse proxy
-  typically owns synthetic routes) — returns `{ "<local_path>": { "web_base_url": ..., "host_type": ... }, ... }` from the sidecar cache.
+  typically owns synthetic routes) — returns `{ "<repo_id>": { "web_base_url": ..., "host_type": ... }, ... }` from the sidecar cache. Keyed by `repo_id`, not `local_path`: the client-side
+  script joins against the DOM's own `/repos/{id}/overview` card links, not paths (see
+  `GitRemoteRegistry::to_remote_links_json`'s doc comment in `git_remote_registry/mod.rs`).
 - The injected script (extending the same `build_injection_script` mechanism already in
   `repowise_i18n_proxy.rs`, or a small sibling script block) `fetch()`s that endpoint once,
-  builds a `local_path → link` map in memory, and the same `MutationObserver`-driven pass that
+  builds an `id → link` map in memory, and the same `MutationObserver`-driven pass that
   already walks translated text nodes also rewrites repo-name elements (which presumably carry
   the path in a `data-*` attribute or are joinable via the same JSON the workspace API already
   returns to the page) into anchor tags.
@@ -429,7 +431,7 @@ one.
    one for linking purposes — `autoresearch` (owner `smallnest`, likely a fork) is a candidate
    worth spot-checking for a second remote before assuming `origin` is always right.
 
-## 9. Phased implementation plan (planning only — nothing below is implemented)
+## 9. Phased implementation plan (Phases 1-3 implemented; Phase 0 and Phase 4 remain open — see issue #191)
 
 **Phase 0 — confirm, don't build.** Resolve open questions #1 and #4 above (cheap, read-only
 checks) before writing any code, since both could change the keying/remote-selection decision.

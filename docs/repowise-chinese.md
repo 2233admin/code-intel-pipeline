@@ -4,17 +4,29 @@ Code Intel Pipeline 现在包含 Repowise UI 的中文翻译层。
 
 ## 快速开始
 
-启动 Repowise 并启用中文：
+中文翻译是由 `code-intel repowise-proxy` 反向代理完成的（实现见
+`crates/code-intel-cli/src/repowise_proxy_server.rs`），代理进程在**启动时**从自身
+的进程环境读取一次 `CODE_INTEL_LANG`，之后每个请求都复用这个值——**没有**按请求切
+换语言的查询参数，`repowise serve` 本身也没有 `--lang` 这个参数。
+
+1. 启动 Repowise 本体（监听其自己的端口；代理默认转发到 9000，端口不同请自行调整）：
 
 ```bash
-cd D:\projects\code-intel-pipeline
-repowise serve --lang zh
+repowise serve
 ```
 
-或通过浏览器查询参数：
+2. 另开一个终端，在启动代理**之前**设置 `CODE_INTEL_LANG=zh`，再启动
+   `code-intel repowise-proxy <上游端口> <代理端口>`（两个端口都可省略，默认分别是
+   9000 和 3000）：
 
+```bash
+CODE_INTEL_LANG=zh code-intel repowise-proxy 9000 3000
 ```
-http://localhost:3000?lang=zh
+
+3. 用浏览器访问**代理**监听的端口（不是 repowise 自己的端口）：
+
+```text
+http://localhost:3000
 ```
 
 ## 已翻译组件
@@ -72,7 +84,7 @@ let translated = proxy.translate_html("zh", &html);
 
 ## 扩展翻译
 
-编辑 `src/repowise_i18n_proxy.rs` 添加更多词汇：
+编辑 `crates/code-intel-cli/src/repowise_i18n_proxy.rs`（相对仓库根目录的路径）添加更多词汇：
 
 ```rust
 zh_cn.insert("New Feature".to_string(), "新功能".to_string());

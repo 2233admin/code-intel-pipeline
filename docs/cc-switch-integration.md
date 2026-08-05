@@ -22,11 +22,20 @@ If CC Switch requires authentication:
 export CODE_INTEL_CC_SWITCH_API_KEY=your-api-key
 ```
 
+**HTTPS is required whenever an API key is set.** An API key is a credential;
+sending it as a Bearer token over plain HTTP would put it on the wire in
+cleartext. If `CODE_INTEL_CC_SWITCH_API_KEY` is set but
+`CODE_INTEL_CC_SWITCH_ENDPOINT` does not start with `https://`, routing fails
+fast with a clear error *before any request is sent* -- this is not a network
+failure, it's a refusal to make the request at all. An `http://` endpoint with
+no API key configured (e.g. local dev) is still allowed, since there's no
+secret in flight.
+
 ### 3. CC Switch API Contract
 
 CC Switch must expose:
 
-```
+```text
 GET /api/channels
 ```
 
@@ -53,7 +62,7 @@ GET /api/channels
 
 ## Integration Flow
 
-```
+```text
 code-intel model route
   ↓
 load inventory (user-provided candidates)
@@ -105,9 +114,18 @@ The tool will:
 
 ## Error Handling
 
-- **CC Switch unreachable**: routing continues with user candidates; error logged
-- **Invalid response**: inventory validation fails with detailed error
-- **HTTP errors**: returned to caller with CC Switch status code
+CC Switch failures do **not** fall back to user candidates. Any failure while
+querying CC Switch -- unreachable endpoint, non-200 response, unparseable
+response, missing `channels` array, or the HTTPS/API-key guard above -- makes
+`merge_cc_switch_candidates` return an error, which propagates out of `route`.
+`run_raw` then exits with code `65` and prints the error to stderr; no result
+JSON is written. The upstream HTTP status code is included in that stderr
+message (e.g. `CC Switch returned status 503`) but is not a structured field
+in any returned JSON -- there is nothing for a caller to parse it out of.
+
+- **CC Switch unreachable / non-200 / bad response**: `route` returns `Err`, `run_raw` exits `65`
+- **`CODE_INTEL_CC_SWITCH_API_KEY` set with a non-`https://` endpoint**: rejected before any request is sent, `run_raw` exits `65`
+- **`CODE_INTEL_CC_SWITCH_ENDPOINT` unset**: CC Switch is skipped entirely; routing proceeds with only the user-provided candidates
 
 ## Security Notes
 

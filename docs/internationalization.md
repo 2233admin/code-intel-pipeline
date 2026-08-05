@@ -38,6 +38,9 @@ CODE_INTEL_LANG=zh code-intel doctor --repo /path/to/repo
 
 ## Messages Translated
 
+The following surface as additive `*Display` fields alongside their canonical,
+never-translated counterparts (see Output Examples below):
+
 - Status indicators: `ready`, `consent_required`, `deterministic_degraded`
 - Error categories: provider unavailable, model unavailable, config errors
 - Cost scopes: local compute, metered API, subscription
@@ -70,13 +73,36 @@ Some('s') => Language::Spanish,
 
 ## Output Examples
 
+`status`, `readinessState`, `failureCategory`, and `reason` are canonical v1
+protocol fields (`code-intel-model-routing-result.v1`) that `run_raw` and
+external callers match on verbatim -- they are **never** translated,
+regardless of `CODE_INTEL_LANG`. Localization instead lands in additive
+`statusDisplay` / `readinessStateDisplay` / `reasonDisplay` companion fields,
+so existing consumers reading the canonical fields are unaffected. In English
+(the default), every `*Display` field is simply equal to its canonical
+counterpart; only under `CODE_INTEL_LANG=zh` do the `*Display` fields diverge,
+and only for tokens that have a Chinese mapping (a token with no mapping falls
+back to the canonical, untranslated value even under `zh` -- see `reason` /
+`reasonDisplay` below, where `model_not_available` has no Chinese mapping yet).
+
 ### English (default)
 
 ```json
 {
-  "status": "ready",
-  "failureCategory": "provider_unavailable",
-  "reason": "Model unavailable"
+  "schema": "code-intel-model-routing-result.v1",
+  "status": "consent_required",
+  "statusDisplay": "consent_required",
+  "attempts": [
+    {
+      "candidateId": "local-llama",
+      "readinessState": "model_available",
+      "readinessStateDisplay": "model_available",
+      "eligible": false,
+      "failureCategory": "model_unavailable",
+      "reason": "model_not_available",
+      "reasonDisplay": "model_not_available"
+    }
+  ]
 }
 ```
 
@@ -84,11 +110,26 @@ Some('s') => Language::Spanish,
 
 ```json
 {
-  "status": "已就绪",
-  "failureCategory": "提供者不可用",
-  "reason": "模型不可用"
+  "schema": "code-intel-model-routing-result.v1",
+  "status": "consent_required",
+  "statusDisplay": "需要确认",
+  "attempts": [
+    {
+      "candidateId": "local-llama",
+      "readinessState": "model_available",
+      "readinessStateDisplay": "模型可用",
+      "eligible": false,
+      "failureCategory": "model_unavailable",
+      "reason": "model_not_available",
+      "reasonDisplay": "model_not_available"
+    }
+  ]
 }
 ```
+
+Note that `status`, `readinessState`, `failureCategory`, and `reason` are
+byte-identical between the two examples above -- only the `*Display` fields
+changed.
 
 ## Scope
 

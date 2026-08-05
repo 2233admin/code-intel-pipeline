@@ -307,10 +307,22 @@ pub fn resolve_remote(
         // Generic: still linkable to the repo root, using the transport's
         // own scheme/host/port -- see design doc §5.3 on what this can and
         // can't do (no per-file/line deep links without a known host type).
-        let scheme = if parsed.scheme == "ssh" || parsed.scheme.is_empty() {
-            "https".to_string()
-        } else {
-            parsed.scheme.clone()
+        //
+        // Scheme is deliberately NOT passed through verbatim: `parsed.scheme`
+        // comes from a `git remote get-url origin` string, which is
+        // attacker-influenceable (anyone who controls a `.git/config` in the
+        // indexed workspace controls this string). This value ends up as
+        // `link.href` on a real anchor element in the proxied page (see
+        // `build_remote_link_injection_script`) -- an unfiltered scheme like
+        // `javascript:` would be a stored-XSS vector the moment a user
+        // clicks the injected "open remote" link. Only `http`/`https` pass
+        // through; everything else (ssh, git, file, javascript, ...) maps to
+        // `https`, since the web UI a browser navigates to is https
+        // regardless of which transport `git` itself used.
+        let scheme = match parsed.scheme.as_str() {
+            "http" => "http".to_string(),
+            "https" => "https".to_string(),
+            _ => "https".to_string(),
         };
         let base = match &parsed.port {
             Some(port) => format!("{}://{}:{}", scheme, parsed.host, port),
@@ -464,6 +476,15 @@ impl GitRemoteRegistry {
         self.entries.insert(normalize_local_path(local_path), info);
     }
 
+    /// Writes via a temp-file-then-rename, not a direct `fs::write`: the
+    /// proxy's warm-up thread, `get_or_resolve`, and every
+    /// `/__code-intel/remote-links.json` request (`GitRemoteRegistry::load`)
+    /// all touch this same file, potentially concurrently. A direct write
+    /// lets a reader observe a partially-written file mid-save -- `load`
+    /// then fails to parse it and silently falls back to an empty registry,
+    /// and a save interrupted mid-write (process killed) would leave a
+    /// truncated file on disk. `rename` is atomic on both Windows and POSIX
+    /// filesystems, so readers only ever see a complete old or new version.
     pub fn save(&self) -> std::io::Result<()> {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
@@ -473,7 +494,17 @@ impl GitRemoteRegistry {
             obj.insert(k.clone(), v.to_json());
         }
         let bytes = serde_json::to_vec_pretty(&Value::Object(obj))?;
-        fs::write(&self.path, bytes)
+
+        let mut tmp_name = self
+            .path
+            .file_name()
+            .map(|n| n.to_os_string())
+            .unwrap_or_else(|| "registry.json".into());
+        tmp_name.push(format!(".tmp-{}", std::process::id()));
+        let tmp_path = self.path.with_file_name(tmp_name);
+
+        fs::write(&tmp_path, bytes)?;
+        fs::rename(&tmp_path, &self.path)
     }
 
     pub fn len(&self) -> usize {
@@ -614,6 +645,11 @@ pub fn build_remote_link_injection_script() -> String {
       var m = href && href.match(ID_RE);
       var info = m && map[m[1]];
       var desired = info && info.web_base_url;
+      // Second layer, redundant with the server-side scheme allowlist in
+      // resolve_remote: never assign an href whose scheme isn't http/https,
+      // so a payload that somehow bypassed the server check still can't
+      // become a clickable javascript: link here.
+      if (desired && !/^https?:\/\//i.test(desired)) desired = null;
       if (!desired) {{
         if (existing) existing.remove();
         return;

@@ -72,7 +72,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 fn main() {
     let raw: Vec<String> = env::args().skip(1).collect();
 
-    if raw.len() >= 2 && raw[0] == "repowise-proxy" {
+    if raw.first().is_some_and(|arg| arg == "repowise-proxy") {
         let upstream_port: u16 = raw.get(1).and_then(|s| s.parse().ok()).unwrap_or(9000);
         let proxy_port: u16 = raw.get(2).and_then(|s| s.parse().ok()).unwrap_or(3000);
         let lang = env::var("CODE_INTEL_LANG").unwrap_or_else(|_| "en".to_string());

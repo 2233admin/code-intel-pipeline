@@ -72,26 +72,67 @@ impl RepowiseI18nProxy {
         out
     }
 
+    /// Object keys that hold user/repo-identifying data rather than our own
+    /// UI chrome text: never translate the value under one of these, even
+    /// if it happens to match a dictionary entry verbatim. Without this, a
+    /// real repo literally named e.g. "Dashboard" or "Sync" -- an ordinary
+    /// English word, not implausible -- would render mistranslated in the
+    /// UI, since the dictionary matches on value content only. This isn't a
+    /// full per-endpoint schema allowlist (repowise's API surface isn't
+    /// small enough to enumerate every field safely here), but it covers
+    /// the concrete, named failure mode: identifier-shaped keys.
+    const IDENTIFIER_KEYS: &'static [&'static str] = &[
+        "name",
+        "id",
+        "repo_id",
+        "local_path",
+        "path",
+        "repo",
+        "alias",
+        "workspace_alias",
+        "owner",
+        "url",
+        "web_base_url",
+        "remote_url_normalized",
+        "branch",
+        "default_branch",
+        "head_commit",
+    ];
+
     /// Mutates in place instead of rebuilding the tree node-by-node: the
     /// workspace API returns hundreds of repo entries per response, and a
     /// clone-and-rebuild walk was allocating a fresh Value for every array
     /// and object on every request even though almost none of that content
     /// (repo names, paths) is ever in the translation table.
     fn translate_in_place(value: &mut Value, translations: &HashMap<String, String>) {
+        Self::translate_in_place_inner(value, translations, false);
+    }
+
+    fn translate_in_place_inner(
+        value: &mut Value,
+        translations: &HashMap<String, String>,
+        is_identifier_field: bool,
+    ) {
         match value {
             Value::String(s) => {
+                if is_identifier_field {
+                    return;
+                }
                 if let Some(translated) = translations.get(s.as_str()) {
                     *s = translated.clone();
                 }
             }
             Value::Object(obj) => {
-                for (_, v) in obj.iter_mut() {
-                    Self::translate_in_place(v, translations);
+                for (k, v) in obj.iter_mut() {
+                    let is_identifier = Self::IDENTIFIER_KEYS.contains(&k.as_str());
+                    Self::translate_in_place_inner(v, translations, is_identifier);
                 }
             }
             Value::Array(arr) => {
                 for v in arr.iter_mut() {
-                    Self::translate_in_place(v, translations);
+                    // Array elements inherit the parent field's identifier-
+                    // ness (e.g. an array of path strings under "paths").
+                    Self::translate_in_place_inner(v, translations, is_identifier_field);
                 }
             }
             _ => {}
@@ -234,15 +275,55 @@ mod tests {
         let input = json!({
             "title": "Dashboard",
             "items": [
-                {"name": "Overview"},
-                {"name": "System Map"}
+                {"label": "Overview"},
+                {"label": "System Map"}
             ]
         });
 
         let output = proxy.translate_response("zh", &input);
         assert_eq!(output["title"], "仪表盘");
-        assert_eq!(output["items"][0]["name"], "概览");
-        assert_eq!(output["items"][1]["name"], "系统地图");
+        assert_eq!(output["items"][0]["label"], "概览");
+        assert_eq!(output["items"][1]["label"], "系统地图");
+    }
+
+    #[test]
+    fn identifier_fields_are_never_translated() {
+        // The concrete bug this guards: repowise's real /api/repos response
+        // has a "name" field holding the repo's actual name -- an ordinary
+        // English word like "Dashboard" or "Sync" there must render as-is,
+        // not get swapped for UI chrome text that happens to share the
+        // string.
+        let proxy = RepowiseI18nProxy::new();
+        let input = json!({
+            "name": "Dashboard",
+            "local_path": "D:\\projects\\Sync",
+            "owner": "Workspace",
+            "title": "Dashboard"
+        });
+
+        let output = proxy.translate_response("zh", &input);
+        assert_eq!(output["name"], "Dashboard");
+        assert_eq!(output["local_path"], "D:\\projects\\Sync");
+        assert_eq!(output["owner"], "Workspace");
+        // Same string value, non-identifier key -- still translated.
+        assert_eq!(output["title"], "仪表盘");
+    }
+
+    #[test]
+    fn identifier_status_propagates_into_nested_arrays() {
+        // An array of repo objects under a "repos" key: each element's own
+        // "name" field must stay protected, since the parent array key
+        // itself isn't an identifier field but the elements' fields are.
+        let proxy = RepowiseI18nProxy::new();
+        let input = json!({
+            "repos": [
+                {"name": "Dashboard", "label": "Overview"}
+            ]
+        });
+
+        let output = proxy.translate_response("zh", &input);
+        assert_eq!(output["repos"][0]["name"], "Dashboard");
+        assert_eq!(output["repos"][0]["label"], "概览");
     }
 
     #[test]
