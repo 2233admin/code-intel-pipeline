@@ -3,9 +3,20 @@ name: code-intel-pr-gate
 # Minimal viable machine risk gate for issue #95: the repo auto-merges PRs on
 # green with no risk gating today. This scores every PR with our own
 # `change risk` subcommand (git-only, no index, no network, no LLM — see
-# crates/code-intel-cli/src/change_risk.rs) and fails the job when the score
-# lands in the top percentile of recent history, unless a human has already
+# crates/code-intel-cli/src/change_risk.rs) and fails the job when the
+# absolute score crosses a fixed threshold, unless a human has already
 # accepted the risk via label.
+#
+# The gate judged `risk_percentile` until issue #201. A percentile is a rank
+# against a rolling sample of recent commits, which gave it two properties a
+# gate must not have. It drifted: PR #195 went 82nd -> 92nd percentile on a
+# score change of 67 -> 68, so what turned it red was its neighbours getting
+# smaller, not the change getting riskier. And its failure rate was fixed by
+# construction: ~10% of commits sit at or above the 90th percentile no matter
+# how healthy the repository becomes, so the gate was a quota nobody could
+# pass by improving. `change_risk/mod.rs` already treats a mechanically
+# inflated percentile as a defect (see the sample-exclusion comment there);
+# a moving denominator is the same defect from another source.
 #
 # Toolchain/cache/action choices are mirrored from ci.yml on purpose: ci.yml
 # has no dependency-cache action (just `rustup toolchain install` reading
@@ -34,10 +45,25 @@ permissions:
   pull-requests: write
 
 env:
-  # Gate threshold for `risk_percentile`. A PR at or above this, compared
-  # against the sampled baseline, fails the job unless it carries the
-  # `risk-accepted` label.
-  RISK_PERCENTILE_BLOCK: "90"
+  # Gate threshold for the absolute `score` (0-100). A PR at or above this
+  # fails the job unless it carries the `risk-accepted` label.
+  #
+  # 80 is read off the measured distribution, not chosen to let anything
+  # through. Scoring the last 60 non-merge commits on main one at a time
+  # (`change risk <sha>^..<sha>`) gives:
+  #
+  #   n=60  min 11 | p50 57 | p75 66 | p80 67 | p90 68 | p95 69 | max 93
+  #   top 8: 93  90  69  68  68  68  68  67
+  #
+  # 66-69 is a dense cluster and 69..90 is empty. Any threshold in 70..89
+  # blocks exactly the same two genuine outliers (93, 90) and passes the
+  # cluster, so 80 sits mid-gap with room on both sides. Inside the cluster
+  # a rank is decided by ties — four merged commits scored exactly 68 —
+  # which is precisely what made the percentile gate flip on noise.
+  #
+  # Re-derive before changing this number, and never tune it to unblock a
+  # pull request in flight (#201 exit criteria).
+  RISK_SCORE_BLOCK: "80"
 
 jobs:
   change-risk:
@@ -110,7 +136,7 @@ jobs:
             echo "- Bug-magnet: $(jq -r '.signals.bugMagnet.totalFixCommits' risk.json) fix commit(s) in touched files (180d)"
             echo "- Churn: $(jq -r '.signals.churn.totalCommits' risk.json) commit(s) touching these files (90d)"
             echo ""
-            echo "<sub>revspec: \`$(jq -r '.revspec' risk.json)\` · threshold: percentile >= ${RISK_PERCENTILE_BLOCK} blocks unless labeled \`risk-accepted\` · \`code-intel change risk\`</sub>"
+            echo "<sub>revspec: \`$(jq -r '.revspec' risk.json)\` · threshold: score >= ${RISK_SCORE_BLOCK} blocks unless labeled \`risk-accepted\`; percentile is reported, not gated (#201) · \`code-intel change risk\`</sub>"
           } > comment-body.md
 
       - name: Post or update sticky comment
@@ -141,30 +167,35 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           # Mirror the warning check in "Render sticky PR comment": a
-          # warning report (e.g. an empty diff) has no meaningful score to
-          # gate on. Handle it explicitly and exit before the numeric `-ge`
-          # comparison below, rather than relying on `risk_percentile`
-          # happening to be a gate-safe value in that case.
+          # warning report (e.g. an empty diff) carries no score to gate on.
+          # Handle it explicitly and exit before the comparison below, rather
+          # than relying on the absent field comparing as a gate-safe value.
           if [ "$(jq -r 'has("warning")' risk.json)" = "true" ]; then
-            echo "percentile=n/a" >> "$GITHUB_OUTPUT"
+            echo "score=n/a" >> "$GITHUB_OUTPUT"
             echo "blocked=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          PERCENTILE=$(jq -r '.risk_percentile' risk.json)
+          SCORE=$(jq -r '.score' risk.json)
           ACCEPTED=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json labels \
             --jq '[.labels[].name] | any(. == "risk-accepted")')
+          # Compared in jq, not with shell `-ge`: `score` is a JSON number and
+          # `round2` can emit a fraction, which `[ ... -ge ... ]` rejects
+          # outright ("integer expression expected") — and with `bash -e` that
+          # would abort the job rather than block or pass, turning a gate into
+          # an outage the first time a score is not whole.
+          OVER=$(jq --argjson threshold "$RISK_SCORE_BLOCK" '.score >= $threshold' risk.json)
           BLOCKED="false"
-          if [ "$PERCENTILE" -ge "$RISK_PERCENTILE_BLOCK" ] && [ "$ACCEPTED" != "true" ]; then
+          if [ "$OVER" = "true" ] && [ "$ACCEPTED" != "true" ]; then
             BLOCKED="true"
           fi
-          echo "percentile=$PERCENTILE" >> "$GITHUB_OUTPUT"
+          echo "score=$SCORE" >> "$GITHUB_OUTPUT"
           echo "blocked=$BLOCKED" >> "$GITHUB_OUTPUT"
 
       - name: Enforce gate
         if: steps.gate.outputs.blocked == 'true'
         run: |
-          echo "::error::change risk percentile ${{ steps.gate.outputs.percentile }} is at or above the ${RISK_PERCENTILE_BLOCK} threshold, and this PR does not carry the 'risk-accepted' label."
+          echo "::error::change risk score ${{ steps.gate.outputs.score }} is at or above the ${RISK_SCORE_BLOCK} threshold, and this PR does not carry the 'risk-accepted' label."
           exit 1
 
   agent-gate:
