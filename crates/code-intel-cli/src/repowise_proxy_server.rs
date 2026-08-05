@@ -247,6 +247,18 @@ fn handle_request(
     }
 }
 
+/// Builds a `Content-Type` header from an upstream-supplied value, falling
+/// back to a safe default instead of panicking when the upstream sends
+/// bytes `tiny_http::Header` rejects (non-ASCII, stray control chars).
+fn content_type_header(content_type: &str) -> tiny_http::Header {
+    tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap_or_else(
+        |_| {
+            tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/octet-stream"[..])
+                .expect("static content-type header is valid")
+        },
+    )
+}
+
 /// Relays one upstream `ureq::Response` back through `tiny_http`, applying
 /// the i18n/remote-link translation passes for text bodies along the way.
 /// Shared between the success path and the `Error::Status` path in
@@ -299,10 +311,7 @@ fn forward_response(
 
         let mut resp = Response::from_string(translated_body)
             .with_status_code(status)
-            .with_header(
-                tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes())
-                    .unwrap(),
-            );
+            .with_header(content_type_header(&content_type));
         for header in extra_headers {
             resp = resp.with_header(header);
         }
@@ -312,10 +321,7 @@ fn forward_response(
         let _ = response.into_reader().read_to_end(&mut bytes);
         let mut resp = Response::from_data(bytes)
             .with_status_code(status)
-            .with_header(
-                tiny_http::Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes())
-                    .unwrap(),
-            );
+            .with_header(content_type_header(&content_type));
         for header in extra_headers {
             resp = resp.with_header(header);
         }
