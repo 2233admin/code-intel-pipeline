@@ -1,3 +1,4 @@
+mod common;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -160,7 +161,7 @@ fn keys(value: &Value) -> BTreeSet<&str> {
 fn route(root: &Path, native: &Value) -> (i32, Value, String) {
     let request = root.join("native.json");
     fs::write(&request, serde_json::to_vec(native).unwrap()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args([
             "provider",
             "graph-adapt",
@@ -406,7 +407,7 @@ fn public_route_accepts_current_and_rejects_wrong_head_without_secret_or_fact() 
 
 #[test]
 fn public_route_usage_registry_facade_and_schemas_are_real() {
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["provider", "graph-adapt"])
         .output()
         .unwrap();
@@ -417,7 +418,7 @@ fn public_route_usage_registry_facade_and_schemas_are_real() {
     // resolves whatever `CODE_INTEL_HOME` points at, which on a developer
     // machine is usually a different checkout than the one being tested —
     // the assertion below would then be about someone else's tree.
-    let validation = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let validation = common::cli()
         .args(["provider", "--action", "Validate", "--json"])
         .env(
             "CODE_INTEL_INTEGRATIONS_MANIFEST",

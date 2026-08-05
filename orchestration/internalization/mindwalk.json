@@ -43,7 +43,7 @@
     "conformanceEvidence": {
       "evidenceIds": [
         "local:mindwalk:adapter-source-sha256:fff59db3f54abee633b7174704c912c9bccf06c83afae1272e6bb1159eff1cb6",
-        "local:mindwalk:adapter-tests-sha256:f6d3e4eb4e3b23208017b2591e73eee9adf2f7abcc5721b23e50d57a72875977",
+        "local:mindwalk:adapter-tests-sha256:e22021400f4dc468231a4ede76e68dbc189eb85e0580f3d86ddf96d99acec53e",
         "local:mindwalk:production-smoke-sha256:33c3c0c28e3c6b7d06ff53043606641c38c3a4890edcd3f2c7bddfc0f737aa45"
       ],
       "checkedAt": 1784748981,
@@ -66,7 +66,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/session_evidence.rs",
-        "sha256": "f6d3e4eb4e3b23208017b2591e73eee9adf2f7abcc5721b23e50d57a72875977",
+        "sha256": "e22021400f4dc468231a4ede76e68dbc189eb85e0580f3d86ddf96d99acec53e",
         "testName": "normalizes_private_trace_and_joins_structural_evidence"
       }
     }

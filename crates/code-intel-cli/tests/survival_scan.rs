@@ -1,7 +1,7 @@
+mod common;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -196,7 +196,7 @@ fn production_cli_registry_facade_schema_and_docs_are_closed() {
         serde_json::to_vec(&request(&root.0)).unwrap(),
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args([
             "repository",
             "survival-scan",

@@ -1,3 +1,4 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -18,7 +19,7 @@ fn fixtures() -> PathBuf {
 }
 
 fn run(request: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    common::cli()
         .args([
             "provider",
             "repowise-adapt",
@@ -165,7 +166,7 @@ fn registry_declares_the_exact_public_route() {
         "target/debug/code-intel.exe provider repowise-adapt --request <native.json|-> --artifact-root <artifact-directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>"
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args([
             "route",
             "--action",

@@ -1,3 +1,4 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -122,7 +123,7 @@ fn dsm_inventory_ignores_external_ripgrep_configuration() {
     fixture.write("work/generated.rs", "fn generated() {}\n");
     fixture.write("ripgrep.conf", "--no-ignore\n");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["sentrux", "dsm"])
         .arg(&fixture.root)
         .env("RIPGREP_CONFIG_PATH", fixture.root.join("ripgrep.conf"))
