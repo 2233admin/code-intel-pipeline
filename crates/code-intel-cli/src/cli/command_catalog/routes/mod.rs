@@ -6,6 +6,7 @@ use super::{matches_primary_pattern, CompatibilityRoute, LegacyRouteId};
 use crate::cli::help_contract::{HELP_ALIASES, HELP_COMMAND};
 
 mod edit_routes;
+mod repowise_routes;
 mod run_routes;
 mod types;
 
@@ -508,6 +509,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             "retire only after a typed administration replacement preserves literal repinning"
         ),
     },
+    CommandRoute::Raw(repowise_routes::HOOKS),
     raw_route! {
         command: "evidence",
         subcommand: None,

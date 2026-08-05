@@ -1139,6 +1139,7 @@ Commands:
   model route --request <routing-request.json> [--out <routing-result.json>]
   snapshot identity --repo <root> --working-tree-policy <head_only|explicit_overlay> [--scope <relative-path>]...
   repin [--repo <root>] [--write] [--json] [--exclude <path-prefix>]...
+  repowise-hooks [--repo <root>] [--write] (detects/installs the optional repowise post-commit and distill-rewrite hooks; no-op if repowise is not on PATH)
   evidence validate --request <request.json> --artifact-root <directory>
   repository survival-scan --request <request.json|-> --artifact-root <directory>
   audit --operation validate|render --repo <root> --report <report.json> [--format markdown|html]
