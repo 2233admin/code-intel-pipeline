@@ -101,15 +101,24 @@ impl RemoteInfo {
         obj.insert("host_type".into(), json!(self.host_type.as_str()));
         obj.insert(
             "host".into(),
-            self.host.as_deref().map(|s| json!(s)).unwrap_or(Value::Null),
+            self.host
+                .as_deref()
+                .map(|s| json!(s))
+                .unwrap_or(Value::Null),
         );
         obj.insert(
             "owner".into(),
-            self.owner.as_deref().map(|s| json!(s)).unwrap_or(Value::Null),
+            self.owner
+                .as_deref()
+                .map(|s| json!(s))
+                .unwrap_or(Value::Null),
         );
         obj.insert(
             "repo".into(),
-            self.repo.as_deref().map(|s| json!(s)).unwrap_or(Value::Null),
+            self.repo
+                .as_deref()
+                .map(|s| json!(s))
+                .unwrap_or(Value::Null),
         );
         obj.insert(
             "web_base_url".into(),
@@ -128,7 +137,10 @@ impl RemoteInfo {
         );
         obj.insert(
             "repo_id".into(),
-            self.repo_id.as_deref().map(|s| json!(s)).unwrap_or(Value::Null),
+            self.repo_id
+                .as_deref()
+                .map(|s| json!(s))
+                .unwrap_or(Value::Null),
         );
         Value::Object(obj)
     }
@@ -281,8 +293,14 @@ pub fn resolve_remote(
         (HostType::Github, "https://github.com".to_string())
     } else if parsed.host == "gitlab.com" {
         (HostType::Gitlab, "https://gitlab.com".to_string())
-    } else if let Some(over) = overrides.get(&host_key).or_else(|| overrides.get(&parsed.host)) {
-        (over.host_type, over.web_base_url.trim_end_matches('/').to_string())
+    } else if let Some(over) = overrides
+        .get(&host_key)
+        .or_else(|| overrides.get(&parsed.host))
+    {
+        (
+            over.host_type,
+            over.web_base_url.trim_end_matches('/').to_string(),
+        )
     } else if parsed.host.is_empty() {
         return RemoteInfo::none();
     } else {
@@ -472,8 +490,7 @@ impl GitRemoteRegistry {
     pub fn to_remote_links_json(&self) -> Value {
         let mut obj = Map::new();
         for info in self.entries.values() {
-            let (Some(repo_id), Some(link)) = (info.repo_id.as_deref(), info.to_link_json())
-            else {
+            let (Some(repo_id), Some(link)) = (info.repo_id.as_deref(), info.to_link_json()) else {
                 continue;
             };
             obj.insert(repo_id.to_string(), link);
@@ -549,7 +566,10 @@ pub fn warm_up_from_upstream(
             if let Some(local_path) = repo.get("local_path").and_then(|v| v.as_str()) {
                 let raw = git_remote_origin(local_path);
                 let mut info = resolve_remote(raw.as_deref(), overrides);
-                info.repo_id = repo.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                info.repo_id = repo
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
                 results.push((local_path.to_string(), info));
             }
         }
@@ -690,7 +710,8 @@ mod tests {
 
     #[test]
     fn gitea_custom_port_with_embedded_credentials_is_stripped() {
-        let raw = "https://someuser:ghp_faketokenvaluexxxx@git.xart.top:8418/owner/katana-kernel.git";
+        let raw =
+            "https://someuser:ghp_faketokenvaluexxxx@git.xart.top:8418/owner/katana-kernel.git";
         let info = resolve_remote(Some(raw), &overrides_with_gitea());
         assert!(info.has_credentials_stripped);
         assert_eq!(info.host_type, HostType::Gitea);

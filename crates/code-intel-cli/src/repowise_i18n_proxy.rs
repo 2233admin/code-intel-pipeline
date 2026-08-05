@@ -27,7 +27,10 @@ impl RepowiseI18nProxy {
         zh_cn.insert("Pages".to_string(), "页面".to_string());
         zh_cn.insert("Sync".to_string(), "同步".to_string());
         zh_cn.insert("Add Repository".to_string(), "添加仓库".to_string());
-        zh_cn.insert("Help us improve Repowise".to_string(), "帮助我们改进 Repowise".to_string());
+        zh_cn.insert(
+            "Help us improve Repowise".to_string(),
+            "帮助我们改进 Repowise".to_string(),
+        );
         zh_cn.insert("Light".to_string(), "浅色".to_string());
         zh_cn.insert("Dark".to_string(), "深色".to_string());
         zh_cn.insert("Theme preference".to_string(), "主题偏好".to_string());
@@ -35,7 +38,10 @@ impl RepowiseI18nProxy {
         zh_cn.insert("docs skipped".to_string(), "文档跳过".to_string());
         zh_cn.insert("Needs attention".to_string(), "需要关注".to_string());
         zh_cn.insert("Cross-Repo Graph".to_string(), "跨仓库图".to_string());
-        zh_cn.insert("Cross-Repo Intelligence".to_string(), "跨仓库智能".to_string());
+        zh_cn.insert(
+            "Cross-Repo Intelligence".to_string(),
+            "跨仓库智能".to_string(),
+        );
         zh_cn.insert("Workspace Overview".to_string(), "工作区概览".to_string());
         zh_cn.insert("CO-CHANGE PAIRS".to_string(), "共变对".to_string());
         zh_cn.insert("PACKAGE DEPS".to_string(), "包依赖".to_string());

@@ -118,8 +118,8 @@ fn handle_request(
     match ureq::get(&upstream_uri).call() {
         Ok(response) => {
             let content_type = response.content_type().to_string();
-            let is_text = content_type.contains("application/json")
-                || content_type.contains("text/html");
+            let is_text =
+                content_type.contains("application/json") || content_type.contains("text/html");
 
             if is_text {
                 let mut body = String::new();

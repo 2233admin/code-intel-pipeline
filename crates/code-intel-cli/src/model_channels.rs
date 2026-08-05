@@ -3,8 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use serde_json::{json, Map, Value};
 use crate::i18n::{Language, Messages};
+use serde_json::{json, Map, Value};
 
 const FAILURE_CATEGORIES: [&str; 9] = [
     "consent_required",
@@ -254,16 +254,20 @@ fn merge_cc_switch_candidates(inventory: &mut Value) -> Result<(), String> {
         req = req.set("Authorization", &format!("Bearer {}", key));
     }
 
-    let response = req.call().map_err(|e| format!("CC Switch request failed: {}", e))?;
+    let response = req
+        .call()
+        .map_err(|e| format!("CC Switch request failed: {}", e))?;
 
     if response.status() != 200 {
         return Err(format!("CC Switch returned status {}", response.status()));
     }
 
-    let cc_data: Value = response.into_json()
+    let cc_data: Value = response
+        .into_json()
         .map_err(|e| format!("CC Switch response parse failed: {}", e))?;
 
-    let channels = cc_data.get("channels")
+    let channels = cc_data
+        .get("channels")
         .and_then(Value::as_array)
         .ok_or("CC Switch response missing 'channels' array")?;
 
