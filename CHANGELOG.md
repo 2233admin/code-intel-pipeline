@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`code-intel serve --mcp`：agent 原生查询面上线，管线在写码中途终于能被问一句话**（#54、#58 提案 3）。stdio MCP server，六个工具：`get_gate_verdict`（权威 run 的门禁结论 + 第一条失败规则 + 最小重跑命令）、`get_facts`（按 artifact type/schema/子串查已验证事实）、`get_evidence`（一条 finding 的证据链：产物、sha256、记录时的 snapshot；查不到明说 `unbacked`，不装真）、`get_audit_status`（各科室结论；没跑过 audit 明说 `unavailable`，不装绿）、`get_change_impact`（默认 stale-advisory——CLI 在这里 fail-closed 正是管线写码时隐形的原因，#58 定为 critical）、`plan_structural_edit`（ast-grep 预览，`repositoryMutation=false`）。**只读，不裁决**：门禁判定照旧只走 CLI 与 CI，查询面被 prompt injection 说服也改不了结论；唯一会执行东西的 `plan_structural_edit` 在跑之前拿注册表核对自己的 capability 声明，一旦出现 `repo_mutation` 直接拒绝（有测试为证）。路径参数复用 `change_impact` / `evidence_query` 的既有请求类型，JSON 进来的路径和 `--changed` 打进来的走同一道越界闸。工具拒答走 `isError` 结果而不是 JSON-RPC error——"还没跑过 run"是答案，不是传输故障。仓库 `.mcp.json` 已注册；README 与 SKILL.md 改为主推查询面，全量扫描降为深检模式。
+
 - **`code-intel edit apply` + `edit.span-apply` 能力：span 寻址补丁，终结"改一个字重写整行"**（#96 item 1、charter gate G4 #139）。`--span <startLine:startColumn-endLine:endColumn> --expect-sha256 <该 span 当前字节的 sha256> --replacement <text>`，行列 1-based、结束列开区间；同一文件可带多个互不重叠的 span，全部对改动前字节定位、写临时同级文件后 rename，整文件原子替换。写之前逐 span 比对 digest：不一致即拒绝（退出码 10、`applied:false`），产物给出 `expectedSha256` / `foundSha256` / 有界原文，且信封 `observedEffects` 不含 `repo_mutation`——"没写"是机器可校验的，不是自报的。写路径全程走既有 capability envelope（`edit.span-apply.compat`，`allowedEffects` 含 `repo_mutation`），能力自身在动手前先检查请求的 effectPolicy，把事后审计变成事前门。不含 ast-grep 接线（下一档）。
 
 ### Fixed

@@ -55,6 +55,39 @@ pub(crate) struct ChangeImpactRequest {
     changed: Vec<String>,
 }
 
+impl ChangeImpactRequest {
+    /// Build a request from already-typed values instead of argv.
+    ///
+    /// `changed` goes through the same `normalize_relative` guard the
+    /// `--changed` flag uses, so a path arriving as a JSON string over the MCP
+    /// surface cannot escape the repository by a route the flag parser closes.
+    /// Reusing the guard is the point; re-stating it here would be the bug.
+    pub(crate) fn new(
+        artifact_root: PathBuf,
+        repo: String,
+        repo_path: PathBuf,
+        changed: Vec<String>,
+    ) -> Result<Self, ImpactError> {
+        let mut changed = changed
+            .iter()
+            .map(|path| normalize_relative(path))
+            .collect::<Result<Vec<_>, _>>()?;
+        changed.sort();
+        changed.dedup();
+        if changed.is_empty() {
+            return Err(ImpactError::Contract(
+                "at least one changed path is required".into(),
+            ));
+        }
+        Ok(Self {
+            artifact_root,
+            repo,
+            repo_path,
+            changed,
+        })
+    }
+}
+
 impl ChangeImpactInvocation {
     pub(crate) fn parse(raw: &[String]) -> Result<Self, ImpactError> {
         if raw.first().map(String::as_str) != Some("impact") {

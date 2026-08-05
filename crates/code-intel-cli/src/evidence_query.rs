@@ -43,6 +43,38 @@ pub(crate) struct EvidenceQueryRequest {
 }
 
 impl EvidenceQueryRequest {
+    /// Build a request from already-typed values instead of argv.
+    ///
+    /// The MCP query surface receives its filters as JSON, not as flags, but
+    /// must not therefore get a laxer request: the limit bound checked here is
+    /// the same `1..=MAX_LIMIT` the flag parser enforces, read from the same
+    /// constant. A second copy of that range is how the two surfaces would
+    /// drift.
+    pub(crate) fn new(
+        artifact_root: PathBuf,
+        repo: String,
+        repo_path: Option<PathBuf>,
+        artifact_schema: Option<String>,
+        artifact_type: Option<String>,
+        contains: Option<String>,
+        limit: usize,
+    ) -> Result<Self, QueryError> {
+        if !(1..=MAX_LIMIT).contains(&limit) {
+            return Err(QueryError::Contract(
+                "limit must be an integer in 1..=100".into(),
+            ));
+        }
+        Ok(Self {
+            artifact_root,
+            repo,
+            repo_path,
+            artifact_schema,
+            artifact_type,
+            contains,
+            limit,
+        })
+    }
+
     pub(crate) fn parse(raw: &[String]) -> Result<Self, QueryError> {
         if raw.first().map(String::as_str) != Some("query") {
             return Err(QueryError::Contract("usage: artifact query --artifact-root <root> --repo <name> [--repo-path <path>] [--artifact-schema <schema>] [--type <artifact-type>] [--contains <text>] [--limit <1..100>]".into()));

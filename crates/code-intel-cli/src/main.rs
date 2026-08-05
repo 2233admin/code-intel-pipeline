@@ -37,6 +37,7 @@ mod hardened_git;
 mod hospital_score;
 mod impact_graph;
 mod language_pref;
+mod mcp_serve;
 mod method_catalog;
 mod model_channels;
 mod orchestration;
