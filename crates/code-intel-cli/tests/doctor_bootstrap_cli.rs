@@ -88,6 +88,45 @@ fn emits_one_observation_only_document_the_adapter_contract_accepts() {
 }
 
 #[test]
+fn invocation_identity_is_cli_layer_unique_and_echoes_the_nonce() {
+    let repo = temp_dir("identity");
+    fs::write(repo.join("README.md"), "fixture\n").unwrap();
+    let args = [
+        "--repo-path",
+        repo.to_str().unwrap(),
+        "--no-require-repowise",
+        "--json",
+        "--nonce",
+        "night-7",
+    ];
+    let (first_code, first, first_stderr) = doctor(&args);
+    let (_, second, _) = doctor(&args);
+
+    // Doctor's identity rides inside the observation, unlike the verdict
+    // commands' stderr echo (#197) — stderr stays clean for envelope readers.
+    assert!(first_stderr.is_empty(), "{first_stderr}");
+    assert!(
+        matches!(first_code, 0 | 1),
+        "unexpected exit code {first_code}"
+    );
+    assert_eq!(first["invocationIdentity"]["nonce"], json!("night-7"));
+    let first_id = first["invocationIdentity"]["id"].as_str().expect("id");
+    let second_id = second["invocationIdentity"]["id"].as_str().expect("id");
+    assert!(!first_id.is_empty());
+    // Byte-identical argv, distinct identity: a replayed capture repeats the
+    // id, a live rerun cannot.
+    assert_ne!(first_id, second_id);
+    fs::remove_dir_all(repo).ok();
+}
+
+#[test]
+fn nonce_without_a_value_fails_closed() {
+    let (code, _, stderr) = doctor(&["--json", "--nonce"]);
+    assert_eq!(code, 65);
+    assert!(stderr.contains("--nonce requires a value"), "{stderr}");
+}
+
+#[test]
 fn exit_code_tracks_ok_so_ci_gates_on_it() {
     let root = temp_dir("absent");
     let missing_repo = root.join("not-here");

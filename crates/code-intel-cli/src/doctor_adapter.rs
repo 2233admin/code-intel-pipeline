@@ -471,6 +471,7 @@ mod tests {
             "crates/code-intel-cli/src/doctor_adapter.rs",
             "crates/code-intel-cli/src/doctor_bootstrap/mod.rs",
             "crates/code-intel-cli/src/doctor_bootstrap/config.rs",
+            "crates/code-intel-cli/src/doctor_bootstrap/identity.rs",
             "crates/code-intel-cli/src/doctor_bootstrap/paths.rs",
             "crates/code-intel-cli/src/doctor_bootstrap/probe.rs",
             "crates/code-intel-cli/src/capability_inventory.rs",
