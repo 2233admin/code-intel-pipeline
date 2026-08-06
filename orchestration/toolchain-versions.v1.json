@@ -1,6 +1,6 @@
 {
   "schema": "code-intel-toolchain-versions.v1",
-  "note": "Single source for the consistency self-check: does this machine run the versions this repository declares? Every entry's `version` is asserted against its real declaration sites by tests/toolchain_versions.rs, so this file cannot silently drift from them. Upstream freshness (is the declared version behind what the ecosystem publishes?) is deliberately NOT modelled here — pinning is a supply-chain control (supply-chain-001/003) and reproducibility control (rust-toolchain.toml), and conflating the two would turn a pin into an auto-upgrade.",
+  "note": "Single source for the consistency self-check: does this machine run the versions this repository declares? Every entry's `version` is asserted against its real declaration sites by tests/toolchain_versions.rs, so this file cannot silently drift from them. Runtime provider pins track the latest reviewed upstream release while remaining exact for supply-chain and reproducibility control; a new upstream release requires an explicit reviewed pin update rather than an unreviewed install-time auto-upgrade.",
   "tools": [
     {
       "name": "rust-toolchain",
@@ -75,10 +75,10 @@
     },
     {
       "name": "repowise",
-      "version": "0.36.0",
+      "version": "0.38.0",
       "scope": "runtime",
       "required": true,
-      "rationale": "Semantic index provider. Pinned so --upgrade cannot pull an unreviewed release onto the machine (supply-chain-003).",
+      "rationale": "Semantic index provider. Track the latest reviewed PyPI release, but pin it exactly so --upgrade cannot pull an unreviewed release onto the machine (supply-chain-003).",
       "declaredIn": [
         {
           "file": "legacy/install-code-intel-pipeline.ps1",
