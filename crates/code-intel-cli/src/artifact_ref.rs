@@ -259,15 +259,14 @@ fn diagnosis_family_contract(schema: &str, artifact_type: &str) -> Option<Artifa
             max_bytes: 8 * 1024 * 1024,
             validate_payload: validate_doctor_observation,
         }),
-        (
-            "code-intel-repository-survival-scan-result.v1",
-            "repository.survival-scan",
-        ) => Some(ArtifactContract {
-            artifact_schema: "code-intel-repository-survival-scan-result.v1",
-            artifact_type: "repository.survival-scan",
-            max_bytes: 8 * 1024 * 1024,
-            validate_payload: validate_survival_scan,
-        }),
+        ("code-intel-repository-survival-scan-result.v1", "repository.survival-scan") => {
+            Some(ArtifactContract {
+                artifact_schema: "code-intel-repository-survival-scan-result.v1",
+                artifact_type: "repository.survival-scan",
+                max_bytes: 8 * 1024 * 1024,
+                validate_payload: validate_survival_scan,
+            })
+        }
         ("code-intel-evidence-admissibility-result.v1", "evidence.admission") => {
             Some(ArtifactContract {
                 artifact_schema: "code-intel-evidence-admissibility-result.v1",
@@ -282,15 +281,14 @@ fn diagnosis_family_contract(schema: &str, artifact_type: &str) -> Option<Artifa
             max_bytes: 64 * 1024 * 1024,
             validate_payload: validate_evidence_payload,
         }),
-        (
-            "code-intel-sentrux-command-observation.v1",
-            "provider.sentrux.command-observation",
-        ) => Some(ArtifactContract {
-            artifact_schema: "code-intel-sentrux-command-observation.v1",
-            artifact_type: "provider.sentrux.command-observation",
-            max_bytes: 2 * 1024 * 1024,
-            validate_payload: validate_sentrux_command_observation,
-        }),
+        ("code-intel-sentrux-command-observation.v1", "provider.sentrux.command-observation") => {
+            Some(ArtifactContract {
+                artifact_schema: "code-intel-sentrux-command-observation.v1",
+                artifact_type: "provider.sentrux.command-observation",
+                max_bytes: 2 * 1024 * 1024,
+                validate_payload: validate_sentrux_command_observation,
+            })
+        }
         ("code-intel-hospital.v1", "diagnosis.hospital") => Some(ArtifactContract {
             artifact_schema: "code-intel-hospital.v1",
             artifact_type: "diagnosis.hospital",
@@ -352,15 +350,14 @@ fn orientation_family_contract(schema: &str, artifact_type: &str) -> Option<Arti
             max_bytes: 64 * 1024 * 1024,
             validate_payload: validate_orientation_benchmark_observations,
         }),
-        (
-            "code-intel-project-orientation-benchmark.v1",
-            "benchmark.orientation-report",
-        ) => Some(ArtifactContract {
-            artifact_schema: "code-intel-project-orientation-benchmark.v1",
-            artifact_type: "benchmark.orientation-report",
-            max_bytes: 8 * 1024 * 1024,
-            validate_payload: validate_orientation_benchmark_report,
-        }),
+        ("code-intel-project-orientation-benchmark.v1", "benchmark.orientation-report") => {
+            Some(ArtifactContract {
+                artifact_schema: "code-intel-project-orientation-benchmark.v1",
+                artifact_type: "benchmark.orientation-report",
+                max_bytes: 8 * 1024 * 1024,
+                validate_payload: validate_orientation_benchmark_report,
+            })
+        }
         (
             "code-intel-project-orientation-benchmark-markdown.v1",
             "benchmark.orientation-report-view",
@@ -469,15 +466,14 @@ fn run_delivery_family_contract(schema: &str, artifact_type: &str) -> Option<Art
                 validate_payload: validate_light_speed_report,
             })
         }
-        (
-            "code-intel-delivery-light-speed-markdown.v1",
-            "delivery.light-speed-report-view",
-        ) => Some(ArtifactContract {
-            artifact_schema: "code-intel-delivery-light-speed-markdown.v1",
-            artifact_type: "delivery.light-speed-report-view",
-            max_bytes: 1024 * 1024,
-            validate_payload: validate_light_speed_markdown,
-        }),
+        ("code-intel-delivery-light-speed-markdown.v1", "delivery.light-speed-report-view") => {
+            Some(ArtifactContract {
+                artifact_schema: "code-intel-delivery-light-speed-markdown.v1",
+                artifact_type: "delivery.light-speed-report-view",
+                max_bytes: 1024 * 1024,
+                validate_payload: validate_light_speed_markdown,
+            })
+        }
         _ => None,
     }
 }
@@ -1518,8 +1514,7 @@ fn validate_understanding_quadrant_identity(value: &Value) -> Result<(), String>
 fn understanding_quadrant_identity_is_valid(value: &Value) -> bool {
     let source_orientation_valid = value.pointer("/sourceOrientation/artifactSchema")
         == Some(&json!("code-intel-project-orientation.v1"))
-        && value.pointer("/sourceOrientation/artifactType")
-            == Some(&json!("project.orientation"))
+        && value.pointer("/sourceOrientation/artifactType") == Some(&json!("project.orientation"))
         && value
             .pointer("/sourceOrientation/sha256")
             .and_then(Value::as_str)
@@ -1814,7 +1809,9 @@ fn orientation_benchmark_report_is_valid(value: &Value) -> bool {
             .and_then(Value::as_u64)
             .is_some()
         && quality_metrics_in_range
-        && value["costCenters"].as_array().is_some_and(|v| !v.is_empty())
+        && value["costCenters"]
+            .as_array()
+            .is_some_and(|v| !v.is_empty())
 }
 
 fn validate_orientation_benchmark_markdown(bytes: &[u8]) -> Result<(), String> {
@@ -2208,7 +2205,9 @@ fn light_speed_report_is_valid(value: &Value) -> bool {
         && value["baseline"].is_object()
         && value["current"].is_object()
         && value["delta"].is_object()
-        && value["limitations"].as_array().is_some_and(|v| !v.is_empty())
+        && value["limitations"]
+            .as_array()
+            .is_some_and(|v| !v.is_empty())
 }
 
 fn validate_light_speed_markdown(bytes: &[u8]) -> Result<(), String> {
@@ -2878,7 +2877,8 @@ fn exact_object_keys(value: &Value, expected: &[&str], context: &str) -> Result<
     let object = value
         .as_object()
         .ok_or_else(|| format!("{context} must be an object"))?;
-    require_exact_keys(object, expected, context).map_err(|_| format!("{context} fields are invalid"))
+    require_exact_keys(object, expected, context)
+        .map_err(|_| format!("{context} fields are invalid"))
 }
 
 fn validate_survival_scan(bytes: &[u8]) -> Result<(), String> {

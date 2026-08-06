@@ -983,7 +983,6 @@ fn identity_for(spec: &DagSpec) -> String {
     format!("dag-v1:{}", sha256_hex(&canonical))
 }
 
-
 fn nonempty_diagnostic(value: String, fallback: &str) -> String {
     if value.trim().is_empty() {
         fallback.to_string()
