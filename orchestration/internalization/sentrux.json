@@ -71,8 +71,7 @@
         "path": "crates/code-intel-cli/tests/sentrux_analysis.rs",
         "sha256": "be65a1f14799e43a58836ae4e9e6c93d07ea7dd25f8518c4e6f19e57833fe09b",
         "testName": "dsm_snapshot_preserves_contract_and_excludes_non_governed_source"
-      },
-      "productionCaller": ".github/workflows/release.yml (packaged-binary smoke: must run clean against the real payload, not gated)"
+      }
     },
     {
       "integrationId": "provider.sentrux-adapt",
@@ -148,8 +147,7 @@
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
         "sha256": "0669522514b6740f8246678ac98f8aac50030b7d9549fd5d028781ff2acaf54b",
         "testName": "complete_normalizes_every_authoritative_kind_and_passes_a04"
-      },
-      "productionCaller": ".github/workflows/release.yml (packaged-binary smoke: must run clean against the real payload, not gated)"
+      }
     },
     {
       "integrationId": "structure.sentrux",
@@ -168,8 +166,7 @@
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
         "sha256": "0669522514b6740f8246678ac98f8aac50030b7d9549fd5d028781ff2acaf54b",
         "testName": "complete_normalizes_every_authoritative_kind_and_passes_a04"
-      },
-      "productionCaller": ".github/workflows/release.yml (packaged-binary smoke: must run clean against the real payload, not gated)"
+      }
     },
     {
       "integrationId": "structure.sentrux",

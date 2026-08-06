@@ -1488,19 +1488,13 @@
         "session_end",
         "rules",
         "dsm",
-        "test_gaps",
-        "what_if",
         "evolution"
       ],
       "commands": {
         "rustDsm": "target/debug/code-intel.exe sentrux dsm <repo-path>",
         "rustScan": "target/debug/code-intel.exe sentrux scan <repo-path>",
         "rustHealth": "target/debug/code-intel.exe sentrux health <repo-path>",
-        "rustSessionStart": "target/debug/code-intel.exe sentrux session_start <repo-path>",
-        "rustSessionEnd": "target/debug/code-intel.exe sentrux session_end <repo-path>",
         "rustCheckRules": "target/debug/code-intel.exe sentrux check_rules <repo-path>",
-        "rustTestGaps": "target/debug/code-intel.exe sentrux test_gaps <repo-path>",
-        "rustWhatIf": "target/debug/code-intel.exe sentrux what_if <repo-path>",
         "shimScan": "legacy/Invoke-SentruxAgentTool.ps1 scan <repo-path>",
         "shimSessionStart": "legacy/Invoke-SentruxAgentTool.ps1 session_start <repo-path>",
         "shimSessionEnd": "legacy/Invoke-SentruxAgentTool.ps1 session_end <repo-path>"
