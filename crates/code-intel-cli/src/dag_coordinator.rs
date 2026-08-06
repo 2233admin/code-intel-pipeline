@@ -4,6 +4,10 @@ use std::fmt;
 
 use serde_json::{json, Value};
 
+// content_contract.rs is a dependency-free leaf module redeclared per file
+// (also included by capability.rs, artifact_ref.rs, audit_report/mod.rs, and
+// integration tests) rather than exported once, since test binaries wire in
+// #[path] modules individually -- see the test-harness-module-wiring note.
 #[path = "content_contract.rs"]
 mod content_contract;
 use content_contract::{is_digest as valid_digest, sha256_hex};

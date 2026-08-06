@@ -1148,6 +1148,10 @@ pub(crate) fn retirement_portable_paths(value: &Value, label: &str) -> Result<Ve
     Ok(paths)
 }
 
+// Guards retirement callPath/deletion-patch paths (see call sites above). Rejects
+// a trailing '/' and '.'/'..' components directly -- distinct rule set from
+// path_syntax_is_portable below, which guards general Artifact Ref paths and
+// instead leans on component normalization to catch traversal.
 fn validate_portable_path(path: &str, label: &str) -> Result<(), String> {
     if path.is_empty()
         || path.contains('\\')
@@ -1380,7 +1384,12 @@ fn validate_project_orientation(bytes: &[u8]) -> Result<(), String> {
         "risks",
         "unknowns",
     ] {
-        for (index, claim) in value[field].as_array().unwrap().iter().enumerate() {
+        for (index, claim) in value[field]
+            .as_array()
+            .expect("project_orientation_shape_is_valid proved this field is an array")
+            .iter()
+            .enumerate()
+        {
             validate_claim_provenance(&claim["provenance"], &format!("{field}[{index}]"))?;
         }
     }
@@ -3094,6 +3103,9 @@ fn portable_relative_path(value: &str) -> Result<String, ArtifactError> {
     Ok(normalized.join("/"))
 }
 
+// Guards the Artifact Ref path field (see caller above), ahead of component
+// normalization -- distinct rule set from validate_portable_path above,
+// which guards retirement callPath/deletion-patch paths directly.
 fn path_syntax_is_portable(value: &str) -> bool {
     !value.is_empty()
         && !value.contains('\0')
