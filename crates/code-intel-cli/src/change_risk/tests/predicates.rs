@@ -102,6 +102,39 @@ fn a_change_touching_an_inline_tests_module_is_not_scored_as_asymmetric() {
     assert_eq!(tests_row["isTestFile"], true);
 }
 
+/// Same contract as the bare-`tests.rs` case above, but for the plural
+/// `_tests.rs` suffix `is_test_file` was just taught to credit -- proving
+/// `score_subset` actually consumes the wider predicate, not just that the
+/// predicate itself returns `true` in isolation.
+#[test]
+fn a_change_touching_a_plural_tests_module_is_not_scored_as_asymmetric() {
+    let files = vec![
+        (
+            40,
+            2,
+            "crates/code-intel-cli/src/change_risk/signals.rs".to_string(),
+        ),
+        (
+            30,
+            0,
+            "crates/code-intel-cli/src/artifacts_tests.rs".to_string(),
+        ),
+    ];
+    let scored = score_subset(&files, &FileHistory::new(), 1_700_000_000);
+
+    let asymmetry = &scored.signals["testAsymmetry"];
+    assert_eq!(asymmetry["testFilesChanged"].as_u64(), Some(1));
+    assert_eq!(asymmetry["asymmetric"], false);
+    assert_eq!(asymmetry["subscore"], 0.0);
+
+    let tests_row = scored
+        .files
+        .iter()
+        .find(|file| file["path"] == "crates/code-intel-cli/src/artifacts_tests.rs")
+        .expect("the artifacts_tests.rs row must be reported");
+    assert_eq!(tests_row["isTestFile"], true);
+}
+
 /// The complementary half: the signal must still fire when a change really
 /// does touch source without touching any test. A fix that made every change
 /// look symmetric would pass the test above and silently disarm the largest
