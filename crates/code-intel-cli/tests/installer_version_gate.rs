@@ -2,7 +2,7 @@
 //!
 //! Before this gate existed, `Install-MissingTool` returned on presence alone:
 //! a machine with `repowise` 0.32.0 on PATH reported `already_present` while
-//! the supply-chain-003 pin declared 0.36.0, so the pin was a declaration
+//! the supply-chain-003 pin declared 0.38.0, so the pin was a declaration
 //! nothing enforced. Presence and correctness were indistinguishable in the
 //! install report.
 //!
@@ -146,7 +146,7 @@ function Get-Command {
 }
 
 $at032 = New-VersionStub "repowise-032" "repowise, version 0.32.0"
-$at036 = New-VersionStub "repowise-036" "repowise, version 0.36.0"
+$at038 = New-VersionStub "repowise-038" "repowise, version 0.38.0"
 $prerelease = New-VersionStub "code-intel" "code-intel 0.7.0-beta.2"
 $silent = New-VersionStub "silent" "no version here"
 
@@ -168,7 +168,7 @@ switch ($Scenario) {
         # ExternalScriptInfo whose Source is the script path; `& $Source` would
         # run it INSIDE the installer process.
         $script = Join-Path $Workspace "repowise.ps1"
-        Set-Content -LiteralPath $script -Encoding ascii -Value @('Write-Output "repowise, version 0.36.0"')
+        Set-Content -LiteralPath $script -Encoding ascii -Value @('Write-Output "repowise, version 0.38.0"')
         Write-ProbeResult (Get-ToolVersion $script -ExpectedName "repowise")
         break
     }
@@ -176,7 +176,7 @@ switch ($Scenario) {
         # A deprecation banner carrying its own version-shaped number must not
         # win the match when the tool name anchors the real line.
         $noisy = New-VersionStub "noisy" "DeprecationWarning from setuptools 3.11.0"
-        Add-Content -LiteralPath $noisy -Value $(if ($IsWindows) { "echo repowise, version 0.36.0" } else { "echo 'repowise, version 0.36.0'" })
+        Add-Content -LiteralPath $noisy -Value $(if ($IsWindows) { "echo repowise, version 0.38.0" } else { "echo 'repowise, version 0.38.0'" })
         Write-ProbeResult (Get-ToolVersion $noisy -ExpectedName "repowise")
         break
     }
@@ -190,10 +190,10 @@ switch ($Scenario) {
             $Checks.Add([ordered]@{ name = $Name; category = $Category; required = $Required; ok = $Ok })
         }
         $actions = [System.Collections.Generic.List[object]]::new()
-        $actions.Add([ordered]@{ name = "repowise"; status = "version_drift"; detail = "reports version 0.32.0; pinned version is 0.36.0"; fix = "f" })
-        $actions.Add([ordered]@{ name = "mystery"; status = "version_drift"; detail = "reports version unknown; pinned version is 0.36.0"; fix = "f" })
+        $actions.Add([ordered]@{ name = "repowise"; status = "version_drift"; detail = "reports version 0.32.0; pinned version is 0.38.0"; fix = "f" })
+        $actions.Add([ordered]@{ name = "mystery"; status = "version_drift"; detail = "reports version unknown; pinned version is 0.38.0"; fix = "f" })
         $actions.Add([ordered]@{ name = "rg"; status = "already_present"; detail = "/usr/bin/rg"; fix = "" })
-        $actions.Add([ordered]@{ name = "fine"; status = "upgraded"; detail = "now 0.36.0, was 0.32.0"; fix = "" })
+        $actions.Add([ordered]@{ name = "fine"; status = "upgraded"; detail = "now 0.38.0, was 0.32.0"; fix = "" })
 
         Add-VersionComplianceChecks $checks $actions
         @{
@@ -243,7 +243,7 @@ switch ($Scenario) {
     }
     "drift" {
         $InstallMissing = $false
-        $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.36.0" }
+        $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.38.0" }
         $script:StubCommandSource = $at032
         Install-MissingTool ([System.Collections.Generic.List[object]]::new()) "repowise" { throw "installer must not run without -InstallMissing" } "fix"
         $script:Recorded | ConvertTo-Json -Compress
@@ -251,7 +251,7 @@ switch ($Scenario) {
     }
     "drift-unknown" {
         $InstallMissing = $false
-        $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.36.0" }
+        $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.38.0" }
         $script:StubCommandSource = $silent
         Install-MissingTool ([System.Collections.Generic.List[object]]::new()) "repowise" { throw "installer must not run without -InstallMissing" } "fix"
         $script:Recorded | ConvertTo-Json -Compress
@@ -269,15 +269,15 @@ switch ($Scenario) {
     }
     "upgrade" {
         $InstallMissing = $true
-        $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.36.0" }
+        $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.38.0" }
         $script:StubCommandSource = $at032
-        Install-MissingTool ([System.Collections.Generic.List[object]]::new()) "repowise" { $script:StubCommandSource = $at036 } "fix"
+        Install-MissingTool ([System.Collections.Generic.List[object]]::new()) "repowise" { $script:StubCommandSource = $at038 } "fix"
         $script:Recorded | ConvertTo-Json -Compress
         break
     }
     "upgrade-failed" {
         $InstallMissing = $true
-        $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.36.0" }
+        $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.38.0" }
         $script:StubCommandSource = $at032
         Install-MissingTool ([System.Collections.Generic.List[object]]::new()) "repowise" { } "fix"
         $script:Recorded | ConvertTo-Json -Compress
@@ -363,7 +363,7 @@ fn a_version_shaped_number_in_a_banner_does_not_win_the_match() {
     let result = scenario("parse-noise-before-version");
     assert_eq!(result["refused"], false);
     assert_eq!(
-        result["parsed"], "0.36.0",
+        result["parsed"], "0.38.0",
         "the name-anchored line wins over `setuptools 3.11.0` noise"
     );
 }
@@ -413,7 +413,7 @@ fn drift_is_reported_even_when_the_gate_may_not_fix_it() {
         "names the observed version: {detail}"
     );
     assert!(
-        detail.contains("0.36.0"),
+        detail.contains("0.38.0"),
         "names the pinned version: {detail}"
     );
     assert!(
@@ -506,7 +506,7 @@ fn the_real_metadata_switch_carries_the_pin() {
         "the repowise metadata entry must carry the supply-chain-003 pin, not a literal that drifted from it"
     );
     assert_eq!(
-        result["repowisePinned"], "0.36.0",
+        result["repowisePinned"], "0.38.0",
         "if the pin moves, this assertion is the deliberate place to notice"
     );
     assert_eq!(
