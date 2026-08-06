@@ -7,7 +7,10 @@ use serde_json::{json, Value};
 mod content_contract;
 
 use crate::stable_artifact::{self, FileId, StableReadError};
-use content_contract::{reject_duplicate_json_keys, sha256_hex, validate_artifact_ref_shape};
+use content_contract::{
+    is_digest as valid_digest, is_run_identity as valid_run_identity, reject_duplicate_json_keys,
+    require_exact_keys, sha256_hex, validate_artifact_ref_shape,
+};
 
 const MAX_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;
 
@@ -2807,12 +2810,7 @@ fn exact_object_keys(value: &Value, expected: &[&str], context: &str) -> Result<
     let object = value
         .as_object()
         .ok_or_else(|| format!("{context} must be an object"))?;
-    let actual = object.keys().map(String::as_str).collect::<BTreeSet<_>>();
-    let expected = expected.iter().copied().collect::<BTreeSet<_>>();
-    if actual != expected {
-        return Err(format!("{context} fields are invalid"));
-    }
-    Ok(())
+    require_exact_keys(object, expected, context).map_err(|_| format!("{context} fields are invalid"))
 }
 
 fn validate_survival_scan(bytes: &[u8]) -> Result<(), String> {
@@ -2943,23 +2941,6 @@ fn validate_repository_snapshot_identity(value: &Value) -> Result<(), String> {
         return Err("repository snapshot identity values are invalid".to_string());
     }
     Ok(())
-}
-
-fn valid_digest(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
-fn valid_run_identity(value: &str) -> bool {
-    value.strip_prefix("dag-v1:").is_some_and(|tail| {
-        !tail.is_empty()
-            && tail.len() % 2 == 0
-            && tail
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    })
 }
 
 fn valid_authority_name(value: &str) -> bool {

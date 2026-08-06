@@ -207,6 +207,16 @@ pub(crate) fn is_digest(v: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+pub(crate) fn is_run_identity(value: &str) -> bool {
+    value.strip_prefix("dag-v1:").is_some_and(|tail| {
+        !tail.is_empty()
+            && tail.len() % 2 == 0
+            && tail
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
+}
+
 pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     const K: [u32; 64] = [
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
