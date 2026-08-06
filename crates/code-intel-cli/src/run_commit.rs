@@ -8,10 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde_json::{json, Value};
 
 use crate::artifact_ref;
-use crate::capability::{
-    is_digest as valid_digest, is_run_identity as valid_run_identity, reject_duplicate_json_keys,
-    sha256_hex, validate_artifact_ref_shape,
-};
+use crate::capability::{reject_duplicate_json_keys, sha256_hex, validate_artifact_ref_shape};
 use crate::stable_artifact;
 use crate::staged_artifact::{self, ArtifactWriteContract, StagedArtifactSet, StagedWriter};
 
@@ -797,6 +794,22 @@ fn exact(value: &Value, fields: &[&str], label: &str) -> Result<(), String> {
     } else {
         Err(format!("{label} fields are invalid"))
     }
+}
+
+fn valid_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || matches!(b, b'a'..=b'f'))
+}
+fn valid_run_identity(value: &str) -> bool {
+    value.strip_prefix("dag-v1:").is_some_and(|tail| {
+        !tail.is_empty()
+            && tail.len() % 2 == 0
+            && tail
+                .bytes()
+                .all(|b| b.is_ascii_digit() || matches!(b, b'a'..=b'f'))
+    })
 }
 
 fn remove_owned_marker(
