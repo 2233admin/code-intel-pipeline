@@ -547,17 +547,22 @@ fn validate_sentrux_command_observation(bytes: &[u8]) -> Result<(), String> {
         if !seen.insert(id) {
             return Err("Sentrux command ids must be unique".into());
         }
-        if (command["argv"] != json!(["sentrux", id, "."])
-            && command["argv"] != json!(["code-intel", "sentrux", id, "."]))
-            || (!command["exitCode"].is_null() && command["exitCode"].as_i64().is_none())
-            || !command["success"].is_boolean()
-            || !command["stdout"].is_string()
-            || !command["stderr"].is_string()
-        {
+        if !sentrux_command_result_is_valid(command, id) {
             return Err("Sentrux command result is invalid".into());
         }
     }
     Ok(())
+}
+
+fn sentrux_command_result_is_valid(command: &Value, id: &str) -> bool {
+    let known_argv = command["argv"] == json!(["sentrux", id, "."])
+        || command["argv"] == json!(["code-intel", "sentrux", id, "."]);
+    let exit_code_ok = command["exitCode"].is_null() || command["exitCode"].as_i64().is_some();
+    known_argv
+        && exit_code_ok
+        && command["success"].is_boolean()
+        && command["stdout"].is_string()
+        && command["stderr"].is_string()
 }
 
 fn validate_retirement_manifest(bytes: &[u8]) -> Result<(), String> {
@@ -830,24 +835,7 @@ fn validate_retirement_ticket_template(bytes: &[u8]) -> Result<(), String> {
         &["retirementDecision", "retirementManifest"],
         "ticket source",
     )?;
-    if value["schema"] != "code-intel-compatibility-retirement-ticket-template.v1"
-        || value["status"] != "draft"
-        || value["authorityBoundary"] != "template_only_no_approval_or_deletion_authority"
-        || [
-            "snapshotIdentity",
-            "ticketId",
-            "retirementId",
-            "owner",
-            "verifier",
-        ]
-        .iter()
-        .any(|key| !value[key].as_str().is_some_and(|v| !v.is_empty()))
-        || value["owner"] == value["verifier"]
-        || value["observationExpiry"].as_u64().is_none()
-        || !value["affectedFiles"]
-            .as_array()
-            .is_some_and(|v| !v.is_empty())
-    {
+    if !retirement_ticket_template_header_is_valid(&value) {
         return Err("retirement ticket template contract is invalid".into());
     }
     for key in ["capabilityId", "branchId", "callPath"] {
@@ -891,6 +879,27 @@ fn validate_retirement_ticket_template(bytes: &[u8]) -> Result<(), String> {
         "compatibility.retirement-manifest",
     )?;
     Ok(())
+}
+
+fn retirement_ticket_template_header_is_valid(value: &Value) -> bool {
+    let nonempty_identity_fields = [
+        "snapshotIdentity",
+        "ticketId",
+        "retirementId",
+        "owner",
+        "verifier",
+    ]
+    .iter()
+    .all(|key| value[key].as_str().is_some_and(|v| !v.is_empty()));
+    value["schema"] == "code-intel-compatibility-retirement-ticket-template.v1"
+        && value["status"] == "draft"
+        && value["authorityBoundary"] == "template_only_no_approval_or_deletion_authority"
+        && nonempty_identity_fields
+        && value["owner"] != value["verifier"]
+        && value["observationExpiry"].as_u64().is_some()
+        && value["affectedFiles"]
+            .as_array()
+            .is_some_and(|v| !v.is_empty())
 }
 
 fn validate_ticket_ref(value: &Value, schema: &str, kind: &str) -> Result<(), String> {
@@ -1306,17 +1315,20 @@ fn validate_surgery_plan_value(value: &Value) -> Result<(), String> {
         ],
         "surgery plan",
     )?;
-    if value["schema"] != "code-intel-surgery-plan.v1"
-        || !matches!(value["status"].as_str(), Some("planned" | "not_required"))
-        || !value["admission"].is_object()
-        || !value["primary_target"].is_object()
-        || !value["operating_plan"].is_array()
-        || !value["verification"].is_array()
-        || !value["discharge_criteria"].is_array()
-    {
+    if !surgery_plan_shape_is_valid(value) {
         return Err("surgery plan contract is invalid".into());
     }
     Ok(())
+}
+
+fn surgery_plan_shape_is_valid(value: &Value) -> bool {
+    value["schema"] == "code-intel-surgery-plan.v1"
+        && matches!(value["status"].as_str(), Some("planned" | "not_required"))
+        && value["admission"].is_object()
+        && value["primary_target"].is_object()
+        && value["operating_plan"].is_array()
+        && value["verification"].is_array()
+        && value["discharge_criteria"].is_array()
 }
 
 fn validate_hospital_markdown(bytes: &[u8]) -> Result<(), String> {
@@ -1352,25 +1364,7 @@ fn validate_project_orientation(bytes: &[u8]) -> Result<(), String> {
         ],
         "project orientation",
     )?;
-    if value["schema"] != "code-intel-project-orientation.v1"
-        || !value["snapshotIdentity"].as_str().is_some_and(valid_digest)
-        || !value["identity"].is_object()
-        || !value["purpose"].is_object()
-        || !value["languages"].is_array()
-        || !value["boundaries"].is_array()
-        || !value["entryPoints"].is_array()
-        || !value["commands"].is_array()
-        || !value["activeChange"].is_object()
-        || !value["evidenceAvailability"].is_array()
-        || !value["risks"].is_array()
-        || !value["unknowns"]
-            .as_array()
-            .is_some_and(|unknowns| !unknowns.is_empty())
-        || !matches!(
-            value.pointer("/confidence/level").and_then(Value::as_str),
-            Some("low" | "medium" | "high")
-        )
-    {
+    if !project_orientation_shape_is_valid(&value) {
         return Err("project orientation contract is invalid".into());
     }
     for (label, claim) in [
@@ -1395,6 +1389,27 @@ fn validate_project_orientation(bytes: &[u8]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn project_orientation_shape_is_valid(value: &Value) -> bool {
+    value["schema"] == "code-intel-project-orientation.v1"
+        && value["snapshotIdentity"].as_str().is_some_and(valid_digest)
+        && value["identity"].is_object()
+        && value["purpose"].is_object()
+        && value["languages"].is_array()
+        && value["boundaries"].is_array()
+        && value["entryPoints"].is_array()
+        && value["commands"].is_array()
+        && value["activeChange"].is_object()
+        && value["evidenceAvailability"].is_array()
+        && value["risks"].is_array()
+        && value["unknowns"]
+            .as_array()
+            .is_some_and(|unknowns| !unknowns.is_empty())
+        && matches!(
+            value.pointer("/confidence/level").and_then(Value::as_str),
+            Some("low" | "medium" | "high")
+        )
 }
 
 fn validate_claim_provenance(value: &Value, label: &str) -> Result<(), String> {
@@ -1494,35 +1509,41 @@ fn validate_understanding_quadrant_shape(value: &Value) -> Result<(), String> {
 }
 
 fn validate_understanding_quadrant_identity(value: &Value) -> Result<(), String> {
-    if value["schema"] != "code-intel-understanding-quadrant.v1"
-        || !value["snapshotIdentity"].as_str().is_some_and(valid_digest)
-        || value.pointer("/sourceOrientation/artifactSchema")
-            != Some(&json!("code-intel-project-orientation.v1"))
-        || value.pointer("/sourceOrientation/artifactType") != Some(&json!("project.orientation"))
-        || !value
-            .pointer("/sourceOrientation/sha256")
-            .and_then(Value::as_str)
-            .is_some_and(valid_digest)
-        || value.pointer("/classificationPolicy/schema")
-            != Some(&json!("code-intel-understanding-quadrant-policy.v1"))
-        || value.pointer("/classificationPolicy/scoreRange/minimum") != Some(&json!(0))
-        || value.pointer("/classificationPolicy/scoreRange/maximum") != Some(&json!(100))
-        || value.pointer("/classificationPolicy/systemCriticalityThreshold") != Some(&json!(50))
-        || value.pointer("/classificationPolicy/evidenceConfidenceThreshold") != Some(&json!(50))
-        || value.pointer("/classificationPolicy/thresholdRule")
-            != Some(&json!("greater_than_or_equal_is_upper_band"))
-        || value.pointer("/classificationPolicy/unknownCriticalityRule")
-            != Some(&json!(
-                "critical_by_default_except_declared_supporting_context"
-            ))
-        || value.pointer("/classificationPolicy/methodConsumerPolicy")
-            != Some(&json!(
-                "C01_cards_and_C02_selection_may_consume_but_cannot_rewrite"
-            ))
-    {
+    if !understanding_quadrant_identity_is_valid(value) {
         return Err("understanding quadrant identity/policy contract is invalid".into());
     }
     Ok(())
+}
+
+fn understanding_quadrant_identity_is_valid(value: &Value) -> bool {
+    let source_orientation_valid = value.pointer("/sourceOrientation/artifactSchema")
+        == Some(&json!("code-intel-project-orientation.v1"))
+        && value.pointer("/sourceOrientation/artifactType")
+            == Some(&json!("project.orientation"))
+        && value
+            .pointer("/sourceOrientation/sha256")
+            .and_then(Value::as_str)
+            .is_some_and(valid_digest);
+    let classification_policy_valid = value.pointer("/classificationPolicy/schema")
+        == Some(&json!("code-intel-understanding-quadrant-policy.v1"))
+        && value.pointer("/classificationPolicy/scoreRange/minimum") == Some(&json!(0))
+        && value.pointer("/classificationPolicy/scoreRange/maximum") == Some(&json!(100))
+        && value.pointer("/classificationPolicy/systemCriticalityThreshold") == Some(&json!(50))
+        && value.pointer("/classificationPolicy/evidenceConfidenceThreshold") == Some(&json!(50))
+        && value.pointer("/classificationPolicy/thresholdRule")
+            == Some(&json!("greater_than_or_equal_is_upper_band"))
+        && value.pointer("/classificationPolicy/unknownCriticalityRule")
+            == Some(&json!(
+                "critical_by_default_except_declared_supporting_context"
+            ))
+        && value.pointer("/classificationPolicy/methodConsumerPolicy")
+            == Some(&json!(
+                "C01_cards_and_C02_selection_may_consume_but_cannot_rewrite"
+            ));
+    value["schema"] == "code-intel-understanding-quadrant.v1"
+        && value["snapshotIdentity"].as_str().is_some_and(valid_digest)
+        && source_orientation_valid
+        && classification_policy_valid
 }
 
 fn validate_understanding_quadrant_items(
@@ -1662,21 +1683,7 @@ fn validate_orientation_benchmark_observations(bytes: &[u8]) -> Result<(), Strin
         ],
         "orientation benchmark observations",
     )?;
-    if value["schema"] != "code-intel-project-orientation-benchmark-observations.v1"
-        || !value["snapshotIdentity"].as_str().is_some_and(valid_digest)
-        || value.pointer("/method/clock") != Some(&Value::String("std::time::Instant".into()))
-        || value.pointer("/method/execution")
-            != Some(&Value::String("sequential_child_process".into()))
-        || value.pointer("/method/concurrency").and_then(Value::as_u64) != Some(1)
-        || value.pointer("/method/llm") != Some(&Value::String("disabled".into()))
-        || value
-            .pointer("/environment/cleanMachine")
-            .and_then(Value::as_bool)
-            != Some(false)
-        || value["fixtures"]
-            .as_array()
-            .map_or(true, |items| items.len() != 9)
-    {
+    if !orientation_benchmark_observations_header_is_valid(&value) {
         return Err("orientation benchmark observation contract is invalid".into());
     }
     for fixture in value["fixtures"].as_array().unwrap() {
@@ -1731,6 +1738,23 @@ fn validate_orientation_benchmark_observations(bytes: &[u8]) -> Result<(), Strin
     Ok(())
 }
 
+fn orientation_benchmark_observations_header_is_valid(value: &Value) -> bool {
+    value["schema"] == "code-intel-project-orientation-benchmark-observations.v1"
+        && value["snapshotIdentity"].as_str().is_some_and(valid_digest)
+        && value.pointer("/method/clock") == Some(&Value::String("std::time::Instant".into()))
+        && value.pointer("/method/execution")
+            == Some(&Value::String("sequential_child_process".into()))
+        && value.pointer("/method/concurrency").and_then(Value::as_u64) == Some(1)
+        && value.pointer("/method/llm") == Some(&Value::String("disabled".into()))
+        && value
+            .pointer("/environment/cleanMachine")
+            .and_then(Value::as_bool)
+            == Some(false)
+        && value["fixtures"]
+            .as_array()
+            .is_some_and(|items| items.len() == 9)
+}
+
 fn validate_orientation_benchmark_report(bytes: &[u8]) -> Result<(), String> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| format!("orientation benchmark report is not UTF-8: {error}"))?;
@@ -1754,39 +1778,43 @@ fn validate_orientation_benchmark_report(bytes: &[u8]) -> Result<(), String> {
         ],
         "orientation benchmark report",
     )?;
-    if value["schema"] != "code-intel-project-orientation-benchmark.v1"
-        || !matches!(value["verdict"].as_str(), Some("pass" | "fail"))
-        || value.pointer("/target/llm") != Some(&Value::String("disabled".into()))
-        || value
-            .pointer("/latency/typical/p50WallTimeMs")
-            .and_then(Value::as_u64)
-            .is_none()
-        || value
-            .pointer("/latency/typical/p95WallTimeMs")
-            .and_then(Value::as_u64)
-            .is_none()
-        || value
-            .pointer("/artifactSize/typical/p95Bytes")
-            .and_then(Value::as_u64)
-            .is_none()
-        || [
-            "fieldCorrectness",
-            "unresolvedCoverage",
-            "unsupportedCoverage",
-            "deterministicReplayRate",
-            "provenanceCompleteness",
-        ]
-        .into_iter()
-        .any(|field| {
-            value["quality"][field]
-                .as_f64()
-                .is_none_or(|metric| !(0.0..=1.0).contains(&metric))
-        })
-        || value["costCenters"].as_array().is_none_or(Vec::is_empty)
-    {
+    if !orientation_benchmark_report_is_valid(&value) {
         return Err("orientation benchmark report contract is invalid".into());
     }
     Ok(())
+}
+
+fn orientation_benchmark_report_is_valid(value: &Value) -> bool {
+    let quality_metrics_in_range = [
+        "fieldCorrectness",
+        "unresolvedCoverage",
+        "unsupportedCoverage",
+        "deterministicReplayRate",
+        "provenanceCompleteness",
+    ]
+    .into_iter()
+    .all(|field| {
+        value["quality"][field]
+            .as_f64()
+            .is_some_and(|metric| (0.0..=1.0).contains(&metric))
+    });
+    value["schema"] == "code-intel-project-orientation-benchmark.v1"
+        && matches!(value["verdict"].as_str(), Some("pass" | "fail"))
+        && value.pointer("/target/llm") == Some(&Value::String("disabled".into()))
+        && value
+            .pointer("/latency/typical/p50WallTimeMs")
+            .and_then(Value::as_u64)
+            .is_some()
+        && value
+            .pointer("/latency/typical/p95WallTimeMs")
+            .and_then(Value::as_u64)
+            .is_some()
+        && value
+            .pointer("/artifactSize/typical/p95Bytes")
+            .and_then(Value::as_u64)
+            .is_some()
+        && quality_metrics_in_range
+        && value["costCenters"].as_array().is_some_and(|v| !v.is_empty())
 }
 
 fn validate_orientation_benchmark_markdown(bytes: &[u8]) -> Result<(), String> {
@@ -1940,25 +1968,28 @@ fn validate_repository_iteration_provenance(bytes: &[u8]) -> Result<(), String> 
         &["component", "contract", "version"],
         "repository iteration producer",
     )?;
-    if value["schema"] != REPOSITORY_ITERATION_SCHEMA
-        || value["purpose"] != REPOSITORY_ITERATION_PURPOSE
-        || !value["runIdentity"]
-            .as_str()
-            .is_some_and(valid_run_identity)
-        || !value["snapshotIdentity"].as_str().is_some_and(valid_digest)
-        || !value["repositoryKey"]
-            .as_str()
-            .is_some_and(valid_authority_name)
-        || !value["publicationName"]
-            .as_str()
-            .is_some_and(valid_authority_name)
-        || value["producer"]["component"] != REPOSITORY_ITERATION_PRODUCER_COMPONENT
-        || value["producer"]["contract"] != REPOSITORY_ITERATION_PRODUCER_CONTRACT
-        || value["producer"]["version"] != REPOSITORY_ITERATION_PRODUCER_VERSION
-    {
+    if !repository_iteration_provenance_is_valid(&value) {
         return Err("repository iteration provenance contract is invalid".into());
     }
     Ok(())
+}
+
+fn repository_iteration_provenance_is_valid(value: &Value) -> bool {
+    value["schema"] == REPOSITORY_ITERATION_SCHEMA
+        && value["purpose"] == REPOSITORY_ITERATION_PURPOSE
+        && value["runIdentity"]
+            .as_str()
+            .is_some_and(valid_run_identity)
+        && value["snapshotIdentity"].as_str().is_some_and(valid_digest)
+        && value["repositoryKey"]
+            .as_str()
+            .is_some_and(valid_authority_name)
+        && value["publicationName"]
+            .as_str()
+            .is_some_and(valid_authority_name)
+        && value["producer"]["component"] == REPOSITORY_ITERATION_PRODUCER_COMPONENT
+        && value["producer"]["contract"] == REPOSITORY_ITERATION_PRODUCER_CONTRACT
+        && value["producer"]["version"] == REPOSITORY_ITERATION_PRODUCER_VERSION
 }
 
 fn validate_method_catalog(bytes: &[u8]) -> Result<(), String> {
@@ -2060,17 +2091,7 @@ fn validate_run_timing_events(bytes: &[u8]) -> Result<(), String> {
         &["mode", "clock", "externalPlatform"],
         "run timing telemetry",
     )?;
-    if value["schema"] != "code-intel-run-timing-events.v1"
-        || !value["measurementSnapshotIdentity"]
-            .as_str()
-            .is_some_and(valid_digest)
-        || value.pointer("/telemetry/mode") != Some(&Value::String("local_opt_in".into()))
-        || value.pointer("/telemetry/clock") != Some(&Value::String("monotonic_elapsed_ms".into()))
-        || value
-            .pointer("/telemetry/externalPlatform")
-            .and_then(Value::as_bool)
-            != Some(false)
-    {
+    if !run_timing_telemetry_policy_is_valid(&value) {
         return Err("run timing telemetry policy is invalid".into());
     }
     for label in ["baseline", "current"] {
@@ -2103,33 +2124,49 @@ fn validate_run_timing_events(bytes: &[u8]) -> Result<(), String> {
                 ],
                 "run timing event",
             )?;
-            let start = event["startedAtMs"].as_u64();
-            let end = event["completedAtMs"].as_u64();
-            if event["id"].as_str().is_none_or(str::is_empty)
-                || event["subject"].as_str().is_none_or(str::is_empty)
-                || !matches!(
-                    event["kind"].as_str(),
-                    Some(
-                        "technical_work"
-                            | "test"
-                            | "verification"
-                            | "queue"
-                            | "handoff"
-                            | "understanding"
-                            | "rework"
-                            | "coordination"
-                    )
-                )
-                || start.is_none()
-                || end.zip(start).is_none_or(|(end, start)| end <= start)
-                || event["mandatory"].as_bool().is_none()
-                || !event["predecessors"].is_array()
-            {
+            if !run_timing_event_is_valid(event) {
                 return Err("run timing event contract is invalid".into());
             }
         }
     }
     Ok(())
+}
+
+fn run_timing_telemetry_policy_is_valid(value: &Value) -> bool {
+    value["schema"] == "code-intel-run-timing-events.v1"
+        && value["measurementSnapshotIdentity"]
+            .as_str()
+            .is_some_and(valid_digest)
+        && value.pointer("/telemetry/mode") == Some(&Value::String("local_opt_in".into()))
+        && value.pointer("/telemetry/clock") == Some(&Value::String("monotonic_elapsed_ms".into()))
+        && value
+            .pointer("/telemetry/externalPlatform")
+            .and_then(Value::as_bool)
+            == Some(false)
+}
+
+fn run_timing_event_is_valid(event: &Value) -> bool {
+    let start = event["startedAtMs"].as_u64();
+    let end = event["completedAtMs"].as_u64();
+    event["id"].as_str().is_some_and(|v| !v.is_empty())
+        && event["subject"].as_str().is_some_and(|v| !v.is_empty())
+        && matches!(
+            event["kind"].as_str(),
+            Some(
+                "technical_work"
+                    | "test"
+                    | "verification"
+                    | "queue"
+                    | "handoff"
+                    | "understanding"
+                    | "rework"
+                    | "coordination"
+            )
+        )
+        && start.is_some()
+        && end.zip(start).is_some_and(|(end, start)| end > start)
+        && event["mandatory"].as_bool().is_some()
+        && event["predecessors"].is_array()
 }
 
 fn validate_light_speed_report(bytes: &[u8]) -> Result<(), String> {
@@ -2153,22 +2190,25 @@ fn validate_light_speed_report(bytes: &[u8]) -> Result<(), String> {
         ],
         "light-speed report",
     )?;
-    if value["schema"] != "code-intel-delivery-light-speed.v1"
-        || !value["measurementSnapshotIdentity"]
-            .as_str()
-            .is_some_and(valid_digest)
-        || value["authority"] != "derived_measurement_no_schedule_commitment"
-        || !value["rules"]
-            .as_array()
-            .is_some_and(|rules| rules.len() == 7)
-        || !value["baseline"].is_object()
-        || !value["current"].is_object()
-        || !value["delta"].is_object()
-        || value["limitations"].as_array().is_none_or(Vec::is_empty)
-    {
+    if !light_speed_report_is_valid(&value) {
         return Err("light-speed report contract is invalid".into());
     }
     Ok(())
+}
+
+fn light_speed_report_is_valid(value: &Value) -> bool {
+    value["schema"] == "code-intel-delivery-light-speed.v1"
+        && value["measurementSnapshotIdentity"]
+            .as_str()
+            .is_some_and(valid_digest)
+        && value["authority"] == "derived_measurement_no_schedule_commitment"
+        && value["rules"]
+            .as_array()
+            .is_some_and(|rules| rules.len() == 7)
+        && value["baseline"].is_object()
+        && value["current"].is_object()
+        && value["delta"].is_object()
+        && value["limitations"].as_array().is_some_and(|v| !v.is_empty())
 }
 
 fn validate_light_speed_markdown(bytes: &[u8]) -> Result<(), String> {
@@ -3018,14 +3058,7 @@ fn validate_inventory(bytes: &[u8]) -> Result<(), String> {
 }
 
 fn portable_relative_path(value: &str) -> Result<String, ArtifactError> {
-    if value.is_empty()
-        || value.contains('\0')
-        || value.contains('\\')
-        || value.starts_with('/')
-        || value.starts_with("//")
-        || value.contains(':')
-        || value.split('/').any(|component| component.is_empty())
-    {
+    if !path_syntax_is_portable(value) {
         return Err(ArtifactError::Contract(
             "Artifact Ref path is not portable root-relative syntax".to_string(),
         ));
@@ -3046,14 +3079,7 @@ fn portable_relative_path(value: &str) -> Result<String, ArtifactError> {
                 ))
             }
         };
-        if name.is_empty()
-            || name.ends_with('.')
-            || name.ends_with(' ')
-            || name
-                .chars()
-                .any(|character| ('\u{0300}'..='\u{036f}').contains(&character))
-            || windows_reserved(name)
-        {
+        if !path_component_is_unambiguous(name) {
             return Err(ArtifactError::Contract(
                 "Artifact Ref path contains a Windows-ambiguous component".to_string(),
             ));
@@ -3066,6 +3092,26 @@ fn portable_relative_path(value: &str) -> Result<String, ArtifactError> {
         ));
     }
     Ok(normalized.join("/"))
+}
+
+fn path_syntax_is_portable(value: &str) -> bool {
+    !value.is_empty()
+        && !value.contains('\0')
+        && !value.contains('\\')
+        && !value.starts_with('/')
+        && !value.starts_with("//")
+        && !value.contains(':')
+        && value.split('/').all(|component| !component.is_empty())
+}
+
+fn path_component_is_unambiguous(name: &str) -> bool {
+    !name.is_empty()
+        && !name.ends_with('.')
+        && !name.ends_with(' ')
+        && !name
+            .chars()
+            .any(|character| ('\u{0300}'..='\u{036f}').contains(&character))
+        && !windows_reserved(name)
 }
 
 fn windows_reserved(name: &str) -> bool {
