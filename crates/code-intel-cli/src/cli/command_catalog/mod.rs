@@ -7,7 +7,8 @@ use crate::{
     admissibility, artifact_index, audit_report, change_agenda, change_impact, change_risk,
     compatibility_retirement_ticket, decision_port, decision_record, doctor_bootstrap, edit_apply,
     edit_impact, evidence_query, invocation_identity, mcp_serve, model_channels, ponytail_gate,
-    providers, repin, run_cli, run_commit, session_evidence, snapshot, survival_scan,
+    providers, repin, repowise_hooks, run_cli, run_commit, session_evidence, snapshot,
+    survival_scan,
 };
 
 use super::legacy::{
@@ -81,6 +82,7 @@ enum CompatibilityRoute {
     Benchmark,
     Snapshot,
     Repin,
+    RepowiseHooks,
     Evidence,
     Decision,
     RunExecute,
@@ -446,6 +448,7 @@ fn execute_compatibility(command: CompatibilityCommand) -> i32 {
         CompatibilityRoute::Benchmark => run_benchmark(raw),
         CompatibilityRoute::Snapshot => snapshot::run_raw(raw),
         CompatibilityRoute::Repin => repin::run_raw(raw),
+        CompatibilityRoute::RepowiseHooks => repowise_hooks::run_raw(raw),
         CompatibilityRoute::Evidence => admissibility::run_raw(raw),
         CompatibilityRoute::Decision => decision_port::run_raw(raw),
         CompatibilityRoute::RunExecute | CompatibilityRoute::RunDagCoordinate => {
