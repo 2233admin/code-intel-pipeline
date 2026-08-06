@@ -196,120 +196,147 @@ pub(crate) fn verify_artifact_ref(
 }
 
 pub(crate) fn registered_contract(artifact: &Value) -> Result<ArtifactContract, ArtifactError> {
-    match (
+    let (Some(schema), Some(artifact_type)) = (
         artifact.get("artifactSchema").and_then(Value::as_str),
         artifact.get("type").and_then(Value::as_str),
-    ) {
-        (Some(REPOSITORY_ITERATION_SCHEMA), Some(REPOSITORY_ITERATION_TYPE)) => {
-            Ok(ArtifactContract {
-                artifact_schema: REPOSITORY_ITERATION_SCHEMA,
-                artifact_type: REPOSITORY_ITERATION_TYPE,
-                max_bytes: 64 * 1024,
-                validate_payload: validate_repository_iteration_provenance,
-            })
-        }
-        (Some("code-intel-file-inventory.v1"), Some("inventory.files")) => Ok(ArtifactContract {
+    ) else {
+        return Err(unregistered_contract_error());
+    };
+    repository_family_contract(schema, artifact_type)
+        .or_else(|| diagnosis_family_contract(schema, artifact_type))
+        .or_else(|| orientation_family_contract(schema, artifact_type))
+        .or_else(|| retirement_family_contract(schema, artifact_type))
+        .or_else(|| run_delivery_family_contract(schema, artifact_type))
+        .or_else(|| method_decision_family_contract(schema, artifact_type))
+        .or_else(|| {
+            native_code_contract(schema, artifact_type).map(
+                |(artifact_schema, artifact_type, validate_payload)| ArtifactContract {
+                    artifact_schema,
+                    artifact_type,
+                    max_bytes: MAX_ARTIFACT_BYTES,
+                    validate_payload,
+                },
+            )
+        })
+        .ok_or_else(unregistered_contract_error)
+}
+
+fn unregistered_contract_error() -> ArtifactError {
+    ArtifactError::Contract(
+        "Artifact Ref schema/type is not registered for capability input consumption".to_string(),
+    )
+}
+
+fn repository_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {
+    match (schema, artifact_type) {
+        (REPOSITORY_ITERATION_SCHEMA, REPOSITORY_ITERATION_TYPE) => Some(ArtifactContract {
+            artifact_schema: REPOSITORY_ITERATION_SCHEMA,
+            artifact_type: REPOSITORY_ITERATION_TYPE,
+            max_bytes: 64 * 1024,
+            validate_payload: validate_repository_iteration_provenance,
+        }),
+        ("code-intel-file-inventory.v1", "inventory.files") => Some(ArtifactContract {
             artifact_schema: "code-intel-file-inventory.v1",
             artifact_type: "inventory.files",
             max_bytes: MAX_ARTIFACT_BYTES,
             validate_payload: validate_inventory,
         }),
-        (Some("code-intel-repository-snapshot.v1"), Some("repository.snapshot")) => {
-            Ok(ArtifactContract {
-                artifact_schema: "code-intel-repository-snapshot.v1",
-                artifact_type: "repository.snapshot",
-                max_bytes: 8 * 1024 * 1024,
-                validate_payload: validate_repository_snapshot,
-            })
-        }
-        (Some("code-intel-doctor-observation.v1"), Some("doctor.observation")) => {
-            Ok(ArtifactContract {
-                artifact_schema: "code-intel-doctor-observation.v1",
-                artifact_type: "doctor.observation",
-                max_bytes: 8 * 1024 * 1024,
-                validate_payload: validate_doctor_observation,
-            })
-        }
+        ("code-intel-repository-snapshot.v1", "repository.snapshot") => Some(ArtifactContract {
+            artifact_schema: "code-intel-repository-snapshot.v1",
+            artifact_type: "repository.snapshot",
+            max_bytes: 8 * 1024 * 1024,
+            validate_payload: validate_repository_snapshot,
+        }),
+        _ => None,
+    }
+}
+
+fn diagnosis_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {
+    match (schema, artifact_type) {
+        ("code-intel-doctor-observation.v1", "doctor.observation") => Some(ArtifactContract {
+            artifact_schema: "code-intel-doctor-observation.v1",
+            artifact_type: "doctor.observation",
+            max_bytes: 8 * 1024 * 1024,
+            validate_payload: validate_doctor_observation,
+        }),
         (
-            Some("code-intel-repository-survival-scan-result.v1"),
-            Some("repository.survival-scan"),
-        ) => Ok(ArtifactContract {
+            "code-intel-repository-survival-scan-result.v1",
+            "repository.survival-scan",
+        ) => Some(ArtifactContract {
             artifact_schema: "code-intel-repository-survival-scan-result.v1",
             artifact_type: "repository.survival-scan",
             max_bytes: 8 * 1024 * 1024,
             validate_payload: validate_survival_scan,
         }),
-        (Some("code-intel-evidence-admissibility-result.v1"), Some("evidence.admission")) => {
-            Ok(ArtifactContract {
+        ("code-intel-evidence-admissibility-result.v1", "evidence.admission") => {
+            Some(ArtifactContract {
                 artifact_schema: "code-intel-evidence-admissibility-result.v1",
                 artifact_type: "evidence.admission",
                 max_bytes: 16 * 1024 * 1024,
                 validate_payload: validate_evidence_admission,
             })
         }
-        (Some("code-intel-evidence-payload.v1"), Some("observed.evidence.payload")) => {
-            Ok(ArtifactContract {
-                artifact_schema: "code-intel-evidence-payload.v1",
-                artifact_type: "observed.evidence.payload",
-                max_bytes: 64 * 1024 * 1024,
-                validate_payload: validate_evidence_payload,
-            })
-        }
+        ("code-intel-evidence-payload.v1", "observed.evidence.payload") => Some(ArtifactContract {
+            artifact_schema: "code-intel-evidence-payload.v1",
+            artifact_type: "observed.evidence.payload",
+            max_bytes: 64 * 1024 * 1024,
+            validate_payload: validate_evidence_payload,
+        }),
         (
-            Some("code-intel-sentrux-command-observation.v1"),
-            Some("provider.sentrux.command-observation"),
-        ) => Ok(ArtifactContract {
+            "code-intel-sentrux-command-observation.v1",
+            "provider.sentrux.command-observation",
+        ) => Some(ArtifactContract {
             artifact_schema: "code-intel-sentrux-command-observation.v1",
             artifact_type: "provider.sentrux.command-observation",
             max_bytes: 2 * 1024 * 1024,
             validate_payload: validate_sentrux_command_observation,
         }),
-        (Some("code-intel-hospital.v1"), Some("diagnosis.hospital")) => Ok(ArtifactContract {
+        ("code-intel-hospital.v1", "diagnosis.hospital") => Some(ArtifactContract {
             artifact_schema: "code-intel-hospital.v1",
             artifact_type: "diagnosis.hospital",
             max_bytes: 8 * 1024 * 1024,
             validate_payload: validate_hospital_report,
         }),
-        (Some("code-intel-audit-report.v1"), Some("diagnosis.audit")) => Ok(ArtifactContract {
+        ("code-intel-audit-report.v1", "diagnosis.audit") => Some(ArtifactContract {
             artifact_schema: "code-intel-audit-report.v1",
             artifact_type: "diagnosis.audit",
             max_bytes: 8 * 1024 * 1024,
             validate_payload: validate_audit_report,
         }),
-        (Some("code-intel-hospital-markdown.v1"), Some("diagnosis.hospital-view")) => {
-            Ok(ArtifactContract {
-                artifact_schema: "code-intel-hospital-markdown.v1",
-                artifact_type: "diagnosis.hospital-view",
-                max_bytes: 8 * 1024 * 1024,
-                validate_payload: validate_hospital_markdown,
-            })
-        }
-        (Some("code-intel-surgery-plan.v1"), Some("diagnosis.surgery-plan")) => {
-            Ok(ArtifactContract {
-                artifact_schema: "code-intel-surgery-plan.v1",
-                artifact_type: "diagnosis.surgery-plan",
-                max_bytes: 8 * 1024 * 1024,
-                validate_payload: validate_surgery_plan,
-            })
-        }
-        (Some("code-intel-surgery-plan-markdown.v1"), Some("diagnosis.surgery-plan-view")) => {
-            Ok(ArtifactContract {
+        ("code-intel-hospital-markdown.v1", "diagnosis.hospital-view") => Some(ArtifactContract {
+            artifact_schema: "code-intel-hospital-markdown.v1",
+            artifact_type: "diagnosis.hospital-view",
+            max_bytes: 8 * 1024 * 1024,
+            validate_payload: validate_hospital_markdown,
+        }),
+        ("code-intel-surgery-plan.v1", "diagnosis.surgery-plan") => Some(ArtifactContract {
+            artifact_schema: "code-intel-surgery-plan.v1",
+            artifact_type: "diagnosis.surgery-plan",
+            max_bytes: 8 * 1024 * 1024,
+            validate_payload: validate_surgery_plan,
+        }),
+        ("code-intel-surgery-plan-markdown.v1", "diagnosis.surgery-plan-view") => {
+            Some(ArtifactContract {
                 artifact_schema: "code-intel-surgery-plan-markdown.v1",
                 artifact_type: "diagnosis.surgery-plan-view",
                 max_bytes: 8 * 1024 * 1024,
                 validate_payload: validate_surgery_markdown,
             })
         }
-        (Some("code-intel-project-orientation.v1"), Some("project.orientation")) => {
-            Ok(ArtifactContract {
-                artifact_schema: "code-intel-project-orientation.v1",
-                artifact_type: "project.orientation",
-                max_bytes: 8 * 1024 * 1024,
-                validate_payload: validate_project_orientation,
-            })
-        }
-        (Some("code-intel-understanding-quadrant.v1"), Some("understanding.quadrant")) => {
-            Ok(ArtifactContract {
+        _ => None,
+    }
+}
+
+fn orientation_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {
+    match (schema, artifact_type) {
+        ("code-intel-project-orientation.v1", "project.orientation") => Some(ArtifactContract {
+            artifact_schema: "code-intel-project-orientation.v1",
+            artifact_type: "project.orientation",
+            max_bytes: 8 * 1024 * 1024,
+            validate_payload: validate_project_orientation,
+        }),
+        ("code-intel-understanding-quadrant.v1", "understanding.quadrant") => {
+            Some(ArtifactContract {
                 artifact_schema: "code-intel-understanding-quadrant.v1",
                 artifact_type: "understanding.quadrant",
                 max_bytes: 8 * 1024 * 1024,
@@ -317,127 +344,125 @@ pub(crate) fn registered_contract(artifact: &Value) -> Result<ArtifactContract, 
             })
         }
         (
-            Some("code-intel-compatibility-retirement-manifest.v1"),
-            Some("compatibility.retirement-manifest"),
-        ) => Ok(ArtifactContract {
-            artifact_schema: "code-intel-compatibility-retirement-manifest.v1",
-            artifact_type: "compatibility.retirement-manifest",
-            max_bytes: 4 * 1024 * 1024,
-            validate_payload: validate_retirement_manifest,
-        }),
-        (
-            Some("code-intel-compatibility-retirement-evidence.v1"),
-            Some("compatibility.retirement-evidence"),
-        ) => Ok(ArtifactContract {
-            artifact_schema: "code-intel-compatibility-retirement-evidence.v1",
-            artifact_type: "compatibility.retirement-evidence",
-            max_bytes: 4 * 1024 * 1024,
-            validate_payload: validate_retirement_evidence,
-        }),
-        (
-            Some("code-intel-compatibility-retirement-decision.v1"),
-            Some("compatibility.retirement-decision"),
-        ) => Ok(ArtifactContract {
-            artifact_schema: "code-intel-compatibility-retirement-decision.v1",
-            artifact_type: "compatibility.retirement-decision",
-            max_bytes: 4 * 1024 * 1024,
-            validate_payload: validate_retirement_decision,
-        }),
-        (
-            Some("code-intel-compatibility-retirement-ticket-template.v1"),
-            Some("compatibility.retirement-ticket-template"),
-        ) => Ok(ArtifactContract {
-            artifact_schema: "code-intel-compatibility-retirement-ticket-template.v1",
-            artifact_type: "compatibility.retirement-ticket-template",
-            max_bytes: 4 * 1024 * 1024,
-            validate_payload: validate_retirement_ticket_template,
-        }),
-        (
-            Some("code-intel-compatibility-retirement-deletion-diff.v1"),
-            Some("compatibility.retirement-deletion-diff"),
-        ) => Ok(ArtifactContract {
-            artifact_schema: "code-intel-compatibility-retirement-deletion-diff.v1",
-            artifact_type: "compatibility.retirement-deletion-diff",
-            max_bytes: 4 * 1024 * 1024,
-            validate_payload: validate_retirement_deletion_diff,
-        }),
-        (
-            Some("code-intel-project-orientation-benchmark-observations.v1"),
-            Some("benchmark.orientation-observations"),
-        ) => Ok(ArtifactContract {
+            "code-intel-project-orientation-benchmark-observations.v1",
+            "benchmark.orientation-observations",
+        ) => Some(ArtifactContract {
             artifact_schema: "code-intel-project-orientation-benchmark-observations.v1",
             artifact_type: "benchmark.orientation-observations",
             max_bytes: 64 * 1024 * 1024,
             validate_payload: validate_orientation_benchmark_observations,
         }),
         (
-            Some("code-intel-project-orientation-benchmark.v1"),
-            Some("benchmark.orientation-report"),
-        ) => Ok(ArtifactContract {
+            "code-intel-project-orientation-benchmark.v1",
+            "benchmark.orientation-report",
+        ) => Some(ArtifactContract {
             artifact_schema: "code-intel-project-orientation-benchmark.v1",
             artifact_type: "benchmark.orientation-report",
             max_bytes: 8 * 1024 * 1024,
             validate_payload: validate_orientation_benchmark_report,
         }),
         (
-            Some("code-intel-project-orientation-benchmark-markdown.v1"),
-            Some("benchmark.orientation-report-view"),
-        ) => Ok(ArtifactContract {
+            "code-intel-project-orientation-benchmark-markdown.v1",
+            "benchmark.orientation-report-view",
+        ) => Some(ArtifactContract {
             artifact_schema: "code-intel-project-orientation-benchmark-markdown.v1",
             artifact_type: "benchmark.orientation-report-view",
             max_bytes: 1024 * 1024,
             validate_payload: validate_orientation_benchmark_markdown,
         }),
-        (Some("code-intel-run-timing-events.v1"), Some("delivery.run-timing-events")) => {
-            Ok(ArtifactContract {
+        _ => None,
+    }
+}
+
+fn retirement_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {
+    match (schema, artifact_type) {
+        (
+            "code-intel-compatibility-retirement-manifest.v1",
+            "compatibility.retirement-manifest",
+        ) => Some(ArtifactContract {
+            artifact_schema: "code-intel-compatibility-retirement-manifest.v1",
+            artifact_type: "compatibility.retirement-manifest",
+            max_bytes: 4 * 1024 * 1024,
+            validate_payload: validate_retirement_manifest,
+        }),
+        (
+            "code-intel-compatibility-retirement-evidence.v1",
+            "compatibility.retirement-evidence",
+        ) => Some(ArtifactContract {
+            artifact_schema: "code-intel-compatibility-retirement-evidence.v1",
+            artifact_type: "compatibility.retirement-evidence",
+            max_bytes: 4 * 1024 * 1024,
+            validate_payload: validate_retirement_evidence,
+        }),
+        (
+            "code-intel-compatibility-retirement-decision.v1",
+            "compatibility.retirement-decision",
+        ) => Some(ArtifactContract {
+            artifact_schema: "code-intel-compatibility-retirement-decision.v1",
+            artifact_type: "compatibility.retirement-decision",
+            max_bytes: 4 * 1024 * 1024,
+            validate_payload: validate_retirement_decision,
+        }),
+        (
+            "code-intel-compatibility-retirement-ticket-template.v1",
+            "compatibility.retirement-ticket-template",
+        ) => Some(ArtifactContract {
+            artifact_schema: "code-intel-compatibility-retirement-ticket-template.v1",
+            artifact_type: "compatibility.retirement-ticket-template",
+            max_bytes: 4 * 1024 * 1024,
+            validate_payload: validate_retirement_ticket_template,
+        }),
+        (
+            "code-intel-compatibility-retirement-deletion-diff.v1",
+            "compatibility.retirement-deletion-diff",
+        ) => Some(ArtifactContract {
+            artifact_schema: "code-intel-compatibility-retirement-deletion-diff.v1",
+            artifact_type: "compatibility.retirement-deletion-diff",
+            max_bytes: 4 * 1024 * 1024,
+            validate_payload: validate_retirement_deletion_diff,
+        }),
+        _ => None,
+    }
+}
+
+fn run_delivery_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {
+    match (schema, artifact_type) {
+        ("code-intel-run-timing-events.v1", "delivery.run-timing-events") => {
+            Some(ArtifactContract {
                 artifact_schema: "code-intel-run-timing-events.v1",
                 artifact_type: "delivery.run-timing-events",
                 max_bytes: 64 * 1024 * 1024,
                 validate_payload: validate_run_timing_events,
             })
         }
-        (Some("code-intel-run-commit.v1"), Some("run.commit")) => Ok(ArtifactContract {
+        ("code-intel-run-commit.v1", "run.commit") => Some(ArtifactContract {
             artifact_schema: "code-intel-run-commit.v1",
             artifact_type: "run.commit",
             max_bytes: 64 * 1024,
             validate_payload: validate_run_commit,
         }),
-        (Some("code-intel-run-manifest.v1"), Some("run.manifest")) => Ok(ArtifactContract {
+        ("code-intel-run-manifest.v1", "run.manifest") => Some(ArtifactContract {
             artifact_schema: "code-intel-run-manifest.v1",
             artifact_type: "run.manifest",
             max_bytes: 8 * 1024 * 1024,
             validate_payload: validate_run_manifest,
         }),
-        (Some("code-intel-session-evidence.v1"), Some("verification.session-evidence")) => {
-            Ok(ArtifactContract {
+        ("code-intel-session-evidence.v1", "verification.session-evidence") => {
+            Some(ArtifactContract {
                 artifact_schema: "code-intel-session-evidence.v1",
                 artifact_type: "verification.session-evidence",
                 max_bytes: 128 * 1024 * 1024,
                 validate_payload: validate_session_evidence,
             })
         }
-        (Some("code-intel-anchor-verification.v1"), Some("verification.anchors")) => {
-            Ok(ArtifactContract {
-                artifact_schema: "code-intel-anchor-verification.v1",
-                artifact_type: "verification.anchors",
-                max_bytes: MAX_ARTIFACT_BYTES,
-                validate_payload: validate_anchor_verification,
-            })
-        }
-        (Some("code-intel-method-catalog.v1"), Some("method.catalog")) => Ok(ArtifactContract {
-            artifact_schema: "code-intel-method-catalog.v1",
-            artifact_type: "method.catalog",
-            max_bytes: 256 * 1024,
-            validate_payload: validate_method_catalog,
+        ("code-intel-anchor-verification.v1", "verification.anchors") => Some(ArtifactContract {
+            artifact_schema: "code-intel-anchor-verification.v1",
+            artifact_type: "verification.anchors",
+            max_bytes: MAX_ARTIFACT_BYTES,
+            validate_payload: validate_anchor_verification,
         }),
-        (Some("code-intel-method-card.v1"), Some("method.card")) => Ok(ArtifactContract {
-            artifact_schema: "code-intel-method-card.v1",
-            artifact_type: "method.card",
-            max_bytes: 256 * 1024,
-            validate_payload: validate_method_card,
-        }),
-        (Some("code-intel-delivery-light-speed.v1"), Some("delivery.light-speed-report")) => {
-            Ok(ArtifactContract {
+        ("code-intel-delivery-light-speed.v1", "delivery.light-speed-report") => {
+            Some(ArtifactContract {
                 artifact_schema: "code-intel-delivery-light-speed.v1",
                 artifact_type: "delivery.light-speed-report",
                 max_bytes: 8 * 1024 * 1024,
@@ -445,36 +470,39 @@ pub(crate) fn registered_contract(artifact: &Value) -> Result<ArtifactContract, 
             })
         }
         (
-            Some("code-intel-delivery-light-speed-markdown.v1"),
-            Some("delivery.light-speed-report-view"),
-        ) => Ok(ArtifactContract {
+            "code-intel-delivery-light-speed-markdown.v1",
+            "delivery.light-speed-report-view",
+        ) => Some(ArtifactContract {
             artifact_schema: "code-intel-delivery-light-speed-markdown.v1",
             artifact_type: "delivery.light-speed-report-view",
             max_bytes: 1024 * 1024,
             validate_payload: validate_light_speed_markdown,
         }),
-        (Some("code-intel-decision-record.v1"), Some("decision.record")) => Ok(ArtifactContract {
+        _ => None,
+    }
+}
+
+fn method_decision_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {
+    match (schema, artifact_type) {
+        ("code-intel-method-catalog.v1", "method.catalog") => Some(ArtifactContract {
+            artifact_schema: "code-intel-method-catalog.v1",
+            artifact_type: "method.catalog",
+            max_bytes: 256 * 1024,
+            validate_payload: validate_method_catalog,
+        }),
+        ("code-intel-method-card.v1", "method.card") => Some(ArtifactContract {
+            artifact_schema: "code-intel-method-card.v1",
+            artifact_type: "method.card",
+            max_bytes: 256 * 1024,
+            validate_payload: validate_method_card,
+        }),
+        ("code-intel-decision-record.v1", "decision.record") => Some(ArtifactContract {
             artifact_schema: "code-intel-decision-record.v1",
             artifact_type: "decision.record",
             max_bytes: 1024 * 1024,
             validate_payload: validate_decision_record_schema,
         }),
-        (Some(schema), Some(artifact_type))
-            if native_code_contract(schema, artifact_type).is_some() =>
-        {
-            let (artifact_schema, artifact_type, validate_payload) =
-                native_code_contract(schema, artifact_type).expect("guard matched native contract");
-            Ok(ArtifactContract {
-                artifact_schema,
-                artifact_type,
-                max_bytes: MAX_ARTIFACT_BYTES,
-                validate_payload,
-            })
-        }
-        _ => Err(ArtifactError::Contract(
-            "Artifact Ref schema/type is not registered for capability input consumption"
-                .to_string(),
-        )),
+        _ => None,
     }
 }
 
