@@ -1582,7 +1582,7 @@ fn validate_understanding_quadrant_item(
     Ok((id.to_string(), expected.2, source_state == Some("unknown")))
 }
 
-fn expected_understanding_quadrant(
+pub(crate) fn expected_understanding_quadrant(
     criticality: u64,
     confidence: u64,
 ) -> (&'static str, &'static str, &'static str) {
