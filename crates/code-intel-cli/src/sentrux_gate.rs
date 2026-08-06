@@ -28,6 +28,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+#[path = "boundary_rules.rs"]
+mod boundary_rules;
 #[path = "file_gate/mod.rs"]
 mod file_gate;
 #[path = "hardened_git.rs"]
@@ -168,7 +170,7 @@ pub(crate) fn run_check(repo: &Path) -> Result<EngineRun, String> {
     }
     let rules = fs::read_to_string(&rules_path)
         .map_err(|error| format!("read {}: {error}", rules_path.display()))?;
-    let violations = evaluate_rules(&rules, &metrics);
+    let violations = evaluate_rules(&rules, &metrics, repo);
     if violations.is_empty() {
         out.push_str(&format!(
             "All rules passed - Quality: {}\n",
@@ -586,7 +588,7 @@ fn gate_pairs_values(out: &mut String, before: &Value, after: &ProjectMetrics) {
     ));
 }
 
-fn evaluate_rules(rules: &str, metrics: &ProjectMetrics) -> Vec<Violation> {
+fn evaluate_rules(rules: &str, metrics: &ProjectMetrics, repo: &Path) -> Vec<Violation> {
     let mut violations = Vec::new();
     if let Some(limit) = integer_rule(rules, "max_cc") {
         if metrics.max_complexity > limit {
@@ -631,6 +633,34 @@ fn evaluate_rules(rules: &str, metrics: &ProjectMetrics) -> Vec<Violation> {
                 });
             }
         }
+    }
+    let boundaries = boundary_rules::parse_boundaries(rules);
+    let layers = boundary_rules::parse_layers(rules);
+    if !boundaries.is_empty() || !layers.is_empty() {
+        let rust_files: BTreeSet<String> = metrics
+            .files
+            .iter()
+            .filter(|file| file.path.ends_with(".rs"))
+            .map(|file| file.path.clone())
+            .collect();
+        let edges = boundary_rules::crate_edges(repo, &rust_files);
+        let modules_by_file: BTreeMap<String, String> = rust_files
+            .iter()
+            .filter_map(|path| {
+                boundary_rules::owning_module(path, &rust_files)
+                    .map(|module| (path.clone(), module))
+            })
+            .collect();
+        violations.extend(boundary_rules::boundary_violations(
+            &boundaries,
+            &edges,
+            &modules_by_file,
+        ));
+        violations.extend(boundary_rules::layer_violations(
+            &layers,
+            &edges,
+            &modules_by_file,
+        ));
     }
     violations
 }

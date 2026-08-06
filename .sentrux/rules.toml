@@ -142,3 +142,47 @@ max_cycles = 0
 max_coupling = 76.0
 max_cc = 156
 no_god_files = false
+
+# layer_order and boundary_dependency (2026-08-06): the adapter contract
+# (`sentrux_adapter::AUTHORITATIVE_RULE_KINDS`) has named these two rule
+# kinds since the adapter was written, but the engine never computed either
+# -- `evidence.sentrux` was only ever complete through the coarser
+# `sentrux_gate`/`sentrux_check` command-observation path. Both now run for
+# real inside `code-intel sentrux check` (`boundary_rules.rs`), resolving
+# `use crate::segment` the same way the `max_cycles` detector already does:
+# an edge only exists when `segment.rs` or `segment/mod.rs` is a real file,
+# so an unresolved path or re-exported type name can't manufacture one.
+#
+# Module names below are this crate's top-level `mod` names (declared in
+# `main.rs`), not file paths -- a file nested only via `#[path]` inside
+# another top-level module (e.g. `doctor_adapter.rs` inside
+# `capability_inventory`) is not independently addressable through
+# `crate::` and so never appears here.
+#
+# layer_order direction: index 0 is the innermost/foundational layer. A
+# later layer may depend on an earlier one; an earlier layer depending on a
+# later one is the violation. This repo's built-in structural engine
+# (`sentrux_gate`, `sentrux_analysis`) has zero `use crate::` lines at all
+# -- verified before adding this -- so it seeded layer 0 for free. `cli` is
+# the outermost layer: nothing outside `cli/` references it (verified the
+# same way), which is what makes it safe to put last.
+[[layer]]
+modules = ["sentrux_gate", "sentrux_analysis"]
+
+[[layer]]
+modules = ["sentrux", "sentrux_adapter", "capability_inventory", "providers"]
+
+[[layer]]
+modules = ["cli"]
+
+# boundary_dependency restates the single highest-value edge from the layer
+# ordering above as its own named, explicit rule: the structural gate engine
+# must stay usable and testable without any CLI argument-parsing dependency.
+# `layer_order` already catches this (and every other backward edge between
+# the three layers above); this rule exists so that specific invariant has
+# its own name in a failing gate's output instead of only ever showing up as
+# a generic layer violation.
+[[boundary]]
+description = "the structural gate engine (sentrux_gate, sentrux_analysis) must not depend on the CLI layer"
+from = ["sentrux_gate", "sentrux_analysis"]
+forbid = ["cli"]
