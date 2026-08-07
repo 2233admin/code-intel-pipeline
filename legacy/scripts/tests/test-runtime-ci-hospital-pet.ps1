@@ -32,7 +32,7 @@ try {
     }
     $requestPath = Join-Path $temp "request.json"
     [IO.File]::WriteAllText($requestPath, ($request | ConvertTo-Json -Depth 6 -Compress), [Text.UTF8Encoding]::new($false))
-    & (Join-Path $root "run-code-intel.ps1") -RepoPath $repo -ArtifactRoot $artifacts -Mode lite -SkipRepowise -SkipSentrux -SkipGitHubResearch -SkipOpenSpec -RuntimeCiEvidenceRequest $requestPath -RuntimeCiEvidenceArtifactRoot $sourceRoot | Out-Null
+    & (Join-Path $root "run-code-intel.ps1") -RepoPath $repo -ArtifactRoot $artifacts -Mode lite -SkipRepowise -SkipSentrux -SkipOpenSpec -RuntimeCiEvidenceRequest $requestPath -RuntimeCiEvidenceArtifactRoot $sourceRoot | Out-Null
     $latest = Get-ChildItem -LiteralPath (Join-Path $artifacts "repo") -Directory | Sort-Object Name -Descending | Select-Object -First 1
     if ($null -eq $latest) { throw "pipeline did not publish an artifact run" }
     $hospital = Get-Content (Join-Path $latest.FullName "hospital-report.json") -Raw | ConvertFrom-Json

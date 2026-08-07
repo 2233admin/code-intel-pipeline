@@ -233,7 +233,7 @@ https://github.com/2233admin/code-intel-pipeline/tree/main/skills/code-intel-pip
 然后使用 $code-intel-pipeline 为 C:\path\to\your\repo 安装并运行稳定版。
 ```
 
-Skill 默认只解析稳定版，校验 GitHub Release 提供的 SHA-256 后才解压。预发布版本和第三方依赖安装都需要显式选择。
+Skill 默认只解析稳定版；`gh` 2.49+ 在场时先验 [GitHub Artifact Attestation](https://cli.github.com/manual/gh_attestation_verify)（证明这份 ZIP 确实产自本仓发布流水线，不只是字节没传坏），再校验 GitHub Release 提供的 SHA-256；`gh` 缺失或过旧会显式打印降级说明而不是静默只查 SHA-256。人工验证同一份保证：`gh attestation verify <zip> --repo 2233admin/code-intel-pipeline`，命令与验证记录见 [docs/release-provenance-runbook.md](docs/release-provenance-runbook.md)。预发布版本和第三方依赖安装都需要显式选择。
 
 人工用户从 GitHub Release 下载并解压安装包；Agent 用户通过 Skill 安装。macOS / Linux 没有 Release ZIP，走[macOS / Linux 快速开始](#macos--linux-快速开始)的源码构建路径。Windows 源码安装仍可使用：
 

@@ -212,7 +212,7 @@ $fixtureRoot = Join-Path $OutputDir "fixture"
 $repoPath = New-BenchmarkRepo -Parent $fixtureRoot
 
 $artifactRoot = Join-Path $OutputDir "native-artifacts"
-& $runner -RepoPath $repoPath -Mode lite -ArtifactRoot $artifactRoot -SkipRepowise -SkipSentrux -SkipGitHubResearch | Out-Null
+& $runner -RepoPath $repoPath -Mode lite -ArtifactRoot $artifactRoot -SkipRepowise -SkipSentrux | Out-Null
 if ($LASTEXITCODE -ne 0) {
     throw "Native code evidence run failed."
 }

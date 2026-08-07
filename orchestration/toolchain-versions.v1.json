@@ -93,7 +93,7 @@
     },
     {
       "name": "code-intel",
-      "version": "0.7.0-beta.6",
+      "version": "0.7.0",
       "scope": "runtime",
       "required": true,
       "rationale": "The pipeline's own binary. An installed copy that lags the tree is invisible without a version surface: a v0.6.0 build answered `snapshot identity` in 10.9s where the current tree answers in 0.28s.",

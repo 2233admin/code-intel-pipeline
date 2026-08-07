@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-08-07
+
+首个正式版切割。#14 的发布闸验收条款本身早已做完（自扫门禁、`dag_run`/`execution_kernel` 循环依赖修复，issue 自己的 checklist 勾过）；剩下未勾的 session-intelligence/2D viewer 是另一条独立多版本 roadmap，跟能不能发 GA 无关，留 backlog。#158 复核后没有整条延后：Skill 安装路径升级为先验 GitHub Artifact Attestation 再退回 SHA-256（`gh` 缺失时显式降级，不静默）；跑了一次真实的 supply-chain 自审（`orchestration/audit/reports/audit-report.json`，8.0/10，一条确认发现——发布 tag 未签名也没有 ruleset 保护）；对已发布的 v0.7.0-beta.6 三平台 ZIP 实测 `gh attestation verify` 全过，记录在 `docs/release-provenance-runbook.md`；OpenSSF Best Practices 逐条自评进 `docs/openssf-best-practices-gap.md`。只有「签名 tag + tag 保护 ruleset」明确留给维护者（改仓库设置不该由 agent 单方面做），继续在 #158 追踪。
+
 ### Added
 
 - **契约登记表与 schema 发布面对账闸（#206 第一刀）**：`registered_contract()` 接受的每一对 `(schema, type)` 现在都必须有对应的 `orchestration/schemas/<id>.schema.json`，否则单测红灯。判据不另立清单——registry 是 `match` 臂，臂本身就是清单，所以检查从 `artifact_ref.rs` 自己的源码把臂读出来，再把读出的每一对喂回 `registered_contract()` 核对；解析一旦跟真臂漂移，喂回去就不认，测试炸而不是静默放行。家族名单也不手写：从 `registered_contract` 自己的分派体里读出它调用了哪些 `*_family_contract`——新家族要进扫描面，唯一的路径正是进生产的那条路径。三道假绿灯陷阱：臂数少于 40 判定「扫描器瞎了」（第一版实现正是被这条抓到的——按第一个 `#[cfg(test)]` 截断源码，漏掉整个 native code-evidence 家族，只解析出 32 条）；家族数少于 7 判定「分派体丢了」；**解析不了的臂是硬失败，不是跳过**——`(CONST_A, CONST_B) =>` 这种写法如果被静默丢弃，该契约就在总数依然健康的情况下逃出 schema 检查，所以常量臂改为查 `const NAME: &str` 表解析，解析不出直接炸（实测：临时塞一条 `&'static str` 声明的常量臂，门禁报 `uses a form the registry scanner cannot resolve`）。markdown 视图按规则豁免（`<x>-markdown.v1` 只要 `<x>.v1` 也已注册即可），native code-evidence 家族解析伞状 schema 的 `oneOf` 分支 → `$defs` → `properties.schema.const` 来豁免，不是在文件里搜字符串——出现在 title、example 或无关字段里的 id 不算覆盖。`AWAITING_SCHEMA` 豁免表的判据是：表里的 id 一旦有了 schema 文件、或不再被注册，都必须删条目；**表变长本身没有被门禁挡住**（那需要 merge-base 或 CI 持有的基线来比对，记在 #210，这里不声称）。当前基线：41 个已注册契约，24 个已发布 schema，4 个 markdown 视图，8 个走伞状 schema，**5 个真缺口**入 `AWAITING_SCHEMA`。
