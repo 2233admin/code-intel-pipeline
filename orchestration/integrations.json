@@ -535,7 +535,7 @@
         "id": "provider.graph-builtin.compat",
         "version": "1.0.0",
         "toolchainDigests": [
-              "5634551c7d560819289cc6aef60c32818b8e2f1a5ee310ee71e68222d0c36035",
+              "e78c7c3d492c0047bd53151d83f3413d2aa937a974aed0b929b94cc4c61d86de",
               "59ef3070547d4af845629a160fdf37e8e1b3edbf9883f5ff882b99839e62c82d",
               "68a4f55b76080575721cde3ee62fd746999c6df8e79303b809baecf5d2514338",
               "52644a812174988ede91d98ddfec63c6a91f8478277d7bf74c73f106dd0f776b",
@@ -587,7 +587,7 @@
         "id": "provider.sentrux-builtin.compat",
         "version": "1.0.0",
         "toolchainDigests": [
-              "5634551c7d560819289cc6aef60c32818b8e2f1a5ee310ee71e68222d0c36035",
+              "e78c7c3d492c0047bd53151d83f3413d2aa937a974aed0b929b94cc4c61d86de",
               "29ad124d984f6ab0756bdc7c0b523a84dfada2a655fe0d282ce681165f6bae4f",
               "f69776e6800f917099794a5a28dbdb1117eaf657568dd09e34bf33e4207ddb4c",
               "52644a812174988ede91d98ddfec63c6a91f8478277d7bf74c73f106dd0f776b",
