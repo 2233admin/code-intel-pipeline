@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-08-07
+
+首个正式版切割。#14（自扫发布闸完整落地）、#158（发布出处——Sigstore attestation + 签名 tag + 验证路径）明确延后到 0.7.0 之后：两条都是真实待办，不是"查过判定不需要"，在 issue 上留了延后理由，SSOT 继续在 issue 上追踪，不因这次切版关闭。
+
 ### Added
 
 - **契约登记表与 schema 发布面对账闸（#206 第一刀）**：`registered_contract()` 接受的每一对 `(schema, type)` 现在都必须有对应的 `orchestration/schemas/<id>.schema.json`，否则单测红灯。判据不另立清单——registry 是 `match` 臂，臂本身就是清单，所以检查从 `artifact_ref.rs` 自己的源码把臂读出来，再把读出的每一对喂回 `registered_contract()` 核对；解析一旦跟真臂漂移，喂回去就不认，测试炸而不是静默放行。家族名单也不手写：从 `registered_contract` 自己的分派体里读出它调用了哪些 `*_family_contract`——新家族要进扫描面，唯一的路径正是进生产的那条路径。三道假绿灯陷阱：臂数少于 40 判定「扫描器瞎了」（第一版实现正是被这条抓到的——按第一个 `#[cfg(test)]` 截断源码，漏掉整个 native code-evidence 家族，只解析出 32 条）；家族数少于 7 判定「分派体丢了」；**解析不了的臂是硬失败，不是跳过**——`(CONST_A, CONST_B) =>` 这种写法如果被静默丢弃，该契约就在总数依然健康的情况下逃出 schema 检查，所以常量臂改为查 `const NAME: &str` 表解析，解析不出直接炸（实测：临时塞一条 `&'static str` 声明的常量臂，门禁报 `uses a form the registry scanner cannot resolve`）。markdown 视图按规则豁免（`<x>-markdown.v1` 只要 `<x>.v1` 也已注册即可），native code-evidence 家族解析伞状 schema 的 `oneOf` 分支 → `$defs` → `properties.schema.const` 来豁免，不是在文件里搜字符串——出现在 title、example 或无关字段里的 id 不算覆盖。`AWAITING_SCHEMA` 豁免表的判据是：表里的 id 一旦有了 schema 文件、或不再被注册，都必须删条目；**表变长本身没有被门禁挡住**（那需要 merge-base 或 CI 持有的基线来比对，记在 #210，这里不声称）。当前基线：41 个已注册契约，24 个已发布 schema，4 个 markdown 视图，8 个走伞状 schema，**5 个真缺口**入 `AWAITING_SCHEMA`。
