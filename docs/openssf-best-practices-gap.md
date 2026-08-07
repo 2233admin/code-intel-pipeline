@@ -78,9 +78,16 @@ move.
 | `crypto_published` / `crypto_call` / `crypto_floss` | N/A (mostly) | This project's own code does not implement or call cryptographic primitives directly; it shells out to `git`, `gh`, and standard OS/Rust-ecosystem tooling for the one crypto-adjacent operation it has (release-artifact signing/attestation via GitHub's Sigstore-backed `attest-build-provenance`, which is itself FLOSS and publicly reviewed). |
 | `crypto_keylength` / `crypto_weaknesses` | N/A | No custom cryptographic mechanism to configure key lengths or algorithms for. |
 | `delivery_mitm` — delivery mechanism resists MITM | Met | GitHub Releases over HTTPS; SHA-256 checksum plus (as of this assessment) GitHub Artifact Attestation verification in the install path — see `docs/release-provenance-runbook.md`. |
-| `delivery_unsigned` (SUGGESTED) — cryptographic signature on releases | Met (as of this assessment) | GitHub Artifact Attestation (Sigstore/OIDC), verified end-to-end against the real `v0.7.0-beta.6` release during this audit. Release **tags** themselves are still unsigned — see `supply-chain-001` in `orchestration/audit/reports/audit-report.json` — this line is specifically about the release *artifacts*, which are covered. |
+| `delivery_unsigned` (MUST) — a hash MUST NOT be fetched over plain HTTP and trusted without a signature check | Met | This criterion is about *not* trusting an HTTP-retrieved hash unsigned, not about signing releases (that's `signed_releases`, corrected below). Every checksum this project publishes or fetches (GitHub Release `.sha256` sidecars, the Skill installer's download) is served over HTTPS end to end — there is no plain-HTTP hash-retrieval path to be unsigned in the first place. |
 | `vulnerabilities_fixed_60_days` | Not verified this pass | No publicly known vulnerability has been filed against this repo to measure against; revisit if one ever is. |
 | `vulnerabilities_critical_fixed` (SUGGESTED) | Not verified this pass | Same as above. |
+
+**Correction (post-review):** this assessment originally mislabeled `delivery_unsigned` (Passing, MUST) as the criterion covered by this project's GitHub Artifact Attestation work and as `SUGGESTED`. Neither was right. The criteria that actually cover signed release artifacts and signed tags — `signed_releases` (MUST) and `version_tags_signed` (SUGGESTED) — are **Silver-badge criteria**, one tier above what this document assesses (`bestpractices.dev/en/criteria/1`, not `/0`), so they are out of this Passing-badge gap list's scope by definition. Noted here anyway because they're exactly what issue #158 is about:
+
+| Silver criterion (out of Passing scope) | Status | Notes |
+|---|---|---|
+| `signed_releases` (MUST for Silver) | Arguably met | GitHub Artifact Attestation (Sigstore/OIDC) cryptographically signs every release ZIP with no private key to manage or leak — verified end-to-end against the real, published `v0.7.0-beta.6` release for all three platforms during this audit (see `docs/release-provenance-runbook.md`). The criterion doesn't mandate a specific signing mechanism; keyless Sigstore/OIDC is a recognized modern approach to it. Not claiming a formal "Met" since this document only assesses Passing. |
+| `version_tags_signed` (SUGGESTED for Silver) | Not met | Release tags are unsigned — tracked as `supply-chain-001` in `orchestration/audit/reports/audit-report.json` and in `docs/release-provenance-runbook.md`. |
 
 ## Analysis
 
@@ -102,6 +109,6 @@ Real, fixable gaps found this pass, roughly in order of effort:
 1. **No `CONTRIBUTING.md` / no documented contribution process** — blocks `interact`, `contribution`, `contribution_requirements`, `tests_documented_added`. Cheapest fix on this list.
 2. **No `SECURITY.md` / vulnerability-reporting process** — blocks `vulnerability_report_process`, `vulnerability_report_private`. Also cheap — mostly a doc, optionally enabling GitHub's private vulnerability reporting feature.
 3. **177 unaddressed compiler warnings, no lint tool wired into CI** — blocks `warnings_fixed`, `static_analysis`, and their SUGGESTED siblings. The largest real-effort item here; `cargo clippy` wiring is small, clearing the existing warning backlog is not.
-4. **Release tags are unsigned** — already tracked as `supply-chain-001` in this audit's findings and in `docs/release-provenance-runbook.md`; affects `delivery_unsigned`'s tag-level nuance even though the release *artifacts* already pass via attestation.
+4. **Release tags are unsigned** — already tracked as `supply-chain-001` in this audit's findings and in `docs/release-provenance-runbook.md`. This is the Silver-tier `version_tags_signed` gap, not a Passing-badge blocker; noted because it's directly what issue #158 asked about.
 
 Everything marked **Not verified this pass** needs a maintainer with response-time/issue-history access (or a `gh api` sweep) to resolve one way or the other — this assessment did not fabricate a status for those.

@@ -303,6 +303,32 @@ class SkillPackageTests(unittest.TestCase):
         ), mock.patch.object(bootstrap.subprocess, "run", return_value=completed):
             self.assertEqual(bootstrap.gh_cli_version(), (2, 49))
 
+    def test_gh_cli_version_none_on_timeout(self) -> None:
+        bootstrap = load_bootstrap_module()
+        with mock.patch.object(
+            bootstrap.shutil, "which", return_value="/usr/bin/gh"
+        ), mock.patch.object(
+            bootstrap.subprocess,
+            "run",
+            side_effect=bootstrap.subprocess.TimeoutExpired(cmd="gh", timeout=30),
+        ):
+            self.assertIsNone(bootstrap.gh_cli_version())
+
+    def test_verify_build_provenance_raises_on_timeout(self) -> None:
+        bootstrap = load_bootstrap_module()
+        with tempfile.TemporaryDirectory() as temp:
+            archive = Path(temp) / "release.zip"
+            archive.write_bytes(b"unused")
+            with mock.patch.object(
+                bootstrap, "gh_cli_version", return_value=(2, 49)
+            ), mock.patch.object(
+                bootstrap.subprocess,
+                "run",
+                side_effect=bootstrap.subprocess.TimeoutExpired(cmd="gh", timeout=30),
+            ):
+                with self.assertRaises(bootstrap.BootstrapError):
+                    bootstrap.verify_build_provenance(archive)
+
     def test_verify_build_provenance_degrades_when_gh_missing(self) -> None:
         bootstrap = load_bootstrap_module()
         with tempfile.TemporaryDirectory() as temp:
@@ -410,6 +436,8 @@ class SkillPackageTests(unittest.TestCase):
                 self.assertEqual(status, "installed")
                 marker = destination / bootstrap.RELEASE_MARKER
                 self.assertTrue(marker.is_file())
+                marker_data = json.loads(marker.read_text(encoding="utf-8"))
+                self.assertEqual(marker_data["attestation"], "verified")
 
                 _, repeated_status = bootstrap.install_release(
                     asset, temp_path / "installs"

@@ -196,6 +196,7 @@ def sha256_file(path: Path) -> str:
 
 
 GH_ATTESTATION_MIN_VERSION = (2, 49)
+GH_COMMAND_TIMEOUT_SECONDS = 30
 
 
 def gh_cli_version() -> tuple[int, int] | None:
@@ -203,9 +204,16 @@ def gh_cli_version() -> tuple[int, int] | None:
     executable = shutil.which("gh")
     if not executable:
         return None
-    completed = subprocess.run(
-        [executable, "--version"], capture_output=True, text=True, check=False
-    )
+    try:
+        completed = subprocess.run(
+            [executable, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GH_COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return None
     if completed.returncode != 0:
         return None
     match = re.search(r"gh version (\d+)\.(\d+)", completed.stdout)
@@ -239,12 +247,20 @@ def verify_build_provenance(archive: Path) -> str:
             file=sys.stderr,
         )
         return "degraded_missing_gh"
-    completed = subprocess.run(
-        ["gh", "attestation", "verify", str(archive), "--repo", REPOSITORY],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            ["gh", "attestation", "verify", str(archive), "--repo", REPOSITORY],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GH_COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise BootstrapError(
+            f"gh attestation verify timed out after {GH_COMMAND_TIMEOUT_SECONDS}s "
+            f"for {archive.name}; this asset's build provenance could not be "
+            "confirmed and must not be installed."
+        ) from error
     if completed.returncode != 0:
         raise BootstrapError(
             "Build provenance attestation verification failed for "

@@ -58,12 +58,14 @@ push access to this repository (see the audit finding
 `supply-chain-001` in the report above: there is currently no tag-protection
 ruleset either).
 
-To cut a signed tag:
+To cut a signed tag (`vX.Y.Z` is whatever the next real release tag is —
+don't reuse an already-published tag; `git tag -s` fails closed if the tag
+exists):
 
 ```bash
-git tag -s v0.7.0 -m "v0.7.0"
-git tag -v v0.7.0          # verify locally before pushing
-git push origin v0.7.0
+git tag -s vX.Y.Z -m "vX.Y.Z"
+git tag -v vX.Y.Z          # verify locally before pushing
+git push origin vX.Y.Z
 ```
 
 This requires a GPG (or SSH, with `git config gpg.format ssh` and
