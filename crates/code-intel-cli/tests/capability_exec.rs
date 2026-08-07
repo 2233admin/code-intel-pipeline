@@ -14,7 +14,7 @@ const STRUCTURED_EDIT_DIGEST: &str =
 const REPO_SNAPSHOT_DIGEST: &str =
     "1fa974b28cc2ab92b1ac04e22702b6b126023bcc0ccf1feee14e3d31a833f9dc";
 const CODENEXUS_TOOLCHAIN_DIGESTS: [&str; 5] = [
-    "e78c7c3d492c0047bd53151d83f3413d2aa937a974aed0b929b94cc4c61d86de",
+    "d72912f1185aefed0fd82081cde7a9b2e48645b2620b47a877c82f3d51266f89",
     "645675312135932dfce365a8dfc14e214cec78ee733f248606547b3eaa56edc8",
     "52644a812174988ede91d98ddfec63c6a91f8478277d7bf74c73f106dd0f776b",
     "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26",
@@ -2193,6 +2193,18 @@ fn codenexus_builtin_compat_dispatches_through_provider_codenexus_adapt() {
             .iter()
             .any(|artifact| artifact["type"] == "evidence.admission"),
         "result={result}"
+    );
+    assert!(
+        result["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|artifact| artifact["type"] == "observed.evidence.payload"),
+        "result={result}"
+    );
+    assert!(
+        codenexus_out.join("codenexus-payload.json").is_file(),
+        "direct capability-exec dispatch must publish the payload artifact to disk, not just the admission result"
     );
     let admission: Value =
         serde_json::from_slice(&fs::read(codenexus_out.join("codenexus-admission.json")).unwrap())

@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
@@ -43,6 +43,13 @@ const CODENEXUS_EFFECTS: [&str; 4] = [
     "write_compatibility_artifact",
 ];
 static CODENEXUS_SCRATCH_NONCE: AtomicU64 = AtomicU64::new(0);
+/// Bounds how long the CodeNexus-lite facade may run. Without this, a hung
+/// `pwsh` process (network stall inside the script, a pathologically large
+/// git history) would block `evidence.codenexus` -- and the whole DAG run --
+/// forever. `status: "unavailable"` is already a first-class admitted
+/// outcome, so timing out just routes into that existing branch rather than
+/// adding a new failure mode.
+const CODENEXUS_LITE_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub(super) fn graph_admission(
     request: &Value,
@@ -283,7 +290,8 @@ pub(super) fn codenexus_admission(
     let implementation_digest = sha256_hex(&fs::read(&script).map_err(|error| {
         AdapterError::Unavailable(format!("read CodeNexus-lite facade: {error}"))
     })?);
-    let scratch = create_codenexus_scratch_dir()?;
+    let scratch_guard = ScratchDir(create_codenexus_scratch_dir()?);
+    let scratch = scratch_guard.path();
     let context_path = scratch.join("codenexus-context.json");
     let mut command = Command::new("pwsh");
     command
@@ -292,11 +300,11 @@ pub(super) fn codenexus_admission(
         .arg("-RepoPath")
         .arg(repo)
         .arg("-RunDir")
-        .arg(&scratch)
+        .arg(scratch)
         .arg("-OutputPath")
         .arg(&context_path)
         .args(["-MaxCommitsPerFile", "0", "-Quiet"]);
-    let run = command.output();
+    let run = run_with_timeout(command, CODENEXUS_LITE_TIMEOUT);
     lease.verify_after(repo).map_err(AdapterError::Contract)?;
     let observed_at = now()?.max(collected_at);
     let identity = snapshot_identity(request)?;
@@ -312,7 +320,7 @@ pub(super) fn codenexus_admission(
         }
         _ => ("unavailable", Value::Null),
     };
-    let _ = fs::remove_dir_all(&scratch);
+    drop(scratch_guard);
     let placeholder_native = json!({
         "schema":"code-intel-codenexus-native-result.v1",
         "providerMode":"lite",
@@ -416,6 +424,55 @@ fn create_codenexus_scratch_dir() -> Result<PathBuf, AdapterError> {
     Err(AdapterError::Io(
         "CodeNexus-lite scratch directory name space exhausted".into(),
     ))
+}
+
+/// Removes the CodeNexus-lite scratch directory on every exit path,
+/// including the early `?` returns between collection and publication
+/// (snapshot verification, clock reads, identity extraction) that a plain
+/// end-of-function cleanup would miss.
+struct ScratchDir(PathBuf);
+
+impl ScratchDir {
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Runs `command` to completion or kills it after `timeout`, whichever comes
+/// first. Stdio is discarded rather than piped: the facade communicates its
+/// result through `-OutputPath`, not stdout/stderr, and piping without
+/// draining while polling `try_wait` would risk a full-pipe deadlock.
+fn run_with_timeout(mut command: Command, timeout: Duration) -> std::io::Result<Output> {
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let started = Instant::now();
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(Output {
+                status,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            });
+        }
+        if started.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("process exceeded {timeout:?} timeout"),
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }
 
 fn sentrux_provider_options<'a>(
