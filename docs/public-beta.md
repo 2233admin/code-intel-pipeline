@@ -90,3 +90,25 @@ Release ZIPs are self-contained. `legacy/code-intel.ps1 -Update` installs a veri
 official stable release while retaining a verified local fallback. Manual
 rollback means switching back to the previous extracted directory. Generated
 artifacts live outside the package under the platform Code Intel data root.
+
+## Maintainer: cutting a release
+
+Tag-driven packaging lives in `.github/workflows/release.yml` (push `v*` tags).
+Before opening a `release:` PR and tagging:
+
+1. Bump `crates/code-intel-cli/Cargo.toml` version (and the pins that restate it:
+   `Cargo.lock`, `orchestration/toolchain-versions.v1.json`, head-parity fixtures).
+2. **Aggregate changelog fragments** into the version section and delete them:
+
+   ```bash
+   python tools/aggregate_changelog.py --version <X.Y.Z> --dry-run   # preview
+   python tools/aggregate_changelog.py --version <X.Y.Z>             # write + delete
+   ```
+
+   Fragment conventions: `changelog.d/README.md`. Existing hand-written
+   `[Unreleased]` stock entries stay put until you move or drop them once.
+3. Commit as `release: v<X.Y.Z>`, open the release PR, merge, tag `v<X.Y.Z>`
+   matching the Cargo version exactly (the release workflow enforces that match).
+
+Ordinary feature/fix PRs only add `changelog.d/<pr-or-slug>.md`; they must not
+fight over `CHANGELOG.md` (issue #174).

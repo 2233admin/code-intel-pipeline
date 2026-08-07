@@ -29,6 +29,15 @@ jobs:
         run: |
           python tests/test_repository_layout.py -v
           python tests/test_skill_package.py -v
+          python tests/test_aggregate_changelog.py -v
+
+      - name: Changelog fragment advisory
+        # Advisory only (issue #174): crates/** or orchestration/** changes without
+        # a changelog.d fragment get a ::warning:: annotation. Never fails the job.
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          python tools/aggregate_changelog.py --check-pr --base-ref "${{ github.event.pull_request.base.sha }}" --head-ref HEAD
 
       - name: Setup Rust
         shell: pwsh
@@ -348,6 +357,15 @@ jobs:
         run: |
           python tests/test_repository_layout.py -v
           python tests/test_skill_package.py -v
+          python tests/test_aggregate_changelog.py -v
+
+      - name: Changelog fragment advisory
+        # Advisory only (issue #174): same check as the Windows job. Runs on every
+        # matrix OS so a missing fragment is visible without blocking merge.
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          python tools/aggregate_changelog.py --check-pr --base-ref "${{ github.event.pull_request.base.sha }}" --head-ref HEAD
 
       - name: Setup Rust
         shell: pwsh
