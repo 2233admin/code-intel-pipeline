@@ -242,7 +242,7 @@ function Get-BaselineMetrics {
     param([string]$TargetPath)
 
     # The lite gate keeps its baseline in .sentrux/cache/lite-baseline.json
-    # (see tools/sentrux-shim/sentrux-lite-core.ps1). `.sentrux/baseline.json`
+    # (see legacy/tools/sentrux-shim/sentrux-lite-core.ps1). `.sentrux/baseline.json`
     # is the native engine's (nested code-intel-sentrux-baseline.v2+ schema on
     # a different measurement scale) and is only accepted here in its
     # pre-split flat `tool = "sentrux-lite"` form — backfilling native numbers

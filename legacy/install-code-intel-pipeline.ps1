@@ -617,14 +617,14 @@ function Install-SentruxShim {
         [string]$Root
     )
 
-    $sourceDir = Join-Path (Join-Path $Root "tools") "sentrux-shim"
+    $sourceDir = Join-Path (Join-Path (Join-Path $Root "legacy") "tools") "sentrux-shim"
     $sourcePs1 = Join-Path $sourceDir "sentrux-shim.ps1"
     $sourceCmd = Join-Path $sourceDir "sentrux.cmd"
     $sourceShell = Join-Path $sourceDir "sentrux"
     $sourceLite = Join-Path $sourceDir "sentrux-lite-core.ps1"
     $sourceLauncher = if ($script:EffectivePlatform -eq "windows") { $sourceCmd } else { $sourceShell }
     if (-not (Test-Path -LiteralPath $sourcePs1 -PathType Leaf) -or -not (Test-Path -LiteralPath $sourceLauncher -PathType Leaf) -or -not (Test-Path -LiteralPath $sourceLite -PathType Leaf)) {
-        Add-InstallAction $Actions "sentrux-shim" "install_failed" "missing shim source under $sourceDir" "Restore tools/sentrux-shim from the repository." "repo-local" $false
+        Add-InstallAction $Actions "sentrux-shim" "install_failed" "missing shim source under $sourceDir" "Restore legacy/tools/sentrux-shim from the repository." "repo-local" $false
         return
     }
 
@@ -642,10 +642,10 @@ function Install-SentruxShim {
         # forwarders hardcode $Root (the repo path resolved at install time) so
         # PATH invocations always run the live repo copy. Editing the repo takes
         # effect immediately; rerunning install is only needed if the repo moves.
-        $shimForwarder = New-ThinForwarderPs1 -RepoRoot $Root -RelativeTargetPath "tools/sentrux-shim/sentrux-shim.ps1" -CommandLabel "sentrux"
+        $shimForwarder = New-ThinForwarderPs1 -RepoRoot $Root -RelativeTargetPath "legacy/tools/sentrux-shim/sentrux-shim.ps1" -CommandLabel "sentrux"
         Set-Content -LiteralPath (Join-Path $shimDir "sentrux-shim.ps1") -Value $shimForwarder -Encoding UTF8
 
-        $liteForwarder = New-ThinForwarderPs1 -RepoRoot $Root -RelativeTargetPath "tools/sentrux-shim/sentrux-lite-core.ps1" -CommandLabel "sentrux-lite-core"
+        $liteForwarder = New-ThinForwarderPs1 -RepoRoot $Root -RelativeTargetPath "legacy/tools/sentrux-shim/sentrux-lite-core.ps1" -CommandLabel "sentrux-lite-core"
         Set-Content -LiteralPath (Join-Path $shimDir "sentrux-lite-core.ps1") -Value $liteForwarder -Encoding UTF8
 
         $launcherName = if ($script:EffectivePlatform -eq "windows") { "sentrux.cmd" } else { "sentrux" }
@@ -1145,8 +1145,8 @@ Add-InstallPlan $installPlan "repowise" "pip" "python/python3 -m pip install --u
 Add-InstallPlan $installPlan "code-intel" "repo-local release binary" "copy bin/code-intel or target/release/code-intel into CODE_INTEL_BIN; build with cargo when no binary is present" "Manifest-bound DAG, evidence query, impact analysis, and atomic publication." "LOW: Pipeline-owned binary; installed digest is reported and --help is executed before success." "Use code-intel.ps1 only when the compiled command needs recovery." "repo-local" $false
 Add-InstallPlan $installPlan "integrations-manifest" "repo-local" "copy orchestration/integrations.json into CODE_INTEL_BIN/orchestration so the installed binary resolves capabilities outside a repo checkout" "Capability registry for the installed code-intel binary; overwritten on every reinstall." "LOW: repo-owned JSON manifest copied verbatim." "Set CODE_INTEL_INTEGRATIONS_MANIFEST to point at a custom manifest instead." "repo-local" $false
 $sentruxBinaryName = if ($script:EffectivePlatform -eq "windows") { "sentrux.exe" } else { "sentrux" }
-Add-InstallPlan $installPlan "sentrux" "repo-local shim or preinstalled binary" "install tools/sentrux-shim first; optionally place a real $sentruxBinaryName on PATH" "Structural quality and regression gate." "LOW for repo-owned shim; MEDIUM for any separately supplied $sentruxBinaryName." "The repo-owned sentrux-lite core keeps scan/check/gate/plugin usable until the real binary is installed." "repo-local" $false
-Add-InstallPlan $installPlan "sentrux-shim" "repo-local" "copy tools/sentrux-shim launcher to CODE_INTEL_BIN and prepend PATH" "Opt-in local Pro activation, stable forwarding to real sentrux, and deterministic lite-core fallback." "LOW: repo-owned PowerShell/CMD/sh shim; review tools/sentrux-shim before install." "Pro auto-activation is off by default; set SENTRUX_AUTO_PRO=1 to opt in." "repo-local" $false
+Add-InstallPlan $installPlan "sentrux" "repo-local shim or preinstalled binary" "install legacy/tools/sentrux-shim first; optionally place a real $sentruxBinaryName on PATH" "Structural quality and regression gate." "LOW for repo-owned shim; MEDIUM for any separately supplied $sentruxBinaryName." "The repo-owned sentrux-lite core keeps scan/check/gate/plugin usable until the real binary is installed." "repo-local" $false
+Add-InstallPlan $installPlan "sentrux-shim" "repo-local" "copy legacy/tools/sentrux-shim launcher to CODE_INTEL_BIN and prepend PATH" "Opt-in local Pro activation, stable forwarding to real sentrux, and deterministic lite-core fallback." "LOW: repo-owned PowerShell/CMD/sh shim; review legacy/tools/sentrux-shim before install." "Pro auto-activation is off by default; set SENTRUX_AUTO_PRO=1 to opt in." "repo-local" $false
 Add-InstallPlan $installPlan "sentrux-vlang-overlay" "repo-local" "copy overlays/sentrux/vlang into the user Sentrux plugin directory when a platform grammar exists" "Fixes the broken upstream Windows vlang plugin package and enables V parsing in real sentrux." "LOW/MEDIUM: ships tree-sitter grammar artifacts; review overlays/sentrux/vlang/THIRD_PARTY.md." "Use -SkipSentruxVlangOverlay to skip this local plugin patch." "repo-local" $false
 
 Install-MissingTool $installActions "rg" { Invoke-RipgrepInstall } "Install ripgrep with winget (`winget install --id BurntSushi.ripgrep.MSVC -e`) or ensure rg is on PATH."
@@ -1184,7 +1184,7 @@ foreach ($file in $requiredFiles) {
 # stayed at the repository root when the PowerShell moved under legacy/
 Test-File $checks "pipeline:Run-ScopedRepowiseDocs.py" (Join-Path $repoRoot "Run-ScopedRepowiseDocs.py") $true
 Test-File $checks "config" $Config $true
-$shimSource = Join-Path (Join-Path $root "tools") "sentrux-shim"
+$shimSource = Join-Path (Join-Path (Join-Path $root "legacy") "tools") "sentrux-shim"
 $shimLauncherName = if ($script:EffectivePlatform -eq "windows") { "sentrux.cmd" } else { "sentrux" }
 Test-File $checks "sentrux-shim:launcher" (Join-Path $shimSource $shimLauncherName) $true
 Test-File $checks "sentrux-shim:ps1" (Join-Path $shimSource "sentrux-shim.ps1") $true
@@ -1207,7 +1207,7 @@ Test-Tool $checks "code-intel" $true "Run install-code-intel-pipeline.ps1 so the
 Test-Tool $checks "sentrux" $true "Install sentrux or ensure it is on PATH."
 Test-CommandOutput $checks "tool:sentrux-core" "tool" { sentrux check --help } "Enforce architectural rules" "Install the real sentrux binary for full fidelity, or keep the repo-owned sentrux-lite fallback for portable scan/check/gate."
 # Tier: free is healthy without the SENTRUX_AUTO_PRO opt-in (Pro auto-activation
-# is opt-in; see tools/sentrux-shim/sentrux-shim.ps1).
+# is opt-in; see legacy/tools/sentrux-shim/sentrux-shim.ps1).
 $sentruxTierPattern = if ($env:SENTRUX_AUTO_PRO -in @("1", "true", "True", "TRUE")) { "Tier:\s+pro" } else { "Tier:\s+(pro|free)" }
 Test-CommandOutput $checks "tool:sentrux-pro" "tool" { sentrux pro status } $sentruxTierPattern "Run install-code-intel-pipeline.ps1 again so the repo shim is installed; set SENTRUX_AUTO_PRO=1 first if you expect Pro auto activation."
 
