@@ -53,7 +53,16 @@ code-intel C:\path\to\your\repo
 **Coding agents (Codex / Claude Code)** — install the skill package with
 `$skill-installer` from
 [`skills/code-intel-pipeline`](skills/code-intel-pipeline); it downloads the
-stable release and verifies the published SHA-256 before unpacking.
+stable release, and when `gh` 2.49+ is present first verifies the release
+ZIP's [GitHub Artifact Attestation](https://cli.github.com/manual/gh_attestation_verify)
+(proof the workflow of this repository produced it, not just that the bytes
+arrived intact) before falling back to the published SHA-256 checksum. When
+`gh` is missing or too old, the installer prints an explicit degradation
+notice instead of silently skipping the attestation check. Verify the same
+guarantee by hand with
+`gh attestation verify <zip> --repo 2233admin/code-intel-pipeline` — see
+[docs/release-provenance-runbook.md](docs/release-provenance-runbook.md) for
+the full command and a recorded verification run.
 
 **macOS / Linux (source build; requires PowerShell 7.2+, Rust toolchain, ripgrep):**
 
