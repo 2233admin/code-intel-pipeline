@@ -3152,6 +3152,150 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    /// Registered contracts that do not yet publish a JSON Schema.
+    ///
+    /// This list may only shrink. `every_registered_contract_publishes_a_schema_file`
+    /// fails if an entry here gains a schema file (delete the entry) and fails
+    /// if a contract outside it lacks one (publish the schema, or add it here
+    /// with a reason and an issue). Tracked by
+    /// https://github.com/2233admin/code-intel-pipeline/issues/206.
+    const AWAITING_SCHEMA: [&str; 5] = [
+        "code-intel-anchor-verification.v1",
+        "code-intel-file-inventory.v1",
+        "code-intel-method-catalog.v1",
+        "code-intel-sentrux-command-observation.v1",
+        "code-intel-surgery-plan.v1",
+    ];
+
+    fn schemas_dir() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../orchestration/schemas")
+    }
+
+    fn schema_file_exists(id: &str) -> bool {
+        schemas_dir().join(format!("{id}.schema.json")).exists()
+    }
+
+    /// The `(schema, type)` pairs the family functions match on, read out of
+    /// this file's own source.
+    ///
+    /// The registry is `match` arms, so there is no value to iterate — the arms
+    /// *are* the list. Reading them is what stops this check from becoming a
+    /// second hand-maintained copy of the registry, which is precisely the
+    /// drift it exists to catch. Every parsed pair is fed back through
+    /// `registered_contract` below, so a parse that drifts away from the real
+    /// arms fails loudly instead of silently checking nothing.
+    fn registered_contract_arms() -> Vec<(String, String)> {
+        let source = include_str!("artifact_ref.rs");
+        // `rfind`, not `find`: production code above carries its own
+        // `#[cfg(test)]` items, and cutting at the first one would hide whole
+        // contract families from the scan.
+        let source = &source[..source
+            .rfind("mod tests {")
+            .expect("the test module bounds the production registry")];
+        let squeezed = source.split_whitespace().collect::<Vec<_>>().join(" ");
+        let mut arms = Vec::new();
+        let mut cursor = 0;
+        while let Some(hit) = squeezed[cursor..].find(") =>") {
+            let close = cursor + hit;
+            cursor = close + ") =>".len();
+            let Some(open) = squeezed[..close].rfind('(') else {
+                continue;
+            };
+            let literals = squeezed[open + 1..close]
+                .split('"')
+                .skip(1)
+                .step_by(2)
+                .map(str::to_string)
+                .collect::<Vec<_>>();
+            if let [schema, artifact_type] = literals.as_slice() {
+                arms.push((schema.clone(), artifact_type.clone()));
+            }
+        }
+        arms
+    }
+
+    /// Every schema/type pair `registered_contract` accepts must have a
+    /// published JSON Schema, so a contract cannot be added on the Rust side
+    /// while the artifact registry consumers keep validating against nothing.
+    #[test]
+    fn every_registered_contract_publishes_a_schema_file() {
+        let arms = registered_contract_arms();
+        assert!(
+            arms.len() >= 40,
+            "only {} contract arms parsed — the scanner stopped seeing the registry",
+            arms.len()
+        );
+
+        // The parse is only trustworthy if the registry agrees with it.
+        for (schema, artifact_type) in &arms {
+            let contract =
+                registered_contract(&json!({"artifactSchema": schema, "type": artifact_type}))
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{schema}/{artifact_type} parsed but is not registered: {}",
+                            error.message()
+                        )
+                    });
+            assert_eq!(contract.artifact_schema, schema);
+            assert_eq!(contract.artifact_type, artifact_type);
+        }
+        // The one arm written with constants rather than literals.
+        assert!(registered_contract(
+            &json!({"artifactSchema": REPOSITORY_ITERATION_SCHEMA, "type": REPOSITORY_ITERATION_TYPE})
+        )
+        .is_ok());
+
+        let registered = arms
+            .iter()
+            .map(|(schema, _)| schema.as_str())
+            .chain([REPOSITORY_ITERATION_SCHEMA])
+            .collect::<BTreeSet<_>>();
+
+        let umbrella =
+            fs::read_to_string(schemas_dir().join("code-evidence-native-artifacts.v1.schema.json"))
+                .expect("the native code-evidence umbrella schema is published");
+
+        let mut unpublished = Vec::new();
+        for schema in &registered {
+            if schema_file_exists(schema) {
+                continue;
+            }
+            // A markdown view carries no schema of its own; the JSON contract
+            // it renders carries it, and that contract is checked on its own.
+            if let Some(stem) = schema.strip_suffix("-markdown.v1") {
+                assert!(
+                    registered.contains(format!("{stem}.v1").as_str()),
+                    "{schema} renders {stem}.v1, which is not a registered contract"
+                );
+                continue;
+            }
+            // The native code-evidence family is published as one `oneOf`
+            // umbrella rather than a file per artifact.
+            if umbrella.contains(&format!("\"{schema}\"")) {
+                continue;
+            }
+            if AWAITING_SCHEMA.contains(schema) {
+                continue;
+            }
+            unpublished.push(*schema);
+        }
+        assert!(
+            unpublished.is_empty(),
+            "registered contracts with no published schema: {unpublished:?} — publish orchestration/schemas/<id>.schema.json, or add the id to AWAITING_SCHEMA with an issue"
+        );
+
+        for schema in AWAITING_SCHEMA {
+            assert!(
+                registered.contains(schema),
+                "{schema} is exempted but no longer registered — delete the exemption"
+            );
+            assert!(
+                !schema_file_exists(schema),
+                "{schema} now publishes a schema — delete it from AWAITING_SCHEMA"
+            );
+        }
+    }
+
     #[test]
     fn portable_path_rejects_cross_platform_aliases() {
         for path in [
