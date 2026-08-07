@@ -62,7 +62,20 @@ code-intel C:\path\to\your\repo
 
 ## macOS / Linux 快速开始
 
-**支持等级**：v0.6.0 及更早版本，macOS / Linux 只支持源码构建安装——那些版本的 Release ZIP 和 `bootstrap.py` 引导只覆盖 Windows。从 v0.7.0-beta.2 起，每个版本同时发布 windows / macos / linux 三个 Release ZIP，`bootstrap.py` 引导在 macOS / Linux 上同样可用（详见 [Public beta guide](docs/public-beta.md)）。下面是不依赖 Release ZIP、直接从源码构建安装的路径；所有入口脚本都要求 PowerShell 7.2+（`pwsh`），README 里其余 `.ps1` 命令在 macOS / Linux 上同样用 `pwsh` 运行。
+**支持等级**：v0.6.0 及更早版本，macOS / Linux 只支持源码构建安装——那些版本的 Release ZIP 和 `bootstrap.py` 引导只覆盖 Windows。从 v0.7.0-beta.2 起，每个版本同时发布 windows / macos / linux 三个 Release ZIP，`bootstrap.py` 引导在 macOS / Linux 上同样可用（详见 [Public beta guide](docs/public-beta.md)）。所有入口脚本都要求 PowerShell 7.2+（`pwsh`），README 里其余 `.ps1` 命令在 macOS / Linux 上同样用 `pwsh` 运行。
+
+### 打包版（推荐）
+
+下载对应平台的 Release ZIP（`code-intel-pipeline-<tag>-macos.zip` / `-linux.zip`），校验（见[验证发布来源](#验证发布来源)）后解压，直接运行编译好的入口，不需要装 Rust 工具链：
+
+```bash
+chmod +x ./bin/code-intel   # 部分解压工具不保留可执行位时才需要
+./bin/code-intel ~/path/to/repo
+```
+
+完整步骤见 [Public beta guide](docs/public-beta.md#install-and-verify)。下面是不依赖 Release ZIP、直接从源码构建安装的备用路径：
+
+### 源码构建（备用路径）
 
 前置依赖（macOS，Homebrew）：
 
@@ -245,11 +258,17 @@ Skill 默认只解析稳定版，校验 GitHub Release 提供的 SHA-256 后才�
 # 校验二进制确实产自本仓 CI（不是有人改了字节又同步改了 SHA-256）
 gh attestation verify code-intel-pipeline-v0.7.0-windows.zip --repo 2233admin/code-intel-pipeline
 
-# 校验 SHA-256（Windows 用 certutil，macOS 用 shasum，Linux 用 sha256sum）
-sha256sum -c code-intel-pipeline-v0.7.0-windows.zip.sha256
+# 校验 SHA-256 —— Windows (PowerShell)
+certutil -hashfile code-intel-pipeline-v0.7.0-windows.zip SHA256
+
+# 校验 SHA-256 —— macOS
+shasum -a 256 -c code-intel-pipeline-v0.7.0-macos.zip.sha256
+
+# 校验 SHA-256 —— Linux
+sha256sum -c code-intel-pipeline-v0.7.0-linux.zip.sha256
 ```
 
-正式版（非 `-beta.`/`-rc.` 结尾的 tag）额外要求 tag 本身经 SSH 签名，签名与验证方式见 [docs/RELEASE_SIGNING.md](docs/RELEASE_SIGNING.md)：
+正式版（不带 `-beta.<n>` 或 `-rc.<n>` 后缀的 tag，例如 `v0.7.0`；`v0.7.0-beta.2` 这种预发布 tag 不算）额外要求 tag 本身经 SSH 签名，签名与验证方式见 [docs/RELEASE_SIGNING.md](docs/RELEASE_SIGNING.md)：
 
 ```bash
 git verify-tag v0.7.0

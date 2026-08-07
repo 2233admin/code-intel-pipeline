@@ -547,6 +547,33 @@ jobs:
       # release.yml does and drive the real bootstrap.py download-verify-
       # install code path against that package, then prove PATH/CODE_INTEL_HOME
       # actually persist -- not just that $env:GITHUB_PATH was appended.
+      - name: Reset persisted install state before packaged-install check
+        shell: pwsh
+        run: |
+          # "Install portable pipeline" above already persisted PATH/CODE_INTEL_HOME
+          # from a from-source install. Clear that state first so the assertion
+          # steps below can only pass because bootstrap.py's packaged-release
+          # install path persisted them -- not because they were already sitting
+          # there from the earlier, unrelated install. This does not affect
+          # `code-intel` resolving in later steps: that goes through the
+          # job-level $env:GITHUB_PATH entry added earlier, not this User-scope
+          # state.
+          Import-Module ./legacy/tools/code-intel-platform.psm1 -Force
+          if ($IsWindows) {
+            [Environment]::SetEnvironmentVariable("CODE_INTEL_HOME", $null, "User")
+            $binDir = (Get-CodeIntelBinDir -Platform windows).TrimEnd('\')
+            $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+            $keptParts = @($userPath -split [System.IO.Path]::PathSeparator | Where-Object {
+              -not [string]::IsNullOrWhiteSpace($_) -and $_.TrimEnd('\') -ne $binDir
+            })
+            [Environment]::SetEnvironmentVariable("Path", ($keptParts -join [System.IO.Path]::PathSeparator), "User")
+          }
+          else {
+            $configDir = Join-Path (Join-Path $HOME ".config") "code-intel"
+            Remove-Item -LiteralPath (Join-Path $configDir "env.sh") -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath (Join-Path $configDir "env.ps1") -Force -ErrorAction SilentlyContinue
+          }
+
       - name: Package release artifact (mirrors release.yml)
         shell: pwsh
         run: |
