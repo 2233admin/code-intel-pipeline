@@ -29,6 +29,7 @@ jobs:
         run: |
           python tests/test_repository_layout.py -v
           python tests/test_skill_package.py -v
+          python tests/test_skill_attestation.py -v
 
       - name: Setup Rust
         shell: pwsh
@@ -348,6 +349,7 @@ jobs:
         run: |
           python tests/test_repository_layout.py -v
           python tests/test_skill_package.py -v
+          python tests/test_skill_attestation.py -v
 
       - name: Setup Rust
         shell: pwsh
