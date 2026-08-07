@@ -127,7 +127,7 @@
       "command": {
         "kind": "pwsh",
         "file": "legacy/scripts/tests/test-code-intel-pipeline.ps1",
-        "args": ["-RepoPath", ".", "-SkipRepowise", "-AllowGraphMissing", "-SkipSentruxGate", "-SkipGitHubResearch", "-Mode", "normal"]
+        "args": ["-RepoPath", ".", "-SkipRepowise", "-AllowGraphMissing", "-SkipSentruxGate", "-Mode", "normal"]
       }
     }
   ]

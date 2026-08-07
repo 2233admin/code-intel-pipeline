@@ -79,7 +79,6 @@ param(
 [switch]$SkipSentruxCheck,
 [switch]$SkipSentruxGate,
 [switch]$RequireUnderstandGraph,
-[switch]$SkipGitHubResearch,
 [switch]$WorkspaceAdd,
 [switch]$SkipOpenSpec,
 [switch]$AutoOpenSpec,
@@ -543,17 +542,6 @@ function Get-CodeIntelEffectiveFailedSteps {
         }
         return $BlockingSentruxDebt -gt 0
     })
-}
-
-function Test-GitHubSolutionResearchRequired {
-param([object]$FailureCounts)
-
-    if ($null -eq $FailureCounts) { return $false }
-    if ($FailureCounts.localToolError -gt 0) { return $true }
-    if ($FailureCounts.sentruxFail -gt 0) { return $true }
-    if ($FailureCounts.providerQuota -gt 0) { return $true }
-
-    return $false
 }
 
 function Complete-NodeLintHygieneStep {
