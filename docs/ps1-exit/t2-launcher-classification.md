@@ -112,6 +112,34 @@ run.
 Both were recorded by T1 as findings and deliberately left unfixed there
 ("record, don't fix"). T2 is the ticket that removes them.
 
+**Status (2026-08-07): removed.** `$SkipGitHubResearch` and
+`Test-GitHubSolutionResearchRequired` are deleted from `run-code-intel.ps1`.
+Every real caller that threaded the no-op flag through — `invoke-code-intel.ps1`'s
+own dead passthrough param, `test-code-intel-pipeline.ps1`'s param and
+forwarding block, `test-ps1-rust-parity.ps1`, `test-transactional-publication.ps1`,
+`test-runtime-ci-hospital-pet.ps1`, `test-code-evidence-layer.ps1`,
+`Invoke-NativeRetrievalBenchmark.ps1`, `Invoke-CccSliceBenchmark.ps1`,
+`Invoke-CodeEvidenceABTest.ps1`, `ci.yml` (both self-scan jobs),
+`release.yml`, and `orchestration/code-intel-project-conformance-policy.v1.json`
+— had the argument dropped too. `legacy/scripts/tests/test-github-solution-research.ps1`
+was **not** touched: it exercises `Invoke-GitHubSolutionResearch.ps1`'s own,
+unrelated `-SkipGitHubResearch` switch, a same-name flag on a different
+script. Verified: pwsh AST parse on every edited `.ps1`, YAML/JSON parse on
+the workflow and policy files, `cargo test -p code-intel --test
+native_code_evidence` (6 passed), and every directly-touched PowerShell
+contract test run standalone (`test-ps1-rust-parity.ps1`,
+`test-transactional-publication.ps1`, `test-runtime-ci-hospital-pet.ps1`,
+`test-code-evidence-layer.ps1`, `test-code-intel-pipeline.ps1`,
+`test-github-solution-research.ps1`) — all exit 0. The T1 parity harness's
+overall `ok:false` verdict is pre-existing (documented node-coverage and
+hospital-shape drift this same document already catalogs in §0/§3, plus a
+worktree-local `doctor`/`sentrux` self-scan false-negative unrelated to this
+change), not something this removal introduced.
+
+The rest of §1.2/§1.3/§1.4 (flag porting, remaining dead-item removal, the
+route-away items) and the launcher shrink itself (blocked on the §0
+dot-source test migration) are still open.
+
 ### 1.4 Route away rather than port
 
 The eight early-exit facades (T1 §1.8) are already thin forwarders into the

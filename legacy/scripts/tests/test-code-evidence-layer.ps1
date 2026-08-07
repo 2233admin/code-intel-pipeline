@@ -94,8 +94,7 @@ function Invoke-CodeEvidenceFixture {
         -Mode lite `
         -ArtifactRoot $artifactRoot `
         -SkipRepowise `
-        -SkipSentrux `
-        -SkipGitHubResearch | Out-Host
+        -SkipSentrux | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "run-code-intel.ps1 failed with exit code $LASTEXITCODE for $ScenarioName"
     }

@@ -19,7 +19,6 @@ param(
     [switch]$AllowGraphMissing,
     [switch]$SkipSentruxCheck,
     [switch]$SkipSentruxGate,
-    [switch]$SkipGitHubResearch,
 
     # Issue #130: run-code-intel.ps1 exits 2 when Sentrux's gate reported architecture/
     # quality debt in the target repo (gate output, not a process failure) and only exits
@@ -96,9 +95,6 @@ if ($SkipSentruxCheck) {
 }
 if ($SkipSentruxGate) {
     $runnerParams.SkipSentruxGate = $true
-}
-if ($SkipGitHubResearch) {
-    $runnerParams.SkipGitHubResearch = $true
 }
 & $runner @runnerParams
 $pipelineExitCode = $LASTEXITCODE

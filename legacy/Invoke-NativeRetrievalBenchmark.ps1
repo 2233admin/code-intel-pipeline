@@ -205,7 +205,7 @@ $repoPath = New-BenchmarkRepo -Parent $fixtureRoot
 
 $artifactRoot = Join-Path $OutputDir "native-artifacts"
 $pipelineStarted = Get-Date
-& $runner -RepoPath $repoPath -Mode lite -ArtifactRoot $artifactRoot -SkipRepowise -SkipSentrux -SkipGitHubResearch | Out-Null
+& $runner -RepoPath $repoPath -Mode lite -ArtifactRoot $artifactRoot -SkipRepowise -SkipSentrux | Out-Null
 $pipelineDurationMs = [int]((Get-Date) - $pipelineStarted).TotalMilliseconds
 if ($LASTEXITCODE -ne 0) {
     throw "Native code evidence run failed."

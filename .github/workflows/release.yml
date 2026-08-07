@@ -155,7 +155,7 @@ jobs:
 
       - name: Pipeline smoke
         shell: pwsh
-        run: .\legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -SkipGitHubResearch -Mode normal
+        run: .\legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -Mode normal
 
       - name: Package
         shell: pwsh
