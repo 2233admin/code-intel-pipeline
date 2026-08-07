@@ -3152,6 +3152,320 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    /// Registered contracts that do not yet publish a JSON Schema.
+    ///
+    /// What `every_registered_contract_publishes_a_schema_file` enforces: an
+    /// entry that gains a schema file fails (delete the entry), an entry that
+    /// stops being registered fails (delete the entry), and a contract outside
+    /// this list with no schema fails (publish the schema).
+    ///
+    /// What it does **not** enforce: a developer can still grow the list by
+    /// appending an id and widening the array length. That edit is visible in
+    /// review, but it is not gated. Gating it needs a merge-base or CI-held
+    /// baseline to compare against — tracked in #210, not claimed here.
+    ///
+    /// Tracked by https://github.com/2233admin/code-intel-pipeline/issues/206.
+    const AWAITING_SCHEMA: [&str; 5] = [
+        "code-intel-anchor-verification.v1",
+        "code-intel-file-inventory.v1",
+        "code-intel-method-catalog.v1",
+        "code-intel-sentrux-command-observation.v1",
+        "code-intel-surgery-plan.v1",
+    ];
+
+    fn schemas_dir() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../orchestration/schemas")
+    }
+
+    /// Every schema id published under `orchestration/schemas`, read once.
+    ///
+    /// One directory listing rather than a `Path::exists` per registered
+    /// contract: the per-id form is a filesystem call inside a loop over 41
+    /// contracts, which is the very finding class this repository is trying
+    /// to burn down.
+    fn published_schema_ids() -> BTreeSet<String> {
+        let ids = fs::read_dir(schemas_dir())
+            .expect("orchestration/schemas is readable")
+            .filter_map(Result::ok)
+            .filter_map(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .and_then(|name| name.strip_suffix(".schema.json"))
+                    .map(str::to_string)
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(
+            !ids.is_empty(),
+            "orchestration/schemas listed no schema files — the check would pass vacuously"
+        );
+        ids
+    }
+
+    /// The production half of this file, whitespace-squeezed so that a pattern
+    /// reads the same whether or not rustfmt wrapped it across lines.
+    fn production_source() -> String {
+        let source = include_str!("artifact_ref.rs");
+        // `rfind`, not `find`: production code above carries its own
+        // `#[cfg(test)]` items, and cutting at the first one would hide whole
+        // contract families from the scan.
+        let source = &source[..source
+            .rfind("mod tests {")
+            .expect("the test module bounds the production registry")];
+        source.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
+    /// `const NAME: &str = "value";` items, so a match arm written with
+    /// constants resolves to the same pair as one written with literals.
+    fn string_consts(source: &str) -> BTreeMap<String, String> {
+        let mut consts = BTreeMap::new();
+        for chunk in source.split("const ").skip(1) {
+            let Some((name, rest)) = chunk.split_once(": &str = ") else {
+                continue;
+            };
+            if name.is_empty()
+                || !name
+                    .bytes()
+                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+            {
+                continue;
+            }
+            let Some(value) = rest
+                .strip_prefix('"')
+                .and_then(|rest| rest.split('"').next())
+            else {
+                continue;
+            };
+            consts.insert(name.to_string(), value.to_string());
+        }
+        consts
+    }
+
+    /// The family functions `registered_contract` dispatches to, named by
+    /// `registered_contract` itself rather than by a list kept here.
+    ///
+    /// A new family reaches the scanner the moment the dispatcher calls it,
+    /// which is the only way it can reach production too.
+    fn registry_family_names(source: &str) -> Vec<String> {
+        let dispatcher = function_body(source, "registered_contract");
+        // Each chunk but the last ends with the identifier that precedes the
+        // next call, which is the family being dispatched to.
+        let chunks = dispatcher
+            .split("(schema, artifact_type)")
+            .collect::<Vec<_>>();
+        let mut names = Vec::new();
+        for chunk in chunks.iter().take(chunks.len().saturating_sub(1)) {
+            let name = chunk
+                .rsplit(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .next()
+                .unwrap_or_default();
+            if !name.is_empty() && !names.contains(&name.to_string()) {
+                names.push(name.to_string());
+            }
+        }
+        names
+    }
+
+    /// One function's body, from its signature to the next item.
+    fn function_body<'a>(source: &'a str, name: &str) -> &'a str {
+        let start = source
+            .find(&format!("fn {name}("))
+            .unwrap_or_else(|| panic!("fn {name} is gone — the registry scanner needs updating"));
+        let rest = &source[start..];
+        let end = rest[1..]
+            .find(" } fn ")
+            .map(|offset| offset + 2)
+            .unwrap_or(rest.len());
+        &rest[..end]
+    }
+
+    /// The `(schema, type)` pairs the family functions match on, read out of
+    /// this file's own source.
+    ///
+    /// The registry is `match` arms, so there is no value to iterate — the arms
+    /// *are* the list. Reading them is what stops this check from becoming a
+    /// second hand-maintained copy of the registry, which is precisely the
+    /// drift it exists to catch. Every parsed pair is fed back through
+    /// `registered_contract`, so a parse that drifts from the real arms fails
+    /// loudly instead of silently checking nothing.
+    ///
+    /// An arm whose pattern this cannot resolve is a hard failure, not a skip:
+    /// silently dropping one arm would leave its contract exempt from the
+    /// schema check while the total count stayed healthy.
+    fn registered_contract_arms() -> Vec<(String, String)> {
+        let source = production_source();
+        let consts = string_consts(&source);
+        let families = registry_family_names(&source);
+        assert!(
+            families.len() >= 7,
+            "registered_contract dispatches to only {} families — the scanner lost the dispatcher",
+            families.len()
+        );
+
+        let mut arms = Vec::new();
+        for family in &families {
+            let body = function_body(&source, family);
+            let mut cursor = 0;
+            while let Some(hit) = body[cursor..].find(") =>") {
+                let close = cursor + hit;
+                cursor = close + ") =>".len();
+                let Some(open) = body[..close].rfind('(') else {
+                    continue;
+                };
+                let inside = &body[open + 1..close];
+                let parts = inside
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>();
+                if parts.len() != 2 {
+                    continue;
+                }
+                let resolved = parts
+                    .iter()
+                    .map(|part| resolve_pattern_atom(part, &consts))
+                    .collect::<Vec<_>>();
+                match resolved.as_slice() {
+                    [Some(schema), Some(artifact_type)] => {
+                        arms.push((schema.clone(), artifact_type.clone()))
+                    }
+                    _ => panic!(
+                        "{family}: match arm ({inside}) uses a form the registry scanner cannot resolve — write arms as string literals or `const NAME: &str` items, otherwise this contract silently escapes the schema check"
+                    ),
+                }
+            }
+        }
+        arms
+    }
+
+    /// A match-pattern atom as either a string literal or a named constant.
+    fn resolve_pattern_atom(atom: &str, consts: &BTreeMap<String, String>) -> Option<String> {
+        match atom.strip_prefix('"') {
+            Some(literal) => literal.split('"').next().map(str::to_string),
+            None => consts.get(atom).cloned(),
+        }
+    }
+
+    /// The schema ids the native code-evidence umbrella actually admits.
+    ///
+    /// Resolved through the `oneOf` branches and their `$defs` targets rather
+    /// than by searching the file text: an id mentioned in a title, an example
+    /// or an unrelated field is not coverage.
+    fn native_umbrella_schema_ids() -> BTreeSet<String> {
+        let text =
+            fs::read_to_string(schemas_dir().join("code-evidence-native-artifacts.v1.schema.json"))
+                .expect("the native code-evidence umbrella schema is published");
+        let umbrella: Value =
+            serde_json::from_str(&text).expect("the native umbrella schema is valid JSON");
+        let branches = umbrella["oneOf"]
+            .as_array()
+            .expect("the native umbrella schema is a oneOf");
+        let ids = branches
+            .iter()
+            .map(|branch| {
+                let reference = branch["$ref"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("umbrella oneOf branch is not a $ref: {branch}"));
+                let target = reference.strip_prefix("#/$defs/").unwrap_or_else(|| {
+                    panic!("umbrella oneOf branch points outside $defs: {reference}")
+                });
+                umbrella["$defs"][target]["properties"]["schema"]["const"]
+                    .as_str()
+                    .unwrap_or_else(|| {
+                        panic!("umbrella $defs/{target} does not pin a schema const")
+                    })
+                    .to_string()
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(
+            !ids.is_empty(),
+            "the native umbrella schema admitted no contract — the check would pass vacuously"
+        );
+        ids
+    }
+
+    /// Every schema/type pair `registered_contract` accepts must have a
+    /// published JSON Schema, so a contract cannot be added on the Rust side
+    /// while the artifact registry consumers keep validating against nothing.
+    #[test]
+    fn every_registered_contract_publishes_a_schema_file() {
+        let arms = registered_contract_arms();
+        assert!(
+            arms.len() >= 40,
+            "only {} contract arms parsed — the scanner stopped seeing the registry",
+            arms.len()
+        );
+
+        // The parse is only trustworthy if the registry agrees with it.
+        for (schema, artifact_type) in &arms {
+            let contract =
+                registered_contract(&json!({"artifactSchema": schema, "type": artifact_type}))
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{schema}/{artifact_type} parsed but is not registered: {}",
+                            error.message()
+                        )
+                    });
+            assert_eq!(contract.artifact_schema, schema);
+            assert_eq!(contract.artifact_type, artifact_type);
+        }
+        // The one arm written with constants rather than literals: proof that
+        // constant-form arms are resolved, not skipped.
+        assert!(
+            arms.iter()
+                .any(|(schema, _)| schema == REPOSITORY_ITERATION_SCHEMA),
+            "the constant-form arm did not resolve — constant arms are being dropped"
+        );
+
+        let registered = arms
+            .iter()
+            .map(|(schema, _)| schema.as_str())
+            .collect::<BTreeSet<_>>();
+
+        let published = published_schema_ids();
+        let umbrella = native_umbrella_schema_ids();
+
+        let mut unpublished = Vec::new();
+        for schema in &registered {
+            if published.contains(*schema) {
+                continue;
+            }
+            // A markdown view carries no schema of its own; the JSON contract
+            // it renders carries it, and that contract is checked on its own.
+            if let Some(stem) = schema.strip_suffix("-markdown.v1") {
+                assert!(
+                    registered.contains(format!("{stem}.v1").as_str()),
+                    "{schema} renders {stem}.v1, which is not a registered contract"
+                );
+                continue;
+            }
+            // The native code-evidence family is published as one `oneOf`
+            // umbrella rather than a file per artifact.
+            if umbrella.contains(*schema) {
+                continue;
+            }
+            if AWAITING_SCHEMA.contains(schema) {
+                continue;
+            }
+            unpublished.push(*schema);
+        }
+        assert!(
+            unpublished.is_empty(),
+            "registered contracts with no published schema: {unpublished:?} — publish orchestration/schemas/<id>.schema.json, or add the id to AWAITING_SCHEMA with an issue"
+        );
+
+        for schema in AWAITING_SCHEMA {
+            assert!(
+                registered.contains(schema),
+                "{schema} is exempted but no longer registered — delete the exemption"
+            );
+            assert!(
+                !published.contains(schema),
+                "{schema} now publishes a schema — delete it from AWAITING_SCHEMA"
+            );
+        }
+    }
+
     #[test]
     fn portable_path_rejects_cross_platform_aliases() {
         for path in [
