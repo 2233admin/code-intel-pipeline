@@ -42,7 +42,7 @@
     },
     "conformanceEvidence": {
       "evidenceIds": [
-        "local:mindwalk:adapter-source-sha256:fff59db3f54abee633b7174704c912c9bccf06c83afae1272e6bb1159eff1cb6",
+        "local:mindwalk:adapter-source-sha256:d5ce744b0d85a867e97b0d866c135aca0c1457dafc1374e7f8047fe3167ab586",
         "local:mindwalk:adapter-tests-sha256:e22021400f4dc468231a4ede76e68dbc189eb85e0580f3d86ddf96d99acec53e",
         "local:mindwalk:production-smoke-sha256:33c3c0c28e3c6b7d06ff53043606641c38c3a4890edcd3f2c7bddfc0f737aa45"
       ],
@@ -62,7 +62,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/session_evidence.rs",
-        "sha256": "fff59db3f54abee633b7174704c912c9bccf06c83afae1272e6bb1159eff1cb6"
+        "sha256": "d5ce744b0d85a867e97b0d866c135aca0c1457dafc1374e7f8047fe3167ab586"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/session_evidence.rs",
@@ -136,7 +136,7 @@
       "path": "crates/code-intel-cli/src/session_evidence.rs",
       "description": "Pipeline-owned native Rust privacy, snapshot, normalization, structural join, and advisory signal boundary",
       "evidenceIds": [
-        "local:mindwalk:adapter-source-sha256:fff59db3f54abee633b7174704c912c9bccf06c83afae1272e6bb1159eff1cb6"
+        "local:mindwalk:adapter-source-sha256:d5ce744b0d85a867e97b0d866c135aca0c1457dafc1374e7f8047fe3167ab586"
       ]
     },
     {

@@ -207,6 +207,16 @@ pub(crate) fn is_digest(v: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+pub(crate) fn is_run_identity(value: &str) -> bool {
+    value.strip_prefix("dag-v1:").is_some_and(|tail| {
+        !tail.is_empty()
+            && tail.len() % 2 == 0
+            && tail
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
+}
+
 pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     const K: [u32; 64] = [
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
@@ -276,4 +286,33 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
         }
     }
     h.iter().map(|v| format!("{v:08x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_run_identity;
+
+    #[test]
+    fn is_run_identity_requires_dag_v1_prefix() {
+        assert!(!is_run_identity("ab"));
+        assert!(!is_run_identity("dag-v2:ab"));
+    }
+
+    #[test]
+    fn is_run_identity_rejects_empty_tail() {
+        assert!(!is_run_identity("dag-v1:"));
+    }
+
+    #[test]
+    fn is_run_identity_requires_even_length_tail() {
+        assert!(!is_run_identity("dag-v1:abc"));
+        assert!(is_run_identity("dag-v1:abcd"));
+    }
+
+    #[test]
+    fn is_run_identity_requires_lowercase_hex_tail() {
+        assert!(!is_run_identity("dag-v1:AB"));
+        assert!(!is_run_identity("dag-v1:gg"));
+        assert!(is_run_identity("dag-v1:ab"));
+    }
 }

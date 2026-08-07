@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
-use crate::capability::sha256_hex;
+use crate::capability::{is_digest as valid_digest, sha256_hex};
 
 const MAX_TRACE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_HOTSPOT_BYTES: u64 = 64 * 1024 * 1024;
@@ -700,10 +700,6 @@ fn exact_keys(value: &Value, expected: &[&str], label: &str) -> Result<(), Strin
 
 fn is_grade(value: Option<&str>) -> bool {
     matches!(value, Some("exact" | "estimated" | "unavailable"))
-}
-
-fn valid_digest(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(is_lower_hex)
 }
 
 fn is_lower_hex(byte: u8) -> bool {
