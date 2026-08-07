@@ -513,7 +513,9 @@ def command_result(
     return result
 
 
-def install_release(asset: dict[str, str], install_root: Path) -> tuple[Path, str]:
+def install_release(
+    asset: dict[str, str], install_root: Path, *, local_source: Path | None = None
+) -> tuple[Path, str]:
     tag = asset["tag"]
     destination = install_root / tag
     marker = destination / RELEASE_MARKER
@@ -534,7 +536,10 @@ def install_release(asset: dict[str, str], install_root: Path) -> tuple[Path, st
     try:
         with tempfile.TemporaryDirectory(prefix="code-intel-download-") as temp:
             archive = Path(temp) / asset["name"]
-            download_file(asset["url"], archive)
+            if local_source is not None:
+                shutil.copyfile(local_source, archive)
+            else:
+                download_file(asset["url"], archive)
             actual_digest = sha256_file(archive)
             if actual_digest != asset["sha256"]:
                 raise BootstrapError(
@@ -606,6 +611,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Release channel when --version is omitted. Stable uses GitHub's latest release.",
     )
     parser.add_argument(
+        "--local-asset",
+        type=Path,
+        help=(
+            "CI-only: install from this local release zip instead of downloading "
+            "from GitHub. Requires --version to name the tag being installed. "
+            "Bypasses the GitHub API and the remote checksum lookup entirely "
+            "(the archive's own hash is computed locally and trusted, since the "
+            "caller just produced it) -- never use this for a real user install."
+        ),
+    )
+    parser.add_argument(
         "--install-root",
         type=Path,
         default=default_install_root(),
@@ -636,10 +652,26 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if not repo_path.is_dir():
         raise BootstrapError(f"Repository path does not exist: {repo_path}")
     install_root = args.install_root.expanduser().resolve()
-    requested_version = resolve_version(args.version, args.channel)
-    release = fetch_release(requested_version, args.channel)
-    asset = select_release_asset(release, platform_name)
-    actual_channel = "prerelease" if release.get("prerelease") else "stable"
+    local_source: Path | None = None
+    if args.local_asset is not None:
+        if not args.version:
+            raise BootstrapError("--local-asset requires --version to name the installed release tag.")
+        local_source = args.local_asset.expanduser().resolve()
+        if not local_source.is_file():
+            raise BootstrapError(f"--local-asset file does not exist: {local_source}")
+        tag = normalize_tag(args.version)
+        asset = {
+            "tag": tag,
+            "name": local_source.name,
+            "url": local_source.as_uri(),
+            "sha256": sha256_file(local_source),
+        }
+        actual_channel = "local"
+    else:
+        requested_version = resolve_version(args.version, args.channel)
+        release = fetch_release(requested_version, args.channel)
+        asset = select_release_asset(release, platform_name)
+        actual_channel = "prerelease" if release.get("prerelease") else "stable"
     plan: dict[str, Any] = {
         "schema": "code-intel-skill-bootstrap.v1",
         "status": "planned" if args.dry_run else "installing",
@@ -647,7 +679,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "platform": platform_name,
         "tag": asset["tag"],
         "version_source": (
-            "explicit"
+            "local"
+            if local_source is not None
+            else "explicit"
             if args.version
             else "channel"
         ),
@@ -662,7 +696,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if args.dry_run:
         return plan
 
-    release_root, install_status = install_release(asset, install_root)
+    release_root, install_status = install_release(
+        asset, install_root, local_source=local_source
+    )
     ensure_release_binary_executable(release_root, platform_name)
     pwsh = find_pwsh()
     installer = release_root / "legacy/install-code-intel-pipeline.ps1"

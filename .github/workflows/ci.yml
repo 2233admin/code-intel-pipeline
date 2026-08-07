@@ -540,6 +540,106 @@ jobs:
         # installed-overlay branch is reachable.
         run: code-intel doctor bootstrap --repo-path . --no-require-repowise --require-provider-conformance --json
 
+      # The steps above install from the local checkout, never exercising the
+      # actual release artifact a real user downloads (#59 proposal 6: this
+      # job was green without ever touching bootstrap.py, a packaged zip, or
+      # CODE_INTEL_HOME). The steps below package HEAD the same way
+      # release.yml does and drive the real bootstrap.py download-verify-
+      # install code path against that package, then prove PATH/CODE_INTEL_HOME
+      # actually persist -- not just that $env:GITHUB_PATH was appended.
+      - name: Package release artifact (mirrors release.yml)
+        shell: pwsh
+        run: |
+          $platform = if ($IsWindows) { "windows" } elseif ($IsMacOS) { "macos" } else { "linux" }
+          $binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
+          $version = "v0.0.0-smoketest"
+          New-Item -ItemType Directory -Force dist/code-intel-pipeline/bin | Out-Null
+          git archive --format=zip -o dist/payload.zip HEAD
+          if ($LASTEXITCODE -ne 0) { throw "git archive failed" }
+          Expand-Archive -LiteralPath dist/payload.zip -DestinationPath dist/code-intel-pipeline -Force
+          Remove-Item dist/payload.zip
+          Copy-Item -LiteralPath "target/release/$binaryName" -Destination "dist/code-intel-pipeline/bin/$binaryName" -Force
+          if (-not $IsWindows) {
+            chmod 755 "dist/code-intel-pipeline/bin/$binaryName"
+            if ($LASTEXITCODE -ne 0) { throw "chmod failed with exit code ${LASTEXITCODE}" }
+          }
+          $zipLeaf = "code-intel-pipeline-$version-$platform.zip"
+          if ($IsWindows) {
+            Compress-Archive -Path dist/code-intel-pipeline -DestinationPath "dist/$zipLeaf" -Force
+          }
+          else {
+            # Compress-Archive does not store POSIX file modes; the system zip
+            # binary records the executable bit so it survives the unzip that
+            # bootstrap.py performs below -- same reason release.yml uses it.
+            Push-Location dist
+            try {
+              zip -r $zipLeaf code-intel-pipeline
+              if ($LASTEXITCODE -ne 0) { throw "zip failed with exit code ${LASTEXITCODE}" }
+            }
+            finally {
+              Pop-Location
+            }
+          }
+
+      - name: Install packaged release via bootstrap.py
+        shell: pwsh
+        run: |
+          $platform = if ($IsWindows) { "windows" } elseif ($IsMacOS) { "macos" } else { "linux" }
+          $version = "v0.0.0-smoketest"
+          $zip = "dist/code-intel-pipeline-$version-$platform.zip"
+          $python = if (Get-Command python3 -ErrorAction SilentlyContinue) { "python3" } else { "python" }
+          $installRoot = Join-Path $env:RUNNER_TEMP "code-intel-smoketest-install"
+          $raw = & $python skills/code-intel-pipeline/scripts/bootstrap.py --local-asset $zip --version $version --repo-path . --install-root $installRoot --install-missing --json
+          if ($LASTEXITCODE -ne 0) { throw "bootstrap.py failed:`n$raw" }
+          $result = $raw | ConvertFrom-Json
+          if ($result.status -notin @("installed", "repaired", "already_installed")) {
+            throw "Unexpected bootstrap status '$($result.status)':`n$raw"
+          }
+          Write-Host "bootstrap.py installed $($result.tag) -> $($result.release_root)"
+
+      - name: Assert PATH and CODE_INTEL_HOME persisted (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Import-Module ./legacy/tools/code-intel-platform.psm1 -Force
+          $binDir = (Get-CodeIntelBinDir -Platform windows).TrimEnd('\')
+          $codeIntelHome = [Environment]::GetEnvironmentVariable("CODE_INTEL_HOME", "User")
+          $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+          if ([string]::IsNullOrWhiteSpace($codeIntelHome)) {
+            throw "CODE_INTEL_HOME was not persisted to the Windows User environment scope after install."
+          }
+          $userPathParts = @($userPath -split [System.IO.Path]::PathSeparator | ForEach-Object { $_.TrimEnd('\') })
+          if ($userPathParts -notcontains $binDir) {
+            throw "User PATH does not contain the installed bin dir ($binDir). User PATH: $userPath"
+          }
+          Write-Host "OK: CODE_INTEL_HOME=$codeIntelHome persisted; $binDir on User PATH."
+
+      - name: Assert PATH and CODE_INTEL_HOME persisted (POSIX)
+        if: runner.os != 'Windows'
+        shell: pwsh
+        run: |
+          Import-Module ./legacy/tools/code-intel-platform.psm1 -Force
+          $platform = if ($IsMacOS) { "macos" } else { "linux" }
+          $shell = if ($IsMacOS) { "zsh" } else { "bash" }
+          $profileFile = if ($IsMacOS) { "$HOME/.zshrc" } else { "$HOME/.bashrc" }
+          # This is exactly the one-time manual step README/public-beta.md
+          # instruct a real user to run -- the installer deliberately does not
+          # auto-edit dotfiles. What we're proving here is that once a user
+          # does that documented step, a genuinely fresh interactive shell
+          # (not this job's own $env: block) actually picks up both vars.
+          Add-Content -Path $profileFile -Value 'source "$HOME/.config/code-intel/env.sh"'
+          $binDir = Get-CodeIntelBinDir -Platform $platform
+          $probe = 'echo "PATH=$PATH"; echo "CODE_INTEL_HOME=$CODE_INTEL_HOME"'
+          $output = & $shell -ic $probe 2>&1 | Out-String
+          Write-Host $output
+          if ($output -notmatch [regex]::Escape($binDir)) {
+            throw "A fresh interactive shell (after the documented profile edit) does not have the installed bin dir on PATH:`n$output"
+          }
+          if ($output -notmatch "CODE_INTEL_HOME=\S+") {
+            throw "A fresh interactive shell does not have CODE_INTEL_HOME set:`n$output"
+          }
+          Write-Host "OK: fresh $shell shell has both PATH and CODE_INTEL_HOME from the persisted profile."
+
       - name: Hospital fail-closed contract tests
         shell: pwsh
         run: ./legacy/scripts/tests/test-hospital-trust-contract.ps1

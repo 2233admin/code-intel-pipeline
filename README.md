@@ -44,7 +44,7 @@
 
 ## 30 秒开始
 
-> **macOS / Linux 用户**：当前只支持源码构建安装——没有非 Windows 的 Release ZIP，`bootstrap.py` 也不支持非 Windows。请直接看 [macOS / Linux 快速开始](#macos--linux-快速开始)；本节以下命令默认 Windows。
+> **macOS / Linux 用户**：请直接看 [macOS / Linux 快速开始](#macos--linux-快速开始)；本节以下命令默认 Windows。macOS / Linux 从 v0.7.0-beta.2 起已有官方 Release ZIP，`bootstrap.py` 三平台通用。
 
 在要分析的仓库目录中运行稳定入口；不传参数时默认分析当前目录：
 
@@ -62,7 +62,7 @@ code-intel C:\path\to\your\repo
 
 ## macOS / Linux 快速开始
 
-**支持等级**：对已发布的版本（v0.6.0 及更早），macOS / Linux 只支持源码构建安装——这些版本的 Release ZIP 和 `bootstrap.py` 引导只覆盖 Windows。从下一个 release 起，每个版本会同时发布 windows / macos / linux 三个 Release ZIP，`bootstrap.py` 引导在 macOS / Linux 上同样可用（详见 [Public beta guide](docs/public-beta.md)）。所有入口脚本都要求 PowerShell 7.2+（`pwsh`），README 里其余 `.ps1` 命令在 macOS / Linux 上同样用 `pwsh` 运行。
+**支持等级**：v0.6.0 及更早版本，macOS / Linux 只支持源码构建安装——那些版本的 Release ZIP 和 `bootstrap.py` 引导只覆盖 Windows。从 v0.7.0-beta.2 起，每个版本同时发布 windows / macos / linux 三个 Release ZIP，`bootstrap.py` 引导在 macOS / Linux 上同样可用（详见 [Public beta guide](docs/public-beta.md)）。下面是不依赖 Release ZIP、直接从源码构建安装的路径；所有入口脚本都要求 PowerShell 7.2+（`pwsh`），README 里其余 `.ps1` 命令在 macOS / Linux 上同样用 `pwsh` 运行。
 
 前置依赖（macOS，Homebrew）：
 
@@ -235,7 +235,25 @@ https://github.com/2233admin/code-intel-pipeline/tree/main/skills/code-intel-pip
 
 Skill 默认只解析稳定版，校验 GitHub Release 提供的 SHA-256 后才解压。预发布版本和第三方依赖安装都需要显式选择。
 
-人工用户从 GitHub Release 下载并解压安装包；Agent 用户通过 Skill 安装。macOS / Linux 没有 Release ZIP，走[macOS / Linux 快速开始](#macos--linux-快速开始)的源码构建路径。Windows 源码安装仍可使用：
+人工用户从 GitHub Release 下载并解压安装包；Agent 用户通过 Skill 安装。三平台都有官方 Release ZIP（`code-intel-pipeline-<tag>-windows/macos/linux.zip`），也都可以走[macOS / Linux 快速开始](#macos--linux-快速开始)里的源码构建路径。Windows 源码安装仍可使用：
+
+### 验证发布来源
+
+每个 Release 资产都带 SHA-256 校验值（`.sha256` sidecar，或 `bootstrap.py`/Skill 自动核对的 `digest` 字段）和 GitHub Artifact Attestation（`actions/attest-build-provenance`，keyless、由 GitHub Actions OIDC 签发），证明这个 ZIP 确实产自本仓 CI，而不只是字节没在传输中损坏：
+
+```bash
+# 校验二进制确实产自本仓 CI（不是有人改了字节又同步改了 SHA-256）
+gh attestation verify code-intel-pipeline-v0.7.0-windows.zip --repo 2233admin/code-intel-pipeline
+
+# 校验 SHA-256（Windows 用 certutil，macOS 用 shasum，Linux 用 sha256sum）
+sha256sum -c code-intel-pipeline-v0.7.0-windows.zip.sha256
+```
+
+正式版（非 `-beta.`/`-rc.` 结尾的 tag）额外要求 tag 本身经 SSH 签名，签名与验证方式见 [docs/RELEASE_SIGNING.md](docs/RELEASE_SIGNING.md)：
+
+```bash
+git verify-tag v0.7.0
+```
 
 ```powershell
 git clone https://github.com/2233admin/code-intel-pipeline.git
