@@ -923,6 +923,8 @@ fn invoke_legacy_session(
         .args(["-SessionId", session_id])
         .env("PATH", path)
         .env("SENTRUX_CORE_EXE", &fake_cli)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("spawn real legacy session gate");
     let pid = child.id();
