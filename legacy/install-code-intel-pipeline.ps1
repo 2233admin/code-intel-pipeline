@@ -1174,7 +1174,7 @@ Install-MissingTool $installActions "git" { Invoke-ToolPackageInstall "git" } "I
 Install-MissingTool $installActions "python" { Invoke-ToolPackageInstall "python" } "Install Python 3.11+ with the platform package manager or ensure python is on PATH."
 Install-MissingTool $installActions "repowise" { Invoke-PipInstall "repowise" -Version $script:RepowisePinnedVersion } "Install repowise into the active Python environment (`python/python3 -m pip install --user repowise==$script:RepowisePinnedVersion`)."
 Install-CodeIntelBinary $installActions $repoRoot
-Install-SentruxShim $installActions $root
+Install-SentruxShim $installActions $repoRoot
 Install-MissingTool $installActions "sentrux" { Invoke-SentruxInstall } "Install the repo-owned shim or ensure sentrux.exe is on PATH."
 Repair-RepowiseThinkingBlockPatch $installActions
 Install-SentruxVlangPluginOverlay $installActions $root
@@ -1204,7 +1204,7 @@ foreach ($file in $requiredFiles) {
 # stayed at the repository root when the PowerShell moved under legacy/
 Test-File $checks "pipeline:Run-ScopedRepowiseDocs.py" (Join-Path $repoRoot "Run-ScopedRepowiseDocs.py") $true
 Test-File $checks "config" $Config $true
-$shimSource = Join-Path (Join-Path (Join-Path $root "legacy") "tools") "sentrux-shim"
+$shimSource = Join-Path (Join-Path (Join-Path $repoRoot "legacy") "tools") "sentrux-shim"
 $shimLauncherName = if ($script:EffectivePlatform -eq "windows") { "sentrux.cmd" } else { "sentrux" }
 Test-File $checks "sentrux-shim:launcher" (Join-Path $shimSource $shimLauncherName) $true
 Test-File $checks "sentrux-shim:ps1" (Join-Path $shimSource "sentrux-shim.ps1") $true
