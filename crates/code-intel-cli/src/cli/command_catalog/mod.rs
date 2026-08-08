@@ -13,8 +13,9 @@ use crate::{
 
 use super::legacy::{
     cmd_classify, cmd_doctor, cmd_graph, cmd_help, cmd_language, cmd_orchestrate, cmd_provider,
-    cmd_resume, cmd_route, cmd_sentrux, cmd_sentrux_debt_register, cmd_sentrux_normalize,
-    parse_args, run_benchmark, run_capability, run_file_boundary_raw, run_runtime_ci_raw, Args,
+    cmd_report, cmd_resume, cmd_route, cmd_sentrux, cmd_sentrux_debt_register,
+    cmd_sentrux_normalize, parse_args, run_benchmark, run_capability, run_file_boundary_raw,
+    run_runtime_ci_raw, Args,
 };
 use super::primary::{execute_primary, matches_primary_pattern, parse_primary_args, PrimaryArgs};
 
@@ -93,6 +94,7 @@ enum CompatibilityRoute {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LegacyRouteId {
+    Report,
     Resume,
     Classify,
     Doctor,
@@ -200,8 +202,12 @@ pub(super) fn parse_command(raw: &[String]) -> std::result::Result<Command, Comm
                 })
         }
         None => match parse_args(raw.to_vec()) {
-            Ok(arguments) => Err(CommandError::Legacy {
-                message: format!("unknown command: {}", arguments.command()),
+            Ok(arguments) => Err(CommandError::Usage {
+                message: format!(
+                    "unknown command: {}; run `code-intel --help` for available commands",
+                    arguments.command()
+                ),
+                exit_code: 64,
             }),
             Err(error) => Err(legacy_error(error)),
         },
@@ -375,6 +381,13 @@ fn render_primary_summary(output: &Value) -> String {
             output["publication"]["marker"].as_str().unwrap_or("")
         ),
     ];
+    if let Some(artifacts) = output["readableArtifacts"].as_object() {
+        for (name, path) in artifacts {
+            if let Some(path) = path.as_str() {
+                lines.push(format!("  {name}: {path}"));
+            }
+        }
+    }
     if let Some(node) = output["failureNode"].as_str() {
         let diagnostic = output["diagnostic"].as_str().unwrap_or("");
         lines.push(format!(
@@ -484,6 +497,7 @@ fn invocation_identity_label(
 
 fn execute_legacy(command: &LegacyCommand) -> std::result::Result<(), Box<dyn Error>> {
     match command.route {
+        LegacyRouteId::Report => cmd_report(&command.arguments),
         LegacyRouteId::Resume => cmd_resume(&command.arguments),
         LegacyRouteId::Classify => cmd_classify(&command.arguments),
         LegacyRouteId::Doctor => cmd_doctor(&command.arguments),

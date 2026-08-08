@@ -432,16 +432,28 @@ pub(crate) fn discover_manifest(explicit: Option<&Path>) -> Option<PathBuf> {
         let path = PathBuf::from(path);
         return path.is_file().then_some(path);
     }
-    let mut candidates = vec![];
+    // Exe-ancestor candidates are guesses, not configuration, so a hit only
+    // wins if its implied root actually resolves the manifest's entrypoints.
+    // The installer copies the manifest to <bin>/orchestration next to the
+    // binary; taking that copy at face value made `orchestrate` treat <bin>
+    // as the repository root and report every entrypoint missing (#218).
+    // Rejecting it here lets discovery fall through to CODE_INTEL_HOME (the
+    // release root), which the installer always writes.
     if let Ok(exe) = env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            candidates.extend(
-                parent
-                    .ancestors()
-                    .map(|root| root.join("orchestration").join("integrations.json")),
-            );
+        if let Some(found) = exe
+            .parent()
+            .into_iter()
+            .flat_map(Path::ancestors)
+            .find_map(|root| {
+                let candidate = root.join("orchestration").join("integrations.json");
+                (candidate.is_file() && manifest_entrypoints_resolve(&candidate))
+                    .then_some(candidate)
+            })
+        {
+            return Some(found);
         }
     }
+    let mut candidates = vec![];
     if let Some(home) = env::var_os("CODE_INTEL_HOME") {
         candidates.push(
             PathBuf::from(home)
@@ -457,6 +469,63 @@ pub(crate) fn discover_manifest(explicit: Option<&Path>) -> Option<PathBuf> {
             .join("integrations.json"),
     );
     candidates.into_iter().find(|path| path.is_file())
+}
+
+/// Whether the repository root implied by `manifest`'s location (the parent
+/// of its `orchestration/` directory, mirroring `orchestrate`'s
+/// `root_for_manifest`) resolves at least one of the manifest's file
+/// entrypoints. A manifest copied next to the installed binary parses fine
+/// but resolves nothing, and must lose discovery to a root that works.
+///
+/// Only file-like entrypoints count as evidence either way — the same
+/// `.ps1`/`.py`/`.toml`/`.rs` suffix set `orchestrate` validates (kept in
+/// sync by hand with `should_validate_entrypoint`; a shared constant would
+/// need every test binary that mounts this file to also mount
+/// `orchestration`). A manifest with no such entrypoints cannot be
+/// disproved and passes.
+pub(crate) fn manifest_entrypoints_resolve(manifest: &Path) -> bool {
+    let Some(parent) = manifest.parent() else {
+        return false;
+    };
+    let root = if parent
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("orchestration"))
+    {
+        match parent.parent() {
+            Some(root) => root,
+            None => return false,
+        }
+    } else {
+        parent
+    };
+    let Ok(bytes) = fs::read(manifest) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+        return false;
+    };
+    let Some(integrations) = value.get("integrations").and_then(Value::as_array) else {
+        return true;
+    };
+    let mut probeable = false;
+    for entry in integrations {
+        let Some(entrypoint) = entry.get("entrypoint").and_then(Value::as_str) else {
+            continue;
+        };
+        let lower = entrypoint.to_ascii_lowercase();
+        if ![".ps1", ".py", ".toml", ".rs"]
+            .iter()
+            .any(|suffix| lower.ends_with(suffix))
+        {
+            continue;
+        }
+        probeable = true;
+        if root.join(entrypoint).is_file() {
+            return true;
+        }
+    }
+    !probeable
 }
 
 fn find_declaration(registry: &Value, capability: &str) -> Result<Option<(Value, String)>, String> {
@@ -1093,5 +1162,72 @@ mod tests {
             mutate(&mut candidate);
             assert!(validate_result(&candidate, &request, &declaration).is_err());
         }
+    }
+
+    fn manifest_probe_root(name: &str) -> PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("code-intel-manifest-probe-{name}-{nonce}"));
+        fs::create_dir_all(root.join("orchestration")).unwrap();
+        root
+    }
+
+    fn write_manifest(root: &Path, entrypoint: &str) -> PathBuf {
+        let path = root.join("orchestration").join("integrations.json");
+        fs::write(
+            &path,
+            serde_json::to_vec(&json!({
+                "integrations": [{"id": "doctor", "entrypoint": entrypoint}]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        path
+    }
+
+    /// #218: the installer's `<bin>/orchestration/integrations.json` copy
+    /// names entrypoints that do not exist under `<bin>` — discovery must
+    /// refuse it so the walk can fall through to `CODE_INTEL_HOME`.
+    #[test]
+    fn manifest_probe_rejects_bin_forwarder_copy() {
+        let root = manifest_probe_root("forwarder");
+        let manifest = write_manifest(&root, "crates/code-intel-cli/src/doctor_bootstrap/mod.rs");
+        assert!(!manifest_entrypoints_resolve(&manifest));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn manifest_probe_accepts_root_that_resolves_entrypoints() {
+        let root = manifest_probe_root("resolving");
+        let manifest = write_manifest(&root, "crates/lib.rs");
+        fs::create_dir_all(root.join("crates")).unwrap();
+        fs::write(root.join("crates").join("lib.rs"), "").unwrap();
+        assert!(manifest_entrypoints_resolve(&manifest));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A manifest with no file-like entrypoints offers no evidence either
+    /// way and must not be rejected — rejecting it would break registries
+    /// whose integrations are all commands or URLs.
+    #[test]
+    fn manifest_probe_passes_manifest_without_probeable_entrypoints() {
+        let root = manifest_probe_root("unprobeable");
+        let manifest = write_manifest(&root, "https://example.invalid/hook");
+        assert!(manifest_entrypoints_resolve(&manifest));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn manifest_probe_rejects_unreadable_or_invalid_json() {
+        let root = manifest_probe_root("invalid");
+        let path = root.join("orchestration").join("integrations.json");
+        fs::write(&path, b"not json").unwrap();
+        assert!(!manifest_entrypoints_resolve(&path));
+        assert!(!manifest_entrypoints_resolve(
+            &root.join("orchestration").join("missing.json")
+        ));
+        fs::remove_dir_all(&root).unwrap();
     }
 }

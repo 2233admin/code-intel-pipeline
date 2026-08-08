@@ -761,14 +761,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         install_command.append("-InstallMissing")
     if args.check_provider:
         install_command.append("-CheckProvider")
-    installer_result = command_result(install_command)
-
+    # Build the child environment before the installer subprocess: the
+    # installer persists CODE_INTEL_HOME into the user environment, and it
+    # resolves that value from the child process environment first. Without
+    # pinning it here, a caller shell that exports a MSYS-style or otherwise
+    # stale CODE_INTEL_HOME (for example `/d/projects/...` from git-bash,
+    # which Windows resolves as `C:\d\projects\...`) would get written to the
+    # registry verbatim and break every later run.
     environment = os.environ.copy()
     environment["CODE_INTEL_HOME"] = str(release_root)
     data_root = default_data_root()
     environment["PATH"] = (
         str(data_root / "bin") + os.pathsep + environment.get("PATH", "")
     )
+    installer_result = command_result(install_command, environment=environment)
     doctor_result = command_result(
         [
             pwsh,
