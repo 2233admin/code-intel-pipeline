@@ -52,6 +52,7 @@ fn identity_holds_and_every_gate_is_represented_over_a_mixed_fixture_tree() {
     write(&root, "README.md", b"not a recognised source extension\n");
     write(&root, "legacy/tools/nested.ps1", b"function F {}\n");
     write(&root, "vendor/inner/thing.py", b"x = 1\n");
+    write(&root, ".claude/worktrees/garbage.rs", b"fn garbage() {}\n");
     write(&root, ".gitignore", b"ignored/\n");
     write(&root, "ignored/generated.rs", b"fn generated() {}\n");
     let big = vec![b'a'; (MAX_FILE_BYTES + 1) as usize];
@@ -82,6 +83,11 @@ fn identity_holds_and_every_gate_is_represented_over_a_mixed_fixture_tree() {
     assert_eq!(
         decision_for(&report, "vendor/inner/thing.py").gate,
         GATE_DEFAULT_PATH
+    );
+    assert_eq!(
+        decision_for(&report, ".claude/worktrees/garbage.rs").gate,
+        GATE_DEFAULT_PATH,
+        "private worktrees must be excluded by the shared gate"
     );
     assert_eq!(decision_for(&report, "huge.py").gate, GATE_OVERSIZED);
     assert_eq!(
