@@ -15,7 +15,7 @@ $fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-publicat
 
 try {
     $smokeRoot = Join-Path $fixtureRoot "smoke"
-    & (Join-Path $root "legacy/run-code-intel.ps1") -RepoPath $root -Mode lite -ArtifactRoot $smokeRoot -SkipRepowise -SkipRepomix -SkipSentrux -SkipGitHubResearch -SkipOpenSpec | Out-Null
+    & (Join-Path $root "legacy/run-code-intel.ps1") -RepoPath $root -Mode lite -ArtifactRoot $smokeRoot -SkipRepowise -SkipRepomix -SkipSentrux -SkipOpenSpec | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) "A real lite pipeline publication smoke run must succeed."
     $publishedRuns = @(Get-ChildItem -LiteralPath (Join-Path $smokeRoot (Split-Path -Leaf $root)) -Directory)
     Assert-True ($publishedRuns.Count -eq 1) "The smoke run must publish exactly one final directory."
