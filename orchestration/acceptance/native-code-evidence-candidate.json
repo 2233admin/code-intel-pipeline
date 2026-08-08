@@ -55,9 +55,9 @@
     "sourceRevisionPinned": true,
     "implementationLicense": "PROJECT-LICENSE-PIPELINE-OWNED",
     "sourcePath": "crates/code-intel-cli/src/native_code_evidence.rs",
-    "sourceDigest": "38e165ad6fb351a27c8187838e71b3a1526408105c4efb8bcfd64672ff2f6064",
+    "sourceDigest": "d07d257df1c36e879bba2f6bdc3f18f4c26a34ee05889fc19f4ab96bc2027051",
     "conformancePath": "crates/code-intel-cli/tests/native_code_evidence.rs",
-    "conformanceDigest": "11c7f5fe4343a266b35dcfaa7a35d75fb86b17766341fbc38a239915bc87bf9f"
+    "conformanceDigest": "679a45aca77a38994cc653344923a47d3131558203af58b647e8594421706531"
   },
   "rollback": {
     "documented": true,

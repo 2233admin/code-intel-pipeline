@@ -304,6 +304,51 @@ fn native_atom_preserves_representative_v1_artifacts_through_a01_a03_a09() {
 }
 
 #[test]
+fn rust_grouped_and_multiline_uses_expand_to_individual_import_artifacts() {
+    let temp = Temp::new("rust-use-imports");
+    let repo = temp.0.join("repo");
+    let out = temp.0.join("run");
+    fs::create_dir_all(&repo).unwrap();
+    fs::write(
+        repo.join("uses.rs"),
+        "use crate::impact_graph::{impacted_files, reverse_import_graph, select_tests};\n\
+         use crate::workflow::{\n\
+             test_commands,\n\
+             Workflow,\n\
+         };\n\
+         use crate::aliases::Thing as LocalThing;\n\
+         use crate::nested::{branch::{One, Two as LocalTwo}, *};\n\
+         fn main() {}\n",
+    )
+    .unwrap();
+
+    run(&repo, &out);
+    let imports =
+        read_json(out.join("evidence.native-code/code-evidence/merged/full/imports.json"));
+    let targets: HashSet<_> = imports["imports"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["file"] == "uses.rs")
+        .map(|item| item["target"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        targets,
+        HashSet::from([
+            "crate::impact_graph::impacted_files",
+            "crate::impact_graph::reverse_import_graph",
+            "crate::impact_graph::select_tests",
+            "crate::workflow::test_commands",
+            "crate::workflow::Workflow",
+            "crate::aliases::Thing",
+            "crate::nested::branch::One",
+            "crate::nested::branch::Two",
+            "crate::nested::*",
+        ])
+    );
+}
+
+#[test]
 fn unsupported_language_is_explicit_unknown_without_relationship_fabrication() {
     let temp = Temp::new("unsupported");
     let repo = temp.0.join("repo");
