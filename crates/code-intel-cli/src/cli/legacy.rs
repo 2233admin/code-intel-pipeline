@@ -400,6 +400,15 @@ pub(super) fn cmd_resume(args: &Args) -> Result<()> {
     artifacts::resume(&repo, args.artifact_root.as_deref(), args.json)
 }
 
+pub(super) fn cmd_report(args: &Args) -> Result<()> {
+    let repo = args
+        .repo
+        .as_ref()
+        .ok_or("report requires --repo <path>")?
+        .to_path_buf();
+    artifacts::report(&repo, args.artifact_root.as_deref(), args.json)
+}
+
 pub(super) fn cmd_classify(args: &Args) -> Result<()> {
     let report_path = args
         .report
@@ -1115,6 +1124,7 @@ pub(super) const FULL_HELP_TEXT: &str = r#"code-intel <command> [options]
 Commands:
   --version|-V [--json]
   help|--help|-h [--all]
+  report --repo <path> [--artifact-root <path>] [--json]
   resume --repo <path> [--artifact-root <path>] [--json]
   classify --report <path> [--json]
   sentrux-normalize --steps <report.json> [--out <sentrux-failures.json>]
@@ -1140,6 +1150,7 @@ Commands:
   snapshot identity --repo <root> --working-tree-policy <head_only|explicit_overlay> [--scope <relative-path>]...
   repin [--repo <root>] [--write] [--json] [--exclude <path-prefix>]...
   determinism check --repo <repo-root> --out <staging-parent-directory> [--runs <n>=3] [--profile default|strict|offline] [--manifest <integrations.json>] [--max-concurrency <n>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>] (runs N `run execute` passes over diagnosis.hospital's reachable evidence chain and byte-compares them after stripping timestamp/run-identity fields; exit 20 on the first divergence)
+  repowise-hooks [--repo <root>] [--write] (detects/installs the optional repowise post-commit and distill-rewrite hooks; no-op if repowise is not on PATH)
   evidence validate --request <request.json> --artifact-root <directory>
   repository survival-scan --request <request.json|-> --artifact-root <directory>
   audit --operation validate|render --repo <root> --report <report.json> [--format markdown|html]
