@@ -72,6 +72,20 @@ fn named_commands_are_not_misclassified_as_repository_paths() {
     assert!(!stderr.contains("unknown primary entry argument"));
 }
 
+#[test]
+fn unknown_subcommand_points_to_help() {
+    let output = common::cli()
+        .arg("init")
+        .output()
+        .expect("run an unknown subcommand");
+
+    assert_eq!(output.status.code(), Some(64));
+    let stderr = String::from_utf8(output.stderr).expect("error is UTF-8");
+    assert!(stderr.contains("unknown command: init"));
+    assert!(stderr.contains("code-intel --help"));
+    assert!(!stderr.contains("repository path is not a directory"));
+}
+
 /// End-to-end cover for the stable wrapper: the default route with no
 /// subcommand, the summary it prints, and what the authoritative index does
 /// with a run that failed.

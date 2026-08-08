@@ -23,8 +23,26 @@ pub(crate) fn load(artifact_root: &Path, repo: &str) -> Result<CommittedEvidence
         .and_then(|entries| entries.iter().find(|entry| entry["repo"] == repo))
         .cloned()
         .ok_or_else(|| {
+            let reasons = index["diagnostics"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|diagnostic| diagnostic["repo"] == repo)
+                .filter_map(|diagnostic| {
+                    Some(format!(
+                        "{}: {}",
+                        diagnostic["classification"].as_str()?,
+                        diagnostic["reason"].as_str()?
+                    ))
+                })
+                .collect::<Vec<_>>();
+            let detail = if reasons.is_empty() {
+                String::new()
+            } else {
+                format!("; exclusion reasons: {}", reasons.join(" | "))
+            };
             EvidenceError::Contract(format!(
-                "no committed authoritative run is indexed for repository: {repo}"
+                "no committed authoritative run is indexed for repository: {repo}{detail}"
             ))
         })?;
     let run = entry["run"].as_str().expect("A08 entry run");
