@@ -456,7 +456,68 @@ pub(crate) fn discover_manifest(explicit: Option<&Path>) -> Option<PathBuf> {
             .join("orchestration")
             .join("integrations.json"),
     );
-    candidates.into_iter().find(|path| path.is_file())
+    // Only accept an auto-discovered candidate when its manifest root looks
+    // like a real pipeline checkout. The installer copies the manifest into
+    // <bin>/orchestration/ as a forwarder, but <bin> is not the repository
+    // root: entrypoints under it resolve to nothing. Skipping non-repo roots
+    // lets discovery fall through to CODE_INTEL_HOME / the compile-time tree.
+    candidates
+        .into_iter()
+        .find(|path| path.is_file() && manifest_root(path).is_some())
+}
+
+/// True when `root` looks like a Code Intel Pipeline repository checkout.
+///
+/// Used to distinguish a real pipeline root (whose `orchestration/
+/// integrations.json` entrypoints resolve relative to it) from the
+/// installer's `<bin>/orchestration/` forwarder copy, whose parent
+/// directory is a thin bin shim, not a checkout.
+pub(crate) fn is_repo_like(root: &Path) -> bool {
+    root.join("pipeline.config.json").is_file()
+        || root.join("Cargo.toml").is_file()
+        || root.join(".git").exists()
+}
+
+/// Resolve the pipeline root that owns `manifest`.
+///
+/// `manifest` normally lives at `<root>/orchestration/integrations.json`, so
+/// the root is its grandparent. When that candidate does not look like a real
+/// checkout (for example the installer's `<bin>/orchestration/` forwarder),
+/// fall back to `CODE_INTEL_HOME` when it is a real checkout.
+pub(crate) fn manifest_root(manifest: &Path) -> Option<PathBuf> {
+    manifest_root_from(manifest, env::var_os("CODE_INTEL_HOME").as_deref())
+}
+
+/// Pure variant of [`manifest_root`] with the `CODE_INTEL_HOME` value injected.
+///
+/// Kept separate so tests exercise the fallback logic without mutating the
+/// process environment (tests in this crate run in parallel in one process,
+/// and `std::env::set_var` races with tests that spawn subprocesses which
+/// inherit `CODE_INTEL_HOME`).
+pub(crate) fn manifest_root_from(
+    manifest: &Path,
+    home: Option<&std::ffi::OsStr>,
+) -> Option<PathBuf> {
+    let parent = manifest.parent()?;
+    let candidate = if parent
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("orchestration"))
+    {
+        parent.parent().map(Path::to_path_buf)?
+    } else {
+        parent.to_path_buf()
+    };
+    if is_repo_like(&candidate) {
+        return Some(candidate);
+    }
+    if let Some(home) = home {
+        let home = PathBuf::from(home);
+        if is_repo_like(&home) {
+            return Some(home);
+        }
+    }
+    None
 }
 
 fn find_declaration(registry: &Value, capability: &str) -> Result<Option<(Value, String)>, String> {
@@ -1093,5 +1154,45 @@ mod tests {
             mutate(&mut candidate);
             assert!(validate_result(&candidate, &request, &declaration).is_err());
         }
+    }
+
+    #[test]
+    fn manifest_root_rejects_bin_forwarder_and_falls_back_to_home() {
+        // tempdir root stands in for a real checkout
+        let temp = std::env::temp_dir().join(format!(
+            "cip-manifest-root-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let repo = temp.join("repo");
+        let bin = temp.join("bin");
+        std::fs::create_dir_all(repo.join("orchestration")).unwrap();
+        std::fs::create_dir_all(bin.join("orchestration")).unwrap();
+        std::fs::write(repo.join("pipeline.config.json"), "{}").unwrap();
+        std::fs::write(repo.join("orchestration").join("integrations.json"), "{}").unwrap();
+        std::fs::write(bin.join("orchestration").join("integrations.json"), "{}").unwrap();
+
+        // The bin forwarder alone must not resolve to the bin shim.
+        let forwarder = bin.join("orchestration").join("integrations.json");
+        assert_eq!(
+            crate::capability::manifest_root_from(&forwarder, None),
+            None
+        );
+        // With CODE_INTEL_HOME pointing at a real checkout, the forwarder falls back to it.
+        assert_eq!(
+            crate::capability::manifest_root_from(&forwarder, Some(repo.as_os_str())),
+            Some(repo.clone())
+        );
+        // A manifest under a real checkout resolves to that checkout.
+        let real = repo.join("orchestration").join("integrations.json");
+        assert_eq!(
+            crate::capability::manifest_root_from(&real, None),
+            Some(repo.clone())
+        );
+
+        std::fs::remove_dir_all(&temp).ok();
     }
 }

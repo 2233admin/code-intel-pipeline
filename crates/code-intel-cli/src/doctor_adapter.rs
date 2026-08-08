@@ -315,7 +315,7 @@ fn publish(out: &Path, relative: &str, bytes: &[u8]) -> Result<(), AdapterError>
 
 fn pipeline_root() -> PathBuf {
     crate::capability::discover_manifest(None)
-        .and_then(|manifest| manifest.parent()?.parent().map(Path::to_path_buf))
+        .and_then(|manifest| crate::capability::manifest_root(&manifest))
         .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(".."))
 }
 

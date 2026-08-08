@@ -758,6 +758,13 @@ function Install-IntegrationsManifest {
     # first candidate of that walk, <bin>/orchestration/integrations.json, so
     # the installed binary works without a repo checkout. Overwrites on
     # reinstall to keep the copy current.
+    #
+    # The copy is a compatibility forwarder only: the binary validates the
+    # candidate's root (manifest_root in capability.rs) and treats a non-repo
+    # root such as <bin> as invalid, falling back to CODE_INTEL_HOME, which
+    # this installer also persists and which points at the real release root.
+    # Keeping the copy is harmless after that validation; it exists so older
+    # binaries that do not validate still find a manifest next to themselves.
     $manifestSource = Join-Path (Join-Path $Root "orchestration") "integrations.json"
     if (-not (Test-Path -LiteralPath $manifestSource -PathType Leaf)) {
         Add-InstallAction $Actions "integrations-manifest" "install_failed" "missing $manifestSource" "Restore orchestration/integrations.json from the repository." "repo-local" $false

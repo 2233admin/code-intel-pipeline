@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Windows 安装后管线在 doctor 节点必挂(#218)**: 安装器把 `orchestration/integrations.json` 复制到 `<bin>/orchestration/` 作 forwarder,而 `discover_manifest` 从 exe 祖先链优先命中该副本,`root_for_manifest` 把 `<bin>` 当仓库根,导致全部 entrypoint 相对 `<bin>` 解析失败(`integration doctor entrypoint missing: ...` x ~40)。修复: `capability.rs` 新增 `is_repo_like` / `manifest_root`,manifest 根不是真实 checkout(无 `pipeline.config.json` / `Cargo.toml` / `.git`)时跳过该候选并回退 `CODE_INTEL_HOME`(真实 release root);`orchestration.rs::root_for_manifest` 区分显式 manifest(保持原父目录布局,doctor_envelope 回归防护)与自动发现(要求 checkout);`doctor_adapter.rs::pipeline_root`、`capability_inventory.rs::pipeline_root` 统一走共享解析。附带修复 `bootstrap.py`: 安装器子进程此前未传入钉好的环境,调用者 shell 里 MSYS 风格 `CODE_INTEL_HOME`(如 `/d/...` → `C:\d\...`)会被原样写进用户注册表并毒化后续运行;现在安装器与 doctor 都使用钉到 release root 的同一环境。
+- **全量测试在带全局 git 配置的机器上 flaky(测试 hermeticity)**: `file_gate/walk.rs` 对遍历中目录消失(NotFound)容错,消除 `sentrux_gate` cycle 测试与 `tool_path` 临时目录删除的并行竞态;`internalization_record` 的 fixture git 命令清空 `core.excludesFile`,不再被用户全局 ignore(如 `*.bin`)拦截;`native_code_evidence` 的 legacy facade 调用清除 PIPELINE_VARS,不再继承 shell 的 `CODE_INTEL_HOME` 指向旧 manifest;`snapshot_identity` 用 `.git/shallow` 边界手工构造 shallow 仓库,避开 Windows 8.3 短路径下 `file://` clone 失败。
+
 ## [0.7.0] — 2026-08-07
 
 首个正式版切割。#14 的发布闸验收条款本身早已做完（自扫门禁、`dag_run`/`execution_kernel` 循环依赖修复，issue 自己的 checklist 勾过）；剩下未勾的 session-intelligence/2D viewer 是另一条独立多版本 roadmap，跟能不能发 GA 无关，留 backlog。#158 复核后没有整条延后：Skill 安装路径升级为先验 GitHub Artifact Attestation 再退回 SHA-256（`gh` 缺失时显式降级，不静默）；跑了一次真实的 supply-chain 自审（`orchestration/audit/reports/audit-report.json`，8.0/10，一条确认发现——发布 tag 未签名也没有 ruleset 保护）；对已发布的 v0.7.0-beta.6 三平台 ZIP 实测 `gh attestation verify` 全过，记录在 `docs/release-provenance-runbook.md`；OpenSSF Best Practices 逐条自评进 `docs/openssf-best-practices-gap.md`。只有「签名 tag + tag 保护 ruleset」明确留给维护者（改仓库设置不该由 agent 单方面做），继续在 #158 追踪。

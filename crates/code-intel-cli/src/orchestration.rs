@@ -20,7 +20,7 @@ pub(crate) fn run(options: &Options<'_>) -> Result<()> {
     let action = normalize_action(options.action)?;
     let mode = normalize_mode(options.mode)?;
     let manifest_path = resolve_manifest_path(options.manifest)?;
-    let root = root_for_manifest(&manifest_path)?;
+    let root = root_for_manifest(&manifest_path, options.manifest.is_some())?;
     let manifest = read_json(&manifest_path)?;
     let stages = array_values(&manifest, "stages");
     let integrations = array_values(&manifest, "integrations");
@@ -170,21 +170,34 @@ fn absolute_file_path(path: &Path) -> Result<PathBuf> {
     Err(format!("file does not exist: {}", path.display()).into())
 }
 
-fn root_for_manifest(manifest_path: &Path) -> Result<PathBuf> {
-    let parent = manifest_path
-        .parent()
-        .ok_or("manifest path has no parent directory")?;
-    if parent
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.eq_ignore_ascii_case("orchestration"))
-    {
-        return parent
+fn root_for_manifest(manifest_path: &Path, explicit: bool) -> Result<PathBuf> {
+    // An explicitly supplied manifest is honored as-is: the caller knows what
+    // they pointed at (for example a drifted manifest under a temp directory
+    // in a test, or a manifest copied next to a custom deployment). Its root
+    // is the ordinary parent-of-orchestration / parent-of-manifest layout.
+    //
+    // An auto-discovered manifest must resolve to a real pipeline checkout;
+    // otherwise the installer's <bin>/orchestration/ forwarder copy would be
+    // accepted and every entrypoint would resolve under <bin> (issue #218).
+    if explicit {
+        let parent = manifest_path
             .parent()
-            .map(Path::to_path_buf)
-            .ok_or_else(|| "orchestration manifest has no repository root".into());
+            .ok_or("manifest path has no parent directory")?;
+        if parent
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case("orchestration"))
+        {
+            return parent
+                .parent()
+                .map(Path::to_path_buf)
+                .ok_or_else(|| "orchestration manifest has no repository root".into());
+        }
+        return Ok(parent.to_path_buf());
     }
-    Ok(parent.to_path_buf())
+    crate::capability::manifest_root(manifest_path).ok_or_else(|| {
+        "orchestration manifest does not resolve to a pipeline repository root".into()
+    })
 }
 
 fn normalize_action(value: &str) -> Result<String> {
@@ -1194,5 +1207,20 @@ mod tests {
                 participant["capabilityId"]
             );
         }
+    }
+
+    #[test]
+    fn root_for_manifest_explicit_accepts_any_parent_layout() {
+        // An explicitly supplied manifest is honored as-is: the caller knows
+        // what they pointed at (drifted manifest under a temp dir in tests,
+        // manifest copied next to a custom deployment). Regression guard for
+        // doctor_envelope: a non-checkout manifest root must not fail the
+        // whole orchestrate validate.
+        let dir = unique_temp_dir("root-explicit");
+        let manifest = dir.join("integrations.json");
+        touch(&manifest, "{}");
+        let root = root_for_manifest(&manifest, true).expect("explicit manifest resolves");
+        assert_eq!(root, dir);
+        fs::remove_dir_all(&dir).ok();
     }
 }
