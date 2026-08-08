@@ -1,6 +1,6 @@
 mod common;
 use std::path::PathBuf;
-use std::process::{Command, ExitStatus};
+use std::process::{Command, ExitStatus, Stdio};
 
 #[test]
 fn root_help_leads_with_the_compiled_primary_entry() {
@@ -593,6 +593,8 @@ fn invoke_legacy_session(
         .args(["-SessionId", session_id])
         .env("PATH", path)
         .env("SENTRUX_CORE_EXE", &fake_cli)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("spawn real legacy session gate");
     let pid = child.id();
