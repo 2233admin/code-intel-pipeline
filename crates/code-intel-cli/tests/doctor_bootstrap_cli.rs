@@ -293,6 +293,57 @@ fn the_pipeline_root_defaults_to_the_checkout_the_caller_stands_in() {
     fs::remove_dir_all(root).ok();
 }
 
+/// A release payload has the compiled graph provider in `bin/`, not in a
+/// source checkout's `target/{release,debug}` directories. Doctor must report
+/// that installed binary instead of describing a path every release install
+/// necessarily lacks (issue #232).
+#[test]
+fn release_layout_reports_the_packaged_graph_provider_binary() {
+    let release = temp_dir("release-layout");
+    let repo = temp_dir("release-repo");
+    let binary = release.join("bin").join("code-intel");
+    fs::create_dir_all(release.join("legacy")).unwrap();
+    fs::create_dir_all(binary.parent().unwrap()).unwrap();
+    fs::write(release.join("legacy").join("run-code-intel.ps1"), b"").unwrap();
+    fs::write(release.join("pipeline.config.json"), b"{}").unwrap();
+    fs::write(&binary, b"packaged binary").unwrap();
+    let binary_path = binary.to_string_lossy().into_owned();
+
+    let output = common::cli()
+        .args(["doctor", "bootstrap", "--pipeline-root"])
+        .arg(&release)
+        .args([
+            "--repo-path",
+            repo.to_str().unwrap(),
+            "--platform",
+            "macos",
+            "--no-require-repowise",
+            "--json",
+        ])
+        .output()
+        .expect("run doctor bootstrap against release layout");
+    let observation: Value =
+        serde_json::from_slice(&output.stdout).expect("observation is one JSON document");
+
+    assert_eq!(
+        observation["checks"]["graphProvider"]["binaryFound"],
+        json!(true),
+        "release layout must discover its packaged binary: {observation}"
+    );
+    assert_eq!(
+        observation["checks"]["graphProvider"]["binaryPath"],
+        json!(binary_path.clone())
+    );
+    assert!(
+        observation["checks"]["graphProvider"]["command"]
+            .as_str()
+            .is_some_and(|command| command.contains(&binary_path)),
+        "doctor must recommend the packaged binary: {observation}"
+    );
+    fs::remove_dir_all(release).ok();
+    fs::remove_dir_all(repo).ok();
+}
+
 /// Regression (F4): `orchestration/integrations.json` ships
 /// `edit.ast-grep-plan` with a `runtimeAdapter`, and that adapter resolves
 /// `ast-grep` through `tool_path` before shelling out to it. The doctor's
