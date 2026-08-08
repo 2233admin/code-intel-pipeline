@@ -198,7 +198,7 @@
       },
       "source": {
         "path": "legacy/Invoke-SentruxAgentTool.ps1",
-        "sha256": "5ecbf6e24bd602b40983f61a98dc388d4228ad7f9fcddac885799147714a49d8"
+        "sha256": "cc2bb463fb8a66d1aee8175cd015a2fa315e172450fb46a8312cf1e8a58c663e"
       },
       "conformance": {
         "path": "legacy/scripts/tests/test-sentrux-failure-normalization.ps1",
@@ -217,7 +217,7 @@
       },
       "source": {
         "path": "legacy/Invoke-SentruxAgentTool.ps1",
-        "sha256": "5ecbf6e24bd602b40983f61a98dc388d4228ad7f9fcddac885799147714a49d8"
+        "sha256": "cc2bb463fb8a66d1aee8175cd015a2fa315e172450fb46a8312cf1e8a58c663e"
       },
       "conformance": {
         "path": "legacy/scripts/tests/test-sentrux-failure-normalization.ps1",
@@ -236,7 +236,7 @@
       },
       "source": {
         "path": "legacy/Invoke-SentruxAgentTool.ps1",
-        "sha256": "5ecbf6e24bd602b40983f61a98dc388d4228ad7f9fcddac885799147714a49d8"
+        "sha256": "cc2bb463fb8a66d1aee8175cd015a2fa315e172450fb46a8312cf1e8a58c663e"
       },
       "conformance": {
         "path": "legacy/scripts/tests/test-sentrux-failure-normalization.ps1",

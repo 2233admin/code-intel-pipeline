@@ -1437,6 +1437,19 @@ Test-Case "fail-open lint: no catch{ return `$true } / catch{ `$true } patterns 
 }
 
 # ---------------------------------------------------------------------------
+# Issue #216: after the shim moved under legacy/tools, the installer must pass
+# the repository root (not the legacy directory) to both the shim installer and
+# its required-file checks. Otherwise it searches legacy/legacy/tools and the
+# portable macOS install exits 1 after a successful release build.
+# ---------------------------------------------------------------------------
+Test-Case "installer: relocated Sentrux shim stays rooted at the repository" {
+    $installerPath = Join-Path $root "install-code-intel-pipeline.ps1"
+    $installer = Get-Content -LiteralPath $installerPath -Raw
+    Assert-True ($installer.Contains('Install-SentruxShim $installActions $repoRoot')) "the shim installer must receive the repository root"
+    Assert-True ($installer.Contains('$shimSource = Join-Path (Join-Path (Join-Path $repoRoot "legacy") "tools") "sentrux-shim"')) "required shim files must be checked from repository-root/legacy/tools"
+}
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 Write-Host ""
