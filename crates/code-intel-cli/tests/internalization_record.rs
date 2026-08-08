@@ -1282,6 +1282,11 @@ impl Drop for TemporaryDirectory {
 
 fn repository_git(repo: &Path) -> Command {
     let mut command = hardened_git::command(repo);
+    // Fixture repos must be hermetic: a user's global excludes
+    // (core.excludesFile, e.g. a `*.bin` pattern) would otherwise make
+    // `git add binary.bin` fail for fixtures that deliberately track binary
+    // blobs, independent of what this test is exercising.
+    command.arg("-c").arg("core.excludesFile=");
     for variable in [
         "GIT_DIR",
         "GIT_WORK_TREE",

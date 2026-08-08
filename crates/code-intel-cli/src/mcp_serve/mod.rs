@@ -28,6 +28,7 @@ use serde_json::{json, Value};
 use crate::artifacts;
 
 mod handlers;
+mod identity;
 mod tools;
 
 #[cfg(test)]
@@ -65,6 +66,7 @@ pub(super) struct ServeContext {
     pub(super) repo: String,
     pub(super) artifact_root: PathBuf,
     pub(super) manifest: Option<PathBuf>,
+    pub(super) binding: identity::RepositoryBinding,
 }
 
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
@@ -157,11 +159,13 @@ fn parse(raw: &[String]) -> Result<ServeContext, String> {
         None => artifacts::resolve_artifact_root(None)
             .map_err(|error| format!("resolve artifact root: {error}"))?,
     };
+    let binding = identity::bind(&artifact_root, &repo, &repo_path)?;
     Ok(ServeContext {
         repo_path,
         repo,
         artifact_root,
         manifest,
+        binding,
     })
 }
 
@@ -248,7 +252,7 @@ pub(super) fn handle_line(context: &ServeContext, line: &str) -> Option<Value> {
 
 fn dispatch(context: &ServeContext, id: Value, method: &str, params: &Value) -> Value {
     match method {
-        "initialize" => success(id, initialize_result(params)),
+        "initialize" => success(id, initialize_result(context, params)),
         "ping" => success(id, json!({})),
         "tools/list" => success(id, json!({ "tools": tools::descriptors() })),
         "tools/call" => tools_call(context, id, params),
@@ -262,7 +266,7 @@ fn dispatch(context: &ServeContext, id: Value, method: &str, params: &Value) -> 
     }
 }
 
-fn initialize_result(params: &Value) -> Value {
+fn initialize_result(context: &ServeContext, params: &Value) -> Value {
     let requested = params["protocolVersion"]
         .as_str()
         .unwrap_or(PROTOCOL_VERSION);
@@ -276,6 +280,7 @@ fn initialize_result(params: &Value) -> Value {
         "capabilities": {"tools": {"listChanged": false}},
         "serverInfo": {"name": "code-intel", "version": env!("CARGO_PKG_VERSION")},
         "instructions": INSTRUCTIONS,
+        "repositoryBinding": context.binding.initialize_value(&context.repo, &context.repo_path),
     })
 }
 

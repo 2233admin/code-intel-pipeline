@@ -575,6 +575,20 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
         ),
     },
     legacy_route! {
+        command: "report",
+        aliases: &[],
+        id: LegacyRouteId::Report,
+        contract: command_contract!(
+            Public,
+            Internal,
+            Internal,
+            &[CommandEffect::RepoRead],
+            stdout!("code-intel-report.v1", "text-format:report-text.v1"),
+            exits!(0, 1),
+            "retain while committed-run report reading is the supported human-facing surface"
+        ),
+    },
+    legacy_route! {
         command: "resume",
         aliases: &[],
         id: LegacyRouteId::Resume,

@@ -1,5 +1,23 @@
 # Code Intel Pipeline agent rules
 
+## Before starting any work
+
+- Read `docs/decisions/README.md` (30 seconds). Live semantics decisions — pin
+  semantics, discovery precedence, gate scope — live there, not in any one
+  session's chat. Work that contradicts an active decision record must open an
+  issue challenging the record first, not implement the opposite semantics.
+- Claim your issue before writing code: add the `claimed` label and a comment
+  naming your branch and one-line approach (DR-0004). An issue already claimed
+  means join that branch or pick another issue — never a parallel rewrite.
+- Count open fix PRs (`gh pr list --state open`). At 5 or more, this session's
+  output must reduce that queue — merge, rebase, or close — not add features
+  (DR-0005). Adopted cures outrank new cures.
+- A fix for an install-class bug ("user cannot install / installed binary
+  fails") is not complete until its reproduction joins the install-smoke CI
+  gate in the same PR (DR-0001). 3794 checkout-topology tests missed every
+  installed-topology bug that shipped with v0.7.0; only the topology gate
+  catches this class.
+
 ## Language direction
 
 - Do not add new PowerShell scripts or new product behavior to existing `.ps1` files.

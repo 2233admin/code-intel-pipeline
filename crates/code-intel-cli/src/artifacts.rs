@@ -7,6 +7,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+#[path = "artifacts_report.rs"]
+mod report_reader;
+
 /// The environment variable that names the artifact root when no flag does.
 pub(crate) const ARTIFACT_ROOT_ENV: &str = "CODE_INTEL_ARTIFACT_ROOT";
 
@@ -46,6 +49,15 @@ pub(crate) fn resume(repo: &Path, artifact_root: Option<&Path>, json: bool) -> R
     let repo_artifacts = artifact_root.join(repo_name);
     let artifact_dir = latest_run_dir(&repo_artifacts)?;
     let report_path = artifact_dir.join("report.json");
+    if !report_path.is_file() {
+        return Err(format!(
+            "resume cannot find {}; this committed run uses manifest Artifact Refs; use `code-intel report --repo {} --artifact-root {}`",
+            report_path.display(),
+            repo.display(),
+            artifact_root.display()
+        )
+        .into());
+    }
     let report = read_json(&report_path)?;
     let hospital_path = string_path(&report, &["hospital", "path"]).or_else(|| {
         let candidate = artifact_dir.join("hospital-report.json");
@@ -63,6 +75,10 @@ pub(crate) fn resume(repo: &Path, artifact_root: Option<&Path>, json: bool) -> R
         print_resume_text(&summary);
     }
     Ok(())
+}
+
+pub(crate) fn report(repo: &Path, artifact_root: Option<&Path>, json: bool) -> Result<()> {
+    report_reader::report(repo, artifact_root, json)
 }
 
 pub(crate) fn classify(report_path: &Path, json: bool) -> Result<()> {

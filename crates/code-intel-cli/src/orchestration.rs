@@ -136,13 +136,29 @@ fn resolve_manifest_path(explicit: Option<&Path>) -> Result<PathBuf> {
     if let Some(path) = explicit {
         return absolute_file_path(path);
     }
+    // Same precedence contract as `capability::discover_manifest`: explicit
+    // configuration first, then guessed candidates gated by the entrypoint
+    // probe, then CODE_INTEL_HOME. Previously this walk took the first
+    // manifest it found, so the installer's `<bin>/orchestration` forwarder
+    // copy won and every relative entrypoint resolved under `<bin>` (#218) —
+    // and CODE_INTEL_INTEGRATIONS_MANIFEST was not consulted at all, so the
+    // documented override did not cover `orchestrate`.
+    if let Some(path) = env::var_os("CODE_INTEL_INTEGRATIONS_MANIFEST") {
+        return absolute_file_path(Path::new(&path));
+    }
     let relative = Path::new("orchestration").join("integrations.json");
     for start in manifest_search_starts()? {
         for ancestor in start.ancestors() {
             let candidate = ancestor.join(&relative);
-            if candidate.is_file() {
+            if candidate.is_file() && crate::capability::manifest_entrypoints_resolve(&candidate) {
                 return Ok(candidate);
             }
+        }
+    }
+    if let Some(home) = env::var_os("CODE_INTEL_HOME") {
+        let candidate = PathBuf::from(home).join(&relative);
+        if candidate.is_file() {
+            return Ok(candidate);
         }
     }
     Err("orchestration manifest missing: orchestration/integrations.json".into())
