@@ -1347,7 +1347,7 @@ Test-Case "doctor graph provider: a target/release platform binary satisfies the
     }
 }
 
-Test-Case "doctor graph provider: debug fallback still detected; absent binary reports a platform-correct hint" {
+Test-Case "doctor graph provider: debug fallback still detected; absent binary reports the packaged-release hint" {
     $dir = New-ScratchDir "doctor-graph-debug"
     try {
         New-DoctorScratchRoot $dir
@@ -1364,8 +1364,8 @@ Test-Case "doctor graph provider: debug fallback still detected; absent binary r
         $json = Invoke-DoctorScratch $dir
         Assert-False $json.checks.graphProvider.binaryFound "no built binary must report binaryFound=false"
         Assert-Equal "" ([string]$json.checks.graphProvider.binaryPath) "binaryPath must be empty when nothing is built"
-        $expectedHint = Join-Path (Join-Path (Join-Path $dir "target") "release") $binaryName
-        Assert-True ($json.checks.graphProvider.command.Contains($expectedHint)) "the command hint must fall back to the platform-correct release candidate path"
+        $expectedHint = Join-Path (Join-Path $dir "bin") $binaryName
+        Assert-True ($json.checks.graphProvider.command.Contains($expectedHint)) "the command hint must prefer the packaged release candidate path"
     }
     finally {
         Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
