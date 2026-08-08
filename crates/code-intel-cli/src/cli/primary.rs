@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -133,11 +133,45 @@ fn primary_result(args: &PrimaryArgs, result: &authoritative_run::ProductionRunR
             "path": result.publication_path(),
             "marker": result.publication_path().join("run-complete.json"),
         },
+        "readableArtifacts": readable_artifact_paths(result.manifest(), result.publication_path()),
         "failureNode": failure_node,
         "diagnostic": diagnostic,
         "failures": result.failures(),
         "anchors": result.anchors(),
     })
+}
+
+fn readable_artifact_paths(manifest: &Value, publication_root: &Path) -> Value {
+    let mut readable = serde_json::Map::new();
+    let artifact_names = [
+        ("diagnosis.hospital", "hospital"),
+        ("diagnosis.hospital-view", "hospitalMarkdown"),
+        ("code_evidence.agent_slice", "agentCodeSliceRanking"),
+    ];
+    for node in manifest["nodes"]
+        .as_object()
+        .into_iter()
+        .flat_map(|nodes| nodes.values())
+    {
+        for artifact in node["artifacts"].as_array().into_iter().flatten() {
+            let Some(artifact_type) = artifact["type"].as_str() else {
+                continue;
+            };
+            let Some((_, name)) = artifact_names
+                .iter()
+                .find(|(candidate, _)| *candidate == artifact_type)
+            else {
+                continue;
+            };
+            let Some(path) = artifact["path"].as_str() else {
+                continue;
+            };
+            readable.entry(*name).or_insert_with(|| {
+                Value::String(publication_root.join(path).display().to_string())
+            });
+        }
+    }
+    Value::Object(readable)
 }
 
 fn first_failure(manifest: &Value) -> Option<(String, String)> {

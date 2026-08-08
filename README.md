@@ -397,6 +397,14 @@ view_sha=$(jq -r '.nodes["diagnosis.hospital"].artifacts[] | select(.type=="diag
 cat "objects/sha256/$view_sha"   # 就是 hospital.md 的 markdown 正文
 ```
 
+不想手工解引用 blob，直接读最近一次已提交结果：
+
+```powershell
+code-intel report --repo C:\path\to\your\repo --artifact-root <artifact-root>
+```
+
+它校验 `run-complete.json` 和 manifest 的 Artifact Ref，打印 `hospital.md`、机器报告和可选的 Agent 切片排名；`--json` 只输出这些已验证路径。
+
 或者跳过手工 jq，直接用上面「全链路命令」里的 `artifact query --type diagnosis.hospital-view`——两条路径读到的是同一份已验证字节，`artifact query` 只是替你做了这趟 manifest 解引用。artifact 根目录的 `index.json` 只有主入口会在提交后自动重建；单独跑 `run execute` 不会顺带写它，要索引就显式 `artifact index --operation rebuild`。
 
 `run-complete.json` 是最后写入的事务提交标记；主入口的标记绑定 manifest blob 的 sha256（即上面 `manifest.sha256` 字段），索引只接受标记存在且校验一致的运行目录。
@@ -647,6 +655,7 @@ sentrux_test_gaps
 
 | 命令 | 档位 | 一句话 |
 | --- | --- | --- |
+| `report` | 结果阅读 | 直接把最近一次已提交的 `hospital.md` 和关键 artifact 路径递到人眼前 |
 | `artifact query` | 直查 | 从已提交 run 里按 type / schema / contains 直接读证据，不重跑管线 |
 | `run execute` | 跑管线 | 权威全量扫描 + 发布到 content-addressed authority root；CI 自扫描步骤用它 |
 | `change risk` | 门禁 | 只用 git 历史给 PR 打缺陷风险分，不需要索引 / 网络 / LLM；驱动 `pr-gate.yml` |
@@ -1053,6 +1062,7 @@ MIT
 cargo build -p code-intel
 .\target\debug\code-intel.exe orchestrate --action Validate --json
 .\target\debug\code-intel.exe orchestrate --action Plan --repo C:\path\to\your\repo --mode normal --json
+.\target\debug\code-intel.exe report --repo C:\path\to\your\repo
 .\target\debug\code-intel.exe resume --repo C:\path\to\your\repo
 .\target\debug\code-intel.exe resume --repo C:\path\to\your\repo --artifact-root C:\path\to\artifacts
 .\target\debug\code-intel.exe resume --repo C:\path\to\your\repo --json
