@@ -207,6 +207,46 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
         .to_string();
     assert_single_index_entry(&artifacts, &name);
 
+    let report = common::cli()
+        .args(["report", "--repo"])
+        .arg(&repo)
+        .args(["--artifact-root"])
+        .arg(&artifacts)
+        .output()
+        .expect("run committed report reader");
+    assert!(
+        report.status.success(),
+        "report failed: {}",
+        String::from_utf8_lossy(&report.stderr)
+    );
+    let report_text = String::from_utf8_lossy(&report.stdout);
+    assert!(
+        report_text.contains("hospitalMarkdown:"),
+        "report={report_text}"
+    );
+    assert!(
+        report_text.contains("--- hospital.md ---"),
+        "report={report_text}"
+    );
+    let report_json = common::cli()
+        .args(["report", "--repo"])
+        .arg(&repo)
+        .args(["--artifact-root"])
+        .arg(&artifacts)
+        .arg("--json")
+        .output()
+        .expect("run committed report reader JSON");
+    assert!(report_json.status.success());
+    let report_json: serde_json::Value =
+        serde_json::from_slice(&report_json.stdout).expect("report JSON");
+    assert_eq!(report_json["schema"], "code-intel-report.v1");
+    assert!(
+        report_json["hospitalMarkdown"]["path"]
+            .as_str()
+            .is_some_and(|path| std::path::Path::new(path).is_file()),
+        "report={report_json}"
+    );
+
     let query = common::cli()
         .args(["artifact", "query", "--artifact-root"])
         .arg(&artifacts)
@@ -280,6 +320,24 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
                         .is_some_and(|reason| reason.contains("process_failed"))
             }),
         "the failed run was not classified outside the authoritative index: {index}"
+    );
+
+    let resume = common::cli()
+        .args(["resume", "--repo"])
+        .arg(&repo)
+        .args(["--artifact-root"])
+        .arg(&artifacts)
+        .output()
+        .expect("run legacy resume against committed layout");
+    assert!(!resume.status.success());
+    let resume_error = String::from_utf8_lossy(&resume.stderr);
+    assert!(
+        resume_error.contains("report.json"),
+        "resume={resume_error}"
+    );
+    assert!(
+        resume_error.contains("code-intel report --repo"),
+        "resume={resume_error}"
     );
 
     let _ = std::fs::remove_dir_all(root);
