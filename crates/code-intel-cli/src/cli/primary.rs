@@ -18,7 +18,14 @@ pub(super) struct PrimaryArgs {
 
 pub(super) fn matches_primary_pattern(raw: &[String]) -> bool {
     raw.is_empty()
-        || raw.first().is_some_and(|first| !first.starts_with('-'))
+        || raw.first().is_some_and(|first| {
+            !first.starts_with('-')
+                && (Path::new(first).is_dir()
+                    || Path::new(first).is_absolute()
+                    || first.contains('/')
+                    || first.contains('\\')
+                    || first.starts_with("__"))
+        })
         || matches!(
             raw.first().map(String::as_str),
             Some("--mode" | "--artifact-root" | "--json")
