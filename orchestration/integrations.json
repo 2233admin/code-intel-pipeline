@@ -1375,7 +1375,7 @@
           "id": "edit.ast-grep-plan.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "74e21715c584392f0955e797817f2ef87e3fa9f21045f53c0d4c1ad8f9c70119"
+            "fb1bc02fbe9335e1ccbe66ad12ca2927bb3bace4722735e62b1fb2ab053af72d"
           ]
         },
         "determinism": "external_nondeterministic",

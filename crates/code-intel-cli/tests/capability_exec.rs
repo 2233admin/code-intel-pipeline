@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 const IMPLEMENTATION_DIGEST: &str =
     "295eb1ce67760638a81136febf727285f0feb4692a228df65ac75316b4a566c5";
 const STRUCTURED_EDIT_DIGEST: &str =
-    "74e21715c584392f0955e797817f2ef87e3fa9f21045f53c0d4c1ad8f9c70119";
+    "fb1bc02fbe9335e1ccbe66ad12ca2927bb3bace4722735e62b1fb2ab053af72d";
 const REPO_SNAPSHOT_DIGEST: &str =
     "1fa974b28cc2ab92b1ac04e22702b6b126023bcc0ccf1feee14e3d31a833f9dc";
 const CODENEXUS_TOOLCHAIN_DIGESTS: [&str; 5] = [
