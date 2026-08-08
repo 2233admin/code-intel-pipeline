@@ -40,7 +40,7 @@ pub(crate) fn execute(
     let bootstrap = run_bootstrap(&options)?;
     let manifest = validate_manifest(&options.manifest_path)?;
     let document = adapt(request, &options, &bootstrap, &manifest)?;
-    let domain_failure = diagnosis(&document);
+    let domain_failure = diagnosis(&document, &bootstrap);
     let domain_verdict = if domain_failure.is_some() {
         AdapterDomainVerdict::Fail
     } else {
@@ -273,7 +273,7 @@ fn adapt(
     }))
 }
 
-fn diagnosis(document: &Value) -> Option<String> {
+fn diagnosis(document: &Value, raw: &Value) -> Option<String> {
     let bootstrap_ready = document
         .pointer("/diagnostics/bootstrapReady")
         .and_then(Value::as_bool)
@@ -282,22 +282,89 @@ fn diagnosis(document: &Value) -> Option<String> {
         .pointer("/diagnostics/manifestReady")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let nonconforming = document["providers"].as_array().is_some_and(|providers| {
-        providers
-            .iter()
-            .any(|provider| provider["conformance"] == "nonconforming")
-    });
-    let mut causes = Vec::new();
+    let nonconforming = document["providers"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|provider| provider["conformance"] == "nonconforming")
+        .filter_map(|provider| provider["id"].as_str())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let mut causes = Vec::<String>::new();
     if !bootstrap_ready {
-        causes.push("bootstrap readiness failed");
+        causes.push("bootstrap readiness failed".into());
     }
-    if nonconforming {
-        causes.push("provider conformance failed");
+    if !nonconforming.is_empty() {
+        let details = nonconforming
+            .iter()
+            .map(|provider| format!("{provider}: {}", provider_probe_output(raw, provider)))
+            .collect::<Vec<_>>()
+            .join("; ");
+        causes.push(format!("provider conformance failed: {details}"));
     }
     if !manifest_ready {
-        causes.push("manifest reconciliation failed");
+        causes.push("manifest reconciliation failed".into());
     }
     (!causes.is_empty()).then(|| format!("doctor diagnosis: {}", causes.join("; ")))
+}
+
+fn provider_probe_output(raw: &Value, provider: &str) -> String {
+    let outputs = match provider {
+        "sentrux" => [
+            raw.pointer("/checks/sentrux/core/output")
+                .and_then(Value::as_str),
+            raw.pointer("/checks/sentrux/pro/output")
+                .and_then(Value::as_str),
+        ],
+        _ => [None, None],
+    };
+    let output = outputs
+        .into_iter()
+        .flatten()
+        .filter(|output| !output.trim().is_empty())
+        .map(|output| redact_probe_output(output.trim()))
+        .collect::<Vec<_>>()
+        .join(" | ");
+    if output.is_empty() {
+        "probe emitted no output".into()
+    } else {
+        output
+    }
+}
+
+fn redact_probe_output(output: &str) -> String {
+    let mut redacted = Vec::new();
+    let mut authorization_scheme = false;
+    let mut authorization_value = false;
+    for token in output.split_whitespace() {
+        if authorization_value {
+            redacted.push("<redacted>".to_string());
+            authorization_value = false;
+            continue;
+        }
+        if authorization_scheme {
+            redacted.push(token.to_string());
+            authorization_scheme = false;
+            authorization_value = token.eq_ignore_ascii_case("bearer");
+            continue;
+        }
+        if token.eq_ignore_ascii_case("authorization:") {
+            redacted.push(token.to_string());
+            authorization_scheme = true;
+            continue;
+        }
+        if let Some((key, _)) = token.split_once('=') {
+            if matches!(
+                key.to_ascii_lowercase().as_str(),
+                "password" | "token" | "secret"
+            ) {
+                redacted.push(format!("{key}=<redacted>"));
+                continue;
+            }
+        }
+        redacted.push(token.to_string());
+    }
+    redacted.join(" ")
 }
 
 fn publish(out: &Path, relative: &str, bytes: &[u8]) -> Result<(), AdapterError> {
@@ -434,7 +501,10 @@ mod tests {
         assert!(!text.contains("super-secret-token"));
         assert!(!text.contains("hunter2"));
         assert!(!text.contains("C:/secret"));
-        assert!(diagnosis(&document).is_some());
+        let diagnosis = diagnosis(&document, &bootstrap()).expect("diagnosis");
+        assert!(diagnosis.contains("sentrux"));
+        assert!(diagnosis.contains("Authorization: Bearer <redacted>"));
+        assert!(!diagnosis.contains("super-secret-token"));
     }
 
     #[test]
