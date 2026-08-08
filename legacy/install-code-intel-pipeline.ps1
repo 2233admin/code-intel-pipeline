@@ -1129,7 +1129,7 @@ if ([string]::IsNullOrWhiteSpace($Config)) {
 
 # repowise comes from PyPI; pin the exact version so `--upgrade` cannot pull a
 # newer, unreviewed release onto the machine (supply-chain-003).
-$script:RepowisePinnedVersion = "0.36.0"
+$script:RepowisePinnedVersion = "0.38.0"
 
 function Add-ToolInstallPlan {
     param(

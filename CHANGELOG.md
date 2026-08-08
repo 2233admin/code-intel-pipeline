@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `native_code_evidence`：legacy pwsh facade 清除 PIPELINE_VARS，不再继承 shell 的 `CODE_INTEL_HOME` 指向旧 manifest
   - `snapshot_identity`：用 `.git/shallow` 边界手工构造 shallow 仓库，避开 Windows 8.3 短路径下 `file://` clone 失败
 
+### Changed
+
+- Repowise 的精确运行时 pin 从 `0.36.0` 升到当前已评审的 PyPI 最新版 `0.38.0`。安装仍然使用精确版本以保持供应链可复现；版本清单要求运行时 provider 只通过显式审阅的 pin 更新，不在安装时追随浮动 latest。
+
 ## [0.7.1] — 2026-08-08
 
 ### Fixed
