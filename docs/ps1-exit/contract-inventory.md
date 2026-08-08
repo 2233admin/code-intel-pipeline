@@ -31,12 +31,12 @@ real picture, confirmed by tracing actual call sites:
 `legacy/run-code-intel.ps1` does call `legacy/Invoke-SentruxAgentTool.ps1` — but only for
 three of its eleven tool operations (`dsm`, `evolution`, `what_if`; see
 §2.2 and §1.8), and its "sentrux check"/"sentrux gate" pipeline steps go
-through the **separate** `sentrux` shim command (`tools/sentrux-shim/`),
+through the **separate** `sentrux` shim command (`legacy/tools/sentrux-shim/`),
 confirmed by `grep -c Invoke-SentruxAgentTool legacy/tools/sentrux-shim/*.ps1` = 0.
 
 This document therefore inventories `legacy/Invoke-SentruxAgentTool.ps1` as what
 it verifiably is (§2: an 11-operation DSM/git-churn/complexity metrics
-engine), gives `tools/sentrux-shim/*.ps1` the light pass the "shim
+engine), gives `legacy/tools/sentrux-shim/*.ps1` the light pass the "shim
 management + pro activation" framing actually calls for (§3, 906 lines,
 well within the spirit of the ticket even though those files were not
 named in the ticket body), and does not force PS1 code to match a premise
@@ -182,7 +182,7 @@ contract, which stays binary.
 | Console/subprocess env var mutation (`PYTHONIOENCODING` etc.) | `:107-111` | shim | Process-local, does not escape to the calling shell. |
 | In-place text rewrite of any repomix/text-extension file under `$runDir` that contains the staging path, replacing it with the final path post-rename | `:4670-4690` | port | Runs over **every text file in the run directory**, not just known artifacts — a broad, generic find-and-replace. Worth noting for anyone porting this: it is easy to under-scope a Rust reimplementation to "the artifacts we know about" and miss this catch-all. |
 | Atomic publish via `[System.IO.Directory]::Move($runDir, $finalRunDir)` | `:4692` | port | PS1's own staging/promote pattern, structurally analogous to (but implemented independently of) the Rust `staged_artifact`/authority-root commit mechanism. |
-| `sentrux gate --save` / `sentrux check` invoke the external `sentrux` shim command (`tools/sentrux-shim/`), which itself may write `.sentrux/baseline.json`, `.sentrux/baseline.prev.json` **inside the scanned repo tree** | `:3799-3852` | port | File placement outside the artifact root — writes land in the repo being scanned, not in `-ArtifactRoot`. Intentional (that's where `.sentrux/` configuration lives), but worth calling out explicitly since it means running this pipeline against a repo mutates that repo. |
+| `sentrux gate --save` / `sentrux check` invoke the external `sentrux` shim command (`legacy/tools/sentrux-shim/`), which itself may write `.sentrux/baseline.json`, `.sentrux/baseline.prev.json` **inside the scanned repo tree** | `:3799-3852` | port | File placement outside the artifact root — writes land in the repo being scanned, not in `-ArtifactRoot`. Intentional (that's where `.sentrux/` configuration lives), but worth calling out explicitly since it means running this pipeline against a repo mutates that repo. |
 
 ### 1.7 `-Mode`/Skip-flag interaction matrix (condensed)
 
@@ -292,7 +292,7 @@ is still exercised as a whole by the 3 files noted in §2.1, just not per
 | Writes `<Path>/.sentrux/agent-sessions/*.start.json` / presumably `*.end.json` | `Get-SessionDir:348-352`, `Write-JsonFile:370-380` | port | **Side effect outside any artifact root** — writes land inside the scanned repository itself, same pattern as §1.6's sentrux-baseline note. |
 | Final stdout: `$result \| ConvertTo-Json -Depth 14` | `:3125` | port | No file write for the primary tool result itself — it is a stdout-only tool; callers (including `legacy/run-code-intel.ps1`) capture and redirect it. |
 
-## 3. `tools/sentrux-shim/*.ps1` (light pass — the real shim/pro-activation surface)
+## 3. `legacy/tools/sentrux-shim/*.ps1` (light pass — the real shim/pro-activation surface)
 
 Not one of the two ticket-named files; included because §0's correction
 means the "shim management + pro activation" framing genuinely describes
@@ -308,7 +308,7 @@ inventory).
 | Core-binary resolution order: `$env:SENTRUX_CORE_EXE` override → `sentrux-core.exe` next to the shim → `sentrux.exe`/`sentrux-core.exe` in the parent dir → PowerShell `sentrux-lite-core.ps1` fallback | `sentrux-shim.ps1:195-282` (`Resolve-Core`, `Invoke-Core`) | `test-regression-fixes.ps1` references `sentrux-shim`/`sentrux-lite-core` by name; exact assertions not enumerated here — `?` | shim | `SENTRUX_CORE_EXE` is a **new env var** not previously listed in either monolith's inventory — genuinely lives only here. |
 | `Test-CodeIntelThinForwarderCandidate` — refuses to treat a directory as a "real core" location unless it has both a sibling `repo.json` and `sentrux-shim.ps1`, specifically to prevent recursive PATH resolution | `sentrux-shim.ps1:176-193` | as above | shim | This function's own docstring-comment explicitly invokes the "thin forwarder" concept the ticket asked about — the clearest piece of evidence that shim-thinness is a deliberate, documented design constraint in this file, not an accident. |
 | `sentrux pro` subcommand: `Show-ProStatus`, `Write-License`, `Deactivate-Pro`, `Show-ProHelp`, `Get-LicensePath`, `Get-AutoDisabledPath`, `Clear-AutoDisabled`, `Ensure-AutoActivation` | `sentrux-shim.ps1:23-165,285-` (dispatch on `$RemainingArgs[0] -eq "pro"`, `:285`) | as above | port | Pro license lifecycle — not exercised by this ticket's parity harness (no `sentrux pro` invocation in the T1 scope). |
-| `sentrux-lite-core.ps1` (567 lines) | not individually read this session beyond confirming its role as `Invoke-Core`'s fallback (`sentrux-shim.ps1:276-280`) | `test-regression-fixes.ps1` (per name reference) | port? | Flagged `?` — genuinely out of budget for this pass; a dedicated light-pass ticket on `tools/sentrux-shim/*` would be reasonable follow-up scope, not assumed here. |
+| `sentrux-lite-core.ps1` (567 lines) | not individually read this session beyond confirming its role as `Invoke-Core`'s fallback (`sentrux-shim.ps1:276-280`) | `test-regression-fixes.ps1` (per name reference) | port? | Flagged `?` — genuinely out of budget for this pass; a dedicated light-pass ticket on `legacy/tools/sentrux-shim/*` would be reasonable follow-up scope, not assumed here. |
 
 ## 4. Test coverage cross-reference (`scripts/tests/*.ps1` [51 files] + `tests/*.ps1` [5 files])
 
@@ -340,7 +340,7 @@ above (not estimated):
 |---|---|---|---|---|
 | `legacy/run-code-intel.ps1` (§1.1-1.6) | 62 | 43 | 15 | 4 |
 | `legacy/Invoke-SentruxAgentTool.ps1` (§2.1-2.4) | 21 | 13 | 8 | 0 |
-| `tools/sentrux-shim/*.ps1` (§3) | 4 | 4 (see `?`-hedged caveats inline) | 0 | 0 |
+| `legacy/tools/sentrux-shim/*.ps1` (§3) | 4 | 4 (see `?`-hedged caveats inline) | 0 | 0 |
 | **Total** | **87** | **60** | **23** | **4** |
 
 For `legacy/Invoke-SentruxAgentTool.ps1` specifically: of its 11 `-Tool`
