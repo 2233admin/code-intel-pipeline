@@ -9,7 +9,9 @@
 //! `declaredIn[].pattern` is checked against EVERY match in the file, not the
 //! first: `ci.yml` installs ast-grep in two independent jobs, each with its own
 //! hardcoded version, and a change that updates one and forgets the other is
-//! exactly the drift this file is meant to catch.
+//! exactly the drift this file is meant to catch. The pipeline's own entry is
+//! deliberately a minimum: Cargo.toml owns the current version, while the
+//! fixture is a historical floor rather than a second release-edit site.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -50,8 +52,9 @@ fn find_all(text: &str, pattern: &str) -> Vec<String> {
     let terminators = expand_class(&body[open + 3..close]);
     let suffix = unescape(&body[close + 3..]);
 
+    let normalized = text.replace("\\\"", "\"");
     let mut out = Vec::new();
-    for line in text.lines() {
+    for line in normalized.lines() {
         let start = match (anchored, line.find(&prefix)) {
             (true, Some(0)) => 0,
             (true, _) => continue,
@@ -96,6 +99,31 @@ fn expand_class(class: &str) -> Vec<char> {
 
 fn unescape(pattern: &str) -> String {
     pattern.replace("\\$", "$").replace("\\\\", "\\")
+}
+
+fn version_at_least(actual: &str, minimum: &str) -> bool {
+    let parse = |value: &str| {
+        value
+            .split(['.', '-'])
+            .take(3)
+            .map(|part| part.parse::<u64>().ok())
+            .collect::<Option<Vec<_>>>()
+    };
+    let Some(actual) = parse(actual) else {
+        return false;
+    };
+    let Some(minimum) = parse(minimum) else {
+        return false;
+    };
+    (0..3)
+        .map(|index| {
+            (
+                actual.get(index).copied().unwrap_or_default(),
+                minimum.get(index).copied().unwrap_or_default(),
+            )
+        })
+        .find(|(actual, minimum)| actual != minimum)
+        .is_none_or(|(actual, minimum)| actual > minimum)
 }
 
 #[test]
@@ -151,10 +179,17 @@ fn every_declared_version_matches_its_real_declaration_sites() {
                 "{name}: pattern `{pattern}` matched nothing in {file} — the declaration moved and this manifest is now stale"
             );
             for (index, actual) in found.iter().enumerate() {
-                assert_eq!(
-                    actual, expected,
-                    "{name}: match #{index} in {file} is {actual}, manifest says {expected}"
-                );
+                if tool["comparison"] == "minimum" {
+                    assert!(
+                        version_at_least(actual, expected),
+                        "{name}: match #{index} in {file} is {actual}, below minimum {expected}"
+                    );
+                } else {
+                    assert_eq!(
+                        actual, expected,
+                        "{name}: match #{index} in {file} is {actual}, manifest says {expected}"
+                    );
+                }
             }
         }
     }

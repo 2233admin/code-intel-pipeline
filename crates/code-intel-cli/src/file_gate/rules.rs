@@ -57,6 +57,7 @@ pub(crate) const DEFAULT_EXCLUDE_DIRS: &[&str] = &[
     ".repowise",
     ".understand-anything",
     ".sentrux",
+    ".claude",
     "tools",
     "vendor",
     "vendors",

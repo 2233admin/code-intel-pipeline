@@ -6,6 +6,7 @@ use super::{matches_primary_pattern, CompatibilityRoute, LegacyRouteId};
 use crate::cli::help_contract::{HELP_ALIASES, HELP_COMMAND};
 
 mod edit_routes;
+mod repowise_routes;
 mod run_routes;
 mod serve_routes;
 mod types;
@@ -509,6 +510,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             "retire only after a typed administration replacement preserves literal repinning"
         ),
     },
+    CommandRoute::Raw(repowise_routes::HOOKS),
     raw_route! {
         command: "evidence",
         subcommand: None,
@@ -555,6 +557,20 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             stdout!("code-intel-ponytail-gate-result.v1"),
             exits!(0, 2, 64, 65, 74),
             "retire only through a versioned governance admission replacement"
+        ),
+    },
+    legacy_route! {
+        command: "report",
+        aliases: &[],
+        id: LegacyRouteId::Report,
+        contract: command_contract!(
+            Public,
+            Internal,
+            Internal,
+            &[CommandEffect::RepoRead],
+            stdout!("code-intel-report.v1", "text-format:report-text.v1"),
+            exits!(0, 1),
+            "retain while committed-run report reading is the supported human-facing surface"
         ),
     },
     legacy_route! {

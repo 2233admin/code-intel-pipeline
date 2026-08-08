@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
 
 mod config;
+mod identity;
 mod paths;
 mod probe;
 
@@ -65,7 +66,7 @@ impl Options {
             repo_path: None,
             config: None,
             platform: "auto".into(),
-            require_repowise: true,
+            require_repowise: false,
             require_understand: false,
             tool_path_prefix: None,
             pipeline_root,
@@ -587,6 +588,11 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
     // that same verdict callable after an install, so the branch every
     // installed machine takes is reachable without a full pipeline run.
     let mut require_provider_conformance = false;
+    // Caller-supplied cache-buster (#197): a host command proxy that keys its
+    // replay cache on command-line bytes can never hit when the caller varies
+    // this value, and the echo in `invocationIdentity.nonce` proves the value
+    // reached a live process instead of a cached capture.
+    let mut nonce: Option<String> = None;
     let mut index = 0;
     while index < raw.len() {
         let token = raw[index].as_str();
@@ -634,24 +640,35 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
                 options.pipeline_root = PathBuf::from(value);
                 2
             }
-            ("--repo" | "--repo-path" | "--config" | "--platform" | "--pipeline-root", None) => {
-                return fail(&format!("{token} requires a value"))
+            ("--nonce", Some(value)) => {
+                nonce = Some(value.clone());
+                2
             }
+            (
+                "--repo" | "--repo-path" | "--config" | "--platform" | "--pipeline-root"
+                | "--nonce",
+                None,
+            ) => return fail(&format!("{token} requires a value")),
             (other, _) => return fail(&format!("unknown argument for doctor bootstrap: {other}")),
         };
     }
 
-    let observation = match observe(&options) {
+    let mut observation = match observe(&options) {
         Ok(observation) => observation,
         Err(error) => return fail(&error),
     };
+    identity::attach(&mut observation, nonce);
     let rendered = if json_output {
         match serde_json::to_string_pretty(&observation) {
             Ok(text) => text,
             Err(error) => return fail(&format!("serialize doctor observation: {error}")),
         }
     } else {
-        render_human(&observation)
+        format!(
+            "{}\n{}",
+            render_human(&observation),
+            identity::human_line(&observation)
+        )
     };
     println!("{rendered}");
     if require_provider_conformance {

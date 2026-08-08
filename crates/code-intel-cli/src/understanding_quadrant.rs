@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 use super::{AdapterArtifact, AdapterError, AdapterOutput};
 use crate::adapter_contract::AdapterDomainVerdict;
-use crate::artifact_ref::VerifiedArtifact;
+use crate::artifact_ref::{expected_understanding_quadrant as classify, VerifiedArtifact};
 
 const CRITICALITY_THRESHOLD: u64 = 50;
 const CONFIDENCE_THRESHOLD: u64 = 50;
@@ -300,17 +300,6 @@ fn insert_item(
         )));
     }
     Ok(())
-}
-
-fn classify(criticality: u64, confidence: u64) -> (&'static str, &'static str, &'static str) {
-    let critical = criticality >= CRITICALITY_THRESHOLD;
-    let confident = confidence >= CONFIDENCE_THRESHOLD;
-    match (critical, confident) {
-        (true, true) => ("critical", "high", "Known Core"),
-        (true, false) => ("critical", "low", "Critical Unknown"),
-        (false, true) => ("supporting", "high", "Supporting Context"),
-        (false, false) => ("supporting", "low", "Deferred Unknown"),
-    }
 }
 
 fn unknown_criticality(field: &str) -> u64 {

@@ -434,6 +434,19 @@ function Install-MissingTool {
             return
         }
 
+        # The pin is a floor, not an exact target: a tool the user upgraded
+        # past the pin must pass. Only older-than-pin (or unparseable) counts
+        # as drift — reinstalling at the pin would downgrade an intentional
+        # upgrade on every rerun.
+        $actualParsed = $null
+        $pinnedParsed = $null
+        if ([System.Version]::TryParse($actual, [ref]$actualParsed) -and
+            [System.Version]::TryParse($pinned, [ref]$pinnedParsed) -and
+            $actualParsed -gt $pinnedParsed) {
+            Add-InstallAction $Actions $CommandName "already_present" "$($existing.Source) (version $actual, newer than pin $pinned)" "" $metadata.packageManager ([bool]$metadata.requiresElevation)
+            return
+        }
+
         $observed = if ([string]::IsNullOrWhiteSpace($actual)) { "unknown" } else { $actual }
         $driftDetail = "$($existing.Source) reports version $observed; pinned version is $pinned"
         $driftFix = "Rerun with -InstallMissing to reinstall $CommandName at the pinned version, or set the pin to the version you intend to run."
@@ -968,7 +981,12 @@ function Ensure-SkillLink {
         }
     }
 
-    Add-Check $Checks "skill:$Name" "skill" $true $ok $detail "Run with -RepairSkillLinks, or link/copy $Target to $Path."
+    # Required only when the operator asked for the repair: a default install
+    # that was told NOT to touch skill links (no -RepairSkillLinks) must not
+    # fail the whole install check over a link it was forbidden to create.
+    # It degrades to a warning with the fix spelled out — the same contract
+    # as the optional Understand Anything skill.
+    Add-Check $Checks "skill:$Name" "skill" $Repair $ok $detail "Run with -RepairSkillLinks, or link/copy $Target to $Path."
 }
 
 function Ensure-SkillSource {
@@ -1092,7 +1110,9 @@ function Ensure-SkillSource {
         $detail = if ($ok) { "installed current bundled skill atomically: $BundledPath" } else { "install failed: $Path" }
     }
 
-    Add-Check $Checks "skill:source" "skill" $true $ok $detail "Run with -RepairSkillLinks to install the bundled skill into $Path."
+    # Same contract as skill:$Name above: advisory unless -RepairSkillLinks
+    # was requested and the install still could not deliver.
+    Add-Check $Checks "skill:source" "skill" $Repair $ok $detail "Run with -RepairSkillLinks to install the bundled skill into $Path."
 }
 
 $checks = New-Object System.Collections.Generic.List[object]

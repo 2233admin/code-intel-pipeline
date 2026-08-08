@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
-use super::{handlers, tools, ServeContext};
+use super::{handlers, identity, tools, ServeContext};
 
 /// A context pointing at a real directory with no committed run.
 ///
@@ -35,6 +35,7 @@ impl Fixture {
             repo: "fixture-repo".into(),
             artifact_root: self.0.join("artifacts"),
             manifest: None,
+            binding: identity::RepositoryBinding::degraded("test fixture has no committed run"),
         }
     }
 }
@@ -249,6 +250,8 @@ fn a_tool_that_cannot_answer_returns_an_error_result_not_a_transport_error() {
             .is_some_and(|text| !text.is_empty()),
         "a refusal must say why: {payload}"
     );
+    let error = payload["error"].as_str().expect("error text");
+    assert!(error.contains("rerun: code-intel"));
 }
 
 /// Injection coverage: a crafted argument must not reach a path the flag
@@ -364,6 +367,7 @@ fn the_rerun_command_is_shell_runnable() {
         repo: "project".into(),
         artifact_root: PathBuf::from(r"C:\artifacts"),
         manifest: None,
+        binding: identity::RepositoryBinding::degraded("test fixture"),
     };
     assert_eq!(
         handlers::rerun_command(&verbatim),
@@ -375,6 +379,7 @@ fn the_rerun_command_is_shell_runnable() {
         repo: "project".into(),
         artifact_root: PathBuf::from(r"C:\artifacts"),
         manifest: None,
+        binding: identity::RepositoryBinding::degraded("test fixture"),
     };
     assert_eq!(
         handlers::rerun_command(&spaced),

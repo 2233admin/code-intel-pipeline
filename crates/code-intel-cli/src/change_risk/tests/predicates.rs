@@ -28,6 +28,21 @@ fn is_test_file_matches_the_documented_heuristics() {
 }
 
 #[test]
+fn is_test_file_credits_this_crates_own_flat_module_tests_suffix_convention() {
+    // `artifacts.rs` -> `artifacts_tests.rs`, `model.rs` -> `model_tests.rs`,
+    // and so on for every flat (non-directory) multi-part module in this
+    // crate: nine existing files use this plural suffix, zero use the
+    // singular `_test.rs` the heuristic checked before this.
+    for path in [
+        "crates/code-intel-cli/src/artifacts_tests.rs",
+        "crates/code-intel-cli/src/boundary_rules_tests.rs",
+        "crates/code-intel-cli/src/audit_report/model_tests.rs",
+    ] {
+        assert!(is_test_file(path), "{path}");
+    }
+}
+
+#[test]
 fn is_test_file_credits_this_crates_own_inline_test_module_convention() {
     // Every multi-part module here keeps its tests in a sibling `tests.rs`.
     // Before this was recognized, a PR adding one scored as "no tests
@@ -87,6 +102,39 @@ fn a_change_touching_an_inline_tests_module_is_not_scored_as_asymmetric() {
     assert_eq!(tests_row["isTestFile"], true);
 }
 
+/// Same contract as the bare-`tests.rs` case above, but for the plural
+/// `_tests.rs` suffix `is_test_file` was just taught to credit -- proving
+/// `score_subset` actually consumes the wider predicate, not just that the
+/// predicate itself returns `true` in isolation.
+#[test]
+fn a_change_touching_a_plural_tests_module_is_not_scored_as_asymmetric() {
+    let files = vec![
+        (
+            40,
+            2,
+            "crates/code-intel-cli/src/change_risk/signals.rs".to_string(),
+        ),
+        (
+            30,
+            0,
+            "crates/code-intel-cli/src/artifacts_tests.rs".to_string(),
+        ),
+    ];
+    let scored = score_subset(&files, &FileHistory::new(), 1_700_000_000);
+
+    let asymmetry = &scored.signals["testAsymmetry"];
+    assert_eq!(asymmetry["testFilesChanged"].as_u64(), Some(1));
+    assert_eq!(asymmetry["asymmetric"], false);
+    assert_eq!(asymmetry["subscore"], 0.0);
+
+    let tests_row = scored
+        .files
+        .iter()
+        .find(|file| file["path"] == "crates/code-intel-cli/src/artifacts_tests.rs")
+        .expect("the artifacts_tests.rs row must be reported");
+    assert_eq!(tests_row["isTestFile"], true);
+}
+
 /// The complementary half: the signal must still fire when a change really
 /// does touch source without touching any test. A fix that made every change
 /// look symmetric would pass the test above and silently disarm the largest
@@ -122,7 +170,6 @@ fn tip_token_extracts_the_range_head() {
     assert_eq!(tip_token("origin/main.."), "HEAD");
     assert_eq!(tip_token("abc123"), "abc123");
 }
-
 /// The workflow that consumes this module had no test at all, which is how
 /// issue #201 lived in it unnoticed: the gate judged `risk_percentile`, a rank
 /// against a rolling sample, so a pull request could turn red because its
