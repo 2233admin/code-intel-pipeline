@@ -44,7 +44,7 @@
 
 ## 30 秒开始
 
-> **macOS / Linux 用户**：当前只支持源码构建安装——没有非 Windows 的 Release ZIP，`bootstrap.py` 也不支持非 Windows。请直接看 [macOS / Linux 快速开始](#macos--linux-快速开始)；本节以下命令默认 Windows。
+> **macOS / Linux 用户**：v0.7.0 起三平台都有 Release ZIP，`bootstrap.py` 引导在 macOS / Linux 上同样可用。安装路径见 [macOS / Linux 快速开始](#macos--linux-快速开始)；本节以下命令默认 Windows。
 
 在要分析的仓库目录中运行稳定入口；不传参数时默认分析当前目录：
 
@@ -62,7 +62,7 @@ code-intel C:\path\to\your\repo
 
 ## macOS / Linux 快速开始
 
-**支持等级**：对已发布的版本（v0.6.0 及更早），macOS / Linux 只支持源码构建安装——这些版本的 Release ZIP 和 `bootstrap.py` 引导只覆盖 Windows。从下一个 release 起，每个版本会同时发布 windows / macos / linux 三个 Release ZIP，`bootstrap.py` 引导在 macOS / Linux 上同样可用（详见 [Public beta guide](docs/public-beta.md)）。所有入口脚本都要求 PowerShell 7.2+（`pwsh`），README 里其余 `.ps1` 命令在 macOS / Linux 上同样用 `pwsh` 运行。
+**支持等级**：**v0.7.0 起**，每个版本同时发布 windows / macos / linux 三个 Release ZIP，`bootstrap.py` 引导在三个平台上都可用（详见 [Public beta guide](docs/public-beta.md)）——macOS / Linux 不再需要源码构建。v0.6.0 及更早的版本仍然只有 Windows ZIP，装旧版本才需要走下面的源码构建路径。所有入口脚本都要求 PowerShell 7.2+（`pwsh`），README 里其余 `.ps1` 命令在 macOS / Linux 上同样用 `pwsh` 运行。
 
 前置依赖（macOS，Homebrew）：
 
@@ -83,7 +83,7 @@ sudo apt-get update && sudo apt-get install -y powershell ripgrep git
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-注意：`-InstallMissing` 只会通过 brew/apt/dnf/pacman 补装 `rg`、`git`、`python`；`rustup`/`cargo` 必须自己先装好——macOS / Linux 没有预编译二进制，安装器要现场 `cargo build`。
+注意：`-InstallMissing` 只会通过 brew/apt/dnf/pacman 补装 `rg`、`git`、`python`；`rustup`/`cargo` 必须自己先装好——**走这条源码路径**时安装器要现场 `cargo build`。装 v0.7.0 及以后的版本不需要它：三平台都有 Release ZIP，用 `bootstrap.py` 引导即可，不需要 Rust 工具链。
 
 安装：
 
@@ -235,7 +235,7 @@ https://github.com/2233admin/code-intel-pipeline/tree/main/skills/code-intel-pip
 
 Skill 默认只解析稳定版；`gh` 2.49+ 在场时先验 [GitHub Artifact Attestation](https://cli.github.com/manual/gh_attestation_verify)（证明这份 ZIP 确实产自本仓发布流水线，不只是字节没传坏），再校验 GitHub Release 提供的 SHA-256；`gh` 缺失或过旧会显式打印降级说明而不是静默只查 SHA-256。人工验证同一份保证：`gh attestation verify <zip> --repo 2233admin/code-intel-pipeline`，命令与验证记录见 [docs/release-provenance-runbook.md](docs/release-provenance-runbook.md)。预发布版本和第三方依赖安装都需要显式选择。
 
-人工用户从 GitHub Release 下载并解压安装包；Agent 用户通过 Skill 安装。macOS / Linux 没有 Release ZIP，走[macOS / Linux 快速开始](#macos--linux-快速开始)的源码构建路径。Windows 源码安装仍可使用：
+人工用户从 GitHub Release 下载并解压安装包；Agent 用户通过 Skill 安装。v0.7.0 起 windows / macos / linux 三平台都有 Release ZIP。源码安装仍可使用（装 v0.6.0 及更早的 macOS / Linux 版本时是唯一路径）：
 
 ```powershell
 git clone https://github.com/2233admin/code-intel-pipeline.git
