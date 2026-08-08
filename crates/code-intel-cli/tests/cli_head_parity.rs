@@ -77,14 +77,25 @@ fn assert_exact_process_result(
         expected["exitCode"].as_i64().map(|code| code as i32),
         "{label} exit"
     );
-    assert_eq!(
-        output.stdout,
-        expected["stdoutUtf8"]
-            .as_str()
-            .expect("stdoutUtf8")
-            .as_bytes(),
-        "{label} stdout bytes"
-    );
+    if expected["stdoutSemantics"] == "version-minimum" {
+        assert_version_at_least(
+            label,
+            &output.stdout,
+            expected["stdoutUtf8"]
+                .as_str()
+                .expect("stdoutUtf8")
+                .as_bytes(),
+        );
+    } else {
+        assert_eq!(
+            output.stdout,
+            expected["stdoutUtf8"]
+                .as_str()
+                .expect("stdoutUtf8")
+                .as_bytes(),
+            "{label} stdout bytes"
+        );
+    }
     assert_eq!(
         output.stderr,
         expected["stderrUtf8"]
@@ -93,6 +104,33 @@ fn assert_exact_process_result(
             .as_bytes(),
         "{label} stderr bytes"
     );
+}
+
+fn assert_version_at_least(label: &str, actual: &[u8], minimum: &[u8]) {
+    let parse = |bytes: &[u8]| {
+        let value: serde_json::Value = serde_json::from_slice(bytes)
+            .unwrap_or_else(|error| panic!("{label} version output is not JSON: {error}"));
+        value["version"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{label} version output omits version"))
+            .split(['.', '-'])
+            .take(3)
+            .map(|part| part.parse::<u64>().ok())
+            .collect::<Option<Vec<_>>>()
+            .unwrap_or_else(|| panic!("{label} version is not numeric"))
+    };
+    let actual = parse(actual);
+    let minimum = parse(minimum);
+    let at_least = (0..3)
+        .map(|index| {
+            (
+                actual.get(index).copied().unwrap_or_default(),
+                minimum.get(index).copied().unwrap_or_default(),
+            )
+        })
+        .find(|(actual, minimum)| actual != minimum)
+        .is_none_or(|(actual, minimum)| actual > minimum);
+    assert!(at_least, "{label} version is below the fixture floor");
 }
 
 #[test]
