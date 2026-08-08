@@ -69,15 +69,7 @@ fn graph_consumes_file_gate_and_excludes_private_worktrees() {
         .unwrap()
         .iter()
         .any(|entry| entry["gate"] == "default_path"));
-    assert!(file_gate["decisions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|decision| {
-            decision["path"] == ".claude/worktrees/garbage/src/garbage.rs"
-                && decision["decision"] == "excluded"
-                && decision["gate"] == "default_path"
-        }));
+    assert!(file_gate.get("decisions").is_none());
 
     fs::remove_dir_all(repo).unwrap();
 }

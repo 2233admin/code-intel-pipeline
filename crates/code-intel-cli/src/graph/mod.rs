@@ -76,6 +76,13 @@ pub fn graph_path(repo: &Path) -> std::path::PathBuf {
 fn build_graph(repo: &Path, language: &str, full: bool) -> Result<Value> {
     let file_gate = file_gate::evaluate(repo, &file_gate::GateConfig::built_in())
         .map_err(|error| format!("evaluate graph file gate: {error}"))?;
+    let file_gate_summary = json!({
+        "schema": "code-intel-file-gate.v1",
+        "candidates": file_gate.candidates,
+        "included": file_gate.included.len(),
+        "excluded": file_gate.candidates - file_gate.included.len() as i64,
+        "by_gate": file_gate.by_gate(),
+    });
     let mut files = Vec::new();
     collect_source_files(repo, &file_gate.included, &mut files)?;
 
@@ -111,7 +118,7 @@ fn build_graph(repo: &Path, language: &str, full: bool) -> Result<Value> {
         "repo": normalize_path(repo),
         "language": language,
         "full": full,
-        "file_gate": file_gate.to_json(),
+        "file_gate": file_gate_summary,
         "summary": {
             "files": nodes.len(),
             "edges": edges.len(),
