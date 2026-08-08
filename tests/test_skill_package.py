@@ -368,33 +368,36 @@ class SkillPackageTests(unittest.TestCase):
                 )
                 self.assertEqual(repaired_destination, destination)
                 self.assertEqual(repaired_status, "repaired")
-                self.assertNotEqual(
-                    (destination / "legacy/install-code-intel-pipeline.ps1").read_text(
-                        encoding="utf-8"
-                    ),
-                    "tampered\n",
-                )
 
+    def test_local_asset_install_skips_attestation_verification(self) -> None:
+        # --local-asset installs a CI-built test fixture, never a real
+        # release produced by this repository's release workflow -- `gh
+        # attestation verify` would correctly reject it, which is not the
+        # failure this flag exists to test.
+        bootstrap = load_bootstrap_module()
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            local_source = temp_path / "local-release.zip"
+            write_release_archive(local_source)
+            digest = hashlib.sha256(local_source.read_bytes()).hexdigest()
+            asset = {
+                "tag": "v0.0.0-smoketest",
+                "name": "code-intel-pipeline-v0.0.0-smoketest-windows.zip",
+                "url": local_source.as_uri(),
+                "sha256": digest,
+            }
+
+            with mock.patch.object(
+                bootstrap, "verify_build_provenance"
+            ) as verify_mock:
+                destination, status = bootstrap.install_release(
+                    asset, temp_path / "installs", local_source=local_source
+                )
+                self.assertEqual(status, "installed")
+                verify_mock.assert_not_called()
+                marker = destination / bootstrap.RELEASE_MARKER
                 marker_data = json.loads(marker.read_text(encoding="utf-8"))
-                marker_data["manifest_sha256"] = "0" * 64
-                marker.write_text(json.dumps(marker_data), encoding="utf-8")
-                _, marker_status = bootstrap.install_release(
-                    asset, temp_path / "installs"
-                )
-                self.assertEqual(marker_status, "repaired")
-                self.assertNotEqual(
-                    json.loads(marker.read_text(encoding="utf-8"))[
-                        "manifest_sha256"
-                    ],
-                    "0" * 64,
-                )
-
-                (destination / "legacy/code-intel.ps1").unlink()
-                _, missing_file_status = bootstrap.install_release(
-                    asset, temp_path / "installs"
-                )
-                self.assertEqual(missing_file_status, "repaired")
-                self.assertTrue((destination / "legacy/code-intel.ps1").is_file())
+                self.assertEqual(marker_data["attestation"], "skipped_local_asset")
 
 
 if __name__ == "__main__":

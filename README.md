@@ -64,6 +64,19 @@ code-intel C:\path\to\your\repo
 
 **支持等级**：**v0.7.0 起**，每个版本同时发布 windows / macos / linux 三个 Release ZIP，`bootstrap.py` 引导在三个平台上都可用（详见 [Public beta guide](docs/public-beta.md)）——macOS / Linux 不再需要源码构建。v0.6.0 及更早的版本仍然只有 Windows ZIP，装旧版本才需要走下面的源码构建路径。所有入口脚本都要求 PowerShell 7.2+（`pwsh`），README 里其余 `.ps1` 命令在 macOS / Linux 上同样用 `pwsh` 运行。
 
+### 打包版（推荐）
+
+下载对应平台的 Release ZIP（`code-intel-pipeline-<tag>-macos.zip` / `-linux.zip`），校验（见[验证发布来源](#验证发布来源)）后解压，直接运行编译好的入口，不需要装 Rust 工具链：
+
+```bash
+chmod +x ./bin/code-intel   # 部分解压工具不保留可执行位时才需要
+./bin/code-intel ~/path/to/repo
+```
+
+完整步骤见 [Public beta guide](docs/public-beta.md#install-and-verify)。下面是不依赖 Release ZIP、直接从源码构建安装的备用路径（v0.6.0 及更早版本是唯一路径）：
+
+### 源码构建（备用路径）
+
 前置依赖（macOS，Homebrew）：
 
 ```bash
@@ -236,6 +249,30 @@ https://github.com/2233admin/code-intel-pipeline/tree/main/skills/code-intel-pip
 Skill 默认只解析稳定版；`gh` 2.49+ 在场时先验 [GitHub Artifact Attestation](https://cli.github.com/manual/gh_attestation_verify)（证明这份 ZIP 确实产自本仓发布流水线，不只是字节没传坏），再校验 GitHub Release 提供的 SHA-256；`gh` 缺失或过旧会显式打印降级说明而不是静默只查 SHA-256。人工验证同一份保证：`gh attestation verify <zip> --repo 2233admin/code-intel-pipeline`，命令与验证记录见 [docs/release-provenance-runbook.md](docs/release-provenance-runbook.md)。预发布版本和第三方依赖安装都需要显式选择。
 
 人工用户从 GitHub Release 下载并解压安装包；Agent 用户通过 Skill 安装。v0.7.0 起 windows / macos / linux 三平台都有 Release ZIP。源码安装仍可使用（装 v0.6.0 及更早的 macOS / Linux 版本时是唯一路径）：
+
+### 验证发布来源
+
+除了上面 Skill 自动做的 attestation + SHA-256 校验，人工也可以逐项验证：
+
+```bash
+# 校验二进制确实产自本仓 CI（不是有人改了字节又同步改了 SHA-256）
+gh attestation verify code-intel-pipeline-v0.7.0-windows.zip --repo 2233admin/code-intel-pipeline
+
+# 校验 SHA-256 —— Windows (PowerShell)
+certutil -hashfile code-intel-pipeline-v0.7.0-windows.zip SHA256
+
+# 校验 SHA-256 —— macOS
+shasum -a 256 -c code-intel-pipeline-v0.7.0-macos.zip.sha256
+
+# 校验 SHA-256 —— Linux
+sha256sum -c code-intel-pipeline-v0.7.0-linux.zip.sha256
+```
+
+正式版（不带 `-beta.<n>` 或 `-rc.<n>` 后缀的 tag，例如 `v0.7.0`；`v0.7.0-beta.2` 这种预发布 tag 不算）额外要求 tag 本身经 SSH 签名，签名与验证方式见 [docs/RELEASE_SIGNING.md](docs/RELEASE_SIGNING.md)：
+
+```bash
+git verify-tag v0.7.0
+```
 
 ```powershell
 git clone https://github.com/2233admin/code-intel-pipeline.git
