@@ -8,9 +8,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
-    "bcc8622f544022998f9d74d7671fd4f375ef31ae7f02c82321213f02de75a853";
+    "295eb1ce67760638a81136febf727285f0feb4692a228df65ac75316b4a566c5";
 const STRUCTURED_EDIT_DIGEST: &str =
     "fb1bc02fbe9335e1ccbe66ad12ca2927bb3bace4722735e62b1fb2ab053af72d";
+const REPO_SNAPSHOT_DIGEST: &str =
+    "4f42b080fd19e501a6315ee204add188d69625bedd15c566fea48bb1f3e78764";
+const CODENEXUS_TOOLCHAIN_DIGESTS: [&str; 5] = [
+    "f13066fdc1a0242006fa634dc530e33b43cff81b82aafdbc3b99a34c05b5d247",
+    "645675312135932dfce365a8dfc14e214cec78ee733f248606547b3eaa56edc8",
+    "52644a812174988ede91d98ddfec63c6a91f8478277d7bf74c73f106dd0f776b",
+    "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26",
+    "cdd5c6d0fe940d2756c45a51095c275b13ebe64347914b581641693e1288ca56",
+];
 static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -1637,7 +1646,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
         "version":"1.0.0",
         "toolchainDigests":[
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-            "bcc8622f544022998f9d74d7671fd4f375ef31ae7f02c82321213f02de75a853"
+            "295eb1ce67760638a81136febf727285f0feb4692a228df65ac75316b4a566c5"
         ]
     });
     value["options"] = json!({"repoPath":repo,"auto":true});
@@ -2062,6 +2071,173 @@ fn assistance_discovery_refuses_a_candidate_that_was_never_reviewed() {
     );
 
     let _ = fs::remove_dir_all(root);
+}
+
+/// `provider.codenexus-adapt` has no builtin adapter dispatch test to mirror
+/// (graph/sentrux builtins are exercised only through the full DAG in
+/// `dag_run.rs`, never through a standalone `capability exec` here), so this
+/// builds the chain by hand: a real `repo.snapshot` artifact first, then the
+/// codenexus dispatch consuming it -- the same shape `CapabilityEnvelopeExecutor`
+/// wires up inside the DAG, just assembled directly instead of through a
+/// second process hop.
+#[test]
+fn codenexus_builtin_compat_dispatches_through_provider_codenexus_adapt() {
+    let root = temp_dir("codenexus");
+    let repo = root.join("repo");
+    fs::create_dir_all(&repo).unwrap();
+    fs::write(repo.join("README.md"), "fixture\n").unwrap();
+
+    let mut snapshot_cmd = common::cli();
+    snapshot_cmd
+        .args(["snapshot", "identity", "--repo"])
+        .arg(&repo)
+        .args(["--working-tree-policy", "explicit_overlay", "--scope", "."]);
+    let snapshot_output = snapshot_cmd.output().expect("compute A02 request snapshot");
+    assert!(
+        snapshot_output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&snapshot_output.stderr)
+    );
+    let snapshot_document: Value =
+        serde_json::from_slice(&snapshot_output.stdout).expect("snapshot JSON");
+    let snapshot = snapshot_document["snapshot"].clone();
+    let identity = snapshot["identity"]
+        .as_str()
+        .expect("snapshot identity")
+        .to_string();
+
+    let snapshot_request = json!({
+        "schema": "code-intel-capability-request.v1",
+        "capability": "repo.snapshot",
+        "contractVersion": 1,
+        "implementation": {
+            "id": "repository.snapshot.compat",
+            "version": "1.0.0",
+            "toolchainDigests": [REPO_SNAPSHOT_DIGEST]
+        },
+        "snapshot": snapshot,
+        "options": {"repoPath": repo},
+        "inputs": [],
+        "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}
+    });
+    let snapshot_out = root.join("repo.snapshot");
+    let snapshot_output = run_capability(
+        &snapshot_request,
+        &root.join("repo.snapshot.request.json"),
+        &snapshot_out,
+        &root,
+        "repo.snapshot",
+    );
+    assert!(
+        snapshot_output.status.success(),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&snapshot_output.stdout),
+        String::from_utf8_lossy(&snapshot_output.stderr)
+    );
+    let snapshot_result: Value = serde_json::from_slice(&snapshot_output.stdout).unwrap();
+    assert_eq!(snapshot_result["status"], "completed");
+    let snapshot_artifact = snapshot_result["artifacts"][0].clone();
+    assert_eq!(
+        snapshot_artifact["artifactSchema"],
+        "code-intel-repository-snapshot.v1"
+    );
+    assert_eq!(snapshot_artifact["type"], "repository.snapshot");
+
+    let codenexus_request = json!({
+        "schema": "code-intel-capability-request.v1",
+        "capability": "provider.codenexus-adapt",
+        "contractVersion": 1,
+        "implementation": {
+            "id": "provider.codenexus-builtin.compat",
+            "version": "1.0.0",
+            "toolchainDigests": CODENEXUS_TOOLCHAIN_DIGESTS
+        },
+        "snapshot": snapshot,
+        "options": {"repoPath": repo},
+        "inputs": [{
+            "schema": "code-intel-artifact-ref.v1",
+            "artifactSchema": snapshot_artifact["artifactSchema"],
+            "type": snapshot_artifact["type"],
+            "path": "repo.snapshot/snapshot.json",
+            "sha256": snapshot_artifact["sha256"],
+            "consumedSnapshotIdentity": identity
+        }],
+        "effectPolicy": {"allowedEffects": ["repo_read", "local_write", "process_spawn"]}
+    });
+    let codenexus_out = root.join("evidence.codenexus");
+    let output = run_capability(
+        &codenexus_request,
+        &root.join("provider.codenexus-adapt.request.json"),
+        &codenexus_out,
+        &root,
+        "provider.codenexus-adapt",
+    );
+    assert!(
+        output.status.success(),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["schema"], "code-intel-capability-result.v1");
+    assert_eq!(result["status"], "completed");
+    assert_eq!(result["verdict"], "pass");
+    assert_eq!(
+        result["implementation"]["id"],
+        "provider.codenexus-builtin.compat"
+    );
+    assert!(
+        result["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|artifact| artifact["type"] == "evidence.admission"),
+        "result={result}"
+    );
+    assert!(
+        result["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|artifact| artifact["type"] == "observed.evidence.payload"),
+        "result={result}"
+    );
+    assert!(
+        codenexus_out.join("codenexus-payload.json").is_file(),
+        "direct capability-exec dispatch must publish the payload artifact to disk, not just the admission result"
+    );
+    let admission: Value =
+        serde_json::from_slice(&fs::read(codenexus_out.join("codenexus-admission.json")).unwrap())
+            .unwrap();
+    assert!(
+        matches!(admission["domainVerdict"].as_str(), Some("observed" | "unknown")),
+        "codenexus admission must never fabricate a fact when the lite facade is unavailable: admission={admission}"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
+fn run_capability(
+    request: &Value,
+    request_path: &Path,
+    out: &Path,
+    artifact_root: &Path,
+    cli_capability: &str,
+) -> std::process::Output {
+    fs::write(
+        request_path,
+        serde_json::to_vec(request).expect("serialize request"),
+    )
+    .expect("write request");
+    common::cli()
+        .args(["capability", "exec", cli_capability, "--request"])
+        .arg(request_path)
+        .arg("--out")
+        .arg(out)
+        .arg("--artifact-root")
+        .arg(artifact_root)
+        .output()
+        .expect("run capability executor")
 }
 
 fn find_named_file(root: &Path, name: &str) -> Option<PathBuf> {
