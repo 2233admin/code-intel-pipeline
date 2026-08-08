@@ -37,13 +37,22 @@ pub fn run(options: &Options<'_>) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&graph)?);
     } else {
         let summary = &graph["summary"];
-        println!(
-            "graph files={} edges={} symbols={} path={}",
-            summary["files"].as_u64().unwrap_or(0),
-            summary["edges"].as_u64().unwrap_or(0),
-            summary["symbols"].as_u64().unwrap_or(0),
-            graph_path.display()
-        );
+        if options.write {
+            println!(
+                "graph files={} edges={} symbols={} path={}",
+                summary["files"].as_u64().unwrap_or(0),
+                summary["edges"].as_u64().unwrap_or(0),
+                summary["symbols"].as_u64().unwrap_or(0),
+                graph_path.display()
+            );
+        } else {
+            println!(
+                "graph files={} edges={} symbols={} (not written; pass --write to persist)",
+                summary["files"].as_u64().unwrap_or(0),
+                summary["edges"].as_u64().unwrap_or(0),
+                summary["symbols"].as_u64().unwrap_or(0)
+            );
+        }
     }
 
     Ok(())
