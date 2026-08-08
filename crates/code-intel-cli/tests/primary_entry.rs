@@ -1,4 +1,10 @@
 mod common;
+#[path = "primary_entry/legacy_session.rs"]
+mod legacy_session;
+
+use legacy_session::{
+    assert_legacy_session_success, invoke_legacy_session, parse_legacy_session_json,
+};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -559,48 +565,6 @@ fn legacy_session_script() -> PathBuf {
         .join("legacy/Invoke-SentruxAgentTool.ps1")
 }
 
-fn invoke_legacy_session(
-    tree: &LegacySessionTemp,
-    operation: &str,
-    session_id: &str,
-) -> (Option<i32>, Vec<u8>, Vec<u8>) {
-    let path = std::env::join_paths(
-        std::iter::once(tree.fake_bin()).chain(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        )),
-    )
-    .expect("compose hermetic PATH");
-    // The agent tool pins the session gate to the repository's lite core and
-    // honors SENTRUX_CORE_EXE as the explicit override (issue #182), so the
-    // fake CLI is injected through that seam; the PATH prepend stays for the
-    // last-resort `sentrux` lookup.
-    #[cfg(windows)]
-    let fake_cli = tree.fake_bin().join("sentrux.cmd");
-    #[cfg(not(windows))]
-    let fake_cli = tree.fake_bin().join("sentrux");
-    let output = Command::new("pwsh")
-        .args(["-NoLogo", "-NoProfile", "-File"])
-        .arg(legacy_session_script())
-        .arg(operation)
-        .arg(tree.repo())
-        .args(["-SessionId", session_id])
-        .env("PATH", path)
-        .env("SENTRUX_CORE_EXE", &fake_cli)
-        .output()
-        .expect("invoke real legacy session gate");
-    (output.status.code(), output.stdout, output.stderr)
-}
-
-fn parse_legacy_session_json(output: &(Option<i32>, Vec<u8>, Vec<u8>)) -> serde_json::Value {
-    serde_json::from_slice(&output.1).unwrap_or_else(|error| {
-        panic!(
-            "session gate must emit JSON: {error}; stdout={}; stderr={}",
-            String::from_utf8_lossy(&output.1),
-            String::from_utf8_lossy(&output.2)
-        )
-    })
-}
-
 fn assert_exact_keys(value: &serde_json::Value, expected: &str, label: &str) {
     let mut actual = value
         .as_object()
@@ -653,7 +617,7 @@ fn real_session_start_change_end_pass_contract_is_stable() {
     let session_id = "pass-contract";
 
     let start = invoke_legacy_session(&tree, "session_start", session_id);
-    assert_eq!(start.0, Some(0));
+    assert_legacy_session_success(&start, "session_start");
     let start_json = parse_legacy_session_json(&start);
     assert_session_document_shape(&start_json, "session_start");
     assert_eq!(start_json["tool"], "session_start");
@@ -686,7 +650,7 @@ fn real_session_start_change_end_pass_contract_is_stable() {
     .expect("make a real repository change");
 
     let end = invoke_legacy_session(&tree, "session_end", session_id);
-    assert_eq!(end.0, Some(0));
+    assert_legacy_session_success(&end, "session_end");
     let end_json = parse_legacy_session_json(&end);
     assert_session_document_shape(&end_json, "session_end");
     assert_eq!(end_json["tool"], "session_end");
@@ -712,7 +676,7 @@ fn real_session_start_change_end_failure_is_json_with_zero_process_exit() {
     let session_id = "fail-contract";
 
     let start = invoke_legacy_session(&tree, "session_start", session_id);
-    assert_eq!(start.0, Some(0));
+    assert_legacy_session_success(&start, "session_start");
     let start_json = parse_legacy_session_json(&start);
     assert_session_document_shape(&start_json, "session_start");
     assert_eq!(start_json["gate"]["pass"], true);
@@ -721,11 +685,7 @@ fn real_session_start_change_end_failure_is_json_with_zero_process_exit() {
         .expect("make a real repository change");
 
     let end = invoke_legacy_session(&tree, "session_end", session_id);
-    assert_eq!(
-        end.0,
-        Some(0),
-        "legacy gate currently reports domain failure in JSON, not process status"
-    );
+    assert_legacy_session_success(&end, "session_end");
     let end_json = parse_legacy_session_json(&end);
     assert_session_document_shape(&end_json, "session_end");
     assert_eq!(end_json["tool"], "session_end");
