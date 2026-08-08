@@ -13,6 +13,14 @@ use crate::snapshot;
 
 #[path = "admissibility.rs"]
 mod admissibility;
+// A local nested copy, not `crate::codenexus_adapter`: this file is compiled
+// standalone into several test binaries (via `capability_inventory.rs`'s own
+// `#[path]` tree) that never declare a crate-root `codenexus_adapter` module,
+// exactly like `graph_adapter`/`sentrux_adapter` below already have to be.
+#[path = "codenexus_adapter.rs"]
+mod codenexus_adapter;
+#[path = "codenexus_scratch.rs"]
+mod codenexus_scratch;
 #[path = "graph/mod.rs"]
 mod graph;
 #[path = "graph_adapter.rs"]
@@ -22,9 +30,22 @@ mod sentrux_adapter;
 #[path = "sentrux_gate.rs"]
 mod sentrux_gate;
 
+use codenexus_scratch::{
+    create_codenexus_scratch_dir, run_with_timeout, ScratchDir, CODENEXUS_LITE_TIMEOUT,
+};
 use sentrux_gate::Violation;
 const MAX_AGE_SECONDS: u64 = 300;
 const MAX_COMMAND_EVIDENCE_BYTES: usize = 1024 * 1024;
+// The codenexus-domain effect vocabulary validated by
+// `codenexus_adapter::validate_native` -- distinct from the generic
+// repo_read/local_write/process_spawn effects `publish_admission` reports at
+// the capability-policy layer. Never let one leak into the other's field.
+const CODENEXUS_EFFECTS: [&str; 4] = [
+    "read_repository",
+    "read_git_history",
+    "read_sentrux_artifacts",
+    "write_compatibility_artifact",
+];
 
 pub(super) fn graph_admission(
     request: &Value,
@@ -225,6 +246,148 @@ pub(super) fn sentrux_admission(
             bytes: command_observation_bytes,
         },
     ]);
+    Ok(output)
+}
+
+/// Builtin compatibility route for the CodeNexus lite path: shells out to the
+/// repository-owned `legacy/Invoke-CodeNexusLite.ps1` facade (the same script
+/// and invocation shape `run-code-intel.ps1` already uses), then builds and
+/// admits the evidence contract itself -- mirroring `sentrux_admission`'s
+/// "collect raw, build the contract in Rust" split rather than delegating
+/// contract construction to the script.
+///
+/// The script's exit/output state maps onto the three CodeNexus native
+/// statuses: a clean run with a parseable `codenexus-context.json` object is
+/// `current`; a clean run that produced no usable document is the defensive
+/// `partial` fallback; anything that failed to spawn or exited non-zero is
+/// `unavailable`. Every one of those still flows through the full two-phase
+/// translate/admit pipeline -- CodeNexus absence is first-class admitted
+/// evidence (domainVerdict "unknown"), not a skipped node, matching the
+/// "provider_unavailable_diagnosis" contract the registry already declares.
+pub(super) fn codenexus_admission(
+    request: &Value,
+    inputs: &[VerifiedArtifact],
+    out: &Path,
+) -> Result<AdapterOutput, AdapterError> {
+    let repo = provider_repo(request, inputs, "provider.codenexus-adapt")?;
+    let lease =
+        snapshot::begin_consumption(repo, &request["snapshot"]).map_err(AdapterError::Contract)?;
+    let collected_at = now()?;
+    let script = super::pipeline_root().join("legacy/Invoke-CodeNexusLite.ps1");
+    if !script.is_file() {
+        return Err(AdapterError::Unavailable(format!(
+            "CodeNexus-lite compatibility facade is unavailable: {}",
+            script.display()
+        )));
+    }
+    // Hash what will actually run, not what was baked into the binary at
+    // build time: the facade lives outside the crate and `pipeline_root`
+    // already supports a relocated install resolving a different copy of it.
+    let implementation_digest = sha256_hex(&fs::read(&script).map_err(|error| {
+        AdapterError::Unavailable(format!("read CodeNexus-lite facade: {error}"))
+    })?);
+    let scratch_guard = ScratchDir(create_codenexus_scratch_dir()?);
+    let scratch = scratch_guard.path();
+    let context_path = scratch.join("codenexus-context.json");
+    let mut command = Command::new("pwsh");
+    command
+        .args(["-NoLogo", "-NoProfile", "-File"])
+        .arg(&script)
+        .arg("-RepoPath")
+        .arg(repo)
+        .arg("-RunDir")
+        .arg(scratch)
+        .arg("-OutputPath")
+        .arg(&context_path)
+        .args(["-MaxCommitsPerFile", "0", "-Quiet"]);
+    let run = run_with_timeout(command, CODENEXUS_LITE_TIMEOUT);
+    lease.verify_after(repo).map_err(AdapterError::Contract)?;
+    let observed_at = now()?.max(collected_at);
+    let identity = snapshot_identity(request)?;
+    let (status, provider_data): (&str, Value) = match run {
+        Ok(output) if output.status.success() => {
+            match fs::read(&context_path)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            {
+                Some(document) if document.is_object() => ("current", document),
+                _ => ("partial", Value::Null),
+            }
+        }
+        _ => ("unavailable", Value::Null),
+    };
+    drop(scratch_guard);
+    let placeholder_native = json!({
+        "schema":"code-intel-codenexus-native-result.v1",
+        "providerMode":"lite",
+        "status":status,
+        "providerId":"codenexus.lite-compat",
+        "implementation":{
+            "id":"invoke-codenexus-lite.ps1",
+            "version":"1.0.0",
+            "digest":implementation_digest
+        },
+        "sourceRevision":source_revision(request),
+        "expectedSnapshotIdentity":identity,
+        "sourceSnapshotIdentity":identity,
+        "collectedAt":collected_at,
+        "observedAt":observed_at,
+        "payload":{
+            "schema":"code-intel-artifact-ref.v1",
+            "artifactSchema":"code-intel-evidence-payload.v1",
+            "type":"observed.evidence.payload",
+            "path":"codenexus-payload.json",
+            "sha256":"0".repeat(64),
+            "consumedSnapshotIdentity":identity
+        },
+        "activation":"legacy_rollback",
+        "effects":CODENEXUS_EFFECTS
+    });
+    let first = codenexus_adapter::translate(&placeholder_native, observed_at, MAX_AGE_SECONDS)
+        .map_err(AdapterError::Contract)?;
+    let availability = if status == "unavailable" {
+        "provider_unavailable"
+    } else {
+        "available"
+    };
+    let payload = json!({
+        "schema":"code-intel-evidence-payload.v1",
+        "data":{"codenexus":{
+            "schema":"code-intel-codenexus-evidence.v1",
+            "snapshotIdentity":identity,
+            "provider":first["port"]["provider"],
+            "provenance":first["port"]["provenance"],
+            "completeness":first["port"]["completeness"],
+            "availability":availability,
+            "providerData":provider_data
+        }}
+    });
+    fs::create_dir(out)
+        .map_err(|error| AdapterError::Io(format!("create CodeNexus provider output: {error}")))?;
+    let payload_bytes = serde_json::to_vec(&payload)
+        .map_err(|error| AdapterError::Internal(format!("serialize CodeNexus payload: {error}")))?;
+    fs::write(out.join("codenexus-payload.json"), &payload_bytes)
+        .map_err(|error| AdapterError::Io(format!("write CodeNexus payload: {error}")))?;
+    let mut native = placeholder_native;
+    native["payload"] = payload_ref("codenexus-payload.json", &payload_bytes, identity);
+    let adapter = codenexus_adapter::translate(&native, observed_at, MAX_AGE_SECONDS)
+        .map_err(AdapterError::Contract)?;
+    let admission = admissibility::validate_for_consumer(&adapter["evidence"]["request"], out)
+        .map_err(AdapterError::Contract)?;
+    codenexus_adapter::validate_admitted_payload(admission.payload(), &adapter)
+        .map_err(AdapterError::Contract)?;
+    let mut output = publish_admission(
+        out,
+        "codenexus-admission.json",
+        admission.result().clone(),
+        &["repo_read", "local_write", "process_spawn"],
+    )?;
+    output.artifacts.push(AdapterArtifact {
+        artifact_schema: "code-intel-evidence-payload.v1".into(),
+        artifact_type: "observed.evidence.payload".into(),
+        relative_path: "codenexus-payload.json".into(),
+        bytes: payload_bytes,
+    });
     Ok(output)
 }
 

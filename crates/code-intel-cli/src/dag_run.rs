@@ -100,6 +100,9 @@ pub(crate) fn execute_dag(cli: DagExecutionRequest) -> Result<DagExecutionResult
         if cli.policy.capability_enabled("provider.sentrux-adapt") {
             required.push("provider.sentrux-adapt");
         }
+        if cli.policy.capability_enabled("provider.codenexus-adapt") {
+            required.push("provider.codenexus-adapt");
+        }
         if cli.policy.provider_diagnosis_enabled() {
             required.push("diagnosis.hospital");
         }
@@ -184,6 +187,15 @@ pub(crate) fn execute_dag(cli: DagExecutionRequest) -> Result<DagExecutionResult
             ));
             edges.push(EdgeSpec::new("repo.snapshot", "evidence.sentrux"));
             edges.push(EdgeSpec::new("evidence.sentrux", "diagnosis.hospital"));
+        }
+        if cli.policy.capability_enabled("provider.codenexus-adapt") {
+            nodes.push(NodeSpec::new(
+                "evidence.codenexus",
+                "provider.codenexus-adapt",
+                request_identity("provider.codenexus-adapt"),
+            ));
+            edges.push(EdgeSpec::new("repo.snapshot", "evidence.codenexus"));
+            edges.push(EdgeSpec::new("evidence.codenexus", "diagnosis.hospital"));
         }
         if cli.policy.provider_diagnosis_enabled() {
             nodes.push(NodeSpec::new(
