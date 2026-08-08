@@ -623,7 +623,16 @@ def install_release(
                     "Release checksum mismatch: "
                     f"expected {asset['sha256']}, received {actual_digest}"
                 )
-            attestation_status = verify_build_provenance(archive)
+            # --local-asset archives are CI-built test fixtures, never a real
+            # release produced by this repository's release workflow -- `gh
+            # attestation verify` would correctly reject them, which is not
+            # the failure this flag exists to test. Record why verification
+            # was skipped rather than silently omitting the field.
+            attestation_status = (
+                "skipped_local_asset"
+                if local_source is not None
+                else verify_build_provenance(archive)
+            )
             safe_extract_zip(archive, staging_root)
         payload = find_payload_root(staging_root)
         verified_manifest = payload_manifest(payload)
