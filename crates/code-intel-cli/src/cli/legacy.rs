@@ -400,6 +400,15 @@ pub(super) fn cmd_resume(args: &Args) -> Result<()> {
     artifacts::resume(&repo, args.artifact_root.as_deref(), args.json)
 }
 
+pub(super) fn cmd_report(args: &Args) -> Result<()> {
+    let repo = args
+        .repo
+        .as_ref()
+        .ok_or("report requires --repo <path>")?
+        .to_path_buf();
+    artifacts::report(&repo, args.artifact_root.as_deref(), args.json)
+}
+
 pub(super) fn cmd_classify(args: &Args) -> Result<()> {
     let report_path = args
         .report
@@ -1115,6 +1124,7 @@ pub(super) const FULL_HELP_TEXT: &str = r#"code-intel <command> [options]
 Commands:
   --version|-V [--json]
   help|--help|-h [--all]
+  report --repo <path> [--artifact-root <path>] [--json]
   resume --repo <path> [--artifact-root <path>] [--json]
   classify --report <path> [--json]
   sentrux-normalize --steps <report.json> [--out <sentrux-failures.json>]
