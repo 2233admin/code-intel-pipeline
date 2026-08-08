@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
-use super::{handlers, tools, ServeContext};
+use super::{handlers, identity, tools, ServeContext};
 
 /// A context pointing at a real directory with no committed run.
 ///
@@ -35,6 +35,7 @@ impl Fixture {
             repo: "fixture-repo".into(),
             artifact_root: self.0.join("artifacts"),
             manifest: None,
+            binding: identity::RepositoryBinding::degraded("test fixture has no committed run"),
         }
     }
 }
@@ -366,6 +367,7 @@ fn the_rerun_command_is_shell_runnable() {
         repo: "project".into(),
         artifact_root: PathBuf::from(r"C:\artifacts"),
         manifest: None,
+        binding: identity::RepositoryBinding::degraded("test fixture"),
     };
     assert_eq!(
         handlers::rerun_command(&verbatim),
@@ -377,6 +379,7 @@ fn the_rerun_command_is_shell_runnable() {
         repo: "project".into(),
         artifact_root: PathBuf::from(r"C:\artifacts"),
         manifest: None,
+        binding: identity::RepositoryBinding::degraded("test fixture"),
     };
     assert_eq!(
         handlers::rerun_command(&spaced),

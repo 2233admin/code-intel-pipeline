@@ -134,6 +134,15 @@ pub(crate) fn build_for_dag(
     build(repo, policy, scopes).map_err(|error| error.message().to_string())
 }
 
+/// Return the Git identity used by committed snapshots without rebuilding the
+/// file manifest. Consumers that bind an external evidence index need the
+/// lineage/HEAD pair, not a second snapshot implementation.
+pub(crate) fn git_repository_identity(repo: &Path) -> Result<Option<(String, String)>, String> {
+    git_context(repo)
+        .map_err(|error| error.message().to_string())
+        .map(|context| context.map(|context| (context.repo_identity, context.head)))
+}
+
 /// Path -> content sha256, at HEAD and in the worktree. A named pair rather
 /// than a same-shaped tuple, so a caller cannot accidentally transpose the
 /// two maps.
