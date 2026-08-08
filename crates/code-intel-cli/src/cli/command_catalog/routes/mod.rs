@@ -6,6 +6,7 @@ use super::{matches_primary_pattern, CompatibilityRoute, LegacyRouteId};
 use crate::cli::help_contract::{HELP_ALIASES, HELP_COMMAND};
 
 mod edit_routes;
+mod provider_routes;
 mod repowise_routes;
 mod run_routes;
 mod serve_routes;
@@ -220,36 +221,8 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             "retire when all file-boundary consumers use the typed capability seam"
         ),
     },
-    raw_route! {
-        command: "provider",
-        subcommand: Some("runtime-ci-evidence"),
-        argument_offset: 2,
-        id: CompatibilityRoute::ProviderRuntimeCiEvidence,
-        contract: command_contract!(
-            Internal,
-            Internal,
-            Internal,
-            &[CommandEffect::RepoRead, CommandEffect::LocalWrite],
-            artifacts!("code-intel-runtime-ci-summary.v1"),
-            exits!(0, 65),
-            "retire when all runtime evidence consumers use the typed capability seam"
-        ),
-    },
-    raw_route! {
-        command: "provider",
-        subcommand: Some("quality-observation"),
-        argument_offset: 2,
-        id: CompatibilityRoute::ProviderQualityObservation,
-        contract: command_contract!(
-            Internal,
-            Internal,
-            Internal,
-            &[CommandEffect::RepoRead, CommandEffect::LocalWrite],
-            artifacts!("code-intel-runtime-ci-observation.v1"),
-            exits!(0, 65),
-            "retire when quality observation producers use the typed capability seam"
-        ),
-    },
+    CommandRoute::Raw(provider_routes::RUNTIME_CI_EVIDENCE),
+    CommandRoute::Raw(provider_routes::QUALITY_OBSERVATION),
     raw_route! {
         command: "repository",
         subcommand: Some("survival-scan"),
