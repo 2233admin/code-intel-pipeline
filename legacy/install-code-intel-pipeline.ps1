@@ -981,7 +981,12 @@ function Ensure-SkillLink {
         }
     }
 
-    Add-Check $Checks "skill:$Name" "skill" $true $ok $detail "Run with -RepairSkillLinks, or link/copy $Target to $Path."
+    # Required only when the operator asked for the repair: a default install
+    # that was told NOT to touch skill links (no -RepairSkillLinks) must not
+    # fail the whole install check over a link it was forbidden to create.
+    # It degrades to a warning with the fix spelled out — the same contract
+    # as the optional Understand Anything skill.
+    Add-Check $Checks "skill:$Name" "skill" $Repair $ok $detail "Run with -RepairSkillLinks, or link/copy $Target to $Path."
 }
 
 function Ensure-SkillSource {
@@ -1105,7 +1110,9 @@ function Ensure-SkillSource {
         $detail = if ($ok) { "installed current bundled skill atomically: $BundledPath" } else { "install failed: $Path" }
     }
 
-    Add-Check $Checks "skill:source" "skill" $true $ok $detail "Run with -RepairSkillLinks to install the bundled skill into $Path."
+    # Same contract as skill:$Name above: advisory unless -RepairSkillLinks
+    # was requested and the install still could not deliver.
+    Add-Check $Checks "skill:source" "skill" $Repair $ok $detail "Run with -RepairSkillLinks to install the bundled skill into $Path."
 }
 
 $checks = New-Object System.Collections.Generic.List[object]
