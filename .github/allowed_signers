@@ -1,0 +1,13 @@
+# SSH allowed-signers file for verifying signed release tags.
+#
+# Format (one signer per line): <principal> <key-type> <base64-key>
+# `principal` is a free-form label (email or handle is conventional) used only
+# for display -- verification is against the key material, not the label.
+#
+# Add the public half of the key used with `git config user.signingkey` here
+# via PR before it signs its first tag. See docs/RELEASE_SIGNING.md.
+#
+# EXAMPLE (replace with a real maintainer key -- this file intentionally ships
+# empty of real keys, so `git verify-tag` / the release.yml GA gate fail
+# closed until a maintainer key is actually added):
+# maintainer@example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI...
