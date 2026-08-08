@@ -147,6 +147,7 @@ function Get-Command {
 
 $at032 = New-VersionStub "repowise-032" "repowise, version 0.32.0"
 $at036 = New-VersionStub "repowise-036" "repowise, version 0.36.0"
+$at037 = New-VersionStub "repowise-037" "repowise, version 0.37.0"
 $prerelease = New-VersionStub "code-intel" "code-intel 0.7.0-beta.2"
 $silent = New-VersionStub "silent" "no version here"
 
@@ -246,6 +247,14 @@ switch ($Scenario) {
         $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.36.0" }
         $script:StubCommandSource = $at032
         Install-MissingTool ([System.Collections.Generic.List[object]]::new()) "repowise" { throw "installer must not run without -InstallMissing" } "fix"
+        $script:Recorded | ConvertTo-Json -Compress
+        break
+    }
+    "newer" {
+        $InstallMissing = $true
+        $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.36.0" }
+        $script:StubCommandSource = $at037
+        Install-MissingTool ([System.Collections.Generic.List[object]]::new()) "repowise" { throw "installer must not downgrade a tool newer than the pin" } "fix"
         $script:Recorded | ConvertTo-Json -Compress
         break
     }
@@ -397,6 +406,21 @@ fn a_matching_pinned_version_stays_already_present() {
             .contains("version 0.32.0"),
         "the matching case reports what it observed: {}",
         result["detail"]
+    );
+}
+
+#[test]
+fn newer_than_pin_stays_already_present_and_is_never_downgraded() {
+    // The pin is a floor, not an exact target. A user who upgraded past the
+    // pin must not be reported as drifted, and -InstallMissing must not
+    // downgrade them back to the pin on every rerun — the scenario's
+    // installer block throws if invoked.
+    let result = scenario("newer");
+    assert_eq!(result["status"], "already_present");
+    let detail = result["detail"].as_str().unwrap();
+    assert!(
+        detail.contains("0.37.0") && detail.contains("newer than pin 0.36.0"),
+        "names both the observed version and the floor: {detail}"
     );
 }
 
