@@ -254,7 +254,7 @@ fn schemas_and_documentation_are_closed_and_provider_neutral() {
     let quality_docs = fs::read_to_string(root.join("docs/runtime-ci-quality-gates.md")).unwrap();
     assert!(quality_docs.contains("signals.quality"));
     assert!(quality_docs.contains("digest-bound"));
-    assert!(quality_docs.contains("failed or cancelled"));
+    assert!(quality_docs.contains("An observed `failed` or `cancelled`"));
 }
 
 #[test]
