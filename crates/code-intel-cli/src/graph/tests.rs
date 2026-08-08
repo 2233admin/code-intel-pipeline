@@ -36,6 +36,52 @@ fn builds_graph_from_local_sources() {
     fs::remove_dir_all(repo).unwrap();
 }
 
+#[test]
+fn graph_consumes_file_gate_and_excludes_private_worktrees() {
+    let repo = unique_temp_dir();
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::create_dir_all(repo.join(".claude/worktrees/garbage/src")).unwrap();
+    fs::write(repo.join("src/main.rs"), "mod lib;\n").unwrap();
+    fs::write(repo.join("src/lib.rs"), "pub fn live() {}\n").unwrap();
+    fs::write(
+        repo.join(".claude/worktrees/garbage/src/garbage.rs"),
+        "pub fn garbage() {}\n",
+    )
+    .unwrap();
+
+    let graph = build_graph(&repo, "zh", false).unwrap();
+    let node_paths: Vec<&str> = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|node| node["path"].as_str())
+        .collect();
+    assert!(node_paths.contains(&"src/main.rs"));
+    assert!(node_paths.contains(&"src/lib.rs"));
+    assert!(!node_paths
+        .iter()
+        .any(|path| path.contains(".claude/worktrees")));
+
+    let file_gate = &graph["file_gate"];
+    assert_eq!(file_gate["schema"], "code-intel-file-gate.v1");
+    assert!(file_gate["by_gate"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["gate"] == "default_path"));
+    assert!(file_gate["decisions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|decision| {
+            decision["path"] == ".claude/worktrees/garbage/src/garbage.rs"
+                && decision["decision"] == "excluded"
+                && decision["gate"] == "default_path"
+        }));
+
+    fs::remove_dir_all(repo).unwrap();
+}
+
 /// Issue #155 acceptance: switching the resolved documentation language
 /// must never change machine-readable shape. `language` is the only
 /// field this document lets vary with the setting (issue #101: schema,

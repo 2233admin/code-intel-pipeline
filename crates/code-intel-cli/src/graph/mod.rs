@@ -4,6 +4,9 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 
+#[path = "../file_gate/mod.rs"]
+mod file_gate;
+
 #[cfg(test)]
 mod tests;
 
@@ -71,8 +74,10 @@ pub fn graph_path(repo: &Path) -> std::path::PathBuf {
 }
 
 fn build_graph(repo: &Path, language: &str, full: bool) -> Result<Value> {
+    let file_gate = file_gate::evaluate(repo, &file_gate::GateConfig::built_in())
+        .map_err(|error| format!("evaluate graph file gate: {error}"))?;
     let mut files = Vec::new();
-    collect_source_files(repo, repo, &mut files)?;
+    collect_source_files(repo, &file_gate.included, &mut files)?;
 
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
@@ -106,6 +111,7 @@ fn build_graph(repo: &Path, language: &str, full: bool) -> Result<Value> {
         "repo": normalize_path(repo),
         "language": language,
         "full": full,
+        "file_gate": file_gate.to_json(),
         "summary": {
             "files": nodes.len(),
             "edges": edges.len(),
@@ -117,29 +123,18 @@ fn build_graph(repo: &Path, language: &str, full: bool) -> Result<Value> {
     }))
 }
 
-fn collect_source_files(repo: &Path, dir: &Path, files: &mut Vec<SourceFile>) -> Result<()> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let file_type = entry.file_type()?;
-
-        if file_type.is_dir() {
-            if should_skip_dir(&path) {
-                continue;
-            }
-            collect_source_files(repo, &path, files)?;
-            continue;
-        }
-
-        if !file_type.is_file() || should_skip_file(&path) {
-            continue;
-        }
-
+fn collect_source_files(
+    repo: &Path,
+    included: &[String],
+    files: &mut Vec<SourceFile>,
+) -> Result<()> {
+    for relative in included {
+        let path = repo.join(relative);
         let Some(language) = language_from_path(&path) else {
             continue;
         };
 
-        let bytes = entry.metadata()?.len();
+        let bytes = fs::metadata(&path)?.len();
         if bytes > 1_500_000 {
             continue;
         }
@@ -148,9 +143,8 @@ fn collect_source_files(repo: &Path, dir: &Path, files: &mut Vec<SourceFile>) ->
             continue;
         };
 
-        let rel_path = normalize_path(path.strip_prefix(repo).unwrap_or(&path));
         files.push(SourceFile {
-            rel: rel_path,
+            rel: normalize_path(Path::new(relative)),
             language,
             bytes,
             lines: text.lines().count(),
@@ -158,36 +152,6 @@ fn collect_source_files(repo: &Path, dir: &Path, files: &mut Vec<SourceFile>) ->
         });
     }
     Ok(())
-}
-
-fn should_skip_dir(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
-        return false;
-    };
-
-    matches!(
-        name,
-        ".git"
-            | ".repowise"
-            | ".understand-anything"
-            | ".sentrux"
-            | ".next"
-            | ".turbo"
-            | "node_modules"
-            | "target"
-            | "dist"
-            | "build"
-            | "coverage"
-            | "__pycache__"
-    )
-}
-
-fn should_skip_file(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
-        return false;
-    };
-
-    name.ends_with(".min.js") || name.ends_with(".lock") || name == "package-lock.json"
 }
 
 fn language_from_path(path: &Path) -> Option<&'static str> {
