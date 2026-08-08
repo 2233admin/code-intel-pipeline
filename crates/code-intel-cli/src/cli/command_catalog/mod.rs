@@ -14,7 +14,8 @@ use crate::{
 use super::legacy::{
     cmd_classify, cmd_doctor, cmd_graph, cmd_help, cmd_language, cmd_orchestrate, cmd_provider,
     cmd_resume, cmd_route, cmd_sentrux, cmd_sentrux_debt_register, cmd_sentrux_normalize,
-    parse_args, run_benchmark, run_capability, run_file_boundary_raw, run_runtime_ci_raw, Args,
+    parse_args, run_benchmark, run_capability, run_file_boundary_raw, run_quality_observation_raw,
+    run_runtime_ci_raw, Args,
 };
 use super::primary::{execute_primary, matches_primary_pattern, parse_primary_args, PrimaryArgs};
 
@@ -65,6 +66,7 @@ enum CompatibilityRoute {
     ProviderCodenexusAdapt,
     ProviderFileBoundary,
     ProviderRuntimeCiEvidence,
+    ProviderQualityObservation,
     RepositorySurvivalScan,
     Audit,
     ArtifactIndex,
@@ -430,6 +432,7 @@ fn execute_compatibility(command: CompatibilityCommand) -> i32 {
         CompatibilityRoute::ProviderCodenexusAdapt => providers::run_codenexus_adapt_raw(raw),
         CompatibilityRoute::ProviderFileBoundary => run_file_boundary_raw(raw),
         CompatibilityRoute::ProviderRuntimeCiEvidence => run_runtime_ci_raw(raw),
+        CompatibilityRoute::ProviderQualityObservation => run_quality_observation_raw(raw),
         CompatibilityRoute::RepositorySurvivalScan => survival_scan::run_raw(raw),
         CompatibilityRoute::Audit => audit_report::run_raw(raw),
         CompatibilityRoute::ArtifactIndex => artifact_index::run_raw(raw),

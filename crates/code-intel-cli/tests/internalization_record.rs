@@ -943,6 +943,7 @@ impl RepositoryFixture {
                 "add",
                 ".gitattributes",
                 "text.txt",
+                "-f",
                 "binary.bin",
                 "ident.txt",
                 "encoded.txt",

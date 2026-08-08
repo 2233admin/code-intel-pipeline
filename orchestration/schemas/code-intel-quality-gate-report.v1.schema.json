@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-quality-gate-report.v1",
+  "title": "Code Intel Quality Gate Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "provider",
+    "provenance",
+    "snapshotIdentity",
+    "observedAt",
+    "gates"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-quality-gate-report.v1" },
+    "provider": { "$ref": "#/$defs/provider" },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "snapshotIdentity": { "$ref": "#/$defs/digest" },
+    "observedAt": { "type": "integer", "minimum": 0 },
+    "gates": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/gate" }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "runId", "sourceRevision"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "runId": { "type": "string", "minLength": 1 },
+        "sourceRevision": { "type": "string", "minLength": 1 }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["collectorId", "collectorVersion", "collectionId", "collectedAt"],
+      "properties": {
+        "collectorId": { "type": "string", "minLength": 1 },
+        "collectorVersion": { "type": "string", "minLength": 1 },
+        "collectionId": { "type": "string", "minLength": 1 },
+        "collectedAt": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "observed", "summary"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "status": {
+          "enum": ["passed", "failed", "cancelled", "unknown"]
+        },
+        "observed": { "type": "boolean" },
+        "summary": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

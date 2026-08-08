@@ -1653,15 +1653,19 @@
       "owner": "code-intel-pipeline",
       "kind": "internal-observer",
       "required": false,
-      "entrypoint": "crates/code-intel-cli/src/runtime_ci_evidence.rs",
-      "capabilities": ["provider_neutral_runtime_evidence", "artifact_digest_binding", "snapshot_and_freshness_binding", "hospital_pet_health_summary"],
-      "commands": { "ingest": "target/debug/code-intel.exe provider runtime-ci-evidence --artifact-root <root> --request <request.json> --out <summary.json>" },
+      "entrypoint": "crates/code-intel-cli/src/runtime_ci_evidence.rs,crates/code-intel-cli/src/quality_observation.rs",
+      "capabilities": ["provider_neutral_runtime_evidence", "quality_gate_evidence", "quality_observation_generation", "artifact_digest_binding", "snapshot_and_freshness_binding", "hospital_pet_health_summary"],
+      "commands": {
+        "generate": "target/debug/code-intel.exe provider quality-observation --request <quality-gates.json> --out <observation.json>",
+        "ingest": "target/debug/code-intel.exe provider runtime-ci-evidence --artifact-root <root> --request <request.json> --out <summary.json>"
+      },
       "artifactContract": [
+        "orchestration/schemas/code-intel-quality-gate-report.v1.schema.json",
         "orchestration/schemas/code-intel-runtime-ci-ingest-request.v1.schema.json",
         "orchestration/schemas/code-intel-runtime-ci-observation.v1.schema.json",
         "orchestration/schemas/code-intel-runtime-ci-summary.v1.schema.json"
       ],
-      "extensionPoint": "Explicit local JSON only. Missing, partial, stale, snapshot-mismatched, or unobserved evidence remains unknown and cannot become green."
+      "extensionPoint": "Explicit local JSON only. Missing, partial, stale, snapshot-mismatched, or unobserved evidence remains unknown and cannot become green. Optional signals.quality records test quality gates such as nextest, clippy, audit, deny, coverage, mutation, and fuzz results; an observed failed or cancelled quality gate makes health red."
     },
     {
       "id": "verification.code-intel-acceptance",

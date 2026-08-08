@@ -118,28 +118,35 @@ pub(crate) fn normalize(
         signals["build"]["status"].as_str().expect("validated"),
         signals["runtime"]["status"].as_str().expect("validated"),
     ];
+    let quality_status = signals
+        .get("quality")
+        .and_then(|quality| quality["status"].as_str());
     let observed_failure = statuses[0] == "failed"
         || statuses[1] == "failed"
         || matches!(statuses[2], "failed" | "degraded");
+    let quality_failure = matches!(quality_status, Some("failed" | "cancelled"));
     let fully_positive = completeness == "complete"
         && statuses[0] == "passed"
         && statuses[1] == "passed"
-        && statuses[2] == "healthy";
+        && statuses[2] == "healthy"
+        && quality_status.map_or(true, |status| status == "passed");
     let health = if observed_failure {
+        "red"
+    } else if quality_failure {
         "red"
     } else if fully_positive {
         "green"
     } else {
         "unknown"
     };
-    let failure_kind = if observed_failure {
+    let failure_kind = if observed_failure || quality_failure {
         "observed_failure"
     } else if fully_positive {
         "none"
     } else {
         "partial_coverage"
     };
-    let facts = if health == "green" {
+    let mut facts = if health == "green" {
         vec![
             "tests_observed_passed",
             "build_observed_passed",
@@ -150,6 +157,9 @@ pub(crate) fn normalize(
     } else {
         Vec::new()
     };
+    if health == "green" && quality_status.is_some() {
+        facts.push("quality_gates_observed_passed");
+    }
     Ok(json!({
         "schema":SUMMARY_SCHEMA,
         "admission":"accepted",
@@ -218,9 +228,10 @@ fn validate_source(source: &Value) -> Result<(), String> {
     integer_field(provenance, "collectedAt", "observation.provenance")?;
 
     let signals = object_field(source, "signals", "observation")?;
-    require_object_keys(
+    require_object_keys_allow(
         signals,
         &["tests", "build", "runtime"],
+        &["quality"],
         "observation.signals",
     )?;
     validate_signal(
@@ -238,6 +249,13 @@ fn validate_source(source: &Value) -> Result<(), String> {
         "observation.signals.runtime",
         &["healthy", "degraded", "failed", "unknown"],
     )?;
+    if let Some(quality) = signals.get("quality") {
+        validate_signal(
+            quality,
+            "observation.signals.quality",
+            &["passed", "failed", "cancelled", "unknown"],
+        )?;
+    }
     Ok(())
 }
 
@@ -307,6 +325,28 @@ fn require_object_keys(value: &Value, expected: &[&str], context: &str) -> Resul
     let actual = object.keys().map(String::as_str).collect::<BTreeSet<_>>();
     let expected = expected.iter().copied().collect::<BTreeSet<_>>();
     if actual != expected {
+        return Err(format!("{context} fields are invalid"));
+    }
+    Ok(())
+}
+
+fn require_object_keys_allow(
+    value: &Value,
+    required: &[&str],
+    optional: &[&str],
+    context: &str,
+) -> Result<(), String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| format!("{context} must be an object"))?;
+    let actual = object.keys().map(String::as_str).collect::<BTreeSet<_>>();
+    let allowed = required
+        .iter()
+        .chain(optional.iter())
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let required = required.iter().copied().collect::<BTreeSet<_>>();
+    if !required.is_subset(&actual) || !actual.is_subset(&allowed) {
         return Err(format!("{context} fields are invalid"));
     }
     Ok(())

@@ -6,8 +6,8 @@ use serde_json::Value;
 
 use crate::{
     artifacts, capability, capability_inventory, file_boundary, graph, orchestration,
-    project_orientation_benchmark, providers, routes, runtime_ci_evidence, sentrux,
-    tool_effectiveness_benchmark,
+    project_orientation_benchmark, providers, quality_observation, routes, runtime_ci_evidence,
+    sentrux, tool_effectiveness_benchmark,
 };
 
 use super::help_contract::{is_help_flag, is_help_spelling, HELP_COMMAND};
@@ -211,6 +211,30 @@ pub(super) fn run_runtime_ci_raw(raw: &[String]) -> i32 {
             &out,
             &runtime_ci_evidence::ingest_request(&artifact_root, &value)?,
         )
+    })();
+    match result {
+        Ok(()) => 0,
+        Err(error) => {
+            eprintln!("error: {error}");
+            65
+        }
+    }
+}
+
+pub(super) fn run_quality_observation_raw(raw: &[String]) -> i32 {
+    let result = (|| -> std::result::Result<(), String> {
+        if raw.len() != 4 {
+            return Err("quality-observation requires --request <path> --out <path>".into());
+        }
+        let request = raw_option(raw, "--request")?;
+        let out = raw_option(raw, "--out")?;
+        let bytes = fs::read(request).map_err(|error| format!("read request: {error}"))?;
+        let text =
+            std::str::from_utf8(&bytes).map_err(|_| "quality gate report must be UTF-8 JSON")?;
+        capability::reject_duplicate_json_keys(text)?;
+        let report: Value = serde_json::from_str(text)
+            .map_err(|error| format!("parse quality gate report: {error}"))?;
+        write_provider_result(&out, &quality_observation::generate(&report)?)
     })();
     match result {
         Ok(()) => 0,
@@ -1130,6 +1154,7 @@ Commands:
   provider codenexus-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
   provider file-boundary --request <request.json> --out <result.json>
   provider runtime-ci-evidence --artifact-root <directory> --request <request.json> --out <summary.json>
+  provider quality-observation --request <quality-gates.json> --out <observation.json>
   compatibility retirement-ticket lint --ticket <ticket.json> --evaluated-at <unix-seconds>
   route|routes [--action List|Plan|Validate] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--json]
   sentrux <dsm|scan|health|check|gate|check_rules|gate_save> <path> [--no-ratchet]
