@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **安装器子进程钉死 `CODE_INTEL_HOME`（bootstrap.py）**：安装器会把 `CODE_INTEL_HOME` 持久化进用户环境，而它取值来自子进程环境；此前安装器子进程未传入钉好的环境，调用者 shell 里 MSYS 风格 `CODE_INTEL_HOME`（如 `/d/projects/...`，Windows 会解析成 `C:\d\projects\...`）会被原样写进用户注册表并毒化后续运行。现在安装器与 doctor 都使用钉到 release root 的同一环境。
+- **测试套件在开发者机器上的 hermeticity 硬化**（#218 修复过程发现，独立提出）：
+  - `file_gate/walk.rs`：遍历中目录消失（NotFound）容错为跳过，消除 `sentrux_gate` cycle 检查与 `tool_path` 临时目录删除的并行竞态
+  - `internalization_record`：fixture git 清空 `core.excludesFile`，不再被用户全局 ignore（如 `*.bin`）拦截
+  - `native_code_evidence`：legacy pwsh facade 清除 PIPELINE_VARS，不再继承 shell 的 `CODE_INTEL_HOME` 指向旧 manifest
+  - `snapshot_identity`：用 `.git/shallow` 边界手工构造 shallow 仓库，避开 Windows 8.3 短路径下 `file://` clone 失败
+
+## [0.7.1] — 2026-08-08
+
+### Fixed
+
+- **安装后 discovery 误把 bin-forwarder manifest 当仓库根（#218）**：安装器会把 `orchestration/integrations.json` 复制到二进制旁边以便脱离 checkout 解析能力清单，但两条 discovery 路径都对这份副本照单全收、把 `<bin>` 当仓库根，导致干净的 v0.7.0 安装报出约 40 条相对入口缺失的假错误。现在 exe 祖先目录候选只是猜测而非配置：命中必须至少解析出一个 manifest 文件入口才算数，否则回落到安装器必写的 `CODE_INTEL_HOME`；`orchestration::resolve_manifest_path` 同享这套探测，并补上它一直缺的两层——`CODE_INTEL_INTEGRATIONS_MANIFEST` 显式覆盖与 `CODE_INTEL_HOME` 回落。README 同步删掉「macOS/Linux 无发布 ZIP、bootstrap.py 仅限 Windows」的过时说法（v0.7.0 起三平台齐发）。
+
 ## [0.7.0] — 2026-08-07
 
 首个正式版切割。#14 的发布闸验收条款本身早已做完（自扫门禁、`dag_run`/`execution_kernel` 循环依赖修复，issue 自己的 checklist 勾过）；剩下未勾的 session-intelligence/2D viewer 是另一条独立多版本 roadmap，跟能不能发 GA 无关，留 backlog。#158 复核后没有整条延后：Skill 安装路径升级为先验 GitHub Artifact Attestation 再退回 SHA-256（`gh` 缺失时显式降级，不静默）；跑了一次真实的 supply-chain 自审（`orchestration/audit/reports/audit-report.json`，8.0/10，一条确认发现——发布 tag 未签名也没有 ruleset 保护）；对已发布的 v0.7.0-beta.6 三平台 ZIP 实测 `gh attestation verify` 全过，记录在 `docs/release-provenance-runbook.md`；OpenSSF Best Practices 逐条自评进 `docs/openssf-best-practices-gap.md`。只有「签名 tag + tag 保护 ruleset」明确留给维护者（改仓库设置不该由 agent 单方面做），继续在 #158 追踪。

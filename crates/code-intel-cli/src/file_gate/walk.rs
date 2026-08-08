@@ -23,14 +23,31 @@ pub(crate) fn walk_candidates(
     directory: &Path,
     out: &mut Vec<String>,
 ) -> Result<(), String> {
-    let entries = fs::read_dir(directory)
-        .map_err(|error| format!("read {}: {error}", directory.display()))?;
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // The directory vanished between enumeration and now (for example
+            // a parallel test or tool created and removed a temp directory
+            // under `target/` while this walk was in flight). Treat it as
+            // empty rather than failing the whole scan: concurrent cleanup is
+            // not a repository integrity problem. Other IO errors (permission,
+            // hardware) still propagate.
+            return Ok(());
+        }
+        Err(error) => return Err(format!("read {}: {error}", directory.display())),
+    };
     for entry in entries {
-        let entry = entry.map_err(|error| format!("read {}: {error}", directory.display()))?;
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(format!("read {}: {error}", directory.display())),
+        };
         let path = entry.path();
-        let file_type = entry
-            .file_type()
-            .map_err(|error| format!("inspect {}: {error}", path.display()))?;
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(format!("inspect {}: {error}", path.display())),
+        };
         if file_type.is_symlink() {
             continue;
         }

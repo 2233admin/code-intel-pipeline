@@ -66,7 +66,7 @@ impl Options {
             repo_path: None,
             config: None,
             platform: "auto".into(),
-            require_repowise: true,
+            require_repowise: false,
             require_understand: false,
             tool_path_prefix: None,
             pipeline_root,

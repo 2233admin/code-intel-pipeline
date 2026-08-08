@@ -64,7 +64,10 @@ guarantee by hand with
 [docs/release-provenance-runbook.md](docs/release-provenance-runbook.md) for
 the full command and a recorded verification run.
 
-**macOS / Linux (source build; requires PowerShell 7.2+, Rust toolchain, ripgrep):**
+**macOS / Linux:** since v0.7.0 every release ships windows / macos / linux
+ZIPs and the `bootstrap.py` bootstrap works on all three — no Rust toolchain
+needed. The source build below is only required for v0.6.0 and earlier
+(source build; requires PowerShell 7.2+, Rust toolchain, ripgrep):
 
 ```bash
 git clone https://github.com/2233admin/code-intel-pipeline.git
@@ -87,8 +90,8 @@ Note: the pipeline needs full git history for lineage identity — run
 ## Status
 
 Windows PowerShell surface is in public beta; production logic is moving to
-Rust (the compiled `code-intel` binary is the primary entry point). macOS /
-Linux are source-build only until the next release. Enhancement providers
+Rust (the compiled `code-intel` binary is the primary entry point). Since
+v0.7.0 all three platforms ship prebuilt release ZIPs. Enhancement providers
 (Repowise semantic docs, Understand Anything graphs, CodeNexus context) are
 optional: when absent the run records them as skipped instead of faking
 success.
