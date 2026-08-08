@@ -110,6 +110,9 @@ pub(crate) fn execute(
         "provider.sentrux-builtin.compat" => {
             builtin_provider_evidence::sentrux_admission(request, verified_inputs, out)
         }
+        "provider.codenexus-builtin.compat" => {
+            builtin_provider_evidence::codenexus_admission(request, verified_inputs, out)
+        }
         "doctor.envelope.compat" => doctor_adapter::execute(request, verified_inputs, out),
         "advisory.workflow-recommend.compat" => {
             workflow_recommendation(request, verified_inputs, out)

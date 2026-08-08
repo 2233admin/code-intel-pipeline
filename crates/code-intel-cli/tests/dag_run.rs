@@ -168,10 +168,19 @@ fn production_run_route_executes_snapshot_then_inventory() {
     assert_eq!(manifest["nodes"]["evidence.graph"]["status"], "succeeded");
     assert_eq!(manifest["nodes"]["evidence.sentrux"]["status"], "succeeded");
     assert_eq!(
+        manifest["nodes"]["evidence.codenexus"]["status"],
+        "succeeded"
+    );
+    assert_eq!(
         manifest["nodes"]["diagnosis.hospital"]["status"],
         "succeeded"
     );
-    for node in ["evidence.graph", "evidence.sentrux", "diagnosis.hospital"] {
+    for node in [
+        "evidence.graph",
+        "evidence.sentrux",
+        "evidence.codenexus",
+        "diagnosis.hospital",
+    ] {
         assert_eq!(manifest["nodes"][node]["verdict"], "pass", "node={node}");
     }
     assert!(manifest["nodes"]["evidence.graph"]["artifacts"]
@@ -184,6 +193,11 @@ fn production_run_route_executes_snapshot_then_inventory() {
         .unwrap()
         .iter()
         .any(|artifact| artifact["type"] == "provider.sentrux.command-observation"));
+    assert!(manifest["nodes"]["evidence.codenexus"]["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|artifact| artifact["type"] == "observed.evidence.payload"));
 
     let _ = fs::remove_dir_all(root);
 }
@@ -521,6 +535,10 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
     assert_eq!(manifest["nodes"]["evidence.graph"]["status"], "succeeded");
     assert_eq!(manifest["nodes"]["evidence.sentrux"]["status"], "succeeded");
     assert_eq!(
+        manifest["nodes"]["evidence.codenexus"]["status"],
+        "succeeded"
+    );
+    assert_eq!(
         manifest["nodes"]["diagnosis.hospital"]["status"],
         "succeeded"
     );
@@ -848,6 +866,7 @@ fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
     let nodes = execution["manifest"]["nodes"].as_object().unwrap();
     assert!(!nodes.contains_key("evidence.graph"));
     assert!(!nodes.contains_key("evidence.sentrux"));
+    assert!(!nodes.contains_key("evidence.codenexus"));
     assert!(!nodes.contains_key("diagnosis.hospital"));
     assert!(nodes.contains_key("repo.snapshot"));
     assert!(nodes.contains_key("inventory.rg"));
@@ -855,6 +874,7 @@ fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
 
     assert!(!out.join("evidence.graph.request.json").exists());
     assert!(!out.join("evidence.sentrux.request.json").exists());
+    assert!(!out.join("evidence.codenexus.request.json").exists());
     let doctor_request: Value =
         serde_json::from_slice(&fs::read(out.join("doctor.request.json")).unwrap()).unwrap();
     assert_eq!(doctor_request["options"]["requireRepowise"], false);
@@ -964,6 +984,7 @@ fn strict_profile_cannot_be_weakened_and_keeps_all_provider_nodes_required() {
     let nodes = execution["manifest"]["nodes"].as_object().unwrap();
     assert!(nodes.contains_key("evidence.graph"));
     assert!(nodes.contains_key("evidence.sentrux"));
+    assert!(nodes.contains_key("evidence.codenexus"));
     assert!(nodes.contains_key("diagnosis.hospital"));
 
     let doctor_request: Value =
