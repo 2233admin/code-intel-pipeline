@@ -12,6 +12,7 @@ pub(crate) struct ProviderPolicy {
     pub(crate) understand: ProviderRequirement,
     graph: ProviderRequirement,
     sentrux: ProviderRequirement,
+    codenexus: ProviderRequirement,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,24 +39,28 @@ impl ExecutionPolicy {
                 understand: ProviderRequirement::Optional,
                 graph: ProviderRequirement::Required,
                 sentrux: ProviderRequirement::Optional,
+                codenexus: ProviderRequirement::Optional,
             },
             RunProfile::Strict => ProviderPolicy {
                 repowise: ProviderRequirement::Required,
                 understand: ProviderRequirement::Required,
                 graph: ProviderRequirement::Required,
                 sentrux: ProviderRequirement::Required,
+                codenexus: ProviderRequirement::Required,
             },
             RunProfile::Compatibility => ProviderPolicy {
                 repowise: ProviderRequirement::Required,
                 understand: ProviderRequirement::Optional,
                 graph: ProviderRequirement::Required,
                 sentrux: ProviderRequirement::Required,
+                codenexus: ProviderRequirement::Required,
             },
             RunProfile::Offline => ProviderPolicy {
                 repowise: ProviderRequirement::Disabled,
                 understand: ProviderRequirement::Disabled,
                 graph: ProviderRequirement::Disabled,
                 sentrux: ProviderRequirement::Disabled,
+                codenexus: ProviderRequirement::Disabled,
             },
         };
         Self {
@@ -161,6 +166,7 @@ impl ExecutionPolicy {
         match capability {
             "provider.graph-adapt" => Some(self.providers.graph),
             "provider.sentrux-adapt" => Some(self.providers.sentrux),
+            "provider.codenexus-adapt" => Some(self.providers.codenexus),
             _ => None,
         }
     }
@@ -171,7 +177,9 @@ impl ExecutionPolicy {
     }
 
     pub(crate) fn provider_diagnosis_enabled(&self) -> bool {
-        self.providers.graph.is_enabled() || self.providers.sentrux.is_enabled()
+        self.providers.graph.is_enabled()
+            || self.providers.sentrux.is_enabled()
+            || self.providers.codenexus.is_enabled()
     }
 
     pub(crate) fn capability_options(

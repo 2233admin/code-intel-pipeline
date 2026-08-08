@@ -2,8 +2,8 @@
 
 ## Supported surface
 
-Existing public beta releases (v0.6.0 and earlier) ship a Windows ZIP only.
-From the next tag onward, every release ships three ZIPs:
+Releases up to and including v0.6.0 shipped a Windows ZIP only. Every release
+from v0.7.0-beta.2 onward ships three ZIPs:
 `code-intel-pipeline-<tag>-windows.zip`, `code-intel-pipeline-<tag>-macos.zip`,
 and `code-intel-pipeline-<tag>-linux.zip`. The stable entrypoint is the
 packaged `bin/code-intel.exe` on Windows and `bin/code-intel` on macOS/Linux;
@@ -52,6 +52,9 @@ gh attestation verify .\code-intel-pipeline-<tag>-<platform>.zip --repo 2233admi
    The release workflow signs every ZIP with GitHub Artifact Attestations
    (`actions/attest-build-provenance`); a failed verification means the asset
    was not produced by this repository's release workflow and must not be run.
+   Official (non-beta, non-rc) tags are additionally SSH-signed; run
+   `git verify-tag <tag>` against `.github/allowed_signers` — see
+   [RELEASE_SIGNING.md](RELEASE_SIGNING.md).
 4. Extract the ZIP to a writable directory.
 5. Run (Windows):
 
@@ -74,9 +77,9 @@ used when available.
 ## Known limits
 
 - Release packages published up to and including v0.6.0 are Windows-only;
-  installing them on macOS/Linux is not supported. Releases from the next tag
-  onward ship windows/macos/linux ZIPs, and macOS/Linux still require
-  PowerShell 7.2+ (`pwsh`) for the installer and launchers.
+  installing them on macOS/Linux is not supported. Releases from
+  v0.7.0-beta.2 onward ship windows/macos/linux ZIPs, and macOS/Linux still
+  require PowerShell 7.2+ (`pwsh`) for the installer and launchers.
 - External providers can be unavailable, rate-limited, or unconfigured. Their
   outcomes are reported rather than rewritten as local success.
 - Understand Anything graph generation still depends on its host integration.
