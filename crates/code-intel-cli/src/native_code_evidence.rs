@@ -586,6 +586,22 @@ fn arrow_name(line: &str) -> Option<&str> {
 }
 
 pub(crate) fn extract_imports(path: &str, language: &str, lines: &[&str]) -> Vec<Value> {
+    if language == "rust" {
+        return rust_import_targets(lines)
+            .into_iter()
+            .map(|(line, target)| {
+                json!({
+                    "file":path,
+                    "line":line,
+                    "target":target,
+                    "language":language,
+                    "confidence":0.6,
+                    "source":"native-minimal"
+                })
+            })
+            .collect();
+    }
+
     lines
         .iter()
         .enumerate()
@@ -602,6 +618,91 @@ pub(crate) fn extract_imports(path: &str, language: &str, lines: &[&str]) -> Vec
             })
         })
         .collect()
+}
+
+fn rust_import_targets(lines: &[&str]) -> Vec<(usize, String)> {
+    let mut imports = Vec::new();
+    let mut statement = String::new();
+    let mut start_line = 0;
+
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if statement.is_empty() {
+            let Some(rest) = trimmed.strip_prefix("use ") else {
+                continue;
+            };
+            start_line = index + 1;
+            statement.push_str(rest);
+        } else {
+            statement.push(' ');
+            statement.push_str(trimmed);
+        }
+
+        let Some(end) = statement.find(';') else {
+            continue;
+        };
+        let mut targets = Vec::new();
+        expand_rust_use_tree(statement[..end].trim(), "", &mut targets);
+        imports.extend(targets.into_iter().map(|target| (start_line, target)));
+        statement.clear();
+    }
+
+    imports
+}
+
+fn expand_rust_use_tree(tree: &str, prefix: &str, targets: &mut Vec<String>) {
+    for item in split_rust_use_tree(tree) {
+        let item = item.trim();
+        if item.is_empty() {
+            continue;
+        }
+        if let Some((group_prefix, group)) = rust_use_group(item) {
+            let prefix = join_rust_import(prefix, group_prefix);
+            expand_rust_use_tree(group, &prefix, targets);
+            continue;
+        }
+        let leaf = item.split_ascii_whitespace().next().unwrap_or_default();
+        if !leaf.is_empty() {
+            targets.push(join_rust_import(prefix, leaf));
+        }
+    }
+}
+
+fn split_rust_use_tree(tree: &str) -> Vec<&str> {
+    let mut depth = 0;
+    let mut start = 0;
+    let mut items = Vec::new();
+    for (index, character) in tree.char_indices() {
+        match character {
+            '{' => depth += 1,
+            '}' => depth -= 1,
+            ',' if depth == 0 => {
+                items.push(&tree[start..index]);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    items.push(&tree[start..]);
+    items
+}
+
+fn rust_use_group(item: &str) -> Option<(&str, &str)> {
+    let open = item.find('{')?;
+    let prefix = item[..open].trim_end().strip_suffix("::")?.trim_end();
+    let group = item[open + 1..].strip_suffix('}')?;
+    Some((prefix, group))
+}
+
+fn join_rust_import(prefix: &str, item: &str) -> String {
+    if item == "self" {
+        return prefix.to_owned();
+    }
+    if prefix.is_empty() {
+        item.to_owned()
+    } else {
+        format!("{prefix}::{item}")
+    }
 }
 
 fn import_target<'a>(language: &str, line: &'a str) -> Option<&'a str> {
@@ -621,12 +722,6 @@ fn import_target<'a>(language: &str, line: &'a str) -> Option<&'a str> {
         if let Some(rest) = trimmed.strip_prefix("import ") {
             return rest.split_ascii_whitespace().next();
         }
-    }
-    if language == "rust" {
-        return trimmed
-            .strip_prefix("use ")
-            .and_then(|rest| rest.strip_suffix(';'))
-            .map(str::trim);
     }
     if language == "go" {
         return trimmed.strip_prefix("import ").and_then(first_quoted);
