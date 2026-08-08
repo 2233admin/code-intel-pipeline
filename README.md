@@ -164,8 +164,14 @@ PowerShell 合同测试在 `legacy/scripts/tests/`。`legacy/` 下的兼容 faca
 - Understand Anything 图谱
 - CodeNexus context、Repomix、模型辅助通道
 - runtime/CI 证据和 file-boundary provider
+- provider-neutral quality-gate evidence（nextest/Clippy/audit/deny/coverage/mutation/fuzz）
 
 缺少这些增强工具时，流水线必须明确记录 skipped、manual-required 或 provider failure，不能把它们冒充成功，也不能因此阻断只依赖核心路径的 public beta。详细支持矩阵和已知边界见 [Public beta guide](docs/public-beta.md)。
+
+质量门的接入契约见
+[docs/runtime-ci-quality-gates.md](docs/runtime-ci-quality-gates.md)。Code Intel
+只校验项目提交的 snapshot-bound 结果，不直接安装或执行项目工具，也不把
+“没有质量证据”伪装成通过。
 
 0.5.1 beta 还提供可重放的工具效果基线评分器。它不会把工具“能运行”误当成“对 Agent 有帮助”；只有冻结任务、配对条件和外部证明完整时才记录基线：
 

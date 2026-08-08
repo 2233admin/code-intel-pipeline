@@ -38,7 +38,8 @@
       "properties": {
         "tests": { "$ref": "#/$defs/testSignal" },
         "build": { "$ref": "#/$defs/buildSignal" },
-        "runtime": { "$ref": "#/$defs/runtimeSignal" }
+        "runtime": { "$ref": "#/$defs/runtimeSignal" },
+        "quality": { "$ref": "#/$defs/qualitySignal" }
       }
     }
   },
@@ -70,6 +71,12 @@
       "allOf": [
         { "$ref": "#/$defs/baseSignal" },
         { "properties": { "status": { "enum": ["healthy", "degraded", "failed", "unknown"] } } }
+      ]
+    },
+    "qualitySignal": {
+      "allOf": [
+        { "$ref": "#/$defs/baseSignal" },
+        { "properties": { "status": { "enum": ["passed", "failed", "cancelled", "unknown"] } } }
       ]
     }
   }

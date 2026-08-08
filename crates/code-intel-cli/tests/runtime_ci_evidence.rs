@@ -72,6 +72,18 @@ fn source(completeness: &str, tests: &str, build: &str, runtime: &str) -> Value 
     })
 }
 
+fn source_with_quality(
+    completeness: &str,
+    tests: &str,
+    build: &str,
+    runtime: &str,
+    quality: &str,
+) -> Value {
+    let mut value = source(completeness, tests, build, runtime);
+    value["signals"]["quality"] = signal(quality, quality != "unknown");
+    value
+}
+
 fn write_request(root: &Path, source: &Value) -> Value {
     let bytes = serde_json::to_vec(source).unwrap();
     fs::write(root.join("runtime-ci.json"), &bytes).unwrap();
@@ -142,6 +154,37 @@ fn observed_failure_is_red_even_when_other_domains_are_unknown() {
 }
 
 #[test]
+fn quality_gate_failure_is_red_and_passed_quality_is_explicitly_green() {
+    let failed = runtime_ci_evidence::normalize(
+        &source_with_quality("complete", "passed", "passed", "healthy", "failed"),
+        SNAPSHOT,
+        2000,
+        100,
+    )
+    .unwrap();
+    assert_eq!(failed["health"], "red");
+    assert_eq!(failed["failureKind"], "observed_failure");
+
+    let passed = runtime_ci_evidence::normalize(
+        &source_with_quality("complete", "passed", "passed", "healthy", "passed"),
+        SNAPSHOT,
+        2000,
+        100,
+    )
+    .unwrap();
+    assert_eq!(passed["health"], "green");
+    assert_eq!(
+        passed["facts"],
+        json!([
+            "tests_observed_passed",
+            "build_observed_passed",
+            "runtime_observed_healthy",
+            "quality_gates_observed_passed"
+        ])
+    );
+}
+
+#[test]
 fn stale_snapshot_mismatch_and_digest_forgery_fail_closed() {
     let mut stale_source = source("complete", "passed", "passed", "healthy");
     stale_source["observedAt"] = json!(1800);
@@ -208,6 +251,10 @@ fn schemas_and_documentation_are_closed_and_provider_neutral() {
     assert!(docs.contains("does not call a CI provider"));
     assert!(docs.contains("Missing is not green"));
     assert!(docs.contains("Hospital/PET"));
+    let quality_docs = fs::read_to_string(root.join("docs/runtime-ci-quality-gates.md")).unwrap();
+    assert!(quality_docs.contains("signals.quality"));
+    assert!(quality_docs.contains("digest-bound"));
+    assert!(quality_docs.contains("failed or cancelled"));
 }
 
 #[test]
