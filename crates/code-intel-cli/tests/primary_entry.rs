@@ -1,6 +1,6 @@
 mod common;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, ExitStatus};
 
 #[test]
 fn root_help_leads_with_the_compiled_primary_entry() {
@@ -559,11 +559,18 @@ fn legacy_session_script() -> PathBuf {
         .join("legacy/Invoke-SentruxAgentTool.ps1")
 }
 
+struct LegacySessionOutput {
+    pid: u32,
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
 fn invoke_legacy_session(
     tree: &LegacySessionTemp,
     operation: &str,
     session_id: &str,
-) -> (Option<i32>, Vec<u8>, Vec<u8>) {
+) -> LegacySessionOutput {
     let path = std::env::join_paths(
         std::iter::once(tree.fake_bin()).chain(std::env::split_paths(
             &std::env::var_os("PATH").unwrap_or_default(),
@@ -578,7 +585,7 @@ fn invoke_legacy_session(
     let fake_cli = tree.fake_bin().join("sentrux.cmd");
     #[cfg(not(windows))]
     let fake_cli = tree.fake_bin().join("sentrux");
-    let output = Command::new("pwsh")
+    let child = Command::new("pwsh")
         .args(["-NoLogo", "-NoProfile", "-File"])
         .arg(legacy_session_script())
         .arg(operation)
@@ -586,19 +593,110 @@ fn invoke_legacy_session(
         .args(["-SessionId", session_id])
         .env("PATH", path)
         .env("SENTRUX_CORE_EXE", &fake_cli)
-        .output()
-        .expect("invoke real legacy session gate");
-    (output.status.code(), output.stdout, output.stderr)
+        .spawn()
+        .expect("spawn real legacy session gate");
+    let pid = child.id();
+    let output = child
+        .wait_with_output()
+        .expect("wait for real legacy session gate");
+    LegacySessionOutput {
+        pid,
+        status: output.status,
+        stdout: output.stdout,
+        stderr: output.stderr,
+    }
 }
 
-fn parse_legacy_session_json(output: &(Option<i32>, Vec<u8>, Vec<u8>)) -> serde_json::Value {
-    serde_json::from_slice(&output.1).unwrap_or_else(|error| {
+fn legacy_session_failure_message(
+    exit_code: Option<i32>,
+    signal: Option<i32>,
+    pid: u32,
+    operation: &str,
+    stdout: &[u8],
+    stderr: &[u8],
+) -> Option<String> {
+    if exit_code == Some(0) {
+        return None;
+    }
+    let termination = match (exit_code, signal) {
+        (Some(code), _) => format!("exited with code {code}"),
+        (None, Some(signal)) => format!("was terminated by signal {signal}"),
+        (None, None) => "ended without a numeric exit code".to_owned(),
+    };
+    Some(format!(
+        "{operation} subprocess {termination} (pid {pid}); stdout={}; stderr={}",
+        String::from_utf8_lossy(stdout),
+        String::from_utf8_lossy(stderr)
+    ))
+}
+
+fn legacy_session_signal(status: &ExitStatus) -> Option<i32> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        status.signal()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = status;
+        None
+    }
+}
+
+fn assert_legacy_session_success(output: &LegacySessionOutput, operation: &str) {
+    if let Some(message) = legacy_session_failure_message(
+        output.status.code(),
+        legacy_session_signal(&output.status),
+        output.pid,
+        operation,
+        &output.stdout,
+        &output.stderr,
+    ) {
+        panic!("{message}");
+    }
+}
+
+fn parse_legacy_session_json(output: &LegacySessionOutput) -> serde_json::Value {
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
         panic!(
             "session gate must emit JSON: {error}; stdout={}; stderr={}",
-            String::from_utf8_lossy(&output.1),
-            String::from_utf8_lossy(&output.2)
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
         )
     })
+}
+
+#[test]
+fn signal_terminated_legacy_session_reports_signal_and_pid() {
+    let message = legacy_session_failure_message(
+        None,
+        Some(9),
+        4242,
+        "session_end",
+        b"partial stdout",
+        b"partial stderr",
+    )
+    .expect("signal termination must be reported as a process failure");
+
+    assert!(message.contains("session_end subprocess was terminated by signal 9 (pid 4242)"));
+    assert!(message.contains("stdout=partial stdout"));
+    assert!(message.contains("stderr=partial stderr"));
+}
+
+#[test]
+fn nonzero_legacy_session_exit_remains_distinct_from_signal_termination() {
+    let message = legacy_session_failure_message(
+        Some(17),
+        None,
+        4242,
+        "session_end",
+        b"partial stdout",
+        b"partial stderr",
+    )
+    .expect("a nonzero exit must be reported as a process failure");
+
+    assert!(message.contains("session_end subprocess exited with code 17 (pid 4242)"));
+    assert!(!message.contains("terminated by signal"));
 }
 
 fn assert_exact_keys(value: &serde_json::Value, expected: &str, label: &str) {
@@ -653,7 +751,7 @@ fn real_session_start_change_end_pass_contract_is_stable() {
     let session_id = "pass-contract";
 
     let start = invoke_legacy_session(&tree, "session_start", session_id);
-    assert_eq!(start.0, Some(0));
+    assert_legacy_session_success(&start, "session_start");
     let start_json = parse_legacy_session_json(&start);
     assert_session_document_shape(&start_json, "session_start");
     assert_eq!(start_json["tool"], "session_start");
@@ -686,7 +784,7 @@ fn real_session_start_change_end_pass_contract_is_stable() {
     .expect("make a real repository change");
 
     let end = invoke_legacy_session(&tree, "session_end", session_id);
-    assert_eq!(end.0, Some(0));
+    assert_legacy_session_success(&end, "session_end");
     let end_json = parse_legacy_session_json(&end);
     assert_session_document_shape(&end_json, "session_end");
     assert_eq!(end_json["tool"], "session_end");
@@ -712,7 +810,7 @@ fn real_session_start_change_end_failure_is_json_with_zero_process_exit() {
     let session_id = "fail-contract";
 
     let start = invoke_legacy_session(&tree, "session_start", session_id);
-    assert_eq!(start.0, Some(0));
+    assert_legacy_session_success(&start, "session_start");
     let start_json = parse_legacy_session_json(&start);
     assert_session_document_shape(&start_json, "session_start");
     assert_eq!(start_json["gate"]["pass"], true);
@@ -721,11 +819,7 @@ fn real_session_start_change_end_failure_is_json_with_zero_process_exit() {
         .expect("make a real repository change");
 
     let end = invoke_legacy_session(&tree, "session_end", session_id);
-    assert_eq!(
-        end.0,
-        Some(0),
-        "legacy gate currently reports domain failure in JSON, not process status"
-    );
+    assert_legacy_session_success(&end, "session_end");
     let end_json = parse_legacy_session_json(&end);
     assert_session_document_shape(&end_json, "session_end");
     assert_eq!(end_json["tool"], "session_end");
