@@ -33,3 +33,20 @@ backward-compatible, but does not claim that quality gates ran.
 
 Code Intel does not execute project tests, install dependencies, create
 commits, open pull requests, or push changes as a consequence of this signal.
+
+## Generate the observation
+
+A project quality orchestrator should write a
+`code-intel-quality-gate-report.v1` file after its gates complete, then call:
+
+```text
+code-intel provider quality-observation \
+  --request quality-gates.json \
+  --out runtime-ci-observation.json
+```
+
+The generator validates the report, aggregates all gate statuses, and emits a
+runtime/CI observation with the quality signal populated. It deliberately marks
+tests, build, and runtime as unknown unless the project supplies those domains
+separately. This prevents a successful lint or audit run from being reported as
+proof that the application itself runs correctly.

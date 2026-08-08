@@ -236,6 +236,21 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
         ),
     },
     raw_route! {
+        command: "provider",
+        subcommand: Some("quality-observation"),
+        argument_offset: 2,
+        id: CompatibilityRoute::ProviderQualityObservation,
+        contract: command_contract!(
+            Internal,
+            Internal,
+            Internal,
+            &[CommandEffect::RepoRead, CommandEffect::LocalWrite],
+            artifacts!("code-intel-runtime-ci-observation.v1"),
+            exits!(0, 65),
+            "retire when quality observation producers use the typed capability seam"
+        ),
+    },
+    raw_route! {
         command: "repository",
         subcommand: Some("survival-scan"),
         argument_offset: 2,

@@ -49,6 +49,7 @@ mod orchestration;
 mod ponytail_gate;
 mod project_orientation_benchmark;
 mod providers;
+mod quality_observation;
 mod repin;
 mod repowise_hooks;
 mod repowise_i18n_proxy;
