@@ -27,6 +27,7 @@
   "cases": [
     {
       "name": "version --version",
+      "stdoutSemantics": "version-minimum",
       "argv": [
         "--version",
         "--json"
@@ -37,6 +38,7 @@
     },
     {
       "name": "version -V",
+      "stdoutSemantics": "version-minimum",
       "argv": [
         "-V",
         "--json"
