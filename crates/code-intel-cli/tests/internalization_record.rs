@@ -556,6 +556,70 @@ fn assert_research_candidate(record: &Value, expected_id: &str) {
     assert_checked_schema(&notice, "code-intel-notice-provenance.v1.schema.json");
 }
 
+/// A research candidate whose upstream provenance *has* been verified.
+///
+/// `assert_research_candidate` pins the fully-unverified shape, where the
+/// missing license and revision are themselves the gaps. Once those are
+/// checked the record must stop claiming them, and the only thing keeping it
+/// out of production is whatever gap is actually left — so the two shapes need
+/// separate assertions or a verified record silently keeps passing the
+/// unverified contract.
+fn assert_verified_research_candidate(
+    record: &Value,
+    expected_id: &str,
+    expected_license: &str,
+    expected_revision_prefix: &str,
+    evaluated_at: u64,
+) {
+    assert_eq!(record["id"], expected_id);
+    assert_eq!(record["lifecycle"]["status"], "research");
+    let revision = record["subject"]["source"]["revision"].as_str().unwrap();
+    assert!(!revision.contains("unverified-upstream"));
+    assert!(revision.starts_with(expected_revision_prefix));
+    assert_eq!(record["subject"]["license"]["id"], expected_license);
+
+    let evidence_ids = known(record);
+    let gaps = evidence_ids
+        .iter()
+        .filter(|id| id.starts_with("gap:"))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(!gaps.is_empty(), "a research record still owes some gap");
+    assert!(!gaps.iter().any(|gap| gap.contains(":license")));
+    assert!(!gaps.iter().any(|gap| gap.contains(":upstream-revision")));
+    let admitted = evidence_ids
+        .into_iter()
+        .filter(|id| !id.starts_with("gap:"))
+        .collect::<Vec<_>>();
+    let evaluation =
+        internalization_record::evaluate_record(record, evaluated_at, &admitted, &[]).unwrap();
+    assert_eq!(evaluation["researchAllowed"], true);
+    assert_eq!(evaluation["productionEnabled"], false);
+    assert_eq!(evaluation["consumedAuthorityEventId"], Value::Null);
+    let diagnostics = evaluation["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|diagnostic| diagnostic.as_str().unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(diagnostics.contains("unknown evidence"));
+    assert!(!diagnostics.contains("expired"));
+    assert!(!diagnostics.contains("future-dated"));
+    assert!(!diagnostics.contains("overdue"));
+
+    let reuse = internalization_record::project_reuse_record(record, &evaluation).unwrap();
+    let notice = internalization_record::project_notice_provenance(record, &evaluation).unwrap();
+    assert_eq!(reuse["productionEnabled"], false);
+    assert!(notice["noticeText"]
+        .as_str()
+        .unwrap()
+        .contains(expected_license));
+    assert_checked_schema(record, "code-intel-internalization-record.v1.schema.json");
+    assert_checked_schema(&reuse, "code-intel-reuse-record.v1.schema.json");
+    assert_checked_schema(&notice, "code-intel-notice-provenance.v1.schema.json");
+}
+
 fn integration(id: &str) -> Value {
     let registry: Value =
         serde_json::from_slice(&fs::read(root().join("orchestration/integrations.json")).unwrap())
@@ -1217,6 +1281,11 @@ impl Drop for TemporaryDirectory {
 
 fn repository_git(repo: &Path) -> Command {
     let mut command = hardened_git::command(repo);
+    // Fixture repos must be hermetic: a user's global excludes
+    // (core.excludesFile, e.g. a `*.bin` pattern) would otherwise make
+    // `git add binary.bin` fail for fixtures that deliberately track binary
+    // blobs, independent of what this test is exercising.
+    command.arg("-c").arg("core.excludesFile=");
     for variable in [
         "GIT_DIR",
         "GIT_WORK_TREE",
@@ -1973,7 +2042,39 @@ fn ticket_r20_yao_record_rejects_local_doc_test_as_upstream_execution_proof() {
 #[test]
 fn ticket_r22_mattpocock_skills_record_traces_each_retained_concept_and_exit() {
     let record = advisory_candidate("mattpocock-skills");
-    assert_research_candidate(&record, "internalization.mattpocock-skills-record");
+    assert_verified_research_candidate(
+        &record,
+        "internalization.mattpocock-skills-record",
+        "MIT",
+        "84fdeffd12f2ee307994d1eb6feb48173b6e0502",
+        1_786_060_800,
+    );
+    // The one gap left is the security review; verifying provenance must not
+    // be mistaken for having read what the upstream skills actually do.
+    let gaps = known(&record)
+        .into_iter()
+        .filter(|id| id.starts_with("gap:"))
+        .collect::<Vec<_>>();
+    assert_eq!(gaps, vec!["gap:mattpocock-skills:security-review"]);
+    // The ADR digest the record carries in its `revision` string is declared
+    // as a `{path, sha256}` pin, which is the only shape `repin` can resync.
+    let adr = record["ownedModifications"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| {
+            entry["path"] == "docs/adr/0006-project-management-support-as-agent-intake.md"
+        })
+        .expect("ADR 0006 owned modification");
+    let pinned = adr["sha256"].as_str().expect("declared ADR pin");
+    assert_eq!(
+        pinned,
+        recompute_sha("docs/adr/0006-project-management-support-as-agent-intake.md")
+    );
+    assert!(record["subject"]["source"]["revision"]
+        .as_str()
+        .unwrap()
+        .contains(pinned));
     assert_eq!(record["economics"]["benefit"]["value"], 4);
     assert_eq!(record["ownedModifications"].as_array().unwrap().len(), 4);
     let project_management =

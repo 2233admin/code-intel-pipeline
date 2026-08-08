@@ -76,6 +76,11 @@ pub(crate) fn evaluate_record(
         assess_evidence(label, evidence, evaluated_at, &known, &mut diagnostics)?;
     }
     for modification in record["ownedModifications"].as_array().unwrap() {
+        // A pin-only entry (`path` + `sha256`) asserts no evidence, so there is
+        // nothing to assess. See `validate_owned_modifications`.
+        if modification.get("evidenceIds").is_none() {
+            continue;
+        }
         assess_ids(
             "owned modification",
             &modification["evidenceIds"],
@@ -192,6 +197,11 @@ pub(crate) fn record_evidence_ids(record: &Value) -> Result<BTreeSet<String>, St
         extend_ids(&mut result, &evidence["evidenceIds"], label)?;
     }
     for modification in record["ownedModifications"].as_array().unwrap() {
+        // An entry that only declares a pinned file (`path` + `sha256`) makes
+        // no evidence claim, so it contributes no ids.
+        if modification.get("evidenceIds").is_none() {
+            continue;
+        }
         extend_ids(
             &mut result,
             &modification["evidenceIds"],
@@ -556,9 +566,17 @@ fn validate_owned_modifications(value: &Value) -> Result<(), String> {
         .as_array()
         .ok_or("ownedModifications must be an array")?;
     for modification in values {
-        exact(
+        // `sha256` is optional: it declares that this record pins the digest of
+        // the file at `path`, which is what lets `repin --write` resync the
+        // copies of that digest the record also carries in its `revision`
+        // string and `evidenceIds`. Without the declaration the path↔digest
+        // mapping exists only inside a test, and no tool can refresh it — see
+        // `declared_pins`. `evidenceIds` is required only when the entry is
+        // making an evidence claim rather than declaring a pinned file.
+        exact_with_optional(
             modification,
-            &["path", "description", "evidenceIds"],
+            &["path", "description"],
+            &["evidenceIds", "sha256"],
             "owned modification",
         )?;
         nonempty(&modification["path"], "owned modification path")?;
@@ -566,11 +584,24 @@ fn validate_owned_modifications(value: &Value) -> Result<(), String> {
             &modification["description"],
             "owned modification description",
         )?;
-        nonempty_strings(
-            &modification["evidenceIds"],
-            "owned modification evidenceIds",
-            false,
-        )?;
+        if let Some(digest) = modification.get("sha256") {
+            let valid = digest.as_str().is_some_and(|value| {
+                value.len() == 64
+                    && value
+                        .bytes()
+                        .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+            });
+            if !valid {
+                return Err("owned modification sha256 is invalid".to_string());
+            }
+        }
+        if modification.get("evidenceIds").is_some() {
+            nonempty_strings(
+                &modification["evidenceIds"],
+                "owned modification evidenceIds",
+                false,
+            )?;
+        }
     }
     Ok(())
 }
@@ -720,12 +751,30 @@ fn assess_ids(
 }
 
 fn exact(value: &Value, expected: &[&str], label: &str) -> Result<(), String> {
+    exact_with_optional(value, expected, &[], label)
+}
+
+/// `exact`, plus fields that may be present but are not required.
+///
+/// The field set stays closed — an unknown key is still rejected — but a
+/// record can carry a declaration that only some records need.
+fn exact_with_optional(
+    value: &Value,
+    required: &[&str],
+    optional: &[&str],
+    label: &str,
+) -> Result<(), String> {
     let object = value
         .as_object()
         .ok_or_else(|| format!("{label} must be an object"))?;
     let actual = object.keys().map(String::as_str).collect::<BTreeSet<_>>();
-    let expected = expected.iter().copied().collect::<BTreeSet<_>>();
-    if actual == expected {
+    let required_set = required.iter().copied().collect::<BTreeSet<_>>();
+    let optional_set = optional.iter().copied().collect::<BTreeSet<_>>();
+    if required_set.is_subset(&actual)
+        && actual
+            .difference(&required_set)
+            .all(|key| optional_set.contains(key))
+    {
         Ok(())
     } else {
         Err(format!("{label} fields are invalid"))

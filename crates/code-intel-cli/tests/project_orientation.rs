@@ -1,3 +1,4 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -136,7 +137,7 @@ fn fixture_composes_first_actionable_view_without_fabricating_purpose() {
     let request_path = temp.0.join("request.json");
     fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
     let out = temp.0.join("out");
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["capability", "exec", "project.orientation", "--request"])
         .arg(&request_path)
         .arg("--out")
@@ -264,7 +265,7 @@ fn fixture_composes_first_actionable_view_without_fabricating_purpose() {
     )
     .unwrap();
     let incoherent_out = temp.0.join("incoherent-out");
-    let rejected = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let rejected = common::cli()
         .args(["capability", "exec", "project.orientation", "--request"])
         .arg(&incoherent_request_path)
         .arg("--out")

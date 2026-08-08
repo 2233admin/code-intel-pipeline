@@ -54,6 +54,7 @@ jobs:
         run: |
           python tests/test_repository_layout.py -v
           python tests/test_skill_package.py -v
+          python tests/test_skill_attestation.py -v
 
       - name: Setup Rust
         shell: pwsh
@@ -155,7 +156,7 @@ jobs:
 
       - name: Pipeline smoke
         shell: pwsh
-        run: .\legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -SkipGitHubResearch -Mode normal
+        run: .\legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -Mode normal
 
       - name: Package
         shell: pwsh
@@ -213,6 +214,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own structural check" }
           & $packagedBinary sentrux --operation gate --repo $payload
           if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own no-degradation gate" }
+          # scan/health/dsm are not gated (no baseline semantics), but they
+          # must at least run clean against the real packaged payload -- a
+          # regression here previously only showed up against synthetic unit
+          # fixtures, never against a real packaged tree.
+          & $packagedBinary sentrux --operation scan --repo $payload | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own structural scan" }
+          & $packagedBinary sentrux --operation health --repo $payload | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own structural health summary" }
+          & $packagedBinary sentrux --operation dsm --repo $payload | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own dependency-structure analysis" }
 
           # ai-safety-003 (issue #34): if the packaged snapshot carries an
           # audit report, it must pass the same fail-closed validate
@@ -378,6 +389,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own structural check" }
           & $packagedBinary sentrux --operation gate --repo $payload
           if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own no-degradation gate" }
+          # scan/health/dsm are not gated (no baseline semantics), but they
+          # must at least run clean against the real packaged payload -- a
+          # regression here previously only showed up against synthetic unit
+          # fixtures, never against a real packaged tree.
+          & $packagedBinary sentrux --operation scan --repo $payload | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own structural scan" }
+          & $packagedBinary sentrux --operation health --repo $payload | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own structural health summary" }
+          & $packagedBinary sentrux --operation dsm --repo $payload | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own dependency-structure analysis" }
 
           # ai-safety-003 (issue #34): if the packaged snapshot carries an
           # audit report, it must pass the same fail-closed validate

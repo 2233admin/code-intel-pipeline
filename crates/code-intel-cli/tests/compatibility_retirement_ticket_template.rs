@@ -1,6 +1,6 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde_json::{json, Value};
 
@@ -48,7 +48,7 @@ fn lint_accepts_one_branch_and_rejects_multi_branch_ambiguity_and_expiry() {
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
     let valid = write(&root, "valid.json", &ticket());
-    let ok = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let ok = common::cli()
         .args(["compatibility", "retirement-ticket", "lint", "--ticket"])
         .arg(&valid)
         .args(["--evaluated-at", "3000000"])
@@ -64,7 +64,7 @@ fn lint_accepts_one_branch_and_rejects_multi_branch_ambiguity_and_expiry() {
     let mut multi = ticket();
     multi["legacyBranches"] = json!([multi["legacyBranch"].clone()]);
     let multi = write(&root, "multi.json", &multi);
-    let rejected = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let rejected = common::cli()
         .args(["compatibility", "retirement-ticket", "lint", "--ticket"])
         .arg(&multi)
         .args(["--evaluated-at", "3000000"])
@@ -75,7 +75,7 @@ fn lint_accepts_one_branch_and_rejects_multi_branch_ambiguity_and_expiry() {
     let mut expired = ticket();
     expired["observationExpiry"] = json!(2_999_999);
     let expired = write(&root, "expired.json", &expired);
-    let rejected = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let rejected = common::cli()
         .args(["compatibility", "retirement-ticket", "lint", "--ticket"])
         .arg(&expired)
         .args(["--evaluated-at", "3000000"])
@@ -87,7 +87,7 @@ fn lint_accepts_one_branch_and_rejects_multi_branch_ambiguity_and_expiry() {
         let mut missing = ticket();
         missing.as_object_mut().unwrap().remove(field);
         let path = write(&root, &format!("missing-{field}.json"), &missing);
-        let rejected = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+        let rejected = common::cli()
             .args(["compatibility", "retirement-ticket", "lint", "--ticket"])
             .arg(path)
             .args(["--evaluated-at", "3000000"])

@@ -53,9 +53,21 @@ code-intel C:\path\to\your\repo
 **Coding agents (Codex / Claude Code)** — install the skill package with
 `$skill-installer` from
 [`skills/code-intel-pipeline`](skills/code-intel-pipeline); it downloads the
-stable release and verifies the published SHA-256 before unpacking.
+stable release, and when `gh` 2.49+ is present first verifies the release
+ZIP's [GitHub Artifact Attestation](https://cli.github.com/manual/gh_attestation_verify)
+(proof the workflow of this repository produced it, not just that the bytes
+arrived intact) before falling back to the published SHA-256 checksum. When
+`gh` is missing or too old, the installer prints an explicit degradation
+notice instead of silently skipping the attestation check. Verify the same
+guarantee by hand with
+`gh attestation verify <zip> --repo 2233admin/code-intel-pipeline` — see
+[docs/release-provenance-runbook.md](docs/release-provenance-runbook.md) for
+the full command and a recorded verification run.
 
-**macOS / Linux (source build; requires PowerShell 7.2+, Rust toolchain, ripgrep):**
+**macOS / Linux:** since v0.7.0 every release ships windows / macos / linux
+ZIPs and the `bootstrap.py` bootstrap works on all three — no Rust toolchain
+needed. The source build below is only required for v0.6.0 and earlier
+(source build; requires PowerShell 7.2+, Rust toolchain, ripgrep):
 
 ```bash
 git clone https://github.com/2233admin/code-intel-pipeline.git
@@ -78,8 +90,8 @@ Note: the pipeline needs full git history for lineage identity — run
 ## Status
 
 Windows PowerShell surface is in public beta; production logic is moving to
-Rust (the compiled `code-intel` binary is the primary entry point). macOS /
-Linux are source-build only until the next release. Enhancement providers
+Rust (the compiled `code-intel` binary is the primary entry point). Since
+v0.7.0 all three platforms ship prebuilt release ZIPs. Enhancement providers
 (Repowise semantic docs, Understand Anything graphs, CodeNexus context) are
 optional: when absent the run records them as skipped instead of faking
 success.

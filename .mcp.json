@@ -1,5 +1,15 @@
 {
   "mcpServers": {
+    "code-intel": {
+      "command": "code-intel",
+      "args": [
+        "serve",
+        "--mcp",
+        "--repo",
+        "code-intel-pipeline"
+      ],
+      "description": "code-intel: agent query surface. Read-only; gates nowhere. Data source differs per tool — get_gate_verdict / get_facts / get_evidence / get_audit_status project the last committed run; get_change_impact reads the committed import graph but compares it against the live --repo-path and labels the result stale-advisory; plan_structural_edit scans the live checkout and writes nothing. --repo is pinned because a worktree directory name is not the name run commit publishes under; --repo-path defaults to the working directory."
+    },
     "repowise": {
       "command": "repowise",
       "args": [

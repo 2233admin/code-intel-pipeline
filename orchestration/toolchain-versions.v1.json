@@ -1,6 +1,6 @@
 {
   "schema": "code-intel-toolchain-versions.v1",
-  "note": "Single source for the consistency self-check: does this machine run the versions this repository declares? Every entry's `version` is asserted against its real declaration sites by tests/toolchain_versions.rs, so this file cannot silently drift from them. Upstream freshness (is the declared version behind what the ecosystem publishes?) is deliberately NOT modelled here — pinning is a supply-chain control (supply-chain-001/003) and reproducibility control (rust-toolchain.toml), and conflating the two would turn a pin into an auto-upgrade.",
+  "note": "Single source for the consistency self-check: does this machine run the versions this repository declares? Entries are exact unless `comparison` is `minimum`; the pipeline's own version is a floor so Cargo.toml remains the only current release site. Every entry is checked against its real declaration sites by tests/toolchain_versions.rs. Upstream freshness is deliberately NOT modelled here.",
   "tools": [
     {
       "name": "rust-toolchain",
@@ -93,7 +93,8 @@
     },
     {
       "name": "code-intel",
-      "version": "0.7.0-beta.5",
+      "version": "0.7.1",
+      "comparison": "minimum",
       "scope": "runtime",
       "required": true,
       "rationale": "The pipeline's own binary. An installed copy that lags the tree is invisible without a version surface: a v0.6.0 build answered `snapshot identity` in 10.9s where the current tree answers in 0.28s.",
@@ -101,6 +102,10 @@
         {
           "file": "crates/code-intel-cli/Cargo.toml",
           "pattern": "^version = \"([^\"]+)\""
+        },
+        {
+          "file": "crates/code-intel-cli/tests/fixtures/cli-head-parity.v2.json",
+          "pattern": "\"version\":\"([^\"]+)\""
         }
       ],
       "probe": {

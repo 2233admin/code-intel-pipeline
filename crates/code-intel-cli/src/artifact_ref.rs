@@ -7,7 +7,10 @@ use serde_json::{json, Value};
 mod content_contract;
 
 use crate::stable_artifact::{self, FileId, StableReadError};
-use content_contract::{reject_duplicate_json_keys, sha256_hex, validate_artifact_ref_shape};
+use content_contract::{
+    is_digest as valid_digest, is_run_identity as valid_run_identity, reject_duplicate_json_keys,
+    require_exact_keys, sha256_hex, validate_artifact_ref_shape,
+};
 
 const MAX_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;
 
@@ -193,120 +196,145 @@ pub(crate) fn verify_artifact_ref(
 }
 
 pub(crate) fn registered_contract(artifact: &Value) -> Result<ArtifactContract, ArtifactError> {
-    match (
+    let (Some(schema), Some(artifact_type)) = (
         artifact.get("artifactSchema").and_then(Value::as_str),
         artifact.get("type").and_then(Value::as_str),
-    ) {
-        (Some(REPOSITORY_ITERATION_SCHEMA), Some(REPOSITORY_ITERATION_TYPE)) => {
-            Ok(ArtifactContract {
-                artifact_schema: REPOSITORY_ITERATION_SCHEMA,
-                artifact_type: REPOSITORY_ITERATION_TYPE,
-                max_bytes: 64 * 1024,
-                validate_payload: validate_repository_iteration_provenance,
-            })
-        }
-        (Some("code-intel-file-inventory.v1"), Some("inventory.files")) => Ok(ArtifactContract {
+    ) else {
+        return Err(unregistered_contract_error());
+    };
+    repository_family_contract(schema, artifact_type)
+        .or_else(|| diagnosis_family_contract(schema, artifact_type))
+        .or_else(|| orientation_family_contract(schema, artifact_type))
+        .or_else(|| retirement_family_contract(schema, artifact_type))
+        .or_else(|| run_delivery_family_contract(schema, artifact_type))
+        .or_else(|| method_decision_family_contract(schema, artifact_type))
+        .or_else(|| {
+            native_code_contract(schema, artifact_type).map(
+                |(artifact_schema, artifact_type, validate_payload)| ArtifactContract {
+                    artifact_schema,
+                    artifact_type,
+                    max_bytes: MAX_ARTIFACT_BYTES,
+                    validate_payload,
+                },
+            )
+        })
+        .ok_or_else(unregistered_contract_error)
+}
+
+fn unregistered_contract_error() -> ArtifactError {
+    ArtifactError::Contract(
+        "Artifact Ref schema/type is not registered for capability input consumption".to_string(),
+    )
+}
+
+fn repository_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {
+    match (schema, artifact_type) {
+        (REPOSITORY_ITERATION_SCHEMA, REPOSITORY_ITERATION_TYPE) => Some(ArtifactContract {
+            artifact_schema: REPOSITORY_ITERATION_SCHEMA,
+            artifact_type: REPOSITORY_ITERATION_TYPE,
+            max_bytes: 64 * 1024,
+            validate_payload: validate_repository_iteration_provenance,
+        }),
+        ("code-intel-file-inventory.v1", "inventory.files") => Some(ArtifactContract {
             artifact_schema: "code-intel-file-inventory.v1",
             artifact_type: "inventory.files",
             max_bytes: MAX_ARTIFACT_BYTES,
             validate_payload: validate_inventory,
         }),
-        (Some("code-intel-repository-snapshot.v1"), Some("repository.snapshot")) => {
-            Ok(ArtifactContract {
-                artifact_schema: "code-intel-repository-snapshot.v1",
-                artifact_type: "repository.snapshot",
-                max_bytes: 8 * 1024 * 1024,
-                validate_payload: validate_repository_snapshot,
-            })
-        }
-        (Some("code-intel-doctor-observation.v1"), Some("doctor.observation")) => {
-            Ok(ArtifactContract {
-                artifact_schema: "code-intel-doctor-observation.v1",
-                artifact_type: "doctor.observation",
-                max_bytes: 8 * 1024 * 1024,
-                validate_payload: validate_doctor_observation,
-            })
-        }
-        (
-            Some("code-intel-repository-survival-scan-result.v1"),
-            Some("repository.survival-scan"),
-        ) => Ok(ArtifactContract {
-            artifact_schema: "code-intel-repository-survival-scan-result.v1",
-            artifact_type: "repository.survival-scan",
+        ("code-intel-repository-snapshot.v1", "repository.snapshot") => Some(ArtifactContract {
+            artifact_schema: "code-intel-repository-snapshot.v1",
+            artifact_type: "repository.snapshot",
             max_bytes: 8 * 1024 * 1024,
-            validate_payload: validate_survival_scan,
+            validate_payload: validate_repository_snapshot,
         }),
-        (Some("code-intel-evidence-admissibility-result.v1"), Some("evidence.admission")) => {
-            Ok(ArtifactContract {
+        _ => None,
+    }
+}
+
+fn diagnosis_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {
+    match (schema, artifact_type) {
+        ("code-intel-doctor-observation.v1", "doctor.observation") => Some(ArtifactContract {
+            artifact_schema: "code-intel-doctor-observation.v1",
+            artifact_type: "doctor.observation",
+            max_bytes: 8 * 1024 * 1024,
+            validate_payload: validate_doctor_observation,
+        }),
+        ("code-intel-repository-survival-scan-result.v1", "repository.survival-scan") => {
+            Some(ArtifactContract {
+                artifact_schema: "code-intel-repository-survival-scan-result.v1",
+                artifact_type: "repository.survival-scan",
+                max_bytes: 8 * 1024 * 1024,
+                validate_payload: validate_survival_scan,
+            })
+        }
+        ("code-intel-evidence-admissibility-result.v1", "evidence.admission") => {
+            Some(ArtifactContract {
                 artifact_schema: "code-intel-evidence-admissibility-result.v1",
                 artifact_type: "evidence.admission",
                 max_bytes: 16 * 1024 * 1024,
                 validate_payload: validate_evidence_admission,
             })
         }
-        (Some("code-intel-evidence-payload.v1"), Some("observed.evidence.payload")) => {
-            Ok(ArtifactContract {
-                artifact_schema: "code-intel-evidence-payload.v1",
-                artifact_type: "observed.evidence.payload",
-                max_bytes: 64 * 1024 * 1024,
-                validate_payload: validate_evidence_payload,
+        ("code-intel-evidence-payload.v1", "observed.evidence.payload") => Some(ArtifactContract {
+            artifact_schema: "code-intel-evidence-payload.v1",
+            artifact_type: "observed.evidence.payload",
+            max_bytes: 64 * 1024 * 1024,
+            validate_payload: validate_evidence_payload,
+        }),
+        ("code-intel-sentrux-command-observation.v1", "provider.sentrux.command-observation") => {
+            Some(ArtifactContract {
+                artifact_schema: "code-intel-sentrux-command-observation.v1",
+                artifact_type: "provider.sentrux.command-observation",
+                max_bytes: 2 * 1024 * 1024,
+                validate_payload: validate_sentrux_command_observation,
             })
         }
-        (
-            Some("code-intel-sentrux-command-observation.v1"),
-            Some("provider.sentrux.command-observation"),
-        ) => Ok(ArtifactContract {
-            artifact_schema: "code-intel-sentrux-command-observation.v1",
-            artifact_type: "provider.sentrux.command-observation",
-            max_bytes: 2 * 1024 * 1024,
-            validate_payload: validate_sentrux_command_observation,
-        }),
-        (Some("code-intel-hospital.v1"), Some("diagnosis.hospital")) => Ok(ArtifactContract {
+        ("code-intel-hospital.v1", "diagnosis.hospital") => Some(ArtifactContract {
             artifact_schema: "code-intel-hospital.v1",
             artifact_type: "diagnosis.hospital",
             max_bytes: 8 * 1024 * 1024,
             validate_payload: validate_hospital_report,
         }),
-        (Some("code-intel-audit-report.v1"), Some("diagnosis.audit")) => Ok(ArtifactContract {
+        ("code-intel-audit-report.v1", "diagnosis.audit") => Some(ArtifactContract {
             artifact_schema: "code-intel-audit-report.v1",
             artifact_type: "diagnosis.audit",
             max_bytes: 8 * 1024 * 1024,
             validate_payload: validate_audit_report,
         }),
-        (Some("code-intel-hospital-markdown.v1"), Some("diagnosis.hospital-view")) => {
-            Ok(ArtifactContract {
-                artifact_schema: "code-intel-hospital-markdown.v1",
-                artifact_type: "diagnosis.hospital-view",
-                max_bytes: 8 * 1024 * 1024,
-                validate_payload: validate_hospital_markdown,
-            })
-        }
-        (Some("code-intel-surgery-plan.v1"), Some("diagnosis.surgery-plan")) => {
-            Ok(ArtifactContract {
-                artifact_schema: "code-intel-surgery-plan.v1",
-                artifact_type: "diagnosis.surgery-plan",
-                max_bytes: 8 * 1024 * 1024,
-                validate_payload: validate_surgery_plan,
-            })
-        }
-        (Some("code-intel-surgery-plan-markdown.v1"), Some("diagnosis.surgery-plan-view")) => {
-            Ok(ArtifactContract {
+        ("code-intel-hospital-markdown.v1", "diagnosis.hospital-view") => Some(ArtifactContract {
+            artifact_schema: "code-intel-hospital-markdown.v1",
+            artifact_type: "diagnosis.hospital-view",
+            max_bytes: 8 * 1024 * 1024,
+            validate_payload: validate_hospital_markdown,
+        }),
+        ("code-intel-surgery-plan.v1", "diagnosis.surgery-plan") => Some(ArtifactContract {
+            artifact_schema: "code-intel-surgery-plan.v1",
+            artifact_type: "diagnosis.surgery-plan",
+            max_bytes: 8 * 1024 * 1024,
+            validate_payload: validate_surgery_plan,
+        }),
+        ("code-intel-surgery-plan-markdown.v1", "diagnosis.surgery-plan-view") => {
+            Some(ArtifactContract {
                 artifact_schema: "code-intel-surgery-plan-markdown.v1",
                 artifact_type: "diagnosis.surgery-plan-view",
                 max_bytes: 8 * 1024 * 1024,
                 validate_payload: validate_surgery_markdown,
             })
         }
-        (Some("code-intel-project-orientation.v1"), Some("project.orientation")) => {
-            Ok(ArtifactContract {
-                artifact_schema: "code-intel-project-orientation.v1",
-                artifact_type: "project.orientation",
-                max_bytes: 8 * 1024 * 1024,
-                validate_payload: validate_project_orientation,
-            })
-        }
-        (Some("code-intel-understanding-quadrant.v1"), Some("understanding.quadrant")) => {
-            Ok(ArtifactContract {
+        _ => None,
+    }
+}
+
+fn orientation_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {
+    match (schema, artifact_type) {
+        ("code-intel-project-orientation.v1", "project.orientation") => Some(ArtifactContract {
+            artifact_schema: "code-intel-project-orientation.v1",
+            artifact_type: "project.orientation",
+            max_bytes: 8 * 1024 * 1024,
+            validate_payload: validate_project_orientation,
+        }),
+        ("code-intel-understanding-quadrant.v1", "understanding.quadrant") => {
+            Some(ArtifactContract {
                 artifact_schema: "code-intel-understanding-quadrant.v1",
                 artifact_type: "understanding.quadrant",
                 max_bytes: 8 * 1024 * 1024,
@@ -314,164 +342,163 @@ pub(crate) fn registered_contract(artifact: &Value) -> Result<ArtifactContract, 
             })
         }
         (
-            Some("code-intel-compatibility-retirement-manifest.v1"),
-            Some("compatibility.retirement-manifest"),
-        ) => Ok(ArtifactContract {
+            "code-intel-project-orientation-benchmark-observations.v1",
+            "benchmark.orientation-observations",
+        ) => Some(ArtifactContract {
+            artifact_schema: "code-intel-project-orientation-benchmark-observations.v1",
+            artifact_type: "benchmark.orientation-observations",
+            max_bytes: 64 * 1024 * 1024,
+            validate_payload: validate_orientation_benchmark_observations,
+        }),
+        ("code-intel-project-orientation-benchmark.v1", "benchmark.orientation-report") => {
+            Some(ArtifactContract {
+                artifact_schema: "code-intel-project-orientation-benchmark.v1",
+                artifact_type: "benchmark.orientation-report",
+                max_bytes: 8 * 1024 * 1024,
+                validate_payload: validate_orientation_benchmark_report,
+            })
+        }
+        (
+            "code-intel-project-orientation-benchmark-markdown.v1",
+            "benchmark.orientation-report-view",
+        ) => Some(ArtifactContract {
+            artifact_schema: "code-intel-project-orientation-benchmark-markdown.v1",
+            artifact_type: "benchmark.orientation-report-view",
+            max_bytes: 1024 * 1024,
+            validate_payload: validate_orientation_benchmark_markdown,
+        }),
+        _ => None,
+    }
+}
+
+fn retirement_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {
+    match (schema, artifact_type) {
+        (
+            "code-intel-compatibility-retirement-manifest.v1",
+            "compatibility.retirement-manifest",
+        ) => Some(ArtifactContract {
             artifact_schema: "code-intel-compatibility-retirement-manifest.v1",
             artifact_type: "compatibility.retirement-manifest",
             max_bytes: 4 * 1024 * 1024,
             validate_payload: validate_retirement_manifest,
         }),
         (
-            Some("code-intel-compatibility-retirement-evidence.v1"),
-            Some("compatibility.retirement-evidence"),
-        ) => Ok(ArtifactContract {
+            "code-intel-compatibility-retirement-evidence.v1",
+            "compatibility.retirement-evidence",
+        ) => Some(ArtifactContract {
             artifact_schema: "code-intel-compatibility-retirement-evidence.v1",
             artifact_type: "compatibility.retirement-evidence",
             max_bytes: 4 * 1024 * 1024,
             validate_payload: validate_retirement_evidence,
         }),
         (
-            Some("code-intel-compatibility-retirement-decision.v1"),
-            Some("compatibility.retirement-decision"),
-        ) => Ok(ArtifactContract {
+            "code-intel-compatibility-retirement-decision.v1",
+            "compatibility.retirement-decision",
+        ) => Some(ArtifactContract {
             artifact_schema: "code-intel-compatibility-retirement-decision.v1",
             artifact_type: "compatibility.retirement-decision",
             max_bytes: 4 * 1024 * 1024,
             validate_payload: validate_retirement_decision,
         }),
         (
-            Some("code-intel-compatibility-retirement-ticket-template.v1"),
-            Some("compatibility.retirement-ticket-template"),
-        ) => Ok(ArtifactContract {
+            "code-intel-compatibility-retirement-ticket-template.v1",
+            "compatibility.retirement-ticket-template",
+        ) => Some(ArtifactContract {
             artifact_schema: "code-intel-compatibility-retirement-ticket-template.v1",
             artifact_type: "compatibility.retirement-ticket-template",
             max_bytes: 4 * 1024 * 1024,
             validate_payload: validate_retirement_ticket_template,
         }),
         (
-            Some("code-intel-compatibility-retirement-deletion-diff.v1"),
-            Some("compatibility.retirement-deletion-diff"),
-        ) => Ok(ArtifactContract {
+            "code-intel-compatibility-retirement-deletion-diff.v1",
+            "compatibility.retirement-deletion-diff",
+        ) => Some(ArtifactContract {
             artifact_schema: "code-intel-compatibility-retirement-deletion-diff.v1",
             artifact_type: "compatibility.retirement-deletion-diff",
             max_bytes: 4 * 1024 * 1024,
             validate_payload: validate_retirement_deletion_diff,
         }),
-        (
-            Some("code-intel-project-orientation-benchmark-observations.v1"),
-            Some("benchmark.orientation-observations"),
-        ) => Ok(ArtifactContract {
-            artifact_schema: "code-intel-project-orientation-benchmark-observations.v1",
-            artifact_type: "benchmark.orientation-observations",
-            max_bytes: 64 * 1024 * 1024,
-            validate_payload: validate_orientation_benchmark_observations,
-        }),
-        (
-            Some("code-intel-project-orientation-benchmark.v1"),
-            Some("benchmark.orientation-report"),
-        ) => Ok(ArtifactContract {
-            artifact_schema: "code-intel-project-orientation-benchmark.v1",
-            artifact_type: "benchmark.orientation-report",
-            max_bytes: 8 * 1024 * 1024,
-            validate_payload: validate_orientation_benchmark_report,
-        }),
-        (
-            Some("code-intel-project-orientation-benchmark-markdown.v1"),
-            Some("benchmark.orientation-report-view"),
-        ) => Ok(ArtifactContract {
-            artifact_schema: "code-intel-project-orientation-benchmark-markdown.v1",
-            artifact_type: "benchmark.orientation-report-view",
-            max_bytes: 1024 * 1024,
-            validate_payload: validate_orientation_benchmark_markdown,
-        }),
-        (Some("code-intel-run-timing-events.v1"), Some("delivery.run-timing-events")) => {
-            Ok(ArtifactContract {
+        _ => None,
+    }
+}
+
+fn run_delivery_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {
+    match (schema, artifact_type) {
+        ("code-intel-run-timing-events.v1", "delivery.run-timing-events") => {
+            Some(ArtifactContract {
                 artifact_schema: "code-intel-run-timing-events.v1",
                 artifact_type: "delivery.run-timing-events",
                 max_bytes: 64 * 1024 * 1024,
                 validate_payload: validate_run_timing_events,
             })
         }
-        (Some("code-intel-run-commit.v1"), Some("run.commit")) => Ok(ArtifactContract {
+        ("code-intel-run-commit.v1", "run.commit") => Some(ArtifactContract {
             artifact_schema: "code-intel-run-commit.v1",
             artifact_type: "run.commit",
             max_bytes: 64 * 1024,
             validate_payload: validate_run_commit,
         }),
-        (Some("code-intel-run-manifest.v1"), Some("run.manifest")) => Ok(ArtifactContract {
+        ("code-intel-run-manifest.v1", "run.manifest") => Some(ArtifactContract {
             artifact_schema: "code-intel-run-manifest.v1",
             artifact_type: "run.manifest",
             max_bytes: 8 * 1024 * 1024,
             validate_payload: validate_run_manifest,
         }),
-        (Some("code-intel-session-evidence.v1"), Some("verification.session-evidence")) => {
-            Ok(ArtifactContract {
+        ("code-intel-session-evidence.v1", "verification.session-evidence") => {
+            Some(ArtifactContract {
                 artifact_schema: "code-intel-session-evidence.v1",
                 artifact_type: "verification.session-evidence",
                 max_bytes: 128 * 1024 * 1024,
                 validate_payload: validate_session_evidence,
             })
         }
-        (Some("code-intel-anchor-verification.v1"), Some("verification.anchors")) => {
-            Ok(ArtifactContract {
-                artifact_schema: "code-intel-anchor-verification.v1",
-                artifact_type: "verification.anchors",
-                max_bytes: MAX_ARTIFACT_BYTES,
-                validate_payload: validate_anchor_verification,
-            })
-        }
-        (Some("code-intel-method-catalog.v1"), Some("method.catalog")) => Ok(ArtifactContract {
-            artifact_schema: "code-intel-method-catalog.v1",
-            artifact_type: "method.catalog",
-            max_bytes: 256 * 1024,
-            validate_payload: validate_method_catalog,
+        ("code-intel-anchor-verification.v1", "verification.anchors") => Some(ArtifactContract {
+            artifact_schema: "code-intel-anchor-verification.v1",
+            artifact_type: "verification.anchors",
+            max_bytes: MAX_ARTIFACT_BYTES,
+            validate_payload: validate_anchor_verification,
         }),
-        (Some("code-intel-method-card.v1"), Some("method.card")) => Ok(ArtifactContract {
-            artifact_schema: "code-intel-method-card.v1",
-            artifact_type: "method.card",
-            max_bytes: 256 * 1024,
-            validate_payload: validate_method_card,
-        }),
-        (Some("code-intel-delivery-light-speed.v1"), Some("delivery.light-speed-report")) => {
-            Ok(ArtifactContract {
+        ("code-intel-delivery-light-speed.v1", "delivery.light-speed-report") => {
+            Some(ArtifactContract {
                 artifact_schema: "code-intel-delivery-light-speed.v1",
                 artifact_type: "delivery.light-speed-report",
                 max_bytes: 8 * 1024 * 1024,
                 validate_payload: validate_light_speed_report,
             })
         }
-        (
-            Some("code-intel-delivery-light-speed-markdown.v1"),
-            Some("delivery.light-speed-report-view"),
-        ) => Ok(ArtifactContract {
-            artifact_schema: "code-intel-delivery-light-speed-markdown.v1",
-            artifact_type: "delivery.light-speed-report-view",
-            max_bytes: 1024 * 1024,
-            validate_payload: validate_light_speed_markdown,
+        ("code-intel-delivery-light-speed-markdown.v1", "delivery.light-speed-report-view") => {
+            Some(ArtifactContract {
+                artifact_schema: "code-intel-delivery-light-speed-markdown.v1",
+                artifact_type: "delivery.light-speed-report-view",
+                max_bytes: 1024 * 1024,
+                validate_payload: validate_light_speed_markdown,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn method_decision_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {
+    match (schema, artifact_type) {
+        ("code-intel-method-catalog.v1", "method.catalog") => Some(ArtifactContract {
+            artifact_schema: "code-intel-method-catalog.v1",
+            artifact_type: "method.catalog",
+            max_bytes: 256 * 1024,
+            validate_payload: validate_method_catalog,
         }),
-        (Some("code-intel-decision-record.v1"), Some("decision.record")) => Ok(ArtifactContract {
+        ("code-intel-method-card.v1", "method.card") => Some(ArtifactContract {
+            artifact_schema: "code-intel-method-card.v1",
+            artifact_type: "method.card",
+            max_bytes: 256 * 1024,
+            validate_payload: validate_method_card,
+        }),
+        ("code-intel-decision-record.v1", "decision.record") => Some(ArtifactContract {
             artifact_schema: "code-intel-decision-record.v1",
             artifact_type: "decision.record",
             max_bytes: 1024 * 1024,
             validate_payload: validate_decision_record_schema,
         }),
-        (Some(schema), Some(artifact_type))
-            if native_code_contract(schema, artifact_type).is_some() =>
-        {
-            let (artifact_schema, artifact_type, validate_payload) =
-                native_code_contract(schema, artifact_type).expect("guard matched native contract");
-            Ok(ArtifactContract {
-                artifact_schema,
-                artifact_type,
-                max_bytes: MAX_ARTIFACT_BYTES,
-                validate_payload,
-            })
-        }
-        _ => Err(ArtifactError::Contract(
-            "Artifact Ref schema/type is not registered for capability input consumption"
-                .to_string(),
-        )),
+        _ => None,
     }
 }
 
@@ -516,17 +543,22 @@ fn validate_sentrux_command_observation(bytes: &[u8]) -> Result<(), String> {
         if !seen.insert(id) {
             return Err("Sentrux command ids must be unique".into());
         }
-        if (command["argv"] != json!(["sentrux", id, "."])
-            && command["argv"] != json!(["code-intel", "sentrux", id, "."]))
-            || (!command["exitCode"].is_null() && command["exitCode"].as_i64().is_none())
-            || !command["success"].is_boolean()
-            || !command["stdout"].is_string()
-            || !command["stderr"].is_string()
-        {
+        if !sentrux_command_result_is_valid(command, id) {
             return Err("Sentrux command result is invalid".into());
         }
     }
     Ok(())
+}
+
+fn sentrux_command_result_is_valid(command: &Value, id: &str) -> bool {
+    let known_argv = command["argv"] == json!(["sentrux", id, "."])
+        || command["argv"] == json!(["code-intel", "sentrux", id, "."]);
+    let exit_code_ok = command["exitCode"].is_null() || command["exitCode"].as_i64().is_some();
+    known_argv
+        && exit_code_ok
+        && command["success"].is_boolean()
+        && command["stdout"].is_string()
+        && command["stderr"].is_string()
 }
 
 fn validate_retirement_manifest(bytes: &[u8]) -> Result<(), String> {
@@ -799,24 +831,7 @@ fn validate_retirement_ticket_template(bytes: &[u8]) -> Result<(), String> {
         &["retirementDecision", "retirementManifest"],
         "ticket source",
     )?;
-    if value["schema"] != "code-intel-compatibility-retirement-ticket-template.v1"
-        || value["status"] != "draft"
-        || value["authorityBoundary"] != "template_only_no_approval_or_deletion_authority"
-        || [
-            "snapshotIdentity",
-            "ticketId",
-            "retirementId",
-            "owner",
-            "verifier",
-        ]
-        .iter()
-        .any(|key| !value[key].as_str().is_some_and(|v| !v.is_empty()))
-        || value["owner"] == value["verifier"]
-        || value["observationExpiry"].as_u64().is_none()
-        || !value["affectedFiles"]
-            .as_array()
-            .is_some_and(|v| !v.is_empty())
-    {
+    if !retirement_ticket_template_header_is_valid(&value) {
         return Err("retirement ticket template contract is invalid".into());
     }
     for key in ["capabilityId", "branchId", "callPath"] {
@@ -860,6 +875,27 @@ fn validate_retirement_ticket_template(bytes: &[u8]) -> Result<(), String> {
         "compatibility.retirement-manifest",
     )?;
     Ok(())
+}
+
+fn retirement_ticket_template_header_is_valid(value: &Value) -> bool {
+    let nonempty_identity_fields = [
+        "snapshotIdentity",
+        "ticketId",
+        "retirementId",
+        "owner",
+        "verifier",
+    ]
+    .iter()
+    .all(|key| value[key].as_str().is_some_and(|v| !v.is_empty()));
+    value["schema"] == "code-intel-compatibility-retirement-ticket-template.v1"
+        && value["status"] == "draft"
+        && value["authorityBoundary"] == "template_only_no_approval_or_deletion_authority"
+        && nonempty_identity_fields
+        && value["owner"] != value["verifier"]
+        && value["observationExpiry"].as_u64().is_some()
+        && value["affectedFiles"]
+            .as_array()
+            .is_some_and(|v| !v.is_empty())
 }
 
 fn validate_ticket_ref(value: &Value, schema: &str, kind: &str) -> Result<(), String> {
@@ -1112,6 +1148,10 @@ pub(crate) fn retirement_portable_paths(value: &Value, label: &str) -> Result<Ve
     Ok(paths)
 }
 
+// Guards retirement callPath/deletion-patch paths (see call sites above). Rejects
+// a trailing '/' and '.'/'..' components directly -- distinct rule set from
+// path_syntax_is_portable below, which guards general Artifact Ref paths and
+// instead leans on component normalization to catch traversal.
 fn validate_portable_path(path: &str, label: &str) -> Result<(), String> {
     if path.is_empty()
         || path.contains('\\')
@@ -1275,17 +1315,20 @@ fn validate_surgery_plan_value(value: &Value) -> Result<(), String> {
         ],
         "surgery plan",
     )?;
-    if value["schema"] != "code-intel-surgery-plan.v1"
-        || !matches!(value["status"].as_str(), Some("planned" | "not_required"))
-        || !value["admission"].is_object()
-        || !value["primary_target"].is_object()
-        || !value["operating_plan"].is_array()
-        || !value["verification"].is_array()
-        || !value["discharge_criteria"].is_array()
-    {
+    if !surgery_plan_shape_is_valid(value) {
         return Err("surgery plan contract is invalid".into());
     }
     Ok(())
+}
+
+fn surgery_plan_shape_is_valid(value: &Value) -> bool {
+    value["schema"] == "code-intel-surgery-plan.v1"
+        && matches!(value["status"].as_str(), Some("planned" | "not_required"))
+        && value["admission"].is_object()
+        && value["primary_target"].is_object()
+        && value["operating_plan"].is_array()
+        && value["verification"].is_array()
+        && value["discharge_criteria"].is_array()
 }
 
 fn validate_hospital_markdown(bytes: &[u8]) -> Result<(), String> {
@@ -1321,25 +1364,7 @@ fn validate_project_orientation(bytes: &[u8]) -> Result<(), String> {
         ],
         "project orientation",
     )?;
-    if value["schema"] != "code-intel-project-orientation.v1"
-        || !value["snapshotIdentity"].as_str().is_some_and(valid_digest)
-        || !value["identity"].is_object()
-        || !value["purpose"].is_object()
-        || !value["languages"].is_array()
-        || !value["boundaries"].is_array()
-        || !value["entryPoints"].is_array()
-        || !value["commands"].is_array()
-        || !value["activeChange"].is_object()
-        || !value["evidenceAvailability"].is_array()
-        || !value["risks"].is_array()
-        || !value["unknowns"]
-            .as_array()
-            .is_some_and(|unknowns| !unknowns.is_empty())
-        || !matches!(
-            value.pointer("/confidence/level").and_then(Value::as_str),
-            Some("low" | "medium" | "high")
-        )
-    {
+    if !project_orientation_shape_is_valid(&value) {
         return Err("project orientation contract is invalid".into());
     }
     for (label, claim) in [
@@ -1359,11 +1384,37 @@ fn validate_project_orientation(bytes: &[u8]) -> Result<(), String> {
         "risks",
         "unknowns",
     ] {
-        for (index, claim) in value[field].as_array().unwrap().iter().enumerate() {
+        for (index, claim) in value[field]
+            .as_array()
+            .expect("project_orientation_shape_is_valid proved this field is an array")
+            .iter()
+            .enumerate()
+        {
             validate_claim_provenance(&claim["provenance"], &format!("{field}[{index}]"))?;
         }
     }
     Ok(())
+}
+
+fn project_orientation_shape_is_valid(value: &Value) -> bool {
+    value["schema"] == "code-intel-project-orientation.v1"
+        && value["snapshotIdentity"].as_str().is_some_and(valid_digest)
+        && value["identity"].is_object()
+        && value["purpose"].is_object()
+        && value["languages"].is_array()
+        && value["boundaries"].is_array()
+        && value["entryPoints"].is_array()
+        && value["commands"].is_array()
+        && value["activeChange"].is_object()
+        && value["evidenceAvailability"].is_array()
+        && value["risks"].is_array()
+        && value["unknowns"]
+            .as_array()
+            .is_some_and(|unknowns| !unknowns.is_empty())
+        && matches!(
+            value.pointer("/confidence/level").and_then(Value::as_str),
+            Some("low" | "medium" | "high")
+        )
 }
 
 fn validate_claim_provenance(value: &Value, label: &str) -> Result<(), String> {
@@ -1463,35 +1514,40 @@ fn validate_understanding_quadrant_shape(value: &Value) -> Result<(), String> {
 }
 
 fn validate_understanding_quadrant_identity(value: &Value) -> Result<(), String> {
-    if value["schema"] != "code-intel-understanding-quadrant.v1"
-        || !value["snapshotIdentity"].as_str().is_some_and(valid_digest)
-        || value.pointer("/sourceOrientation/artifactSchema")
-            != Some(&json!("code-intel-project-orientation.v1"))
-        || value.pointer("/sourceOrientation/artifactType") != Some(&json!("project.orientation"))
-        || !value
-            .pointer("/sourceOrientation/sha256")
-            .and_then(Value::as_str)
-            .is_some_and(valid_digest)
-        || value.pointer("/classificationPolicy/schema")
-            != Some(&json!("code-intel-understanding-quadrant-policy.v1"))
-        || value.pointer("/classificationPolicy/scoreRange/minimum") != Some(&json!(0))
-        || value.pointer("/classificationPolicy/scoreRange/maximum") != Some(&json!(100))
-        || value.pointer("/classificationPolicy/systemCriticalityThreshold") != Some(&json!(50))
-        || value.pointer("/classificationPolicy/evidenceConfidenceThreshold") != Some(&json!(50))
-        || value.pointer("/classificationPolicy/thresholdRule")
-            != Some(&json!("greater_than_or_equal_is_upper_band"))
-        || value.pointer("/classificationPolicy/unknownCriticalityRule")
-            != Some(&json!(
-                "critical_by_default_except_declared_supporting_context"
-            ))
-        || value.pointer("/classificationPolicy/methodConsumerPolicy")
-            != Some(&json!(
-                "C01_cards_and_C02_selection_may_consume_but_cannot_rewrite"
-            ))
-    {
+    if !understanding_quadrant_identity_is_valid(value) {
         return Err("understanding quadrant identity/policy contract is invalid".into());
     }
     Ok(())
+}
+
+fn understanding_quadrant_identity_is_valid(value: &Value) -> bool {
+    let source_orientation_valid = value.pointer("/sourceOrientation/artifactSchema")
+        == Some(&json!("code-intel-project-orientation.v1"))
+        && value.pointer("/sourceOrientation/artifactType") == Some(&json!("project.orientation"))
+        && value
+            .pointer("/sourceOrientation/sha256")
+            .and_then(Value::as_str)
+            .is_some_and(valid_digest);
+    let classification_policy_valid = value.pointer("/classificationPolicy/schema")
+        == Some(&json!("code-intel-understanding-quadrant-policy.v1"))
+        && value.pointer("/classificationPolicy/scoreRange/minimum") == Some(&json!(0))
+        && value.pointer("/classificationPolicy/scoreRange/maximum") == Some(&json!(100))
+        && value.pointer("/classificationPolicy/systemCriticalityThreshold") == Some(&json!(50))
+        && value.pointer("/classificationPolicy/evidenceConfidenceThreshold") == Some(&json!(50))
+        && value.pointer("/classificationPolicy/thresholdRule")
+            == Some(&json!("greater_than_or_equal_is_upper_band"))
+        && value.pointer("/classificationPolicy/unknownCriticalityRule")
+            == Some(&json!(
+                "critical_by_default_except_declared_supporting_context"
+            ))
+        && value.pointer("/classificationPolicy/methodConsumerPolicy")
+            == Some(&json!(
+                "C01_cards_and_C02_selection_may_consume_but_cannot_rewrite"
+            ));
+    value["schema"] == "code-intel-understanding-quadrant.v1"
+        && value["snapshotIdentity"].as_str().is_some_and(valid_digest)
+        && source_orientation_valid
+        && classification_policy_valid
 }
 
 fn validate_understanding_quadrant_items(
@@ -1579,7 +1635,7 @@ fn validate_understanding_quadrant_item(
     Ok((id.to_string(), expected.2, source_state == Some("unknown")))
 }
 
-fn expected_understanding_quadrant(
+pub(crate) fn expected_understanding_quadrant(
     criticality: u64,
     confidence: u64,
 ) -> (&'static str, &'static str, &'static str) {
@@ -1631,21 +1687,7 @@ fn validate_orientation_benchmark_observations(bytes: &[u8]) -> Result<(), Strin
         ],
         "orientation benchmark observations",
     )?;
-    if value["schema"] != "code-intel-project-orientation-benchmark-observations.v1"
-        || !value["snapshotIdentity"].as_str().is_some_and(valid_digest)
-        || value.pointer("/method/clock") != Some(&Value::String("std::time::Instant".into()))
-        || value.pointer("/method/execution")
-            != Some(&Value::String("sequential_child_process".into()))
-        || value.pointer("/method/concurrency").and_then(Value::as_u64) != Some(1)
-        || value.pointer("/method/llm") != Some(&Value::String("disabled".into()))
-        || value
-            .pointer("/environment/cleanMachine")
-            .and_then(Value::as_bool)
-            != Some(false)
-        || value["fixtures"]
-            .as_array()
-            .map_or(true, |items| items.len() != 9)
-    {
+    if !orientation_benchmark_observations_header_is_valid(&value) {
         return Err("orientation benchmark observation contract is invalid".into());
     }
     for fixture in value["fixtures"].as_array().unwrap() {
@@ -1700,6 +1742,23 @@ fn validate_orientation_benchmark_observations(bytes: &[u8]) -> Result<(), Strin
     Ok(())
 }
 
+fn orientation_benchmark_observations_header_is_valid(value: &Value) -> bool {
+    value["schema"] == "code-intel-project-orientation-benchmark-observations.v1"
+        && value["snapshotIdentity"].as_str().is_some_and(valid_digest)
+        && value.pointer("/method/clock") == Some(&Value::String("std::time::Instant".into()))
+        && value.pointer("/method/execution")
+            == Some(&Value::String("sequential_child_process".into()))
+        && value.pointer("/method/concurrency").and_then(Value::as_u64) == Some(1)
+        && value.pointer("/method/llm") == Some(&Value::String("disabled".into()))
+        && value
+            .pointer("/environment/cleanMachine")
+            .and_then(Value::as_bool)
+            == Some(false)
+        && value["fixtures"]
+            .as_array()
+            .is_some_and(|items| items.len() == 9)
+}
+
 fn validate_orientation_benchmark_report(bytes: &[u8]) -> Result<(), String> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| format!("orientation benchmark report is not UTF-8: {error}"))?;
@@ -1723,39 +1782,45 @@ fn validate_orientation_benchmark_report(bytes: &[u8]) -> Result<(), String> {
         ],
         "orientation benchmark report",
     )?;
-    if value["schema"] != "code-intel-project-orientation-benchmark.v1"
-        || !matches!(value["verdict"].as_str(), Some("pass" | "fail"))
-        || value.pointer("/target/llm") != Some(&Value::String("disabled".into()))
-        || value
-            .pointer("/latency/typical/p50WallTimeMs")
-            .and_then(Value::as_u64)
-            .is_none()
-        || value
-            .pointer("/latency/typical/p95WallTimeMs")
-            .and_then(Value::as_u64)
-            .is_none()
-        || value
-            .pointer("/artifactSize/typical/p95Bytes")
-            .and_then(Value::as_u64)
-            .is_none()
-        || [
-            "fieldCorrectness",
-            "unresolvedCoverage",
-            "unsupportedCoverage",
-            "deterministicReplayRate",
-            "provenanceCompleteness",
-        ]
-        .into_iter()
-        .any(|field| {
-            value["quality"][field]
-                .as_f64()
-                .is_none_or(|metric| !(0.0..=1.0).contains(&metric))
-        })
-        || value["costCenters"].as_array().is_none_or(Vec::is_empty)
-    {
+    if !orientation_benchmark_report_is_valid(&value) {
         return Err("orientation benchmark report contract is invalid".into());
     }
     Ok(())
+}
+
+fn orientation_benchmark_report_is_valid(value: &Value) -> bool {
+    let quality_metrics_in_range = [
+        "fieldCorrectness",
+        "unresolvedCoverage",
+        "unsupportedCoverage",
+        "deterministicReplayRate",
+        "provenanceCompleteness",
+    ]
+    .into_iter()
+    .all(|field| {
+        value["quality"][field]
+            .as_f64()
+            .is_some_and(|metric| (0.0..=1.0).contains(&metric))
+    });
+    value["schema"] == "code-intel-project-orientation-benchmark.v1"
+        && matches!(value["verdict"].as_str(), Some("pass" | "fail"))
+        && value.pointer("/target/llm") == Some(&Value::String("disabled".into()))
+        && value
+            .pointer("/latency/typical/p50WallTimeMs")
+            .and_then(Value::as_u64)
+            .is_some()
+        && value
+            .pointer("/latency/typical/p95WallTimeMs")
+            .and_then(Value::as_u64)
+            .is_some()
+        && value
+            .pointer("/artifactSize/typical/p95Bytes")
+            .and_then(Value::as_u64)
+            .is_some()
+        && quality_metrics_in_range
+        && value["costCenters"]
+            .as_array()
+            .is_some_and(|v| !v.is_empty())
 }
 
 fn validate_orientation_benchmark_markdown(bytes: &[u8]) -> Result<(), String> {
@@ -1909,25 +1974,28 @@ fn validate_repository_iteration_provenance(bytes: &[u8]) -> Result<(), String> 
         &["component", "contract", "version"],
         "repository iteration producer",
     )?;
-    if value["schema"] != REPOSITORY_ITERATION_SCHEMA
-        || value["purpose"] != REPOSITORY_ITERATION_PURPOSE
-        || !value["runIdentity"]
-            .as_str()
-            .is_some_and(valid_run_identity)
-        || !value["snapshotIdentity"].as_str().is_some_and(valid_digest)
-        || !value["repositoryKey"]
-            .as_str()
-            .is_some_and(valid_authority_name)
-        || !value["publicationName"]
-            .as_str()
-            .is_some_and(valid_authority_name)
-        || value["producer"]["component"] != REPOSITORY_ITERATION_PRODUCER_COMPONENT
-        || value["producer"]["contract"] != REPOSITORY_ITERATION_PRODUCER_CONTRACT
-        || value["producer"]["version"] != REPOSITORY_ITERATION_PRODUCER_VERSION
-    {
+    if !repository_iteration_provenance_is_valid(&value) {
         return Err("repository iteration provenance contract is invalid".into());
     }
     Ok(())
+}
+
+fn repository_iteration_provenance_is_valid(value: &Value) -> bool {
+    value["schema"] == REPOSITORY_ITERATION_SCHEMA
+        && value["purpose"] == REPOSITORY_ITERATION_PURPOSE
+        && value["runIdentity"]
+            .as_str()
+            .is_some_and(valid_run_identity)
+        && value["snapshotIdentity"].as_str().is_some_and(valid_digest)
+        && value["repositoryKey"]
+            .as_str()
+            .is_some_and(valid_authority_name)
+        && value["publicationName"]
+            .as_str()
+            .is_some_and(valid_authority_name)
+        && value["producer"]["component"] == REPOSITORY_ITERATION_PRODUCER_COMPONENT
+        && value["producer"]["contract"] == REPOSITORY_ITERATION_PRODUCER_CONTRACT
+        && value["producer"]["version"] == REPOSITORY_ITERATION_PRODUCER_VERSION
 }
 
 fn validate_method_catalog(bytes: &[u8]) -> Result<(), String> {
@@ -2029,17 +2097,7 @@ fn validate_run_timing_events(bytes: &[u8]) -> Result<(), String> {
         &["mode", "clock", "externalPlatform"],
         "run timing telemetry",
     )?;
-    if value["schema"] != "code-intel-run-timing-events.v1"
-        || !value["measurementSnapshotIdentity"]
-            .as_str()
-            .is_some_and(valid_digest)
-        || value.pointer("/telemetry/mode") != Some(&Value::String("local_opt_in".into()))
-        || value.pointer("/telemetry/clock") != Some(&Value::String("monotonic_elapsed_ms".into()))
-        || value
-            .pointer("/telemetry/externalPlatform")
-            .and_then(Value::as_bool)
-            != Some(false)
-    {
+    if !run_timing_telemetry_policy_is_valid(&value) {
         return Err("run timing telemetry policy is invalid".into());
     }
     for label in ["baseline", "current"] {
@@ -2072,33 +2130,49 @@ fn validate_run_timing_events(bytes: &[u8]) -> Result<(), String> {
                 ],
                 "run timing event",
             )?;
-            let start = event["startedAtMs"].as_u64();
-            let end = event["completedAtMs"].as_u64();
-            if event["id"].as_str().is_none_or(str::is_empty)
-                || event["subject"].as_str().is_none_or(str::is_empty)
-                || !matches!(
-                    event["kind"].as_str(),
-                    Some(
-                        "technical_work"
-                            | "test"
-                            | "verification"
-                            | "queue"
-                            | "handoff"
-                            | "understanding"
-                            | "rework"
-                            | "coordination"
-                    )
-                )
-                || start.is_none()
-                || end.zip(start).is_none_or(|(end, start)| end <= start)
-                || event["mandatory"].as_bool().is_none()
-                || !event["predecessors"].is_array()
-            {
+            if !run_timing_event_is_valid(event) {
                 return Err("run timing event contract is invalid".into());
             }
         }
     }
     Ok(())
+}
+
+fn run_timing_telemetry_policy_is_valid(value: &Value) -> bool {
+    value["schema"] == "code-intel-run-timing-events.v1"
+        && value["measurementSnapshotIdentity"]
+            .as_str()
+            .is_some_and(valid_digest)
+        && value.pointer("/telemetry/mode") == Some(&Value::String("local_opt_in".into()))
+        && value.pointer("/telemetry/clock") == Some(&Value::String("monotonic_elapsed_ms".into()))
+        && value
+            .pointer("/telemetry/externalPlatform")
+            .and_then(Value::as_bool)
+            == Some(false)
+}
+
+fn run_timing_event_is_valid(event: &Value) -> bool {
+    let start = event["startedAtMs"].as_u64();
+    let end = event["completedAtMs"].as_u64();
+    event["id"].as_str().is_some_and(|v| !v.is_empty())
+        && event["subject"].as_str().is_some_and(|v| !v.is_empty())
+        && matches!(
+            event["kind"].as_str(),
+            Some(
+                "technical_work"
+                    | "test"
+                    | "verification"
+                    | "queue"
+                    | "handoff"
+                    | "understanding"
+                    | "rework"
+                    | "coordination"
+            )
+        )
+        && start.is_some()
+        && end.zip(start).is_some_and(|(end, start)| end > start)
+        && event["mandatory"].as_bool().is_some()
+        && event["predecessors"].is_array()
 }
 
 fn validate_light_speed_report(bytes: &[u8]) -> Result<(), String> {
@@ -2122,22 +2196,27 @@ fn validate_light_speed_report(bytes: &[u8]) -> Result<(), String> {
         ],
         "light-speed report",
     )?;
-    if value["schema"] != "code-intel-delivery-light-speed.v1"
-        || !value["measurementSnapshotIdentity"]
-            .as_str()
-            .is_some_and(valid_digest)
-        || value["authority"] != "derived_measurement_no_schedule_commitment"
-        || !value["rules"]
-            .as_array()
-            .is_some_and(|rules| rules.len() == 7)
-        || !value["baseline"].is_object()
-        || !value["current"].is_object()
-        || !value["delta"].is_object()
-        || value["limitations"].as_array().is_none_or(Vec::is_empty)
-    {
+    if !light_speed_report_is_valid(&value) {
         return Err("light-speed report contract is invalid".into());
     }
     Ok(())
+}
+
+fn light_speed_report_is_valid(value: &Value) -> bool {
+    value["schema"] == "code-intel-delivery-light-speed.v1"
+        && value["measurementSnapshotIdentity"]
+            .as_str()
+            .is_some_and(valid_digest)
+        && value["authority"] == "derived_measurement_no_schedule_commitment"
+        && value["rules"]
+            .as_array()
+            .is_some_and(|rules| rules.len() == 7)
+        && value["baseline"].is_object()
+        && value["current"].is_object()
+        && value["delta"].is_object()
+        && value["limitations"]
+            .as_array()
+            .is_some_and(|v| !v.is_empty())
 }
 
 fn validate_light_speed_markdown(bytes: &[u8]) -> Result<(), String> {
@@ -2807,12 +2886,8 @@ fn exact_object_keys(value: &Value, expected: &[&str], context: &str) -> Result<
     let object = value
         .as_object()
         .ok_or_else(|| format!("{context} must be an object"))?;
-    let actual = object.keys().map(String::as_str).collect::<BTreeSet<_>>();
-    let expected = expected.iter().copied().collect::<BTreeSet<_>>();
-    if actual != expected {
-        return Err(format!("{context} fields are invalid"));
-    }
-    Ok(())
+    require_exact_keys(object, expected, context)
+        .map_err(|_| format!("{context} fields are invalid"))
 }
 
 fn validate_survival_scan(bytes: &[u8]) -> Result<(), String> {
@@ -2945,23 +3020,6 @@ fn validate_repository_snapshot_identity(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
-fn valid_digest(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
-fn valid_run_identity(value: &str) -> bool {
-    value.strip_prefix("dag-v1:").is_some_and(|tail| {
-        !tail.is_empty()
-            && tail.len() % 2 == 0
-            && tail
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    })
-}
-
 fn valid_authority_name(value: &str) -> bool {
     !value.is_empty()
         && value != "."
@@ -3009,14 +3067,7 @@ fn validate_inventory(bytes: &[u8]) -> Result<(), String> {
 }
 
 fn portable_relative_path(value: &str) -> Result<String, ArtifactError> {
-    if value.is_empty()
-        || value.contains('\0')
-        || value.contains('\\')
-        || value.starts_with('/')
-        || value.starts_with("//")
-        || value.contains(':')
-        || value.split('/').any(|component| component.is_empty())
-    {
+    if !path_syntax_is_portable(value) {
         return Err(ArtifactError::Contract(
             "Artifact Ref path is not portable root-relative syntax".to_string(),
         ));
@@ -3037,14 +3088,7 @@ fn portable_relative_path(value: &str) -> Result<String, ArtifactError> {
                 ))
             }
         };
-        if name.is_empty()
-            || name.ends_with('.')
-            || name.ends_with(' ')
-            || name
-                .chars()
-                .any(|character| ('\u{0300}'..='\u{036f}').contains(&character))
-            || windows_reserved(name)
-        {
+        if !path_component_is_unambiguous(name) {
             return Err(ArtifactError::Contract(
                 "Artifact Ref path contains a Windows-ambiguous component".to_string(),
             ));
@@ -3057,6 +3101,29 @@ fn portable_relative_path(value: &str) -> Result<String, ArtifactError> {
         ));
     }
     Ok(normalized.join("/"))
+}
+
+// Guards the Artifact Ref path field (see caller above), ahead of component
+// normalization -- distinct rule set from validate_portable_path above,
+// which guards retirement callPath/deletion-patch paths directly.
+fn path_syntax_is_portable(value: &str) -> bool {
+    !value.is_empty()
+        && !value.contains('\0')
+        && !value.contains('\\')
+        && !value.starts_with('/')
+        && !value.starts_with("//")
+        && !value.contains(':')
+        && value.split('/').all(|component| !component.is_empty())
+}
+
+fn path_component_is_unambiguous(name: &str) -> bool {
+    !name.is_empty()
+        && !name.ends_with('.')
+        && !name.ends_with(' ')
+        && !name
+            .chars()
+            .any(|character| ('\u{0300}'..='\u{036f}').contains(&character))
+        && !windows_reserved(name)
 }
 
 fn windows_reserved(name: &str) -> bool {
@@ -3084,6 +3151,320 @@ mod tests {
     use serde_json::json;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// Registered contracts that do not yet publish a JSON Schema.
+    ///
+    /// What `every_registered_contract_publishes_a_schema_file` enforces: an
+    /// entry that gains a schema file fails (delete the entry), an entry that
+    /// stops being registered fails (delete the entry), and a contract outside
+    /// this list with no schema fails (publish the schema).
+    ///
+    /// What it does **not** enforce: a developer can still grow the list by
+    /// appending an id and widening the array length. That edit is visible in
+    /// review, but it is not gated. Gating it needs a merge-base or CI-held
+    /// baseline to compare against — tracked in #210, not claimed here.
+    ///
+    /// Tracked by https://github.com/2233admin/code-intel-pipeline/issues/206.
+    const AWAITING_SCHEMA: [&str; 5] = [
+        "code-intel-anchor-verification.v1",
+        "code-intel-file-inventory.v1",
+        "code-intel-method-catalog.v1",
+        "code-intel-sentrux-command-observation.v1",
+        "code-intel-surgery-plan.v1",
+    ];
+
+    fn schemas_dir() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../orchestration/schemas")
+    }
+
+    /// Every schema id published under `orchestration/schemas`, read once.
+    ///
+    /// One directory listing rather than a `Path::exists` per registered
+    /// contract: the per-id form is a filesystem call inside a loop over 41
+    /// contracts, which is the very finding class this repository is trying
+    /// to burn down.
+    fn published_schema_ids() -> BTreeSet<String> {
+        let ids = fs::read_dir(schemas_dir())
+            .expect("orchestration/schemas is readable")
+            .filter_map(Result::ok)
+            .filter_map(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .and_then(|name| name.strip_suffix(".schema.json"))
+                    .map(str::to_string)
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(
+            !ids.is_empty(),
+            "orchestration/schemas listed no schema files — the check would pass vacuously"
+        );
+        ids
+    }
+
+    /// The production half of this file, whitespace-squeezed so that a pattern
+    /// reads the same whether or not rustfmt wrapped it across lines.
+    fn production_source() -> String {
+        let source = include_str!("artifact_ref.rs");
+        // `rfind`, not `find`: production code above carries its own
+        // `#[cfg(test)]` items, and cutting at the first one would hide whole
+        // contract families from the scan.
+        let source = &source[..source
+            .rfind("mod tests {")
+            .expect("the test module bounds the production registry")];
+        source.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
+    /// `const NAME: &str = "value";` items, so a match arm written with
+    /// constants resolves to the same pair as one written with literals.
+    fn string_consts(source: &str) -> BTreeMap<String, String> {
+        let mut consts = BTreeMap::new();
+        for chunk in source.split("const ").skip(1) {
+            let Some((name, rest)) = chunk.split_once(": &str = ") else {
+                continue;
+            };
+            if name.is_empty()
+                || !name
+                    .bytes()
+                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+            {
+                continue;
+            }
+            let Some(value) = rest
+                .strip_prefix('"')
+                .and_then(|rest| rest.split('"').next())
+            else {
+                continue;
+            };
+            consts.insert(name.to_string(), value.to_string());
+        }
+        consts
+    }
+
+    /// The family functions `registered_contract` dispatches to, named by
+    /// `registered_contract` itself rather than by a list kept here.
+    ///
+    /// A new family reaches the scanner the moment the dispatcher calls it,
+    /// which is the only way it can reach production too.
+    fn registry_family_names(source: &str) -> Vec<String> {
+        let dispatcher = function_body(source, "registered_contract");
+        // Each chunk but the last ends with the identifier that precedes the
+        // next call, which is the family being dispatched to.
+        let chunks = dispatcher
+            .split("(schema, artifact_type)")
+            .collect::<Vec<_>>();
+        let mut names = Vec::new();
+        for chunk in chunks.iter().take(chunks.len().saturating_sub(1)) {
+            let name = chunk
+                .rsplit(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .next()
+                .unwrap_or_default();
+            if !name.is_empty() && !names.contains(&name.to_string()) {
+                names.push(name.to_string());
+            }
+        }
+        names
+    }
+
+    /// One function's body, from its signature to the next item.
+    fn function_body<'a>(source: &'a str, name: &str) -> &'a str {
+        let start = source
+            .find(&format!("fn {name}("))
+            .unwrap_or_else(|| panic!("fn {name} is gone — the registry scanner needs updating"));
+        let rest = &source[start..];
+        let end = rest[1..]
+            .find(" } fn ")
+            .map(|offset| offset + 2)
+            .unwrap_or(rest.len());
+        &rest[..end]
+    }
+
+    /// The `(schema, type)` pairs the family functions match on, read out of
+    /// this file's own source.
+    ///
+    /// The registry is `match` arms, so there is no value to iterate — the arms
+    /// *are* the list. Reading them is what stops this check from becoming a
+    /// second hand-maintained copy of the registry, which is precisely the
+    /// drift it exists to catch. Every parsed pair is fed back through
+    /// `registered_contract`, so a parse that drifts from the real arms fails
+    /// loudly instead of silently checking nothing.
+    ///
+    /// An arm whose pattern this cannot resolve is a hard failure, not a skip:
+    /// silently dropping one arm would leave its contract exempt from the
+    /// schema check while the total count stayed healthy.
+    fn registered_contract_arms() -> Vec<(String, String)> {
+        let source = production_source();
+        let consts = string_consts(&source);
+        let families = registry_family_names(&source);
+        assert!(
+            families.len() >= 7,
+            "registered_contract dispatches to only {} families — the scanner lost the dispatcher",
+            families.len()
+        );
+
+        let mut arms = Vec::new();
+        for family in &families {
+            let body = function_body(&source, family);
+            let mut cursor = 0;
+            while let Some(hit) = body[cursor..].find(") =>") {
+                let close = cursor + hit;
+                cursor = close + ") =>".len();
+                let Some(open) = body[..close].rfind('(') else {
+                    continue;
+                };
+                let inside = &body[open + 1..close];
+                let parts = inside
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>();
+                if parts.len() != 2 {
+                    continue;
+                }
+                let resolved = parts
+                    .iter()
+                    .map(|part| resolve_pattern_atom(part, &consts))
+                    .collect::<Vec<_>>();
+                match resolved.as_slice() {
+                    [Some(schema), Some(artifact_type)] => {
+                        arms.push((schema.clone(), artifact_type.clone()))
+                    }
+                    _ => panic!(
+                        "{family}: match arm ({inside}) uses a form the registry scanner cannot resolve — write arms as string literals or `const NAME: &str` items, otherwise this contract silently escapes the schema check"
+                    ),
+                }
+            }
+        }
+        arms
+    }
+
+    /// A match-pattern atom as either a string literal or a named constant.
+    fn resolve_pattern_atom(atom: &str, consts: &BTreeMap<String, String>) -> Option<String> {
+        match atom.strip_prefix('"') {
+            Some(literal) => literal.split('"').next().map(str::to_string),
+            None => consts.get(atom).cloned(),
+        }
+    }
+
+    /// The schema ids the native code-evidence umbrella actually admits.
+    ///
+    /// Resolved through the `oneOf` branches and their `$defs` targets rather
+    /// than by searching the file text: an id mentioned in a title, an example
+    /// or an unrelated field is not coverage.
+    fn native_umbrella_schema_ids() -> BTreeSet<String> {
+        let text =
+            fs::read_to_string(schemas_dir().join("code-evidence-native-artifacts.v1.schema.json"))
+                .expect("the native code-evidence umbrella schema is published");
+        let umbrella: Value =
+            serde_json::from_str(&text).expect("the native umbrella schema is valid JSON");
+        let branches = umbrella["oneOf"]
+            .as_array()
+            .expect("the native umbrella schema is a oneOf");
+        let ids = branches
+            .iter()
+            .map(|branch| {
+                let reference = branch["$ref"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("umbrella oneOf branch is not a $ref: {branch}"));
+                let target = reference.strip_prefix("#/$defs/").unwrap_or_else(|| {
+                    panic!("umbrella oneOf branch points outside $defs: {reference}")
+                });
+                umbrella["$defs"][target]["properties"]["schema"]["const"]
+                    .as_str()
+                    .unwrap_or_else(|| {
+                        panic!("umbrella $defs/{target} does not pin a schema const")
+                    })
+                    .to_string()
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(
+            !ids.is_empty(),
+            "the native umbrella schema admitted no contract — the check would pass vacuously"
+        );
+        ids
+    }
+
+    /// Every schema/type pair `registered_contract` accepts must have a
+    /// published JSON Schema, so a contract cannot be added on the Rust side
+    /// while the artifact registry consumers keep validating against nothing.
+    #[test]
+    fn every_registered_contract_publishes_a_schema_file() {
+        let arms = registered_contract_arms();
+        assert!(
+            arms.len() >= 40,
+            "only {} contract arms parsed — the scanner stopped seeing the registry",
+            arms.len()
+        );
+
+        // The parse is only trustworthy if the registry agrees with it.
+        for (schema, artifact_type) in &arms {
+            let contract =
+                registered_contract(&json!({"artifactSchema": schema, "type": artifact_type}))
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{schema}/{artifact_type} parsed but is not registered: {}",
+                            error.message()
+                        )
+                    });
+            assert_eq!(contract.artifact_schema, schema);
+            assert_eq!(contract.artifact_type, artifact_type);
+        }
+        // The one arm written with constants rather than literals: proof that
+        // constant-form arms are resolved, not skipped.
+        assert!(
+            arms.iter()
+                .any(|(schema, _)| schema == REPOSITORY_ITERATION_SCHEMA),
+            "the constant-form arm did not resolve — constant arms are being dropped"
+        );
+
+        let registered = arms
+            .iter()
+            .map(|(schema, _)| schema.as_str())
+            .collect::<BTreeSet<_>>();
+
+        let published = published_schema_ids();
+        let umbrella = native_umbrella_schema_ids();
+
+        let mut unpublished = Vec::new();
+        for schema in &registered {
+            if published.contains(*schema) {
+                continue;
+            }
+            // A markdown view carries no schema of its own; the JSON contract
+            // it renders carries it, and that contract is checked on its own.
+            if let Some(stem) = schema.strip_suffix("-markdown.v1") {
+                assert!(
+                    registered.contains(format!("{stem}.v1").as_str()),
+                    "{schema} renders {stem}.v1, which is not a registered contract"
+                );
+                continue;
+            }
+            // The native code-evidence family is published as one `oneOf`
+            // umbrella rather than a file per artifact.
+            if umbrella.contains(*schema) {
+                continue;
+            }
+            if AWAITING_SCHEMA.contains(schema) {
+                continue;
+            }
+            unpublished.push(*schema);
+        }
+        assert!(
+            unpublished.is_empty(),
+            "registered contracts with no published schema: {unpublished:?} — publish orchestration/schemas/<id>.schema.json, or add the id to AWAITING_SCHEMA with an issue"
+        );
+
+        for schema in AWAITING_SCHEMA {
+            assert!(
+                registered.contains(schema),
+                "{schema} is exempted but no longer registered — delete the exemption"
+            );
+            assert!(
+                !published.contains(schema),
+                "{schema} now publishes a schema — delete it from AWAITING_SCHEMA"
+            );
+        }
+    }
 
     #[test]
     fn portable_path_rejects_cross_platform_aliases() {

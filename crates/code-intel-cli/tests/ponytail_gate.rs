@@ -1,5 +1,6 @@
 #[path = "../src/authority.rs"]
 mod authority;
+mod common;
 #[path = "../src/ponytail_gate.rs"]
 mod ponytail_gate;
 
@@ -393,7 +394,7 @@ fn production_cli_consumes_stdin_and_registry_declares_the_gate() {
     );
     speculative.as_object_mut().unwrap().remove("bypass");
     let input = serde_json::to_vec(&request("enforce", vec![speculative])).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let mut child = common::cli()
         .args(["governance", "ponytail-gate", "--request", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -436,7 +437,7 @@ fn production_cli_consumes_stdin_and_registry_declares_the_gate() {
         &["ev-plan", "ev-approval", "ev-protection-boundary"],
     );
     let invalid_input = serde_json::to_vec(&request("enforce", vec![invalid])).unwrap();
-    let mut invalid_child = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let mut invalid_child = common::cli()
         .args(["governance", "ponytail-gate", "--request", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

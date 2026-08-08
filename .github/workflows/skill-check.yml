@@ -7,6 +7,7 @@ on:
       - ".claude/skills/**"
       - "skills/**"
       - "tests/test_skill_package.py"
+      - "tests/test_skill_attestation.py"
       - "legacy/install-code-intel-pipeline.ps1"
   workflow_dispatch:
 
@@ -228,4 +229,6 @@ jobs:
           PYEOF
 
       - name: Validate Code Intel Skill package
-        run: python tests/test_skill_package.py -v
+        run: |
+          python tests/test_skill_package.py -v
+          python tests/test_skill_attestation.py -v

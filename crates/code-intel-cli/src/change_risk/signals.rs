@@ -124,8 +124,16 @@ pub(super) fn is_test_file(path: &str) -> bool {
     let stem = file_stem(filename);
     // Whole-stem equality, not a substring or suffix match: `latest.rs` and
     // `contests.rs` are ordinary source files and must not be credited as
-    // tests.
-    stem == "tests" || filename.starts_with("test_") || stem.ends_with("_test")
+    // tests. Both singular (`foo_test.rs`) and plural (`foo_tests.rs`)
+    // suffixes count: this crate's own flat-module convention (`artifacts.rs`
+    // -> `artifacts_tests.rs`, `model.rs` -> `model_tests.rs`, ...) uses only
+    // the plural form -- nine existing sibling files at last count, zero
+    // singular ones -- so the singular-only check silently under-credited
+    // every one of them.
+    stem == "tests"
+        || filename.starts_with("test_")
+        || stem.ends_with("_test")
+        || stem.ends_with("_tests")
 }
 
 fn file_stem(filename: &str) -> &str {

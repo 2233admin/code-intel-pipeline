@@ -1,0 +1,265 @@
+//! `boundary_dependency` and `layer_order`: the two authoritative rule kinds
+//! `sentrux_adapter::AUTHORITATIVE_RULE_KINDS` has always named but this
+//! engine never computed (the adapter fell back to its coarser
+//! `sentrux_gate`/`sentrux_check` command-level completeness path instead).
+//! Both reuse the exact `use crate::segment` resolution `rust_import_cycles`
+//! already trusts for cycle detection: a `use crate::X` only becomes an edge
+//! when `X.rs` or `X/mod.rs` exists under the referencing file's crate
+//! `src/` root, so a re-exported type name or an unresolved path never
+//! manufactures a phantom dependency.
+//!
+//! `.sentrux/rules.toml` never needs a general TOML parser for this --
+//! `[[boundary]]`/`[[layer]]` are flat, single-line-array tables, so
+//! `table_array` hand-rolls the same "read `.sentrux/rules.toml` by hand"
+//! theory `rule_value`/`integer_rule` already use for `[constraints]`,
+//! rather than adding a `toml` crate dependency for two array-of-tables.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
+
+use super::{crate_source_root, crate_use_segments, Violation, MAX_VIOLATION_TARGETS};
+
+/// file path -> resolved target file paths named by its `use crate::` lines.
+pub(crate) fn crate_edges(
+    repo: &Path,
+    rust_files: &BTreeSet<String>,
+) -> BTreeMap<String, BTreeSet<String>> {
+    let mut edges: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for path in rust_files {
+        let Some(source_root) = crate_source_root(path) else {
+            continue;
+        };
+        let content = std::fs::read(repo.join(path)).unwrap_or_default();
+        let content = String::from_utf8_lossy(&content);
+        for segment in crate_use_segments(&content) {
+            let module_file = format!("{source_root}/{segment}.rs");
+            let module_directory = format!("{source_root}/{segment}/mod.rs");
+            let target = if rust_files.contains(&module_file) {
+                module_file
+            } else if rust_files.contains(&module_directory) {
+                module_directory
+            } else {
+                continue;
+            };
+            if &target != path {
+                edges.entry(path.clone()).or_default().insert(target);
+            }
+        }
+    }
+    edges
+}
+
+/// The top-level crate module a file belongs to: the first path segment
+/// under its crate's `src/` root, kept only when that segment resolves to a
+/// real `X.rs`/`X/mod.rs` module file -- the same resolution `crate_edges`
+/// uses, so a file nested under another module only via `#[path]` (never
+/// declared `mod` at crate root) is left unclassified rather than guessed.
+pub(crate) fn owning_module(path: &str, rust_files: &BTreeSet<String>) -> Option<String> {
+    let source_root = crate_source_root(path)?;
+    let relative = path.strip_prefix(&format!("{source_root}/"))?;
+    match relative.split_once('/') {
+        // Nested under a real subdirectory: the first segment is a bare
+        // module name (no extension), matched the same way `crate_edges`
+        // resolves a `use crate::` target.
+        Some((first, _rest)) => {
+            let module_file = format!("{source_root}/{first}.rs");
+            let module_directory = format!("{source_root}/{first}/mod.rs");
+            (rust_files.contains(&module_file) || rust_files.contains(&module_directory))
+                .then(|| first.to_string())
+        }
+        // A flat file directly under `src/` already IS its own top-level
+        // module file (it came from `rust_files`, so it exists); the module
+        // name is its stem, not the filename with `.rs` appended again.
+        None => relative.strip_suffix(".rs").map(str::to_string),
+    }
+}
+
+pub(crate) struct BoundaryRule {
+    pub(crate) description: String,
+    pub(crate) from: Vec<String>,
+    pub(crate) forbid: Vec<String>,
+}
+
+pub(crate) struct Layer {
+    pub(crate) modules: Vec<String>,
+}
+
+pub(crate) fn parse_boundaries(rules: &str) -> Vec<BoundaryRule> {
+    table_array(rules, "boundary")
+        .into_iter()
+        .map(|table| BoundaryRule {
+            description: string_field(&table, "description"),
+            from: array_field(&table, "from"),
+            forbid: array_field(&table, "forbid"),
+        })
+        .filter(|rule| !rule.from.is_empty() && !rule.forbid.is_empty())
+        .collect()
+}
+
+pub(crate) fn parse_layers(rules: &str) -> Vec<Layer> {
+    table_array(rules, "layer")
+        .into_iter()
+        .map(|table| Layer {
+            modules: array_field(&table, "modules"),
+        })
+        .filter(|layer| !layer.modules.is_empty())
+        .collect()
+}
+
+/// `from`/`forbid` name an explicit module-to-module boundary that must
+/// never be crossed, independent of any general layer ordering.
+pub(crate) fn boundary_violations(
+    rules: &[BoundaryRule],
+    edges: &BTreeMap<String, BTreeSet<String>>,
+    modules_by_file: &BTreeMap<String, String>,
+) -> Vec<Violation> {
+    let mut violations = Vec::new();
+    for rule in rules {
+        let mut targets: Vec<String> = Vec::new();
+        for (source, dests) in edges {
+            let Some(source_module) = modules_by_file.get(source) else {
+                continue;
+            };
+            if !rule.from.iter().any(|module| module == source_module) {
+                continue;
+            }
+            for dest in dests {
+                let Some(dest_module) = modules_by_file.get(dest) else {
+                    continue;
+                };
+                if rule.forbid.iter().any(|module| module == dest_module) {
+                    targets.push(format!("{source} -> {dest}"));
+                }
+            }
+        }
+        if targets.is_empty() {
+            continue;
+        }
+        targets.sort();
+        targets.dedup();
+        targets.truncate(MAX_VIOLATION_TARGETS);
+        violations.push(Violation {
+            rule: "boundary_dependency".into(),
+            message: format!(
+                "boundary_dependency violated: {} ({:?} must not depend on {:?})",
+                rule.description, rule.from, rule.forbid
+            ),
+            targets,
+        });
+    }
+    violations
+}
+
+/// `layers` in dependency order: index 0 is the innermost/foundational
+/// layer. A later layer may depend on an earlier one; an earlier layer
+/// depending on a later one is the violation.
+pub(crate) fn layer_violations(
+    layers: &[Layer],
+    edges: &BTreeMap<String, BTreeSet<String>>,
+    modules_by_file: &BTreeMap<String, String>,
+) -> Vec<Violation> {
+    if layers.is_empty() {
+        return Vec::new();
+    }
+    let mut index_of_module: BTreeMap<&str, usize> = BTreeMap::new();
+    for (index, layer) in layers.iter().enumerate() {
+        for module in &layer.modules {
+            index_of_module.insert(module.as_str(), index);
+        }
+    }
+    let mut targets: Vec<String> = Vec::new();
+    for (source, dests) in edges {
+        let Some(source_module) = modules_by_file.get(source) else {
+            continue;
+        };
+        let Some(&source_index) = index_of_module.get(source_module.as_str()) else {
+            continue;
+        };
+        for dest in dests {
+            let Some(dest_module) = modules_by_file.get(dest) else {
+                continue;
+            };
+            let Some(&dest_index) = index_of_module.get(dest_module.as_str()) else {
+                continue;
+            };
+            if source_index < dest_index {
+                targets.push(format!("{source} -> {dest}"));
+            }
+        }
+    }
+    if targets.is_empty() {
+        return Vec::new();
+    }
+    targets.sort();
+    targets.dedup();
+    targets.truncate(MAX_VIOLATION_TARGETS);
+    vec![Violation {
+        rule: "layer_order".into(),
+        message: "layer_order violated: a foundational layer depends on a layer declared above it"
+            .into(),
+        targets,
+    }]
+}
+
+/// Minimal `[[header]]` array-of-tables reader: collects `key = value` lines
+/// between one `[[header]]` marker and the next `[[...]]`/`[...]` header (or
+/// end of file) into one table per occurrence. No nesting, no multi-line
+/// arrays, no quoting beyond a plain `"..."` wrapper -- exactly what
+/// `[[boundary]]`/`[[layer]]` need and nothing a real TOML document could
+/// need that this file's own rules ever use.
+fn table_array(rules: &str, header: &str) -> Vec<BTreeMap<String, String>> {
+    let marker = format!("[[{header}]]");
+    let mut tables = Vec::new();
+    let mut current: Option<BTreeMap<String, String>> = None;
+    for line in rules.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') || trimmed.is_empty() {
+            continue;
+        }
+        if trimmed == marker {
+            tables.extend(current.take());
+            current = Some(BTreeMap::new());
+            continue;
+        }
+        if trimmed.starts_with('[') {
+            tables.extend(current.take());
+            continue;
+        }
+        let Some(table) = current.as_mut() else {
+            continue;
+        };
+        let Some((key, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let value = value.split('#').next().unwrap_or("").trim().to_string();
+        table.insert(key.trim().to_string(), value);
+    }
+    tables.extend(current.take());
+    tables
+}
+
+fn string_field(table: &BTreeMap<String, String>, key: &str) -> String {
+    table
+        .get(key)
+        .map(|value| value.trim_matches('"').to_string())
+        .unwrap_or_default()
+}
+
+fn array_field(table: &BTreeMap<String, String>, key: &str) -> Vec<String> {
+    table
+        .get(key)
+        .map(|raw| {
+            raw.trim()
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .split(',')
+                .map(|item| item.trim().trim_matches('"').to_string())
+                .filter(|item| !item.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+#[path = "boundary_rules_tests.rs"]
+mod tests;

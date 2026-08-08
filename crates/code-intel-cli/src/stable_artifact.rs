@@ -369,7 +369,8 @@ fn read_bounded(handle: File, max_bytes: u64, path: &Path) -> Result<Vec<u8>, St
         > max_bytes
     {
         return Err(StableReadError::TooLarge(format!(
-            "stable file exceeds {max_bytes} bytes"
+            "stable file exceeds {max_bytes} bytes: {}",
+            path.display()
         )));
     }
     let mut bytes = Vec::new();
@@ -381,7 +382,8 @@ fn read_bounded(handle: File, max_bytes: u64, path: &Path) -> Result<Vec<u8>, St
         })?;
     if bytes.len() as u64 > max_bytes {
         return Err(StableReadError::TooLarge(format!(
-            "stable file exceeds {max_bytes} bytes"
+            "stable file exceeds {max_bytes} bytes: {}",
+            path.display()
         )));
     }
     Ok(bytes)

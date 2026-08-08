@@ -1,3 +1,4 @@
+mod common;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -66,7 +67,7 @@ fn tool_fixture(root: &Path) -> PathBuf {
 
 fn run_with_expected_code(repo: &Path, out: &Path, expected_code: i32) -> Value {
     let tools = tool_fixture(out.parent().unwrap());
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(repo)
         .arg("--out")
@@ -114,7 +115,17 @@ fn run_legacy(repo: &Path, root: &Path) -> PathBuf {
     )
     .unwrap();
     let artifacts = root.join("legacy-artifacts");
-    let output = Command::new("pwsh")
+    let mut pwsh_command = Command::new("pwsh");
+    // The legacy facade must not inherit pipeline env vars from the test
+    // process: `common::cli` clears them for direct binary calls, and a
+    // developer shell that exported `CODE_INTEL_HOME` (pointing at an
+    // installed release, whose integrations.json predates this tree's
+    // repinned digests) would otherwise make the facade's internal
+    // `code-intel` calls cohere against the wrong manifest.
+    for name in common::env_contract::PIPELINE_VARS {
+        pwsh_command.env_remove(name);
+    }
+    let output = pwsh_command
         .arg("-NoProfile")
         .arg("-File")
         .arg(project_root.join("legacy/run-code-intel.ps1"))
@@ -126,12 +137,7 @@ fn run_legacy(repo: &Path, root: &Path) -> PathBuf {
         .arg("lite")
         .arg("-ArtifactRoot")
         .arg(&artifacts)
-        .args([
-            "-SkipRepowise",
-            "-SkipSentrux",
-            "-SkipGitHubResearch",
-            "-SkipRepomix",
-        ])
+        .args(["-SkipRepowise", "-SkipSentrux", "-SkipRepomix"])
         .output()
         .unwrap();
     assert_eq!(

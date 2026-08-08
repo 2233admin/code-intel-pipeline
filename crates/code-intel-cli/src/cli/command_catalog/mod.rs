@@ -6,14 +6,16 @@ use serde_json::{json, Value};
 use crate::{
     admissibility, artifact_index, audit_report, change_agenda, change_impact, change_risk,
     compatibility_retirement_ticket, decision_port, decision_record, doctor_bootstrap, edit_apply,
-    edit_impact, evidence_query, model_channels, ponytail_gate, providers, repin, run_cli,
-    run_commit, session_evidence, snapshot, survival_scan,
+    edit_impact, evidence_query, invocation_identity, mcp_serve, model_channels, ponytail_gate,
+    providers, repin, repowise_hooks, run_cli, run_commit, session_evidence, snapshot,
+    survival_scan,
 };
 
 use super::legacy::{
     cmd_classify, cmd_doctor, cmd_graph, cmd_help, cmd_language, cmd_orchestrate, cmd_provider,
-    cmd_resume, cmd_route, cmd_sentrux, cmd_sentrux_debt_register, cmd_sentrux_normalize,
-    parse_args, run_benchmark, run_capability, run_file_boundary_raw, run_runtime_ci_raw, Args,
+    cmd_report, cmd_resume, cmd_route, cmd_sentrux, cmd_sentrux_debt_register,
+    cmd_sentrux_normalize, parse_args, run_benchmark, run_capability, run_file_boundary_raw,
+    run_runtime_ci_raw, Args,
 };
 use super::primary::{execute_primary, matches_primary_pattern, parse_primary_args, PrimaryArgs};
 
@@ -81,15 +83,18 @@ enum CompatibilityRoute {
     Benchmark,
     Snapshot,
     Repin,
+    RepowiseHooks,
     Evidence,
     Decision,
     RunExecute,
     RunDagCoordinate,
+    Serve,
     Governance,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LegacyRouteId {
+    Report,
     Resume,
     Classify,
     Doctor,
@@ -197,8 +202,12 @@ pub(super) fn parse_command(raw: &[String]) -> std::result::Result<Command, Comm
                 })
         }
         None => match parse_args(raw.to_vec()) {
-            Ok(arguments) => Err(CommandError::Legacy {
-                message: format!("unknown command: {}", arguments.command()),
+            Ok(arguments) => Err(CommandError::Usage {
+                message: format!(
+                    "unknown command: {}; run `code-intel --help` for available commands",
+                    arguments.command()
+                ),
+                exit_code: 64,
             }),
             Err(error) => Err(legacy_error(error)),
         },
@@ -372,6 +381,13 @@ fn render_primary_summary(output: &Value) -> String {
             output["publication"]["marker"].as_str().unwrap_or("")
         ),
     ];
+    if let Some(artifacts) = output["readableArtifacts"].as_object() {
+        for (name, path) in artifacts {
+            if let Some(path) = path.as_str() {
+                lines.push(format!("  {name}: {path}"));
+            }
+        }
+    }
     if let Some(node) = output["failureNode"].as_str() {
         let diagnostic = output["diagnostic"].as_str().unwrap_or("");
         lines.push(format!(
@@ -411,6 +427,9 @@ fn render_primary_summary(output: &Value) -> String {
 /// Private, explicit Phase-2 adapters. No controller can call this with argv;
 /// only a typed route ID and its catalog-sliced compatibility arguments arrive.
 fn execute_compatibility(command: CompatibilityCommand) -> i32 {
+    if let Some(label) = invocation_identity_label(command.route, &command.arguments) {
+        invocation_identity::emit(label);
+    }
     let raw = &command.arguments;
     match command.route {
         CompatibilityRoute::DoctorBootstrap => doctor_bootstrap::run_raw(raw),
@@ -442,17 +461,43 @@ fn execute_compatibility(command: CompatibilityCommand) -> i32 {
         CompatibilityRoute::Benchmark => run_benchmark(raw),
         CompatibilityRoute::Snapshot => snapshot::run_raw(raw),
         CompatibilityRoute::Repin => repin::run_raw(raw),
+        CompatibilityRoute::RepowiseHooks => repowise_hooks::run_raw(raw),
         CompatibilityRoute::Evidence => admissibility::run_raw(raw),
         CompatibilityRoute::Decision => decision_port::run_raw(raw),
         CompatibilityRoute::RunExecute | CompatibilityRoute::RunDagCoordinate => {
             run_cli::run_raw(raw)
         }
+        CompatibilityRoute::Serve => mcp_serve::run_raw(raw),
         CompatibilityRoute::Governance => ponytail_gate::run_raw(raw),
+    }
+}
+
+/// Verdict-producing routes echo an anti-replay identity line (#197) before
+/// their own output. Contract probes are catalog introspection, not verdicts,
+/// and the head-parity fixture byte-compares their stderr, so they stay
+/// silent. Doctor is excluded: its envelope contract asserts an empty stderr.
+fn invocation_identity_label(
+    route: CompatibilityRoute,
+    arguments: &[String],
+) -> Option<&'static str> {
+    if arguments
+        .iter()
+        .any(|argument| argument == "--contract-probe")
+    {
+        return None;
+    }
+    match route {
+        CompatibilityRoute::RunExecute => Some("run-execute"),
+        CompatibilityRoute::RunDagCoordinate => Some("run-dag-coordinate"),
+        CompatibilityRoute::Audit => Some("audit"),
+        CompatibilityRoute::Benchmark => Some("benchmark"),
+        _ => None,
     }
 }
 
 fn execute_legacy(command: &LegacyCommand) -> std::result::Result<(), Box<dyn Error>> {
     match command.route {
+        LegacyRouteId::Report => cmd_report(&command.arguments),
         LegacyRouteId::Resume => cmd_resume(&command.arguments),
         LegacyRouteId::Classify => cmd_classify(&command.arguments),
         LegacyRouteId::Doctor => cmd_doctor(&command.arguments),

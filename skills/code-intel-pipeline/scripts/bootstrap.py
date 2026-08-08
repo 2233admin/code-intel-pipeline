@@ -195,6 +195,83 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+GH_ATTESTATION_MIN_VERSION = (2, 49)
+GH_COMMAND_TIMEOUT_SECONDS = 30
+
+
+def gh_cli_version() -> tuple[int, int] | None:
+    """Return the installed ``gh`` CLI's (major, minor), or ``None`` if absent/unreadable."""
+    executable = shutil.which("gh")
+    if not executable:
+        return None
+    try:
+        completed = subprocess.run(
+            [executable, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GH_COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if completed.returncode != 0:
+        return None
+    match = re.search(r"gh version (\d+)\.(\d+)", completed.stdout)
+    if not match:
+        return None
+    return (int(match.group(1)), int(match.group(2)))
+
+
+def verify_build_provenance(archive: Path) -> str:
+    """Verify the release ZIP's GitHub Artifact Attestation before it is trusted.
+
+    SHA-256 alone only proves the bytes were not corrupted in transit; it
+    says nothing about whether this repository's release workflow produced
+    them. When ``gh`` >= 2.49 is available this checks that GitHub
+    Artifact Attestation, matching the manual verification path documented
+    in ``docs/public-beta.md``. When it cannot verify (no ``gh``, or a
+    ``gh`` older than the minimum that supports ``attestation verify``),
+    installation still proceeds on the SHA-256 checksum alone, but that
+    degradation is printed to stderr and recorded in the release marker
+    rather than passing silently.
+    """
+    version = gh_cli_version()
+    if version is None or version < GH_ATTESTATION_MIN_VERSION:
+        print(
+            "WARNING: gh CLI 2.49+ not found; cannot verify this release's "
+            "GitHub Artifact Attestation (build provenance), falling back "
+            "to SHA-256 checksum only. SHA-256 proves the download was not "
+            "corrupted; it does NOT prove this repository's release "
+            "workflow produced these bytes. Install gh >= 2.49 "
+            "(https://cli.github.com/) to get that guarantee.",
+            file=sys.stderr,
+        )
+        return "degraded_missing_gh"
+    try:
+        completed = subprocess.run(
+            ["gh", "attestation", "verify", str(archive), "--repo", REPOSITORY],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GH_COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise BootstrapError(
+            f"gh attestation verify timed out after {GH_COMMAND_TIMEOUT_SECONDS}s "
+            f"for {archive.name}; this asset's build provenance could not be "
+            "confirmed and must not be installed."
+        ) from error
+    if completed.returncode != 0:
+        raise BootstrapError(
+            "Build provenance attestation verification failed for "
+            f"{archive.name}: this asset does not carry a valid GitHub "
+            f"Artifact Attestation from {REPOSITORY}'s release workflow "
+            "and must not be installed.\n"
+            f"{(completed.stderr or completed.stdout).strip()}"
+        )
+    return "verified"
+
+
 def download_file(url: str, destination: Path) -> None:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
@@ -541,6 +618,7 @@ def install_release(asset: dict[str, str], install_root: Path) -> tuple[Path, st
                     "Release checksum mismatch: "
                     f"expected {asset['sha256']}, received {actual_digest}"
                 )
+            attestation_status = verify_build_provenance(archive)
             safe_extract_zip(archive, staging_root)
         payload = find_payload_root(staging_root)
         verified_manifest = payload_manifest(payload)
@@ -551,6 +629,7 @@ def install_release(asset: dict[str, str], install_root: Path) -> tuple[Path, st
             "asset": asset["name"],
             "url": asset["url"],
             "sha256": asset["sha256"],
+            "attestation": attestation_status,
             "manifest_sha256": verified_manifest_digest,
             "files": verified_manifest,
         }
@@ -682,14 +761,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         install_command.append("-InstallMissing")
     if args.check_provider:
         install_command.append("-CheckProvider")
-    installer_result = command_result(install_command)
-
+    # Build the child environment before the installer subprocess: the
+    # installer persists CODE_INTEL_HOME into the user environment, and it
+    # resolves that value from the child process environment first. Without
+    # pinning it here, a caller shell that exports a MSYS-style or otherwise
+    # stale CODE_INTEL_HOME (for example `/d/projects/...` from git-bash,
+    # which Windows resolves as `C:\d\projects\...`) would get written to the
+    # registry verbatim and break every later run.
     environment = os.environ.copy()
     environment["CODE_INTEL_HOME"] = str(release_root)
     data_root = default_data_root()
     environment["PATH"] = (
         str(data_root / "bin") + os.pathsep + environment.get("PATH", "")
     )
+    installer_result = command_result(install_command, environment=environment)
     doctor_result = command_result(
         [
             pwsh,

@@ -208,14 +208,14 @@ fn unified_route_inventory_owns_version_primary_raw_and_legacy_dispatch() {
             .iter()
             .filter(|route| matches!(route, CommandRoute::Raw(_)))
             .count(),
-        31
+        33
     );
     assert_eq!(
         COMMAND_ROUTES
             .iter()
             .filter(|route| matches!(route, CommandRoute::Legacy(_)))
             .count(),
-        12
+        13
     );
 }
 
@@ -469,4 +469,45 @@ fn full_help_alias_discoverability_has_a_v2_output_contract() {
             identities: &["text-format:help-quick.v1", "text-format:help-full.v2"]
         }
     );
+}
+
+#[test]
+fn verdict_routes_carry_an_invocation_identity_label() {
+    let expectations = [
+        (CompatibilityRoute::RunExecute, "run-execute"),
+        (CompatibilityRoute::RunDagCoordinate, "run-dag-coordinate"),
+        (CompatibilityRoute::Audit, "audit"),
+        (CompatibilityRoute::Benchmark, "benchmark"),
+    ];
+    for (route, label) in expectations {
+        assert_eq!(
+            super::invocation_identity_label(route, &["--repo".into(), ".".into()]),
+            Some(label),
+            "{route:?}"
+        );
+    }
+}
+
+#[test]
+fn contract_probes_and_non_verdict_routes_stay_silent_for_invocation_identity() {
+    // The head-parity fixture byte-compares probe stderr; a per-invocation
+    // identity line there would make the fixture unrecordable.
+    assert_eq!(
+        super::invocation_identity_label(CompatibilityRoute::Audit, &["--contract-probe".into()]),
+        None
+    );
+    // Doctor's envelope contract asserts an empty stderr (doctor_envelope,
+    // doctor_bootstrap_cli); its identity has to ride inside the envelope.
+    for route in [
+        CompatibilityRoute::DoctorBootstrap,
+        CompatibilityRoute::Snapshot,
+        CompatibilityRoute::Repin,
+        CompatibilityRoute::ChangeImpact,
+    ] {
+        assert_eq!(
+            super::invocation_identity_label(route, &[]),
+            None,
+            "{route:?}"
+        );
+    }
 }

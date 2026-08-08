@@ -1,3 +1,4 @@
+mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -285,7 +286,7 @@ fn execute(root: &Path, request: &Value, name: &str) -> (i32, Vec<u8>, Vec<u8>, 
     let request_path = root.join(format!("{name}-request.json"));
     fs::write(&request_path, serde_json::to_vec(request).unwrap()).unwrap();
     let out = root.join(format!("{name}-out"));
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args([
             "capability",
             "exec",

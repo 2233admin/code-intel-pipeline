@@ -6,6 +6,7 @@
 //! adapter checks, the `missing`/`ok` pair the installer parses, the
 //! `checks.repo.*` fields the repo-config contract test asserts on, and the
 //! exit code CI gates on.
+mod common;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -40,7 +41,7 @@ fn pipeline_root() -> PathBuf {
 }
 
 fn doctor(args: &[&str]) -> (i32, Value, String) {
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["doctor", "bootstrap", "--pipeline-root"])
         .arg(pipeline_root())
         .args(args)
@@ -84,6 +85,45 @@ fn emits_one_observation_only_document_the_adapter_contract_accepts() {
         .is_boolean());
     assert_eq!(observation["checks"]["repo"]["exists"], json!(true));
     fs::remove_dir_all(repo).ok();
+}
+
+#[test]
+fn invocation_identity_is_cli_layer_unique_and_echoes_the_nonce() {
+    let repo = temp_dir("identity");
+    fs::write(repo.join("README.md"), "fixture\n").unwrap();
+    let args = [
+        "--repo-path",
+        repo.to_str().unwrap(),
+        "--no-require-repowise",
+        "--json",
+        "--nonce",
+        "night-7",
+    ];
+    let (first_code, first, first_stderr) = doctor(&args);
+    let (_, second, _) = doctor(&args);
+
+    // Doctor's identity rides inside the observation, unlike the verdict
+    // commands' stderr echo (#197) — stderr stays clean for envelope readers.
+    assert!(first_stderr.is_empty(), "{first_stderr}");
+    assert!(
+        matches!(first_code, 0 | 1),
+        "unexpected exit code {first_code}"
+    );
+    assert_eq!(first["invocationIdentity"]["nonce"], json!("night-7"));
+    let first_id = first["invocationIdentity"]["id"].as_str().expect("id");
+    let second_id = second["invocationIdentity"]["id"].as_str().expect("id");
+    assert!(!first_id.is_empty());
+    // Byte-identical argv, distinct identity: a replayed capture repeats the
+    // id, a live rerun cannot.
+    assert_ne!(first_id, second_id);
+    fs::remove_dir_all(repo).ok();
+}
+
+#[test]
+fn nonce_without_a_value_fails_closed() {
+    let (code, _, stderr) = doctor(&["--json", "--nonce"]);
+    assert_eq!(code, 65);
+    assert!(stderr.contains("--nonce requires a value"), "{stderr}");
 }
 
 #[test]
@@ -226,7 +266,7 @@ fn the_pipeline_root_defaults_to_the_checkout_the_caller_stands_in() {
     // No --pipeline-root, and the working directory is a subdirectory of the
     // checkout so the upward walk is exercised too.
     let nested = checkout.join("crates");
-    let output = Command::new(env!("CARGO_BIN_EXE_code-intel"))
+    let output = common::cli()
         .args(["doctor", "bootstrap", "--no-require-repowise", "--json"])
         .current_dir(&nested)
         .output()

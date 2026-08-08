@@ -101,23 +101,39 @@ pub(crate) fn execute(
     }
     command.args(["--json=compact", "--threads", "0", "--"]);
     command.args(&paths).current_dir(repo);
+    let command_line = format!("{command:?}");
     let output = command
         .output()
         .map_err(|error| AdapterError::Unavailable(format!("start ast-grep: {error}")))?;
-    if !output.status.success() {
-        return Err(AdapterError::Internal(format!(
-            "ast-grep failed: {}",
-            bounded_diagnostic(&output.stderr)
-        )));
-    }
     if output.stdout.len() > MAX_OUTPUT_BYTES {
         return Err(AdapterError::Contract(format!(
             "ast-grep output exceeds {MAX_OUTPUT_BYTES} bytes; narrow options.paths or pattern"
         )));
     }
-    let mut matches: Vec<Value> = serde_json::from_slice(&output.stdout).map_err(|error| {
-        AdapterError::Internal(format!("ast-grep emitted invalid JSON: {error}"))
-    })?;
+    let mut matches: Vec<Value> = match serde_json::from_slice(&output.stdout) {
+        Ok(matches) => matches,
+        Err(error) if !output.status.success() => {
+            return Err(AdapterError::Internal(format!(
+                "ast-grep failed: command={command_line}; stderr={}; invalid JSON={error}",
+                bounded_diagnostic(&output.stderr)
+            )))
+        }
+        Err(error) => {
+            return Err(AdapterError::Internal(format!(
+                "ast-grep emitted invalid JSON: {error}"
+            )))
+        }
+    };
+    if !ast_grep_status_is_acceptable(
+        output.status.success(),
+        output.status.code(),
+        matches.is_empty(),
+    ) {
+        return Err(AdapterError::Internal(format!(
+            "ast-grep failed: command={command_line}; stderr={}",
+            bounded_diagnostic(&output.stderr)
+        )));
+    }
     let mut files = BTreeSet::new();
     for item in &mut matches {
         let file = item
@@ -361,6 +377,10 @@ fn bounded_diagnostic(bytes: &[u8]) -> String {
         .to_string()
 }
 
+fn ast_grep_status_is_acceptable(success: bool, code: Option<i32>, empty: bool) -> bool {
+    success || (code == Some(1) && empty)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -385,5 +405,12 @@ mod tests {
         assert!(normalize_relative("node_modules/pkg/index.js", true).is_err());
         assert!(within_scope("backend/api.py", "backend"));
         assert!(!within_scope("frontend/api.ts", "backend"));
+    }
+
+    #[test]
+    fn ast_grep_empty_json_is_success_only_for_no_match_exit() {
+        assert!(ast_grep_status_is_acceptable(false, Some(1), true));
+        assert!(!ast_grep_status_is_acceptable(false, Some(1), false));
+        assert!(!ast_grep_status_is_acceptable(false, Some(2), true));
     }
 }

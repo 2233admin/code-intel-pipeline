@@ -7,15 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **安装器子进程钉死 `CODE_INTEL_HOME`（bootstrap.py）**：安装器会把 `CODE_INTEL_HOME` 持久化进用户环境，而它取值来自子进程环境；此前安装器子进程未传入钉好的环境，调用者 shell 里 MSYS 风格 `CODE_INTEL_HOME`（如 `/d/projects/...`，Windows 会解析成 `C:\d\projects\...`）会被原样写进用户注册表并毒化后续运行。现在安装器与 doctor 都使用钉到 release root 的同一环境。
+- **测试套件在开发者机器上的 hermeticity 硬化**（#218 修复过程发现，独立提出）：
+  - `file_gate/walk.rs`：遍历中目录消失（NotFound）容错为跳过，消除 `sentrux_gate` cycle 检查与 `tool_path` 临时目录删除的并行竞态
+  - `internalization_record`：fixture git 清空 `core.excludesFile`，不再被用户全局 ignore（如 `*.bin`）拦截
+  - `native_code_evidence`：legacy pwsh facade 清除 PIPELINE_VARS，不再继承 shell 的 `CODE_INTEL_HOME` 指向旧 manifest
+  - `snapshot_identity`：用 `.git/shallow` 边界手工构造 shallow 仓库，避开 Windows 8.3 短路径下 `file://` clone 失败
+
+## [0.7.1] — 2026-08-08
+
+### Fixed
+
+- **安装后 discovery 误把 bin-forwarder manifest 当仓库根（#218）**：安装器会把 `orchestration/integrations.json` 复制到二进制旁边以便脱离 checkout 解析能力清单，但两条 discovery 路径都对这份副本照单全收、把 `<bin>` 当仓库根，导致干净的 v0.7.0 安装报出约 40 条相对入口缺失的假错误。现在 exe 祖先目录候选只是猜测而非配置：命中必须至少解析出一个 manifest 文件入口才算数，否则回落到安装器必写的 `CODE_INTEL_HOME`；`orchestration::resolve_manifest_path` 同享这套探测，并补上它一直缺的两层——`CODE_INTEL_INTEGRATIONS_MANIFEST` 显式覆盖与 `CODE_INTEL_HOME` 回落。README 同步删掉「macOS/Linux 无发布 ZIP、bootstrap.py 仅限 Windows」的过时说法（v0.7.0 起三平台齐发）。
+
+## [0.7.0] — 2026-08-07
+
+首个正式版切割。#14 的发布闸验收条款本身早已做完（自扫门禁、`dag_run`/`execution_kernel` 循环依赖修复，issue 自己的 checklist 勾过）；剩下未勾的 session-intelligence/2D viewer 是另一条独立多版本 roadmap，跟能不能发 GA 无关，留 backlog。#158 复核后没有整条延后：Skill 安装路径升级为先验 GitHub Artifact Attestation 再退回 SHA-256（`gh` 缺失时显式降级，不静默）；跑了一次真实的 supply-chain 自审（`orchestration/audit/reports/audit-report.json`，8.0/10，一条确认发现——发布 tag 未签名也没有 ruleset 保护）；对已发布的 v0.7.0-beta.6 三平台 ZIP 实测 `gh attestation verify` 全过，记录在 `docs/release-provenance-runbook.md`；OpenSSF Best Practices 逐条自评进 `docs/openssf-best-practices-gap.md`。只有「签名 tag + tag 保护 ruleset」明确留给维护者（改仓库设置不该由 agent 单方面做），继续在 #158 追踪。
+
+### Added
+
+- **契约登记表与 schema 发布面对账闸（#206 第一刀）**：`registered_contract()` 接受的每一对 `(schema, type)` 现在都必须有对应的 `orchestration/schemas/<id>.schema.json`，否则单测红灯。判据不另立清单——registry 是 `match` 臂，臂本身就是清单，所以检查从 `artifact_ref.rs` 自己的源码把臂读出来，再把读出的每一对喂回 `registered_contract()` 核对；解析一旦跟真臂漂移，喂回去就不认，测试炸而不是静默放行。家族名单也不手写：从 `registered_contract` 自己的分派体里读出它调用了哪些 `*_family_contract`——新家族要进扫描面，唯一的路径正是进生产的那条路径。三道假绿灯陷阱：臂数少于 40 判定「扫描器瞎了」（第一版实现正是被这条抓到的——按第一个 `#[cfg(test)]` 截断源码，漏掉整个 native code-evidence 家族，只解析出 32 条）；家族数少于 7 判定「分派体丢了」；**解析不了的臂是硬失败，不是跳过**——`(CONST_A, CONST_B) =>` 这种写法如果被静默丢弃，该契约就在总数依然健康的情况下逃出 schema 检查，所以常量臂改为查 `const NAME: &str` 表解析，解析不出直接炸（实测：临时塞一条 `&'static str` 声明的常量臂，门禁报 `uses a form the registry scanner cannot resolve`）。markdown 视图按规则豁免（`<x>-markdown.v1` 只要 `<x>.v1` 也已注册即可），native code-evidence 家族解析伞状 schema 的 `oneOf` 分支 → `$defs` → `properties.schema.const` 来豁免，不是在文件里搜字符串——出现在 title、example 或无关字段里的 id 不算覆盖。`AWAITING_SCHEMA` 豁免表的判据是：表里的 id 一旦有了 schema 文件、或不再被注册，都必须删条目；**表变长本身没有被门禁挡住**（那需要 merge-base 或 CI 持有的基线来比对，记在 #210，这里不声称）。当前基线：41 个已注册契约，24 个已发布 schema，4 个 markdown 视图，8 个走伞状 schema，**5 个真缺口**入 `AWAITING_SCHEMA`。
+- **`code-intel serve --mcp`：agent 原生查询面上线，管线在写码中途终于能被问一句话**（#54、#58 提案 3）。stdio MCP server，六个工具：`get_gate_verdict`（权威 run 的门禁结论 + 第一条失败规则 + 最小重跑命令）、`get_facts`（按 artifact type/schema/子串查已验证事实）、`get_evidence`（一条 finding 的证据链：产物、sha256、记录时的 snapshot；查不到明说 `unbacked`，不装真）、`get_audit_status`（各科室结论；没跑过 audit 明说 `unavailable`，不装绿）、`get_change_impact`（默认 stale-advisory——CLI 在这里 fail-closed 正是管线写码时隐形的原因，#58 定为 critical）、`plan_structural_edit`（ast-grep 预览，`repositoryMutation=false`）。**只读，不裁决**：门禁判定照旧只走 CLI 与 CI，查询面被 prompt injection 说服也改不了结论；唯一会执行东西的 `plan_structural_edit` 在跑之前拿注册表核对自己的 capability 声明，一旦出现 `repo_mutation` 直接拒绝（有测试为证）。路径参数复用 `change_impact` / `evidence_query` 的既有请求类型，JSON 进来的路径和 `--changed` 打进来的走同一道越界闸。工具拒答走 `isError` 结果而不是 JSON-RPC error——"还没跑过 run"是答案，不是传输故障。声明的 MCP 版本收窄到 `2025-06-18` 一版：更早的修订要求 JSON-RPC 批量支持，本 transport 一行一条消息，宣称就会让客户端发批量后挂死；走错路的批量收到显式 `-32600` 而不是被静默丢弃。仓库 `.mcp.json` 已注册；README 与 SKILL.md 改为主推查询面，全量扫描降为深检模式，并按工具写清数据来源（四个是已提交 run 的投影，`get_change_impact` 是已提交 import 图 × 当前工作树，`plan_structural_edit` 扫的是当前工作树）。
+
+### Fixed
+
+- **mattpocock/skills 内化记录的上游出处一直是「没查」，而记录里那枚 ADR digest 早就过期、`code-intel repin` 报绿（#133 同因第三例）**：记录声明 `revision: "unverified-upstream; local-adr-sha256:1431a4df…"`，但 `docs/adr/0006-project-management-support-as-agent-intake.md` 的实际 digest 是 `7a0e7da5…`。`code-intel repin` 之所以报 clean，是因为这枚 pin 只活在 `revision` 字符串里，旁边没有 `ownedModifications[].sha256` 的 `{path, sha256}` 声明——`declared_pins` 的模块文档写明了这正是它的盲区，本记录是实例。三处一起修：上游修订钉到 `84fdeffd12f2ee307994d1eb6feb48173b6e0502`，license 实测为 MIT（LICENSE blob `f1dd2c09…`）并把义务从「查清前禁止一切」换成真实的 MIT 保留声明义务，ADR digest 补上 `{path, sha256}` 声明从而进入 `code-intel repin --write` 的可解析面。测试侧同步分家：`assert_research_candidate` 钉的是「完全没查」的形状（`unverified-upstream` + `UNKNOWN-RESEARCH-ONLY` + license/upstream-revision 两条 gap），已核实的记录再套这张断言就等于核实完还继续通过未核实契约，所以新增 `assert_verified_research_candidate`，并断言 mattpocock 记录**只剩** `gap:mattpocock-skills:security-review` 一条——核实出处不等于读过上游 skill 到底干什么，这条 gap 继续挡住它离开 research。
+
+### Notes
+
+- **正式版已知延后项**（发布说明须明写，别让人以为已查过）：性能面 579 条 I/O-in-loop / N+1 静态发现未处理；`artifact_ref.rs` defect score 1.85/10、3807 行，仍是仓内最差且本轮只加了检查没拆；33 个 god file 由 `.sentrux/baseline.json` 按身份豁免（不是消失）；5 个已注册契约无 schema（`code-intel-anchor-verification.v1`、`code-intel-file-inventory.v1`、`code-intel-method-catalog.v1`、`code-intel-sentrux-command-observation.v1`、`code-intel-surgery-plan.v1`）；内化记录里 104 枚本地 digest pin 未用可解析形状声明，其中 37 枚已对不上任何在册文件而 `code-intel repin` 仍报 clean（#133）。
+
+## [0.7.0-beta.6] — 2026-08-05
+
+这一批的主线是「门禁自己说的话得能被核对」：扫描面、锚点、巨石身份、退出码、schema 五处都从体感口径换成可计算口径——覆盖率不再靠感觉、锚点不再靠猜、巨石不再靠数数、gate finding 不再伪装成崩溃、产物不再违反自家 schema。另一条线是写路径的第一块落地（span 寻址补丁）和文档语言首选项。
+
 ### Added
 
 - **`code-intel edit apply` + `edit.span-apply` 能力：span 寻址补丁，终结"改一个字重写整行"**（#96 item 1、charter gate G4 #139）。`--span <startLine:startColumn-endLine:endColumn> --expect-sha256 <该 span 当前字节的 sha256> --replacement <text>`，行列 1-based、结束列开区间；同一文件可带多个互不重叠的 span，全部对改动前字节定位、写临时同级文件后 rename，整文件原子替换。写之前逐 span 比对 digest：不一致即拒绝（退出码 10、`applied:false`），产物给出 `expectedSha256` / `foundSha256` / 有界原文，且信封 `observedEffects` 不含 `repo_mutation`——"没写"是机器可校验的，不是自报的。写路径全程走既有 capability envelope（`edit.span-apply.compat`，`allowedEffects` 含 `repo_mutation`），能力自身在动手前先检查请求的 effectPolicy，把事后审计变成事前门。不含 ast-grep 接线（下一档）。
+- **锚点验证闸：三态 `verified` / `approximate` / `dropped` + 计数出账（#151）**。`run execute` 发布前新增一道锚点验证：文件锚点（路径是否还在）、行区间锚点、符号锚点（声称的名字能否在声称的 `file:startLine` 重新解析出来）——只在声称的那一个文件内找，不做全仓搜，解不出就是解不出。三态而非两态：`approximate` 表示同名符号还在同一文件、只是行漂了，带纠正后的行号；`dropped` 表示文件不在了或文件里再也找不到这个名字，带原因。状态类型仿 G1 的 `EvidenceOutcome`（#141）：`Approximate` 造不出来除非真带纠正行号，`Dropped` 造不出来除非真带 reason，`from_json` 对每个状态做穷尽 key 校验，把「只改 state 字段、留下另一状态残留字段」挡在反序列化边界上。
+- **扫描面具名排除闸门：覆盖率从体感变计算，38 个失踪文件归位（#152）**。`included_files: 315` 只列 2 条排除、38 个文件消失且无法归因，根因不是精度问题，是 `scan` 与 `dsm` 各自维护一套排除规则会悄悄漂移。用 `file_gate::evaluate` 实测定位到两个真实 bug：`dsm` 的 `excluded_reason` 只把 `tools`/`vendor`/`third_party`/`external` 当 `parts.first()` 检查，`legacy/tools/*` 这类嵌套路径对它不可见（本仓自扫一次贡献 39 个文件的分叉）；`dsm` 的 `SOURCE_EXTENSIONS` 漏了 `cpp`/`c`/`h`/`hpp`，命中文件在 dsm 里连「被排除」都算不上。排除判据统一到单一模块并从磁盘发现，每条排除具名出账。
+- **文档语言首选项：优先级链 + locale 默认 + 只在交互式才问（#155）**。新增 `crates/code-intel-cli/src/language_pref.rs`：`--language` 标志 > 项目配置 > 用户配置 > 系统 locale > `en`，链条声明为纯函数（`resolve_from`）并逐档单测，不读用户对话历史或其它文件去猜语言。项目级配置落在 `<repo>/.code-intel/config.json`（和 `.sentrux/`、`.understand-anything/` 同级的仓根点目录，不塞进 `.sentrux/` 内部——语言是管线级设置，不是质量闸门子系统私有的）；用户级落在平台 data root 下的 `config.json`，复用 `doctor_bootstrap::paths` 的三平台 OS switch。
 
 ### Fixed
 
 - **execution-result schema declared `additionalProperties: false` yet omitted the `failures` field it always emits (#168)**: every `code-intel run execute` output was invalid by its own schema; nothing caught it because the existing schema validation step does not enforce the closed-world bit. The schema now declares `failures` (`{process: [{node, diagnostic}], domain: [{node, verdict}]}`, shapes taken from `to_execution_json()` / `execution_kernel::failures()`, not invented) and lists it as required. A strict in-process key check now runs against a real `code-intel run execute` output in `dag_run.rs`, with a negative control proving an undeclared extra field turns it red. The 88-schema emitter sweep from #168 remains open.
 - **Exit-code semantics conflated gate findings with process failure (#130)**: `legacy/run-code-intel.ps1` exited `1` whenever `sentrux gate` reported architecture/quality debt (e.g. `god_files 23 -> 25`) in the target repo — identical to a genuine tool crash, even though every artifact was produced intact. Exit codes are now layered: `0` clean, `2` pipeline completed with Sentrux gate findings (see new `report.summary.gateFindings`), `1` the pipeline genuinely did not complete. Scoped to `sentrux gate` only; `sentrux check` keeps its prior behavior. See `docs/artifact-data-contract.md#exit-code-contract-issue-130`.
 - **God-file ratchet compared counts against a stale baseline — three real branches each shipped a new god file with every self-scan green (#165)**: the ratchet now compares file *identities*. `.sentrux/baseline.json` moves to schema v5 and records every tolerated god file by path with its measured loc/functions and the rule branch it trips; any god file the baseline does not list fails `god_files_increased`, and the violation names the file, the branch (`loc>800` or `functions>25&&loc>400`), and the measured values — files, not counts (#148 C1). Count slack and fix+regress swaps can no longer hide a new monolith. Baselines without the identity list fail closed as `baseline_engine_mismatch`. A green gate now also reports reclaimable slack ("N god file(s) no longer over threshold") since the gate itself never rewrites repository state. Decision recorded in `.sentrux/rules.toml`: test functions count toward the functions limit (option B) — the convention that tests live in a module directory's own `tests.rs` is what keeps production files under the limit; the cfg-aware alternative is explicitly rebutted there. The repository's 33 standing god files are grandfathered by identity, not amnestied.
+- **测试不对称信号不认本仓自己的 `tests.rs` 约定——96 百分位假阻断（#170）**：`is_test_file` 的三条判据全都漏掉内联测试模块约定（`change_risk/tests.rs`、`change_agenda/tests.rs`、`file_gate/tests.rs`：最后一段是 `tests.rs` 不是 `tests` 目录，文件名不以 `test_` 开头，词干 `tests` 不以 `_test` 结尾）。后果不是理论上的：PR #166 加了 229 行 `file_gate/tests.rs`，门禁却报「source changed, no tests touched」并以 96 百分位挡下它——而测试不对称是公式里权重最大的单项（`WEIGHT_TEST_ASYMMETRY = 25`）。
+- **sentrux shim 的 lite 门与权威 baseline 分居（#182）**：lite 门的缓存迁入 `.sentrux/cache`，撞上 baseline schema v5 不再崩、不再覆写权威 baseline、不再静默回填。session 门锁的 lite 语义直调 lite-core，`SENTRUX_CORE_EXE` 作为显式注入缝。
+- **测试临时目录按进程归属，不再只按时钟命名（#175）**：`switching_documentation_language_changes_only_the_language_field` 在 windows-latest 上偶发红——一条断言确定性的测试自己不确定，训练出「重跑一下就好」的假绿灯文化。机制是 `graph` 模块被 `#[path]` 编进 12 个集成测试二进制、由 cargo 当独立进程并行跑，而 `unique_temp_dir()` 的目录名只由 `SystemTime::now()` 决定（无 pid、无计数器）：两个进程观测到同一瞬间就拿到同一路径，先跑完的 `remove_dir_all` 掉另一个正在读的树。修法是结构性的——目录名带进程 id，跨进程碰撞从「不太可能」变成「不可能」。
+
+### Notes
+
+- `scoring.rs` 补数值单测，26 个存活变异体归零（#179）：8 条测试钉住离散取值，变异测试 caught 35 / missed 0。
+- agent 分支的 PR 须带 `agent-approved` label 才放行（#189）：draft 阶段的口头约定升级为 pr-gate 机制。
+- OpenSpec 内化记录核实入账（#156）：MIT + v1.7.0 证据落到文档。
 
 ## [0.7.0-beta.5] — 2026-08-04
 

@@ -400,6 +400,15 @@ pub(super) fn cmd_resume(args: &Args) -> Result<()> {
     artifacts::resume(&repo, args.artifact_root.as_deref(), args.json)
 }
 
+pub(super) fn cmd_report(args: &Args) -> Result<()> {
+    let repo = args
+        .repo
+        .as_ref()
+        .ok_or("report requires --repo <path>")?
+        .to_path_buf();
+    artifacts::report(&repo, args.artifact_root.as_deref(), args.json)
+}
+
 pub(super) fn cmd_classify(args: &Args) -> Result<()> {
     let report_path = args
         .report
@@ -1115,6 +1124,7 @@ pub(super) const FULL_HELP_TEXT: &str = r#"code-intel <command> [options]
 Commands:
   --version|-V [--json]
   help|--help|-h [--all]
+  report --repo <path> [--artifact-root <path>] [--json]
   resume --repo <path> [--artifact-root <path>] [--json]
   classify --report <path> [--json]
   sentrux-normalize --steps <report.json> [--out <sentrux-failures.json>]
@@ -1139,6 +1149,7 @@ Commands:
   model route --request <routing-request.json> [--out <routing-result.json>]
   snapshot identity --repo <root> --working-tree-policy <head_only|explicit_overlay> [--scope <relative-path>]...
   repin [--repo <root>] [--write] [--json] [--exclude <path-prefix>]...
+  repowise-hooks [--repo <root>] [--write] (detects/installs the optional repowise post-commit and distill-rewrite hooks; no-op if repowise is not on PATH)
   evidence validate --request <request.json> --artifact-root <directory>
   repository survival-scan --request <request.json|-> --artifact-root <directory>
   audit --operation validate|render --repo <root> --report <report.json> [--format markdown|html]
@@ -1156,6 +1167,7 @@ Commands:
   run execute --repo <repo-root> --out <run-staging-directory> --authority-root <publication-root> --final-name <name> [--profile default|strict|offline] [--manifest <integrations.json>] [--max-concurrency <n>] [--session-evidence <session-evidence.json>]
   run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--manifest <integrations.json>] [--max-concurrency <n>] [--session-evidence <session-evidence.json>]
   run commit --source-root <A09-artifact-root> --authority-root <publication-root> --manifest-ref <artifact-ref.json> --final-name <name>
+  serve --mcp [--repo-path <checkout>] [--repo <name>] [--artifact-root <root>] [--manifest <integrations.json>] (stdio MCP query surface over the committed run; read-only, gates nowhere)
   benchmark orientation --out <directory> [--repetitions <2..10>]
   benchmark tools --corpus <corpus.json> --runs <runs.json> --artifact-root <directory> --out <directory>
   governance ponytail-gate --request <request.json|->
