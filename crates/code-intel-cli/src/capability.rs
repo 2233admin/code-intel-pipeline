@@ -440,13 +440,16 @@ pub(crate) fn discover_manifest(explicit: Option<&Path>) -> Option<PathBuf> {
     // Rejecting it here lets discovery fall through to CODE_INTEL_HOME (the
     // release root), which the installer always writes.
     if let Ok(exe) = env::current_exe() {
-        if let Some(found) = exe.parent().into_iter().flat_map(Path::ancestors).find_map(
-            |root| {
+        if let Some(found) = exe
+            .parent()
+            .into_iter()
+            .flat_map(Path::ancestors)
+            .find_map(|root| {
                 let candidate = root.join("orchestration").join("integrations.json");
                 (candidate.is_file() && manifest_entrypoints_resolve(&candidate))
                     .then_some(candidate)
-            },
-        ) {
+            })
+        {
             return Some(found);
         }
     }

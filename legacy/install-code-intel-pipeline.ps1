@@ -434,6 +434,19 @@ function Install-MissingTool {
             return
         }
 
+        # The pin is a floor, not an exact target: a tool the user upgraded
+        # past the pin must pass. Only older-than-pin (or unparseable) counts
+        # as drift — reinstalling at the pin would downgrade an intentional
+        # upgrade on every rerun.
+        $actualParsed = $null
+        $pinnedParsed = $null
+        if ([System.Version]::TryParse($actual, [ref]$actualParsed) -and
+            [System.Version]::TryParse($pinned, [ref]$pinnedParsed) -and
+            $actualParsed -gt $pinnedParsed) {
+            Add-InstallAction $Actions $CommandName "already_present" "$($existing.Source) (version $actual, newer than pin $pinned)" "" $metadata.packageManager ([bool]$metadata.requiresElevation)
+            return
+        }
+
         $observed = if ([string]::IsNullOrWhiteSpace($actual)) { "unknown" } else { $actual }
         $driftDetail = "$($existing.Source) reports version $observed; pinned version is $pinned"
         $driftFix = "Rerun with -InstallMissing to reinstall $CommandName at the pinned version, or set the pin to the version you intend to run."
