@@ -51,3 +51,4 @@ Thumbs.db
 # candidates before a mutation run and 32839 during one.
 mutants.out/
 mutants.out.old/
+target-msvc/
