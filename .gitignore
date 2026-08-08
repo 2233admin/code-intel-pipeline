@@ -16,6 +16,7 @@ __pycache__/
 .understand-anything/
 .sentrux/cache/
 .sentrux/agent-sessions/
+.claude/
 artifacts/
 cache/
 dist/
