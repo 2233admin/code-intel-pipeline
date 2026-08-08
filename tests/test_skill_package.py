@@ -341,6 +341,10 @@ class SkillPackageTests(unittest.TestCase):
 
             with mock.patch.object(
                 bootstrap, "download_file", side_effect=copy_archive
+            ), mock.patch.object(
+                bootstrap,
+                "verify_build_provenance",
+                return_value="verified",
             ):
                 destination, status = bootstrap.install_release(
                     asset, temp_path / "installs"
@@ -348,6 +352,8 @@ class SkillPackageTests(unittest.TestCase):
                 self.assertEqual(status, "installed")
                 marker = destination / bootstrap.RELEASE_MARKER
                 self.assertTrue(marker.is_file())
+                marker_data = json.loads(marker.read_text(encoding="utf-8"))
+                self.assertEqual(marker_data["attestation"], "verified")
 
                 _, repeated_status = bootstrap.install_release(
                     asset, temp_path / "installs"

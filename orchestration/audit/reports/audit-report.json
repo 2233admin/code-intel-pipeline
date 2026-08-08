@@ -1,0 +1,132 @@
+{
+  "schema": "code-intel-audit-report.v1",
+  "generatedAt": null,
+  "repo": "code-intel-pipeline",
+  "rubric_version": "v1",
+  "departments": [
+    {
+      "id": "security",
+      "status": "not_assessed",
+      "applicability": {
+        "applicable": "yes",
+        "reason": "This run was intentionally scoped to the supply-chain department per issue #158 (self-audit before v0.7.0 GA). Security has real applicable surface (capability adapters shell out to external processes) but was not run this pass; a full audit across all three departments is separate future work.",
+        "surface_evidence": [
+          "crates/code-intel-cli/src/capability_inventory.rs"
+        ]
+      }
+    },
+    {
+      "id": "ai-safety",
+      "status": "not_assessed",
+      "applicability": {
+        "applicable": "yes",
+        "reason": "This run was intentionally scoped to the supply-chain department per issue #158. AI-safety has applicable surface (model channel routing, assistance-discovery) but was not run this pass.",
+        "surface_evidence": [
+          "crates/code-intel-cli/src/model_channels.rs"
+        ]
+      }
+    },
+    {
+      "id": "supply-chain",
+      "status": "assessed",
+      "applicability": {
+        "applicable": "yes",
+        "reason": "The repository has Cargo/npm dependency manifests and lockfiles, five GitHub Actions workflows including a release/publish path, and an installer that downloads and executes a released binary.",
+        "surface_evidence": [
+          "Cargo.toml",
+          "package.json",
+          ".github/workflows/release.yml",
+          "skills/code-intel-pipeline/scripts/bootstrap.py"
+        ]
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "supply-chain-001",
+      "department": "supply-chain",
+      "title": "Release tags are neither cryptographically signed nor protected by a repository ruleset",
+      "severity": "medium",
+      "confidence": "high",
+      "status": "confirmed",
+      "affected_area": ".github/workflows/release.yml",
+      "evidence": [
+        {
+          "kind": "file",
+          "source": "manual read of release.yml's tag-validation step",
+          "path": ".github/workflows/release.yml",
+          "line_start": 29,
+          "line_end": 45,
+          "modality": "xray",
+          "note": "The 'Validate release tag and package version' step only regex-matches the tag name against ^v(...)$ and cross-checks it equals the Cargo.toml package version. It never calls `git tag -v` or checks any cryptographic signature before the rest of the release pipeline (build, self-scan, package, attest, publish) runs."
+        },
+        {
+          "kind": "command",
+          "source": "gh api repos/2233admin/code-intel-pipeline/rulesets and gh api repos/2233admin/code-intel-pipeline/tags/protection",
+          "note": "rulesets returns an empty array `[]`; tags/protection returns 404 Not Found. No branch or tag protection ruleset exists on this repository, so any collaborator or leaked token with push access can create and push an arbitrary `v*` tag."
+        }
+      ],
+      "problem": "The only gate on what becomes a `vX.Y.Z` release tag is the regex-and-version-match step inside release.yml itself, which runs *after* the tag already exists and *after* GitHub Actions has already started a workflow run in response to it. There is no tag protection ruleset restricting who can push matching tags, and no signature requirement (`git tag -s` / `git tag -v`) anywhere in the release process or documented as a runbook step.",
+      "failure_scenario": "An attacker who obtains push access to the repository (a compromised maintainer token, an overly-broad CI token, or a maintainer account takeover) pushes a `vX.Y.Z` tag pointing at a malicious commit. Nothing at the tag layer stops this: release.yml's own checks only validate the tag *string* against the package version, not who pushed it or whether it is signed. The build-provenance attestation (verified working end-to-end against the real v0.7.0-beta.6 release assets during this audit) would still correctly attest that *this repository's workflow* built the resulting ZIPs -- but it would attest to the malicious commit just as faithfully as a legitimate one, because attestation proves build provenance, not tag authenticity.",
+      "minimal_fix": "Add a GitHub ruleset restricting tag creation matching `v*` to designated release actors (or requiring a signed commit/tag), closing the gap issue #158 explicitly calls out. This is a repository-settings change, not a code change.",
+      "long_term_fix": "Adopt `git tag -s` for release tags with the signing key and process documented in a maintainer runbook (docs/release-provenance-runbook.md, added alongside this audit), and consider verifying the tag signature as an explicit release.yml step before the release-windows job starts, so an unsigned tag fails closed instead of silently proceeding.",
+      "regression_test": "Not applicable as an automated regression test today -- this is a repository-configuration gap, not a code path. The closest verifiable regression test is a documented, repeatable manual check: `gh api repos/2233admin/code-intel-pipeline/rulesets` returns a non-empty ruleset covering tag refs matching `v*`.",
+      "estimated_effort": "hours",
+      "redacted": false
+    }
+  ],
+  "score_dashboard": {
+    "entries": [
+      {
+        "department": "security",
+        "score": null,
+        "justification": "Not assessed: this run was intentionally scoped to the supply-chain department per issue #158."
+      },
+      {
+        "department": "ai-safety",
+        "score": null,
+        "justification": "Not assessed: this run was intentionally scoped to the supply-chain department per issue #158."
+      },
+      {
+        "department": "supply-chain",
+        "score": 8.0,
+        "justification": "One confirmed, isolated medium-severity finding (unsigned/unprotected release tags) with a clear, local fix. Every other inspected control held: all five GitHub Actions workflows pin every third-party action by full commit SHA, use least-privilege `permissions:` blocks (contents: read by default, escalated only in release.yml's publish job), and use no `pull_request_target`; every Cargo and npm dependency resolves through a committed lockfile with no git/branch-pinned sources; the release ZIP's GitHub Artifact Attestation was independently downloaded and verified end-to-end against the real, already-published v0.7.0-beta.6 assets for all three platforms during this audit (`gh attestation verify`, exit 0, valid Sigstore certificate chain to release.yml@refs/tags/v0.7.0-beta.6); and the Skill install path (bootstrap.py) now verifies that same attestation before trusting a download, degrading explicitly (not silently) when `gh` is unavailable."
+      }
+    ],
+    "overall": 8.0
+  },
+  "coverage_matrix": [
+    {
+      "department": "security",
+      "coverage": "not_assessed",
+      "inspected_evidence": [],
+      "exclusions": [
+        "security was not run this pass; this run was intentionally scoped to the supply-chain department per issue #158"
+      ]
+    },
+    {
+      "department": "ai-safety",
+      "coverage": "not_assessed",
+      "inspected_evidence": [],
+      "exclusions": [
+        "ai-safety was not run this pass; this run was intentionally scoped to the supply-chain department per issue #158"
+      ]
+    },
+    {
+      "department": "supply-chain",
+      "coverage": "high",
+      "inspected_evidence": [
+        "all 5 .github/workflows/*.yml files (action pinning, permissions blocks, trigger types)",
+        "Cargo.toml / Cargo.lock (dependency source and pinning)",
+        "package.json / package-lock.json (npm dependency pinning and CI exposure)",
+        "legacy/install-code-intel-pipeline.ps1 and skills/code-intel-pipeline/scripts/bootstrap.py (download/execute hygiene)",
+        "live gh attestation verify against the real, published v0.7.0-beta.6 windows/macos/linux release assets",
+        "gh api repos/2233admin/code-intel-pipeline/rulesets and tags/protection (tag protection state)"
+      ],
+      "exclusions": [
+        "transitive advisory-database / CVE scanning of dependencies was intentionally not performed -- this department's prompt (orchestration/audit/prompts/supply-chain.md, Focus section) explicitly excludes advisory-database CVE counts that cannot be verified from the tree",
+        "the OpenSSF Best Practices self-assessment questionnaire (issue #158 item 5) is a separate, ongoing deliverable tracked in docs/, not part of this department run"
+      ]
+    }
+  ]
+}

@@ -16,7 +16,6 @@ param(
     [switch]$SaveSentruxBaseline,
     [switch]$AutoSaveMissingSentruxBaseline,
     [switch]$RequireUnderstandGraph,
-    [switch]$SkipGitHubResearch,
     [switch]$SkipRepowise,
     [switch]$NoIndexUpdate,
     [switch]$ValidateInstallation,

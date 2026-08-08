@@ -44,7 +44,7 @@
 
 ## 30 秒开始
 
-> **macOS / Linux 用户**：请直接看 [macOS / Linux 快速开始](#macos--linux-快速开始)；本节以下命令默认 Windows。macOS / Linux 从 v0.7.0-beta.2 起已有官方 Release ZIP，`bootstrap.py` 三平台通用。
+> **macOS / Linux 用户**：v0.7.0 起三平台都有 Release ZIP，`bootstrap.py` 引导在 macOS / Linux 上同样可用。安装路径见 [macOS / Linux 快速开始](#macos--linux-快速开始)；本节以下命令默认 Windows。
 
 在要分析的仓库目录中运行稳定入口；不传参数时默认分析当前目录：
 
@@ -62,7 +62,7 @@ code-intel C:\path\to\your\repo
 
 ## macOS / Linux 快速开始
 
-**支持等级**：v0.6.0 及更早版本，macOS / Linux 只支持源码构建安装——那些版本的 Release ZIP 和 `bootstrap.py` 引导只覆盖 Windows。从 v0.7.0-beta.2 起，每个版本同时发布 windows / macos / linux 三个 Release ZIP，`bootstrap.py` 引导在 macOS / Linux 上同样可用（详见 [Public beta guide](docs/public-beta.md)）。所有入口脚本都要求 PowerShell 7.2+（`pwsh`），README 里其余 `.ps1` 命令在 macOS / Linux 上同样用 `pwsh` 运行。
+**支持等级**：**v0.7.0 起**，每个版本同时发布 windows / macos / linux 三个 Release ZIP，`bootstrap.py` 引导在三个平台上都可用（详见 [Public beta guide](docs/public-beta.md)）——macOS / Linux 不再需要源码构建。v0.6.0 及更早的版本仍然只有 Windows ZIP，装旧版本才需要走下面的源码构建路径。所有入口脚本都要求 PowerShell 7.2+（`pwsh`），README 里其余 `.ps1` 命令在 macOS / Linux 上同样用 `pwsh` 运行。
 
 ### 打包版（推荐）
 
@@ -73,7 +73,7 @@ chmod +x ./bin/code-intel   # 部分解压工具不保留可执行位时才需�
 ./bin/code-intel ~/path/to/repo
 ```
 
-完整步骤见 [Public beta guide](docs/public-beta.md#install-and-verify)。下面是不依赖 Release ZIP、直接从源码构建安装的备用路径：
+完整步骤见 [Public beta guide](docs/public-beta.md#install-and-verify)。下面是不依赖 Release ZIP、直接从源码构建安装的备用路径（v0.6.0 及更早版本是唯一路径）：
 
 ### 源码构建（备用路径）
 
@@ -96,7 +96,7 @@ sudo apt-get update && sudo apt-get install -y powershell ripgrep git
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-注意：`-InstallMissing` 只会通过 brew/apt/dnf/pacman 补装 `rg`、`git`、`python`；`rustup`/`cargo` 必须自己先装好——macOS / Linux 没有预编译二进制，安装器要现场 `cargo build`。
+注意：`-InstallMissing` 只会通过 brew/apt/dnf/pacman 补装 `rg`、`git`、`python`；`rustup`/`cargo` 必须自己先装好——**走这条源码路径**时安装器要现场 `cargo build`。装 v0.7.0 及以后的版本不需要它：三平台都有 Release ZIP，用 `bootstrap.py` 引导即可，不需要 Rust 工具链。
 
 安装：
 
@@ -246,13 +246,13 @@ https://github.com/2233admin/code-intel-pipeline/tree/main/skills/code-intel-pip
 然后使用 $code-intel-pipeline 为 C:\path\to\your\repo 安装并运行稳定版。
 ```
 
-Skill 默认只解析稳定版，校验 GitHub Release 提供的 SHA-256 后才解压。预发布版本和第三方依赖安装都需要显式选择。
+Skill 默认只解析稳定版；`gh` 2.49+ 在场时先验 [GitHub Artifact Attestation](https://cli.github.com/manual/gh_attestation_verify)（证明这份 ZIP 确实产自本仓发布流水线，不只是字节没传坏），再校验 GitHub Release 提供的 SHA-256；`gh` 缺失或过旧会显式打印降级说明而不是静默只查 SHA-256。人工验证同一份保证：`gh attestation verify <zip> --repo 2233admin/code-intel-pipeline`，命令与验证记录见 [docs/release-provenance-runbook.md](docs/release-provenance-runbook.md)。预发布版本和第三方依赖安装都需要显式选择。
 
-人工用户从 GitHub Release 下载并解压安装包；Agent 用户通过 Skill 安装。三平台都有官方 Release ZIP（`code-intel-pipeline-<tag>-windows/macos/linux.zip`），也都可以走[macOS / Linux 快速开始](#macos--linux-快速开始)里的源码构建路径。Windows 源码安装仍可使用：
+人工用户从 GitHub Release 下载并解压安装包；Agent 用户通过 Skill 安装。v0.7.0 起 windows / macos / linux 三平台都有 Release ZIP。源码安装仍可使用（装 v0.6.0 及更早的 macOS / Linux 版本时是唯一路径）：
 
 ### 验证发布来源
 
-每个 Release 资产都带 SHA-256 校验值（`.sha256` sidecar，或 `bootstrap.py`/Skill 自动核对的 `digest` 字段）和 GitHub Artifact Attestation（`actions/attest-build-provenance`，keyless、由 GitHub Actions OIDC 签发），证明这个 ZIP 确实产自本仓 CI，而不只是字节没在传输中损坏：
+除了上面 Skill 自动做的 attestation + SHA-256 校验，人工也可以逐项验证：
 
 ```bash
 # 校验二进制确实产自本仓 CI（不是有人改了字节又同步改了 SHA-256）
