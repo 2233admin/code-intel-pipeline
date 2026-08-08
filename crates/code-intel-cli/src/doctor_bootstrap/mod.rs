@@ -260,11 +260,12 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
     }))
 }
 
-/// `target/release` then `target/debug`, with the platform-correct name — the
-/// order the retired script probed and the order `binaryPath` reports.
-fn binary_candidates(pipeline_root: &Path, platform: &str) -> [PathBuf; 2] {
+/// The packaged release binary first, then a source checkout's
+/// `target/release` and `target/debug`, with the platform-correct name.
+fn binary_candidates(pipeline_root: &Path, platform: &str) -> [PathBuf; 3] {
     let name = paths::binary_name(platform);
     [
+        pipeline_root.join("bin").join(&name),
         pipeline_root.join("target").join("release").join(&name),
         pipeline_root.join("target").join("debug").join(&name),
     ]
@@ -877,9 +878,10 @@ mod tests {
     }
 
     #[test]
-    fn binary_candidates_prefer_release_over_debug() {
+    fn binary_candidates_prefer_packaged_release_over_checkout_builds() {
         let candidates = binary_candidates(Path::new("root"), "windows");
-        assert!(candidates[0].ends_with(Path::new("target/release/code-intel.exe")));
-        assert!(candidates[1].ends_with(Path::new("target/debug/code-intel.exe")));
+        assert!(candidates[0].ends_with(Path::new("bin/code-intel.exe")));
+        assert!(candidates[1].ends_with(Path::new("target/release/code-intel.exe")));
+        assert!(candidates[2].ends_with(Path::new("target/debug/code-intel.exe")));
     }
 }
