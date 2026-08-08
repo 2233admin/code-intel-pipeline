@@ -200,8 +200,12 @@ pub(super) fn parse_command(raw: &[String]) -> std::result::Result<Command, Comm
                 })
         }
         None => match parse_args(raw.to_vec()) {
-            Ok(arguments) => Err(CommandError::Legacy {
-                message: format!("unknown command: {}", arguments.command()),
+            Ok(arguments) => Err(CommandError::Usage {
+                message: format!(
+                    "unknown command: {}; run `code-intel --help` for available commands",
+                    arguments.command()
+                ),
+                exit_code: 64,
             }),
             Err(error) => Err(legacy_error(error)),
         },

@@ -365,7 +365,9 @@ executes a repository writer"
 fn load(context: &ServeContext) -> Result<CommittedEvidence, String> {
     context.binding.require_verified()?;
     committed_evidence::load(&context.artifact_root, &context.repo).map_err(|error| match error {
-        EvidenceError::Contract(message) | EvidenceError::HostIo(message) => message,
+        EvidenceError::Contract(message) | EvidenceError::HostIo(message) => {
+            format!("{message}; rerun: {}", rerun_command(context))
+        }
     })
 }
 

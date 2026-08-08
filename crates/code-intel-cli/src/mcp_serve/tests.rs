@@ -250,6 +250,8 @@ fn a_tool_that_cannot_answer_returns_an_error_result_not_a_transport_error() {
             .is_some_and(|text| !text.is_empty()),
         "a refusal must say why: {payload}"
     );
+    let error = payload["error"].as_str().expect("error text");
+    assert!(error.contains("rerun: code-intel"));
 }
 
 /// Injection coverage: a crafted argument must not reach a path the flag
