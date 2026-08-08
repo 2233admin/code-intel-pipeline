@@ -3,7 +3,10 @@ mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Output;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static TEMP_TREE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 struct TempTree(PathBuf);
 
@@ -13,7 +16,11 @@ impl TempTree {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path = std::env::temp_dir().join(format!("code-intel-{label}-{nonce}"));
+        let sequence = TEMP_TREE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "code-intel-{label}-{nonce}-{}-{sequence}",
+            std::process::id()
+        ));
         fs::create_dir_all(&path).unwrap();
         Self(path)
     }
