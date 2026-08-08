@@ -184,15 +184,6 @@ Write-Host "Rust path exit code: $rustExitCode"
 #                             is deliberately NOT passed: the check step is
 #                             what produces the metrics this harness compares
 #                             against Rust's evidence.sentrux/sentrux-payload.json.
-#      -SkipGitHubResearch     Passed for parity with the existing CI smoke
-#                             invocation, but note (see contract-inventory.md,
-#                             kill-candidate row): this flag is currently
-#                             DEAD -- $githubResearch is unconditionally
-#                             New-GitHubSolutionResearchNotApplicable()
-#                             (:3919) regardless of this switch. Passing it
-#                             is a no-op today; kept for readability and in
-#                             case the flag is wired up again later.
-#
 #    Deliberately NOT passed:
 #      -RequireUnderstandGraph  Left off (default false) so a missing
 #                             .understand-anything/knowledge-graph.json
@@ -217,8 +208,7 @@ $ps1Stdout = & $pwshExe -NoProfile -File $ps1Script `
     -ArtifactRoot $ps1ArtifactRoot `
     -SkipRepowise `
     -SkipOpenSpec `
-    -SkipSentruxGate `
-    -SkipGitHubResearch 2>&1
+    -SkipSentruxGate 2>&1
 $ps1ExitCode = $LASTEXITCODE
 Write-Host "PS1 path exit code: $ps1ExitCode"
 

@@ -119,6 +119,13 @@ fn a_client_session_handshakes_lists_tools_and_closes_cleanly() {
         responses[0]["result"]["protocolVersion"],
         json!("2025-06-18")
     );
+    assert_eq!(
+        responses[0]["result"]["repositoryBinding"]["status"],
+        json!("degraded")
+    );
+    assert!(responses[0]["result"]["repositoryBinding"]["reason"]
+        .as_str()
+        .is_some_and(|reason| reason.contains("no committed")));
 
     let tools = responses[1]["result"]["tools"]
         .as_array()

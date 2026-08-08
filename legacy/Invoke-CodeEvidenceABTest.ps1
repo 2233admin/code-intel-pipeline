@@ -101,8 +101,7 @@ for ($i = 1; $i -le $Runs; $i++) {
         -Mode lite `
         -ArtifactRoot $artifactRoot `
         -SkipRepowise `
-        -SkipSentrux `
-        -SkipGitHubResearch | Out-Null
+        -SkipSentrux | Out-Null
     $exitCode = $LASTEXITCODE
     $pipelineExitCodes.Add([int]$exitCode)
     $repoArtifactRoot = Join-Path $artifactRoot (Split-Path -Leaf $repoPath)
