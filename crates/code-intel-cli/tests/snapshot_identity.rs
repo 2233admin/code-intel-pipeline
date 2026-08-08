@@ -465,18 +465,28 @@ fn shallow_lineage_is_rejected_and_symlink_target_is_hashed_without_following() 
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "--quiet", "-m", "second"]);
     let shallow = fixture.0.join("shallow");
-    let source_url = format!("file:///{}", repo.to_string_lossy().replace('\\', "/"));
+    // Build a shallow repository without git's file:// clone: on Windows,
+    // file:// URLs fail under an 8.3 short temp name (e.g. `ADMINI~1` — git
+    // parses `file:///C:/...` as a relative `/C:/...` and reports "does not
+    // appear to be a git repository"), while a plain local-path clone ignores
+    // --depth and produces a full repo. A full copy plus a .git/shallow
+    // boundary line yields the same `rev-parse --is-shallow-repository ==
+    // true` state the snapshot gate rejects.
+    let full = fixture.0.join("fullclone");
     git(
         &fixture.0,
         &[
             "clone",
             "--quiet",
-            "--depth",
-            "1",
-            &source_url,
-            shallow.to_str().unwrap(),
+            &repo.to_string_lossy(),
+            &full.to_string_lossy(),
         ],
     );
+    let head = std::fs::read_to_string(full.join(".git/HEAD")).unwrap();
+    let branch = head.trim().strip_prefix("ref: ").unwrap().trim();
+    let head_sha = std::fs::read_to_string(full.join(".git").join(branch)).unwrap();
+    std::fs::write(full.join(".git/shallow"), format!("{}\n", head_sha.trim())).unwrap();
+    let shallow = full; // shadow: the shallow repo lives at `full`
     let rejected = snapshot(&shallow, "head_only", &["."]);
     assert_eq!(rejected.status.code(), Some(69));
     assert!(String::from_utf8_lossy(&rejected.stderr).contains("shallow"));

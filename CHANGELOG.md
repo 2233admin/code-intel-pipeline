@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **安装器子进程钉死 `CODE_INTEL_HOME`（bootstrap.py）**：安装器会把 `CODE_INTEL_HOME` 持久化进用户环境，而它取值来自子进程环境；此前安装器子进程未传入钉好的环境，调用者 shell 里 MSYS 风格 `CODE_INTEL_HOME`（如 `/d/projects/...`，Windows 会解析成 `C:\d\projects\...`）会被原样写进用户注册表并毒化后续运行。现在安装器与 doctor 都使用钉到 release root 的同一环境。
+- **测试套件在开发者机器上的 hermeticity 硬化**（#218 修复过程发现，独立提出）：
+  - `file_gate/walk.rs`：遍历中目录消失（NotFound）容错为跳过，消除 `sentrux_gate` cycle 检查与 `tool_path` 临时目录删除的并行竞态
+  - `internalization_record`：fixture git 清空 `core.excludesFile`，不再被用户全局 ignore（如 `*.bin`）拦截
+  - `native_code_evidence`：legacy pwsh facade 清除 PIPELINE_VARS，不再继承 shell 的 `CODE_INTEL_HOME` 指向旧 manifest
+  - `snapshot_identity`：用 `.git/shallow` 边界手工构造 shallow 仓库，避开 Windows 8.3 短路径下 `file://` clone 失败
+
 ## [0.7.1] — 2026-08-08
 
 ### Fixed
