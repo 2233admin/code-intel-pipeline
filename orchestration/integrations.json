@@ -1064,7 +1064,7 @@
           "id": "advisory.workflow-recommend.compat",
           "version": "1.1.0",
           "toolchainDigests": [
-            "1c9824f1b412201ee2758e607714214c6eeb0610972b04f2881d9e07f140c094",
+            "01ba574500859e07864a76704502a67c3e0d8a6d0dd66d9f431e387c5c571786",
             "7015e78f5d632600b0c2a4ec4e33d67209fdf11c3f437632820b9481fb9b0278",
             "3f461dca316189c2c893793e96e6ec7e1cf340f01dcbfa6f12a39569b16e635c",
             "296d69344fcca3504ae3606abfe2995b63ea1dbc16bc4a79c56eef8f227d9f00"
@@ -1118,7 +1118,7 @@
           "id": "advisory.workflow-recommend-v2.native",
           "version": "2.0.0",
           "toolchainDigests": [
-            "1c9824f1b412201ee2758e607714214c6eeb0610972b04f2881d9e07f140c094",
+            "01ba574500859e07864a76704502a67c3e0d8a6d0dd66d9f431e387c5c571786",
             "7015e78f5d632600b0c2a4ec4e33d67209fdf11c3f437632820b9481fb9b0278",
             "3f461dca316189c2c893793e96e6ec7e1cf340f01dcbfa6f12a39569b16e635c",
             "296d69344fcca3504ae3606abfe2995b63ea1dbc16bc4a79c56eef8f227d9f00"

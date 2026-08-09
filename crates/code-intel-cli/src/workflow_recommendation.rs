@@ -367,11 +367,11 @@ fn evaluate(
         selected = Some(adapter.clone());
         reason = "an active normative artifact should be continued".into();
     } else {
-        let openspec_fit = has_any(
+        let openspec_capability_fit = has_any(
             &options.capabilities,
             &["delta-governance", "continuous-change"],
         );
-        let spec_kit_fit = has_any(
+        let spec_kit_capability_fit = has_any(
             &options.capabilities,
             &[
                 "constitution",
@@ -381,6 +381,10 @@ fn evaluate(
                 "composed-workflow",
             ],
         );
+        let openspec_intent_fit = has_any(&options.intents, &["explore", "archive", "synchronize"]);
+        let spec_kit_intent_fit = has_any(&options.intents, &["clarify", "converge"]);
+        let openspec_fit = openspec_capability_fit || openspec_intent_fit;
+        let spec_kit_fit = spec_kit_capability_fit || spec_kit_intent_fit;
         if openspec_fit && spec_kit_fit {
             conflict = Some(json!({
                 "kind":"incompatible-required-capabilities",
@@ -389,15 +393,24 @@ fn evaluate(
             }));
         } else if openspec_fit {
             selected = Some("openspec".into());
-            reason = "required capabilities include delta or continuous-change governance".into();
+            reason = if openspec_intent_fit {
+                "requested semantic intents require OpenSpec explore, archive, or synchronize actions"
+                    .into()
+            } else {
+                "required capabilities include delta or continuous-change governance".into()
+            };
         } else if spec_kit_fit
             || (options.capabilities.contains("brownfield-change")
                 && presences["spec-kit"].state != "absent")
         {
             selected = Some("spec-kit".into());
-            reason =
+            reason = if spec_kit_intent_fit {
+                "requested semantic intents require spec-kit clarification or convergence actions"
+                    .into()
+            } else {
                 "required capabilities include constitution, convergence, or composed workflow"
-                    .into();
+                    .into()
+            };
         } else if options.capabilities.contains("brownfield-change") {
             selected = Some("openspec".into());
             reason = "brownfield change is supported by both adapters; OpenSpec delta governance is the default tie-break".into();

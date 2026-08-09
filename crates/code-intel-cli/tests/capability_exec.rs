@@ -1999,6 +1999,38 @@ fn workflow_v2_does_not_claim_uninstalled_openspec_verify_action() {
 }
 
 #[test]
+fn workflow_v2_uses_unique_semantic_intents_without_duplicate_capabilities() {
+    for (intent, adapter) in [
+        ("clarify", "spec-kit"),
+        ("converge", "spec-kit"),
+        ("archive", "openspec"),
+    ] {
+        let root = temp_dir(&format!("workflow-v2-intent-{intent}"));
+        let repo = root.join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let proposal = run_workflow_v2(
+            &root,
+            &repo,
+            json!({
+                "repoPath": repo,
+                "requestedIntents": [intent],
+                "requiredCapabilities": []
+            }),
+        );
+        assert_eq!(
+            proposal["recommendation"]["adapter"], adapter,
+            "semantic intent {intent} must select its unique adapter"
+        );
+        assert!(proposal["recommendation"]["entryActions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|action| action["intent"] == intent));
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[test]
 fn workflow_v2_is_offline_deterministic_and_shipping_remains_unavailable() {
     let root = temp_dir("workflow-v2-determinism");
     let repo = root.join("repo");
