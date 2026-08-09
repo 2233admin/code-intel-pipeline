@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-pr-evidence-packet.v1",
+  "title": "Code Intel Advisory PR Evidence Packet v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "packetId", "binding", "subject", "claims", "decision"],
+  "properties": {
+    "schema": { "const": "code-intel-pr-evidence-packet.v1" },
+    "packetId": { "type": "string", "pattern": "^pr-evidence-packet-v1:[0-9a-f]{64}$" },
+    "binding": { "$ref": "#/$defs/binding" },
+    "subject": { "$ref": "#/$defs/subject" },
+    "claims": { "type": "array", "items": { "$ref": "#/$defs/claim" } },
+    "decision": { "$ref": "#/$defs/decision" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "revision": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "identifier": { "type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[A-Za-z0-9._:/-]+$" },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "sha256"],
+      "properties": { "algorithm": { "const": "sha256" }, "sha256": { "$ref": "#/$defs/digest" } }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "baseRevision", "headRevision", "snapshotIdentity"],
+      "properties": {
+        "repository": { "$ref": "#/$defs/text" },
+        "baseRevision": { "$ref": "#/$defs/revision" },
+        "headRevision": { "$ref": "#/$defs/revision" },
+        "snapshotIdentity": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactSchema", "type", "sha256", "snapshotIdentity"],
+      "properties": {
+        "artifactSchema": { "$ref": "#/$defs/identifier" },
+        "type": { "$ref": "#/$defs/identifier" },
+        "sha256": { "$ref": "#/$defs/digest" },
+        "snapshotIdentity": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "line"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$)).+$" },
+        "line": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "authority", "status", "availability", "summary", "evidence", "locations"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "authority": { "enum": ["gate", "advisory", "observation"] },
+        "status": { "enum": ["pass", "fail", "unknown"] },
+        "availability": { "enum": ["current", "stale", "unavailable"] },
+        "summary": { "$ref": "#/$defs/text" },
+        "evidence": { "$ref": "#/$defs/evidence" },
+        "locations": { "type": "array", "items": { "$ref": "#/$defs/location" } }
+      }
+    },
+    "reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claimId", "code", "summary"],
+      "properties": {
+        "claimId": { "oneOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }] },
+        "code": { "enum": ["gate_failed", "missing_gate_evidence", "evidence_stale", "evidence_unavailable", "claim_unknown", "advisory_failed", "observation_failed"] },
+        "summary": { "$ref": "#/$defs/text" }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "state", "hardGateStatus", "reasons", "nextActions"],
+      "properties": {
+        "authority": { "const": "advisory" },
+        "state": { "enum": ["ready_for_human_merge_review", "blocked", "manual_review"] },
+        "hardGateStatus": { "enum": ["passed", "failed", "unknown"] },
+        "reasons": { "type": "array", "items": { "$ref": "#/$defs/reason" } },
+        "nextActions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/text" } }
+      }
+    }
+  }
+}

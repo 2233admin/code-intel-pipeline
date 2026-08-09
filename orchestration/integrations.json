@@ -1744,6 +1744,29 @@
       "extensionPoint": "Optional market/product intelligence only. Reuse upstream compete scoring, keep network Agent execution explicit, and never feed this advisory score into structural gates or hospital discharge decisions."
     },
     {
+      "id": "delivery.pr-evidence-packet",
+      "stage": "landing_coordination",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-adapter",
+      "required": false,
+      "entrypoint": "crates/code-intel-cli/src/pr_evidence_packet/mod.rs",
+      "capabilities": [
+        "deterministic_claim_normalization",
+        "snapshot_bound_merge_review",
+        "explicit_authority_classes",
+        "fail_closed_unknown_evidence"
+      ],
+      "commands": {
+        "assemble": "target/debug/code-intel.exe pr evidence --request <packet-request.json|-> --out <packet.json>"
+      },
+      "artifactContract": [
+        "orchestration/schemas/code-intel-pr-evidence-request.v1.schema.json",
+        "orchestration/schemas/code-intel-pr-evidence-packet.v1.schema.json"
+      ],
+      "effects": ["repo_read", "local_write"],
+      "extensionPoint": "Advisory local aggregation only: validates supplied source identities and makes the review decision visible, but does not independently verify sources, execute CI, record approval, or grant merge authority."
+    },
+    {
       "id": "delivery.multi-agent-merge-queue",
       "stage": "landing_coordination",
       "owner": "code-intel-pipeline",

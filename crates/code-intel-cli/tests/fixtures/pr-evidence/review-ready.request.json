@@ -1,0 +1,53 @@
+{
+  "schema": "code-intel-pr-evidence-request.v1",
+  "subject": {
+    "repository": "2233admin/code-intel-pipeline",
+    "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "headRevision": "cccccccccccccccccccccccccccccccccccccccc",
+    "snapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "claims": [
+    {
+      "id": "change-agenda",
+      "authority": "advisory",
+      "status": "pass",
+      "availability": "current",
+      "summary": "review agenda identifies the highest-risk unit",
+      "evidence": {
+        "artifactSchema": "code-intel-change-agenda.v1",
+        "type": "change.agenda",
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "snapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "locations": [{ "file": "crates/code-intel-cli/src/change_agenda/mod.rs", "line": 42 }]
+    },
+    {
+      "id": "runtime-ci",
+      "authority": "gate",
+      "status": "pass",
+      "availability": "current",
+      "summary": "tests, build, and runtime observations are green",
+      "evidence": {
+        "artifactSchema": "code-intel-runtime-ci-summary.v1",
+        "type": "runtime-ci.summary",
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "snapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "locations": [{ "file": ".github/workflows/ci.yml", "line": 64 }]
+    },
+    {
+      "id": "binary-diff",
+      "authority": "observation",
+      "status": "pass",
+      "availability": "current",
+      "summary": "binary diff was observed without a behavior regression",
+      "evidence": {
+        "artifactSchema": "code-intel-diaphora-observation.v1",
+        "type": "binary.diff.observation",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "snapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "locations": [{ "file": "artifacts/diaphora/summary.json", "line": 1 }]
+    }
+  ]
+}

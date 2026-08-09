@@ -208,7 +208,7 @@ fn unified_route_inventory_owns_version_primary_raw_and_legacy_dispatch() {
             .iter()
             .filter(|route| matches!(route, CommandRoute::Raw(_)))
             .count(),
-        33
+        34
     );
     assert_eq!(
         COMMAND_ROUTES
@@ -246,6 +246,10 @@ fn command_authority_and_effect_contracts_cover_conditional_and_mutating_routes(
     assert_eq!(
         raw("artifact", Some("query")).contract.effects,
         &[CommandEffect::RepoRead, CommandEffect::ProcessSpawn]
+    );
+    assert_eq!(
+        raw("pr", Some("evidence")).contract.effects,
+        &[CommandEffect::RepoRead, CommandEffect::LocalWrite]
     );
     assert_eq!(
         raw("repin", None).contract.effects,
@@ -454,7 +458,7 @@ fn full_help_documents_every_registered_route_alias() {
 }
 
 #[test]
-fn full_help_alias_discoverability_has_a_v2_output_contract() {
+fn full_help_alias_discoverability_has_a_v3_output_contract() {
     let help = COMMAND_ROUTES
         .iter()
         .find_map(|route| match route {
@@ -466,7 +470,7 @@ fn full_help_alias_discoverability_has_a_v2_output_contract() {
     assert_eq!(
         help.contract.output_contract,
         OutputContract::Stdout {
-            identities: &["text-format:help-quick.v1", "text-format:help-full.v2"]
+            identities: &["text-format:help-quick.v1", "text-format:help-full.v3"]
         }
     );
 }

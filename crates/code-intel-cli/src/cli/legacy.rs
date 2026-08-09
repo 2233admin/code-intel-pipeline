@@ -1159,6 +1159,7 @@ Commands:
   change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--staleness current|advisory]
   change risk <revspec> [--repo <path>] [--sample <N>] [--format json|text] (git-only defect-risk score, no prior run, no index)
   change agenda <revspec> [--repo <path>] [--min-cochange <N>] [--format json|text] (git-only review units clustered by co-change, ranked worst first)
+  pr evidence --request <packet-request.json|-> --out <packet.json> (advisory snapshot-bound merge-review packet; does not grant merge authority)
   edit impact --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--scope <directory>]... (working tree, no prior run, authority: none)
   edit apply --repo-path <checkout> --file <repo-relative-path> (--span <startLine:startColumn-endLine:endColumn> --expect-sha256 <sha256-of-current-span-bytes> --replacement <text>|--replacement-file <path>)... [--out <staging-dir>] [--manifest <integrations.json>] [--envelope] (span-addressed patch; refuses with evidence on digest drift, exit 10)
   decision request-response --request <request.json|-> [--response <response.json>|--cancel <cancellation.json>] --now <unix-seconds> --branch <branch-id>...

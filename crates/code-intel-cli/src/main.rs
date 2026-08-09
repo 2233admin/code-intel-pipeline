@@ -47,6 +47,7 @@ mod method_catalog;
 mod model_channels;
 mod orchestration;
 mod ponytail_gate;
+mod pr_evidence_packet;
 mod project_orientation_benchmark;
 mod providers;
 mod repin;

@@ -6,6 +6,7 @@ use super::{matches_primary_pattern, CompatibilityRoute, LegacyRouteId};
 use crate::cli::help_contract::{HELP_ALIASES, HELP_COMMAND};
 
 mod edit_routes;
+mod pr_evidence_route;
 mod repowise_routes;
 mod run_routes;
 mod serve_routes;
@@ -355,6 +356,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             "retire only through a versioned workspace agenda replacement"
         ),
     },
+    pr_evidence_route::ROUTE,
     CommandRoute::Raw(edit_routes::APPLY),
     raw_route! {
         // Working-tree sibling of `change impact`. Separate command because
@@ -733,7 +735,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             Internal,
             Internal,
             &[],
-            stdout!("text-format:help-quick.v1", "text-format:help-full.v2"),
+            stdout!("text-format:help-quick.v1", "text-format:help-full.v3"),
             exits!(0, 1),
             "retain while this major CLI contract is supported"
         ),

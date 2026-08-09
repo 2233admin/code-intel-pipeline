@@ -1,0 +1,25 @@
+{
+  "schema": "code-intel-pr-evidence-request.v1",
+  "subject": {
+    "repository": "2233admin/code-intel-pipeline",
+    "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "headRevision": "cccccccccccccccccccccccccccccccccccccccc",
+    "snapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "claims": [
+    {
+      "id": "runtime-ci",
+      "authority": "gate",
+      "status": "fail",
+      "availability": "current",
+      "summary": "integration test failed in the current snapshot",
+      "evidence": {
+        "artifactSchema": "code-intel-runtime-ci-summary.v1",
+        "type": "runtime-ci.summary",
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "snapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "locations": [{ "file": "crates/code-intel-cli/tests/pr_evidence_packet.rs", "line": 1 }]
+    }
+  ]
+}

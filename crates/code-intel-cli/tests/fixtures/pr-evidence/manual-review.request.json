@@ -1,0 +1,39 @@
+{
+  "schema": "code-intel-pr-evidence-request.v1",
+  "subject": {
+    "repository": "2233admin/code-intel-pipeline",
+    "baseRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "headRevision": "cccccccccccccccccccccccccccccccccccccccc",
+    "snapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "claims": [
+    {
+      "id": "runtime-ci",
+      "authority": "gate",
+      "status": "pass",
+      "availability": "current",
+      "summary": "tests, build, and runtime observations are green",
+      "evidence": {
+        "artifactSchema": "code-intel-runtime-ci-summary.v1",
+        "type": "runtime-ci.summary",
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "snapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "locations": [{ "file": ".github/workflows/ci.yml", "line": 64 }]
+    },
+    {
+      "id": "binary-diff",
+      "authority": "observation",
+      "status": "unknown",
+      "availability": "unavailable",
+      "summary": "binary diff provider was unavailable for this snapshot",
+      "evidence": {
+        "artifactSchema": "code-intel-diaphora-observation.v1",
+        "type": "binary.diff.observation",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "snapshotIdentity": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "locations": []
+    }
+  ]
+}
