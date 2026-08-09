@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-diaphora-observation.v1",
+  "title": "Code Intel Diaphora Read-only Observation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "provider", "comparison", "observedAt", "summary", "authority", "failure"],
+  "properties": {
+    "schema": { "const": "code-intel-diaphora-observation.v1" },
+    "status": { "enum": ["observed", "unavailable", "rejected"] },
+    "provider": { "$ref": "#/$defs/provider" },
+    "comparison": { "oneOf": [{ "$ref": "#/$defs/comparison" }, { "type": "null" }] },
+    "observedAt": { "type": "integer", "minimum": 0 },
+    "summary": { "oneOf": [{ "$ref": "#/$defs/summary" }, { "type": "null" }] },
+    "authority": { "$ref": "#/$defs/authority" },
+    "failure": { "$ref": "#/$defs/failure" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "observed" } } },
+      "then": {
+        "properties": {
+          "comparison": { "$ref": "#/$defs/comparison" },
+          "summary": { "$ref": "#/$defs/summary" },
+          "provider": {
+            "allOf": [
+              { "$ref": "#/$defs/provider" },
+              { "properties": { "resultSchemaVersion": { "type": "string", "minLength": 1 } } }
+            ]
+          },
+          "failure": {
+            "allOf": [
+              { "$ref": "#/$defs/failure" },
+              { "properties": { "kind": { "const": "none" } } }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "enum": ["unavailable", "rejected"] } } },
+      "then": {
+        "properties": {
+          "comparison": { "type": "null" },
+          "summary": { "type": "null" },
+          "provider": {
+            "allOf": [
+              { "$ref": "#/$defs/provider" },
+              { "properties": { "resultSchemaVersion": { "type": "null" } } }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "unavailable" } } },
+      "then": {
+        "properties": {
+          "failure": {
+            "allOf": [
+              { "$ref": "#/$defs/failure" },
+              {
+                "required": ["message"],
+                "properties": { "kind": { "const": "provider_unavailable" } }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "rejected" } } },
+      "then": {
+        "properties": {
+          "failure": {
+            "allOf": [
+              { "$ref": "#/$defs/failure" },
+              {
+                "required": ["message"],
+                "properties": { "kind": { "const": "process_failure" } }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "upstreamVersion", "resultSchemaVersion", "mode"],
+      "properties": {
+        "id": { "const": "diaphora" },
+        "upstreamVersion": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "resultSchemaVersion": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+        "mode": { "const": "external_result_import" }
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "baseBinarySha256", "candidateBinarySha256", "resultDatabaseSha256", "sourceRevision"],
+      "properties": {
+        "identity": { "$ref": "#/$defs/digest" },
+        "baseBinarySha256": { "$ref": "#/$defs/digest" },
+        "candidateBinarySha256": { "$ref": "#/$defs/digest" },
+        "resultDatabaseSha256": { "$ref": "#/$defs/digest" },
+        "sourceRevision": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resultRows", "matches", "unmatched", "topMatches"],
+      "properties": {
+        "resultRows": { "type": "integer", "minimum": 0 },
+        "matches": { "$ref": "#/$defs/matchCounts" },
+        "unmatched": { "$ref": "#/$defs/unmatchedCounts" },
+        "topMatches": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "$ref": "#/$defs/topMatch" }
+        }
+      }
+    },
+    "matchCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["best", "partial", "unreliable", "multimatch"],
+      "properties": {
+        "best": { "type": "integer", "minimum": 0 },
+        "partial": { "type": "integer", "minimum": 0 },
+        "unreliable": { "type": "integer", "minimum": 0 },
+        "multimatch": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "unmatchedCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary", "secondary"],
+      "properties": {
+        "primary": { "type": "integer", "minimum": 0 },
+        "secondary": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "topMatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "baseName", "candidateName", "ratio", "heuristic"],
+      "properties": {
+        "type": { "enum": ["best", "partial", "unreliable", "multimatch"] },
+        "baseName": { "oneOf": [{ "type": "string", "maxLength": 512 }, { "type": "null" }] },
+        "candidateName": { "oneOf": [{ "type": "string", "maxLength": 512 }, { "type": "null" }] },
+        "ratio": { "oneOf": [{ "type": "number" }, { "type": "null" }] },
+        "heuristic": { "oneOf": [{ "type": "string", "maxLength": 512 }, { "type": "null" }] }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observationOnly", "engineeringFacts", "note"],
+      "properties": {
+        "observationOnly": { "const": true },
+        "engineeringFacts": { "type": "array", "maxItems": 0 },
+        "note": { "type": "string", "minLength": 1 }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["none", "provider_unavailable", "process_failure"] },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

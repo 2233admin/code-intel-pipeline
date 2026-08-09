@@ -5,10 +5,10 @@ use serde_json::{json, Value};
 
 use crate::{
     admissibility, artifact_index, audit_report, change_agenda, change_impact, change_risk,
-    compatibility_retirement_ticket, decision_port, decision_record, doctor_bootstrap, edit_apply,
-    edit_impact, evidence_query, invocation_identity, mcp_serve, model_channels, ponytail_gate,
-    providers, repin, repowise_hooks, run_cli, run_commit, session_evidence, snapshot,
-    survival_scan,
+    compatibility_retirement_ticket, decision_port, decision_record, diaphora_provider,
+    doctor_bootstrap, edit_apply, edit_impact, evidence_query, invocation_identity, mcp_serve,
+    model_channels, ponytail_gate, providers, repin, repowise_hooks, run_cli, run_commit,
+    session_evidence, snapshot, survival_scan,
 };
 
 use super::legacy::{
@@ -59,6 +59,7 @@ pub(super) struct LegacyCommand {
 enum CompatibilityRoute {
     DoctorBootstrap,
     CompatibilityRetirementTicket,
+    ProviderDiaphoraInspect,
     ProviderRepowiseAdapt,
     ProviderGraphAdapt,
     ProviderSentruxAdapt,
@@ -436,6 +437,7 @@ fn execute_compatibility(command: CompatibilityCommand) -> i32 {
         CompatibilityRoute::CompatibilityRetirementTicket => {
             compatibility_retirement_ticket::run_raw(raw)
         }
+        CompatibilityRoute::ProviderDiaphoraInspect => diaphora_provider::run_raw(raw),
         CompatibilityRoute::ProviderRepowiseAdapt => providers::run_repowise_adapt_raw(raw),
         CompatibilityRoute::ProviderGraphAdapt => providers::run_graph_adapt_raw(raw),
         CompatibilityRoute::ProviderSentruxAdapt => providers::run_sentrux_adapt_raw(raw),

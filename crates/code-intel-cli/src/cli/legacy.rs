@@ -1139,6 +1139,7 @@ Commands:
   provider session-adapt --repo <repo> --trace <mindwalk-trace.json> [--hotspots <sentrux-hotspots-or-dsm.json>] [--out <session-evidence.json>] [--working-tree-policy head_only|explicit_overlay]
   provider codenexus-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
   provider file-boundary --request <request.json> --out <result.json>
+  provider diaphora-inspect --result-db <diaphora-results.db> --base-binary <base-binary> --candidate-binary <candidate-binary> --source-revision <source-revision> --provider-version <version> --observed-at <unix-seconds> --out <observation.json>
   provider runtime-ci-evidence --artifact-root <directory> --request <request.json> --out <summary.json>
   compatibility retirement-ticket lint --ticket <ticket.json> --evaluated-at <unix-seconds>
   route|routes [--action List|Plan|Validate] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--json]

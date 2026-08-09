@@ -693,6 +693,27 @@
       "extensionPoint": "Full CodeNexus and explicit lite compatibility output share this adapter and A04 route. CodeNexus retains process, storage, retrieval, and impact semantics; absence remains provider-unavailable/unknown without fabricated facts. The builtin lite-compat implementation is now a real DAG caller (evidence.codenexus), invoking legacy/Invoke-CodeNexusLite.ps1 in-process rather than through the external facade."
     },
     {
+      "id": "provider.diaphora",
+      "stage": "verification",
+      "owner": "code-intel-pipeline",
+      "kind": "optional-external-result-import",
+      "required": false,
+      "entrypoint": "crates/code-intel-cli/src/diaphora_provider.rs",
+      "capabilities": [
+        "read_only_result_database_import",
+        "binary_identity_binding",
+        "path_free_bounded_match_summary",
+        "provider_unavailable_diagnosis"
+      ],
+      "commands": {
+        "inspect": "target/debug/code-intel.exe provider diaphora-inspect --result-db <diaphora-results.db> --base-binary <base-binary> --candidate-binary <candidate-binary> --source-revision <source-revision> --provider-version <version> --observed-at <unix-seconds> --out <observation.json>"
+      },
+      "artifactContract": [
+        "orchestration/schemas/code-intel-diaphora-observation.v1.schema.json"
+      ],
+      "extensionPoint": "Diaphora remains an externally installed AGPL-3.0 tool. This adapter neither installs nor invokes it; it reads an operator-produced result database, binds the three input files by SHA-256, and emits advisory evidence with no engineering-fact or gate authority."
+    },
+    {
       "id": "repository.survival-scan",
       "stage": "orientation",
       "owner": "code-intel-pipeline",
