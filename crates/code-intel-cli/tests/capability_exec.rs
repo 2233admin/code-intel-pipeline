@@ -1633,6 +1633,32 @@ fn normalized_inventory_matches_real_legacy_runner_with_custom_exclude() {
 }
 
 #[test]
+fn capability_declaration_uses_rust_manifest_discovery() {
+    let root = temp_dir("capability-declaration-discovery");
+    fs::create_dir_all(&root).unwrap();
+    let output = common::cli()
+        .current_dir(&root)
+        .env_remove("CODE_INTEL_INTEGRATIONS_MANIFEST")
+        .env_remove("CODE_INTEL_HOME")
+        .args(["capability", "declaration", "advisory.workflow-recommend"])
+        .output()
+        .expect("read capability declaration through Rust discovery");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let declaration: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(declaration["id"], "advisory.workflow-recommend");
+    assert_eq!(
+        declaration["implementation"],
+        registry_implementation("advisory.workflow-recommend")
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_parity() {
     let root = temp_dir("workflow-recommend");
     let repo = root.join("repo");
@@ -1912,7 +1938,7 @@ fn workflow_v2_models_brownfield_spec_kit_and_profile_dependent_actions() {
         &repo,
         json!({
             "repoPath": repo,
-            "requestedIntents": ["plan", "verify"],
+            "requestedIntents": ["plan", "clarify", "verify", "converge"],
             "requiredCapabilities": ["brownfield-change", "convergence"]
         }),
     );
@@ -1930,6 +1956,45 @@ fn workflow_v2_models_brownfield_spec_kit_and_profile_dependent_actions() {
             && action["availability"] == "conditional"
             && action["invocations"]["codex"].is_null()
     }));
+    for action_id in [
+        "spec-kit.constitution",
+        "spec-kit.clarify",
+        "spec-kit.plan",
+        "spec-kit.tasks",
+        "spec-kit.checklist",
+        "spec-kit.converge",
+    ] {
+        assert!(
+            actions.iter().any(|action| action["actionId"] == action_id),
+            "missing structured spec-kit action {action_id}"
+        );
+    }
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn workflow_v2_does_not_claim_uninstalled_openspec_verify_action() {
+    let root = temp_dir("workflow-v2-openspec-profile");
+    let repo = root.join("repo");
+    fs::create_dir_all(repo.join("openspec")).unwrap();
+    let proposal = run_workflow_v2(
+        &root,
+        &repo,
+        json!({
+            "repoPath": repo,
+            "requestedIntents": ["verify"],
+            "requiredCapabilities": ["delta-governance"]
+        }),
+    );
+    let verify = proposal["recommendation"]["entryActions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|action| action["actionId"] == "openspec.verify")
+        .expect("OpenSpec verification intent must have a structured action");
+    assert_eq!(verify["availability"], "conditional");
+    assert!(verify["invocations"]["codex"].is_null());
+    assert!(verify["invocations"]["generic"].is_null());
     let _ = fs::remove_dir_all(root);
 }
 

@@ -11,7 +11,7 @@
     "requestedIntents": {
       "type": "array",
       "uniqueItems": true,
-      "items": { "enum": ["explore", "plan", "implement", "verify", "archive", "synchronize", "ship", "observe"] }
+      "items": { "enum": ["explore", "plan", "clarify", "implement", "verify", "converge", "archive", "synchronize", "ship", "observe"] }
     },
     "requiredCapabilities": {
       "type": "array",

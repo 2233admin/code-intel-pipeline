@@ -21,11 +21,13 @@ const V1_SCHEMA: &str = "code-intel-advisory-workflow-recommendation.v1";
 const V2_SCHEMA: &str = "code-intel-advisory-workflow-recommendation.v2";
 const ARTIFACT_TYPE: &str = "advisory.workflow-recommendation";
 
-const INTENTS: [&str; 8] = [
+const INTENTS: [&str; 10] = [
     "explore",
     "plan",
+    "clarify",
     "implement",
     "verify",
+    "converge",
     "archive",
     "synchronize",
     "ship",
@@ -762,7 +764,7 @@ mod tests {
 
     #[test]
     fn semantic_vocabularies_are_closed_and_do_not_contain_phrase_aliases() {
-        assert_eq!(INTENTS.len(), 8);
+        assert_eq!(INTENTS.len(), 10);
         assert_eq!(CAPABILITIES.len(), 9);
         assert!(!INTENTS.contains(&"定案"));
         assert!(!INTENTS.contains(&"开始做"));

@@ -23,6 +23,9 @@ type AdapterExecutor =
     fn(&str, &Value, &[VerifiedArtifact], &Path) -> Result<AdapterOutput, AdapterError>;
 
 pub(crate) fn run_raw(raw: &[String], execute_adapter: AdapterExecutor) -> i32 {
+    if raw.first().is_some_and(|command| command == "declaration") {
+        return run_declaration_raw(raw);
+    }
     let parsed = match parse_cli(raw) {
         Ok(parsed) => parsed,
         Err(message) => {
@@ -52,6 +55,26 @@ pub(crate) fn run_raw(raw: &[String], execute_adapter: AdapterExecutor) -> i32 {
         eprintln!("{diagnostic}");
     }
     outcome.exit_code
+}
+
+fn run_declaration_raw(raw: &[String]) -> i32 {
+    if raw.len() != 2 || raw[1].starts_with('-') {
+        eprintln!("usage: capability declaration <id>");
+        return 64;
+    }
+    match declaration_for(&raw[1], None) {
+        Ok(declaration) => {
+            println!(
+                "{}",
+                serde_json::to_string(&declaration).expect("capability declaration serializes")
+            );
+            0
+        }
+        Err(message) => {
+            eprintln!("{message}");
+            69
+        }
+    }
 }
 
 struct ExecCli {

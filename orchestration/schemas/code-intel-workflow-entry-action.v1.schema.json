@@ -8,7 +8,7 @@
   "properties": {
     "schema": { "const": "code-intel-workflow-entry-action.v1" },
     "classification": { "enum": ["entry", "setup", "maintenance"] },
-    "intent": { "enum": ["explore", "plan", "implement", "verify", "archive", "synchronize", "setup", "maintain"] },
+    "intent": { "enum": ["explore", "plan", "clarify", "implement", "verify", "converge", "archive", "synchronize", "setup", "maintain"] },
     "actionId": { "type": "string", "minLength": 1 },
     "availability": { "enum": ["available", "conditional", "unavailable"] },
     "invocations": {

@@ -40,37 +40,17 @@ function Resolve-CodeIntelBinary {
     throw "Compiled code-intel binary not found."
 }
 
-function Resolve-IntegrationsManifest {
-    param([Parameter(Mandatory = $true)][string]$Binary)
-
-    $candidates = [System.Collections.Generic.List[string]]::new()
-    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_INTEGRATIONS_MANIFEST)) {
-        $candidates.Add($env:CODE_INTEL_INTEGRATIONS_MANIFEST)
-    }
-    $candidates.Add((Join-Path (Split-Path -Parent $PSScriptRoot) "orchestration/integrations.json"))
-    $candidates.Add((Join-Path (Split-Path -Parent $Binary) "orchestration/integrations.json"))
-    foreach ($candidate in $candidates) {
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-            return (Resolve-Path -LiteralPath $candidate).Path
-        }
-    }
-    throw "Capability registry for advisory.workflow-recommend not found."
-}
-
 $resolvedRepo = (Resolve-Path -LiteralPath $RepoPath).Path
 $rustCli = Resolve-CodeIntelBinary
-$manifestPath = Resolve-IntegrationsManifest -Binary $rustCli
-$registry = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-$registration = @($registry.integrations | Where-Object { $_.id -eq "advisory.workflow-recommend" })
-if ($registration.Count -ne 1) {
-    throw "Capability registry must contain exactly one advisory.workflow-recommend declaration."
+$declarationText = (& $rustCli capability declaration advisory.workflow-recommend | Out-String)
+if ($LASTEXITCODE -ne 0) {
+    throw "Workflow recommendation capability declaration failed with exit code $LASTEXITCODE."
 }
+$declaration = $declarationText | ConvertFrom-Json
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-workflow-recommend-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
-$priorManifest = $env:CODE_INTEL_INTEGRATIONS_MANIFEST
 try {
-    $env:CODE_INTEL_INTEGRATIONS_MANIFEST = $manifestPath
     $snapshotText = (& $rustCli snapshot identity --repo $resolvedRepo --working-tree-policy explicit_overlay --scope . | Out-String)
     if ($LASTEXITCODE -ne 0) {
         throw "Workflow recommendation snapshot failed with exit code $LASTEXITCODE."
@@ -80,7 +60,7 @@ try {
         schema = "code-intel-capability-request.v1"
         capability = "advisory.workflow-recommend"
         contractVersion = 1
-        implementation = $registration[0].capabilityDeclaration.implementation
+        implementation = $declaration.implementation
         snapshot = $snapshot.snapshot
         options = [ordered]@{ repoPath = $resolvedRepo; auto = [bool]$Auto }
         inputs = @()
@@ -100,7 +80,6 @@ try {
     return $proposalText | ConvertFrom-Json -AsHashtable
 }
 finally {
-    $env:CODE_INTEL_INTEGRATIONS_MANIFEST = $priorManifest
     if (Test-Path -LiteralPath $tempRoot) {
         Remove-Item -LiteralPath $tempRoot -Recurse -Force
     }

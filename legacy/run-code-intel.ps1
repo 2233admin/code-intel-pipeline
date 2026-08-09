@@ -3489,6 +3489,9 @@ if (-not $SkipOpenSpec) {
     if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
         throw "Workflow recommendation capability binary not found: $rustCli"
     }
+    $workflowDeclarationText = (& $rustCli capability declaration advisory.workflow-recommend | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw "Workflow recommendation capability declaration failed with exit code $LASTEXITCODE" }
+    $workflowDeclaration = $workflowDeclarationText | ConvertFrom-Json
     $snapshotText = (& $rustCli snapshot identity --repo $repoPath --working-tree-policy explicit_overlay --scope . | Out-String)
     if ($LASTEXITCODE -ne 0) { throw "Workflow recommendation snapshot failed with exit code $LASTEXITCODE" }
     $workflowSnapshot = $snapshotText | ConvertFrom-Json
@@ -3496,16 +3499,7 @@ if (-not $SkipOpenSpec) {
         schema = "code-intel-capability-request.v1"
         capability = "advisory.workflow-recommend"
         contractVersion = 1
-        implementation = [ordered]@{
-            id = "advisory.workflow-recommend.compat"
-            version = "1.1.0"
-            toolchainDigests = @(
-                "e4224d35f1f16f6929f40dff95cee39490fdd0ed71112145d2d95fbae735a3aa",
-                "7015e78f5d632600b0c2a4ec4e33d67209fdf11c3f437632820b9481fb9b0278",
-                "5d64181134790421e92f37616b9e722cfaa667d1d5550254b460d28a9bc0084a",
-                "296d69344fcca3504ae3606abfe2995b63ea1dbc16bc4a79c56eef8f227d9f00"
-            )
-        }
+        implementation = $workflowDeclaration.implementation
         snapshot = $workflowSnapshot.snapshot
         options = [ordered]@{ repoPath = $repoPath; auto = [bool]$AutoOpenSpec }
         inputs = @()
