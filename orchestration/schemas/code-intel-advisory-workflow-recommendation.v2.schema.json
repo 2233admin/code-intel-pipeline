@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-advisory-workflow-recommendation.v2.schema.json",
+  "title": "Code Intel advisory workflow recommendation v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "kind", "recommendation", "evidence", "confidence", "alternatives", "provenance", "effects", "conflict", "manualOverride", "handoffs"],
+  "properties": {
+    "schema": { "const": "code-intel-advisory-workflow-recommendation.v2" },
+    "kind": { "const": "proposal" },
+    "recommendation": { "oneOf": [{ "$ref": "#/$defs/candidate" }, { "type": "null" }] },
+    "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidence" } },
+    "confidence": { "enum": ["low", "medium", "high"] },
+    "alternatives": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/candidate" } },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capabilityId", "implementation", "repository", "catalog", "sourceVersions"],
+      "properties": {
+        "capabilityId": { "const": "advisory.workflow-recommend.v2" },
+        "implementation": { "const": "workflow_recommendation.rs" },
+        "repository": { "type": "string", "minLength": 1 },
+        "catalog": { "const": "orchestration/workflow-adapters.v1.json" },
+        "sourceVersions": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/source" } }
+      }
+    },
+    "effects": { "type": "array", "maxItems": 0 },
+    "conflict": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "roots", "resolution"],
+          "properties": {
+            "kind": { "enum": ["competing-normative-roots", "incompatible-required-capabilities"] },
+            "roots": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+            "resolution": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "manualOverride": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["from", "to", "reason"],
+          "properties": {
+            "from": { "enum": ["openspec", "spec-kit", "lightweight"] },
+            "to": { "enum": ["openspec", "spec-kit", "lightweight"] },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "handoffs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["intent", "availability", "missingCapability"],
+        "properties": {
+          "intent": { "enum": ["ship", "observe"] },
+          "availability": { "const": "unavailable" },
+          "missingCapability": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": { "kind": { "type": "string", "minLength": 1 }, "value": { "type": "string", "minLength": 1 } }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "version", "revision", "license"],
+      "properties": {
+        "uri": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 1 },
+        "license": { "const": "MIT" }
+      }
+    },
+    "presence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "evidence"],
+      "properties": {
+        "state": { "enum": ["absent", "configured", "active"] },
+        "evidence": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "adoption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "authorityEventRef"],
+      "properties": {
+        "state": { "enum": ["unresolved", "approved"] },
+        "authorityEventRef": { "type": ["string", "null"] }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate", "stack", "adapter", "verdict", "score", "reasons", "presence", "adoption", "entryActions", "setupActions", "maintenanceActions", "source", "capabilities"],
+      "properties": {
+        "candidate": { "type": "string", "minLength": 1 },
+        "stack": { "const": "spec-driven" },
+        "adapter": { "enum": ["openspec", "spec-kit", "lightweight"] },
+        "verdict": { "enum": ["recommended", "alternative", "active-continuation", "manual-override"] },
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "reasons": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "presence": { "$ref": "#/$defs/presence" },
+        "adoption": { "$ref": "#/$defs/adoption" },
+        "entryActions": { "type": "array", "items": { "$ref": "code-intel-workflow-entry-action.v1.schema.json" } },
+        "setupActions": { "type": "array", "items": { "$ref": "code-intel-workflow-entry-action.v1.schema.json" } },
+        "maintenanceActions": { "type": "array", "items": { "$ref": "code-intel-workflow-entry-action.v1.schema.json" } },
+        "source": { "$ref": "#/$defs/source" },
+        "capabilities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    }
+  }
+}

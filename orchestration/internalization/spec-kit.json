@@ -2,26 +2,26 @@
   "schema": "code-intel-internalization-record.v1",
   "id": "internalization.spec-kit-record",
   "projectId": "code-intel-pipeline",
-  "subject": { "name": "spec-kit advisory candidate", "kind": "design_reference", "source": { "uri": "https://github.com/github/spec-kit", "revision": "unverified-upstream; local-atom-sha256:03d9cbed70d83c59f7d9540fccc606ce0b2723135efd2c5e32943d367008a199" }, "license": { "id": "UNKNOWN-RESEARCH-ONLY", "obligations": ["do not distribute, vendor, invoke, or production-enable until the exact upstream revision and license text are verified", "retain this provenance and gap notice while the candidate remains in research"] } },
+  "subject": { "name": "spec-kit advisory candidate", "kind": "design_reference", "source": { "uri": "https://github.com/github/spec-kit", "revision": "ad4104b56c219b0a27bac06547d1a3c7d6a0dbd6 (release v0.16.1, published 2026-08-07T17:30:26Z, committed 2026-08-07T17:30:04Z)" }, "license": { "id": "MIT", "obligations": ["MIT confirmed 2026-08-09 via the upstream repository license endpoint; this is provenance evidence, not adoption authority", "retain this provenance and gap notice while the candidate remains in research"] } },
   "adoption": {
     "rung": "reimplement",
-    "ownedBoundary": ["pipeline-owned greenfield-fit advisory candidate data only", "no spec-kit runtime dependency", "no specify init, filesystem initialization, commitment, or adoption authority"],
-    "necessityEvidence": { "evidenceIds": ["local:reference-capability-map:spec-kit-row", "gap:spec-kit:upstream-revision", "gap:spec-kit:license"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "ownedBoundary": ["pipeline-owned brownfield and greenfield capability candidate data only", "no spec-kit runtime dependency", "no specify init, filesystem initialization, commitment, or adoption authority"],
+    "necessityEvidence": { "evidenceIds": ["local:reference-capability-map:spec-kit-row", "local:i255:spec-kit-upstream-commit-v0.16.1", "local:i255:spec-kit-license-mit", "local:i255:spec-kit-release-active"], "checkedAt": 1786233600, "expiresAt": 1791676800 },
     "compatibilityEvidence": { "evidenceIds": ["local:b06:proposal-effects-empty", "local:b06:no-auto-init-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
-    "conformanceEvidence": { "evidenceIds": ["local:atom:spec-kit-eight-occurrences", "local:b06:a01-envelope-parity"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+    "conformanceEvidence": { "evidenceIds": ["local:i255:workflow-adapter-catalog-validation", "local:i255:rust-v1-v2-envelope-parity"], "checkedAt": 1786233600, "expiresAt": 1791676800 }
   },
   "economics": {
-    "benefit": { "metric": "spec-kit token occurrences traced in the current advisory atom", "value": 8, "unit": "occurrences" },
+    "benefit": { "metric": "spec-kit capabilities represented in the governed adapter catalog", "value": 6, "unit": "capabilities" },
     "cost": { "metric": "pipeline-owned spec-kit lifecycle records", "value": 1, "unit": "records" },
-    "benefitEvidence": { "evidenceIds": ["local:atom:spec-kit-eight-occurrences"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "benefitEvidence": { "evidenceIds": ["local:i255:workflow-adapter-catalog-validation"], "checkedAt": 1786233600, "expiresAt": 1791676800 },
     "costEvidence": { "evidenceIds": ["local:record:spec-kit"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
   },
-  "assurance": { "maintenanceEvidence": { "evidenceIds": ["gap:spec-kit:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 }, "securityEvidence": { "evidenceIds": ["gap:spec-kit:security-review"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
-  "update": { "policy": "Before 2026-10-11, verify the upstream commit, LICENSE, releases, and greenfield-fit semantics; keep research-only until admitted", "nextCheckAt": 1791676800, "evidence": { "evidenceIds": ["gap:spec-kit:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
-  "ownedModifications": [ { "path": "legacy/OpenSpec-Detector.ps1", "description": "Pipeline-owned spec-kit fit heuristic and advisory rendering; no upstream execution", "evidenceIds": ["local:atom:spec-kit-eight-occurrences", "local:b06:no-auto-init-boundary"] } ],
+  "assurance": { "maintenanceEvidence": { "evidenceIds": ["local:i255:spec-kit-release-active"], "checkedAt": 1786233600, "expiresAt": 1791676800 }, "securityEvidence": { "evidenceIds": ["gap:spec-kit:security-review"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "update": { "policy": "Recheck the exact upstream release, commit, license, generated action surface, and security posture before 2026-10-11; keep research-only and reference-only until a separate authority event adopts it", "nextCheckAt": 1791676800, "evidence": { "evidenceIds": ["local:i255:spec-kit-release-active"], "checkedAt": 1786233600, "expiresAt": 1791676800 } },
+  "ownedModifications": [ { "path": "orchestration/workflow-adapters.v1.json", "description": "Pipeline-owned spec-kit provenance, capabilities, structured actions, and no-runtime boundary", "evidenceIds": ["local:i255:workflow-adapter-catalog-validation", "local:b06:no-auto-init-boundary"] }, { "path": "crates/code-intel-cli/src/workflow_recommendation.rs", "description": "Pipeline-owned deterministic evaluator; it does not invoke or initialize spec-kit", "evidenceIds": ["local:i255:rust-v1-v2-envelope-parity", "local:b06:no-auto-init-boundary"] } ],
   "rollback": { "strategy": "delete this candidate record and remove the spec-kit alternative without changing facts, commitments, or advisory authority", "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
   "exit": { "strategy": "replace with a pinned, licensed greenfield candidate or retire while retaining audit provenance", "replacementCriteria": ["fit evidence uses repository facts rather than tool name alone", "replacement has exact revision, license, measurements, and no-auto-init conformance"], "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
   "retirement": { "status": "candidate", "triggers": ["greenfield-fit claim is not evidence-bound", "upstream provenance or license remains unverifiable", "candidate loses unique measured advisory value"], "evidence": { "evidenceIds": ["local:record:spec-kit"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
-  "lifecycle": { "previousStatus": null, "status": "research", "effectiveAt": 1783900800, "replacementRecordId": null, "evidenceIds": ["local:record:spec-kit", "gap:spec-kit:upstream-revision", "gap:spec-kit:license"], "authorityEvent": null },
+  "lifecycle": { "previousStatus": null, "status": "research", "effectiveAt": 1783900800, "replacementRecordId": null, "evidenceIds": ["local:record:spec-kit", "local:i255:spec-kit-upstream-commit-v0.16.1", "local:i255:spec-kit-license-mit", "local:i255:spec-kit-release-active"], "authorityEvent": null },
   "provenance": { "recordedAt": 1783900800, "recordedBy": "dependency-expert" }
 }

@@ -42,7 +42,7 @@ $root = (Resolve-Path -LiteralPath $RepoPath).Path
 
 $repoRoot = $root
 $detectorPath = Join-Path $root "legacy/OpenSpec-Detector.ps1"
-Assert-True (Test-Path -LiteralPath $detectorPath -PathType Leaf) "OpenSpec-Detector.ps1 must exist."
+Assert-True (-not (Test-Path -LiteralPath $detectorPath)) "Duplicated PowerShell policy atom must be retired."
 $facadePath = Join-Path $root "legacy/Invoke-WorkflowRecommendation.ps1"
 Assert-True (Test-Path -LiteralPath $facadePath -PathType Leaf) "Workflow recommendation facade must exist."
 $schemaPath = Join-Path $repoRoot "orchestration/schemas/code-intel-advisory-workflow-recommendation.v1.schema.json"
@@ -55,6 +55,7 @@ Assert-True (@($registration[0].effects).Count -eq 0) "Registered advisory capab
 Assert-True ($registration[0].capabilityDeclaration.id -eq "advisory.workflow-recommend") "Registration must expose a real A01 capability declaration."
 Assert-True (@($registration[0].capabilityDeclaration.allowedEffects).Count -eq 0) "A01 declaration must allow no advisory effects."
 Assert-True ($registration[0].runtimeAdapter -eq "advisory.workflow-recommend.compat") "Registration must bind the executable runtime adapter."
+Assert-True ($registration[0].entrypoint -eq "crates/code-intel-cli/src/workflow_recommendation.rs") "Workflow policy must be Rust-native."
 Assert-True (Test-Path -LiteralPath (Join-Path $repoRoot "docs/advisory-workflow-recommendation.md") -PathType Leaf) "Advisory boundary documentation must exist."
 $runnerSource = Get-Content -LiteralPath (Join-Path $root "legacy/run-code-intel.ps1") -Raw
 Assert-True ($runnerSource -notmatch "function Get-CodeMetrics") "Main runner must not retain duplicated recommender implementation."
@@ -68,10 +69,10 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $tempRoot "src") -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $tempRoot "src/main.ps1") -Value "function Invoke-Demo { 'ok' }" -Encoding UTF8
 
-    $result = & $detectorPath -RepoPath $tempRoot -Auto -Quiet 6>$null
-    $facadeResult = & $facadePath -RepoPath $tempRoot -Auto -Quiet
-    Assert-True ($null -ne $result) "Detector must return a result object."
-    Assert-True (($result | ConvertTo-Json -Depth 20 -Compress) -eq ($facadeResult | ConvertTo-Json -Depth 20 -Compress)) "Standalone atom and facade must have normalized parity."
+    $result = & $facadePath -RepoPath $tempRoot -Auto -Quiet
+    $jsonResult = (& $facadePath -RepoPath $tempRoot -Auto -Quiet -Json) | ConvertFrom-Json -AsHashtable
+    Assert-True ($null -ne $result) "Facade must return a result object."
+    Assert-True (($result | ConvertTo-Json -Depth 20 -Compress) -eq ($jsonResult | ConvertTo-Json -Depth 20 -Compress)) "Object and JSON compatibility modes must have normalized parity."
     Assert-True ((Get-MapValue $result "schema") -eq "code-intel-advisory-workflow-recommendation.v1") "Result must use the advisory proposal schema."
     Assert-True ((Get-MapValue $result "kind") -eq "proposal") "Workflow recommendation must remain a proposal."
     $keys = @($result.Keys | Sort-Object)
@@ -84,7 +85,7 @@ try {
     $brief = Get-MapValue $recommendation "brief"
     Assert-True ($null -ne $brief) "Recommendation must include its evidence brief."
     Assert-True ((Get-MapValue $brief "recommended") -eq "openspec-opsx") "Brief must recommend openspec-opsx for openspec/ repos."
-    Assert-True ((Get-MapValue $result "confidence") -eq "high") "Already-adopted proposal must be high confidence."
+    Assert-True ((Get-MapValue $result "confidence") -eq "medium") "Configuration evidence without an authority event must not be reported as adopted."
 
     $guardrails = @(Get-MapValue $brief "doNotDoYet")
     Assert-True (($guardrails -join "`n") -match "Do not auto-run init") "Brief must preserve no-auto-init guardrail."

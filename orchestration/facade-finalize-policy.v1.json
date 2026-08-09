@@ -21,8 +21,7 @@
     { "surfaceId": "compat.repowise", "path": "legacy/Invoke-ScopedRepowise.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "memory.repowise", "expiresAt": null, "classification": "platform_glue" },
     { "surfaceId": "compat.sentrux", "path": "legacy/Invoke-SentruxAgentTool.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "structure.sentrux", "expiresAt": null, "classification": "compatibility_facade" },
     { "surfaceId": "compat.codenexus", "path": "legacy/Invoke-CodeNexusLite.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "localization.codenexus-lite", "expiresAt": null, "classification": "compatibility_facade" },
-    { "surfaceId": "compat.workflow-recommend", "path": "legacy/Invoke-WorkflowRecommendation.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "advisory.workflow-recommend", "expiresAt": null, "classification": "compatibility_facade" },
-    { "surfaceId": "compat.openspec-detector", "path": "legacy/OpenSpec-Detector.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "advisory.workflow-recommend", "expiresAt": null, "classification": "compatibility_facade" }
+    { "surfaceId": "compat.workflow-recommend", "path": "legacy/Invoke-WorkflowRecommendation.ps1", "owner": "code-intel-pipeline", "registryParticipantId": "advisory.workflow-recommend", "expiresAt": null, "classification": "compatibility_facade" }
   ],
   "modeMatrix": [
     { "mode": "doctor", "fixture": "doctor.json", "requiredCapabilities": ["doctor"] },

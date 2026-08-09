@@ -1,0 +1,73 @@
+{
+  "schema": "code-intel-workflow-adapter-catalog.v1",
+  "candidates": [
+    {
+      "candidate": "openspec-opsx",
+      "adapter": "openspec",
+      "stack": "spec-driven",
+      "source": {
+        "uri": "https://github.com/Fission-AI/OpenSpec",
+        "version": "1.8.0",
+        "revision": "d57889664cab4f2f061d236ec3ff82a5578701bb",
+        "license": "MIT"
+      },
+      "capabilities": ["delta-governance", "continuous-change", "brownfield-change"],
+      "configurationRoots": ["openspec"],
+      "entryActions": [
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "entry", "intent": "explore", "actionId": "openspec.explore", "availability": "conditional", "invocations": { "codex": "$openspec-explore", "generic": "/opsx:explore", "cli": null }, "prerequisites": ["generated-action:openspec-explore"], "effects": [] },
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "entry", "intent": "plan", "actionId": "openspec.propose", "availability": "conditional", "invocations": { "codex": "$openspec-propose", "generic": "/opsx:propose", "cli": null }, "prerequisites": ["generated-action:openspec-propose"], "effects": [] },
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "entry", "intent": "implement", "actionId": "openspec.apply-change", "availability": "conditional", "invocations": { "codex": "$openspec-apply-change", "generic": "/opsx:apply", "cli": null }, "prerequisites": ["generated-action:openspec-apply-change"], "effects": ["repository_write", "process_execute"] },
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "entry", "intent": "archive", "actionId": "openspec.archive-change", "availability": "conditional", "invocations": { "codex": "$openspec-archive-change", "generic": "/opsx:archive", "cli": null }, "prerequisites": ["generated-action:openspec-archive-change"], "effects": ["repository_write"] },
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "entry", "intent": "synchronize", "actionId": "openspec.sync", "availability": "conditional", "invocations": { "codex": "$openspec-sync", "generic": "/opsx:sync", "cli": null }, "prerequisites": ["generated-action:openspec-sync"], "effects": ["repository_write"] }
+      ],
+      "setupActions": [
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "setup", "intent": "setup", "actionId": "openspec.init", "availability": "conditional", "invocations": { "codex": null, "generic": null, "cli": null }, "prerequisites": ["explicit-operator-approval", "installed-openspec-runtime"], "effects": ["repository_write", "process_execute"] }
+      ],
+      "maintenanceActions": [
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "maintenance", "intent": "maintain", "actionId": "openspec.update", "availability": "conditional", "invocations": { "codex": "$openspec-update", "generic": "/opsx:update", "cli": null }, "prerequisites": ["generated-action:openspec-update"], "effects": ["repository_write", "process_execute"] }
+      ],
+      "runtimeBoundary": "reference-only-no-runtime-dependency"
+    },
+    {
+      "candidate": "spec-kit",
+      "adapter": "spec-kit",
+      "stack": "spec-driven",
+      "source": {
+        "uri": "https://github.com/github/spec-kit",
+        "version": "0.16.1",
+        "revision": "ad4104b56c219b0a27bac06547d1a3c7d6a0dbd6",
+        "license": "MIT"
+      },
+      "capabilities": ["constitution", "clarification", "checklists", "convergence", "composed-workflow", "brownfield-change"],
+      "configurationRoots": [".specify", "specs"],
+      "entryActions": [
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "entry", "intent": "plan", "actionId": "spec-kit.specify", "availability": "conditional", "invocations": { "codex": "$speckit-specify", "generic": "/speckit.specify", "cli": null }, "prerequisites": ["generated-action:speckit-specify"], "effects": ["repository_write"] },
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "entry", "intent": "plan", "actionId": "spec-kit.plan", "availability": "conditional", "invocations": { "codex": "$speckit-plan", "generic": "/speckit.plan", "cli": null }, "prerequisites": ["generated-action:speckit-plan"], "effects": ["repository_write"] },
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "entry", "intent": "implement", "actionId": "spec-kit.implement", "availability": "conditional", "invocations": { "codex": "$speckit-implement", "generic": "/speckit.implement", "cli": null }, "prerequisites": ["generated-action:speckit-implement"], "effects": ["repository_write", "process_execute"] },
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "entry", "intent": "verify", "actionId": "spec-kit.analyze", "availability": "conditional", "invocations": { "codex": "$speckit-analyze", "generic": "/speckit.analyze", "cli": null }, "prerequisites": ["generated-action:speckit-analyze"], "effects": [] },
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "entry", "intent": "verify", "actionId": "spec-kit.checklist", "availability": "conditional", "invocations": { "codex": "$speckit-checklist", "generic": "/speckit.checklist", "cli": null }, "prerequisites": ["generated-action:speckit-checklist"], "effects": ["repository_write"] }
+      ],
+      "setupActions": [
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "setup", "intent": "setup", "actionId": "spec-kit.init", "availability": "conditional", "invocations": { "codex": null, "generic": null, "cli": null }, "prerequisites": ["explicit-operator-approval", "installed-spec-kit-runtime"], "effects": ["repository_write", "process_execute"] }
+      ],
+      "maintenanceActions": [],
+      "runtimeBoundary": "reference-only-no-runtime-dependency"
+    },
+    {
+      "candidate": "lightweight-local",
+      "adapter": "lightweight",
+      "stack": "spec-driven",
+      "source": { "uri": "pipeline://workflow-adapters", "version": "1", "revision": "pipeline-owned", "license": "MIT" },
+      "capabilities": ["bounded-local-work"],
+      "configurationRoots": [],
+      "entryActions": [
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "entry", "intent": "plan", "actionId": "lightweight.plan", "availability": "available", "invocations": { "codex": null, "generic": "bounded-local-plan", "cli": null }, "prerequisites": [], "effects": [] },
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "entry", "intent": "implement", "actionId": "lightweight.implement", "availability": "available", "invocations": { "codex": null, "generic": "bounded-local-implementation", "cli": null }, "prerequisites": [], "effects": ["repository_write", "process_execute"] },
+        { "schema": "code-intel-workflow-entry-action.v1", "classification": "entry", "intent": "verify", "actionId": "lightweight.verify", "availability": "available", "invocations": { "codex": null, "generic": "bounded-local-verification", "cli": null }, "prerequisites": [], "effects": ["process_execute"] }
+      ],
+      "setupActions": [],
+      "maintenanceActions": [],
+      "runtimeBoundary": "reference-only-no-runtime-dependency"
+    }
+  ]
+}

@@ -288,6 +288,31 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     h.iter().map(|v| format!("{v:08x}")).collect()
 }
 
+pub(crate) fn authority_event_digest(event: &Value) -> Result<String, String> {
+    let mut evidence = event["evidenceIds"]
+        .as_array()
+        .ok_or("authority event evidenceIds must be an array")?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| "authority event evidenceIds contains an invalid id".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    evidence.sort();
+    let payload = serde_json::json!({
+        "schema":event["schema"],
+        "id":event["id"],
+        "decision":event["decision"],
+        "approver":event["approver"],
+        "evidenceIds":evidence,
+        "issuedAt":event["issuedAt"],
+        "expiresAt":event["expiresAt"]
+    });
+    Ok(sha256_hex(&serde_json::to_vec(&payload).unwrap()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::is_run_identity;

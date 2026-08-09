@@ -2,31 +2,32 @@
   "schema": "code-intel-internalization-record.v1",
   "id": "internalization.openspec-record",
   "projectId": "code-intel-pipeline",
-  "subject": { "name": "OpenSpec OPSX advisory candidate", "kind": "design_reference", "source": { "uri": "https://github.com/Fission-AI/OpenSpec", "revision": "upstream-commit:4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b (tag v1.7.0, tag-object:bb2f3e5287872d7cae7074964fc2f39cde0d5022, committed 2026-07-29T01:25:23Z); local-atom-sha256:03d9cbed70d83c59f7d9540fccc606ce0b2723135efd2c5e32943d367008a199" }, "license": { "id": "MIT", "obligations": ["MIT confirmed 2026-08-04 via gh api repos/Fission-AI/OpenSpec (spdx_id: MIT); this closes the license compliance blocker only and is not an adoption decision — it does not grant dependency, vendoring, invocation, or production-enable authority under the reimplement rung and owned boundary", "retain this provenance and gap notice while the candidate remains in research"] } },
+  "subject": { "name": "OpenSpec OPSX advisory candidate", "kind": "design_reference", "source": { "uri": "https://github.com/Fission-AI/OpenSpec", "revision": "d57889664cab4f2f061d236ec3ff82a5578701bb (release v1.8.0, published 2026-08-05T21:10:13Z, committed 2026-08-05T20:55:58Z)" }, "license": { "id": "MIT", "obligations": ["MIT confirmed 2026-08-09 via the upstream repository license endpoint; this is provenance evidence, not adoption authority", "retain this provenance and gap notice while the candidate remains in research"] } },
   "adoption": {
     "rung": "reimplement",
     "ownedBoundary": ["pipeline-owned advisory candidate data and recommendation rules only", "no OpenSpec runtime dependency", "no openspec init, filesystem initialization, commitment, or adoption authority"],
-    "necessityEvidence": { "evidenceIds": ["local:reference-capability-map:openspec-row", "local:i156:openspec-upstream-commit-v1.7.0", "local:i156:openspec-license-mit", "local:i156:openspec-release-active"], "checkedAt": 1785801600, "expiresAt": 1791676800 },
+    "necessityEvidence": { "evidenceIds": ["local:reference-capability-map:openspec-row", "local:i255:openspec-upstream-commit-v1.8.0", "local:i255:openspec-license-mit", "local:i255:openspec-release-active"], "checkedAt": 1786233600, "expiresAt": 1791676800 },
     "compatibilityEvidence": { "evidenceIds": ["local:b06:proposal-effects-empty", "local:b06:no-auto-init-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
-    "conformanceEvidence": { "evidenceIds": ["local:atom:openspec-opsx-five-occurrences", "local:b06:a01-envelope-parity"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
+    "conformanceEvidence": { "evidenceIds": ["local:i255:workflow-adapter-catalog-validation", "local:i255:rust-v1-v2-envelope-parity"], "checkedAt": 1786233600, "expiresAt": 1791676800 }
   },
   "economics": {
-    "benefit": { "metric": "OpenSpec OPSX token occurrences traced in the current advisory atom", "value": 5, "unit": "occurrences" },
+    "benefit": { "metric": "OpenSpec capabilities represented in the governed adapter catalog", "value": 3, "unit": "capabilities" },
     "cost": { "metric": "pipeline-owned OpenSpec lifecycle records", "value": 1, "unit": "records" },
-    "benefitEvidence": { "evidenceIds": ["local:atom:openspec-opsx-five-occurrences"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "benefitEvidence": { "evidenceIds": ["local:i255:workflow-adapter-catalog-validation"], "checkedAt": 1786233600, "expiresAt": 1791676800 },
     "costEvidence": { "evidenceIds": ["local:record:openspec"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
   },
   "assurance": {
-    "maintenanceEvidence": { "evidenceIds": ["gap:openspec:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 },
+    "maintenanceEvidence": { "evidenceIds": ["local:i255:openspec-release-active"], "checkedAt": 1786233600, "expiresAt": 1791676800 },
     "securityEvidence": { "evidenceIds": ["gap:openspec:security-review"], "checkedAt": 1783900800, "expiresAt": 1791676800 }
   },
-  "update": { "policy": "Upstream commit, LICENSE, and release status were verified 2026-08-04 ahead of the 2026-10-11 deadline (see adoption.necessityEvidence); MIT clarity resolves the license compliance blocker only and is not by itself an adoption reason under the reimplement rung. Before 2026-10-11, still complete the security/supply-chain review and the maintenance update-check attestation; keep research-only until those are admitted", "nextCheckAt": 1791676800, "evidence": { "evidenceIds": ["gap:openspec:update-check"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
+  "update": { "policy": "Recheck the exact upstream release, commit, license, generated action surface, and security posture before 2026-10-11; keep research-only and reference-only until a separate authority event adopts it", "nextCheckAt": 1791676800, "evidence": { "evidenceIds": ["local:i255:openspec-release-active"], "checkedAt": 1786233600, "expiresAt": 1791676800 } },
   "ownedModifications": [
-    { "path": "legacy/OpenSpec-Detector.ps1", "description": "Pipeline-owned OpenSpec candidate detection and advisory rendering; does not contain or invoke the upstream runtime", "evidenceIds": ["local:atom:openspec-opsx-five-occurrences", "local:b06:no-auto-init-boundary"] }
+    { "path": "orchestration/workflow-adapters.v1.json", "description": "Pipeline-owned OpenSpec provenance, capabilities, structured actions, and no-runtime boundary", "evidenceIds": ["local:i255:workflow-adapter-catalog-validation", "local:b06:no-auto-init-boundary"] },
+    { "path": "crates/code-intel-cli/src/workflow_recommendation.rs", "description": "Pipeline-owned deterministic evaluator; it does not invoke or initialize OpenSpec", "evidenceIds": ["local:i255:rust-v1-v2-envelope-parity", "local:b06:no-auto-init-boundary"] }
   ],
   "rollback": { "strategy": "delete this candidate record and remove the OpenSpec alternative from candidate data without changing the advisory schema or authority boundary", "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
   "exit": { "strategy": "replace the reference with a pinned, licensed candidate record or retire it while retaining audit provenance", "replacementCriteria": ["replacement has exact upstream revision and verified license obligations", "replacement passes proposal conformance and no-auto-init tests"], "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
   "retirement": { "status": "candidate", "triggers": ["upstream provenance or license remains unverifiable at next check", "candidate no longer contributes unique measured advisory value", "security or maintenance evidence cannot be admitted"], "evidence": { "evidenceIds": ["local:record:openspec"], "checkedAt": 1783900800, "expiresAt": 1791676800 } },
-  "lifecycle": { "previousStatus": null, "status": "research", "effectiveAt": 1783900800, "replacementRecordId": null, "evidenceIds": ["local:record:openspec", "local:i156:openspec-upstream-commit-v1.7.0", "local:i156:openspec-license-mit", "local:i156:openspec-release-active"], "authorityEvent": null },
+  "lifecycle": { "previousStatus": null, "status": "research", "effectiveAt": 1783900800, "replacementRecordId": null, "evidenceIds": ["local:record:openspec", "local:i255:openspec-upstream-commit-v1.8.0", "local:i255:openspec-license-mit", "local:i255:openspec-release-active"], "authorityEvent": null },
   "provenance": { "recordedAt": 1783900800, "recordedBy": "dependency-expert" }
 }

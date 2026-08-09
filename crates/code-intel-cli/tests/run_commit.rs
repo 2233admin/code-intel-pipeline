@@ -11,6 +11,8 @@ mod adapter_contract;
 mod artifact_ref;
 #[path = "../src/audit_report/mod.rs"]
 mod audit_report;
+#[path = "../src/authority.rs"]
+mod authority;
 #[path = "../src/capability.rs"]
 mod capability;
 #[path = "../src/capability_inventory.rs"]
@@ -75,6 +77,15 @@ fn manifest_contract() -> ArtifactWriteContract {
     }
 }
 
+fn workflow_recommendation_contract() -> ArtifactWriteContract {
+    ArtifactWriteContract {
+        artifact_schema: "code-intel-advisory-workflow-recommendation.v2",
+        artifact_type: "advisory.workflow-recommendation",
+        max_bytes: 1024 * 1024,
+        validate_payload: capability_inventory::workflow_recommendation::validate_v2_bytes,
+    }
+}
+
 fn staged(root: &Path) -> (staged_artifact::StagedArtifactSet, Value) {
     let mut writer = StagedWriter::begin(root, SNAPSHOT).unwrap();
     let inventory = writer
@@ -109,6 +120,55 @@ fn staged_run_is_promoted_and_completion_marker_is_published_last() {
     assert!(result.final_path.join("run-complete.json").is_file());
     assert_eq!(run_commit::classify(&result.final_path), "committed");
     assert!(!tree.0.join("run-001").join("artifact-index.json").exists());
+}
+
+#[test]
+fn workflow_recommendation_v2_is_staged_and_committed_through_a06_and_a07() {
+    let tree = Temp::new("workflow-v2");
+    let repo = tree.0.join("repository");
+    let output = tree.0.join("workflow-output");
+    fs::create_dir_all(&repo).unwrap();
+    let request = json!({
+        "options": {
+            "repoPath": repo,
+            "requestedIntents": ["plan"],
+            "requiredCapabilities": ["delta-governance"]
+        }
+    });
+    let recommendation =
+        capability_inventory::workflow_recommendation::execute_v2(&request, &[], &output).unwrap();
+    let bytes = &recommendation.artifacts[0].bytes;
+
+    let mut writer = StagedWriter::begin(&tree.0, SNAPSHOT).unwrap();
+    let recommendation_ref = writer
+        .stage(bytes, workflow_recommendation_contract())
+        .unwrap()
+        .to_artifact_ref_value();
+    let manifest = json!({
+        "schema":"code-intel-run-manifest.v1",
+        "runIdentity":"dag-v1:aabb",
+        "snapshotIdentity":SNAPSHOT,
+        "outcome":"completed",
+        "nodes":{"workflow":{"status":"succeeded","verdict":"pass","artifacts":[recommendation_ref]}}
+    });
+    let manifest_ref = writer
+        .stage(&serde_json::to_vec(&manifest).unwrap(), manifest_contract())
+        .unwrap()
+        .to_artifact_ref_value();
+    let result = run_commit::commit(
+        writer.seal().unwrap(),
+        &manifest_ref,
+        "workflow-v2",
+        CommitOptions::default(),
+    )
+    .unwrap();
+
+    assert_eq!(run_commit::classify(&result.final_path), "committed");
+    let digest = manifest["nodes"]["workflow"]["artifacts"][0]["sha256"]
+        .as_str()
+        .unwrap();
+    let committed = fs::read(result.final_path.join("objects/sha256").join(digest)).unwrap();
+    capability_inventory::workflow_recommendation::validate_v2_bytes(&committed).unwrap();
 }
 
 #[test]

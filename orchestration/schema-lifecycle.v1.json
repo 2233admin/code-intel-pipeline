@@ -184,6 +184,71 @@
         "symbols": ["validate_artifact_value", "code-intel-session-evidence.v1"],
         "tests": ["crates/code-intel-cli/tests/session_evidence.rs", "crates/code-intel-cli/tests/dag_run.rs"]
       }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-intel-authority-event.v1.schema.json",
+      "schemaId": "code-intel-authority-event.v1.schema.json",
+      "logicalSchemas": ["code-intel-authority-event.v1"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/workflow_recommendation_contract.rs",
+        "symbols": ["code-intel-authority-event.v1", "validate_authority_event_bytes"],
+        "tests": ["crates/code-intel-cli/tests/capability_exec.rs", "crates/code-intel-cli/tests/schema_lifecycle.rs"]
+      }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-intel-workflow-recommendation-request.v2.schema.json",
+      "schemaId": "code-intel-workflow-recommendation-request.v2.schema.json",
+      "logicalSchemas": ["code-intel-workflow-recommendation-request.v2"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/workflow_recommendation.rs",
+        "symbols": ["REQUEST_SCHEMA", "parse_v2_options"],
+        "tests": ["crates/code-intel-cli/tests/capability_exec.rs", "crates/code-intel-cli/tests/schema_lifecycle.rs"]
+      }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-intel-workflow-entry-action.v1.schema.json",
+      "schemaId": "code-intel-workflow-entry-action.v1.schema.json",
+      "logicalSchemas": ["code-intel-workflow-entry-action.v1"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/workflow_recommendation_contract.rs",
+        "symbols": ["code-intel-workflow-entry-action.v1", "validate_action"],
+        "tests": ["crates/code-intel-cli/tests/capability_exec.rs", "crates/code-intel-cli/tests/schema_lifecycle.rs"]
+      }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-intel-workflow-adapter-catalog.v1.schema.json",
+      "schemaId": "code-intel-workflow-adapter-catalog.v1.schema.json",
+      "logicalSchemas": ["code-intel-workflow-adapter-catalog.v1"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/workflow_recommendation_contract.rs",
+        "symbols": ["code-intel-workflow-adapter-catalog.v1", "validate_catalog"],
+        "tests": ["crates/code-intel-cli/tests/capability_exec.rs", "crates/code-intel-cli/tests/schema_lifecycle.rs"]
+      }
+    },
+    {
+      "schemaPath": "orchestration/schemas/code-intel-advisory-workflow-recommendation.v2.schema.json",
+      "schemaId": "code-intel-advisory-workflow-recommendation.v2.schema.json",
+      "logicalSchemas": ["code-intel-advisory-workflow-recommendation.v2"],
+      "shape": "closed-object",
+      "status": "active",
+      "compatibilityPolicy": "additive-only",
+      "implementation": {
+        "source": "crates/code-intel-cli/src/workflow_recommendation_contract.rs",
+        "symbols": ["V2_SCHEMA", "validate_v2"],
+        "tests": ["crates/code-intel-cli/tests/capability_exec.rs", "crates/code-intel-cli/tests/schema_lifecycle.rs"]
+      }
     }
   ]
 }

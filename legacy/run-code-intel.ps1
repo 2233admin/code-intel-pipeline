@@ -303,7 +303,7 @@ $output = & git @script:GitHardening -C $Path rev-parse --is-inside-work-tree 2>
 return ($LASTEXITCODE -eq 0 -and [string]$output -eq "true")
 }
 
-# Workflow recommendations are owned by the standalone advisory atom in OpenSpec-Detector.ps1.
+# Workflow recommendation policy is owned by the compiled Rust capability.
 
 function Get-JsonProperty {
     param(
@@ -3498,10 +3498,12 @@ if (-not $SkipOpenSpec) {
         contractVersion = 1
         implementation = [ordered]@{
             id = "advisory.workflow-recommend.compat"
-            version = "1.0.0"
+            version = "1.1.0"
             toolchainDigests = @(
-                "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-                "295eb1ce67760638a81136febf727285f0feb4692a228df65ac75316b4a566c5"
+                "e4224d35f1f16f6929f40dff95cee39490fdd0ed71112145d2d95fbae735a3aa",
+                "7015e78f5d632600b0c2a4ec4e33d67209fdf11c3f437632820b9481fb9b0278",
+                "5d64181134790421e92f37616b9e722cfaa667d1d5550254b460d28a9bc0084a",
+                "296d69344fcca3504ae3606abfe2995b63ea1dbc16bc4a79c56eef8f227d9f00"
             )
         }
         snapshot = $workflowSnapshot.snapshot

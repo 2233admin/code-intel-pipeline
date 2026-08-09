@@ -129,8 +129,8 @@ if ($null -eq $registry) { throw "orchestration/integrations.json is missing" }
 $registered = @($registry.integrations | ForEach-Object { [string]$_.id })
 $retained = [System.Collections.Generic.List[object]]::new()
 $surfaceIds = @($policy.retainedPowerShell | ForEach-Object { [string]$_.surfaceId })
-if ($surfaceIds.Count -ne 11 -or @($surfaceIds | Sort-Object -Unique).Count -ne $surfaceIds.Count) {
-    throw "E06 policy must contain exactly eleven unique retained PowerShell surfaces"
+if ($surfaceIds.Count -ne 10 -or @($surfaceIds | Sort-Object -Unique).Count -ne $surfaceIds.Count) {
+    throw "E06 policy must contain exactly ten unique retained PowerShell surfaces"
 }
 foreach ($surface in @($policy.retainedPowerShell)) {
     Assert-ExactProperties $surface @("surfaceId", "path", "owner", "registryParticipantId", "expiresAt", "classification") "retained PowerShell surface"

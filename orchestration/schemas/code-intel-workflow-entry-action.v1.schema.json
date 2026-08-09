@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-workflow-entry-action.v1.schema.json",
+  "title": "Code Intel structured workflow action",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "classification", "intent", "actionId", "availability", "invocations", "prerequisites", "effects"],
+  "properties": {
+    "schema": { "const": "code-intel-workflow-entry-action.v1" },
+    "classification": { "enum": ["entry", "setup", "maintenance"] },
+    "intent": { "enum": ["explore", "plan", "implement", "verify", "archive", "synchronize", "setup", "maintain"] },
+    "actionId": { "type": "string", "minLength": 1 },
+    "availability": { "enum": ["available", "conditional", "unavailable"] },
+    "invocations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["codex", "generic", "cli"],
+      "properties": {
+        "codex": { "type": ["string", "null"] },
+        "generic": { "type": ["string", "null"] },
+        "cli": { "type": ["string", "null"] }
+      }
+    },
+    "prerequisites": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "effects": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+  }
+}

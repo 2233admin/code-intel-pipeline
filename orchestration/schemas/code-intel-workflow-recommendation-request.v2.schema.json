@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-workflow-recommendation-request.v2.schema.json",
+  "title": "Code Intel workflow recommendation semantic request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "repoPath", "requestedIntents", "requiredCapabilities"],
+  "properties": {
+    "schema": { "const": "code-intel-workflow-recommendation-request.v2" },
+    "repoPath": { "type": "string", "minLength": 1 },
+    "requestedIntents": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["explore", "plan", "implement", "verify", "archive", "synchronize", "ship", "observe"] }
+    },
+    "requiredCapabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["delta-governance", "continuous-change", "constitution", "clarification", "checklists", "convergence", "composed-workflow", "brownfield-change", "bounded-local-work"] }
+    },
+    "preferredAdapter": { "enum": ["openspec", "spec-kit", "lightweight"] },
+    "manualOverrideReason": { "type": "string", "minLength": 1 }
+  },
+  "allOf": [
+    {
+      "if": { "required": ["preferredAdapter"] },
+      "then": { "required": ["manualOverrideReason"] }
+    }
+  ]
+}

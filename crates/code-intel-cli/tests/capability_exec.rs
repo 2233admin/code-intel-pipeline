@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
-    "295eb1ce67760638a81136febf727285f0feb4692a228df65ac75316b4a566c5";
+    "296d69344fcca3504ae3606abfe2995b63ea1dbc16bc4a79c56eef8f227d9f00";
 const STRUCTURED_EDIT_DIGEST: &str =
     "fb1bc02fbe9335e1ccbe66ad12ca2927bb3bace4722735e62b1fb2ab053af72d";
 const REPO_SNAPSHOT_DIGEST: &str =
@@ -1641,23 +1641,30 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
     fs::write(repo.join("src/main.ps1"), "'ok'\n").unwrap();
 
     let mut value = request(&repo, "advisory.workflow-recommend");
-    value["implementation"] = json!({
-        "id":"advisory.workflow-recommend.compat",
-        "version":"1.0.0",
-        "toolchainDigests":[
-            "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-            "295eb1ce67760638a81136febf727285f0feb4692a228df65ac75316b4a566c5"
-        ]
-    });
+    value["implementation"] = registry_implementation("advisory.workflow-recommend");
     value["options"] = json!({"repoPath":repo,"auto":true});
     value["effectPolicy"]["allowedEffects"] = json!([]);
     let out = root.join("out");
-    let output = run_with_request_file(
-        &value,
-        &root.join("request.json"),
-        &out,
-        "advisory.workflow-recommend",
-    );
+    let request_path = root.join("request.json");
+    fs::write(&request_path, serde_json::to_vec(&value).unwrap()).unwrap();
+    let output = common::cli()
+        .env(
+            "CODE_INTEL_INTEGRATIONS_MANIFEST",
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join("orchestration/integrations.json"),
+        )
+        .args([
+            "capability",
+            "exec",
+            "advisory.workflow-recommend",
+            "--request",
+        ])
+        .arg(&request_path)
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .unwrap();
     assert_eq!(
         output.status.code(),
         Some(0),
@@ -1700,6 +1707,326 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
     let direct_proposal: Value =
         serde_json::from_slice(&direct.stdout).expect("facade JSON mode must keep stdout pure");
     assert_eq!(envelope_proposal, direct_proposal);
+    let _ = fs::remove_dir_all(root);
+}
+
+fn run_workflow_v2(root: &Path, repo: &Path, options: Value) -> Value {
+    let mut value = request(repo, "advisory.workflow-recommend.v2");
+    value["implementation"] = registry_implementation("advisory.workflow-recommend.v2");
+    value["options"] = options;
+    value["effectPolicy"]["allowedEffects"] = json!([]);
+    let out = root.join("v2-out");
+    let request_path = root.join("v2-request.json");
+    fs::write(&request_path, serde_json::to_vec(&value).unwrap()).unwrap();
+    let output = common::cli()
+        .env(
+            "CODE_INTEL_INTEGRATIONS_MANIFEST",
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join("orchestration/integrations.json"),
+        )
+        .args([
+            "capability",
+            "exec",
+            "advisory.workflow-recommend.v2",
+            "--request",
+        ])
+        .arg(&request_path)
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .expect("run v2 capability executor");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr={} stdout={}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let envelope: Value = serde_json::from_slice(&output.stdout).expect("v2 envelope JSON");
+    assert_eq!(envelope["capability"], "advisory.workflow-recommend.v2");
+    assert_eq!(envelope["declaredEffects"], json!([]));
+    assert_eq!(envelope["observedEffects"], json!([]));
+    serde_json::from_slice(&fs::read(out.join("workflow-recommendation.v2.json")).unwrap())
+        .expect("v2 proposal JSON")
+}
+
+fn assert_checked_json_schema(document: &Path, schema: &Path) {
+    let output = Command::new("pwsh")
+        .args([
+            "-NoLogo",
+            "-NoProfile",
+            "-Command",
+            "param($Document,$Schema); if (-not (Get-Content -Raw -LiteralPath $Document | Test-Json -SchemaFile $Schema -ErrorAction Stop)) { exit 1 }",
+        ])
+        .arg(document)
+        .arg(schema)
+        .output()
+        .expect("run checked JSON Schema validation");
+    assert!(
+        output.status.success(),
+        "schema={} document={} stderr={}",
+        schema.display(),
+        document.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn workflow_v2_distinguishes_configuration_from_adoption_and_separates_setup() {
+    let root = temp_dir("workflow-v2-configured");
+    let repo = root.join("repo");
+    fs::create_dir_all(repo.join("openspec")).unwrap();
+    let proposal = run_workflow_v2(
+        &root,
+        &repo,
+        json!({
+            "repoPath": repo,
+            "requestedIntents": ["plan"],
+            "requiredCapabilities": ["delta-governance"]
+        }),
+    );
+    assert_eq!(
+        proposal["schema"],
+        "code-intel-advisory-workflow-recommendation.v2"
+    );
+    assert_eq!(proposal["kind"], "proposal");
+    assert_eq!(proposal["effects"], json!([]));
+    assert_eq!(proposal["recommendation"]["adapter"], "openspec");
+    assert_eq!(
+        proposal["recommendation"]["presence"]["state"],
+        "configured"
+    );
+    assert_eq!(
+        proposal["recommendation"]["adoption"]["state"],
+        "unresolved"
+    );
+    assert!(proposal["recommendation"]["adoption"]["authorityEventRef"].is_null());
+    assert!(proposal["recommendation"]["setupActions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|action| action["actionId"] == "openspec.init"));
+    assert!(proposal["recommendation"]["entryActions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|action| action["actionId"] != "openspec.init"));
+    let schema_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("orchestration/schemas");
+    assert_checked_json_schema(
+        &root.join("v2-out/workflow-recommendation.v2.json"),
+        &schema_root.join("code-intel-advisory-workflow-recommendation.v2.schema.json"),
+    );
+    assert_checked_json_schema(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("orchestration/workflow-adapters.v1.json"),
+        &schema_root.join("code-intel-workflow-adapter-catalog.v1.schema.json"),
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn workflow_v2_fails_closed_on_competing_active_normative_roots() {
+    let root = temp_dir("workflow-v2-conflict");
+    let repo = root.join("repo");
+    fs::create_dir_all(repo.join("openspec/changes/change-a")).unwrap();
+    fs::write(
+        repo.join("openspec/changes/change-a/proposal.md"),
+        "# Change\n",
+    )
+    .unwrap();
+    fs::create_dir_all(repo.join("specs/001-change-a")).unwrap();
+    fs::write(repo.join("specs/001-change-a/spec.md"), "# Feature\n").unwrap();
+    let proposal = run_workflow_v2(
+        &root,
+        &repo,
+        json!({
+            "repoPath": repo,
+            "requestedIntents": ["implement"],
+            "requiredCapabilities": []
+        }),
+    );
+    assert_eq!(proposal["conflict"]["kind"], "competing-normative-roots");
+    assert!(proposal["recommendation"].is_null());
+    assert_eq!(proposal["confidence"], "high");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn workflow_v2_uses_capabilities_and_records_manual_override() {
+    let root = temp_dir("workflow-v2-capabilities");
+    let repo = root.join("repo");
+    fs::create_dir_all(&repo).unwrap();
+    let delta = run_workflow_v2(
+        &root,
+        &repo,
+        json!({
+            "repoPath": repo,
+            "requestedIntents": ["plan"],
+            "requiredCapabilities": ["delta-governance"]
+        }),
+    );
+    assert_eq!(delta["recommendation"]["adapter"], "openspec");
+
+    let override_root = temp_dir("workflow-v2-override");
+    let override_repo = override_root.join("repo");
+    fs::create_dir_all(&override_repo).unwrap();
+    let overridden = run_workflow_v2(
+        &override_root,
+        &override_repo,
+        json!({
+            "repoPath": override_repo,
+            "requestedIntents": ["plan"],
+            "requiredCapabilities": ["delta-governance"],
+            "preferredAdapter": "spec-kit",
+            "manualOverrideReason": "operator chose constitution-led convergence"
+        }),
+    );
+    assert_eq!(overridden["recommendation"]["adapter"], "spec-kit");
+    assert_eq!(overridden["manualOverride"]["from"], "openspec");
+    assert_eq!(overridden["manualOverride"]["to"], "spec-kit");
+    assert_eq!(
+        overridden["manualOverride"]["reason"],
+        "operator chose constitution-led convergence"
+    );
+    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_dir_all(override_root);
+}
+
+#[test]
+fn workflow_v2_models_brownfield_spec_kit_and_profile_dependent_actions() {
+    let root = temp_dir("workflow-v2-spec-kit");
+    let repo = root.join("repo");
+    fs::create_dir_all(repo.join(".specify")).unwrap();
+    fs::create_dir_all(repo.join(".agents/skills/speckit-specify")).unwrap();
+    fs::write(
+        repo.join(".agents/skills/speckit-specify/SKILL.md"),
+        "# specify\n",
+    )
+    .unwrap();
+    let proposal = run_workflow_v2(
+        &root,
+        &repo,
+        json!({
+            "repoPath": repo,
+            "requestedIntents": ["plan", "verify"],
+            "requiredCapabilities": ["brownfield-change", "convergence"]
+        }),
+    );
+    assert_eq!(proposal["recommendation"]["adapter"], "spec-kit");
+    let actions = proposal["recommendation"]["entryActions"]
+        .as_array()
+        .unwrap();
+    assert!(actions.iter().any(|action| {
+        action["actionId"] == "spec-kit.specify"
+            && action["availability"] == "available"
+            && action["invocations"]["codex"] == "$speckit-specify"
+    }));
+    assert!(actions.iter().any(|action| {
+        action["actionId"] == "spec-kit.analyze"
+            && action["availability"] == "conditional"
+            && action["invocations"]["codex"].is_null()
+    }));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn workflow_v2_is_offline_deterministic_and_shipping_remains_unavailable() {
+    let root = temp_dir("workflow-v2-determinism");
+    let repo = root.join("repo");
+    fs::create_dir_all(&repo).unwrap();
+    let options = json!({
+        "repoPath": repo,
+        "requestedIntents": ["ship", "observe"],
+        "requiredCapabilities": ["bounded-local-work"]
+    });
+    let first = run_workflow_v2(&root, &repo, options.clone());
+    fs::remove_dir_all(root.join("v2-out")).unwrap();
+    let second = run_workflow_v2(&root, &repo, options);
+    assert_eq!(first, second);
+    assert!(first["handoffs"].as_array().unwrap().iter().all(|handoff| {
+        handoff["availability"] == "unavailable"
+            && handoff["missingCapability"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+    }));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn workflow_v2_reports_adoption_only_from_an_a03_verified_authority_event() {
+    let root = temp_dir("workflow-v2-adoption");
+    let repo = root.join("repo");
+    let artifact_root = root.join("artifacts");
+    fs::create_dir_all(&repo).unwrap();
+    fs::create_dir_all(&artifact_root).unwrap();
+
+    let bytes = br#"{"attestation":{"digest":"378cefe74f17f99c1c73f378d301c42cb95b5e27ccd34b9ccaeba13aea1cb177","scheme":"repository-governed-sha256-v1"},"approver":{"id":"repository-owner","role":"maintainer"},"decision":"approved","evidenceIds":["workflow-adapter:spec-kit"],"expiresAt":4000000000,"id":"authority-workflow-spec-kit","issuedAt":1,"schema":"code-intel-authority-event.v1"}"#.to_vec();
+    fs::write(artifact_root.join("authority.json"), &bytes).unwrap();
+    assert_checked_json_schema(
+        &artifact_root.join("authority.json"),
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("orchestration/schemas/code-intel-authority-event.v1.schema.json"),
+    );
+
+    let mut value = request(&repo, "advisory.workflow-recommend.v2");
+    value["implementation"] = registry_implementation("advisory.workflow-recommend.v2");
+    value["options"] = json!({
+        "repoPath":repo,
+        "requestedIntents":["plan"],
+        "requiredCapabilities":["delta-governance"]
+    });
+    value["inputs"] = json!([{
+        "schema":"code-intel-artifact-ref.v1",
+        "artifactSchema":"code-intel-authority-event.v1",
+        "type":"authority.event",
+        "path":"authority.json",
+        "sha256":"7fd34041107a7fc323cd77e85ef1d9d9f69ef5565a1d66a5a10588277bdbcac9",
+        "consumedSnapshotIdentity":value["snapshot"]["identity"]
+    }]);
+    value["effectPolicy"]["allowedEffects"] = json!([]);
+    let request_path = root.join("request.json");
+    let out = root.join("out");
+    fs::write(&request_path, serde_json::to_vec(&value).unwrap()).unwrap();
+    let output = common::cli()
+        .env(
+            "CODE_INTEL_INTEGRATIONS_MANIFEST",
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join("orchestration/integrations.json"),
+        )
+        .args([
+            "capability",
+            "exec",
+            "advisory.workflow-recommend.v2",
+            "--request",
+        ])
+        .arg(&request_path)
+        .arg("--out")
+        .arg(&out)
+        .arg("--artifact-root")
+        .arg(&artifact_root)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let proposal: Value =
+        serde_json::from_slice(&fs::read(out.join("workflow-recommendation.v2.json")).unwrap())
+            .unwrap();
+    assert_eq!(proposal["recommendation"]["adapter"], "spec-kit");
+    assert_eq!(proposal["recommendation"]["adoption"]["state"], "approved");
+    assert!(proposal["recommendation"]["adoption"]["authorityEventRef"]
+        .as_str()
+        .unwrap()
+        .starts_with("sha256:"));
     let _ = fs::remove_dir_all(root);
 }
 

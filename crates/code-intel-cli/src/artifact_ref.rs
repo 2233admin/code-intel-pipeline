@@ -4,7 +4,7 @@ use std::path::{Component, Path};
 use serde_json::{json, Value};
 
 #[path = "content_contract.rs"]
-mod content_contract;
+pub(crate) mod content_contract;
 
 use crate::stable_artifact::{self, FileId, StableReadError};
 use content_contract::{
@@ -208,6 +208,7 @@ pub(crate) fn registered_contract(artifact: &Value) -> Result<ArtifactContract, 
         .or_else(|| retirement_family_contract(schema, artifact_type))
         .or_else(|| run_delivery_family_contract(schema, artifact_type))
         .or_else(|| method_decision_family_contract(schema, artifact_type))
+        .or_else(|| workflow_family_contract(schema, artifact_type))
         .or_else(|| {
             native_code_contract(schema, artifact_type).map(
                 |(artifact_schema, artifact_type, validate_payload)| ArtifactContract {
@@ -219,6 +220,28 @@ pub(crate) fn registered_contract(artifact: &Value) -> Result<ArtifactContract, 
             )
         })
         .ok_or_else(unregistered_contract_error)
+}
+
+fn workflow_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {
+    match (schema, artifact_type) {
+        ("code-intel-authority-event.v1", "authority.event") => Some(ArtifactContract {
+            artifact_schema: "code-intel-authority-event.v1",
+            artifact_type: "authority.event",
+            max_bytes: 64 * 1024,
+            validate_payload:
+                crate::capability_inventory::workflow_recommendation::validate_authority_event_bytes,
+        }),
+        ("code-intel-advisory-workflow-recommendation.v2", "advisory.workflow-recommendation") => {
+            Some(ArtifactContract {
+                artifact_schema: "code-intel-advisory-workflow-recommendation.v2",
+                artifact_type: "advisory.workflow-recommendation",
+                max_bytes: 4 * 1024 * 1024,
+                validate_payload:
+                    crate::capability_inventory::workflow_recommendation::validate_v2_bytes,
+            })
+        }
+        _ => None,
+    }
 }
 
 fn unregistered_contract_error() -> ArtifactError {

@@ -152,6 +152,11 @@ fn lifecycle_catalog_is_coherent() {
         "code-intel-change-impact.v1",
         "code-evidence-files.v1",
         "code-intel-session-evidence.v1",
+        "code-intel-authority-event.v1",
+        "code-intel-workflow-recommendation-request.v2",
+        "code-intel-workflow-entry-action.v1",
+        "code-intel-workflow-adapter-catalog.v1",
+        "code-intel-advisory-workflow-recommendation.v2",
     ];
     let mut paths = BTreeSet::new();
     let mut logical = BTreeSet::new();

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-workflow-adapter-catalog.v1.schema.json",
+  "title": "Code Intel workflow adapter candidate catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "candidates"],
+  "properties": {
+    "schema": { "const": "code-intel-workflow-adapter-catalog.v1" },
+    "candidates": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate", "adapter", "stack", "source", "capabilities", "configurationRoots", "entryActions", "setupActions", "maintenanceActions", "runtimeBoundary"],
+        "properties": {
+          "candidate": { "type": "string", "minLength": 1 },
+          "adapter": { "enum": ["openspec", "spec-kit", "lightweight"] },
+          "stack": { "const": "spec-driven" },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["uri", "version", "revision", "license"],
+            "properties": {
+              "uri": { "type": "string", "minLength": 1 },
+              "version": { "type": "string", "minLength": 1 },
+              "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$|^pipeline-owned$" },
+              "license": { "const": "MIT" }
+            }
+          },
+          "capabilities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+          "configurationRoots": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+          "entryActions": { "type": "array", "items": { "$ref": "code-intel-workflow-entry-action.v1.schema.json" } },
+          "setupActions": { "type": "array", "items": { "$ref": "code-intel-workflow-entry-action.v1.schema.json" } },
+          "maintenanceActions": { "type": "array", "items": { "$ref": "code-intel-workflow-entry-action.v1.schema.json" } },
+          "runtimeBoundary": { "const": "reference-only-no-runtime-dependency" }
+        }
+      }
+    }
+  }
+}
