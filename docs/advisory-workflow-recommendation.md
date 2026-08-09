@@ -14,7 +14,7 @@ Both capabilities declare `effects: []`. Recommendation does not initialize a to
 
 Selection is capability-driven. OpenSpec covers delta governance, continuous change, and brownfield change. spec-kit covers constitution, clarification, checklists, convergence, composed workflows, and brownfield change. Repository age is not selection authority. A caller may request a manual override only by supplying both the preferred adapter and a non-empty reason; the proposal records that evidence.
 
-Entry, setup, and maintenance actions are separate structured objects. An action is callable only when its generated action is observed for the active host/profile. For example, OpenSpec `explore`, `propose`, `apply-change`, `archive`, and `sync` entries are profile-dependent. `openspec init`, `openspec update`, and `specify init` stay outside normative entry actions and require separate operator authority.
+Entry, setup, and maintenance actions are separate structured objects. A generated entry or maintenance action is callable only when its generated action is observed for the active host/profile. Setup actions are callable only when their declared prerequisites are satisfied. For example, OpenSpec `explore`, `propose`, `apply-change`, `archive`, and `sync` entries are profile-dependent. `openspec init`, `openspec update`, and `specify init` stay outside normative entry actions and require separate operator authority.
 
 ## Host activation wording
 

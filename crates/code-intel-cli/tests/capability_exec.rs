@@ -1713,6 +1713,10 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
             .unwrap();
     assert_eq!(envelope_proposal["effects"], json!([]));
     assert_eq!(envelope_proposal["kind"], "proposal");
+    assert_eq!(
+        envelope_proposal["provenance"]["compatibilityOptions"]["auto"],
+        true
+    );
 
     let facade = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -1720,6 +1724,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
     let direct = Command::new("pwsh")
         .args(["-NoLogo", "-NoProfile", "-File"])
         .arg(facade)
+        .env("CODE_INTEL_BIN", env!("CARGO_BIN_EXE_code-intel"))
         .arg("-RepoPath")
         .arg(&repo)
         .args(["-Auto", "-Quiet", "-Json"])
@@ -1798,6 +1803,27 @@ fn assert_checked_json_schema(document: &Path, schema: &Path) {
     );
 }
 
+fn assert_rejected_json_schema(document: &Path, schema: &Path) {
+    let output = Command::new("pwsh")
+        .args([
+            "-NoLogo",
+            "-NoProfile",
+            "-Command",
+            "param($Document,$Schema); if (Get-Content -Raw -LiteralPath $Document | Test-Json -SchemaFile $Schema -ErrorAction Stop) { exit 1 }",
+        ])
+        .arg(document)
+        .arg(schema)
+        .output()
+        .expect("run negative JSON Schema validation");
+    assert!(
+        output.status.success(),
+        "schema unexpectedly accepted document: schema={} document={} stderr={}",
+        schema.display(),
+        document.display(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn workflow_v2_distinguishes_configuration_from_adoption_and_separates_setup() {
     let root = temp_dir("workflow-v2-configured");
@@ -1843,6 +1869,19 @@ fn workflow_v2_distinguishes_configuration_from_adoption_and_separates_setup() {
         .join("orchestration/schemas");
     assert_checked_json_schema(
         &root.join("v2-out/workflow-recommendation.v2.json"),
+        &schema_root.join("code-intel-advisory-workflow-recommendation.v2.schema.json"),
+    );
+    let mut substituted_provenance = proposal.clone();
+    substituted_provenance["provenance"]["sourceVersions"][0]["uri"] =
+        json!("https://example.invalid/substitute");
+    let substituted_path = root.join("substituted-provenance.json");
+    fs::write(
+        &substituted_path,
+        serde_json::to_vec(&substituted_provenance).unwrap(),
+    )
+    .unwrap();
+    assert_rejected_json_schema(
+        &substituted_path,
         &schema_root.join("code-intel-advisory-workflow-recommendation.v2.schema.json"),
     );
     assert_checked_json_schema(

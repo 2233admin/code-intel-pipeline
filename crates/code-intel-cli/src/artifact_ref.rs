@@ -235,7 +235,7 @@ fn workflow_family_contract(schema: &str, artifact_type: &str) -> Option<Artifac
             Some(ArtifactContract {
                 artifact_schema: "code-intel-advisory-workflow-recommendation.v2",
                 artifact_type: "advisory.workflow-recommendation",
-                max_bytes: 4 * 1024 * 1024,
+                max_bytes: crate::capability_inventory::workflow_recommendation::MAX_ARTIFACT_BYTES,
                 validate_payload:
                     crate::capability_inventory::workflow_recommendation::validate_v2_bytes,
             })

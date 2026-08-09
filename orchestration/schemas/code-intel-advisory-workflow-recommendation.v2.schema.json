@@ -21,7 +21,39 @@
         "implementation": { "const": "workflow_recommendation.rs" },
         "repository": { "type": "string", "minLength": 1 },
         "catalog": { "const": "orchestration/workflow-adapters.v1.json" },
-        "sourceVersions": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/source" } }
+        "sourceVersions": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "$ref": "#/$defs/source" },
+          "allOf": [
+            {
+              "contains": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["uri", "version", "revision", "license"],
+                "properties": {
+                  "uri": { "const": "https://github.com/Fission-AI/OpenSpec" },
+                  "version": { "const": "1.8.0" },
+                  "revision": { "const": "d57889664cab4f2f061d236ec3ff82a5578701bb" },
+                  "license": { "const": "MIT" }
+                }
+              }
+            },
+            {
+              "contains": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["uri", "version", "revision", "license"],
+                "properties": {
+                  "uri": { "const": "https://github.com/github/spec-kit" },
+                  "version": { "const": "0.16.1" },
+                  "revision": { "const": "ad4104b56c219b0a27bac06547d1a3c7d6a0dbd6" },
+                  "license": { "const": "MIT" }
+                }
+              }
+            }
+          ]
+        }
       }
     },
     "effects": { "type": "array", "maxItems": 0 },

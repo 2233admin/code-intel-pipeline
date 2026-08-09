@@ -81,7 +81,7 @@ fn workflow_recommendation_contract() -> ArtifactWriteContract {
     ArtifactWriteContract {
         artifact_schema: "code-intel-advisory-workflow-recommendation.v2",
         artifact_type: "advisory.workflow-recommendation",
-        max_bytes: 1024 * 1024,
+        max_bytes: capability_inventory::workflow_recommendation::MAX_ARTIFACT_BYTES,
         validate_payload: capability_inventory::workflow_recommendation::validate_v2_bytes,
     }
 }

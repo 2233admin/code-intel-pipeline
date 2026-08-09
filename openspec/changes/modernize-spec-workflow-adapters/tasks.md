@@ -34,3 +34,10 @@
 - [x] 5.3 Run orchestration parity, primary-entry and packaging smoke, declared-pin validation, and `legacy/tools/check-hardcoded-paths.ps1`; leave unrelated EOL or pin failures explicit instead of overwriting evidence.
 - [x] 5.4 End the Sentrux session and require no structural regression; do not refresh a baseline to hide a failure.
 - [x] 5.5 Run `openspec validate modernize-spec-workflow-adapters --strict`, check tasks only when their evidence exists, and produce a verified pre-checkpoint handoff for the tool-neutral shipping control loop; if that capability is not yet delivered, record the missing dependency and do not claim shipping completion.
+
+## 6. Hosted review convergence
+
+- [x] 6.1 Reproduce and close hosted review findings at the artifact boundary: full authority-event schema validation, nested v2 validation, exact required provenance, v1 `auto` projection, and shared 4 MiB staging limit.
+- [x] 6.2 Close the hosted documentation findings by labeling Markdown fences, limiting generated-action callability to applicable actions, and leading command examples with the compiled CLI.
+- [x] 6.3 Re-run focused and aggregate Rust/contracts, schema validation, pins, OpenSpec strict validation, hardcoded-path scan, and Sentrux with no structural regression.
+- [ ] 6.4 Push a review-fix checkpoint and observe the hosted rerun. Stop at the real `agent-approved`/human-merge boundary; do not self-approve, bypass, archive, merge, or begin outcome observation.

@@ -20,6 +20,7 @@ const REQUEST_SCHEMA: &str = "code-intel-workflow-recommendation-request.v2";
 const V1_SCHEMA: &str = "code-intel-advisory-workflow-recommendation.v1";
 const V2_SCHEMA: &str = "code-intel-advisory-workflow-recommendation.v2";
 const ARTIFACT_TYPE: &str = "advisory.workflow-recommendation";
+pub(crate) const MAX_ARTIFACT_BYTES: u64 = 4 * 1024 * 1024;
 
 const INTENTS: [&str; 10] = [
     "explore",
@@ -52,6 +53,7 @@ struct Options {
     capabilities: BTreeSet<String>,
     preferred: Option<String>,
     override_reason: Option<String>,
+    compatibility_auto: bool,
 }
 
 struct Adoption {
@@ -145,6 +147,10 @@ fn parse_v1_options(request: &Value) -> Result<Options, AdapterError> {
         capabilities: BTreeSet::new(),
         preferred: None,
         override_reason: None,
+        compatibility_auto: options
+            .get("auto")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
     })
 }
 
@@ -188,6 +194,7 @@ fn parse_v2_options(request: &Value) -> Result<Options, AdapterError> {
         capabilities,
         preferred,
         override_reason,
+        compatibility_auto: false,
     })
 }
 
@@ -765,7 +772,7 @@ fn project_v1(v2: &Value, options: &Options) -> Result<Value, AdapterError> {
             "capabilityId":"advisory.workflow-recommend",
             "implementation":"workflow_recommendation.rs",
             "repository":options.repo.to_string_lossy(),
-            "compatibilityOptions":{"auto":false}
+            "compatibilityOptions":{"auto":options.compatibility_auto}
         },
         "effects":[]
     }))

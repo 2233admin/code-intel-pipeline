@@ -104,3 +104,17 @@ The production v2 recommendation and v1 compatibility projection MUST be determi
 - **WHEN** the capability evaluates a valid request without network access or installed OpenSpec/spec-kit runtimes
 - **THEN** it returns a deterministic recommendation from local evidence and performs no repository mutation or external lookup
 
+### Requirement: Artifact validators enforce the published closed schemas
+The A03 validators for workflow recommendation and supplied adoption authority MUST reject payloads that violate their published nested schemas. Recommendation provenance MUST contain the exact governed OpenSpec 1.8.0 and spec-kit 0.16.1 source entries; a substituted URI, version, or revision MUST NOT satisfy provenance.
+
+#### Scenario: Malformed nested recommendation is rejected
+- **WHEN** a v2 payload contains a scalar recommendation, malformed evidence, non-integer score, invalid action invocation, or non-array capability set
+- **THEN** the artifact validator rejects it before staging or consumption
+
+#### Scenario: Malformed adoption authority is rejected
+- **WHEN** a supplied authority event has duplicate or empty evidence ids, extra nested fields, or non-integer timestamps even with a recomputed attestation
+- **THEN** A03 rejects it and the recommender does not report adoption
+
+#### Scenario: Substituted provenance is rejected
+- **WHEN** a v2 payload omits or substitutes either governed OpenSpec 1.8.0 or spec-kit 0.16.1 source identity
+- **THEN** both the public JSON Schema and the Rust artifact validator reject the payload

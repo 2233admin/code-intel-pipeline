@@ -30,7 +30,13 @@ Generated OpenSpec actions depend on the installed host profile. The proposal ma
 
 Agent hosts map phrases such as “定案” to `plan`, “明确 apply 请求” to `implement`, “验证” to `verify`, “开 PR” to `ship`, and “复盘” to `observe`. The Rust core receives those closed intents and has no multilingual phrase parser. `ship` and `observe` are explicit handoffs until the separate shipping control loop and outcome ledger exist on the active branch.
 
-Use the compiled CLI through A01. The retained PowerShell command is a thin compatibility forwarder only:
+Use the compiled CLI through A01:
+
+```powershell
+code-intel capability exec advisory.workflow-recommend.v2 --request <request.json> --out <output-directory>
+```
+
+The retained PowerShell command is a thin v1 compatibility forwarder only:
 
 ```powershell
 .\legacy\Invoke-WorkflowRecommendation.ps1 -RepoPath <path> -Auto -Json
