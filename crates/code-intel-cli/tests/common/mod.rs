@@ -10,6 +10,11 @@ pub mod env_contract;
 use std::path::Path;
 use std::process::Command;
 
+/// The Cargo-built CLI path used by shared test support.
+pub fn cli_path() -> &'static str {
+    env!("CARGO_BIN_EXE_code-intel")
+}
+
 /// The CLI under test, with every pipeline-owned variable removed.
 ///
 /// Tests used to build `Command::new(env!("CARGO_BIN_EXE_code-intel"))`
@@ -27,7 +32,7 @@ use std::process::Command;
 /// with `.env(...)` after calling this — the point is that it becomes a
 /// property of the test rather than of the shell.
 pub fn cli() -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_code-intel"));
+    let mut command = Command::new(cli_path());
     for name in env_contract::PIPELINE_VARS {
         command.env_remove(name);
     }

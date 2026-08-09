@@ -25,6 +25,10 @@
     {
       "if": { "required": ["preferredAdapter"] },
       "then": { "required": ["manualOverrideReason"] }
+    },
+    {
+      "if": { "required": ["manualOverrideReason"] },
+      "then": { "required": ["preferredAdapter"] }
     }
   ]
 }

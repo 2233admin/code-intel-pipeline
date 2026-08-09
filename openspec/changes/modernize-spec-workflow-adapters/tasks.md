@@ -41,3 +41,5 @@
 - [x] 6.2 Close the hosted documentation findings by labeling Markdown fences, limiting generated-action callability to applicable actions, and leading command examples with the compiled CLI.
 - [x] 6.3 Re-run focused and aggregate Rust/contracts, schema validation, pins, OpenSpec strict validation, hardcoded-path scan, and Sentrux with no structural regression.
 - [ ] 6.4 Push a review-fix checkpoint and observe the hosted rerun. Stop at the real `agent-approved`/human-merge boundary; do not self-approve, bypass, archive, merge, or begin outcome observation.
+- [ ] 6.5 Reproduce and close the hosted macOS hermetic-test regression by routing the compatibility-facade binary override through shared test support; rerun the affected local and hosted contracts.
+- [x] 6.6 Close final independent-review findings: synchronize v1/v2 workflow source digests, require complete manual-override pairs in the public request schema, and prove negative schema validation is not a false positive.

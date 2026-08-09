@@ -1724,7 +1724,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
     let direct = Command::new("pwsh")
         .args(["-NoLogo", "-NoProfile", "-File"])
         .arg(facade)
-        .env("CODE_INTEL_BIN", env!("CARGO_BIN_EXE_code-intel"))
+        .env("CODE_INTEL_BIN", common::cli_path())
         .arg("-RepoPath")
         .arg(&repo)
         .args(["-Auto", "-Quiet", "-Json"])
@@ -1788,10 +1788,10 @@ fn assert_checked_json_schema(document: &Path, schema: &Path) {
             "-NoLogo",
             "-NoProfile",
             "-Command",
-            "param($Document,$Schema); if (-not (Get-Content -Raw -LiteralPath $Document | Test-Json -SchemaFile $Schema -ErrorAction Stop)) { exit 1 }",
+            "if (-not (Get-Content -Raw -LiteralPath $env:CIP_TEST_JSON_DOCUMENT | Test-Json -SchemaFile $env:CIP_TEST_JSON_SCHEMA -ErrorAction Stop)) { exit 1 }",
         ])
-        .arg(document)
-        .arg(schema)
+        .env("CIP_TEST_JSON_DOCUMENT", document)
+        .env("CIP_TEST_JSON_SCHEMA", schema)
         .output()
         .expect("run checked JSON Schema validation");
     assert!(
@@ -1809,10 +1809,10 @@ fn assert_rejected_json_schema(document: &Path, schema: &Path) {
             "-NoLogo",
             "-NoProfile",
             "-Command",
-            "param($Document,$Schema); if (Get-Content -Raw -LiteralPath $Document | Test-Json -SchemaFile $Schema -ErrorAction Stop) { exit 1 }",
+            "try { if (Get-Content -Raw -LiteralPath $env:CIP_TEST_JSON_DOCUMENT | Test-Json -SchemaFile $env:CIP_TEST_JSON_SCHEMA -ErrorAction Stop) { exit 1 }; exit 0 } catch { exit 0 }",
         ])
-        .arg(document)
-        .arg(schema)
+        .env("CIP_TEST_JSON_DOCUMENT", document)
+        .env("CIP_TEST_JSON_SCHEMA", schema)
         .output()
         .expect("run negative JSON Schema validation");
     assert!(
@@ -1959,6 +1959,36 @@ fn workflow_v2_uses_capabilities_and_records_manual_override() {
     );
     let _ = fs::remove_dir_all(root);
     let _ = fs::remove_dir_all(override_root);
+}
+
+#[test]
+fn workflow_v2_public_request_schema_requires_complete_manual_override() {
+    let root = temp_dir("workflow-v2-override-schema");
+    fs::create_dir_all(&root).unwrap();
+    let schema = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("orchestration/schemas/code-intel-workflow-recommendation-request.v2.schema.json");
+    let base = json!({
+        "schema": "code-intel-workflow-recommendation-request.v2",
+        "repoPath": ".",
+        "requestedIntents": ["plan"],
+        "requiredCapabilities": []
+    });
+    for (name, key, value) in [
+        ("adapter-only", "preferredAdapter", json!("openspec")),
+        (
+            "reason-only",
+            "manualOverrideReason",
+            json!("operator selected an approved workflow"),
+        ),
+    ] {
+        let mut request = base.clone();
+        request[key] = value;
+        let path = root.join(format!("{name}.json"));
+        fs::write(&path, serde_json::to_vec(&request).unwrap()).unwrap();
+        assert_rejected_json_schema(&path, &schema);
+    }
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
