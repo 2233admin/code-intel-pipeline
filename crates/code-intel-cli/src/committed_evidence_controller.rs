@@ -167,6 +167,14 @@ impl CommittedEvidenceController {
     pub(crate) fn query(request: EvidenceQueryRequest) -> Result<CommittedQueryResult, QueryError> {
         let (evidence, authority) = Self::open(&request.artifact_root, &request.repo)
             .map_err(evidence_query::map_evidence_error)?;
+        Self::query_opened(request, evidence, authority)
+    }
+
+    pub(crate) fn query_opened(
+        request: EvidenceQueryRequest,
+        evidence: CommittedEvidence,
+        authority: CommittedAuthority,
+    ) -> Result<CommittedQueryResult, QueryError> {
         let result = evidence_query::execute(request, &evidence)?;
         Ok(CommittedQueryResult { result, authority })
     }
@@ -237,7 +245,7 @@ impl CommittedEvidenceController {
         })
     }
 
-    fn open(
+    pub(crate) fn open(
         artifact_root: &Path,
         repo: &str,
     ) -> Result<(CommittedEvidence, CommittedAuthority), EvidenceError> {

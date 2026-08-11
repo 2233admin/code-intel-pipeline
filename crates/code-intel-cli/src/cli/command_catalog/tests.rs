@@ -10,6 +10,7 @@ use super::{
     execute_command, parse_command, render_outcome, Command, CompatibilityCommand,
     CompatibilityRoute, VersionCommand,
 };
+use serde_json::Value;
 
 #[test]
 fn parser_exposes_typed_commands_and_hides_route_slicing() {
@@ -34,6 +35,21 @@ fn parser_exposes_typed_commands_and_hides_route_slicing() {
             ref arguments,
         }) if arguments == &["impact", "--contract-probe"]
     ));
+
+    let run_alias = parse_command(&["run".into(), "--mode".into(), "lite".into()]).unwrap();
+    assert!(matches!(
+        run_alias,
+        Command::Primary(PrimaryArgs { ref mode, .. }) if mode == "lite"
+    ));
+
+    let project_query = parse_command(&[
+        "query".into(),
+        "--kind".into(),
+        "evidence".into(),
+        "--json".into(),
+    ])
+    .unwrap();
+    assert!(matches!(project_query, Command::ProjectQuery(_)));
 }
 
 #[test]
@@ -100,14 +116,42 @@ fn raw_routes_preserve_specific_dispatch_precedence_and_argument_offsets() {
 }
 
 #[test]
-fn invalid_run_namespace_is_a_parse_error_not_an_authority_route() {
-    for raw in [vec!["run".into()], vec!["run".into(), "unknown".into()]] {
-        assert!(resolve_raw_route(&raw).is_none());
-        let rendered = render_outcome(parse_command(&raw).and_then(execute_command));
-        assert_eq!(rendered.exit_code, 64);
-        assert!(rendered.stdout.is_empty());
-        assert_eq!(rendered.stderr, format!("{}\n", crate::run_cli::usage()));
+fn run_namespace_keeps_specific_admin_routes_ahead_of_the_primary_alias() {
+    assert!(matches!(
+        resolve_command_route(&["run".into()]),
+        Some(CommandRoute::RunAlias(_))
+    ));
+    for subcommand in ["execute", "dag-coordinate", "commit"] {
+        assert!(matches!(
+            resolve_command_route(&["run".into(), subcommand.into()]),
+            Some(CommandRoute::Raw(_))
+        ));
     }
+
+    let rendered = render_outcome(
+        parse_command(&["run".into(), "path-that-does-not-exist".into()]).and_then(execute_command),
+    );
+    assert_eq!(rendered.exit_code, 64);
+    assert!(rendered
+        .stderr
+        .contains("repository path is not a directory"));
+
+    let override_error = render_outcome(
+        parse_command(&[
+            "run".into(),
+            ".".into(),
+            "--artifact-root".into(),
+            "elsewhere".into(),
+            "--json".into(),
+        ])
+        .and_then(execute_command),
+    );
+    assert_eq!(override_error.exit_code, 64);
+    assert!(override_error.stderr.is_empty());
+    let override_error: Value = serde_json::from_str(&override_error.stdout).unwrap();
+    assert!(override_error["diagnostic"]
+        .as_str()
+        .is_some_and(|message| message.contains("--artifact-root is not accepted")));
 }
 
 #[test]
@@ -142,6 +186,24 @@ fn command_inventory_is_complete_unique_and_dispatchable() {
                 assert!(matches!(
                     resolve_command_route(&[]),
                     Some(CommandRoute::Primary(_))
+                ));
+            }
+            CommandRoute::RunAlias(contract) => {
+                contract.assert_complete("run");
+                assert!(!spellings.contains(&"run".to_string()));
+                spellings.push("run".into());
+                assert!(matches!(
+                    resolve_command_route(&["run".into()]),
+                    Some(CommandRoute::RunAlias(_))
+                ));
+            }
+            CommandRoute::ProjectQuery(contract) => {
+                contract.assert_complete("query");
+                assert!(!spellings.contains(&"query".to_string()));
+                spellings.push("query".into());
+                assert!(matches!(
+                    resolve_command_route(&["query".into()]),
+                    Some(CommandRoute::ProjectQuery(_))
                 ));
             }
             CommandRoute::Raw(route) => {
@@ -186,6 +248,7 @@ fn command_contracts_use_concrete_output_and_exit_types() {
     for route in COMMAND_ROUTES {
         let contract = match route {
             CommandRoute::Version(route) => &route.contract,
+            CommandRoute::RunAlias(contract) | CommandRoute::ProjectQuery(contract) => contract,
             CommandRoute::Primary(contract) => contract,
             CommandRoute::Raw(route) => &route.contract,
             CommandRoute::Legacy(route) => &route.contract,
@@ -203,6 +266,12 @@ fn unified_route_inventory_owns_version_primary_raw_and_legacy_dispatch() {
     assert!(COMMAND_ROUTES
         .iter()
         .any(|route| matches!(route, CommandRoute::Primary(_))));
+    assert!(COMMAND_ROUTES
+        .iter()
+        .any(|route| matches!(route, CommandRoute::RunAlias(_))));
+    assert!(COMMAND_ROUTES
+        .iter()
+        .any(|route| matches!(route, CommandRoute::ProjectQuery(_))));
     assert_eq!(
         COMMAND_ROUTES
             .iter()
@@ -454,7 +523,7 @@ fn full_help_documents_every_registered_route_alias() {
 }
 
 #[test]
-fn full_help_alias_discoverability_has_a_v2_output_contract() {
+fn full_help_alias_discoverability_has_a_v3_output_contract() {
     let help = COMMAND_ROUTES
         .iter()
         .find_map(|route| match route {
@@ -466,7 +535,7 @@ fn full_help_alias_discoverability_has_a_v2_output_contract() {
     assert_eq!(
         help.contract.output_contract,
         OutputContract::Stdout {
-            identities: &["text-format:help-quick.v1", "text-format:help-full.v2"]
+            identities: &["text-format:help-quick.v1", "text-format:help-full.v3"]
         }
     );
 }

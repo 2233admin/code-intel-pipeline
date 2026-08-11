@@ -3,6 +3,7 @@ mod execution_kernel;
 
 pub(crate) struct RunRequest {
     repo: std::path::PathBuf,
+    repository_key: Option<String>,
     staging_root: std::path::PathBuf,
     authority_root: std::path::PathBuf,
     final_name: String,
@@ -23,6 +24,7 @@ impl RunRequest {
     ) -> Self {
         Self {
             repo,
+            repository_key: None,
             staging_root,
             authority_root,
             final_name,
@@ -32,6 +34,11 @@ impl RunRequest {
             session_evidence: None,
             cleanup_staging: false,
         }
+    }
+
+    pub(crate) fn with_repository_key(mut self, repository_key: String) -> Self {
+        self.repository_key = Some(repository_key);
+        self
     }
 
     pub(crate) fn with_manifest(mut self, manifest: Option<std::path::PathBuf>) -> Self {
@@ -133,6 +140,7 @@ pub(crate) fn execute(
     let cleanup_staging = request.cleanup_staging;
     let result = execution_kernel::execute(execution_kernel::RunRequest {
         repo: request.repo,
+        repository_key: request.repository_key,
         staging_root: request.staging_root,
         authority_root: request.authority_root,
         final_name: request.final_name,

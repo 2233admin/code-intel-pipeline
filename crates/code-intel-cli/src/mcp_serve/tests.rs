@@ -5,7 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
-use super::{handlers, identity, tools, ServeContext};
+use super::{handlers, tools, ServeContext};
+use crate::project_context::{ProjectContext, RepositoryBinding};
 
 /// A context pointing at a real directory with no committed run.
 ///
@@ -30,12 +31,19 @@ impl Fixture {
     }
 
     fn context(&self) -> ServeContext {
+        let repo_path = self.0.clone();
+        let artifact_root = self.0.join("artifacts");
         ServeContext {
-            repo_path: self.0.clone(),
+            project: ProjectContext::for_test(
+                repo_path.clone(),
+                "fixture-repo".into(),
+                artifact_root.clone(),
+            ),
+            repo_path,
             repo: "fixture-repo".into(),
-            artifact_root: self.0.join("artifacts"),
+            artifact_root,
             manifest: None,
-            binding: identity::RepositoryBinding::degraded("test fixture has no committed run"),
+            binding: RepositoryBinding::degraded("test fixture has no committed run"),
         }
     }
 }
@@ -76,6 +84,7 @@ fn every_registered_tool_has_a_handler() {
     for name in tools::NAMES {
         let error = handlers::call(&context, name, &json!({}))
             .err()
+            .map(|error| error.message().to_string())
             .unwrap_or_default();
         assert!(
             !error.starts_with("unknown tool"),
@@ -288,14 +297,20 @@ fn crafted_arguments_are_refused_before_any_evidence_is_read() {
         json!({"type": "code_evidence.files", "repoPath": "/tmp/elsewhere"}),
     );
     assert_eq!(smuggled["result"]["isError"], json!(true));
-    assert!(tool_payload(&smuggled)["error"]
+    let smuggled = tool_payload(&smuggled);
+    assert_eq!(smuggled["projectError"]["kind"], "usage");
+    assert_eq!(smuggled["projectError"]["exitCode"], 64);
+    assert!(smuggled["error"]
         .as_str()
         .expect("error text")
         .contains("unexpected argument: repoPath"));
 
     let non_object = handlers::call(&context, "get_facts", &json!("--artifact-root /etc"));
     assert_eq!(
-        non_object.err().as_deref(),
+        non_object
+            .err()
+            .map(|error| error.message().to_string())
+            .as_deref(),
         Some("arguments must be a JSON object")
     );
 }
@@ -321,11 +336,13 @@ fn every_limit_taking_tool_shares_the_declared_bound() {
         ("get_facts", json!({"limit": 101})),
     ] {
         let error = handlers::call(&context, tool, &arguments)
-            .err()
-            .unwrap_or_else(|| panic!("{tool} accepted {arguments}"));
+            .expect_err(&format!("{tool} accepted {arguments}"));
+        assert_eq!(error.kind(), "usage");
+        assert_eq!(error.exit_code(), 64);
         assert!(
-            error.contains("1..=100"),
-            "{tool} rejected {arguments} for the wrong reason: {error}"
+            error.message().contains("1..=100"),
+            "{tool} rejected {arguments} for the wrong reason: {}",
+            error.message(),
         );
     }
 
@@ -335,6 +352,7 @@ fn every_limit_taking_tool_shares_the_declared_bound() {
     for arguments in [json!({"limit": 1}), json!({"limit": 100}), json!({})] {
         let error = handlers::call(&context, "get_facts", &arguments)
             .err()
+            .map(|error| error.message().to_string())
             .unwrap_or_default();
         assert!(
             !error.contains("1..=100"),
@@ -349,10 +367,9 @@ fn a_capability_that_declared_repository_mutation_would_be_refused() {
     let refused =
         handlers::refuse_repository_mutation(&json!(["repo_read", "local_write", "repo_mutation"]));
     assert!(
-        refused
-            .as_ref()
-            .err()
-            .is_some_and(|message| message.contains("never executes a repository writer")),
+        refused.as_ref().err().is_some_and(|error| error
+            .message()
+            .contains("never executes a repository writer")),
         "a mutating declaration must be refused: {refused:?}"
     );
 }
@@ -363,11 +380,16 @@ fn a_capability_that_declared_repository_mutation_would_be_refused() {
 #[test]
 fn the_rerun_command_is_shell_runnable() {
     let verbatim = ServeContext {
+        project: ProjectContext::for_test(
+            PathBuf::from(r"\\?\C:\repo\project"),
+            "project".into(),
+            PathBuf::from(r"C:\artifacts"),
+        ),
         repo_path: PathBuf::from(r"\\?\C:\repo\project"),
         repo: "project".into(),
         artifact_root: PathBuf::from(r"C:\artifacts"),
         manifest: None,
-        binding: identity::RepositoryBinding::degraded("test fixture"),
+        binding: RepositoryBinding::degraded("test fixture"),
     };
     assert_eq!(
         handlers::rerun_command(&verbatim),
@@ -375,11 +397,16 @@ fn the_rerun_command_is_shell_runnable() {
     );
 
     let spaced = ServeContext {
+        project: ProjectContext::for_test(
+            PathBuf::from(r"\\?\C:\my repo\project"),
+            "project".into(),
+            PathBuf::from(r"C:\artifacts"),
+        ),
         repo_path: PathBuf::from(r"\\?\C:\my repo\project"),
         repo: "project".into(),
         artifact_root: PathBuf::from(r"C:\artifacts"),
         manifest: None,
-        binding: identity::RepositoryBinding::degraded("test fixture"),
+        binding: RepositoryBinding::degraded("test fixture"),
     };
     assert_eq!(
         handlers::rerun_command(&spaced),
@@ -392,17 +419,23 @@ fn serve_requires_a_transport_and_rejects_unknown_flags() {
     let argv = |args: &[&str]| args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
 
     let no_transport = super::parse(&argv(&[])).expect_err("a transport is required");
-    assert!(no_transport.contains("serve requires a transport"));
+    assert_eq!(no_transport.kind(), "usage");
+    assert!(no_transport
+        .message()
+        .contains("serve requires a transport"));
 
     let unknown = super::parse(&argv(&["--mcp", "--exec"])).expect_err("unknown flag");
-    assert!(unknown.contains("unknown serve argument: --exec"));
+    assert_eq!(unknown.exit_code(), 64);
+    assert!(unknown.message().contains("unknown serve argument: --exec"));
 
     let duplicate = super::parse(&argv(&["--mcp", "--mcp"])).expect_err("duplicate transport");
-    assert_eq!(duplicate, "duplicate --mcp");
+    assert_eq!(duplicate.message(), "duplicate --mcp");
 
     let missing_value =
         super::parse(&argv(&["--mcp", "--repo"])).expect_err("flag without a value");
-    assert!(missing_value.contains("--repo requires one value"));
+    assert!(missing_value
+        .message()
+        .contains("--repo requires one value"));
 }
 
 #[test]
@@ -425,4 +458,26 @@ fn serve_defaults_the_repository_name_to_the_published_directory_name() {
             .expect("fixture directory name")
     );
     assert!(context.manifest.is_none());
+}
+
+#[test]
+fn serve_refuses_repository_keys_that_escape_the_artifact_root() {
+    let fixture = Fixture::create("repository-key-boundary");
+    for key in ["..", "../other", "..\\other"] {
+        let argv = [
+            "--mcp".to_string(),
+            "--repo-path".to_string(),
+            fixture.0.display().to_string(),
+            "--artifact-root".to_string(),
+            fixture.0.join("artifacts").display().to_string(),
+            "--repo".to_string(),
+            key.to_string(),
+        ];
+        let error = super::parse(&argv).expect_err("repository key must stay under artifact root");
+        assert!(
+            error.message().contains("one non-empty path component"),
+            "{key:?}: {}",
+            error.message(),
+        );
+    }
 }

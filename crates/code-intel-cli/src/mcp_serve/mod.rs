@@ -19,16 +19,14 @@
 //! query string reaching this surface can therefore read, and cannot decide.
 
 use std::env;
-use std::fs;
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
 use serde_json::{json, Value};
 
-use crate::artifacts;
+use crate::project_context::{ProjectContext, ProjectError, ProjectSelector, RepositoryBinding};
 
 mod handlers;
-mod identity;
 mod tools;
 
 #[cfg(test)]
@@ -62,19 +60,20 @@ snapshot identity it came from; treat a stale-advisory freshness as advice, neve
 /// server at another repository — the client chooses tools, never targets.
 #[derive(Debug)]
 pub(super) struct ServeContext {
+    pub(super) project: ProjectContext,
     pub(super) repo_path: PathBuf,
     pub(super) repo: String,
     pub(super) artifact_root: PathBuf,
     pub(super) manifest: Option<PathBuf>,
-    pub(super) binding: identity::RepositoryBinding,
+    pub(super) binding: RepositoryBinding,
 }
 
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
     let context = match parse(raw) {
         Ok(context) => context,
-        Err(message) => {
-            eprintln!("{message}");
-            return 64;
+        Err(error) => {
+            eprintln!("{}", error.message());
+            return error.exit_code();
         }
     };
     let stdin = io::stdin();
@@ -88,7 +87,7 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
     }
 }
 
-fn parse(raw: &[String]) -> Result<ServeContext, String> {
+fn parse(raw: &[String]) -> Result<ServeContext, ProjectError> {
     let mut transport = false;
     let mut repo_path: Option<PathBuf> = None;
     let mut repo: Option<String> = None;
@@ -99,7 +98,7 @@ fn parse(raw: &[String]) -> Result<ServeContext, String> {
         let flag = raw[index].as_str();
         if flag == "--mcp" {
             if transport {
-                return Err("duplicate --mcp".into());
+                return Err(ProjectError::usage("duplicate --mcp"));
             }
             transport = true;
             index += 1;
@@ -109,12 +108,14 @@ fn parse(raw: &[String]) -> Result<ServeContext, String> {
             flag,
             "--repo-path" | "--repo" | "--artifact-root" | "--manifest"
         ) {
-            return Err(format!("unknown serve argument: {flag}\n{USAGE}"));
+            return Err(ProjectError::usage(format!(
+                "unknown serve argument: {flag}\n{USAGE}"
+            )));
         }
         let value = raw
             .get(index + 1)
             .filter(|value| !value.is_empty() && !value.starts_with("--"))
-            .ok_or_else(|| format!("{flag} requires one value"))?;
+            .ok_or_else(|| ProjectError::usage(format!("{flag} requires one value")))?;
         match flag {
             "--repo-path" => set_once(&mut repo_path, PathBuf::from(value), flag)?,
             "--repo" => set_once(&mut repo, value.clone(), flag)?,
@@ -125,42 +126,27 @@ fn parse(raw: &[String]) -> Result<ServeContext, String> {
         index += 2;
     }
     if !transport {
-        return Err(format!("serve requires a transport\n{USAGE}"));
+        return Err(ProjectError::usage(format!(
+            "serve requires a transport\n{USAGE}"
+        )));
     }
     let repo_path = match repo_path {
         Some(path) => path,
-        None => {
-            env::current_dir().map_err(|error| format!("resolve working directory: {error}"))?
-        }
+        None => env::current_dir().map_err(|error| {
+            ProjectError::host_io(format!("resolve working directory: {error}"))
+        })?,
     };
-    if !repo_path.is_dir() {
-        return Err(format!(
-            "--repo-path is not a directory: {}",
-            repo_path.display()
-        ));
-    }
-    let repo_path = fs::canonicalize(&repo_path)
-        .map_err(|error| format!("resolve --repo-path {}: {error}", repo_path.display()))?;
-    // The artifact-index key defaults to the checkout's directory name because
-    // that is the name `run commit` publishes under. A worktree whose folder
-    // name differs from the published repository name must say so with
-    // `--repo`; guessing would silently answer from another repository's runs.
-    let repo = match repo {
-        Some(repo) => repo,
-        None => repo_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .filter(|name| !name.is_empty())
-            .ok_or("--repo-path has no usable directory name; pass --repo")?
-            .to_string(),
-    };
-    let artifact_root = match artifact_root {
-        Some(root) => root,
-        None => artifacts::resolve_artifact_root(None)
-            .map_err(|error| format!("resolve artifact root: {error}"))?,
-    };
-    let binding = identity::bind(&artifact_root, &repo, &repo_path)?;
+    let project = ProjectContext::resolve(
+        ProjectSelector::new(repo_path)
+            .with_repo(repo)
+            .with_artifact_root(artifact_root),
+    )?;
+    let binding = project.binding()?;
+    let repo_path = project.repo_path().to_path_buf();
+    let repo = project.repo().to_string();
+    let artifact_root = project.artifact_root().to_path_buf();
     Ok(ServeContext {
+        project,
         repo_path,
         repo,
         artifact_root,
@@ -169,9 +155,9 @@ fn parse(raw: &[String]) -> Result<ServeContext, String> {
     })
 }
 
-fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<(), String> {
+fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<(), ProjectError> {
     if slot.replace(value).is_some() {
-        Err(format!("duplicate {flag}"))
+        Err(ProjectError::usage(format!("duplicate {flag}")))
     } else {
         Ok(())
     }
@@ -280,7 +266,7 @@ fn initialize_result(context: &ServeContext, params: &Value) -> Value {
         "capabilities": {"tools": {"listChanged": false}},
         "serverInfo": {"name": "code-intel", "version": env!("CARGO_PKG_VERSION")},
         "instructions": INSTRUCTIONS,
-        "repositoryBinding": context.binding.initialize_value(&context.repo, &context.repo_path),
+        "repositoryBinding": context.binding.describe(&context.repo, &context.repo_path),
     })
 }
 
@@ -308,13 +294,18 @@ fn tools_call(context: &ServeContext, id: Value, params: &Value) -> Value {
         .unwrap_or_else(|| json!({}));
     match handlers::call(context, name, &arguments) {
         Ok(payload) => success(id, tool_result(&payload, false)),
-        Err(message) => success(
+        Err(error) => success(
             id,
             tool_result(
                 &json!({
                     "schema": "code-intel-mcp-tool-error.v1",
                     "tool": name,
-                    "error": message,
+                    "error": format!(
+                        "{}; rerun: {}",
+                        error.message(),
+                        handlers::rerun_command(context)
+                    ),
+                    "projectError": error.to_value(),
                 }),
                 true,
             ),

@@ -157,7 +157,7 @@ fn every_ordinary_case_matches_old_head_exactly() {
     // One case ("repin clean success") moved from here into
     // `intentionalDeltas` when gate G1 added `scanCoverage` to repin's
     // report -- see `every_intentional_delta_is_documented_and_reproduced`.
-    assert_eq!(cases.len(), 50);
+    assert_eq!(cases.len(), 49);
 
     let repo = FixtureRepository::create();
     for case in cases {
@@ -197,8 +197,12 @@ fn every_legacy_command_spelling_honors_trailing_help() {
 /// also actually reproduce against a live run, the same guarantee
 /// `assert_exact_process_result` gives the plain (non-delta) cases.
 const EXPECTED_INTENTIONAL_DELTAS: &[(&str, &str)] = &[
-    ("text-format:help-full.v1", "text-format:help-full.v2"),
+    ("text-format:help-full.v1", "text-format:help-full.v3"),
     ("json-format:repin-report.v1", "json-format:repin-report.v2"),
+    (
+        "text-format:run-namespace-usage.v1",
+        "text-format:primary-run-alias-error.v1",
+    ),
 ];
 
 #[test]
@@ -234,12 +238,12 @@ fn every_intentional_delta_is_documented_and_reproduced() {
 
     let repo = FixtureRepository::create();
     for delta in deltas {
-        assert_ne!(
-            delta["old"]["stdoutUtf8"], delta["new"]["stdoutUtf8"],
-            "a delta whose bytes didn't actually change isn't a delta: {delta}"
+        assert!(
+            delta["old"]["stdoutUtf8"] != delta["new"]["stdoutUtf8"]
+                || delta["old"]["stderrUtf8"] != delta["new"]["stderrUtf8"],
+            "a delta whose output bytes didn't actually change isn't a delta: {delta}"
         );
         assert_eq!(delta["old"]["exitCode"], delta["new"]["exitCode"]);
-        assert_eq!(delta["old"]["stderrUtf8"], delta["new"]["stderrUtf8"]);
         assert_exact_process_result(
             delta["name"].as_str().expect("delta name"),
             delta["argv"].as_array().expect("delta argv"),

@@ -17,7 +17,10 @@ use super::legacy::{
     cmd_sentrux_normalize, parse_args, run_benchmark, run_capability, run_file_boundary_raw,
     run_runtime_ci_raw, Args,
 };
-use super::primary::{execute_primary, matches_primary_pattern, parse_primary_args, PrimaryArgs};
+use super::primary::{
+    execute_primary, matches_primary_pattern, parse_primary_args, parse_run_alias_args, PrimaryArgs,
+};
+use super::project_query::{execute_project_query, parse_project_query_args, ProjectQueryArgs};
 
 mod contract;
 mod routes;
@@ -34,6 +37,7 @@ use routes::{resolve_command_route, resolve_legacy_route, CommandRoute};
 pub(super) enum Command {
     Version(VersionCommand),
     Primary(PrimaryArgs),
+    ProjectQuery(ProjectQueryArgs),
     Compatibility(CompatibilityCommand),
     Legacy(LegacyCommand),
 }
@@ -136,6 +140,11 @@ pub(super) enum CommandError {
         exit_code: i32,
         message: String,
     },
+    Project {
+        kind: &'static str,
+        exit_code: i32,
+        message: String,
+    },
     Legacy {
         message: String,
     },
@@ -153,17 +162,6 @@ pub(crate) struct RenderedOutcome {
 }
 
 pub(super) fn parse_command(raw: &[String]) -> std::result::Result<Command, CommandError> {
-    if raw.first().is_some_and(|command| command == "run")
-        && !matches!(
-            raw.get(1).map(String::as_str),
-            Some("execute" | "dag-coordinate" | "commit")
-        )
-    {
-        return Err(CommandError::Usage {
-            message: run_cli::usage(),
-            exit_code: 64,
-        });
-    }
     match resolve_command_route(raw) {
         Some(CommandRoute::Version(_)) => Ok(Command::Version(VersionCommand {
             json: raw.iter().any(|argument| argument == "--json"),
@@ -179,6 +177,31 @@ pub(super) fn parse_command(raw: &[String]) -> std::result::Result<Command, Comm
                     message,
                 })
         }
+        Some(CommandRoute::RunAlias(_)) => parse_run_alias_args(&raw[1..])
+            .map(Command::Primary)
+            .map_err(|message| CommandError::Primary {
+                json: raw.iter().any(|argument| argument == "--json"),
+                repo: None,
+                mode: None,
+                exit_code: 64,
+                message,
+            }),
+        Some(CommandRoute::ProjectQuery(_)) => parse_project_query_args(&raw[1..])
+            .map(Command::ProjectQuery)
+            .map_err(|message| {
+                if raw.iter().any(|argument| argument == "--json") {
+                    CommandError::Project {
+                        kind: "usage",
+                        exit_code: 64,
+                        message,
+                    }
+                } else {
+                    CommandError::Usage {
+                        message,
+                        exit_code: 64,
+                    }
+                }
+            }),
         Some(CommandRoute::Raw(route)) => Ok(Command::Compatibility(CompatibilityCommand {
             route: route.id,
             arguments: raw[route.argument_offset..].to_vec(),
@@ -231,8 +254,23 @@ pub(super) fn execute_command(
                 json: arguments.json,
                 repo: Some(arguments.repo),
                 mode: Some(arguments.mode),
-                exit_code: error.exit_code,
-                message: error.message,
+                exit_code: error.exit_code(),
+                message: error.message().to_string(),
+            }),
+        },
+        Command::ProjectQuery(arguments) => match execute_project_query(arguments) {
+            Ok(output) => Ok(buffered_outcome(
+                0,
+                format!(
+                    "{}\n",
+                    serde_json::to_string(&output).expect("project query result serializes")
+                ),
+                String::new(),
+            )),
+            Err(error) => Err(CommandError::Project {
+                kind: error.kind(),
+                exit_code: error.exit_code(),
+                message: error.message().to_string(),
             }),
         },
         Command::Compatibility(command) => Ok(CommandOutcome {
@@ -280,6 +318,25 @@ pub(super) fn render_outcome(
             stdout: String::new(),
             stderr: format!("error: {message}\n"),
             exit_code: 1,
+        },
+        Err(CommandError::Project {
+            kind,
+            exit_code,
+            message,
+        }) => RenderedOutcome {
+            stdout: format!(
+                "{}\n",
+                serde_json::to_string(&json!({
+                    "schema": "code-intel-project-error.v1",
+                    "outcome": "error",
+                    "kind": kind,
+                    "exitCode": exit_code,
+                    "diagnostic": message,
+                }))
+                .expect("project error serializes")
+            ),
+            stderr: String::new(),
+            exit_code,
         },
         Err(CommandError::Usage { message, exit_code }) => RenderedOutcome {
             stdout: String::new(),

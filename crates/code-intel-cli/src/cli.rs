@@ -2,6 +2,7 @@ mod command_catalog;
 mod help_contract;
 mod legacy;
 mod primary;
+mod project_query;
 
 pub(crate) use command_catalog::RenderedOutcome;
 
