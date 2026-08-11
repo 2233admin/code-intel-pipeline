@@ -123,7 +123,13 @@ echo 'source "$HOME/.config/code-intel/env.sh"' >> ~/.zshrc
 
 ```bash
 code-intel ~/src/your-repo
+code-intel query ~/src/your-repo --kind evidence --json
 ```
+
+`code-intel run <repo>` 是第一行主入口的等价命名形式。`query` 只接收仓库路径，
+由 ProjectContext 统一解析仓库键和 artifact root；日常调用不需要再传
+`--artifact-root`、`--repo`、run id 或 manifest。低层发布/排障仍可使用
+`run execute` 和 `artifact query` 的显式参数接口。
 
 ## 语言方向与治理
 

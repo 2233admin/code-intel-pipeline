@@ -6,6 +6,7 @@ use super::{matches_primary_pattern, CompatibilityRoute, LegacyRouteId};
 use crate::cli::help_contract::{HELP_ALIASES, HELP_COMMAND};
 
 mod edit_routes;
+mod project_routes;
 mod repowise_routes;
 mod run_routes;
 mod serve_routes;
@@ -733,7 +734,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             Internal,
             Internal,
             &[],
-            stdout!("text-format:help-quick.v1", "text-format:help-full.v2"),
+            stdout!("text-format:help-quick.v1", "text-format:help-full.v3"),
             exits!(0, 1),
             "retain while this major CLI contract is supported"
         ),
@@ -752,26 +753,9 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             "retire only through a versioned language administration replacement"
         ),
     },
-    CommandRoute::Primary(command_contract!(
-        Public,
-        AuthoritativeRun,
-        Committed,
-        &[
-            CommandEffect::RepoRead,
-            CommandEffect::LocalWrite,
-            CommandEffect::ProcessSpawn,
-            CommandEffect::Network
-        ],
-        artifacts_and_stdout!(
-            ["code-intel-run-manifest.v1", "code-intel-artifact-index.v1"],
-            [
-                "code-intel-primary-result.v1",
-                "text-format:primary-summary.v1"
-            ]
-        ),
-        exits!(0, 10, 20, 64, 65, 70, 74),
-        "retain as the default production entry; retire only by versioned replacement"
-    )),
+    project_routes::RUN_ALIAS,
+    project_routes::QUERY,
+    project_routes::PRIMARY,
 ];
 
 pub(super) fn resolve_command_route(raw: &[String]) -> Option<&'static CommandRoute> {
@@ -779,6 +763,8 @@ pub(super) fn resolve_command_route(raw: &[String]) -> Option<&'static CommandRo
         CommandRoute::Version(route) => raw.first().is_some_and(|command| {
             route.command == command || route.aliases.iter().any(|alias| alias == command)
         }),
+        CommandRoute::RunAlias(_) => raw.first().is_some_and(|command| command == "run"),
+        CommandRoute::ProjectQuery(_) => raw.first().is_some_and(|command| command == "query"),
         CommandRoute::Primary(_) => matches_primary_pattern(raw),
         CommandRoute::Raw(route) => raw.first().is_some_and(|command| {
             route.command == command

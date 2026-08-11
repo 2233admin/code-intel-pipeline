@@ -1,6 +1,11 @@
 mod common;
+#[path = "primary_entry/content_identity.rs"]
+mod content_identity;
+#[path = "primary_entry/session_gate.rs"]
+mod session_gate;
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[test]
 fn root_help_leads_with_the_compiled_primary_entry() {
@@ -58,6 +63,65 @@ fn root_entry_keeps_json_machine_readable_on_usage_errors() {
     assert!(result["diagnostic"]
         .as_str()
         .is_some_and(|message| message.contains("repository path is not a directory:")));
+}
+
+#[test]
+fn run_alias_uses_the_same_primary_error_contract() {
+    let missing = std::env::temp_dir().join(format!(
+        "code-intel-run-alias-missing-repo-{}",
+        std::process::id()
+    ));
+    let output = common::cli()
+        .arg("run")
+        .arg(&missing)
+        .args(["--mode", "lite", "--json"])
+        .output()
+        .expect("run code-intel run alias");
+
+    assert_eq!(output.status.code(), Some(64));
+    assert!(output.stderr.is_empty());
+    let result: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("run alias error output is JSON");
+    assert_eq!(result["schema"], "code-intel-primary-result.v1");
+    assert_eq!(result["outcome"], "error");
+    assert!(result["diagnostic"]
+        .as_str()
+        .is_some_and(|message| message.contains("repository path is not a directory:")));
+}
+
+#[test]
+fn project_query_resolves_repository_context_before_loading_evidence() {
+    let root = std::env::temp_dir().join(format!(
+        "code-intel-project-query-empty-{}",
+        std::process::id()
+    ));
+    let repo = root.join("fixture-repo");
+    let artifacts = root.join("artifacts");
+    std::fs::create_dir_all(&repo).expect("create repository fixture");
+    std::fs::create_dir_all(&artifacts).expect("create artifact root fixture");
+
+    let output = common::cli()
+        .arg("query")
+        .arg(&repo)
+        .args(["--kind", "evidence", "--json"])
+        .env("CODE_INTEL_ARTIFACT_ROOT", &artifacts)
+        .output()
+        .expect("run project query");
+
+    assert_eq!(output.status.code(), Some(65));
+    assert!(output.stderr.is_empty());
+    let error: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("query error is JSON");
+    assert_eq!(error["schema"], "code-intel-project-error.v1");
+    assert_eq!(error["kind"], "contract");
+    assert!(
+        error["diagnostic"]
+            .as_str()
+            .is_some_and(|message| message.contains("no committed authoritative run")),
+        "{error}"
+    );
+
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
@@ -136,7 +200,7 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
     }
     commit_fixture(&repo, "baseline");
 
-    let (code, output) = run_wrapper(&repo, &artifacts);
+    let (code, output) = run_wrapper(&repo, &artifacts, true);
     // The doctor reports three distinct causes (`doctor_adapter.rs::diagnosis`).
     // Two of them — bootstrap readiness and provider conformance — describe the
     // machine's tools, and this route passes the doctor no flags to fix that up,
@@ -247,6 +311,24 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
         "report={report_json}"
     );
 
+    let resume = common::cli()
+        .args(["resume", "--repo"])
+        .arg(&repo)
+        .args(["--artifact-root"])
+        .arg(&artifacts)
+        .output()
+        .expect("run legacy resume against committed layout");
+    assert!(!resume.status.success());
+    let resume_error = String::from_utf8_lossy(&resume.stderr);
+    assert!(
+        resume_error.contains("report.json"),
+        "resume={resume_error}"
+    );
+    assert!(
+        resume_error.contains("code-intel report --repo"),
+        "resume={resume_error}"
+    );
+
     let query = common::cli()
         .args(["artifact", "query", "--artifact-root"])
         .arg(&artifacts)
@@ -267,12 +349,162 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
         "query={query}"
     );
 
+    let divergent = root.join("divergent linked worktree");
+    let worktree = Command::new("git")
+        .arg("-C")
+        .arg(&repo)
+        .args([
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "divergent-evidence-test",
+        ])
+        .arg(&divergent)
+        .output()
+        .expect("create divergent linked worktree");
+    assert!(
+        worktree.status.success(),
+        "git worktree add failed: {}",
+        String::from_utf8_lossy(&worktree.stderr)
+    );
+    std::fs::write(
+        divergent.join("src/lib.rs"),
+        "pub fn fixture() {}\npub fn divergent() {}\n",
+    )
+    .expect("diverge linked worktree");
+    commit_fixture(&divergent, "divergent-linked-worktree");
+
+    let divergent_query = common::cli()
+        .arg("query")
+        .arg(&divergent)
+        .args(["--kind", "evidence", "--json"])
+        .env("CODE_INTEL_ARTIFACT_ROOT", &artifacts)
+        .output()
+        .expect("query divergent linked worktree");
+    assert_eq!(divergent_query.status.code(), Some(65));
+    assert!(divergent_query.stderr.is_empty());
+    let divergent_error: serde_json::Value =
+        serde_json::from_slice(&divergent_query.stdout).expect("divergent query refusal is JSON");
+    assert_eq!(divergent_error["kind"], "contract");
+    assert!(
+        divergent_error["diagnostic"]
+            .as_str()
+            .is_some_and(|message| message.contains("repository identity mismatch")),
+        "divergent query did not fail closed: {divergent_error}"
+    );
+
+    let divergent_mcp = common::cli()
+        .args(["serve", "--mcp", "--repo-path"])
+        .arg(&divergent)
+        .args(["--artifact-root"])
+        .arg(&artifacts)
+        .output()
+        .expect("start MCP against divergent linked worktree");
+    assert_eq!(divergent_mcp.status.code(), Some(65));
+    assert!(divergent_mcp.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&divergent_mcp.stderr).contains("repository identity mismatch"),
+        "MCP did not fail closed: {}",
+        String::from_utf8_lossy(&divergent_mcp.stderr)
+    );
+
+    let unrelated = root.join("unrelated-lineage").join("fixture-repo");
+    std::fs::create_dir_all(unrelated.join("src")).expect("create unrelated repository");
+    std::fs::write(unrelated.join("src/lib.rs"), "pub fn unrelated() {}")
+        .expect("write unrelated source");
+    commit_fixture(&unrelated, "unrelated-lineage");
+    let collision = common::cli()
+        .arg("run")
+        .arg(&unrelated)
+        .args(["--mode", "lite", "--json"])
+        .env("CODE_INTEL_ARTIFACT_ROOT", &artifacts)
+        .output()
+        .expect("refuse an unrelated repository with the same directory name");
+    assert_eq!(collision.status.code(), Some(65));
+    assert!(collision.stderr.is_empty());
+    let collision: serde_json::Value =
+        serde_json::from_slice(&collision.stdout).expect("collision error is JSON");
+    assert!(
+        collision["diagnostic"]
+            .as_str()
+            .is_some_and(|message| message.contains("repository key collision")),
+        "collision={collision}"
+    );
+
+    let renamed_repo = root.join("renamed checkout");
+    std::fs::rename(&repo, &renamed_repo).expect("rename the published checkout");
+    let repo = renamed_repo;
+
+    let project_query = common::cli()
+        .arg("query")
+        .arg(&repo)
+        .args([
+            "--kind",
+            "evidence",
+            "--type",
+            "observed.evidence.payload",
+            "--json",
+        ])
+        .env("CODE_INTEL_ARTIFACT_ROOT", &artifacts)
+        .output()
+        .expect("run project-context query");
+    assert!(
+        project_query.status.success(),
+        "project query failed: {}",
+        String::from_utf8_lossy(&project_query.stderr)
+    );
+    let project_query: serde_json::Value =
+        serde_json::from_slice(&project_query.stdout).expect("project query is JSON");
+    assert_eq!(project_query["schema"], "code-intel-evidence-query.v1");
+    assert_eq!(project_query["repo"], "fixture-repo");
+    assert_eq!(project_query["freshness"]["status"], "current");
+    assert!(
+        project_query["matches"]
+            .as_array()
+            .expect("project query matches")
+            .len()
+            >= 2,
+        "query={project_query}"
+    );
+
+    let mcp = mcp_session(
+        &repo,
+        &artifacts,
+        &[
+            serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+                "protocolVersion":"2025-06-18","capabilities":{},
+                "clientInfo":{"name":"project-context-test","version":"1"}}}),
+            serde_json::json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+            serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
+                "name":"get_facts","arguments":{"type":"observed.evidence.payload"}}}),
+        ],
+    );
+    assert_eq!(
+        mcp.len(),
+        2,
+        "notification must not receive a response: {mcp:?}"
+    );
+    assert_eq!(
+        mcp[0]["result"]["repositoryBinding"]["status"], "verified",
+        "MCP startup did not bind the named-run publication: {}",
+        mcp[0]
+    );
+    assert_eq!(mcp[1]["result"]["isError"], false, "MCP facts={}", mcp[1]);
+    let mcp_facts: serde_json::Value = serde_json::from_str(
+        mcp[1]["result"]["content"][0]["text"]
+            .as_str()
+            .expect("MCP facts text block"),
+    )
+    .expect("MCP facts payload is JSON");
+    assert_eq!(mcp_facts, project_query, "CLI and MCP facts diverged");
+
     // Invalid UTF-8 in a source file fails the native-code node, and the run
     // has to stay visible for audit without becoming authoritative.
     std::fs::write(repo.join("broken.rs"), [0xff, 0xfe, 0xfd]).expect("invalid source");
     commit_fixture(&repo, "invalid-utf8-source");
 
-    let (code, output) = run_wrapper(&repo, &artifacts);
+    let (code, output) = run_wrapper(&repo, &artifacts, false);
     assert_ne!(
         code,
         Some(0),
@@ -322,24 +554,6 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
         "the failed run was not classified outside the authoritative index: {index}"
     );
 
-    let resume = common::cli()
-        .args(["resume", "--repo"])
-        .arg(&repo)
-        .args(["--artifact-root"])
-        .arg(&artifacts)
-        .output()
-        .expect("run legacy resume against committed layout");
-    assert!(!resume.status.success());
-    let resume_error = String::from_utf8_lossy(&resume.stderr);
-    assert!(
-        resume_error.contains("report.json"),
-        "resume={resume_error}"
-    );
-    assert!(
-        resume_error.contains("code-intel report --repo"),
-        "resume={resume_error}"
-    );
-
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -379,18 +593,85 @@ fn commit_fixture(repo: &std::path::Path, message: &str) {
     }
 }
 
-/// The wrapper takes the repository from the working directory, which is the
-/// route a user actually types.
-fn run_wrapper(repo: &std::path::Path, artifacts: &std::path::Path) -> (Option<i32>, String) {
-    let output = common::cli()
-        .arg("--artifact-root")
-        .arg(artifacts)
+/// The default entry and its named `run` alias both take the repository from
+/// the working directory; the test uses one for each authoritative iteration.
+fn run_wrapper(
+    repo: &std::path::Path,
+    artifacts: &std::path::Path,
+    named_alias: bool,
+) -> (Option<i32>, String) {
+    let mut command = common::cli();
+    if named_alias {
+        command.arg("run");
+    }
+    let output = command
+        .env("CODE_INTEL_ARTIFACT_ROOT", artifacts)
         .current_dir(repo)
         .output()
         .expect("run the stable wrapper");
     let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
     text.push_str(&String::from_utf8_lossy(&output.stderr));
     (output.status.code(), text)
+}
+
+fn run_lite_json(repo: &std::path::Path, artifacts: &std::path::Path) -> serde_json::Value {
+    let output = common::cli()
+        .arg("run")
+        .arg(repo)
+        .args(["--mode", "lite", "--json"])
+        .env("CODE_INTEL_ARTIFACT_ROOT", artifacts)
+        .output()
+        .expect("run content-identity repository");
+    assert!(
+        output.status.success(),
+        "content-identity run failed: stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    assert!(output.stderr.is_empty(), "JSON run writes no stderr");
+    serde_json::from_slice(&output.stdout).expect("content-identity run JSON")
+}
+
+fn mcp_session(
+    repo: &std::path::Path,
+    artifacts: &std::path::Path,
+    requests: &[serde_json::Value],
+) -> Vec<serde_json::Value> {
+    let mut child = common::cli()
+        .args(["serve", "--mcp", "--repo-path"])
+        .arg(repo)
+        .args(["--artifact-root"])
+        .arg(artifacts)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start MCP server over the committed publication");
+    {
+        let stdin = child.stdin.as_mut().expect("MCP stdin");
+        for request in requests {
+            writeln!(stdin, "{request}").expect("write MCP request");
+        }
+    }
+    drop(child.stdin.take());
+    let output = child.wait_with_output().expect("wait for MCP server");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "MCP server failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "MCP server wrote stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout)
+        .expect("MCP stdout is UTF-8")
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).expect("MCP response is JSON"))
+        .collect()
 }
 
 /// Authoritative runs are published as `<name>-core`; staging directories and
@@ -435,320 +716,4 @@ fn assert_single_index_entry(artifacts: &std::path::Path, run: &str) -> serde_js
     assert_eq!(entries[0]["run"].as_str(), Some(run), "index={index}");
     assert_eq!(entries[0]["outcome"], "completed", "index={index}");
     index
-}
-
-struct LegacySessionTemp(PathBuf);
-
-impl LegacySessionTemp {
-    fn new(label: &str) -> Self {
-        let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-session-gate-{label}-{}-{nonce}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(path.join("fake-bin")).expect("create hermetic tree");
-        std::fs::create_dir_all(path.join("repo/src")).expect("create repository tree");
-        std::fs::write(path.join("repo/src/lib.rs"), "pub fn baseline() {}\n")
-            .expect("write baseline source");
-        write_fake_sentrux(&path.join("fake-bin"));
-        Self(path)
-    }
-
-    fn repo(&self) -> PathBuf {
-        self.0.join("repo")
-    }
-
-    fn fake_bin(&self) -> PathBuf {
-        self.0.join("fake-bin")
-    }
-}
-
-impl Drop for LegacySessionTemp {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
-fn write_fake_sentrux(fake_bin: &std::path::Path) {
-    #[cfg(windows)]
-    let path = fake_bin.join("sentrux.cmd");
-    #[cfg(not(windows))]
-    let path = fake_bin.join("sentrux");
-
-    #[cfg(windows)]
-    std::fs::write(
-        &path,
-        concat!(
-            "@echo off\r\n",
-            "setlocal EnableExtensions\r\n",
-            "set \"save=0\"\r\n",
-            "set \"repo=\"\r\n",
-            ":args\r\n",
-            "if \"%~1\"==\"\" goto args_done\r\n",
-            "if /I \"%~1\"==\"--save\" set \"save=1\"\r\n",
-            "set \"repo=%~1\"\r\n",
-            "shift\r\n",
-            "goto args\r\n",
-            ":args_done\r\n",
-            "if \"%save%\"==\"1\" (\r\n",
-            "  if not exist \"%repo%\\.sentrux\\cache\" mkdir \"%repo%\\.sentrux\\cache\"\r\n",
-            "  > \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo {\r\n",
-            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"tool\": \"sentrux-lite\",\r\n",
-            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"quality_signal\": 100,\r\n",
-            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"coupling_score\": 1,\r\n",
-            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"cycle_count\": 0,\r\n",
-            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"god_file_count\": 0,\r\n",
-            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"complex_fn_count\": 0,\r\n",
-            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"cross_module_edges\": 1,\r\n",
-            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo   \"total_import_edges\": 10\r\n",
-            "  >> \"%repo%\\.sentrux\\cache\\lite-baseline.json\" echo }\r\n",
-            ")\r\n",
-            "set \"quality=100\"\r\n",
-            "if exist \"%repo%\\src\\regression.marker\" set \"quality=99\"\r\n",
-            "echo [resolve] 10 resolved, 0 unresolved\r\n",
-            "echo [build_graphs] 5 files ^| 10 import, 3 call, 0 inherit edges\r\n",
-            "echo Quality: 100 -^> %quality%\r\n",
-            "echo Coupling: 1 -^> 1\r\n",
-            "echo Cycles: 0 -^> 0\r\n",
-            "echo God files: 0 -^> 0\r\n",
-            "echo Distance from Main Sequence: 0.01\r\n",
-            "exit /b 0\r\n",
-        ),
-    )
-    .expect("write fake sentrux");
-
-    #[cfg(not(windows))]
-    std::fs::write(
-        &path,
-        concat!(
-            "#!/bin/sh\n",
-            "save=0\n",
-            "repo=\n",
-            "for arg in \"$@\"; do\n",
-            "  [ \"$arg\" = \"--save\" ] && save=1\n",
-            "  repo=$arg\n",
-            "done\n",
-            "if [ \"$save\" = 1 ]; then\n",
-            "  mkdir -p \"$repo/.sentrux/cache\"\n",
-            "  printf '%s\\n' '{' '  \"tool\": \"sentrux-lite\",' '  \"quality_signal\": 100,' '  \"coupling_score\": 1,' '  \"cycle_count\": 0,' '  \"god_file_count\": 0,' '  \"complex_fn_count\": 0,' '  \"cross_module_edges\": 1,' '  \"total_import_edges\": 10' '}' > \"$repo/.sentrux/cache/lite-baseline.json\"\n",
-            "fi\n",
-            "quality=100\n",
-            "[ -f \"$repo/src/regression.marker\" ] && quality=99\n",
-            "printf '%s\\n' '[resolve] 10 resolved, 0 unresolved' '[build_graphs] 5 files | 10 import, 3 call, 0 inherit edges' \"Quality: 100 -> $quality\" 'Coupling: 1 -> 1' 'Cycles: 0 -> 0' 'God files: 0 -> 0' 'Distance from Main Sequence: 0.01'\n",
-        ),
-    )
-    .expect("write fake sentrux");
-
-    #[cfg(unix)]
-    {
-        let status = Command::new("chmod")
-            .arg("755")
-            .arg(&path)
-            .status()
-            .expect("run chmod for fake sentrux");
-        assert!(status.success(), "make fake sentrux executable");
-    }
-}
-
-fn legacy_session_script() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("legacy/Invoke-SentruxAgentTool.ps1")
-}
-
-fn invoke_legacy_session(
-    tree: &LegacySessionTemp,
-    operation: &str,
-    session_id: &str,
-) -> (Option<i32>, Vec<u8>, Vec<u8>) {
-    let path = std::env::join_paths(
-        std::iter::once(tree.fake_bin()).chain(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        )),
-    )
-    .expect("compose hermetic PATH");
-    // The agent tool pins the session gate to the repository's lite core and
-    // honors SENTRUX_CORE_EXE as the explicit override (issue #182), so the
-    // fake CLI is injected through that seam; the PATH prepend stays for the
-    // last-resort `sentrux` lookup.
-    #[cfg(windows)]
-    let fake_cli = tree.fake_bin().join("sentrux.cmd");
-    #[cfg(not(windows))]
-    let fake_cli = tree.fake_bin().join("sentrux");
-    let output = Command::new("pwsh")
-        .args(["-NoLogo", "-NoProfile", "-File"])
-        .arg(legacy_session_script())
-        .arg(operation)
-        .arg(tree.repo())
-        .args(["-SessionId", session_id])
-        .env("PATH", path)
-        .env("SENTRUX_CORE_EXE", &fake_cli)
-        .output()
-        .expect("invoke real legacy session gate");
-    (output.status.code(), output.stdout, output.stderr)
-}
-
-fn parse_legacy_session_json(output: &(Option<i32>, Vec<u8>, Vec<u8>)) -> serde_json::Value {
-    serde_json::from_slice(&output.1).unwrap_or_else(|error| {
-        panic!(
-            "session gate must emit JSON: {error}; stdout={}; stderr={}",
-            String::from_utf8_lossy(&output.1),
-            String::from_utf8_lossy(&output.2)
-        )
-    })
-}
-
-fn assert_exact_keys(value: &serde_json::Value, expected: &str, label: &str) {
-    let mut actual = value
-        .as_object()
-        .unwrap_or_else(|| panic!("{label} must be an object: {value}"))
-        .keys()
-        .map(String::as_str)
-        .collect::<Vec<_>>();
-    let mut expected = expected.split(',').collect::<Vec<_>>();
-    actual.sort_unstable();
-    expected.sort_unstable();
-    assert_eq!(actual, expected, "{label} keys");
-}
-
-fn assert_session_document_shape(value: &serde_json::Value, phase: &str) {
-    let top_level = match phase {
-        "session_start" => {
-            "tool,session_id,path,status,quality_signal,bottleneck,started_at,gate"
-        }
-        "session_end" => {
-            "tool,session_id,path,pass,signal_before,signal_after,delta,summary,metrics_observed_count,backfilled_metrics,ended_at,gate,rules"
-        }
-        _ => panic!("unsupported session phase: {phase}"),
-    };
-    assert_exact_keys(value, top_level, phase);
-    assert_exact_keys(
-        &value["gate"],
-        "pass,status,exit_code,duration_ms,metrics,baseline,bottleneck,raw_output,metrics_observed_count,backfilled_metrics",
-        &format!("{phase}.gate"),
-    );
-    assert_exact_keys(
-        &value["gate"]["metrics"],
-        "quality_before,quality_signal,coupling_before,coupling,cycles_before,cycles,god_files_before,god_files,distance_from_main_sequence,no_degradation,violations,scan",
-        &format!("{phase}.gate.metrics"),
-    );
-    assert_exact_keys(
-        &value["gate"]["metrics"]["scan"],
-        "resolvedImports,unresolvedImports,files,importEdges,callEdges,inheritEdges",
-        &format!("{phase}.gate.metrics.scan"),
-    );
-    assert_exact_keys(
-        &value["gate"]["baseline"],
-        "path,quality_signal,coupling,cycles,god_files,complex_functions,total_import_edges,cross_module_edges",
-        &format!("{phase}.gate.baseline"),
-    );
-}
-
-#[test]
-fn real_session_start_change_end_pass_contract_is_stable() {
-    let tree = LegacySessionTemp::new("pass");
-    let session_id = "pass-contract";
-
-    let start = invoke_legacy_session(&tree, "session_start", session_id);
-    assert_eq!(start.0, Some(0));
-    let start_json = parse_legacy_session_json(&start);
-    assert_session_document_shape(&start_json, "session_start");
-    assert_eq!(start_json["tool"], "session_start");
-    assert_eq!(start_json["session_id"], session_id);
-    assert_eq!(start_json["status"], "Baseline saved");
-    assert_eq!(start_json["gate"]["pass"], true);
-    assert_eq!(start_json["gate"]["exit_code"], 0);
-    assert_eq!(start_json["gate"]["baseline"]["quality_signal"], 100);
-    let records = tree.repo().join(".sentrux/agent-sessions");
-    let persisted_start = read_json(&records.join(format!("{session_id}.start.json")));
-    assert_eq!(
-        persisted_start, start_json,
-        "persisted start differs from stdout"
-    );
-    assert_eq!(persisted_start["session_id"], session_id);
-    assert_eq!(persisted_start["quality_signal"], 100);
-    assert_eq!(
-        read_json(&tree.repo().join(".sentrux/cache/lite-baseline.json"))["quality_signal"],
-        100
-    );
-    assert!(
-        !tree.repo().join(".sentrux/baseline.json").exists(),
-        "session gate must not create the native engine's .sentrux/baseline.json (issue #182)"
-    );
-
-    std::fs::write(
-        tree.repo().join("src/lib.rs"),
-        "pub fn baseline() {}\npub fn changed() {}\n",
-    )
-    .expect("make a real repository change");
-
-    let end = invoke_legacy_session(&tree, "session_end", session_id);
-    assert_eq!(end.0, Some(0));
-    let end_json = parse_legacy_session_json(&end);
-    assert_session_document_shape(&end_json, "session_end");
-    assert_eq!(end_json["tool"], "session_end");
-    assert_eq!(end_json["session_id"], session_id);
-    assert_eq!(end_json["pass"], true);
-    assert_eq!(end_json["delta"], 0);
-    assert_eq!(
-        end_json["summary"],
-        "No structural degradation during this session"
-    );
-    assert_eq!(end_json["gate"]["exit_code"], 0);
-
-    assert_eq!(
-        read_json(&records.join(format!("{session_id}.end.json"))),
-        end_json,
-        "persisted end differs from stdout"
-    );
-}
-
-#[test]
-fn real_session_start_change_end_failure_is_json_with_zero_process_exit() {
-    let tree = LegacySessionTemp::new("fail");
-    let session_id = "fail-contract";
-
-    let start = invoke_legacy_session(&tree, "session_start", session_id);
-    assert_eq!(start.0, Some(0));
-    let start_json = parse_legacy_session_json(&start);
-    assert_session_document_shape(&start_json, "session_start");
-    assert_eq!(start_json["gate"]["pass"], true);
-
-    std::fs::write(tree.repo().join("src/regression.marker"), "regressed\n")
-        .expect("make a real repository change");
-
-    let end = invoke_legacy_session(&tree, "session_end", session_id);
-    assert_eq!(
-        end.0,
-        Some(0),
-        "legacy gate currently reports domain failure in JSON, not process status"
-    );
-    let end_json = parse_legacy_session_json(&end);
-    assert_session_document_shape(&end_json, "session_end");
-    assert_eq!(end_json["tool"], "session_end");
-    assert_eq!(end_json["pass"], false);
-    assert_eq!(end_json["signal_before"], 100);
-    assert_eq!(end_json["signal_after"], 99);
-    assert_eq!(end_json["delta"], -1);
-    assert_eq!(end_json["summary"], "Quality degraded during this session");
-    assert_eq!(end_json["gate"]["pass"], true);
-    assert_eq!(end_json["gate"]["exit_code"], 0);
-    let records = tree.repo().join(".sentrux/agent-sessions");
-    assert_eq!(
-        read_json(&records.join(format!("{session_id}.start.json"))),
-        start_json,
-        "persisted failure-case start differs from stdout"
-    );
-    assert_eq!(
-        read_json(&records.join(format!("{session_id}.end.json"))),
-        end_json,
-        "persisted failure-case end differs from stdout"
-    );
-    assert!(
-        !tree.repo().join(".sentrux/baseline.json").exists(),
-        "session gate must not create the native engine's .sentrux/baseline.json (issue #182)"
-    );
 }

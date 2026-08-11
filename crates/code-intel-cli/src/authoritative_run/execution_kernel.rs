@@ -8,6 +8,7 @@ use crate::run_error::RunError;
 
 pub(crate) struct RunRequest {
     pub(crate) repo: PathBuf,
+    pub(crate) repository_key: Option<String>,
     pub(crate) staging_root: PathBuf,
     pub(crate) authority_root: PathBuf,
     pub(crate) final_name: String,
@@ -111,7 +112,7 @@ pub(crate) fn execute(request: RunRequest) -> Result<ExecutionResult, RunError> 
     // `artifacts::compose_dag_staging_dir` and the primary entry in
     // `main.rs` — keeps the write side and the query side agreeing on the
     // path without changing either reader.
-    let repo_name = resolve_repo_name(&request.repo)?;
+    let repo_name = resolve_repository_key(&request.repo, request.repository_key.as_deref())?;
     // Cloned before `request.repo` moves into the DAG request below: the
     // anchor-verification gate (issue #151) re-resolves each claim against
     // the same live repository the DAG scanned, after the DAG has already
@@ -183,6 +184,23 @@ fn resolve_repo_name(repo: &Path) -> Result<String, RunError> {
                 repo.display()
             ))
         })
+}
+
+/// ProjectContext may preserve a repository's authority key when the checkout
+/// directory is renamed. Compatibility callers omit the override and retain
+/// the historical final-directory-name behavior.
+fn resolve_repository_key(repo: &Path, repository_key: Option<&str>) -> Result<String, RunError> {
+    match repository_key {
+        Some(key)
+            if !key.is_empty() && key != "." && key != ".." && !key.contains(['/', '\\', '\0']) =>
+        {
+            Ok(key.to_string())
+        }
+        Some(key) => Err(RunError::contract(format!(
+            "repository key must be one non-empty path component: {key:?}"
+        ))),
+        None => resolve_repo_name(repo),
+    }
 }
 
 /// Folds `repo_name` under `authority_root`, unless the caller already did
@@ -349,6 +367,22 @@ mod tests {
     fn resolve_repo_name_rejects_a_repo_path_that_does_not_exist() {
         let missing = unique_temp_dir("resolve-name-missing");
         assert!(resolve_repo_name(&missing).is_err());
+    }
+
+    #[test]
+    fn explicit_repository_key_preserves_authority_across_checkout_rename() {
+        let missing = unique_temp_dir("stable-repository-key");
+        let name = resolve_repository_key(&missing, Some("original-checkout"))
+            .expect("explicit authority key does not depend on checkout directory name");
+        assert_eq!(name, "original-checkout");
+    }
+
+    #[test]
+    fn explicit_repository_key_rejects_nested_or_parent_paths() {
+        let repo = unique_temp_dir("invalid-repository-key");
+        for key in ["", ".", "..", "nested/repo", "nested\\repo"] {
+            assert!(resolve_repository_key(&repo, Some(key)).is_err(), "{key:?}");
+        }
     }
 
     #[test]

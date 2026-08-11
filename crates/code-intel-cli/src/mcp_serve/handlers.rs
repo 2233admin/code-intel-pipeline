@@ -15,10 +15,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Map, Value};
 
 use super::ServeContext;
-use crate::committed_evidence::{self, CommittedEvidence, EvidenceError};
-use crate::{
-    capability, capability_inventory, change_impact, evidence_query, execution_policy, snapshot,
-};
+use crate::committed_evidence::{self, CommittedEvidence};
+use crate::project_context::{EvidenceQuery, ProjectError, Query};
+use crate::{capability, capability_inventory, change_impact, execution_policy, snapshot};
 
 const EDIT_PLAN_CAPABILITY: &str = "edit.ast-grep-plan";
 const DEFAULT_LIMIT: usize = 20;
@@ -27,9 +26,13 @@ const DEFAULT_LIMIT: usize = 20;
 /// of `100` is how they stop agreeing.
 use crate::evidence_query::MAX_LIMIT;
 
-pub(super) fn call(context: &ServeContext, name: &str, arguments: &Value) -> Result<Value, String> {
+pub(super) fn call(
+    context: &ServeContext,
+    name: &str,
+    arguments: &Value,
+) -> Result<Value, ProjectError> {
     if !arguments.is_object() {
-        return Err("arguments must be a JSON object".into());
+        return Err(ProjectError::usage("arguments must be a JSON object"));
     }
     match name {
         "get_gate_verdict" => gate_verdict(context, arguments),
@@ -38,11 +41,11 @@ pub(super) fn call(context: &ServeContext, name: &str, arguments: &Value) -> Res
         "get_audit_status" => audit_status(context, arguments),
         "get_change_impact" => blast_radius(context, arguments),
         "plan_structural_edit" => structural_edit(context, arguments),
-        other => Err(format!("unknown tool: {other}")),
+        other => Err(ProjectError::contract(format!("unknown tool: {other}"))),
     }
 }
 
-fn gate_verdict(context: &ServeContext, arguments: &Value) -> Result<Value, String> {
+fn gate_verdict(context: &ServeContext, arguments: &Value) -> Result<Value, ProjectError> {
     expect_keys(arguments, &[])?;
     let evidence = load(context)?;
     let freshness = freshness(&evidence, context)?;
@@ -61,8 +64,11 @@ fn gate_verdict(context: &ServeContext, arguments: &Value) -> Result<Value, Stri
     });
     match evidence.artifact("diagnosis.hospital") {
         Some((artifact_ref, verified)) => {
-            let hospital: Value = serde_json::from_slice(verified.bytes())
-                .map_err(|error| format!("committed hospital artifact is invalid JSON: {error}"))?;
+            let hospital: Value = serde_json::from_slice(verified.bytes()).map_err(|error| {
+                ProjectError::contract(format!(
+                    "committed hospital artifact is invalid JSON: {error}"
+                ))
+            })?;
             let triage = &hospital["triage"];
             let failing = triage["failing_rules"]
                 .as_array()
@@ -92,22 +98,15 @@ fn gate_verdict(context: &ServeContext, arguments: &Value) -> Result<Value, Stri
     Ok(result)
 }
 
-fn facts(context: &ServeContext, arguments: &Value) -> Result<Value, String> {
+fn facts(context: &ServeContext, arguments: &Value) -> Result<Value, ProjectError> {
     expect_keys(arguments, &["type", "artifactSchema", "contains", "limit"])?;
-    let request = evidence_query::EvidenceQueryRequest::new(
-        context.artifact_root.clone(),
-        context.repo.clone(),
-        Some(context.repo_path.clone()),
+    let query = Query::Evidence(EvidenceQuery::new(
         optional_text(arguments, "artifactSchema")?,
         optional_text(arguments, "type")?,
         optional_text(arguments, "contains")?,
-        optional_limit(arguments)?,
-    )
-    .map_err(query_message)?;
-    let evidence = load(context)?;
-    evidence_query::execute(request, &evidence)
-        .map(|result| result.value().clone())
-        .map_err(query_message)
+        optional_query_limit(arguments)?,
+    )?);
+    Ok(context.project.query(query)?.value().clone())
 }
 
 /// The provenance chain behind one identifier.
@@ -117,7 +116,7 @@ fn facts(context: &ServeContext, arguments: &Value) -> Result<Value, String> {
 /// backs the identifier at all, and an empty chain is reported as `unbacked`
 /// rather than as an error. An agent asked to justify a finding needs to be
 /// able to discover that nothing recorded supports it.
-fn evidence_chain(context: &ServeContext, arguments: &Value) -> Result<Value, String> {
+fn evidence_chain(context: &ServeContext, arguments: &Value) -> Result<Value, ProjectError> {
     expect_keys(arguments, &["findingId", "limit"])?;
     let finding = required_text(arguments, "findingId")?;
     let limit = optional_limit(arguments)?;
@@ -163,7 +162,7 @@ fn evidence_chain(context: &ServeContext, arguments: &Value) -> Result<Value, St
     }))
 }
 
-fn audit_status(context: &ServeContext, arguments: &Value) -> Result<Value, String> {
+fn audit_status(context: &ServeContext, arguments: &Value) -> Result<Value, ProjectError> {
     expect_keys(arguments, &["department"])?;
     let wanted = optional_text(arguments, "department")?;
     let evidence = load(context)?;
@@ -184,8 +183,9 @@ against this snapshot"
         );
         return Ok(result);
     };
-    let report: Value = serde_json::from_slice(verified.bytes())
-        .map_err(|error| format!("committed audit artifact is invalid JSON: {error}"))?;
+    let report: Value = serde_json::from_slice(verified.bytes()).map_err(|error| {
+        ProjectError::contract(format!("committed audit artifact is invalid JSON: {error}"))
+    })?;
     let matches = |row: &Value, key: &str| match &wanted {
         Some(wanted) => row[key] == json!(wanted),
         None => true,
@@ -227,7 +227,7 @@ against this snapshot"
 /// the pipeline invisible at write time (#58). Here the default is the
 /// advisory answer, labelled with both snapshot identities, and `requireCurrent`
 /// restores the strict behaviour for a caller that wants it.
-fn blast_radius(context: &ServeContext, arguments: &Value) -> Result<Value, String> {
+fn blast_radius(context: &ServeContext, arguments: &Value) -> Result<Value, ProjectError> {
     expect_keys(arguments, &["changed", "requireCurrent"])?;
     let changed = required_string_array(arguments, "changed")?;
     let require_current = optional_bool(arguments, "requireCurrent")?.unwrap_or(false);
@@ -240,18 +240,18 @@ fn blast_radius(context: &ServeContext, arguments: &Value) -> Result<Value, Stri
         context.repo_path.clone(),
         changed,
     )
-    .map_err(impact_message)?;
+    .map_err(ProjectError::from)?;
     let evidence = load(context)?;
     let result = if require_current {
         change_impact::execute_committed(request, &evidence)
     } else {
         change_impact::execute_stale_advisory(request, &evidence)
     }
-    .map_err(impact_message)?;
+    .map_err(ProjectError::from)?;
     Ok(result.into_value())
 }
 
-fn structural_edit(context: &ServeContext, arguments: &Value) -> Result<Value, String> {
+fn structural_edit(context: &ServeContext, arguments: &Value) -> Result<Value, ProjectError> {
     expect_keys(arguments, &["language", "pattern", "rewrite", "paths"])?;
     let language = required_text(arguments, "language")?;
     let pattern = required_text(arguments, "pattern")?;
@@ -262,13 +262,17 @@ fn structural_edit(context: &ServeContext, arguments: &Value) -> Result<Value, S
     };
     let declaration =
         capability::declaration_for(EDIT_PLAN_CAPABILITY, context.manifest.as_deref())
-            .map_err(|error| format!("capability registry: {error}"))?;
+            .map_err(|error| ProjectError::contract(format!("capability registry: {error}")))?;
     let policy =
         execution_policy::ExecutionPolicy::for_profile(execution_policy::RunProfile::Default);
     let allowed_effects = policy.allowed_effects(&declaration);
     refuse_repository_mutation(&allowed_effects)?;
     let snapshot = snapshot::build_for_dag(&context.repo_path, "explicit_overlay", &paths)
-        .map_err(|error| format!("snapshot identity for the requested paths: {error}"))?;
+        .map_err(|error| {
+            ProjectError::contract(format!(
+                "snapshot identity for the requested paths: {error}"
+            ))
+        })?;
 
     // `rewrite` is inserted only when supplied: the adapter validates its
     // options as a closed key set and rejects a null rewrite as an empty
@@ -317,26 +321,36 @@ fn structural_edit(context: &ServeContext, arguments: &Value) -> Result<Value, S
             "exitCode": outcome.exit_code,
             "plan": plan,
         })),
-        Err(reason) => Err(format!(
-            "{reason} (exit {}): {}",
+        Err(error) => Err(ProjectError::contract(format!(
+            "{} (exit {}): {}",
+            error.message(),
             outcome.exit_code,
             outcome
                 .diagnostic
                 .unwrap_or_else(|| "no diagnostic was emitted".into())
-        )),
+        ))),
     }
 }
 
-fn read_plan_artifact(outcome: &capability::ExecOutcome, staging: &Path) -> Result<Value, String> {
+fn read_plan_artifact(
+    outcome: &capability::ExecOutcome,
+    staging: &Path,
+) -> Result<Value, ProjectError> {
     let relative = outcome
         .result
         .as_ref()
         .and_then(|result| result["artifacts"][0]["path"].as_str())
-        .ok_or("edit plan produced no artifact")?;
-    let bytes = fs::read(staging.join(relative))
-        .map_err(|error| format!("edit plan artifact {relative} could not be read: {error}"))?;
-    serde_json::from_slice(&bytes)
-        .map_err(|error| format!("edit plan artifact {relative} is not valid JSON: {error}"))
+        .ok_or_else(|| ProjectError::contract("edit plan produced no artifact"))?;
+    let bytes = fs::read(staging.join(relative)).map_err(|error| {
+        ProjectError::host_io(format!(
+            "edit plan artifact {relative} could not be read: {error}"
+        ))
+    })?;
+    serde_json::from_slice(&bytes).map_err(|error| {
+        ProjectError::contract(format!(
+            "edit plan artifact {relative} is not valid JSON: {error}"
+        ))
+    })
 }
 
 /// The read-only boundary, enforced against the registry rather than asserted
@@ -347,39 +361,34 @@ fn read_plan_artifact(outcome: &capability::ExecOutcome, staging: &Path) -> Resu
 /// change someone must review — not something this server should discover at
 /// runtime and proceed through. Refusing here means no argument value, however
 /// crafted, can reach a writer from the MCP surface.
-pub(super) fn refuse_repository_mutation(allowed_effects: &Value) -> Result<(), String> {
+pub(super) fn refuse_repository_mutation(allowed_effects: &Value) -> Result<(), ProjectError> {
     let mutates = allowed_effects
         .as_array()
         .into_iter()
         .flatten()
         .any(|effect| effect == "repo_mutation");
     if mutates {
-        return Err(format!(
+        return Err(ProjectError::contract(format!(
             "refused: {EDIT_PLAN_CAPABILITY} declares repo_mutation; the MCP surface never \
 executes a repository writer"
-        ));
+        )));
     }
     Ok(())
 }
 
-fn load(context: &ServeContext) -> Result<CommittedEvidence, String> {
+fn load(context: &ServeContext) -> Result<CommittedEvidence, ProjectError> {
+    let evidence = committed_evidence::load(&context.artifact_root, &context.repo)?;
     context
-        .binding
-        .require_verified()
-        .map_err(|error| format!("{error}; rerun: {}", rerun_command(context)))?;
-    committed_evidence::load(&context.artifact_root, &context.repo).map_err(|error| match error {
-        EvidenceError::Contract(message) | EvidenceError::HostIo(message) => {
-            format!("{message}; rerun: {}", rerun_command(context))
-        }
-    })
+        .project
+        .verify_evidence(&evidence)?
+        .require_verified()?;
+    Ok(evidence)
 }
 
-fn freshness(evidence: &CommittedEvidence, context: &ServeContext) -> Result<Value, String> {
+fn freshness(evidence: &CommittedEvidence, context: &ServeContext) -> Result<Value, ProjectError> {
     evidence
         .freshness(Some(&context.repo_path))
-        .map_err(|error| match error {
-            EvidenceError::Contract(message) | EvidenceError::HostIo(message) => message,
-        })
+        .map_err(ProjectError::from)
 }
 
 /// The command is meant to be run, so it is spelled the way a shell accepts.
@@ -397,10 +406,10 @@ pub(super) fn rerun_command(context: &ServeContext) -> String {
     }
 }
 
-fn staging_path() -> Result<PathBuf, String> {
+fn staging_path() -> Result<PathBuf, ProjectError> {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|error| format!("resolve staging nonce: {error}"))?
+        .map_err(|error| ProjectError::host_io(format!("resolve staging nonce: {error}")))?
         .as_nanos();
     Ok(env::temp_dir().join(format!(
         "code-intel-mcp-plan-{}-{nonce}",
@@ -414,41 +423,41 @@ fn staging_path() -> Result<PathBuf, String> {
 /// hint to a well-behaved client, not a guard. Rejecting unexpected keys here
 /// means a caller cannot smuggle an argument that a future version of a
 /// handler might start honouring.
-fn expect_keys(arguments: &Value, allowed: &[&str]) -> Result<(), String> {
+fn expect_keys(arguments: &Value, allowed: &[&str]) -> Result<(), ProjectError> {
     let object = arguments
         .as_object()
-        .ok_or_else(|| "arguments must be a JSON object".to_string())?;
+        .ok_or_else(|| ProjectError::usage("arguments must be a JSON object"))?;
     match object.keys().find(|key| !allowed.contains(&key.as_str())) {
-        Some(unexpected) => Err(format!(
+        Some(unexpected) => Err(ProjectError::usage(format!(
             "unexpected argument: {unexpected} (accepted: {})",
             if allowed.is_empty() {
                 "none".to_string()
             } else {
                 allowed.join(", ")
             }
-        )),
+        ))),
         None => Ok(()),
     }
 }
 
-fn required_text(arguments: &Value, key: &str) -> Result<String, String> {
-    optional_text(arguments, key)?.ok_or_else(|| format!("{key} is required"))
+fn required_text(arguments: &Value, key: &str) -> Result<String, ProjectError> {
+    optional_text(arguments, key)?.ok_or_else(|| ProjectError::usage(format!("{key} is required")))
 }
 
-fn optional_text(arguments: &Value, key: &str) -> Result<Option<String>, String> {
+fn optional_text(arguments: &Value, key: &str) -> Result<Option<String>, ProjectError> {
     match arguments.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) if !value.is_empty() => Ok(Some(value.clone())),
-        Some(Value::String(_)) => Err(format!("{key} must not be empty")),
-        Some(_) => Err(format!("{key} must be a string")),
+        Some(Value::String(_)) => Err(ProjectError::usage(format!("{key} must not be empty"))),
+        Some(_) => Err(ProjectError::usage(format!("{key} must be a string"))),
     }
 }
 
-fn optional_bool(arguments: &Value, key: &str) -> Result<Option<bool>, String> {
+fn optional_bool(arguments: &Value, key: &str) -> Result<Option<bool>, ProjectError> {
     match arguments.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Bool(value)) => Ok(Some(*value)),
-        Some(_) => Err(format!("{key} must be a boolean")),
+        Some(_) => Err(ProjectError::usage(format!("{key} must be a boolean"))),
     }
 }
 
@@ -463,8 +472,9 @@ fn optional_bool(arguments: &Value, key: &str) -> Result<Option<bool>, String> {
 ///
 /// The comparison happens on the `u64` before any cast: `as usize` truncates on
 /// a 32-bit target, which would turn an out-of-range value into an accepted one.
-fn optional_limit(arguments: &Value) -> Result<usize, String> {
-    let out_of_range = || format!("limit must be an integer in 1..={MAX_LIMIT}");
+fn optional_limit(arguments: &Value) -> Result<usize, ProjectError> {
+    let out_of_range =
+        || ProjectError::usage(format!("limit must be an integer in 1..={MAX_LIMIT}"));
     match arguments.get("limit") {
         None | Some(Value::Null) => Ok(DEFAULT_LIMIT),
         Some(Value::Number(value)) => {
@@ -474,17 +484,31 @@ fn optional_limit(arguments: &Value) -> Result<usize, String> {
             }
             Ok(value as usize)
         }
-        Some(_) => Err("limit must be an integer".into()),
+        Some(_) => Err(ProjectError::usage("limit must be an integer")),
     }
 }
 
-fn required_string_array(arguments: &Value, key: &str) -> Result<Vec<String>, String> {
+fn optional_query_limit(arguments: &Value) -> Result<Option<usize>, ProjectError> {
+    match arguments.get("limit") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Number(value)) => value
+            .as_u64()
+            .and_then(|value| usize::try_from(value).ok())
+            .map(Some)
+            .ok_or_else(|| ProjectError::usage("--limit must be an integer in 1..=100")),
+        Some(_) => Err(ProjectError::usage("limit must be an integer")),
+    }
+}
+
+fn required_string_array(arguments: &Value, key: &str) -> Result<Vec<String>, ProjectError> {
     let items = arguments
         .get(key)
         .and_then(Value::as_array)
-        .ok_or_else(|| format!("{key} must be an array of strings"))?;
+        .ok_or_else(|| ProjectError::usage(format!("{key} must be an array of strings")))?;
     if items.is_empty() {
-        return Err(format!("{key} must contain at least one entry"));
+        return Err(ProjectError::usage(format!(
+            "{key} must contain at least one entry"
+        )));
     }
     items
         .iter()
@@ -492,21 +516,9 @@ fn required_string_array(arguments: &Value, key: &str) -> Result<Vec<String>, St
             item.as_str()
                 .filter(|value| !value.is_empty())
                 .map(str::to_string)
-                .ok_or_else(|| format!("{key} entries must be non-empty strings"))
+                .ok_or_else(|| {
+                    ProjectError::usage(format!("{key} entries must be non-empty strings"))
+                })
         })
         .collect()
-}
-
-fn query_message(error: evidence_query::QueryError) -> String {
-    match error {
-        evidence_query::QueryError::Contract(message)
-        | evidence_query::QueryError::HostIo(message) => message,
-    }
-}
-
-fn impact_message(error: change_impact::ImpactError) -> String {
-    match error {
-        change_impact::ImpactError::Contract(message)
-        | change_impact::ImpactError::HostIo(message) => message,
-    }
 }
