@@ -278,10 +278,11 @@ fn production_pipeline_prefers_rust_dsm_with_explicit_powershell_rollback() {
     assert!(pipeline.contains("& $sentruxDsmRustCli sentrux dsm $sentruxTargetPath"));
     assert!(pipeline.contains("& $sentruxAgentTool dsm $sentruxTargetPath"));
     assert!(pipeline.contains("$rustExecutableName = if ($effectivePlatform -eq \"windows\")"));
-    // target/ stayed at the repository root when the facade moved under legacy/
-    assert!(pipeline.contains(
-        "$defaultRustCli = Join-Path (Split-Path -Parent $PSScriptRoot) (Join-Path \"target/debug\" $rustExecutableName)"
-    ));
+    // Prefer the installed/release binary, while retaining the source-build
+    // paths for local development and the actionable missing-binary error.
+    assert!(pipeline.contains("$defaultRustCliCandidates = @("));
+    assert!(pipeline.contains("Join-Path \"target/release\" $rustExecutableName"));
+    assert!(pipeline.contains("Join-Path \"target/debug\" $rustExecutableName"));
     assert!(pipeline.contains("$sentruxDsmRustCli = if"));
     assert!(pipeline.contains("$defaultRustCli"));
     assert!(pipeline.contains("$dsmLaunchError = $_.Exception.Message"));

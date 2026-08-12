@@ -99,7 +99,19 @@ Import-Module $followUpAutomationModule -Force
 $effectivePlatform = Get-CodeIntelPlatform -Platform $Platform
 $codeIntelPaths = Get-CodeIntelPaths -Platform $effectivePlatform -Root (Split-Path -Parent $PSScriptRoot)
 $rustExecutableName = if ($effectivePlatform -eq "windows") { "code-intel.exe" } else { "code-intel" }
-$defaultRustCli = Join-Path (Split-Path -Parent $PSScriptRoot) (Join-Path "target/debug" $rustExecutableName)
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$defaultRustCliCandidates = @(
+    (Join-Path $repoRoot (Join-Path "bin" $rustExecutableName)),
+    (Join-Path $codeIntelPaths.bin $rustExecutableName),
+    (Join-Path $repoRoot (Join-Path "target/release" $rustExecutableName)),
+    (Join-Path $repoRoot (Join-Path "target/debug" $rustExecutableName))
+)
+$defaultRustCli = @($defaultRustCliCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1)
+if ($defaultRustCli.Count -eq 0) {
+    # Keep the historical debug path in the error so source checkouts still
+    # receive the actionable build hint when no candidate exists.
+    $defaultRustCli = $defaultRustCliCandidates[-1]
+}
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
