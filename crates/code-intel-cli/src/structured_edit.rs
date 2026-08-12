@@ -413,4 +413,11 @@ mod tests {
         assert!(!ast_grep_status_is_acceptable(false, Some(1), false));
         assert!(!ast_grep_status_is_acceptable(false, Some(2), true));
     }
+
+    #[test]
+    fn structured_edit_plan_is_scope_bound_and_preview_only() {
+        assert!(within_scope("backend/api.py", "backend"));
+        assert!(!within_scope("frontend/api.ts", "backend"));
+        assert!(normalize_relative("src/../secret.py", true).is_err());
+    }
 }

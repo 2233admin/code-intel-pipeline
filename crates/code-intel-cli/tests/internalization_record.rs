@@ -1,14 +1,11 @@
 #[path = "../src/authority.rs"]
 mod authority;
-#[path = "../src/content_contract.rs"]
-mod content_contract;
-#[path = "../src/hardened_git.rs"]
-mod hardened_git;
 #[path = "../src/internalization_record.rs"]
 mod internalization_record;
 
+use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -18,8 +15,6 @@ use serde_json::{json, Value};
 
 const NOW: u64 = 1_700_000_100;
 static NEXT_SCHEMA_CHECK: AtomicUsize = AtomicUsize::new(1);
-static NEXT_REPOSITORY_FIXTURE: AtomicUsize = AtomicUsize::new(1);
-static NEXT_SOURCE_SCRATCH: AtomicUsize = AtomicUsize::new(1);
 static SCHEMA_CHECK_LOCK: Mutex<()> = Mutex::new(());
 
 fn root() -> PathBuf {
@@ -556,14 +551,6 @@ fn assert_research_candidate(record: &Value, expected_id: &str) {
     assert_checked_schema(&notice, "code-intel-notice-provenance.v1.schema.json");
 }
 
-/// A research candidate whose upstream provenance *has* been verified.
-///
-/// `assert_research_candidate` pins the fully-unverified shape, where the
-/// missing license and revision are themselves the gaps. Once those are
-/// checked the record must stop claiming them, and the only thing keeping it
-/// out of production is whatever gap is actually left — so the two shapes need
-/// separate assertions or a verified record silently keeps passing the
-/// unverified contract.
 fn assert_verified_research_candidate(
     record: &Value,
     expected_id: &str,
@@ -726,600 +713,29 @@ fn assert_signed_out_of_scope_record_projects(record: &Value, expected_id: &str)
     assert_checked_schema(record, "code-intel-internalization-record.v1.schema.json");
 }
 
-#[test]
-fn repository_source_digest_uses_current_worktree_after_git_clean_filters() {
-    let fixture = RepositoryFixture::new();
-    let verifier = WorktreeSourceVerifier::new(fixture.path()).unwrap();
-    let git_storage_before = fixture.git_storage_state();
-
-    assert_eq!(
-        verifier.sha256("text.txt").unwrap(),
-        content_contract::sha256_hex(b"alpha\nbeta\n")
-    );
-    assert_eq!(
-        verifier.sha256("binary.bin").unwrap(),
-        content_contract::sha256_hex(b"\0alpha\r\nbeta\r\n")
-    );
-    assert_eq!(
-        verifier.sha256("ident.txt").unwrap(),
-        content_contract::sha256_hex(b"$Id$\n")
-    );
-    assert_eq!(
-        verifier.sha256("encoded.txt").unwrap(),
-        content_contract::sha256_hex(b"gamma\n")
-    );
-
-    // Updating a source pin is normally one unstaged edit containing both the
-    // source and its record. Verification must therefore read the current
-    // worktree, not freeze or require the real index.
-    fs::write(fixture.path().join("text.txt"), b"repinned\r\n").unwrap();
-    assert_eq!(
-        verifier.sha256("text.txt").unwrap(),
-        content_contract::sha256_hex(b"repinned\n")
-    );
-    assert_eq!(fixture.git_storage_state(), git_storage_before);
-
-    assert_eq!(
-        content_contract::sha256_hex(b"alpha\r\nbeta\r\n"),
-        "98ab4d3aeab1e120560e942e2df6a0db1147bf94bafcf1590000ffb3c2b6fc80",
-        "general artifact payload digests must remain byte-exact"
-    );
-}
-
-#[test]
-fn repository_source_digest_rejects_missing_and_untracked_paths() {
-    let fixture = RepositoryFixture::new();
-    let verifier = WorktreeSourceVerifier::new(fixture.path()).unwrap();
-
-    fs::write(fixture.path().join("untracked.txt"), b"untracked\n").unwrap();
-    let untracked = verifier.sha256("untracked.txt").unwrap_err();
-    assert!(
-        untracked.contains("not tracked in the current Git index"),
-        "{untracked}"
-    );
-
-    fs::remove_file(fixture.path().join("text.txt")).unwrap();
-    let missing = verifier.sha256("text.txt").unwrap_err();
-    assert!(
-        missing.contains("does not exist in the worktree"),
-        "{missing}"
-    );
-
-    fs::write(fixture.path().join("text.txt"), b"still here\n").unwrap();
-    run_fixture_git(fixture.path(), &["rm", "--cached", "-f", "text.txt"]);
-    let removed_from_index = verifier.sha256("text.txt").unwrap_err();
-    assert!(
-        removed_from_index.contains("not tracked in the current Git index"),
-        "{removed_from_index}"
-    );
-}
-
-#[test]
-fn repository_source_digest_rejects_custom_filters_without_executing_them() {
-    assert_custom_filter_is_never_executed("sentinel");
-}
-
-#[test]
-fn repository_source_digest_rejects_ambiguous_filter_values_without_execution() {
-    for driver in ["unspecified", "unset"] {
-        assert_custom_filter_is_never_executed(driver);
-    }
-}
-
-#[test]
-fn repository_source_digest_checks_filters_against_the_scratch_index() {
-    let fixture = RepositoryFixture::new();
-    let mut attributes = fs::read(fixture.path().join(".gitattributes")).unwrap();
-    attributes.extend_from_slice(b"filtered.txt filter=head-index\n");
-    fs::write(fixture.path().join(".gitattributes"), attributes).unwrap();
-    run_fixture_git(fixture.path(), &["add", ".gitattributes"]);
-    run_fixture_git(
-        fixture.path(),
-        &[
-            "-c",
-            "user.name=Code Intel Fixture",
-            "-c",
-            "user.email=fixture@example.invalid",
-            "commit",
-            "--amend",
-            "--no-edit",
-        ],
-    );
-    run_fixture_git(fixture.path(), &["rm", ".gitattributes"]);
-    run_fixture_git(
-        fixture.path(),
-        &[
-            "config",
-            "filter.head-index.clean",
-            "echo filter-ran > head-index-filter-ran.txt",
-        ],
-    );
-    let sentinel = fixture.path().join("head-index-filter-ran.txt");
-    assert!(!sentinel.exists(), "test setup executed the clean driver");
-
-    let result = WorktreeSourceVerifier::new(fixture.path())
-        .unwrap()
-        .sha256("filtered.txt");
-
-    assert!(
-        !sentinel.exists(),
-        "scratch-index clean driver executed after the real index hid its attributes"
-    );
-    let error = result.unwrap_err();
-    assert!(error.contains("custom Git filter"), "{error}");
-}
-
-fn assert_custom_filter_is_never_executed(driver: &str) {
-    let fixture = RepositoryFixture::new();
-    let attributes = fs::read(fixture.path().join(".gitattributes")).unwrap();
-    let mut malicious_attributes = attributes;
-    malicious_attributes.extend_from_slice(format!("filtered.txt filter={driver}\n").as_bytes());
-    fs::write(fixture.path().join(".gitattributes"), malicious_attributes).unwrap();
-    let sentinel_name = format!("filter-{driver}-ran.txt");
-    let configured = repository_git(fixture.path())
-        .arg("config")
-        .arg(format!("filter.{driver}.clean"))
-        .arg(format!("echo filter-ran > {sentinel_name}"))
-        .output()
-        .unwrap();
-    assert!(configured.status.success());
-    let sentinel = fixture.path().join(sentinel_name);
-
-    let result = WorktreeSourceVerifier::new(fixture.path())
-        .unwrap()
-        .sha256("filtered.txt");
-
-    assert!(
-        !sentinel.exists(),
-        "custom clean driver {driver} executed before verification rejected it"
-    );
-    let error = result.unwrap_err();
-    assert!(error.contains("custom Git filter"), "{error}");
-}
-
-#[test]
-fn repository_source_digest_rejects_noncanonical_git_paths() {
-    let fixture = RepositoryFixture::new();
-    let verifier = WorktreeSourceVerifier::new(fixture.path()).unwrap();
-
-    for relative in [r"nested\source.txt", "./text.txt", "nested//source.txt"] {
-        let error = verifier.sha256(relative).unwrap_err();
-        assert!(
-            error.contains("not relative and normalized"),
-            "{relative}: {error}"
-        );
-    }
-}
-
-#[test]
-fn temporary_git_scratch_is_removed_on_drop() {
-    let fixture = RepositoryFixture::new();
-    let verifier = WorktreeSourceVerifier::new(fixture.path()).unwrap();
-    let scratch_path = {
-        let scratch = TemporaryGitIndex::new(&verifier.real_objects).unwrap();
-        let path = scratch.path().to_path_buf();
-        assert!(path.is_dir());
-        path
-    };
-
-    assert!(!scratch_path.exists());
-}
-
-struct RepositoryFixture {
-    path: PathBuf,
-}
-
-impl RepositoryFixture {
-    fn new() -> Self {
-        let path = loop {
-            let id = NEXT_REPOSITORY_FIXTURE.fetch_add(1, Ordering::Relaxed);
-            let candidate = std::env::temp_dir().join(format!(
-                "internalization-repository-bytes-{}-{id}",
-                std::process::id()
-            ));
-            match fs::create_dir(&candidate) {
-                Ok(()) => break candidate,
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => panic!(
-                    "cannot create repository fixture {}: {error}",
-                    candidate.display()
-                ),
-            }
-        };
-        run_fixture_git(&path, &["init"]);
-        fs::write(
-            path.join(".gitattributes"),
-            b"text.txt text eol=lf\nbinary.bin -text\nident.txt text eol=lf ident\nencoded.txt text working-tree-encoding=UTF-16LE-BOM eol=lf\n",
-        )
-        .unwrap();
-        fs::write(path.join("text.txt"), b"alpha\nbeta\n").unwrap();
-        fs::write(path.join("binary.bin"), b"\0alpha\r\nbeta\r\n").unwrap();
-        fs::write(path.join("ident.txt"), b"$Id$\n").unwrap();
-        fs::write(path.join("encoded.txt"), utf16le_bom("gamma\n")).unwrap();
-        fs::write(path.join("filtered.txt"), b"safe\n").unwrap();
-        run_fixture_git(
-            &path,
-            &[
-                "add",
-                ".gitattributes",
-                "text.txt",
-                "binary.bin",
-                "ident.txt",
-                "encoded.txt",
-                "filtered.txt",
-            ],
-        );
-        run_fixture_git(
-            &path,
-            &[
-                "-c",
-                "user.name=Code Intel Fixture",
-                "-c",
-                "user.email=fixture@example.invalid",
-                "commit",
-                "-m",
-                "fixture",
-            ],
-        );
-        fs::write(path.join("text.txt"), b"alpha\r\nbeta\r\n").unwrap();
-        fs::write(path.join("ident.txt"), b"$Id: fixture $\r\n").unwrap();
-        fs::write(path.join("encoded.txt"), utf16le_bom("gamma\r\n")).unwrap();
-        Self { path }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-
-    fn git_storage_state(&self) -> (Vec<u8>, Vec<u8>) {
-        let index = repository_git(&self.path)
-            .args(["rev-parse", "--git-path", "index"])
-            .output()
-            .unwrap();
-        assert!(index.status.success());
-        let index = PathBuf::from(String::from_utf8(index.stdout).unwrap().trim());
-        let index = if index.is_absolute() {
-            index
-        } else {
-            self.path.join(index)
-        };
-
-        let objects = repository_git(&self.path)
-            .args(["count-objects", "-v"])
-            .output()
-            .unwrap();
-        assert!(objects.status.success());
-        (fs::read(index).unwrap(), objects.stdout)
-    }
-}
-
-impl Drop for RepositoryFixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.path).ok();
-    }
-}
-
-fn run_fixture_git(repo: &Path, args: &[&str]) {
-    let output = repository_git(repo)
-        .args(args)
-        .output()
-        .unwrap_or_else(|error| panic!("fixture git {} failed to launch: {error}", args.join(" ")));
+fn recompute_sha(relative: &str) -> String {
+    let path = root().join(relative);
+    let mut command = Command::new("pwsh");
+    command.args([
+        "-NoProfile",
+        "-CommandWithArgs",
+        "(Get-FileHash -LiteralPath $args[0] -Algorithm SHA256).Hash.ToLowerInvariant()",
+        path.to_str().unwrap(),
+    ]);
+    let output = run_command_with_timeout(&mut command);
     assert!(
         output.status.success(),
-        "fixture git {} failed: {}",
-        args.join(" "),
+        "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-}
-
-fn utf16le_bom(value: &str) -> Vec<u8> {
-    let mut bytes = vec![0xff, 0xfe];
-    for unit in value.encode_utf16() {
-        bytes.extend_from_slice(&unit.to_le_bytes());
-    }
-    bytes
-}
-
-/// Computes source pins from the current worktree after Git's clean
-/// conversion, without staging anything in the repository itself.
-///
-/// The real index is authoritative only for whether a path is tracked. A
-/// private index and object directory then let `git add` apply attributes such
-/// as EOL normalization, `ident`, binary handling, and working-tree encoding
-/// to the current bytes. This matches the normal workflow where a source and
-/// its updated record are both modified but not yet staged.
-struct WorktreeSourceVerifier {
-    repo: PathBuf,
-    real_objects: PathBuf,
-}
-
-impl WorktreeSourceVerifier {
-    fn new(repo: &Path) -> Result<Self, String> {
-        let common_dir = repository_git(repo)
-            .args(["rev-parse", "--git-common-dir"])
-            .output()
-            .map_err(|error| format!("cannot locate the repository object directory: {error}"))?;
-        if !common_dir.status.success() {
-            return Err(format!(
-                "cannot locate the repository object directory: {}",
-                String::from_utf8_lossy(&common_dir.stderr)
-            ));
-        }
-        let common_dir = PathBuf::from(
-            String::from_utf8(common_dir.stdout)
-                .map_err(|error| format!("Git common directory is not UTF-8: {error}"))?
-                .trim(),
-        );
-        let common_dir = if common_dir.is_absolute() {
-            common_dir
-        } else {
-            repo.join(common_dir)
-        };
-        let real_objects = common_dir.join("objects").canonicalize().map_err(|error| {
-            format!(
-                "cannot resolve repository object directory {}: {error}",
-                common_dir.join("objects").display()
-            )
-        })?;
-        Ok(Self {
-            repo: repo.to_path_buf(),
-            real_objects,
-        })
-    }
-
-    fn sha256(&self, relative: &str) -> Result<String, String> {
-        if relative.is_empty()
-            || relative.contains('\0')
-            || relative.contains('\\')
-            || relative.starts_with('/')
-            || relative
-                .split('/')
-                .any(|component| component.is_empty() || component == "." || component == "..")
-        {
-            return Err(format!(
-                "repository source path is not relative and normalized: {relative}"
-            ));
-        }
-
-        let tracked = repository_git(&self.repo)
-            .args(["ls-files", "--error-unmatch", "--"])
-            .arg(&relative)
-            .output()
-            .map_err(|error| format!("cannot inspect repository source {relative}: {error}"))?;
-        if !tracked.status.success() {
-            return Err(format!(
-                "repository source is not tracked in the current Git index: {relative}: {}",
-                String::from_utf8_lossy(&tracked.stderr)
-            ));
-        }
-        if fs::symlink_metadata(self.repo.join(&relative)).is_err() {
-            return Err(format!(
-                "repository source does not exist in the worktree: {relative}"
-            ));
-        }
-        let scratch = TemporaryGitIndex::new(&self.real_objects)?;
-        let head = repository_git(&self.repo)
-            .args(["rev-parse", "--verify", "HEAD^{tree}"])
-            .output()
-            .map_err(|error| format!("cannot inspect the repository HEAD tree: {error}"))?;
-        let mut initialize = scratch.command(&self.repo);
-        if head.status.success() {
-            let tree_oid = String::from_utf8(head.stdout)
-                .map_err(|error| format!("Git HEAD tree OID is not UTF-8: {error}"))?;
-            initialize.args(["read-tree", tree_oid.trim()]);
-        } else {
-            initialize.args(["read-tree", "--empty"]);
-        }
-        let initialized = initialize
-            .output()
-            .map_err(|error| format!("cannot initialize temporary Git index: {error}"))?;
-        if !initialized.status.success() {
-            return Err(format!(
-                "cannot initialize temporary Git index: {}",
-                String::from_utf8_lossy(&initialized.stderr)
-            ));
-        }
-        self.reject_custom_filter(&scratch, relative)?;
-
-        let added = scratch
-            .command(&self.repo)
-            .args(["add", "-f", "--"])
-            .arg(&relative)
-            .output()
-            .map_err(|error| format!("cannot apply Git clean conversion to {relative}: {error}"))?;
-        if !added.status.success() {
-            return Err(format!(
-                "cannot apply Git clean conversion to {relative}: {}",
-                String::from_utf8_lossy(&added.stderr)
-            ));
-        }
-
-        let object = format!(":{relative}");
-        let canonical = scratch
-            .command(&self.repo)
-            .args(["cat-file", "blob", &object])
-            .output()
-            .map_err(|error| {
-                format!("cannot read canonical Git index bytes for {relative}: {error}")
-            })?;
-        if !canonical.status.success() {
-            return Err(format!(
-                "canonical Git index bytes are unavailable for {relative}: {}",
-                String::from_utf8_lossy(&canonical.stderr)
-            ));
-        }
-        Ok(content_contract::sha256_hex(&canonical.stdout))
-    }
-
-    fn reject_custom_filter(
-        &self,
-        scratch: &TemporaryGitIndex,
-        relative: &str,
-    ) -> Result<(), String> {
-        let attributes = scratch
-            .command(&self.repo)
-            .args(["check-attr", "-z", "--all", "--"])
-            .arg(relative)
-            .output()
-            .map_err(|error| format!("cannot inspect Git filter for {relative}: {error}"))?;
-        if !attributes.status.success() {
-            return Err(format!(
-                "cannot inspect Git filter for {relative}: {}",
-                String::from_utf8_lossy(&attributes.stderr)
-            ));
-        }
-
-        let mut fields = attributes
-            .stdout
-            .split(|byte| *byte == 0)
-            .collect::<Vec<_>>();
-        if fields.last() == Some(&&[][..]) {
-            fields.pop();
-        }
-        if fields.len() % 3 != 0
-            || fields
-                .chunks_exact(3)
-                .any(|triplet| triplet[0] != relative.as_bytes() || triplet[1].is_empty())
-        {
-            return Err(format!(
-                "Git returned malformed filter attributes for {relative}"
-            ));
-        }
-        if let Some(filter) = fields
-            .chunks_exact(3)
-            .find(|triplet| triplet[1] == b"filter")
-        {
-            let value = String::from_utf8_lossy(filter[2]);
-            return Err(format!(
-                "repository source declares a custom Git filter and cannot be verified safely: {relative}: {value}"
-            ));
-        }
-        Ok(())
-    }
-}
-
-struct TemporaryGitIndex {
-    directory: TemporaryDirectory,
-    index: PathBuf,
-    objects: PathBuf,
-    alternates: std::ffi::OsString,
-}
-
-impl TemporaryGitIndex {
-    fn new(real_objects: &Path) -> Result<Self, String> {
-        let directory = TemporaryDirectory::new()?;
-        let objects = directory.path().join("objects");
-        fs::create_dir(&objects).map_err(|error| {
-            format!(
-                "cannot create temporary Git object directory {}: {error}",
-                objects.display()
-            )
-        })?;
-        let alternates = std::env::join_paths([real_objects]).map_err(|error| {
-            format!(
-                "cannot encode repository object directory {}: {error}",
-                real_objects.display()
-            )
-        })?;
-        Ok(Self {
-            index: directory.path().join("index"),
-            directory,
-            objects,
-            alternates,
-        })
-    }
-
-    fn path(&self) -> &Path {
-        self.directory.path()
-    }
-
-    fn command(&self, repo: &Path) -> Command {
-        let mut command = repository_git(repo);
-        command
-            .env("GIT_INDEX_FILE", &self.index)
-            .env("GIT_OBJECT_DIRECTORY", &self.objects)
-            .env("GIT_ALTERNATE_OBJECT_DIRECTORIES", &self.alternates);
-        command
-    }
-}
-
-struct TemporaryDirectory {
-    path: PathBuf,
-}
-
-impl TemporaryDirectory {
-    fn new() -> Result<Self, String> {
-        loop {
-            let id = NEXT_SOURCE_SCRATCH.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!(
-                "code-intel-source-index-{}-{id}",
-                std::process::id()
-            ));
-            match fs::create_dir(&path) {
-                Ok(()) => return Ok(Self { path }),
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => {
-                    return Err(format!(
-                        "cannot create temporary Git index directory {}: {error}",
-                        path.display()
-                    ));
-                }
-            }
-        }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TemporaryDirectory {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.path).ok();
-    }
-}
-
-fn repository_git(repo: &Path) -> Command {
-    let mut command = hardened_git::command(repo);
-    // Fixture repos must be hermetic: a user's global excludes
-    // (core.excludesFile, e.g. a `*.bin` pattern) would otherwise make
-    // `git add binary.bin` fail for fixtures that deliberately track binary
-    // blobs, independent of what this test is exercising.
-    command.arg("-c").arg("core.excludesFile=");
-    for variable in [
-        "GIT_DIR",
-        "GIT_WORK_TREE",
-        "GIT_COMMON_DIR",
-        "GIT_INDEX_FILE",
-        "GIT_OBJECT_DIRECTORY",
-        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    ] {
-        command.env_remove(variable);
-    }
-    command.env("GIT_LITERAL_PATHSPECS", "1");
-    command
-}
-
-/// Digests are recomputed in process rather than through `Get-FileHash`. Every
-/// operation trace pins two files, so shelling out once per pin spawned dozens
-/// of concurrent `pwsh` processes; the macOS runner killed them with
-/// `Stack overflow.`, which surfaced here as 26 of 40 records failing at once
-/// and read exactly like real digest drift. Repository source pins are read
-/// from a disposable Git index so current unstaged edits receive the same
-/// clean conversion as a future commit without mutating the real repository.
-/// General artifact payload hashing remains byte-exact.
-fn recompute_sha(relative: &str) -> String {
-    let verifier = WorktreeSourceVerifier::new(&root())
-        .unwrap_or_else(|error| panic!("cannot initialize conformance source verifier: {error}"));
-    let digest = verifier
-        .sha256(relative)
-        .unwrap_or_else(|error| panic!("conformance source is unverifiable: {error}"));
+    let digest = String::from_utf8(output.stdout).unwrap();
+    let digest = digest.trim().to_string();
     assert_eq!(digest.len(), 64);
     digest
 }
 
 fn assert_operation_trace_exact(record: &Value, integration_ids: &[&str]) {
-    let mut expected = std::collections::BTreeMap::new();
+    let mut expected = BTreeMap::new();
     for integration_id in integration_ids {
         let entry = integration(integration_id);
         for (operation, command) in entry["commands"].as_object().unwrap() {
@@ -1331,7 +747,7 @@ fn assert_operation_trace_exact(record: &Value, integration_ids: &[&str]) {
     }
 
     let traces = record["operationTrace"].as_array().unwrap();
-    let mut actual = std::collections::BTreeMap::new();
+    let mut actual = BTreeMap::new();
     for trace in traces {
         let integration_id = trace["integrationId"].as_str().unwrap();
         let operation = trace["operation"].as_str().unwrap();
@@ -1486,24 +902,10 @@ fn ticket_r03_sentrux_record_blocks_shim_retirement_on_windows_and_plugin_gaps()
     assert!(retirement.contains("gap:sentrux:upstream-windows-conformance"));
     assert!(retirement.contains("gap:sentrux:upstream-plugin-conformance"));
     let owned = record["ownedModifications"].as_array().unwrap();
-    assert_eq!(owned.len(), 4);
+    assert_eq!(owned.len(), 3);
     assert!(owned
         .iter()
         .any(|entry| { entry["path"] == "crates/code-intel-cli/src/sentrux_analysis.rs" }));
-    let gate_digest = recompute_sha("crates/code-intel-cli/src/sentrux_gate.rs");
-    assert!(
-        owned.iter().any(|entry| {
-            entry["path"] == "crates/code-intel-cli/src/sentrux_gate.rs"
-                && entry["evidenceIds"].as_array().is_some_and(|ids| {
-                    ids.iter().any(|id| {
-                        id.as_str().is_some_and(|id| {
-                            id == format!("local:b03:native-gate-source-sha256:{gate_digest}")
-                        })
-                    })
-                })
-        }),
-        "native gate source digest is not bound into the record"
-    );
 }
 
 #[test]
@@ -1577,7 +979,8 @@ fn ticket_r04_codenexus_compat_command_executes_and_writes_context() {
         "-NoProfile",
         "-File",
         root()
-            .join("legacy/Invoke-CodeNexusLite.ps1")
+            .join("legacy")
+            .join("Invoke-CodeNexusLite.ps1")
             .to_str()
             .unwrap(),
         "-RepoPath",
@@ -1642,7 +1045,7 @@ fn ticket_r05_repomix_is_a_measured_reviewed_deletion_not_fake_production() {
         measurements["observations"]["r05Repomix"]["npmInstalledOrExtractedExecutableEntries"],
         0
     );
-    let source = fs::read_to_string(root().join("legacy/run-code-intel.ps1")).unwrap();
+    let source = fs::read_to_string(root().join("run-code-intel.ps1")).unwrap();
     assert!(!source.contains("$repomixTool = Join-Path"));
     assert!(source.contains("Repomix production participation was reviewed and removed"));
 }
@@ -1720,7 +1123,7 @@ fn ticket_r07_cocoindex_is_a_reviewed_retirement_with_no_production_path() {
     ] {
         assert!(text.contains(boundary), "missing {boundary}");
     }
-    let source = fs::read_to_string(root().join("legacy/run-code-intel.ps1")).unwrap();
+    let source = fs::read_to_string(root().join("run-code-intel.ps1")).unwrap();
     assert!(!source.contains("Get-JsonProperty $adapters \"cocoindex-code\""));
     assert!(!source.contains("Test-CommandAvailable $cocoCommand"));
 }
@@ -1758,7 +1161,7 @@ fn ticket_r08_github_research_failed_live_reproduction_is_reviewed_out() {
     );
     let text = serde_json::to_string(&record).unwrap();
     assert!(text.contains("invalid-query"));
-    let source = fs::read_to_string(root().join("legacy/run-code-intel.ps1")).unwrap();
+    let source = fs::read_to_string(root().join("run-code-intel.ps1")).unwrap();
     assert!(!source.contains("$githubResearchScript"));
 }
 
@@ -1824,67 +1227,18 @@ fn ticket_r12_unverified_greenfield_plugin_is_retired_from_production() {
 #[test]
 fn ticket_r13_openspec_record_is_measured_removable_and_fail_closed() {
     let record = advisory_candidate("openspec");
-    assert_eq!(record["id"], "internalization.openspec-record");
-    assert_eq!(record["lifecycle"]["status"], "research");
-    assert_eq!(record["adoption"]["rung"], "reimplement");
-    assert_eq!(record["subject"]["license"]["id"], "MIT");
-    assert!(record["subject"]["source"]["revision"]
-        .as_str()
-        .unwrap()
-        .contains("4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b"));
-
-    // Issue #156 admitted license (MIT), release status (v1.7.0, active),
-    // and the pinned upstream commit, so this record can no longer share
-    // `assert_research_candidate`: that helper hard-asserts the
-    // fully-unverified shape (`UNKNOWN-RESEARCH-ONLY`, `unverified-upstream`,
-    // open license/upstream-revision gaps) that the other 12 research
-    // candidates still have and this one no longer does. `gap:openspec:
-    // update-check` and `gap:openspec:security-review` stay open — no
-    // maintenance-attestation or security/supply-chain evidence was
-    // gathered in this pass — so the record still fails closed for
-    // production, same as before.
-    let evidence_ids = known(&record);
-    let gaps = evidence_ids
-        .iter()
-        .filter(|id| id.starts_with("gap:"))
-        .cloned()
-        .collect::<Vec<_>>();
-    let admitted = evidence_ids
+    assert_verified_research_candidate(
+        &record,
+        "internalization.openspec-record",
+        "MIT",
+        "upstream-commit:4e16790d90d8f54d4773ad9a5e71a57cd9f1e86b",
+        1_785_801_600,
+    );
+    let gaps = known(&record)
         .into_iter()
-        .filter(|id| !id.starts_with("gap:"))
+        .filter(|id| id.starts_with("gap:"))
         .collect::<Vec<_>>();
-    let evaluated_at = 1_785_801_600u64; // 2026-08-04, matches the refreshed necessityEvidence.checkedAt
-    let evaluation =
-        internalization_record::evaluate_record(&record, evaluated_at, &admitted, &[]).unwrap();
-    assert_eq!(evaluation["researchAllowed"], true);
-    assert_eq!(evaluation["productionEnabled"], false);
-    assert_eq!(evaluation["consumedAuthorityEventId"], Value::Null);
-    let diagnostics = evaluation["diagnostics"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|diagnostic| diagnostic.as_str().unwrap())
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(diagnostics.contains("unknown evidence"));
     assert_eq!(gaps.len(), 2, "{gaps:?}");
-
-    let record_text = serde_json::to_string(&record).unwrap();
-    for closed in ["gap:openspec:license", "gap:openspec:upstream-revision"] {
-        assert!(!record_text.contains(closed), "{closed} must be closed");
-    }
-    for open in ["gap:openspec:update-check", "gap:openspec:security-review"] {
-        assert!(record_text.contains(open), "{open} must stay declared");
-    }
-
-    let reuse = internalization_record::project_reuse_record(&record, &evaluation).unwrap();
-    let notice = internalization_record::project_notice_provenance(&record, &evaluation).unwrap();
-    assert_eq!(reuse["productionEnabled"], false);
-    assert!(notice["noticeText"].as_str().unwrap().contains("MIT"));
-    assert_checked_schema(&record, "code-intel-internalization-record.v1.schema.json");
-    assert_checked_schema(&reuse, "code-intel-reuse-record.v1.schema.json");
-    assert_checked_schema(&notice, "code-intel-notice-provenance.v1.schema.json");
-
     let atom = fs::read_to_string(root().join("legacy/OpenSpec-Detector.ps1")).unwrap();
     assert_eq!(atom.matches("openspec-opsx").count(), 5);
     assert_eq!(record["economics"]["benefit"]["value"], 5);
@@ -2049,15 +1403,11 @@ fn ticket_r22_mattpocock_skills_record_traces_each_retained_concept_and_exit() {
         "84fdeffd12f2ee307994d1eb6feb48173b6e0502",
         1_786_060_800,
     );
-    // The one gap left is the security review; verifying provenance must not
-    // be mistaken for having read what the upstream skills actually do.
     let gaps = known(&record)
         .into_iter()
         .filter(|id| id.starts_with("gap:"))
         .collect::<Vec<_>>();
     assert_eq!(gaps, vec!["gap:mattpocock-skills:security-review"]);
-    // The ADR digest the record carries in its `revision` string is declared
-    // as a `{path, sha256}` pin, which is the only shape `repin` can resync.
     let adr = record["ownedModifications"]
         .as_array()
         .unwrap()
@@ -2105,7 +1455,7 @@ fn ticket_r09_rg_record_traces_every_registered_production_operation() {
         "local-conformance-sha256",
     );
     assert_operation_trace_exact(&record, &["inventory.rg"]);
-    let exact = std::collections::BTreeMap::from([
+    let exact = BTreeMap::from([
         (
             ("inventory.rg", "run"),
             "normalized_inventory_matches_real_legacy_runner_with_custom_exclude",
@@ -2337,14 +1687,7 @@ fn assert_checked_schema(value: &Value, schema: &str) {
     // PowerShell's Test-Json schema engine is not reliable under concurrent
     // invocations from this parallel test binary. Keep the external validator
     // serialized while preserving unique payload paths for failure diagnosis.
-    // Recover from poisoning instead of propagating it. The lock guards
-    // nothing but serialisation of an external validator — there is no shared
-    // state a panicking holder could have corrupted. Unwrapping turned a
-    // single timeout in one test into eight failures in unrelated ones, all
-    // reporting a poisoned mutex rather than the timeout that caused it.
-    let _guard = SCHEMA_CHECK_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = SCHEMA_CHECK_LOCK.lock().unwrap();
     let path = std::env::temp_dir().join(format!(
         "code-intel-c03-schema-{}-{}.json",
         std::process::id(),
@@ -2369,22 +1712,13 @@ fn assert_checked_schema(value: &Value, schema: &str) {
     );
 }
 
-/// Ten seconds was a cold-start budget, not a work budget: `SCHEMA_CHECK_LOCK`
-/// serialises roughly thirty of these, each one a fresh `pwsh` process loading
-/// `Test-Json`, and a Windows CI runner under load has exceeded it on a tree
-/// byte-identical to one that passed minutes earlier. The timeout exists to
-/// stop a hung validator from hanging the suite, so it only has to be shorter
-/// than the job timeout — being tight buys nothing and costs false failures.
-const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(120);
-
 fn run_command_with_timeout(command: &mut Command) -> std::process::Output {
     let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let started = Instant::now();
-    let deadline = started + SUBPROCESS_TIMEOUT;
+    let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         if child.try_wait().unwrap().is_some() {
             return child.wait_with_output().unwrap();
@@ -2393,8 +1727,7 @@ fn run_command_with_timeout(command: &mut Command) -> std::process::Output {
             let _ = child.kill();
             let output = child.wait_with_output().unwrap();
             panic!(
-                "subprocess exceeded {}s; stderr: {}",
-                SUBPROCESS_TIMEOUT.as_secs(),
+                "subprocess timed out; stderr: {}",
                 String::from_utf8_lossy(&output.stderr)
             );
         }

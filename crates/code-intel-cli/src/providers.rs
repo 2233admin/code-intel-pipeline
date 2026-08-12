@@ -11,8 +11,6 @@ mod graph_adapter;
 mod repowise_adapter;
 #[path = "sentrux_adapter.rs"]
 mod sentrux_adapter;
-#[path = "tool_path.rs"]
-mod tool_path;
 
 pub struct Options<'a> {
     pub action: &'a str,
@@ -68,7 +66,7 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         required: true,
         status: "active",
         source_spec: "Pipeline-owned B03 translation over Sentrux/shim native output and A04 admissibility",
-        notes: "Canonical structural evidence route. The bundled shim and legacy/Invoke-SentruxAgentTool.ps1 remain replaceable provider implementations/rollback surfaces, never diagnosis authority.",
+        notes: "Canonical structural evidence route. The bundled shim and Invoke-SentruxAgentTool.ps1 remain replaceable provider implementations/rollback surfaces, never diagnosis authority.",
     },
     ProviderOperation {
         provider: "session",
@@ -162,7 +160,7 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         protocol: "artifact+command",
         method: "POST",
         route: "/api/providers/codenexus/lite",
-        command_template: r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy/Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#,
+        command_template: r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy\Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#,
         artifact: "codenexus-context.json",
         required: false,
         status: "compatibility",
@@ -176,7 +174,7 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         protocol: "compatibility-alias",
         method: "POST",
         route: "/api/providers/repowise/lite",
-        command_template: r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy/Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#,
+        command_template: r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy\Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#,
         artifact: "codenexus-context.json",
         required: false,
         status: "compatibility",
@@ -1210,7 +1208,7 @@ fn validate_codenexus_integration(
             "{integration_id} entrypoint missing from repository: {entrypoint}"
         ));
     }
-    let entrypoint_reference = format!(r#"$env:CODE_INTEL_HOME\{entrypoint}"#);
+    let entrypoint_reference = format!(r#"$env:CODE_INTEL_HOME\{}"#, entrypoint.replace('/', "\\"));
     if !command.contains(&entrypoint_reference) {
         errors.push(format!(
             "{integration_id} command does not invoke its entrypoint: {command}"
@@ -1224,87 +1222,15 @@ fn validate_codenexus_integration(
     }
 }
 
-/// Resolves the trusted orchestration manifest, refusing the case where the
-/// resolved manifest belongs to a different checkout than the one the process
-/// is standing in.
-///
-/// The refusal exists because the silent version of this is a false PASS, not
-/// a false failure. `CODE_INTEL_HOME` is commonly set to a primary checkout;
-/// run a validation from a git worktree of the same repository and every
-/// provider/route check reads the *primary* checkout's manifest while
-/// appearing to validate the worktree. A worktree whose manifest is genuinely
-/// broken then reports green as long as the primary checkout is consistent.
-/// Naming both roots costs one error message; not naming them costs a
-/// verification result that means nothing.
-///
-/// `CODE_INTEL_INTEGRATIONS_MANIFEST` is exempt: it is an explicit operator
-/// instruction to use one specific file, so there is no ambiguity to resolve.
 fn orchestration_manifest() -> std::result::Result<(PathBuf, PathBuf), String> {
-    let explicit = env::var("CODE_INTEL_INTEGRATIONS_MANIFEST").is_ok();
-    let (manifest, root) = resolve_orchestration_manifest()?;
-    if !explicit {
-        reject_foreign_checkout(&manifest, cwd_manifest_path())?;
-    }
-    Ok((manifest, root))
-}
-
-/// The manifest a cwd-anchored reader would have picked, used only to detect
-/// disagreement. This never grants trust — `orchestration_manifest`'s own cwd
-/// fallback still gates on [`is_safe_cwd_manifest`].
-fn cwd_manifest_path() -> Option<PathBuf> {
-    let cwd = env::current_dir().ok()?;
-    cwd.ancestors()
-        .map(|ancestor| ancestor.join("orchestration").join("integrations.json"))
-        // `is_safe_cwd_manifest` is what separates the two cases that both
-        // look like "cwd disagrees with CODE_INTEL_HOME". Standing in an
-        // unrelated repository that merely happens to have a file at
-        // orchestration/integrations.json is not ambiguity — the operator
-        // named a checkout and nothing here rivals it, which is exactly what
-        // test-integration-orchestration.ps1:243 has always asserted. Only a
-        // real code-intel registry is a rival, and that is the worktree case
-        // this guard exists for.
-        .find(|candidate| candidate.is_file() && is_safe_cwd_manifest(candidate))
-}
-
-fn reject_foreign_checkout(
-    resolved: &Path,
-    local: Option<PathBuf>,
-) -> std::result::Result<(), String> {
-    let Some(local) = local else {
-        return Ok(());
-    };
-    let canonical = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    if canonical(&local) == canonical(resolved) {
-        return Ok(());
-    }
-    Err(format!(
-        "orchestration manifest ambiguity: resolved {} but the current directory belongs to {}. \
-These are different checkouts, so validating one while standing in the other proves nothing. \
-Set CODE_INTEL_HOME to the checkout you mean, or CODE_INTEL_INTEGRATIONS_MANIFEST to one manifest explicitly.",
-        resolved.display(),
-        local.display()
-    ))
-}
-
-// Registry tests must assert against the checkout they were built from, not
-// against whatever `CODE_INTEL_HOME` happens to name on the developer's
-// machine. Reading the ambient variable is what let a worktree's registry
-// look valid while the primary checkout was the thing actually validated.
-#[cfg(test)]
-fn test_manifest_override() -> Option<PathBuf> {
-    let candidate = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("orchestration")
-        .join("integrations.json");
-    candidate.is_file().then_some(candidate)
-}
-
-fn resolve_orchestration_manifest() -> std::result::Result<(PathBuf, PathBuf), String> {
     #[cfg(test)]
-    if let Some(path) = test_manifest_override() {
-        return manifest_candidate(path).ok_or_else(|| {
-            "built-from checkout has no readable integrations manifest".to_string()
-        });
+    if let Some(found) = manifest_candidate(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("orchestration")
+            .join("integrations.json"),
+    ) {
+        return Ok(found);
     }
 
     if let Ok(explicit) = env::var("CODE_INTEL_INTEGRATIONS_MANIFEST") {
@@ -1470,30 +1396,9 @@ fn invoke_repowise_index(repo: &Path) -> Result<Value> {
     }
 }
 
-/// A command that launches `repowise` by absolute path, resolved through
-/// `tool_path` like every `rg`/`git` call site: `invoke_repowise` runs the
-/// child in the scanned repository, so a bare name must never reach
-/// `Command::new`. npm-style installs ship a `.cmd` shim on Windows, which
-/// `CreateProcess` cannot start directly, so those are wrapped in `cmd.exe`
-/// the same way `builtin_provider_evidence::external_command` wraps them.
-fn repowise_command() -> Command {
-    let path = tool_path::resolve("repowise");
-    #[cfg(windows)]
-    if path
-        .extension()
-        .and_then(|value| value.to_str())
-        .is_some_and(|extension| matches!(extension.to_ascii_lowercase().as_str(), "cmd" | "bat"))
-    {
-        let mut command = Command::new("cmd.exe");
-        command.args(["/d", "/c"]).arg(path);
-        return command;
-    }
-    Command::new(path)
-}
-
 fn invoke_repowise(repo: &Path, subcommand: &str, args: &[&str]) -> Result<Value> {
     let repo_cli = cli_path(repo);
-    let mut child = repowise_command()
+    let mut child = Command::new("repowise")
         .arg(subcommand)
         .args(args)
         .arg(&repo_cli)
@@ -1617,7 +1522,7 @@ mod tests {
     #[test]
     fn provider_registry_validates() {
         let result = validate();
-        assert_eq!(result["ok"].as_bool(), Some(true));
+        assert_eq!(result["ok"].as_bool(), Some(true), "{result}");
         assert!(result["operations"].as_u64().unwrap_or(0) >= 6);
     }
 
@@ -1645,7 +1550,7 @@ mod tests {
         let canonical = find("codenexus", "lite").expect("canonical CodeNexus provider");
         assert_eq!(
             canonical.command_template,
-            r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy/Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#
+            r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy\Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#
         );
         assert!(!canonical.required);
         assert_eq!(canonical.status, "compatibility");
@@ -1664,15 +1569,15 @@ mod tests {
             .expect("clock should be after epoch")
             .as_nanos();
         let root = env::temp_dir().join(format!("code-intel-provider-drift-{stamp}"));
-        fs::create_dir_all(root.join("legacy")).expect("fixture root");
-        fs::write(root.join("legacy/Invoke-CodeNexusLite.ps1"), "# fixture\n")
+        fs::create_dir_all(&root).expect("fixture root");
+        fs::write(root.join("Invoke-CodeNexusLite.ps1"), "# fixture\n")
             .expect("fixture entrypoint");
         let manifest = json!({
             "integrations": [{
                 "id": "localization.codenexus-lite",
                 "required": false,
                 "kind": "compatibility-adapter",
-                "entrypoint": "legacy/Invoke-CodeNexusLite.ps1",
+                "entrypoint": "Invoke-CodeNexusLite.ps1",
                 "commands": {"compat": "target/debug/code-nexus-lite.exe codenexus::lite"}
             }]
         });
@@ -1753,59 +1658,6 @@ mod tests {
     }
 
     #[test]
-    fn manifest_from_another_checkout_is_refused_and_names_both_roots() {
-        // The worktree case: CODE_INTEL_HOME points at the primary checkout
-        // while the process stands in a worktree of the same repository.
-        let primary = Path::new(r"D:\projects\code-intel-pipeline\orchestration\integrations.json");
-        let worktree = Path::new(
-            r"D:\projects\code-intel-pipeline\.claude\worktrees\wt\orchestration\integrations.json",
-        );
-        let error = reject_foreign_checkout(primary, Some(worktree.to_path_buf()))
-            .expect_err("two different checkouts must not validate silently");
-        assert!(error.contains("ambiguity"), "{error}");
-        assert!(error.contains(&primary.display().to_string()), "{error}");
-        assert!(error.contains(&worktree.display().to_string()), "{error}");
-        assert!(
-            error.contains("CODE_INTEL_INTEGRATIONS_MANIFEST"),
-            "{error}"
-        );
-    }
-
-    #[test]
-    fn an_unrelated_cwd_manifest_never_rivals_code_intel_home() {
-        // Regression guard for test-integration-orchestration.ps1:243. A
-        // directory holding {"policy":{"name":"unrelated"},"integrations":[]}
-        // is not a code-intel registry, so CODE_INTEL_HOME still wins and
-        // nothing is ambiguous.
-        let root = std::env::temp_dir().join(format!(
-            "code-intel-unrelated-manifest-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock after epoch")
-                .as_nanos()
-        ));
-        let manifest = root.join("orchestration").join("integrations.json");
-        fs::create_dir_all(manifest.parent().expect("orchestration dir")).expect("fixture");
-        fs::write(
-            &manifest,
-            br#"{"policy":{"name":"unrelated"},"integrations":[]}"#,
-        )
-        .expect("write fixture manifest");
-        assert!(!is_safe_cwd_manifest(&manifest));
-        fs::remove_dir_all(&root).expect("cleanup");
-    }
-
-    #[test]
-    fn matching_checkout_and_absent_local_manifest_both_pass() {
-        let same = Path::new(r"D:\repo\orchestration\integrations.json");
-        assert!(reject_foreign_checkout(same, Some(same.to_path_buf())).is_ok());
-        // Running against an arbitrary directory that has no manifest of its
-        // own is the normal installed-CLI case, not an ambiguity.
-        assert!(reject_foreign_checkout(same, None).is_ok());
-    }
-
-    #[test]
     fn codenexus_plan_quotes_repo_paths_for_powershell() {
         let command = render_command(
             find("codenexus", "lite").unwrap(),
@@ -1813,7 +1665,7 @@ mod tests {
         );
         assert_eq!(
             command,
-            r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy/Invoke-CodeNexusLite.ps1" -RepoPath 'D:\work repo\O''Brien'"#
+            r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy\Invoke-CodeNexusLite.ps1" -RepoPath 'D:\work repo\O''Brien'"#
         );
     }
 }

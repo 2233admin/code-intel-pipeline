@@ -4,27 +4,17 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
-use crate::adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterError, AdapterOutput};
-use crate::artifact_ref::VerifiedArtifact;
-use crate::audit_report::AuditReport;
+use crate::{
+    adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterError, AdapterOutput},
+    artifact_ref::VerifiedArtifact,
+};
 
+#[derive(Default)]
 struct Signals {
     local_tool_failure: bool,
     provider_quota: bool,
     graph_seen: bool,
     graph_current: bool,
-    /// Whether the run was configured to produce structural evidence at all.
-    ///
-    /// Absence and exclusion are different facts. A run that was asked for the
-    /// structural stage and got nothing has an evidence gap and must not be
-    /// certified; a run that was never asked for it (`--mode lite`) simply has
-    /// a narrower scope, and reporting that as "unavailable" would make every
-    /// deliberately-narrow run indistinguishable from a broken one.
-    ///
-    /// Only the execution policy may set this false, and the policy already
-    /// refuses to disable a capability its profile marks `Required` — so this
-    /// cannot become a way to talk the hospital out of a gate that a strict
-    /// run demanded. The resulting narrowing is recorded in the report.
     structural_in_scope: bool,
     structural_seen: bool,
     structural_trusted: bool,
@@ -37,27 +27,11 @@ struct Signals {
     admissions: BTreeMap<String, String>,
 }
 
-impl Default for Signals {
-    fn default() -> Self {
-        Self {
-            local_tool_failure: false,
-            provider_quota: false,
-            graph_seen: false,
-            graph_current: false,
-            // Fail closed: unless a run explicitly declares the structural
-            // stage out of scope, its absence stays an evidence gap.
-            structural_in_scope: true,
-            structural_seen: false,
-            structural_trusted: false,
-            structural_rules: false,
-            structural_failure: false,
-            native_seen: false,
-            modernization_debt: false,
-            top_target: None,
-            failing_rules: Vec::new(),
-            admissions: BTreeMap::new(),
-        }
-    }
+struct ReadinessDimension {
+    id: &'static str,
+    name: &'static str,
+    normalized: f64,
+    evidence: String,
 }
 
 pub(crate) fn execute(
@@ -69,10 +43,6 @@ pub(crate) fn execute(
         .get("options")
         .and_then(Value::as_object)
         .ok_or_else(|| AdapterError::InvalidOptions("options must be an object".into()))?;
-    // `structuralEvidenceInScope` is the only option, and it may only ever
-    // narrow: the caller declares that the run never asked for the structural
-    // stage. Anything else is rejected so the option surface cannot grow into
-    // a way to hand-tune a diagnosis.
     let mut structural_in_scope = true;
     for (key, value) in options {
         match (key.as_str(), value.as_bool()) {
@@ -108,7 +78,7 @@ pub(crate) fn execute(
         }
         consume_admission(input, &mut signals)?;
     }
-    let machine = diagnose(request, &signals, None);
+    let machine = diagnose(request, &signals);
     let domain_verdict = match machine["domainVerdict"].as_str() {
         Some("pass") => AdapterDomainVerdict::Pass,
         Some("fail") => AdapterDomainVerdict::Fail,
@@ -131,7 +101,7 @@ pub(crate) fn execute(
         .map_err(|error| AdapterError::Internal(format!("serialize hospital report: {error}")))?;
     let surgery_bytes = serde_json::to_vec(&surgery)
         .map_err(|error| AdapterError::Internal(format!("serialize surgery plan: {error}")))?;
-    let hospital_markdown = render_hospital(&machine, None).into_bytes();
+    let hospital_markdown = render_hospital(&machine).into_bytes();
     let surgery_markdown = render_surgery(&surgery).into_bytes();
     fs::create_dir_all(out)
         .map_err(|error| AdapterError::Io(format!("create hospital output directory: {error}")))?;
@@ -294,7 +264,7 @@ fn require_provider_modality(provider: &str, modality: &str) -> Result<(), Adapt
     }
 }
 
-fn diagnose(request: &Value, s: &Signals, audit: Option<&AuditReport>) -> Value {
+fn diagnose(request: &Value, s: &Signals) -> Value {
     let (status, diagnosis, next_protocol, disposition, domain_verdict) = if s.local_tool_failure {
         (
             "unknown",
@@ -354,32 +324,17 @@ fn diagnose(request: &Value, s: &Signals, audit: Option<&AuditReport>) -> Value 
     } else {
         ("green", "clean snapshot", "post_op", "observe", "pass")
     };
-    let structural_target = s.failing_rules.iter().find_map(|rule| {
-        rule["details"]["violations"]
-            .as_array()
-            .and_then(|violations| {
-                violations.iter().find_map(|violation| {
-                    violation["targets"]
-                        .as_array()
-                        .and_then(|targets| targets.first())
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                })
-            })
-    });
-    let surgery_target = if diagnosis == "architecture gate failure" {
-        structural_target.clone().or_else(|| s.top_target.clone())
-    } else {
-        s.top_target.clone()
-    };
-    let treatment = treatment(diagnosis, surgery_target.as_deref(), &s.failing_rules);
-    let surgery_status = if (next_protocol == "surgery_plan" && s.top_target.is_some())
-        || (diagnosis == "architecture gate failure" && surgery_target.is_some())
-    {
+    let treatment = treatment(diagnosis, s.top_target.as_deref());
+    let surgery_status = if next_protocol == "surgery_plan" && s.top_target.is_some() {
         "planned"
     } else {
         "not_required"
     };
+    let evidence = s
+        .admissions
+        .iter()
+        .map(|(provider, admission)| json!({"provider":provider,"admissionIdentity":admission}))
+        .collect::<Vec<_>>();
     let failing_rules = s
         .failing_rules
         .iter()
@@ -390,12 +345,9 @@ fn diagnose(request: &Value, s: &Signals, audit: Option<&AuditReport>) -> Value 
             })
         })
         .collect::<Vec<_>>();
-    let evidence = s
-        .admissions
-        .iter()
-        .map(|(provider, admission)| json!({"provider":provider,"admissionIdentity":admission}))
-        .collect::<Vec<_>>();
-    let mut machine = json!({
+    let report_quality = development_readiness_signal(diagnosis, next_protocol, s);
+    let overall_score = report_quality["overall_score"].clone();
+    json!({
         "schema":"code-intel-hospital.v1",
         "domainVerdict":domain_verdict,
         "generatedAt":null,
@@ -407,7 +359,7 @@ fn diagnose(request: &Value, s: &Signals, audit: Option<&AuditReport>) -> Value 
             "disposition":disposition,
             "primary_diagnosis":diagnosis,
             "failing_rules":failing_rules,
-            "overall_score":null,
+            "overall_score":overall_score,
             "next_protocol":next_protocol,
             "research_status":"not_applicable",
             "research_required":false,
@@ -421,8 +373,8 @@ fn diagnose(request: &Value, s: &Signals, audit: Option<&AuditReport>) -> Value 
         },
         "state_machine":{"schema":"code-intel-hospital-state-machine.v1","current_state":next_protocol,"disposition":disposition,"next_protocol":next_protocol,"states":["triage","diagnose","govern","surgery_plan","post_op","discharge_ready"],"transitions":[]},
         "modalities":evidence,
-        "policies":{"precedence":["local tool failure","provider quota exhausted","architecture gate failure","architecture graph missing","authoritative structural evidence unavailable","ungoverned structural scope","known modernization debt","clean snapshot"],"scope":{"structuralEvidence":if s.structural_in_scope {"in_scope"} else {"out_of_scope"}}},
-        "report_quality":{"overall_score":null,"diagnostic_score":null,"governance_score":null,"dimensions":[]},
+        "policies":{"precedence":["local tool failure","provider quota exhausted","architecture gate failure","architecture graph missing","authoritative structural evidence unavailable","ungoverned structural scope","known modernization debt","clean snapshot"]},
+        "report_quality":report_quality,
         "diagnosis":{"findings":[diagnosis],"impression":diagnosis,"risk":status,"evidence":evidence},
         "treatment":{"plan":treatment,"follow_up":["Rerun diagnosis.hospital with current admitted evidence."]},
         "protocols":[],
@@ -431,16 +383,156 @@ fn diagnose(request: &Value, s: &Signals, audit: Option<&AuditReport>) -> Value 
             "schema":"code-intel-surgery-plan.v1",
             "status":surgery_status,
             "admission":{"disposition":disposition,"diagnosis":diagnosis,"reason":admission_reason(diagnosis)},
-            "primary_target":{"file":surgery_target,"name":null,"source_anchor":null,"complexity":null,"scenario":null,"scenario_action":null,"codenexus_file":null},
+            "primary_target":{"file":s.top_target,"name":null,"source_anchor":null,"complexity":null,"scenario":null,"scenario_action":null,"codenexus_file":null},
             "operating_plan":if surgery_status == "planned" { vec!["Open the admitted primary target before editing.","Make one bounded repair and preserve behavior."] } else { Vec::<&str>::new() },
             "verification":["Rerun the smallest affected test.","Re-admit current structural evidence before discharge."],
             "discharge_criteria":["the admitted structural verdict is pass"]
         }
-    });
-    if let Some(report) = audit {
-        machine["audit"] = report.summary("audit-report.json").to_value();
+    })
+}
+
+fn development_readiness_signal(diagnosis: &str, next_protocol: &str, s: &Signals) -> Value {
+    let authoritative_seen = usize::from(s.graph_seen) + usize::from(s.structural_seen);
+    let authoritative_current = usize::from(s.graph_current) + usize::from(s.structural_trusted);
+    let coverage = authoritative_seen as f64 / 2.0;
+    let currentness = if authoritative_seen == 0 {
+        0.0
+    } else {
+        authoritative_current as f64 / authoritative_seen as f64
+    };
+    let governance = if s.structural_trusted && s.structural_rules {
+        1.0
+    } else {
+        0.0
+    };
+    let availability = if !s.local_tool_failure && !s.provider_quota {
+        1.0
+    } else {
+        0.0
+    };
+    let actionability = match diagnosis {
+        "local tool failure" | "provider quota exhausted" => 0.0,
+        "architecture graph missing" | "authoritative structural evidence unavailable" => 0.5,
+        "known modernization debt" if s.top_target.is_none() => 0.5,
+        _ => 1.0,
+    };
+    let mut dimensions = vec![
+        ReadinessDimension {
+            id: "authoritative_coverage",
+            name: "Authoritative coverage",
+            normalized: coverage,
+            evidence: format!("required authoritative modalities={authoritative_seen}/2"),
+        },
+        ReadinessDimension {
+            id: "evidence_currentness",
+            name: "Evidence currentness",
+            normalized: currentness,
+            evidence: format!(
+                "current admitted authoritative modalities={authoritative_current}/{authoritative_seen}"
+            ),
+        },
+        ReadinessDimension {
+            id: "governance_coverage",
+            name: "Governance coverage",
+            normalized: governance,
+            evidence: format!(
+                "trusted structural rules={}",
+                if s.structural_trusted && s.structural_rules {
+                    "present"
+                } else {
+                    "missing"
+                }
+            ),
+        },
+        ReadinessDimension {
+            id: "tool_availability",
+            name: "Tool availability",
+            normalized: availability,
+            evidence: format!(
+                "local_tool_failure={}; provider_quota={}",
+                s.local_tool_failure, s.provider_quota
+            ),
+        },
+        ReadinessDimension {
+            id: "actionability",
+            name: "Actionability",
+            normalized: actionability,
+            evidence: format!(
+                "diagnosis={diagnosis}; next_protocol={next_protocol}; bounded_target={}",
+                s.top_target.as_deref().unwrap_or("none")
+            ),
+        },
+    ];
+    let weakest = dimensions
+        .iter()
+        .map(|dimension| dimension.normalized)
+        .fold(1.0_f64, f64::min);
+    let weakest_dimensions = if weakest >= 1.0 {
+        Vec::new()
+    } else {
+        dimensions
+            .iter()
+            .filter(|dimension| (dimension.normalized - weakest).abs() < f64::EPSILON)
+            .map(|dimension| dimension.id)
+            .collect::<Vec<_>>()
+    };
+    let diagnostic_score = geometric_score(
+        dimensions
+            .iter()
+            .filter(|dimension| dimension.id != "governance_coverage")
+            .map(|dimension| dimension.normalized),
+    );
+    let governance_score = normalized_score(governance);
+    let overall_score = geometric_score(dimensions.iter().map(|dimension| dimension.normalized));
+    let dimension_values = dimensions
+        .drain(..)
+        .map(|dimension| {
+            let is_weakest = weakest_dimensions.contains(&dimension.id);
+            json!({
+                "id":dimension.id,
+                "name":dimension.name,
+                "normalized":round_six(dimension.normalized),
+                "score":normalized_score(dimension.normalized),
+                "status":if dimension.normalized >= 1.0 { "ready" } else if dimension.normalized <= 0.0 { "blocked" } else { "partial" },
+                "weakest":is_weakest,
+                "evidence":dimension.evidence
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "overall_score":overall_score,
+        "diagnostic_score":diagnostic_score,
+        "governance_score":governance_score,
+        "dimensions":dimension_values,
+        "decision_signal":{
+            "schema":"code-intel-development-readiness-signal.v1",
+            "status":"experimental",
+            "authority":"advisory_only",
+            "meaning":"readiness to make the next development decision; not code health",
+            "aggregation":"unweighted_geometric_mean",
+            "scale":{"minimum":0,"maximum":100},
+            "score":overall_score,
+            "weakest_dimensions":weakest_dimensions
+        }
+    })
+}
+
+fn geometric_score(values: impl Iterator<Item = f64>) -> i64 {
+    let values = values.collect::<Vec<_>>();
+    if values.is_empty() || values.iter().any(|value| *value <= 0.0) {
+        return 0;
     }
-    machine
+    normalized_score(
+        (values.iter().map(|value| value.ln()).sum::<f64>() / values.len() as f64).exp(),
+    )
+}
+
+fn normalized_score(value: f64) -> i64 {
+    (value.clamp(0.0, 1.0) * 100.0).round() as i64
+}
+
+fn round_six(value: f64) -> f64 {
+    (value.clamp(0.0, 1.0) * 1_000_000.0).round() / 1_000_000.0
 }
 
 fn admission_reason(diagnosis: &str) -> &'static str {
@@ -460,7 +552,7 @@ fn admission_reason(diagnosis: &str) -> &'static str {
     }
 }
 
-fn treatment(diagnosis: &str, target: Option<&str>, failing: &[Value]) -> Vec<String> {
+fn treatment(diagnosis: &str, target: Option<&str>) -> Vec<String> {
     let mut plan = vec![match diagnosis {
         "local tool failure" => "Fix local tool errors before interpreting architecture signals.".into(),
         "provider quota exhausted" => "Restore provider quota or use a complete admitted local evidence path before interpreting the result.".into(),
@@ -471,52 +563,14 @@ fn treatment(diagnosis: &str, target: Option<&str>, failing: &[Value]) -> Vec<St
         "known modernization debt" => "Repair the first admitted modernization target and verify behavior.".into(),
         _ => "Keep this admitted evidence set as the clean comparison baseline.".into(),
     }];
-    if diagnosis == "architecture gate failure" {
-        for rule in failing {
-            let kind = rule["kind"].as_str().unwrap_or("unknown");
-            let violations = rule["details"]["violations"].as_array();
-            match violations {
-                Some(violations) => {
-                    for violation in violations.iter().take(3) {
-                        let message = violation["message"].as_str().unwrap_or("");
-                        let targets = violation["targets"]
-                            .as_array()
-                            .map(|targets| {
-                                targets
-                                    .iter()
-                                    .filter_map(Value::as_str)
-                                    .take(3)
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            })
-                            .unwrap_or_default();
-                        if targets.is_empty() {
-                            plan.push(format!("Failing rule {kind}: {message}."));
-                        } else {
-                            plan.push(format!(
-                                "Failing rule {kind}: {message} (targets: {targets})."
-                            ));
-                        }
-                    }
-                }
-                None => plan.push(format!(
-                    "Failing rule {kind}: no structured violation details were admitted."
-                )),
-            }
-        }
-        plan.push(
-            "Rerun the smallest gate: code-intel sentrux --operation check --repo <repo-root>."
-                .into(),
-        );
-    }
     if let Some(target) = target {
         plan.push(format!("Start the bounded review at {target}."));
     }
     plan
 }
 
-fn render_hospital(value: &Value, audit: Option<&AuditReport>) -> String {
-    let mut report = format!(
+fn render_hospital(value: &Value) -> String {
+    format!(
         "# Code Intel Hospital Report\n\n- Status: {}\n- Disposition: {}\n- Primary diagnosis: {}\n- Next protocol: {}\n\n## Treatment\n{}\n",
         value["triage"]["status"].as_str().unwrap_or("unknown"),
         value["triage"]["disposition"].as_str().unwrap_or("admit"),
@@ -530,41 +584,7 @@ fn render_hospital(value: &Value, audit: Option<&AuditReport>) -> String {
             .map(|item| format!("- {item}"))
             .collect::<Vec<_>>()
             .join("\n")
-    );
-    let failing = value["triage"]["failing_rules"].as_array();
-    if let Some(failing) = failing.filter(|rules| !rules.is_empty()) {
-        report.push_str("\n## Failing rules\n");
-        for rule in failing {
-            let kind = rule["kind"].as_str().unwrap_or("unknown");
-            match rule["details"]["violations"].as_array() {
-                Some(violations) => {
-                    for violation in violations {
-                        let message = violation["message"].as_str().unwrap_or("");
-                        let targets = violation["targets"]
-                            .as_array()
-                            .map(|targets| {
-                                targets
-                                    .iter()
-                                    .filter_map(Value::as_str)
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            })
-                            .unwrap_or_default();
-                        if targets.is_empty() {
-                            report.push_str(&format!("- {kind}: {message}\n"));
-                        } else {
-                            report.push_str(&format!("- {kind}: {message} (targets: {targets})\n"));
-                        }
-                    }
-                }
-                None => report.push_str(&format!("- {kind}: no structured violation details\n")),
-            }
-        }
-    }
-    if let Some(report_data) = audit {
-        report.push_str(&crate::audit_report::render_markdown_section(report_data));
-    }
-    report
+    )
 }
 
 fn render_surgery(value: &Value) -> String {
@@ -575,165 +595,4 @@ fn render_surgery(value: &Value) -> String {
             .as_str()
             .unwrap_or("unknown")
     )
-}
-
-#[cfg(test)]
-mod audit_wiring_tests {
-    use super::*;
-
-    fn clean_signals() -> Signals {
-        Signals {
-            graph_seen: true,
-            graph_current: true,
-            structural_seen: true,
-            structural_trusted: true,
-            structural_rules: true,
-            ..Signals::default()
-        }
-    }
-
-    fn sample_request() -> Value {
-        json!({"snapshot": {"repoIdentity": "content-v1:test"}})
-    }
-
-    fn sample_audit_report() -> AuditReport {
-        let bytes = fs::read(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/fixtures/audit/audit-report.v1.example.json"),
-        )
-        .unwrap();
-        AuditReport::parse(&bytes).unwrap()
-    }
-
-    #[test]
-    fn audit_absent_omits_the_audit_key_and_section() {
-        let machine = diagnose(&sample_request(), &clean_signals(), None);
-        assert!(machine.get("audit").is_none());
-        let markdown = render_hospital(&machine, None);
-        assert!(!markdown.contains("## Audit"));
-    }
-
-    /// A run that never asked for the structural stage has a narrower scope,
-    /// not an evidence gap. Before this distinction existed, `--mode lite`
-    /// exited 20 on a clean repository because absence was read as a gap.
-    #[test]
-    fn structural_evidence_out_of_scope_reaches_a_verdict_instead_of_unknown() {
-        let signals = Signals {
-            graph_seen: true,
-            graph_current: true,
-            structural_in_scope: false,
-            ..Signals::default()
-        };
-        let machine = diagnose(&sample_request(), &signals, None);
-        assert_eq!(machine["domainVerdict"], "pass");
-        assert_eq!(machine["diagnosis"]["impression"], "clean snapshot");
-        // The narrowing has to be visible in the artifact, never silent.
-        assert_eq!(
-            machine["policies"]["scope"]["structuralEvidence"],
-            "out_of_scope"
-        );
-    }
-
-    /// The fail-closed half: in scope and absent is still a gap.
-    #[test]
-    fn structural_evidence_in_scope_but_absent_stays_unknown() {
-        let signals = Signals {
-            graph_seen: true,
-            graph_current: true,
-            ..Signals::default()
-        };
-        let machine = diagnose(&sample_request(), &signals, None);
-        assert_eq!(machine["domainVerdict"], "unknown");
-        assert_eq!(
-            machine["diagnosis"]["impression"],
-            "authoritative structural evidence unavailable"
-        );
-        assert_eq!(
-            machine["policies"]["scope"]["structuralEvidence"],
-            "in_scope"
-        );
-    }
-
-    /// Defence in depth: admitted evidence beats a scope claim. If structural
-    /// evidence was actually produced and it fails, declaring it out of scope
-    /// must not launder the failure into a pass — otherwise the option would
-    /// be a way to talk the hospital out of a gate it already has evidence for.
-    #[test]
-    fn an_out_of_scope_claim_cannot_launder_an_admitted_structural_failure() {
-        let signals = Signals {
-            graph_seen: true,
-            graph_current: true,
-            structural_in_scope: false,
-            structural_seen: true,
-            structural_trusted: true,
-            structural_rules: true,
-            structural_failure: true,
-            ..Signals::default()
-        };
-        let machine = diagnose(&sample_request(), &signals, None);
-        assert_eq!(machine["domainVerdict"], "fail");
-        assert_eq!(
-            machine["diagnosis"]["impression"],
-            "architecture gate failure"
-        );
-    }
-
-    /// Scope narrowing never outranks a real failure signal that precedes it
-    /// in the ladder.
-    #[test]
-    fn out_of_scope_does_not_mask_local_tool_failure_or_quota_exhaustion() {
-        for (label, signals) in [
-            (
-                "local tool failure",
-                Signals {
-                    local_tool_failure: true,
-                    structural_in_scope: false,
-                    ..Signals::default()
-                },
-            ),
-            (
-                "provider quota exhausted",
-                Signals {
-                    provider_quota: true,
-                    structural_in_scope: false,
-                    ..Signals::default()
-                },
-            ),
-        ] {
-            let machine = diagnose(&sample_request(), &signals, None);
-            assert_eq!(machine["domainVerdict"], "unknown", "{label}");
-            assert_eq!(machine["diagnosis"]["impression"], label);
-        }
-    }
-
-    /// A missing architecture graph outranks the structural scope question,
-    /// so lite runs still cannot certify without one.
-    #[test]
-    fn out_of_scope_does_not_excuse_a_missing_architecture_graph() {
-        let signals = Signals {
-            structural_in_scope: false,
-            ..Signals::default()
-        };
-        let machine = diagnose(&sample_request(), &signals, None);
-        assert_eq!(machine["domainVerdict"], "unknown");
-        assert_eq!(
-            machine["diagnosis"]["impression"],
-            "architecture graph missing"
-        );
-    }
-
-    #[test]
-    fn audit_present_embeds_the_summary_and_renders_the_section() {
-        let report = sample_audit_report();
-        let machine = diagnose(&sample_request(), &clean_signals(), Some(&report));
-        assert_eq!(machine["audit"]["status"], "present");
-        assert_eq!(machine["audit"]["artifact"], "audit-report.json");
-        assert_eq!(machine["audit"]["overall"], 7.0);
-        assert_eq!(machine["audit"]["findings_total"], 1);
-        assert_eq!(machine["audit"]["by_severity"]["medium"], 1);
-
-        let markdown = render_hospital(&machine, Some(&report));
-        assert!(markdown.contains("## Audit"));
-        assert!(markdown.contains("medium | security-001 |"));
-    }
 }

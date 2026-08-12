@@ -116,8 +116,8 @@ if (-not [string]::IsNullOrWhiteSpace($ModelInventoryResult)) {
         [string]::IsNullOrWhiteSpace($ModelAdapterArtifactRoot)) {
         throw "Model request synthesis requires inventory, routing, prompt, and adapter artifact root"
     }
-    $synthesisScript = Join-Path $PSScriptRoot "New-ModelAdapterRequest.ps1"
-    $delegateScript = Join-Path $PSScriptRoot "Invoke-ModelChannelDelegate.ps1"
+    $synthesisScript = Join-Path $PSScriptRoot "legacy/New-ModelAdapterRequest.ps1"
+    $delegateScript = Join-Path $PSScriptRoot "legacy/Invoke-ModelChannelDelegate.ps1"
     if (-not (Test-Path -LiteralPath $synthesisScript -PathType Leaf) -or -not (Test-Path -LiteralPath $delegateScript -PathType Leaf)) {
         throw "Model request synthesis or delegate implementation is missing"
     }
@@ -142,7 +142,7 @@ if (-not [string]::IsNullOrWhiteSpace($ModelInventoryResult)) {
 
 if (-not [string]::IsNullOrWhiteSpace($ModelAdapterRequest)) {
     if ([string]::IsNullOrWhiteSpace($ModelAdapterArtifactRoot)) { throw "Model adapter facade requires an artifact root" }
-    $delegateScript = Join-Path $PSScriptRoot "Invoke-ModelChannelDelegate.ps1"
+    $delegateScript = Join-Path $PSScriptRoot "legacy/Invoke-ModelChannelDelegate.ps1"
     if (-not (Test-Path -LiteralPath $delegateScript -PathType Leaf)) { throw "Model channel delegate is missing: $delegateScript" }
     & $delegateScript -Request $ModelAdapterRequest -ArtifactRoot $ModelAdapterArtifactRoot
     exit $LASTEXITCODE
@@ -304,7 +304,7 @@ $output = & git @script:GitHardening -C $Path rev-parse --is-inside-work-tree 2>
 return ($LASTEXITCODE -eq 0 -and [string]$output -eq "true")
 }
 
-# Workflow recommendations are owned by the standalone advisory atom in OpenSpec-Detector.ps1.
+# Workflow recommendations are owned by the standalone legacy advisory atom in legacy/OpenSpec-Detector.ps1.
 
 function Get-JsonProperty {
     param(
@@ -1746,8 +1746,8 @@ function New-CodeIntelSurgeryPlan {
             "Add or update the smallest test that proves the behavior stayed intact."
         )
         verification = @(
-            "Invoke-SentruxAgentTool.ps1 check_rules `"$SentruxTargetPath`"",
-            "Invoke-SentruxAgentTool.ps1 session_end `"$SentruxTargetPath`"",
+            "legacy/Invoke-SentruxAgentTool.ps1 check_rules `"$SentruxTargetPath`"",
+            "legacy/Invoke-SentruxAgentTool.ps1 session_end `"$SentruxTargetPath`"",
             "scripts/tests/test-code-intel-pipeline.ps1 -RepoPath `"$RepoPath`" -SentruxPath `"$((Get-RelativePathSafe $RepoPath $SentruxTargetPath) -replace '\\', '/')`" -SkipRepowise -Mode normal"
         )
         discharge_criteria = $Hospital.triage.discharge_criteria
@@ -2313,7 +2313,7 @@ function New-HospitalProtocolBlock {
         (New-HospitalProtocol "diagnose" "available" "run-code-intel.ps1 -RepoPath <repo> -Mode normal" "Produce summary.md, hospital.md, sentrux artifacts, and codenexus context.")
         (New-HospitalProtocol "govern" $governProtocolStatus "sentrux check <scope>; sentrux gate <scope>" "Rules pass and gate reports no degradation.")
         (New-HospitalProtocol "surgery_plan" $surgeryProtocolStatus "read sentrux-what-if.json and codenexus-context.json" "Choose one hotspot, one boundary, and one verification command before editing.")
-        (New-HospitalProtocol "post_op" "available" "Invoke-SentruxAgentTool.ps1 session_end <scope>" "Signal does not drop, rules pass, and touched hotspot is lower risk.")
+        (New-HospitalProtocol "post_op" "available" "legacy/Invoke-SentruxAgentTool.ps1 session_end <scope>" "Signal does not drop, rules pass, and touched hotspot is lower risk.")
     )
 }
 
@@ -3519,7 +3519,7 @@ if (-not $toolState.rg) {
 }
 
 if ($RepowiseDocs -and -not $SkipRepowise) {
-    $providerProbeScript = Join-Path $PSScriptRoot "Invoke-RepowiseProviderProbe.ps1"
+    $providerProbeScript = Join-Path $PSScriptRoot "legacy/Invoke-RepowiseProviderProbe.ps1"
     $preflightStep = Invoke-LoggedStep "repowise provider health" {
         if (-not (Test-Path -LiteralPath $providerProbeScript -PathType Leaf)) {
             throw "Repowise provider health probe not found: $providerProbeScript"
@@ -3689,7 +3689,7 @@ if (-not $SkipRepowise) {
             })
         }
         elseif ($RepowiseScopePaths.Count -gt 0 -or $RepowiseRootFiles.Count -gt 0) {
-            $scopedRepowiseScript = Join-Path $PSScriptRoot "Invoke-ScopedRepowise.ps1"
+            $scopedRepowiseScript = Join-Path $PSScriptRoot "legacy/Invoke-ScopedRepowise.ps1"
             if ($RepowiseDocs -and $Mode -ne "lite") {
                 $repowiseStep = Invoke-LoggedStep "repowise scoped docs" {
                     & $scopedRepowiseScript `
@@ -3950,7 +3950,7 @@ $sentruxHotspotsSummary = $null
 $sentruxEvolutionSummary = $null
 $sentruxWhatIfSummary = $null
 $codeNexusContextSummary = $null
-$sentruxAgentTool = Join-Path $PSScriptRoot "Invoke-SentruxAgentTool.ps1"
+$sentruxAgentTool = Join-Path $PSScriptRoot "legacy/Invoke-SentruxAgentTool.ps1"
 if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -LiteralPath $sentruxAgentTool -PathType Leaf)) {
     try {
         $sentruxDsmPreference = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_SENTRUX_DSM_PROVIDER)) {
@@ -4163,7 +4163,7 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -Liter
     }
 }
 
-$codeNexusLiteTool = Join-Path $PSScriptRoot "Invoke-CodeNexusLite.ps1"
+$codeNexusLiteTool = Join-Path $PSScriptRoot "legacy/Invoke-CodeNexusLite.ps1"
 if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -LiteralPath $codeNexusLiteTool -PathType Leaf)) {
     try {
         $global:LASTEXITCODE = 0

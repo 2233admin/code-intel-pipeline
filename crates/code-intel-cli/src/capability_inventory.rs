@@ -11,10 +11,6 @@ use crate::adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterErro
 use crate::artifact_ref::VerifiedArtifact;
 use crate::snapshot;
 
-#[path = "assistance_adapter.rs"]
-mod assistance_adapter;
-#[path = "assistance_discovery.rs"]
-mod assistance_discovery;
 #[path = "builtin_provider_evidence.rs"]
 mod builtin_provider_evidence;
 #[path = "compatibility_retirement_gate.rs"]
@@ -24,14 +20,12 @@ mod compatibility_retirement_ticket;
 #[path = "delivery_light_speed.rs"]
 mod delivery_light_speed;
 #[path = "doctor_adapter.rs"]
-// Crate-visible so `doctor bootstrap --require-provider-conformance` can reuse
-// the node's own provider rows instead of restating the predicate.
-pub(crate) mod doctor_adapter;
+mod doctor_adapter;
+#[path = "dogfood_finding.rs"]
+mod dogfood_finding;
 #[path = "hospital_diagnosis.rs"]
 mod hospital_diagnosis;
 #[path = "native_code_evidence.rs"]
-// Crate-visible so dit impact reuses the same import heuristics the
-// evidence.native-code node publishes, instead of restating them.
 pub(crate) mod native_code_evidence;
 #[path = "project_orientation.rs"]
 mod project_orientation;
@@ -80,13 +74,13 @@ pub(crate) fn execute(
         );
     }
     match adapter {
+        "edit.span-apply.compat" => span_apply::execute(request, verified_inputs, out),
         "repository.snapshot.compat" => repository_snapshot(request, verified_inputs, out),
         "inventory.rg.compat" => inventory(request, out),
+        "edit.ast-grep-plan.compat" => structured_edit::execute(request, verified_inputs, out),
         "evidence.native-code.compat" => {
             native_code_evidence::execute(request, verified_inputs, out)
         }
-        "edit.ast-grep-plan.compat" => structured_edit::execute(request, verified_inputs, out),
-        "edit.span-apply.compat" => span_apply::execute(request, verified_inputs, out),
         "project.orientation.compat" => project_orientation::execute(request, verified_inputs, out),
         "understanding.quadrant.compat" => {
             understanding_quadrant::execute(request, verified_inputs, out)
@@ -117,7 +111,7 @@ pub(crate) fn execute(
         "advisory.workflow-recommend.compat" => {
             workflow_recommendation(request, verified_inputs, out)
         }
-        "assistance.discovery.compat" => assistance_adapter::execute(request, verified_inputs, out),
+        "dogfood.finding.compat" => dogfood_finding::execute(request, verified_inputs, out),
         other => Err(AdapterError::Unavailable(format!(
             "runtime adapter is not installed: {other}"
         ))),
@@ -164,7 +158,10 @@ fn workflow_recommendation(
             AdapterError::InvalidOptions("options.auto must be boolean when present".into())
         })?,
     };
-    let script = pipeline_root().join("legacy/Invoke-WorkflowRecommendation.ps1");
+    let script = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("legacy")
+        .join("Invoke-WorkflowRecommendation.ps1");
     if !script.is_file() {
         return Err(AdapterError::Unavailable(format!(
             "workflow recommendation facade is unavailable: {}",
@@ -256,16 +253,6 @@ fn validate_workflow_proposal(value: &Value) -> Result<(), AdapterError> {
     Ok(())
 }
 
-// Mirrors `doctor_adapter::pipeline_root`: resolve the installed pipeline
-// root through the discovered integrations manifest so a relocated or
-// CI-built binary still finds the facade script; the compile-time
-// `CARGO_MANIFEST_DIR` layout is only a development fallback.
-fn pipeline_root() -> PathBuf {
-    crate::capability::discover_manifest(None)
-        .and_then(|manifest| manifest.parent()?.parent().map(Path::to_path_buf))
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(".."))
-}
-
 fn repository_snapshot(
     request: &Value,
     verified_inputs: &[VerifiedArtifact],
@@ -336,11 +323,7 @@ fn inventory(request: &Value, out: &Path) -> Result<AdapterOutput, AdapterError>
     }
     let lease =
         snapshot::begin_consumption(repo, &request["snapshot"]).map_err(snapshot_adapter_error)?;
-    // Resolved to an absolute path (never a bare name) because `rg` below
-    // launches with its working directory set to `repo`, the repository
-    // under analysis; see `tool_path` for why that matters.
-    let rg = tool_path::resolve("rg");
-    let rg = rg.to_string_lossy().into_owned();
+    let rg = if cfg!(windows) { "rg.exe" } else { "rg" };
     let mut baseline_globs = EXCLUDES
         .iter()
         .map(|value| value.to_string())
@@ -373,12 +356,8 @@ fn inventory(request: &Value, out: &Path) -> Result<AdapterOutput, AdapterError>
             glob_patterns.push(p.to_string());
         }
     }
-    // The fault injection below is debug-only on purpose: a shipped binary must
-    // not carry an env-var hook that can widen the inventory baseline. Release
-    // builds therefore never mutate the set, which is why `mut` is unused there.
-    #[cfg_attr(not(debug_assertions), allow(unused_mut))]
     let mut actual_baseline = run_rg_files(
-        &rg,
+        rg,
         repo,
         lease.scopes(),
         &baseline_globs,
@@ -389,7 +368,7 @@ fn inventory(request: &Value, out: &Path) -> Result<AdapterOutput, AdapterError>
         actual_baseline.insert(normalize_inventory_path(&extra));
     }
     let (expected_baseline, filtered) = mirror_path_sets(
-        &rg,
+        rg,
         lease.scopes(),
         &baseline_globs,
         &glob_patterns,
@@ -1156,16 +1135,6 @@ mod tests {
     #[test]
     fn nul_serialization_preserves_embedded_newlines() {
         assert_eq!(join_records(&[b"a\nb".to_vec()], 0), b"a\nb\0");
-    }
-
-    #[test]
-    fn workflow_recommendation_script_resolves_from_the_pipeline_root() {
-        assert!(
-            pipeline_root()
-                .join("legacy/Invoke-WorkflowRecommendation.ps1")
-                .is_file(),
-            "workflow facade must resolve through the discovered pipeline root"
-        );
     }
 
     #[test]

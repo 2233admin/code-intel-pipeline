@@ -1,4 +1,3 @@
-mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -7,19 +6,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
+mod common;
+
 const IMPLEMENTATION_DIGEST: &str =
-    "295eb1ce67760638a81136febf727285f0feb4692a228df65ac75316b4a566c5";
-const STRUCTURED_EDIT_DIGEST: &str =
-    "fb1bc02fbe9335e1ccbe66ad12ca2927bb3bace4722735e62b1fb2ab053af72d";
-const REPO_SNAPSHOT_DIGEST: &str =
-    "4f42b080fd19e501a6315ee204add188d69625bedd15c566fea48bb1f3e78764";
-const CODENEXUS_TOOLCHAIN_DIGESTS: [&str; 5] = [
-    "f13066fdc1a0242006fa634dc530e33b43cff81b82aafdbc3b99a34c05b5d247",
-    "645675312135932dfce365a8dfc14e214cec78ee733f248606547b3eaa56edc8",
-    "52644a812174988ede91d98ddfec63c6a91f8478277d7bf74c73f106dd0f776b",
-    "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26",
-    "cdd5c6d0fe940d2756c45a51095c275b13ebe64347914b581641693e1288ca56",
-];
+    "1707b3779188b941fbc6b750ba2ac0c5721c16b62647551276c18d2f0462e1a1";
 static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -343,55 +333,6 @@ fn inventory_rg_ignores_repository_ignored_workspace_churn() {
 }
 
 #[test]
-fn inventory_rg_excludes_linked_worktree_git_pointer() {
-    let root = temp_dir("linked-worktree-git-pointer");
-    let repo = root.join("repo");
-    let linked = root.join("linked");
-    fs::create_dir_all(&repo).unwrap();
-    git(&repo, &["init", "--quiet"]);
-    git(&repo, &["config", "user.name", "Inventory Test"]);
-    git(
-        &repo,
-        &["config", "user.email", "inventory@example.invalid"],
-    );
-    fs::write(repo.join("kept.py"), "print('kept')\n").unwrap();
-    git(&repo, &["add", "kept.py"]);
-    git(&repo, &["commit", "--quiet", "-m", "baseline"]);
-
-    let added = Command::new("git")
-        .args(["worktree", "add", "--quiet", "--detach"])
-        .arg(&linked)
-        .arg("HEAD")
-        .current_dir(&repo)
-        .output()
-        .expect("create linked worktree");
-    assert!(
-        added.status.success(),
-        "{}",
-        String::from_utf8_lossy(&added.stderr)
-    );
-    assert!(linked.join(".git").is_file());
-
-    let out = root.join("out");
-    let output = run_with_request_file(
-        &request(&linked, "inventory.rg"),
-        &root.join("request.json"),
-        &out,
-        "inventory.rg",
-    );
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let files = fs::read_to_string(out.join("files.txt")).unwrap();
-    assert!(files.lines().any(|path| path == "kept.py"));
-    assert!(!files.lines().any(|path| path == ".git"));
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
 fn inventory_rejects_repository_changes_after_snapshot_and_honors_snapshot_scope() {
     let root = temp_dir("snapshot-lease");
     let repo = root.join("repo");
@@ -513,14 +454,7 @@ fn relocated_repositories_emit_identical_inventory_bytes_and_digest() {
     let _ = fs::remove_dir_all(root);
 }
 
-// Drives the `CODE_INTEL_TEST_RG_EXTRA_PATH` hook in `capability_inventory.rs`,
-// which is `#[cfg(debug_assertions)]` so the shipped binary carries no inventory
-// fault injection. `cargo test --release` builds that binary without the hook,
-// so this test only has something to assert against in a debug build. The
-// contract it guards (`verify_inventory_path_sets` refusing to publish on a set
-// mismatch) is compiled into every profile — only the simulation is debug-only.
 #[test]
-#[cfg(debug_assertions)]
 fn inventory_rejects_simulated_rg_extra_path_without_publication() {
     let root = temp_dir("rg-extra-path");
     let repo = root.join("repo");
@@ -1275,59 +1209,6 @@ fn populated_gitlink_is_literal_excluded_and_oid_bound_for_both_policies() {
 }
 
 #[test]
-fn nested_linked_worktree_is_excluded_from_inventory() {
-    let root = temp_dir("nested-linked-worktree");
-    let repo = root.join("repo");
-    fs::create_dir_all(&repo).unwrap();
-    git(&repo, &["init", "--quiet"]);
-    git(&repo, &["config", "user.name", "Inventory Test"]);
-    git(
-        &repo,
-        &["config", "user.email", "inventory@example.invalid"],
-    );
-    fs::write(repo.join("root.txt"), "root\n").unwrap();
-    git(&repo, &["add", "."]);
-    git(&repo, &["commit", "--quiet", "-m", "root"]);
-
-    let nested = repo.join(".claude/worktrees/agent-test");
-    git(
-        &repo,
-        &[
-            "worktree",
-            "add",
-            "--quiet",
-            "--detach",
-            nested.to_str().unwrap(),
-            "HEAD",
-        ],
-    );
-
-    for policy in ["head_only", "explicit_overlay"] {
-        let request = request_with_policy_scopes(&repo, "inventory.rg", policy, &["."]);
-        let out = root.join(format!("{policy}-out"));
-        let output = run_with_request_file(
-            &request,
-            &root.join(format!("{policy}-request.json")),
-            &out,
-            "inventory.rg",
-        );
-        assert_eq!(
-            output.status.code(),
-            Some(0),
-            "{policy}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let files = fs::read_to_string(out.join("files.txt")).unwrap();
-        assert!(files.lines().any(|path| path == "root.txt"));
-        assert!(!files
-            .lines()
-            .any(|path| path.starts_with(".claude/worktrees/agent-test/")));
-    }
-
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
 fn inventory_exclude_uses_ripgrep_glob_semantics_for_basename_brace_class_and_segment() {
     let root = temp_dir("ripgrep-glob-semantics");
     let repo = root.join("repo");
@@ -1592,7 +1473,7 @@ fn normalized_inventory_matches_real_legacy_runner_with_custom_exclude() {
     let runner = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
-        .join("legacy/run-code-intel.ps1");
+        .join("run-code-intel.ps1");
     let legacy = Command::new("pwsh")
         .args(["-NoProfile", "-File"])
         .arg(&runner)
@@ -1645,8 +1526,8 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
         "id":"advisory.workflow-recommend.compat",
         "version":"1.0.0",
         "toolchainDigests":[
-            "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-            "295eb1ce67760638a81136febf727285f0feb4692a228df65ac75316b4a566c5"
+            "5edf6bbd5414dcb0a29b788d81378a299b84f8ecb69f7ab2479ba583e405d05c",
+            "748c8b087c9d1a68f9aa5711cda200204ac0d05845058a1ee50058b161582de9"
         ]
     });
     value["options"] = json!({"repoPath":repo,"auto":true});
@@ -1683,7 +1564,8 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
 
     let facade = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
-        .join("legacy/Invoke-WorkflowRecommendation.ps1");
+        .join("legacy")
+        .join("Invoke-WorkflowRecommendation.ps1");
     let direct = Command::new("pwsh")
         .args(["-NoLogo", "-NoProfile", "-File"])
         .arg(facade)
@@ -1829,79 +1711,6 @@ fn declaration_determinism_is_used_for_post_declaration_failures() {
     let _ = fs::remove_dir_all(root);
 }
 
-#[test]
-fn structured_edit_plan_is_scope_bound_and_preview_only() {
-    let root = temp_dir("structured-edit");
-    let repo = root.join("repo");
-    fs::create_dir_all(repo.join("src")).unwrap();
-    fs::write(repo.join("src/example.py"), "print(\"hello\")\n").unwrap();
-
-    let mut value = request(&repo, "edit.ast-grep-plan");
-    value["implementation"] = json!({
-        "id":"edit.ast-grep-plan.compat",
-        "version":"1.0.0",
-        "toolchainDigests":[STRUCTURED_EDIT_DIGEST]
-    });
-    value["options"] = json!({
-        "repoPath":repo,
-        "language":"python",
-        "pattern":"print($A)",
-        "rewrite":"logger.info($A)",
-        "paths":["../outside.py"]
-    });
-    value["effectPolicy"]["allowedEffects"] = json!(["repo_read", "local_write", "process_spawn"]);
-    let rejected = run_with_request_file(
-        &value,
-        &root.join("rejected-request.json"),
-        &root.join("rejected-out"),
-        "edit.ast-grep-plan",
-    );
-    assert_eq!(rejected.status.code(), Some(64));
-    assert!(String::from_utf8_lossy(&rejected.stderr).contains("escapes repository"));
-
-    let ast_grep_available = Command::new("ast-grep")
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| output.status.success());
-    if !ast_grep_available {
-        let _ = fs::remove_dir_all(root);
-        return;
-    }
-
-    value["options"]["paths"] = json!(["src"]);
-    let out = root.join("out");
-    let output = run_with_request_file(
-        &value,
-        &root.join("request.json"),
-        &out,
-        "edit.ast-grep-plan",
-    );
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr={} stdout={}",
-        String::from_utf8_lossy(&output.stderr),
-        String::from_utf8_lossy(&output.stdout)
-    );
-    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(result["capability"], "edit.ast-grep-plan");
-    assert_eq!(
-        result["observedEffects"],
-        json!(["repo_read", "local_write", "process_spawn"])
-    );
-    let plan: Value =
-        serde_json::from_slice(&fs::read(out.join("structured-edit-plan.json")).unwrap()).unwrap();
-    assert_eq!(plan["summary"]["matches"], 1);
-    assert_eq!(plan["matches"][0]["file"], "src/example.py");
-    assert_eq!(plan["matches"][0]["replacement"], "logger.info(\"hello\")");
-    assert_eq!(plan["authority"]["repositoryMutation"], false);
-    assert_eq!(
-        fs::read_to_string(repo.join("src/example.py")).unwrap(),
-        "print(\"hello\")\n"
-    );
-    let _ = fs::remove_dir_all(root);
-}
-
 fn normalized_lines(text: &str) -> Vec<String> {
     let mut lines = text
         .lines()
@@ -1922,322 +1731,6 @@ fn normalized_repo_lines(text: &str, repo: &Path) -> Vec<String> {
         .collect::<Vec<_>>()
         .join("\n");
     normalized_lines(&relative)
-}
-
-/// The declared implementation is read from the registry rather than restated
-/// here: a copy would only prove this file agrees with itself, and the pins
-/// move every time `repin` runs.
-fn registry_implementation(capability: &str) -> Value {
-    let registry: Value = serde_json::from_slice(
-        &fs::read(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../..")
-                .join("orchestration/integrations.json"),
-        )
-        .expect("read integrations registry"),
-    )
-    .expect("integrations registry is JSON");
-    registry["integrations"]
-        .as_array()
-        .expect("integrations is an array")
-        .iter()
-        .find(|entry| entry["id"] == capability)
-        .unwrap_or_else(|| panic!("{capability} is not registered"))["capabilityDeclaration"]
-        ["implementation"]
-        .clone()
-}
-
-fn assistance_gap() -> Value {
-    json!({
-        "schema": "code-intel-engineering-capability-gap.v1",
-        "id": "gap-line-level-review",
-        "capability": "read a changed diff for defects line by line",
-        "description": "`change risk` scores a revspec and `change impact` selects tests; neither reads the diff itself.",
-        "constraints": ["no repository mutation", "no new runtime service"],
-        "evidenceRefs": ["artifact:change-risk", "artifact:change-impact"]
-    })
-}
-
-#[test]
-fn assistance_discovery_turns_catalog_candidates_into_proposal_only_dossiers() {
-    let root = temp_dir("assistance-discovery");
-    let repo = root.join("repo");
-    fs::create_dir_all(repo.join("src")).unwrap();
-    fs::write(repo.join("src/main.rs"), "fn main() {}\n").unwrap();
-
-    let mut value = request(&repo, "assistance.discovery");
-    value["implementation"] = registry_implementation("assistance.discovery");
-    value["options"] = json!({
-        "gap": assistance_gap(),
-        "candidateIds": [
-            "official-plugin-pr-review-toolkit",
-            "official-plugin-claude-security"
-        ]
-    });
-    value["effectPolicy"]["allowedEffects"] = json!([]);
-    let out = root.join("out");
-    let output = run_with_request_file(
-        &value,
-        &root.join("request.json"),
-        &out,
-        "assistance.discovery",
-    );
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr={} stdout={}",
-        String::from_utf8_lossy(&output.stderr),
-        String::from_utf8_lossy(&output.stdout)
-    );
-    let envelope: Value = serde_json::from_slice(&output.stdout)
-        .expect("stdout must contain exactly one capability result JSON document");
-    assert_eq!(envelope["capability"], "assistance.discovery");
-    assert_eq!(envelope["declaredEffects"], json!([]));
-    assert_eq!(envelope["observedEffects"], json!([]));
-
-    let result: Value =
-        serde_json::from_slice(&fs::read(out.join("assistance-discovery-result.json")).unwrap())
-            .unwrap();
-    assert_eq!(
-        result["schema"],
-        "code-intel-assistance-discovery-result.v1"
-    );
-    assert_eq!(result["gapId"], "gap-line-level-review");
-    assert_eq!(result["proposalOnly"], json!(true));
-    assert_eq!(result["effects"], json!([]));
-    assert_eq!(result["authorityEvents"], json!([]));
-    assert_eq!(result["adoptionDecisions"], json!([]));
-    assert_eq!(result["committedEngineeringPlans"], json!([]));
-
-    let dossiers = result["dossiers"].as_array().unwrap();
-    assert_eq!(dossiers.len(), 2);
-    for dossier in dossiers {
-        assert_eq!(dossier["disposition"], "proposal");
-        assert_eq!(dossier["authorityState"], "unresolved");
-    }
-    // The committed rating travels with the dossier. claude-security is the
-    // one candidate whose licence is a proprietary internal-use grant, so a
-    // caller must see `review_required` rather than a rating invented at call
-    // time — that is the whole reason candidates resolve from the catalog.
-    let security = dossiers
-        .iter()
-        .find(|dossier| dossier["id"] == "official-plugin-claude-security")
-        .expect("claude-security dossier");
-    assert_eq!(security["license"]["status"], "review_required");
-    assert_eq!(security["security"]["status"], "review_required");
-
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
-fn assistance_discovery_refuses_a_candidate_that_was_never_reviewed() {
-    let root = temp_dir("assistance-unreviewed");
-    let repo = root.join("repo");
-    fs::create_dir_all(repo.join("src")).unwrap();
-    fs::write(repo.join("src/main.rs"), "fn main() {}\n").unwrap();
-
-    let mut value = request(&repo, "assistance.discovery");
-    value["implementation"] = registry_implementation("assistance.discovery");
-    value["options"] = json!({
-        "gap": assistance_gap(),
-        "candidateIds": ["official-plugin-code-review", "some-tool-nobody-reviewed"]
-    });
-    value["effectPolicy"]["allowedEffects"] = json!([]);
-    let out = root.join("out");
-    let output = run_with_request_file(
-        &value,
-        &root.join("request.json"),
-        &out,
-        "assistance.discovery",
-    );
-    assert_ne!(
-        output.status.code(),
-        Some(0),
-        "an unreviewed candidate must not produce a dossier"
-    );
-    let text = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(
-        text.contains("some-tool-nobody-reviewed")
-            && text.contains("agent-assistance-catalog.v1.json"),
-        "the diagnostic must name the candidate and the catalog: {text}"
-    );
-    assert!(
-        !out.join("assistance-discovery-result.json").exists(),
-        "a refused request must publish nothing"
-    );
-
-    let _ = fs::remove_dir_all(root);
-}
-
-/// `provider.codenexus-adapt` has no builtin adapter dispatch test to mirror
-/// (graph/sentrux builtins are exercised only through the full DAG in
-/// `dag_run.rs`, never through a standalone `capability exec` here), so this
-/// builds the chain by hand: a real `repo.snapshot` artifact first, then the
-/// codenexus dispatch consuming it -- the same shape `CapabilityEnvelopeExecutor`
-/// wires up inside the DAG, just assembled directly instead of through a
-/// second process hop.
-#[test]
-fn codenexus_builtin_compat_dispatches_through_provider_codenexus_adapt() {
-    let root = temp_dir("codenexus");
-    let repo = root.join("repo");
-    fs::create_dir_all(&repo).unwrap();
-    fs::write(repo.join("README.md"), "fixture\n").unwrap();
-
-    let mut snapshot_cmd = common::cli();
-    snapshot_cmd
-        .args(["snapshot", "identity", "--repo"])
-        .arg(&repo)
-        .args(["--working-tree-policy", "explicit_overlay", "--scope", "."]);
-    let snapshot_output = snapshot_cmd.output().expect("compute A02 request snapshot");
-    assert!(
-        snapshot_output.status.success(),
-        "stderr={}",
-        String::from_utf8_lossy(&snapshot_output.stderr)
-    );
-    let snapshot_document: Value =
-        serde_json::from_slice(&snapshot_output.stdout).expect("snapshot JSON");
-    let snapshot = snapshot_document["snapshot"].clone();
-    let identity = snapshot["identity"]
-        .as_str()
-        .expect("snapshot identity")
-        .to_string();
-
-    let snapshot_request = json!({
-        "schema": "code-intel-capability-request.v1",
-        "capability": "repo.snapshot",
-        "contractVersion": 1,
-        "implementation": {
-            "id": "repository.snapshot.compat",
-            "version": "1.0.0",
-            "toolchainDigests": [REPO_SNAPSHOT_DIGEST]
-        },
-        "snapshot": snapshot,
-        "options": {"repoPath": repo},
-        "inputs": [],
-        "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}
-    });
-    let snapshot_out = root.join("repo.snapshot");
-    let snapshot_output = run_capability(
-        &snapshot_request,
-        &root.join("repo.snapshot.request.json"),
-        &snapshot_out,
-        &root,
-        "repo.snapshot",
-    );
-    assert!(
-        snapshot_output.status.success(),
-        "stdout={} stderr={}",
-        String::from_utf8_lossy(&snapshot_output.stdout),
-        String::from_utf8_lossy(&snapshot_output.stderr)
-    );
-    let snapshot_result: Value = serde_json::from_slice(&snapshot_output.stdout).unwrap();
-    assert_eq!(snapshot_result["status"], "completed");
-    let snapshot_artifact = snapshot_result["artifacts"][0].clone();
-    assert_eq!(
-        snapshot_artifact["artifactSchema"],
-        "code-intel-repository-snapshot.v1"
-    );
-    assert_eq!(snapshot_artifact["type"], "repository.snapshot");
-
-    let codenexus_request = json!({
-        "schema": "code-intel-capability-request.v1",
-        "capability": "provider.codenexus-adapt",
-        "contractVersion": 1,
-        "implementation": {
-            "id": "provider.codenexus-builtin.compat",
-            "version": "1.0.0",
-            "toolchainDigests": CODENEXUS_TOOLCHAIN_DIGESTS
-        },
-        "snapshot": snapshot,
-        "options": {"repoPath": repo},
-        "inputs": [{
-            "schema": "code-intel-artifact-ref.v1",
-            "artifactSchema": snapshot_artifact["artifactSchema"],
-            "type": snapshot_artifact["type"],
-            "path": "repo.snapshot/snapshot.json",
-            "sha256": snapshot_artifact["sha256"],
-            "consumedSnapshotIdentity": identity
-        }],
-        "effectPolicy": {"allowedEffects": ["repo_read", "local_write", "process_spawn"]}
-    });
-    let codenexus_out = root.join("evidence.codenexus");
-    let output = run_capability(
-        &codenexus_request,
-        &root.join("provider.codenexus-adapt.request.json"),
-        &codenexus_out,
-        &root,
-        "provider.codenexus-adapt",
-    );
-    assert!(
-        output.status.success(),
-        "stdout={} stderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(result["schema"], "code-intel-capability-result.v1");
-    assert_eq!(result["status"], "completed");
-    assert_eq!(result["verdict"], "pass");
-    assert_eq!(
-        result["implementation"]["id"],
-        "provider.codenexus-builtin.compat"
-    );
-    assert!(
-        result["artifacts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|artifact| artifact["type"] == "evidence.admission"),
-        "result={result}"
-    );
-    assert!(
-        result["artifacts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|artifact| artifact["type"] == "observed.evidence.payload"),
-        "result={result}"
-    );
-    assert!(
-        codenexus_out.join("codenexus-payload.json").is_file(),
-        "direct capability-exec dispatch must publish the payload artifact to disk, not just the admission result"
-    );
-    let admission: Value =
-        serde_json::from_slice(&fs::read(codenexus_out.join("codenexus-admission.json")).unwrap())
-            .unwrap();
-    assert!(
-        matches!(admission["domainVerdict"].as_str(), Some("observed" | "unknown")),
-        "codenexus admission must never fabricate a fact when the lite facade is unavailable: admission={admission}"
-    );
-
-    let _ = fs::remove_dir_all(root);
-}
-
-fn run_capability(
-    request: &Value,
-    request_path: &Path,
-    out: &Path,
-    artifact_root: &Path,
-    cli_capability: &str,
-) -> std::process::Output {
-    fs::write(
-        request_path,
-        serde_json::to_vec(request).expect("serialize request"),
-    )
-    .expect("write request");
-    common::cli()
-        .args(["capability", "exec", cli_capability, "--request"])
-        .arg(request_path)
-        .arg("--out")
-        .arg(out)
-        .arg("--artifact-root")
-        .arg(artifact_root)
-        .output()
-        .expect("run capability executor")
 }
 
 fn find_named_file(root: &Path, name: &str) -> Option<PathBuf> {

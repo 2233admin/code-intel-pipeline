@@ -3,8 +3,11 @@ use serde_json::json;
 use std::{
     fs,
     path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+static NEXT_TEMP_REPORT: AtomicU64 = AtomicU64::new(0);
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -64,9 +67,10 @@ impl TempReport {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
+        let sequence = NEXT_TEMP_REPORT.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
-            "code-intel-audit-cli-test-{}-{nonce}.json",
-            std::process::id()
+            "code-intel-audit-cli-test-{}-{nonce}-{sequence}.json",
+            std::process::id(),
         ));
         fs::write(&path, serde_json::to_vec(value).unwrap()).unwrap();
         Self(path)

@@ -1,4 +1,3 @@
-mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -6,6 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
+
+mod common;
 
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -548,85 +549,67 @@ fn precedence_matrix_matches_the_legacy_stable_diagnoses_and_fails_closed() {
 }
 
 #[test]
-fn architecture_gate_failure_names_the_rule_targets_and_smallest_rerun_command() {
-    // Acceptance criterion from issue #14 (v0.5.1 self-dogfood slice): a
-    // Hospital failure must name the first failed rule, its evidence
-    // (message), the target file(s), and the smallest rerun command -- not
-    // a bare "architecture gate failure" string. `structural()` above only
-    // ever seeds `failure:{"kind":"none"}`, so no existing test exercises
-    // the rendered text for a real violation; seed one directly, shaped
-    // exactly like the max_cycles violation sentrux_gate.rs produces for
-    // the dag_run.rs/execution_kernel.rs cycle this PR verified is gone.
+fn development_readiness_signal_exposes_bottlenecks_without_overriding_authority() {
     let temp = Temp::new();
-    let cycle_rule = json!({
-        "kind": "max_cycles",
-        "status": "evaluated",
-        "verdict": "fail",
-        "details": {
-            "violations": [{
-                "rule": "max_cycles",
-                "message": "cycles exceeded: 1 > 0",
-                "targets": [
-                    "crates/code-intel-cli/src/dag_run.rs",
-                    "crates/code-intel-cli/src/execution_kernel.rs"
-                ]
-            }]
-        }
-    });
-    let structural_fail = admission(
-        &temp.0,
-        "structural-cycle-fail",
-        "structural-evidence.sentrux",
-        "observed",
-        "none",
-        json!({"structuralEvidence":{
-            "schema":"code-intel-structural-evidence-payload.v1",
-            "snapshotIdentity":SNAPSHOT,
-            "completeness":"complete",
-            "rules":[cycle_rule]
-        }}),
-    );
-    let (exit, _, out, stderr) = run(
-        &temp.0,
-        vec![graph(&temp.0, true), structural_fail],
-        "cycle-gate-failure",
-    );
-    assert_eq!(exit, 10, "{stderr}");
-    let machine: Value =
-        serde_json::from_slice(&fs::read(out.join("hospital-report.json")).unwrap()).unwrap();
+    let failing_inputs = vec![
+        graph(&temp.0, true),
+        structural(&temp.0, "signal-structural-fail", Some("fail"), true),
+        native(&temp.0, false),
+    ];
+    let (failing_exit, _, failing_out, failing_stderr) =
+        run(&temp.0, failing_inputs, "signal-failing-code");
+    assert_eq!(failing_exit, 10, "{failing_stderr}");
+    let failing: Value =
+        serde_json::from_slice(&fs::read(failing_out.join("hospital-report.json")).unwrap())
+            .unwrap();
+    assert_eq!(failing["domainVerdict"], "fail");
+    assert_eq!(failing["triage"]["overall_score"], 100);
+    assert_eq!(failing["report_quality"]["overall_score"], 100);
     assert_eq!(
-        machine["triage"]["primary_diagnosis"],
-        "architecture gate failure"
+        failing["report_quality"]["decision_signal"]["meaning"],
+        "readiness to make the next development decision; not code health"
     );
-    assert_eq!(machine["triage"]["next_protocol"], "govern");
-
-    let markdown = fs::read_to_string(out.join("hospital.md")).unwrap();
-    assert!(
-        markdown.contains(
-            "Failing rule max_cycles: cycles exceeded: 1 > 0 (targets: \
-             crates/code-intel-cli/src/dag_run.rs, crates/code-intel-cli/src/execution_kernel.rs)."
-        ),
-        "hospital.md did not name the failing rule and its targets:\n{markdown}"
+    assert_eq!(
+        failing["report_quality"]["decision_signal"]["authority"],
+        "advisory_only"
     );
-    assert!(
-        markdown.contains(
-            "Rerun the smallest gate: code-intel sentrux --operation check --repo <repo-root>."
-        ),
-        "hospital.md did not name the smallest rerun command:\n{markdown}"
+    assert_eq!(
+        failing["report_quality"]["decision_signal"]["weakest_dimensions"],
+        json!([])
     );
-    assert!(
-        markdown.contains("## Failing rules")
-            && markdown.contains(
-                "- max_cycles: cycles exceeded: 1 > 0 (targets: crates/code-intel-cli/src/dag_run.rs, crates/code-intel-cli/src/execution_kernel.rs)"
-            ),
-        "hospital.md did not render a dedicated failing-rules section:\n{markdown}"
+    assert_eq!(
+        failing["report_quality"]["dimensions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        5
     );
 
-    let surgery_markdown = fs::read_to_string(out.join("surgery-plan.md")).unwrap();
-    assert!(
-        !surgery_markdown.trim().is_empty(),
-        "a governed architecture-gate failure should plan a surgery"
+    let ungoverned_inputs = vec![
+        graph(&temp.0, true),
+        structural(&temp.0, "signal-structural-empty", None, true),
+    ];
+    let (ungoverned_exit, _, ungoverned_out, ungoverned_stderr) =
+        run(&temp.0, ungoverned_inputs, "signal-ungoverned");
+    assert_eq!(ungoverned_exit, 10, "{ungoverned_stderr}");
+    let ungoverned: Value =
+        serde_json::from_slice(&fs::read(ungoverned_out.join("hospital-report.json")).unwrap())
+            .unwrap();
+    assert_eq!(ungoverned["domainVerdict"], "fail");
+    assert_eq!(ungoverned["report_quality"]["overall_score"], 0);
+    assert_eq!(ungoverned["report_quality"]["governance_score"], 0);
+    assert_eq!(
+        ungoverned["report_quality"]["decision_signal"]["weakest_dimensions"],
+        json!(["governance_coverage"])
     );
+    let governance = ungoverned["report_quality"]["dimensions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|dimension| dimension["id"] == "governance_coverage")
+        .unwrap();
+    assert_eq!(governance["status"], "blocked");
+    assert_eq!(governance["weakest"], true);
 }
 
 #[test]
@@ -919,17 +902,14 @@ fn a09_seeded_path_executes_hospital_through_a01_and_rejects_snapshot_mismatch()
 fn legacy_facade_and_rust_execute_the_same_fixture_with_stable_machine_parity() {
     let temp = Temp::new();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let source = fs::read_to_string(root.join("legacy/run-code-intel.ps1")).unwrap();
+    let legacy_root = root.join("legacy");
+    let source = fs::read_to_string(legacy_root.join("run-code-intel.ps1")).unwrap();
     let main = source
         .find("\n$configData = $null")
         .expect("legacy function boundary");
-    // the facade now lives under legacy/, so $PSScriptRoot resolves there
     let function_source = source[..main].replace(
         "$PSScriptRoot",
-        &format!(
-            "'{}'",
-            root.join("legacy").to_string_lossy().replace('\\', "/")
-        ),
+        &format!("'{}'", legacy_root.to_string_lossy().replace('\\', "/")),
     );
     let legacy_out = temp.0.join("legacy");
     fs::create_dir(&legacy_out).unwrap();

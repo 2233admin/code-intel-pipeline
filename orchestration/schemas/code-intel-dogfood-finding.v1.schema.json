@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-dogfood-finding.v1.schema.json",
+  "title": "Code Intel dogfood finding v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "classification",
+    "suggested_action",
+    "target",
+    "evidence",
+    "summary",
+    "effects"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-dogfood-finding.v1" },
+    "status": { "const": "candidate" },
+    "classification": { "const": "tooling_gap" },
+    "suggested_action": { "const": "improve_onboarding" },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository"],
+      "properties": {
+        "repository": {
+          "enum": ["code-intel-pipeline", "reverse-skill-evolver", "tdxcli-rs"]
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runCommitSha256",
+        "snapshotIdentity",
+        "runIdentity",
+        "manifestSha256",
+        "hospitalSha256"
+      ],
+      "properties": {
+        "runCommitSha256": { "$ref": "#/$defs/digest" },
+        "snapshotIdentity": { "$ref": "#/$defs/digest" },
+        "runIdentity": { "type": "string", "minLength": 1 },
+        "manifestSha256": { "$ref": "#/$defs/digest" },
+        "hospitalSha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "summary": { "type": "string", "minLength": 1 },
+    "effects": {
+      "const": []
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

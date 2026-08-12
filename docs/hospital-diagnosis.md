@@ -29,6 +29,45 @@ readers, including `schema`, `artifacts`, `triage`, `state_machine`,
 `modalities`, `policies`, `report_quality`, `diagnosis`, `treatment`,
 `protocols`, `tools`, and `surgery_plan`.
 
+## Experimental development-readiness signal
+
+`report_quality.decision_signal` is an advisory, replay-stable signal for the
+quality of the next development decision. It is deliberately not a code-health
+score and cannot override `domainVerdict`, an admitted rule failure, or an
+`unknown` diagnosis.
+
+The signal keeps five normalized dimensions visible instead of hiding them in
+one opaque weight vector:
+
+1. authoritative evidence coverage
+2. admitted evidence currentness
+3. structural governance coverage
+4. tool/provider availability
+5. actionability of the selected next protocol
+
+The displayed 0-100 value is the unweighted geometric mean. A zero dimension
+therefore vetoes readiness, and `weakest_dimensions` identifies the first
+improvement target. The dimension vector, its evidence strings, and the
+authoritative Hospital verdict remain available for consumers that should not
+collapse the result to one number. Hard constraints stay in admitted structural
+rules and diagnosis precedence; this experimental signal is never a gate.
+
+Normalization is deterministic:
+
+| Dimension | Normalized value |
+| --- | --- |
+| Authoritative coverage | admitted graph and structural modalities divided by 2 |
+| Evidence currentness | current/trusted authoritative modalities divided by authoritative modalities seen; 0 when none are seen |
+| Governance coverage | 1 only when trusted structural evidence contains evaluated rules; otherwise 0 |
+| Tool availability | 1 when neither a local tool failure nor provider quota blocks collection; otherwise 0 |
+| Actionability | 1 for a bounded next action, 0.5 while authority must be acquired or a modernization target is missing, and 0 for tool/quota blockers |
+
+The 0-100 scale preserves the existing Hospital score surface. This adapts the
+transparent-dimensions, geometric-aggregation, and weakest-factor interaction
+pattern documented by [Sentrux Quality Signal](https://sentrux.dev/docs/quality-signal/),
+but it does not reuse Sentrux's structural metrics or claim to measure the same
+thing.
+
 ## A09 execution
 
 The normal default DAG is intentionally unchanged because it still lacks an A01

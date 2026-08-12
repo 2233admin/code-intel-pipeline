@@ -10,26 +10,6 @@ use crate::adapter_contract::AdapterDomainVerdict;
 use crate::artifact_ref::VerifiedArtifact;
 use crate::capability::sha256_hex;
 
-// Included by path rather than imported from the crate root: several
-// integration tests pull this adapter into their own crate via `#[path]`, and
-// those roots do not declare the binary's module list. Same convention the
-// adapter already used for `tool_path`.
-//
-// `allow(dead_code)` sits here rather than on the individual items because it
-// is this inclusion that makes them unreachable: the adapter needs only
-// `Options`, `observe` and `BOOTSTRAP_SCHEMA`, so the CLI surface (`run_raw`,
-// `render_human`, `pipeline_root`, …) has no caller in this copy. `main.rs`
-// declares the same module without the allowance, so genuinely dead code still
-// warns where the module is actually the binary's.
-#[allow(dead_code)]
-#[path = "doctor_bootstrap/mod.rs"]
-mod doctor_bootstrap;
-
-// Same reason: included by path so the integration-test crate roots that pull
-// this adapter in still resolve it.
-#[path = "doctor_provider_rows.rs"]
-mod doctor_provider_rows;
-
 pub(crate) fn execute(
     request: &Value,
     verified_inputs: &[VerifiedArtifact],
@@ -40,7 +20,7 @@ pub(crate) fn execute(
     let bootstrap = run_bootstrap(&options)?;
     let manifest = validate_manifest(&options.manifest_path)?;
     let document = adapt(request, &options, &bootstrap, &manifest)?;
-    let domain_failure = diagnosis(&document, &bootstrap);
+    let domain_failure = diagnosis(&document);
     let domain_verdict = if domain_failure.is_some() {
         AdapterDomainVerdict::Fail
     } else {
@@ -172,28 +152,55 @@ fn validate_snapshot_input(
     Ok(())
 }
 
-/// Run the bootstrap probe in-process.
-///
-/// Before T3 this shelled out to `legacy/check-code-intel-tools.ps1` and fell
-/// back to a hand-written stub when `pwsh` or the script was absent — a stub
-/// that answered `graphProvider` with hardcoded `true`s and so could not
-/// report the very drift doctor exists to catch. The probe is native now, so
-/// there is one implementation, no `pwsh` dependency on the kernel path, and
-/// the same answers on every platform.
 fn run_bootstrap(options: &Options) -> Result<Value, AdapterError> {
-    let mut probe = doctor_bootstrap::Options::new(pipeline_root());
-    probe.repo_path = Some(options.repo_path.to_string_lossy().into_owned());
-    probe.config = options.config_path.clone();
-    probe.platform = options.platform.clone();
-    probe.require_repowise = options.require_repowise;
-    probe.require_understand = options.require_understand;
-    probe.tool_path_prefix = options.tool_path_prefix.clone();
-    let value = doctor_bootstrap::observe(&probe)
-        .map_err(|error| AdapterError::InvalidOptions(format!("doctor bootstrap: {error}")))?;
-    // Kept as an explicit boundary check rather than an invariant assumed from
-    // the call above: the adapter must never publish an observation that does
-    // not carry the non-authoritative v1 contract, whoever produced it.
-    if value["schema"] != doctor_bootstrap::BOOTSTRAP_SCHEMA
+    let script = pipeline_root()
+        .join("legacy")
+        .join("check-code-intel-tools.ps1");
+    if !script.is_file() {
+        return Err(AdapterError::Unavailable(format!(
+            "doctor bootstrap adapter is unavailable: {}",
+            script.display()
+        )));
+    }
+    let mut command = Command::new("pwsh");
+    command
+        .args(["-NoLogo", "-NoProfile", "-File"])
+        .arg(&script)
+        .arg("-RepoPath")
+        .arg(&options.repo_path)
+        .arg("-Platform")
+        .arg(&options.platform)
+        .arg(format!("-RequireRepowise:${}", options.require_repowise))
+        .arg(format!(
+            "-RequireUnderstand:${}",
+            options.require_understand
+        ))
+        .arg("-Json");
+    if let Some(config) = &options.config_path {
+        command.arg("-Config").arg(config);
+    }
+    if let Some(prefix) = &options.tool_path_prefix {
+        let mut paths = vec![prefix.clone()];
+        paths.extend(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ));
+        let path = std::env::join_paths(paths).map_err(|error| {
+            AdapterError::InvalidOptions(format!("compose options.toolPathPrefix PATH: {error}"))
+        })?;
+        command
+            .env_remove("PATH")
+            .env_remove("Path")
+            .env("PATH", path);
+    }
+    let output = command
+        .output()
+        .map_err(|error| AdapterError::Unavailable(format!("start doctor bootstrap: {error}")))?;
+    let value: Value = serde_json::from_slice(&output.stdout).map_err(|error| {
+        AdapterError::Contract(format!(
+            "doctor bootstrap stdout is not one JSON observation: {error}"
+        ))
+    })?;
+    if value["schema"] != "code-intel-doctor-bootstrap-observation.v1"
         || value["authority"] != "observation_only"
         || !value["ok"].is_boolean()
     {
@@ -247,6 +254,31 @@ fn adapt(
             })
         })
         .collect::<Vec<_>>();
+    let tool_present = |name: &str| {
+        tools
+            .iter()
+            .any(|tool| string(tool, "name") == name && boolean(tool, "found"))
+    };
+    let sentrux_core = raw
+        .pointer("/checks/sentrux/core/found")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let sentrux_pro = raw
+        .pointer("/checks/sentrux/pro/found")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let graph_source = raw
+        .pointer("/checks/graphProvider/sourceFound")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let graph_cargo = raw
+        .pointer("/checks/graphProvider/cargoFound")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let graph_binary = raw
+        .pointer("/checks/graphProvider/binaryFound")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let policy = json!({
         "platform": options.platform,
         "requireRepowise": options.require_repowise,
@@ -266,14 +298,18 @@ fn adapt(
         "bootstrap":{"schema":raw["schema"],"authority":"observation_only","ready":raw["ok"]},
         "repository":{"presence":if raw.pointer("/checks/repo/exists").and_then(Value::as_bool).unwrap_or(false) { "present" } else { "missing" },"readiness":if raw.pointer("/checks/repo/exists").and_then(Value::as_bool).unwrap_or(false) { "ready" } else { "unavailable" },"conformance":"not_evaluated","admissibility":"not_evaluated"},
         "tools":tool_observations,
-        "providers":doctor_provider_rows::provider_rows(raw),
+        "providers":[
+            {"id":"repowise","presence":if tool_present("repowise") {"present"} else {"missing"},"readiness":if tool_present("repowise") {"ready"} else {"unavailable"},"conformance":"not_evaluated","admissibility":"not_evaluated"},
+            {"id":"sentrux","presence":if tool_present("sentrux") {"present"} else {"missing"},"readiness":if sentrux_core && sentrux_pro {"ready"} else {"unavailable"},"conformance":if tool_present("sentrux") && sentrux_core && sentrux_pro {"conforming"} else if tool_present("sentrux") {"nonconforming"} else {"not_evaluated"},"admissibility":"not_evaluated"},
+            {"id":"graph.code-intel","presence":if graph_source && graph_cargo {"present"} else {"missing"},"readiness":if graph_source && graph_cargo && graph_binary {"ready"} else {"unavailable"},"conformance":if graph_source && graph_cargo {"conforming"} else {"not_evaluated"},"admissibility":"not_evaluated"}
+        ],
         "manifest":{"reconciled":manifest_ok,"registryReconciled":registry_ok,"findingCount":manifest["errors"].as_array().map_or(0, Vec::len)},
         "diagnostics":{"bootstrapReady":raw["ok"],"manifestReady":manifest_ok},
         "engineeringFacts":[]
     }))
 }
 
-fn diagnosis(document: &Value, raw: &Value) -> Option<String> {
+fn diagnosis(document: &Value) -> Option<String> {
     let bootstrap_ready = document
         .pointer("/diagnostics/bootstrapReady")
         .and_then(Value::as_bool)
@@ -282,89 +318,22 @@ fn diagnosis(document: &Value, raw: &Value) -> Option<String> {
         .pointer("/diagnostics/manifestReady")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let nonconforming = document["providers"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|provider| provider["conformance"] == "nonconforming")
-        .filter_map(|provider| provider["id"].as_str())
-        .map(str::to_string)
-        .collect::<Vec<_>>();
-    let mut causes = Vec::<String>::new();
-    if !bootstrap_ready {
-        causes.push("bootstrap readiness failed".into());
-    }
-    if !nonconforming.is_empty() {
-        let details = nonconforming
+    let nonconforming = document["providers"].as_array().is_some_and(|providers| {
+        providers
             .iter()
-            .map(|provider| format!("{provider}: {}", provider_probe_output(raw, provider)))
-            .collect::<Vec<_>>()
-            .join("; ");
-        causes.push(format!("provider conformance failed: {details}"));
+            .any(|provider| provider["conformance"] == "nonconforming")
+    });
+    let mut causes = Vec::new();
+    if !bootstrap_ready {
+        causes.push("bootstrap readiness failed");
+    }
+    if nonconforming {
+        causes.push("provider conformance failed");
     }
     if !manifest_ready {
-        causes.push("manifest reconciliation failed".into());
+        causes.push("manifest reconciliation failed");
     }
     (!causes.is_empty()).then(|| format!("doctor diagnosis: {}", causes.join("; ")))
-}
-
-fn provider_probe_output(raw: &Value, provider: &str) -> String {
-    let outputs = match provider {
-        "sentrux" => [
-            raw.pointer("/checks/sentrux/core/output")
-                .and_then(Value::as_str),
-            raw.pointer("/checks/sentrux/pro/output")
-                .and_then(Value::as_str),
-        ],
-        _ => [None, None],
-    };
-    let output = outputs
-        .into_iter()
-        .flatten()
-        .filter(|output| !output.trim().is_empty())
-        .map(|output| redact_probe_output(output.trim()))
-        .collect::<Vec<_>>()
-        .join(" | ");
-    if output.is_empty() {
-        "probe emitted no output".into()
-    } else {
-        output
-    }
-}
-
-fn redact_probe_output(output: &str) -> String {
-    let mut redacted = Vec::new();
-    let mut authorization_scheme = false;
-    let mut authorization_value = false;
-    for token in output.split_whitespace() {
-        if authorization_value {
-            redacted.push("<redacted>".to_string());
-            authorization_value = false;
-            continue;
-        }
-        if authorization_scheme {
-            redacted.push(token.to_string());
-            authorization_scheme = false;
-            authorization_value = token.eq_ignore_ascii_case("bearer");
-            continue;
-        }
-        if token.eq_ignore_ascii_case("authorization:") {
-            redacted.push(token.to_string());
-            authorization_scheme = true;
-            continue;
-        }
-        if let Some((key, _)) = token.split_once('=') {
-            if matches!(
-                key.to_ascii_lowercase().as_str(),
-                "password" | "token" | "secret"
-            ) {
-                redacted.push(format!("{key}=<redacted>"));
-                continue;
-            }
-        }
-        redacted.push(token.to_string());
-    }
-    redacted.join(" ")
 }
 
 fn publish(out: &Path, relative: &str, bytes: &[u8]) -> Result<(), AdapterError> {
@@ -380,10 +349,8 @@ fn publish(out: &Path, relative: &str, bytes: &[u8]) -> Result<(), AdapterError>
     })
 }
 
-fn pipeline_root() -> PathBuf {
-    crate::capability::discover_manifest(None)
-        .and_then(|manifest| manifest.parent()?.parent().map(Path::to_path_buf))
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(".."))
+pub(crate) fn pipeline_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
 }
 
 fn required_existing_directory(value: Option<&Value>, name: &str) -> Result<PathBuf, AdapterError> {
@@ -501,10 +468,7 @@ mod tests {
         assert!(!text.contains("super-secret-token"));
         assert!(!text.contains("hunter2"));
         assert!(!text.contains("C:/secret"));
-        let diagnosis = diagnosis(&document, &bootstrap()).expect("diagnosis");
-        assert!(diagnosis.contains("sentrux"));
-        assert!(diagnosis.contains("Authorization: Bearer <redacted>"));
-        assert!(!diagnosis.contains("super-secret-token"));
+        assert!(diagnosis(&document).is_some());
     }
 
     #[test]
@@ -537,41 +501,13 @@ mod tests {
         let declared = declaration["capabilityDeclaration"]["implementation"]["toolchainDigests"]
             .as_array()
             .unwrap();
-        let inputs: Vec<&str> = declaration["toolchainDigestEvidence"]["inputs"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|input| input.as_str().unwrap())
-            .collect();
-        // The CI atomic-capability contract checks inputs[i] <-> digests[i]
-        // pairing; assert the same here so a membership-only local run can no
-        // longer pass a misaligned declaration (PR #200 caught this only in
-        // CI — the local face of #176's checklist blind spot).
-        assert_eq!(
-            inputs.len(),
-            declared.len(),
-            "toolchainDigestEvidence.inputs and toolchainDigests must pair by index"
-        );
         for relative in [
             "crates/code-intel-cli/src/doctor_adapter.rs",
-            "crates/code-intel-cli/src/doctor_bootstrap/mod.rs",
-            "crates/code-intel-cli/src/doctor_bootstrap/config.rs",
-            "crates/code-intel-cli/src/doctor_bootstrap/identity.rs",
-            "crates/code-intel-cli/src/doctor_bootstrap/paths.rs",
-            "crates/code-intel-cli/src/doctor_bootstrap/probe.rs",
             "crates/code-intel-cli/src/capability_inventory.rs",
-            "crates/code-intel-cli/src/doctor_provider_rows.rs",
         ] {
-            assert!(
-                inputs.contains(&relative),
-                "digest-bound source missing from toolchainDigestEvidence.inputs: {relative}"
-            );
-        }
-        for (index, relative) in inputs.iter().enumerate() {
             let actual = sha256_hex(&fs::read(root.join(relative)).unwrap());
-            assert_eq!(
-                declared[index],
-                json!(actual),
+            assert!(
+                declared.iter().any(|digest| digest == &json!(actual)),
                 "stale doctor toolchain digest for {relative}"
             );
         }

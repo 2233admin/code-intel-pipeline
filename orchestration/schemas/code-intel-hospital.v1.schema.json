@@ -134,7 +134,31 @@
     },
     "reportQuality": {
       "type": "object", "additionalProperties": false, "required": ["overall_score", "diagnostic_score", "governance_score", "dimensions"],
-      "properties": { "overall_score": { "type": "null" }, "diagnostic_score": { "type": "null" }, "governance_score": { "type": "null" }, "dimensions": { "type": "array" } }
+      "properties": {
+        "overall_score": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+        "diagnostic_score": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+        "governance_score": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+        "dimensions": { "type": "array" },
+        "decision_signal": { "$ref": "#/$defs/decisionSignal" }
+      }
+    },
+    "decisionSignal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "status", "authority", "meaning", "aggregation", "scale", "score", "weakest_dimensions"],
+      "properties": {
+        "schema": { "const": "code-intel-development-readiness-signal.v1" },
+        "status": { "const": "experimental" },
+        "authority": { "const": "advisory_only" },
+        "meaning": { "type": "string", "minLength": 1 },
+        "aggregation": { "const": "unweighted_geometric_mean" },
+        "scale": {
+          "type": "object", "additionalProperties": false,
+          "required": ["minimum", "maximum"],
+          "properties": { "minimum": { "const": 0 }, "maximum": { "const": 100 } }
+        },
+        "score": { "type": "number", "minimum": 0, "maximum": 100 },
+        "weakest_dimensions": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
     },
     "diagnosis": {
       "type": "object", "additionalProperties": false, "required": ["findings", "impression", "risk", "evidence"],

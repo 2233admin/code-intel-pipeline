@@ -273,7 +273,7 @@ pub(super) fn codenexus_admission(
     let lease =
         snapshot::begin_consumption(repo, &request["snapshot"]).map_err(AdapterError::Contract)?;
     let collected_at = now()?;
-    let script = super::pipeline_root().join("legacy/Invoke-CodeNexusLite.ps1");
+    let script = super::doctor_adapter::pipeline_root().join("legacy/Invoke-CodeNexusLite.ps1");
     if !script.is_file() {
         return Err(AdapterError::Unavailable(format!(
             "CodeNexus-lite compatibility facade is unavailable: {}",

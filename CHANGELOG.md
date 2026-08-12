@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-08-12
+
 ### Fixed
 
 - **安装器子进程钉死 `CODE_INTEL_HOME`（bootstrap.py）**：安装器会把 `CODE_INTEL_HOME` 持久化进用户环境，而它取值来自子进程环境；此前安装器子进程未传入钉好的环境，调用者 shell 里 MSYS 风格 `CODE_INTEL_HOME`（如 `/d/projects/...`，Windows 会解析成 `C:\d\projects\...`）会被原样写进用户注册表并毒化后续运行。现在安装器与 doctor 都使用钉到 release root 的同一环境。
