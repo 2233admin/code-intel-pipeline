@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2-beta.1] — 2026-08-13
+
+### Added
+
+- **语言感知的快速反馈规划（#261）**：Rust 集成测试收窄到所属 `Cargo.toml` 与精确 `--test` 目标；导入图没有测试边时，改用 crate 内 `--lib`/`--bins` 加模块过滤器，并显式提示仍需完整套件收尾。Python 根据 `uv.lock` 选择 `uv run pytest`，JavaScript/TypeScript 根据 `packageManager` 或锁文件选择 bun/pnpm/yarn/npm。Cranelift 保持可选且先测量，不替代稳定 LLVM 完成门禁。
+
 ### Fixed
 
 - **安装器子进程钉死 `CODE_INTEL_HOME`（bootstrap.py）**：安装器会把 `CODE_INTEL_HOME` 持久化进用户环境，而它取值来自子进程环境；此前安装器子进程未传入钉好的环境，调用者 shell 里 MSYS 风格 `CODE_INTEL_HOME`（如 `/d/projects/...`，Windows 会解析成 `C:\d\projects\...`）会被原样写进用户注册表并毒化后续运行。现在安装器与 doctor 都使用钉到 release root 的同一环境。
