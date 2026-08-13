@@ -269,7 +269,14 @@ fn build_result(
         reverse_import_graph(imports, &file_paths).map_err(ImpactError::Contract)?;
     let impacted = impacted_files(&cli.changed, &file_paths, &reverse);
     let test_files = select_tests(&impacted, &cli.changed, &file_paths);
-    let commands = test_commands(&test_files);
+    let co_location_fallback =
+        !test_files.is_empty() && !test_files.iter().any(|path| impacted.contains_key(path));
+    let (commands, command_limitations) = test_commands(
+        &cli.repo_path,
+        &cli.changed,
+        &test_files,
+        co_location_fallback,
+    );
     let changed = cli
         .changed
         .iter()
@@ -315,6 +322,10 @@ fn build_result(
             "Test commands are candidates only and are never executed by this command."
         ]
     });
+    result["limitations"]
+        .as_array_mut()
+        .expect("constructed limitations array")
+        .extend(command_limitations.into_iter().map(Value::String));
     if let Some((recorded, current)) = stale_identities {
         result["recordedSnapshotIdentity"] = recorded;
         result["currentSnapshotIdentity"] = current;

@@ -201,18 +201,45 @@ pub(crate) fn select_tests(
     tests.into_iter().collect()
 }
 
-pub(crate) fn test_commands(tests: &[String]) -> Vec<String> {
+pub(crate) fn test_commands(
+    repo: &std::path::Path,
+    changed: &[String],
+    tests: &[String],
+    co_location_fallback: bool,
+) -> (Vec<String>, Vec<String>) {
     let mut commands = BTreeSet::new();
-    if tests.iter().any(|path| path.ends_with(".rs")) {
-        commands.insert("cargo test".to_string());
-    }
+    let mut limitations = Vec::new();
+    rust_test_commands(
+        repo,
+        changed,
+        tests,
+        co_location_fallback,
+        &mut commands,
+        &mut limitations,
+    );
     let python = tests
         .iter()
         .filter(|path| path.ends_with(".py"))
         .cloned()
         .collect::<Vec<_>>();
     if !python.is_empty() {
-        commands.insert(format!("pytest {}", python.join(" ")));
+        let runner = if repo.join("uv.lock").is_file() {
+            "uv run pytest"
+        } else {
+            limitations.push(
+                "No uv.lock was found at the repository root; Python tests use the active interpreter."
+                    .to_string(),
+            );
+            "python -m pytest"
+        };
+        commands.insert(format!(
+            "{runner} {}",
+            python
+                .iter()
+                .map(|path| shell_arg(path))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
     }
     let javascript = tests
         .iter()
@@ -224,7 +251,33 @@ pub(crate) fn test_commands(tests: &[String]) -> Vec<String> {
         .cloned()
         .collect::<Vec<_>>();
     if !javascript.is_empty() {
-        commands.insert(format!("npm test -- {}", javascript.join(" ")));
+        let package_manager = declared_package_manager(repo);
+        let runner = match package_manager {
+            Some("bun") => "bun test",
+            Some("pnpm") => "pnpm test --",
+            Some("yarn") => "yarn test",
+            Some("npm") => "npm test --",
+            _ if repo.join("bun.lock").is_file() || repo.join("bun.lockb").is_file() => "bun test",
+            _ if repo.join("pnpm-lock.yaml").is_file() => "pnpm test --",
+            _ if repo.join("yarn.lock").is_file() => "yarn test",
+            _ => {
+                if !repo.join("package-lock.json").is_file() {
+                    limitations.push(
+                        "No supported JavaScript package-manager declaration or lockfile was found at the repository root; npm is an advisory fallback."
+                            .to_string(),
+                    );
+                }
+                "npm test --"
+            }
+        };
+        commands.insert(format!(
+            "{runner} {}",
+            javascript
+                .iter()
+                .map(|path| shell_arg(path))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
     }
     if tests.iter().any(|path| path.ends_with(".go")) {
         commands.insert("go test ./...".to_string());
@@ -232,7 +285,165 @@ pub(crate) fn test_commands(tests: &[String]) -> Vec<String> {
     if tests.iter().any(|path| path.ends_with(".java")) {
         commands.insert("mvn test".to_string());
     }
-    commands.into_iter().collect()
+    (commands.into_iter().collect(), limitations)
+}
+
+fn rust_test_commands(
+    repo: &std::path::Path,
+    changed: &[String],
+    tests: &[String],
+    co_location_fallback: bool,
+    commands: &mut BTreeSet<String>,
+    limitations: &mut Vec<String>,
+) {
+    if co_location_fallback && rust_source_test_commands(repo, changed, commands) {
+        limitations.push(
+            "No Rust test was reachable through imports; the command targets unit tests in the changed crate and uses a module-name filter for fast feedback. Run the package or workspace suite for completion."
+                .to_string(),
+        );
+        return;
+    }
+    let mut manifests: BTreeMap<String, (BTreeSet<String>, bool)> = BTreeMap::new();
+    let mut missing_manifest = false;
+    for test in tests.iter().filter(|path| path.ends_with(".rs")) {
+        let Some(manifest) = nearest_manifest(repo, test) else {
+            missing_manifest = true;
+            continue;
+        };
+        let target = cargo_integration_target(&manifest, test);
+        let selection = manifests.entry(manifest).or_default();
+        if let Some(target) = target {
+            selection.0.insert(target);
+        } else {
+            selection.1 = true;
+        }
+    }
+    for (manifest, (targets, broad)) in manifests {
+        let mut command = format!("cargo test --manifest-path {}", shell_arg(&manifest));
+        if broad {
+            limitations.push(format!(
+                "At least one Rust candidate under {manifest} is not a standard Cargo integration-test target; the command falls back to the package test suite."
+            ));
+        } else {
+            for target in targets {
+                command.push_str(&format!(" --test {}", shell_arg(&target)));
+            }
+        }
+        commands.insert(command);
+    }
+    if missing_manifest {
+        commands.insert("cargo test".to_string());
+        limitations.push(
+            "At least one Rust candidate has no discoverable Cargo.toml; cargo test from the repository root is an advisory fallback."
+                .to_string(),
+        );
+    }
+}
+
+fn rust_source_test_commands(
+    repo: &std::path::Path,
+    changed: &[String],
+    commands: &mut BTreeSet<String>,
+) -> bool {
+    let mut added = false;
+    for source in changed.iter().filter(|path| path.ends_with(".rs")) {
+        let Some(manifest) = nearest_manifest(repo, source) else {
+            continue;
+        };
+        let manifest_dir = std::path::Path::new(&manifest)
+            .parent()
+            .unwrap_or(std::path::Path::new(""));
+        let Ok(relative) = std::path::Path::new(source).strip_prefix(manifest_dir) else {
+            continue;
+        };
+        if !relative.starts_with("src") {
+            continue;
+        }
+        let crate_root = repo.join(manifest_dir);
+        let mut command = format!("cargo test --manifest-path {}", shell_arg(&manifest));
+        if crate_root.join("src/lib.rs").is_file() {
+            command.push_str(" --lib");
+        }
+        if crate_root.join("src/main.rs").is_file() {
+            command.push_str(" --bins");
+        }
+        if !command.contains(" --lib") && !command.contains(" --bins") {
+            continue;
+        }
+        let stem = relative.file_stem().and_then(|stem| stem.to_str());
+        let filter = match stem {
+            Some("lib" | "main") | None => None,
+            Some("mod") => relative
+                .parent()
+                .and_then(std::path::Path::file_name)
+                .and_then(|name| name.to_str()),
+            other => other,
+        };
+        if let Some(filter) = filter {
+            command.push(' ');
+            command.push_str(&shell_arg(filter));
+        }
+        commands.insert(command);
+        added = true;
+    }
+    added
+}
+
+fn nearest_manifest(repo: &std::path::Path, test: &str) -> Option<String> {
+    let mut directory = repo.join(test).parent()?.to_path_buf();
+    loop {
+        let manifest = directory.join("Cargo.toml");
+        if manifest.is_file() {
+            return manifest
+                .strip_prefix(repo)
+                .ok()
+                .map(|path| path.to_string_lossy().replace('\\', "/"));
+        }
+        if directory == repo || !directory.pop() || !directory.starts_with(repo) {
+            return None;
+        }
+    }
+}
+
+fn cargo_integration_target(manifest: &str, test: &str) -> Option<String> {
+    let manifest_dir = std::path::Path::new(manifest)
+        .parent()
+        .unwrap_or(std::path::Path::new(""));
+    let relative = std::path::Path::new(test).strip_prefix(manifest_dir).ok()?;
+    let parts = relative
+        .components()
+        .map(|part| part.as_os_str().to_str())
+        .collect::<Option<Vec<_>>>()?;
+    match parts.as_slice() {
+        ["tests", file] if file.ends_with(".rs") => std::path::Path::new(file)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .map(str::to_string),
+        ["tests", directory, "main.rs"] => Some((*directory).to_string()),
+        _ => None,
+    }
+}
+
+fn declared_package_manager(repo: &std::path::Path) -> Option<&'static str> {
+    let manifest = std::fs::read_to_string(repo.join("package.json")).ok()?;
+    let value: Value = serde_json::from_str(&manifest).ok()?;
+    let declared = value["packageManager"].as_str()?;
+    ["bun", "pnpm", "yarn", "npm"]
+        .into_iter()
+        .find(|manager| declared == *manager || declared.starts_with(&format!("{manager}@")))
+}
+
+fn shell_arg(value: &str) -> String {
+    if value
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || "_+-./:".contains(character))
+    {
+        value.to_string()
+    } else if cfg!(windows) {
+        format!("'{}'", value.replace('\'', "''"))
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
 }
 
 pub(crate) fn test_file(path: &str) -> bool {
@@ -246,4 +457,95 @@ pub(crate) fn test_file(path: &str) -> bool {
         || path.contains("/test/")
         || path.contains("/tests/")
         || path.contains("/spec/")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_repo(name: &str) -> std::path::PathBuf {
+        let repo =
+            std::env::temp_dir().join(format!("code-intel-impact-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(&repo).unwrap();
+        repo
+    }
+
+    #[test]
+    fn rust_commands_target_the_owning_cargo_integration_tests() {
+        let repo = temp_repo("rust-targets");
+        std::fs::create_dir_all(repo.join("crates/app/tests")).unwrap();
+        std::fs::write(repo.join("crates/app/Cargo.toml"), "[package]\n").unwrap();
+
+        let (commands, limitations) = test_commands(
+            &repo,
+            &["crates/app/src/lib.rs".to_string()],
+            &[
+                "crates/app/tests/api.rs".to_string(),
+                "crates/app/tests/cli/main.rs".to_string(),
+            ],
+            false,
+        );
+
+        assert_eq!(
+            commands,
+            ["cargo test --manifest-path crates/app/Cargo.toml --test api --test cli"]
+        );
+        assert!(limitations.is_empty());
+        assert_eq!(shell_arg("tests/a & b.rs"), "'tests/a & b.rs'");
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    #[test]
+    fn rust_co_location_fallback_uses_the_changed_source_target() {
+        let repo = temp_repo("rust-source-fallback");
+        std::fs::create_dir_all(repo.join("crates/app/src")).unwrap();
+        std::fs::write(repo.join("crates/app/Cargo.toml"), "[package]\n").unwrap();
+        std::fs::write(repo.join("crates/app/src/main.rs"), "fn main() {}\n").unwrap();
+
+        let (commands, limitations) = test_commands(
+            &repo,
+            &["crates/app/src/impact_graph.rs".to_string()],
+            &["crates/app/tests/api.rs".to_string()],
+            true,
+        );
+
+        assert_eq!(
+            commands,
+            ["cargo test --manifest-path crates/app/Cargo.toml --bins impact_graph"]
+        );
+        assert!(limitations[0].contains("fast feedback"));
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    #[test]
+    fn repository_evidence_selects_python_and_typescript_runners() {
+        let repo = temp_repo("language-runners");
+        std::fs::write(repo.join("uv.lock"), "").unwrap();
+        std::fs::write(
+            repo.join("package.json"),
+            r#"{"packageManager":"pnpm@10.0.0"}"#,
+        )
+        .unwrap();
+
+        let (commands, limitations) = test_commands(
+            &repo,
+            &[],
+            &[
+                "tests/test_api.py".to_string(),
+                "src/app.test.ts".to_string(),
+            ],
+            false,
+        );
+
+        assert_eq!(
+            commands,
+            [
+                "pnpm test -- src/app.test.ts",
+                "uv run pytest tests/test_api.py"
+            ]
+        );
+        assert!(limitations.is_empty());
+        let _ = std::fs::remove_dir_all(repo);
+    }
 }

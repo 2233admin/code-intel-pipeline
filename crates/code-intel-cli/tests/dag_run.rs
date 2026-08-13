@@ -217,6 +217,11 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::create_dir_all(repo.join("tests")).unwrap();
     fs::create_dir_all(&repo_authority).unwrap();
+    fs::write(
+        repo.join("Cargo.toml"),
+        "[package]\nname = \"fixture-repo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
     fs::write(
@@ -340,7 +345,10 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
         impact["testSelection"]["files"],
         json!(["tests/lib_test.rs"])
     );
-    assert_eq!(impact["testSelection"]["commands"], json!(["cargo test"]));
+    assert_eq!(
+        impact["testSelection"]["commands"],
+        json!(["cargo test --manifest-path Cargo.toml --test lib_test"])
+    );
 
     let advisory_fresh = common::cli()
         .args(["change", "impact", "--artifact-root"])
