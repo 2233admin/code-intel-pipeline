@@ -23,7 +23,13 @@ is medium confidence. Impacted test files become the minimal candidates. When th
 test, same-module test co-location is an explicit fallback. Returned commands are advisory strings
 only and are not executed.
 
-Command planning follows repository evidence instead of a global language default. Rust integration
+Start command planning with the compiled CLI:
+
+```text
+code-intel change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <path> --staleness advisory
+```
+
+The returned commands follow repository evidence instead of a global language default. Rust integration
 tests are narrowed to their owning `Cargo.toml` and exact `cargo test --test` targets; non-standard
 targets fall back to the owning package and name that extra work in `limitations`. When the import
 graph has no test edge, changed Rust source uses crate-local `--lib`/`--bins` unit tests with a

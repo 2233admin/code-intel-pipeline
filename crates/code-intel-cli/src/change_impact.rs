@@ -329,10 +329,16 @@ fn build_result(
     if let Some((recorded, current)) = stale_identities {
         result["recordedSnapshotIdentity"] = recorded;
         result["currentSnapshotIdentity"] = current;
-        result["limitations"]
+        let limitations = result["limitations"]
             .as_array_mut()
-            .expect("constructed limitations array")
-            .push(json!("Freshness is stale-advisory: impact derives from the committed snapshot, not the current working tree, and must never gate."));
+            .expect("constructed limitations array");
+        limitations.push(json!("Freshness is stale-advisory: impact derives from the committed snapshot, not the current working tree, and must never gate."));
+        let command_provenance = "testSelection.commands uses current working-tree manifests and lockfiles, not the committed snapshot.";
+        limitations.push(json!(command_provenance));
+        debug_assert_eq!(
+            limitations.last().and_then(Value::as_str),
+            Some(command_provenance)
+        );
     }
     debug_assert_eq!(stale, freshness["status"] == "stale-advisory");
     Ok(ChangeImpactResult { value: result })

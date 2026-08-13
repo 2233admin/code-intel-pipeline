@@ -361,13 +361,15 @@ fn rust_source_test_commands(
         }
         let crate_root = repo.join(manifest_dir);
         let mut command = format!("cargo test --manifest-path {}", shell_arg(&manifest));
-        if crate_root.join("src/lib.rs").is_file() {
+        let has_lib = crate_root.join("src/lib.rs").is_file();
+        let has_bin = crate_root.join("src/main.rs").is_file();
+        if has_lib {
             command.push_str(" --lib");
         }
-        if crate_root.join("src/main.rs").is_file() {
+        if has_bin {
             command.push_str(" --bins");
         }
-        if !command.contains(" --lib") && !command.contains(" --bins") {
+        if !has_lib && !has_bin {
             continue;
         }
         let stem = relative.file_stem().and_then(|stem| stem.to_str());
