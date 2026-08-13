@@ -93,7 +93,7 @@
     },
     {
       "name": "code-intel",
-      "version": "0.7.1",
+      "version": "0.7.2-beta.1",
       "comparison": "minimum",
       "scope": "runtime",
       "required": true,
