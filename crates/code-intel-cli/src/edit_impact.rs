@@ -163,7 +163,10 @@ pub(crate) fn execute(cli: EditImpactRequest) -> Result<EditImpactResult, EditIm
         reverse_import_graph(&imports, &files).map_err(EditImpactError::Contract)?;
     let impacted = impacted_files(&cli.changed, &files, &reverse);
     let tests = select_tests(&impacted, &cli.changed, &files);
-    let commands = test_commands(&tests);
+    let co_location_fallback =
+        !tests.is_empty() && !tests.iter().any(|path| impacted.contains_key(path));
+    let (commands, command_limitations) =
+        test_commands(&repo, &cli.changed, &tests, co_location_fallback);
 
     let changed_rows = cli
         .changed
@@ -189,6 +192,7 @@ pub(crate) fn execute(cli: EditImpactRequest) -> Result<EditImpactResult, EditIm
         json!("Dynamic imports, generated code, reflection, build-system edges, and external packages may be unresolved."),
         json!("Test commands are candidates only and are never executed by this command."),
     ];
+    limitations.extend(command_limitations.into_iter().map(Value::String));
     if !unreadable.is_empty() {
         limitations.push(json!(format!(
             "{} file(s) could not be read and contribute no edges.",
