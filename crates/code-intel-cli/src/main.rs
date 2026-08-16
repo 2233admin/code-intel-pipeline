@@ -36,6 +36,7 @@ mod execution_policy;
 mod file_boundary;
 mod git_remote_registry;
 mod graph;
+mod hardcoded_paths;
 mod hardened_git;
 mod hospital_score;
 mod i18n;

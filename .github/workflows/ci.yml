@@ -694,4 +694,4 @@ jobs:
 
       - name: Hardcoded path scan
         shell: pwsh
-        run: ./legacy/tools/check-hardcoded-paths.ps1
+        run: ./target/release/code-intel.exe lint hardcoded-paths
