@@ -40,7 +40,9 @@ pub(crate) struct ScanResult {
 /// facade's `$envVarPattern.Replace($line, "")` step.
 fn line_has_hit(line: &str) -> bool {
     let stripped = strip_env_vars(line);
-    literal_patterns().iter().any(|pattern| stripped.contains(pattern))
+    literal_patterns()
+        .iter()
+        .any(|pattern| stripped.contains(pattern))
         || absolute_pipeline_path(&stripped)
 }
 
@@ -61,9 +63,7 @@ fn strip_env_vars(line: &str) -> String {
         {
             // Skip the whole `$env:NAME` token.
             let mut j = i + 5;
-            while j < bytes.len()
-                && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_')
-            {
+            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
                 j += 1;
             }
             i = j;
@@ -197,7 +197,11 @@ pub(crate) fn run_and_report(repo: &Path) -> i32 {
             println!("{}", hit.text);
         }
     }
-    if result.ok { 0 } else { 1 }
+    if result.ok {
+        0
+    } else {
+        1
+    }
 }
 
 /// JSON variant for tooling (`--json` flag parity with the facade).
@@ -260,10 +264,16 @@ mod tests {
     fn pipeline_absolute_path_hits() {
         // The facade's pattern is `[A-Za-z]:\\(?:[^\s"'\\]*\\)*code-intel-pipeline\b` —
         // backslash separators only, exactly like the PowerShell original.
-        assert!(line_has_hit("D:\\projects\\_tools\\code-intel-pipeline\\run.ps1"));
+        assert!(line_has_hit(
+            "D:\\projects\\_tools\\code-intel-pipeline\\run.ps1"
+        ));
         assert!(line_has_hit("D:\\code-intel-pipeline\\x"));
-        assert!(!line_has_hit("D:/projects/_tools/code-intel-pipeline/run.ps1"));
-        assert!(!line_has_hit("D:\\projects\\_tools\\code-intel-pipeline-backup\\run.ps1"));
+        assert!(!line_has_hit(
+            "D:/projects/_tools/code-intel-pipeline/run.ps1"
+        ));
+        assert!(!line_has_hit(
+            "D:\\projects\\_tools\\code-intel-pipeline-backup\\run.ps1"
+        ));
         assert!(!line_has_hit("code-intel-pipeline"));
     }
 
