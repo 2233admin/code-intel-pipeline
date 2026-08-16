@@ -49,7 +49,8 @@ Consequences:
 ## Verification
 
 - Rust changes require focused `cargo test` coverage plus the relevant integration-contract checks.
-- Run `legacy/tools/check-hardcoded-paths.ps1` before pushing. It scans tracked
+- Run `code-intel lint hardcoded-paths` before pushing (issue #275: the Rust
+  implementation replaced `legacy/tools/check-hardcoded-paths.ps1`). It scans tracked
   `.ps1`/`.psm1`/`.md`/`.yml` for machine-specific paths, and it strips
   `$env:VAR` references before matching. So naming one of the scanned Windows
   user-directory variables bare — in **prose or a comment**, not just in code —

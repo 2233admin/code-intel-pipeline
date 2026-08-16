@@ -23,7 +23,7 @@ repowise's source, binary, or database.
 ### 2.1 Per-repo storage is not centralized
 
 Every repo repowise indexes gets its **own** `.repowise/wiki.db` inside that repo's directory
-(e.g. `D:\projects\code-intel-pipeline\.repowise\wiki.db`, 19.3 MB). The workspace root
+(e.g. `<repo-root>\.repowise\wiki.db`, 19.3 MB). The workspace root
 (`D:\projects`) also has its own `.repowise\wiki.db` (1018 MB) and treats itself as a
 pseudo-repo named `projects`. A filesystem walk of `D:\projects` (depth-bounded, 6 levels)
 found **136** `.repowise` directories — one per workspace member. There is no single
@@ -114,7 +114,7 @@ survives `repowise` reindexes, `repowise delete`/`init` cycles, and version upgr
 Follows the existing `CODE_INTEL_DATA_ROOT` convention already implemented in
 `crates/code-intel-cli/src/doctor_bootstrap/paths.rs` (`data_root()`): per-user data dir,
 `CODE_INTEL_DATA_ROOT` env override, else platform default (Windows:
-`%LOCALAPPDATA%\code-intel\code-intel`, else `~/.code-intel`). Proposed location:
+`$env:LOCALAPPDATA\code-intel\code-intel`, else `~/.code-intel`). Proposed location:
 
 ```text
 <CODE_INTEL_DATA_ROOT>/remote-links/registry.json
