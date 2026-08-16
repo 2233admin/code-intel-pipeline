@@ -122,7 +122,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/builtin_provider_evidence.rs",
-        "sha256": "f13066fdc1a0242006fa634dc530e33b43cff81b82aafdbc3b99a34c05b5d247"
+        "sha256": "040bef4ff61f93b95b28ac2026714fc481b6178c37a7b5907c3bba85bc8ca61d"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
