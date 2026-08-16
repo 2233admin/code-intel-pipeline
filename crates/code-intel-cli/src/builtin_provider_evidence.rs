@@ -284,29 +284,23 @@ pub(super) fn codenexus_admission(
     let scratch = scratch_guard.path();
     let context_path = scratch.join("codenexus-context.json");
     let document = codenexus_lite::build_context(
-        repo,
-        repo,
-        None,
-        None,
+        repo, repo, None, None,
         // Facade defaults: -MaxFiles 8, -MaxReferencesPerFile 12,
         // -MaxCommitsPerFile 0 (as passed by this admission route).
-        8,
-        12,
-        0,
+        8, 12, 0,
     );
     let document_bytes = serde_json::to_vec(&document)
         .map_err(|error| AdapterError::Internal(format!("serialize CodeNexus context: {error}")))?;
-    fs::write(&context_path, &document_bytes).map_err(|error| {
-        AdapterError::Io(format!("write CodeNexus context document: {error}"))
-    })?;
+    fs::write(&context_path, &document_bytes)
+        .map_err(|error| AdapterError::Io(format!("write CodeNexus context document: {error}")))?;
     lease.verify_after(repo).map_err(AdapterError::Contract)?;
     let observed_at = now()?.max(collected_at);
     let identity = snapshot_identity(request)?;
-    let (status, provider_data): (&str, Value) = match serde_json::from_slice::<Value>(&document_bytes)
-    {
-        Ok(document) if document.is_object() => ("current", document),
-        _ => ("partial", Value::Null),
-    };
+    let (status, provider_data): (&str, Value) =
+        match serde_json::from_slice::<Value>(&document_bytes) {
+            Ok(document) if document.is_object() => ("current", document),
+            _ => ("partial", Value::Null),
+        };
     drop(scratch_guard);
     let placeholder_native = json!({
         "schema":"code-intel-codenexus-native-result.v1",

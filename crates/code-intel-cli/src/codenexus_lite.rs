@@ -94,8 +94,14 @@ fn select_hotspot_files(
             if let Some(modules) = dsm.get("modules").and_then(Value::as_array) {
                 let mut ranked: Vec<&Value> = modules.iter().collect();
                 ranked.sort_by(|a, b| {
-                    let ar = a.pointer("/metrics/risk").and_then(Value::as_i64).unwrap_or(0);
-                    let br = b.pointer("/metrics/risk").and_then(Value::as_i64).unwrap_or(0);
+                    let ar = a
+                        .pointer("/metrics/risk")
+                        .and_then(Value::as_i64)
+                        .unwrap_or(0);
+                    let br = b
+                        .pointer("/metrics/risk")
+                        .and_then(Value::as_i64)
+                        .unwrap_or(0);
                     br.cmp(&ar)
                 });
                 for module in ranked {
@@ -350,8 +356,14 @@ pub(crate) fn build_context(
     let mut total_references = 0usize;
     let mut total_commits = 0usize;
     for context in &file_contexts {
-        total_references += context["references"].as_array().map(|a| a.len()).unwrap_or(0);
-        total_commits += context["recentCommits"].as_array().map(|a| a.len()).unwrap_or(0);
+        total_references += context["references"]
+            .as_array()
+            .map(|a| a.len())
+            .unwrap_or(0);
+        total_commits += context["recentCommits"]
+            .as_array()
+            .map(|a| a.len())
+            .unwrap_or(0);
     }
 
     let dsm_path_str = dsm_path
@@ -406,9 +418,7 @@ fn iso_now() -> String {
         (secs_of_day % 3600) / 60,
         secs_of_day % 60,
     );
-    format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}Z"
-    )
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}Z")
 }
 
 fn civil_from_days(z: i64) -> (i64, i64, i64) {
@@ -434,7 +444,10 @@ pub(crate) const IMPLEMENTATION_ID: &str = "invoke-codenexus-lite.ps1";
 /// route reports as `implementation.digest`. Kept in a function so the value
 /// is computed once per process.
 pub(crate) fn implementation_digest() -> String {
-    sha256_hex(include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/codenexus_lite.rs")))
+    sha256_hex(include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/codenexus_lite.rs"
+    )))
 }
 
 #[cfg(test)]
@@ -507,7 +520,10 @@ mod tests {
         });
         let target = repo.clone();
         let selected = select_hotspot_files(&repo, &target, Some(&hotspots), Some(&dsm), 8);
-        let paths: Vec<&str> = selected.iter().map(|v| v["path"].as_str().unwrap()).collect();
+        let paths: Vec<&str> = selected
+            .iter()
+            .map(|v| v["path"].as_str().unwrap())
+            .collect();
         // hotspot first, then DSM by risk desc, then largest fallback
         assert_eq!(paths[0], "hot.rs");
         assert_eq!(paths[1], "mod_a.rs");
@@ -529,7 +545,10 @@ mod tests {
             ]
         });
         let selected = select_hotspot_files(&repo, &repo, None, Some(&dsm), 8);
-        let paths: Vec<&str> = selected.iter().map(|v| v["path"].as_str().unwrap()).collect();
+        let paths: Vec<&str> = selected
+            .iter()
+            .map(|v| v["path"].as_str().unwrap())
+            .collect();
         assert_eq!(paths[0], "b.rs");
         assert_eq!(paths[1], "a.rs");
     }
