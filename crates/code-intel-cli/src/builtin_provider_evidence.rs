@@ -19,6 +19,8 @@ mod admissibility;
 // exactly like `graph_adapter`/`sentrux_adapter` below already have to be.
 #[path = "codenexus_adapter.rs"]
 mod codenexus_adapter;
+#[path = "codenexus_lite.rs"]
+mod codenexus_lite;
 #[path = "codenexus_scratch.rs"]
 mod codenexus_scratch;
 #[path = "graph/mod.rs"]
@@ -30,9 +32,7 @@ mod sentrux_adapter;
 #[path = "sentrux_gate.rs"]
 mod sentrux_gate;
 
-use codenexus_scratch::{
-    create_codenexus_scratch_dir, run_with_timeout, ScratchDir, CODENEXUS_LITE_TIMEOUT,
-};
+use codenexus_scratch::{create_codenexus_scratch_dir, ScratchDir};
 use sentrux_gate::Violation;
 const MAX_AGE_SECONDS: u64 = 300;
 const MAX_COMMAND_EVIDENCE_BYTES: usize = 1024 * 1024;
@@ -273,49 +273,34 @@ pub(super) fn codenexus_admission(
     let lease =
         snapshot::begin_consumption(repo, &request["snapshot"]).map_err(AdapterError::Contract)?;
     let collected_at = now()?;
-    let script = super::pipeline_root().join("legacy/Invoke-CodeNexusLite.ps1");
-    if !script.is_file() {
-        return Err(AdapterError::Unavailable(format!(
-            "CodeNexus-lite compatibility facade is unavailable: {}",
-            script.display()
-        )));
-    }
-    // Hash what will actually run, not what was baked into the binary at
-    // build time: the facade lives outside the crate and `pipeline_root`
-    // already supports a relocated install resolving a different copy of it.
-    let implementation_digest = sha256_hex(&fs::read(&script).map_err(|error| {
-        AdapterError::Unavailable(format!("read CodeNexus-lite facade: {error}"))
-    })?);
+    // Issue #275: the CodeNexus-lite context is now generated in-process by
+    // the Rust implementation (`codenexus_lite`), replacing the PowerShell
+    // facade `legacy/Invoke-CodeNexusLite.ps1`. The facade previously ran
+    // without -DsmPath/-HotspotsPath, so it always took the largest-code-file
+    // fallback path; the Rust implementation preserves that exact behavior
+    // (no dsm/hotspots inputs are read).
+    let implementation_digest = codenexus_lite::implementation_digest();
     let scratch_guard = ScratchDir(create_codenexus_scratch_dir()?);
     let scratch = scratch_guard.path();
     let context_path = scratch.join("codenexus-context.json");
-    let mut command = Command::new("pwsh");
-    command
-        .args(["-NoLogo", "-NoProfile", "-File"])
-        .arg(&script)
-        .arg("-RepoPath")
-        .arg(repo)
-        .arg("-RunDir")
-        .arg(scratch)
-        .arg("-OutputPath")
-        .arg(&context_path)
-        .args(["-MaxCommitsPerFile", "0", "-Quiet"]);
-    let run = run_with_timeout(command, CODENEXUS_LITE_TIMEOUT);
+    let document = codenexus_lite::build_context(
+        repo, repo, None, None,
+        // Facade defaults: -MaxFiles 8, -MaxReferencesPerFile 12,
+        // -MaxCommitsPerFile 0 (as passed by this admission route).
+        8, 12, 0,
+    );
+    let document_bytes = serde_json::to_vec(&document)
+        .map_err(|error| AdapterError::Internal(format!("serialize CodeNexus context: {error}")))?;
+    fs::write(&context_path, &document_bytes)
+        .map_err(|error| AdapterError::Io(format!("write CodeNexus context document: {error}")))?;
     lease.verify_after(repo).map_err(AdapterError::Contract)?;
     let observed_at = now()?.max(collected_at);
     let identity = snapshot_identity(request)?;
-    let (status, provider_data): (&str, Value) = match run {
-        Ok(output) if output.status.success() => {
-            match fs::read(&context_path)
-                .ok()
-                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-            {
-                Some(document) if document.is_object() => ("current", document),
-                _ => ("partial", Value::Null),
-            }
-        }
-        _ => ("unavailable", Value::Null),
-    };
+    let (status, provider_data): (&str, Value) =
+        match serde_json::from_slice::<Value>(&document_bytes) {
+            Ok(document) if document.is_object() => ("current", document),
+            _ => ("partial", Value::Null),
+        };
     drop(scratch_guard);
     let placeholder_native = json!({
         "schema":"code-intel-codenexus-native-result.v1",
@@ -323,7 +308,7 @@ pub(super) fn codenexus_admission(
         "status":status,
         "providerId":"codenexus.lite-compat",
         "implementation":{
-            "id":"invoke-codenexus-lite.ps1",
+            "id":codenexus_lite::IMPLEMENTATION_ID,
             "version":"1.0.0",
             "digest":implementation_digest
         },
