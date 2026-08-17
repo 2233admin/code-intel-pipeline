@@ -365,7 +365,8 @@ pub(crate) fn ensure_directory(path: &Path) -> std::io::Result<PathBuf> {
                 return Err(error);
             };
             let resolved_ancestor = fs::canonicalize(existing_ancestor)?;
-            let resolved_target = resolved_retry_target(path, existing_ancestor, &resolved_ancestor);
+            let resolved_target =
+                resolved_retry_target(path, existing_ancestor, &resolved_ancestor);
             fs::create_dir_all(&resolved_target)?;
             Ok(resolved_target)
         }
@@ -378,8 +379,14 @@ pub(crate) fn ensure_directory(path: &Path) -> std::io::Result<PathBuf> {
 /// it in production: rejoins the part of `path` beyond `existing_ancestor`
 /// onto `resolved_ancestor` (the canonicalized, symlink-free form of that
 /// same ancestor).
-fn resolved_retry_target(path: &Path, existing_ancestor: &Path, resolved_ancestor: &Path) -> PathBuf {
-    let remainder = path.strip_prefix(existing_ancestor).unwrap_or(Path::new(""));
+fn resolved_retry_target(
+    path: &Path,
+    existing_ancestor: &Path,
+    resolved_ancestor: &Path,
+) -> PathBuf {
+    let remainder = path
+        .strip_prefix(existing_ancestor)
+        .unwrap_or(Path::new(""));
     resolved_ancestor.join(remainder)
 }
 

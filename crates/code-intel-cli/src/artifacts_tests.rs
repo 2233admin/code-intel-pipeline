@@ -256,9 +256,7 @@ fn ensure_directory_recovers_from_a_spurious_already_exists_through_a_cross_volu
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists
     ) && !child.is_dir();
     if !reproduces_quirk {
-        eprintln!(
-            "skipping: this host did not reproduce the cross-volume symlink quirk: {raw:?}"
-        );
+        eprintln!("skipping: this host did not reproduce the cross-volume symlink quirk: {raw:?}");
         let _ = fs::remove_dir_all(&real_target);
         let _ = fs::remove_dir_all(&link_parent);
         return;
