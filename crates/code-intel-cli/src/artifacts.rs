@@ -320,6 +320,69 @@ pub(crate) fn resolve_artifact_root(explicit: Option<&Path>) -> Result<PathBuf> 
         .join("artifacts"))
 }
 
+/// Creates `path` (and any missing ancestors), tolerating a Windows quirk
+/// this crate's issue #279 investigation verified against a real, pre-existing
+/// cross-drive directory symlink (`$env:LOCALAPPDATA\code-intel\artifacts` on the
+/// investigating machine, symlinked onto another drive to route a cache
+/// directory to a bigger/faster disk — a normal setup, not an exotic one):
+/// `CreateDirectoryW` for a brand-new subdirectory can return
+/// `ERROR_ALREADY_EXISTS` (os error 183) when an ancestor path component is a
+/// symlink onto a *different* volume, even though the target does not exist
+/// before or after the failed call, and an immediate retry against the same
+/// unresolved path fails identically — not a race. `create_dir_all`'s own
+/// recovery (treat `AlreadyExists` as success when `path.is_dir()`) can't
+/// catch this, because `is_dir()` resolves through the very same reparse
+/// point and also reports `false`.
+///
+/// This is the root cause of "create repository authority root: … already
+/// exists (os error 183)" (exit 74): a `code-intel .` quick-start run hit it
+/// on the very first invocation, not merely "the second run." A same-drive
+/// symlink does not reproduce it. Curiously, neither does a *freshly created*
+/// cross-drive symlink within the same process that then immediately reads
+/// through it (tried against several drives, and against an external process
+/// creating the link) — only the long-settled, pre-existing one did, every
+/// time. Whatever OS-level cache this depends on evidently needs the reparse
+/// point to have existed for a while, which makes the exact trigger resist
+/// synthetic, on-demand reproduction in a test process even though it is
+/// consistently, deterministically reproducible on an affected real machine.
+///
+/// The workaround: canonicalize the nearest already-existing ancestor
+/// (resolving past the symlink) and retry the create against the resolved
+/// form. Returns the path now confirmed to exist — `path` unchanged in the
+/// common (non-symlinked) case, or the resolved replacement when the
+/// workaround fired. Callers must use the returned path for further nested
+/// creates underneath it, since `path` itself remains unusable for that.
+///
+/// A genuine collision (something real blocking the path, e.g. a file with
+/// that name) still fails, returning the underlying `io::Error` unchanged so
+/// callers can report it with full path context.
+pub(crate) fn ensure_directory(path: &Path) -> std::io::Result<PathBuf> {
+    match fs::create_dir_all(path) {
+        Ok(()) => Ok(path.to_path_buf()),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && !path.is_dir() => {
+            let Some(existing_ancestor) = path.ancestors().find(|candidate| candidate.is_dir())
+            else {
+                return Err(error);
+            };
+            let resolved_ancestor = fs::canonicalize(existing_ancestor)?;
+            let resolved_target = resolved_retry_target(path, existing_ancestor, &resolved_ancestor);
+            fs::create_dir_all(&resolved_target)?;
+            Ok(resolved_target)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Path arithmetic for the recovery branch above, split out so it is
+/// unit-testable without depending on the Windows-only OS state that reaches
+/// it in production: rejoins the part of `path` beyond `existing_ancestor`
+/// onto `resolved_ancestor` (the canonicalized, symlink-free form of that
+/// same ancestor).
+fn resolved_retry_target(path: &Path, existing_ancestor: &Path, resolved_ancestor: &Path) -> PathBuf {
+    let remainder = path.strip_prefix(existing_ancestor).unwrap_or(Path::new(""));
+    resolved_ancestor.join(remainder)
+}
+
 /// Composes a DAG staging directory the way `resume` and `artifact index` read
 /// runs back: `<artifact root>/<repo name>/<run>`. The PowerShell launcher owned
 /// this composition until it was retired, and the failure it existed to prevent

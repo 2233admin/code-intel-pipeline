@@ -216,9 +216,12 @@ fn nest_authority_root(authority_root: &Path, repo_name: &str) -> Result<PathBuf
     } else {
         authority_root.join(repo_name)
     };
-    std::fs::create_dir_all(&nested)
-        .map_err(|error| RunError::io(format!("create repository authority root: {error}")))?;
-    Ok(nested)
+    crate::artifacts::ensure_directory(&nested).map_err(|error| {
+        RunError::io(format!(
+            "create repository authority root {}: {error}",
+            nested.display()
+        ))
+    })
 }
 
 /// Schema identity of the envelope printed on stdout when the run finished but
@@ -413,5 +416,32 @@ mod tests {
         );
 
         std::fs::remove_dir_all(root.parent().unwrap()).ok();
+    }
+
+    /// Issue #279's sibling call site (see `project_context.rs::run` and
+    /// `artifacts::ensure_directory`, which both share this message
+    /// template): "create repository authority root: <raw OS error>" used to
+    /// carry zero path context at either site. A file sitting where the
+    /// repo-nested directory needs to go is a portable, deterministic way to
+    /// exercise a *genuine* block without depending on the Windows-only
+    /// cross-volume-symlink quirk `ensure_directory` self-heals (covered by
+    /// `artifacts_tests.rs`).
+    #[test]
+    fn nest_authority_root_names_the_path_when_something_real_blocks_it() {
+        let root = unique_temp_dir("nest-blocked");
+        std::fs::create_dir_all(&root).expect("fixture authority root");
+        let blocked = root.join("widget-repo");
+        std::fs::write(&blocked, b"not a directory").expect("fixture blocking file");
+
+        let error = nest_authority_root(&root, "widget-repo")
+            .expect_err("a real file must still block authority root creation");
+        assert_eq!(error.exit_code, 74);
+        assert!(
+            error.message.contains(&blocked.display().to_string()),
+            "message omits the blocked path: {}",
+            error.message
+        );
+
+        std::fs::remove_dir_all(&root).ok();
     }
 }

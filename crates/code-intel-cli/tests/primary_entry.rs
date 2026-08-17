@@ -124,6 +124,55 @@ fn project_query_resolves_repository_context_before_loading_evidence() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+/// Issue #279: `code-intel .` (this file's
+/// `root_help_leads_with_the_compiled_primary_entry` confirms it's the
+/// documented quick start) used to fold the authority-root bootstrap's IO
+/// error — including a Windows-only false
+/// positive from a symlinked artifact root — into a bare "create repository
+/// authority root: <raw OS error>" with no path at all. Drives the exact
+/// call site (`project_context.rs::run`) end to end through the compiled
+/// binary. A file occupying the per-repo authority directory is a portable,
+/// deterministic way to force a genuine block; the symlink false positive
+/// itself needs a real second drive, so it's covered directly against the
+/// shared helper in `artifacts_tests.rs` instead.
+#[test]
+fn root_entry_names_the_authority_root_path_when_a_file_blocks_it() {
+    let root = std::env::temp_dir().join(format!(
+        "code-intel-primary-entry-authority-blocked-{}",
+        std::process::id()
+    ));
+    let repo = root.join("fixture-repo");
+    let artifacts = root.join("artifacts");
+    std::fs::create_dir_all(&repo).expect("create repository fixture");
+    std::fs::create_dir_all(&artifacts).expect("create artifact root fixture");
+    let blocked = artifacts.join("fixture-repo");
+    std::fs::write(&blocked, b"not a directory").expect("fixture blocking file");
+
+    let output = common::cli()
+        .arg(&repo)
+        .args(["--mode", "lite", "--json"])
+        .env("CODE_INTEL_ARTIFACT_ROOT", &artifacts)
+        .output()
+        .expect("run code-intel against a blocked authority root");
+
+    assert_eq!(output.status.code(), Some(74));
+    assert!(output.stderr.is_empty());
+    let result: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("error output is JSON");
+    assert_eq!(result["schema"], "code-intel-primary-result.v1");
+    assert_eq!(result["outcome"], "error");
+    assert_eq!(result["exitCode"], 74);
+    let diagnostic = result["diagnostic"]
+        .as_str()
+        .expect("diagnostic is a string");
+    assert!(
+        diagnostic.contains(&blocked.display().to_string()),
+        "diagnostic omits the blocked path: {diagnostic}"
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
 #[test]
 fn named_commands_are_not_misclassified_as_repository_paths() {
     let output = common::cli()

@@ -67,6 +67,50 @@ fn resolves_native_paths_and_repository_key_when_directories_contain_spaces() {
     let _ = fs::remove_dir_all(root);
 }
 
+/// Issue #279: this call site and `execution_kernel.rs::nest_authority_root`
+/// share the exact "create repository authority root: <raw OS error>"
+/// message template — this one is what the `code-intel .` quick start
+/// actually goes through. A file sitting where the per-repo authority
+/// directory needs to go is a portable, deterministic way to exercise a
+/// *genuine* block. (The Windows-only cross-volume-symlink false positive
+/// this bug was actually filed for needs a real second drive to reproduce;
+/// it is covered by `artifacts_tests.rs`'s `ensure_directory_*` tests
+/// instead, against the shared helper directly.)
+#[test]
+fn run_names_the_authority_root_path_when_something_real_blocks_it() {
+    let root = env::temp_dir().join(format!(
+        "code-intel-project-context-authority-blocked-{}",
+        process::id()
+    ));
+    let repo = root.join("fixture-repo");
+    let artifact_root = root.join("artifacts");
+    fs::create_dir_all(&repo).expect("create repository fixture");
+    fs::create_dir_all(&artifact_root).expect("create artifact root fixture");
+    let blocked = artifact_root.join("fixture-repo");
+    fs::write(&blocked, b"not a directory").expect("fixture blocking file");
+
+    let context = ProjectContext::resolve(
+        ProjectSelector::new(repo.clone()).with_artifact_root(Some(artifact_root.clone())),
+    )
+    .expect("resolve project context");
+
+    // `RunAnswer` does not derive `Debug`, so `expect_err` (which requires it
+    // on the `Ok` side too) is not available here — match instead.
+    match context.run(RunIntent::new(RunMode::Lite)) {
+        Ok(_) => panic!("a real file must still block authority root creation"),
+        Err(error) => {
+            assert_eq!(error.exit_code(), 74);
+            assert!(
+                error.message().contains(&blocked.display().to_string()),
+                "message omits the blocked path: {}",
+                error.message()
+            );
+        }
+    }
+
+    let _ = fs::remove_dir_all(root);
+}
+
 #[test]
 fn explicit_repository_key_cannot_escape_the_artifact_root() {
     let root = env::temp_dir().join(format!("code-intel-project-context-key-{}", process::id()));
