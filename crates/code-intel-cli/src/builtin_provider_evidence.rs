@@ -206,7 +206,7 @@ pub(super) fn sentrux_admission(
     });
     let first = sentrux_adapter::translate(&native, observed_at, MAX_AGE_SECONDS)
         .map_err(AdapterError::Contract)?;
-    let run_id = format!("sentrux-{}-{}", identity, std::process::id());
+    let run_id = format!("sentrux-{identity}");
     let (capability_artifacts, capability_refs) =
         sentrux_capability_artifacts::build_capability_artifacts(
             &capability_observations,

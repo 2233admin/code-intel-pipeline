@@ -3,7 +3,7 @@ use std::path::Path;
 use serde_json::{json, Value};
 
 use crate::adapter_contract::{AdapterArtifact, AdapterError};
-use crate::capability::{rfc3339_now, sha256_hex};
+use crate::capability::sha256_hex;
 
 use super::{command_evidence, run_sentrux, SentruxCommand};
 
@@ -256,7 +256,11 @@ pub(super) fn build_capability_artifacts(
             "failure":capability_failure(observation, status),
             "freshness":{
                 "status":"current",
-                "evaluatedAt":rfc3339_now(),
+                // The parent Sentrux observation carries the wall-clock
+                // freshness authority. Capability artifacts are themselves
+                // content-addressed, so their snapshot-bound projection
+                // must not embed a per-run timestamp.
+                "evaluatedAt":null,
                 "consumedSnapshotIdentity":snapshot_identity
             },
             "decisionConsumers":sentrux_decision_consumers(capability_id)

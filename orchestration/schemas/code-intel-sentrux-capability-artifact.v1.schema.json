@@ -244,7 +244,10 @@
         "status": {
           "enum": ["current", "stale", "snapshot_mismatch", "unknown"]
         },
-        "evaluatedAt": { "type": "string", "format": "date-time" },
+        "evaluatedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
         "consumedSnapshotIdentity": { "$ref": "#/$defs/sha256" }
       }
     },
