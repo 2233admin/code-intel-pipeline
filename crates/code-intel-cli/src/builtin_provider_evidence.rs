@@ -29,6 +29,8 @@ mod graph;
 mod graph_adapter;
 #[path = "sentrux_adapter.rs"]
 mod sentrux_adapter;
+#[path = "sentrux_analysis.rs"]
+mod sentrux_analysis;
 #[path = "sentrux_gate.rs"]
 mod sentrux_gate;
 
@@ -45,6 +47,15 @@ const CODENEXUS_EFFECTS: [&str; 4] = [
     "read_git_history",
     "read_sentrux_artifacts",
     "write_compatibility_artifact",
+];
+const SENTRUX_CAPABILITY_COMMANDS: [(&str, &str); 7] = [
+    ("sentrux.gate", "gate"),
+    ("sentrux.check", "check"),
+    ("sentrux.scan", "scan"),
+    ("sentrux.health", "health"),
+    ("sentrux.dsm", "dsm"),
+    ("sentrux.check_rules", "check_rules"),
+    ("sentrux.gate_save", "gate_save"),
 ];
 
 pub(super) fn graph_admission(
@@ -134,8 +145,8 @@ pub(super) fn sentrux_admission(
     let lease =
         snapshot::begin_consumption(repo, &request["snapshot"]).map_err(AdapterError::Contract)?;
     let collected_at = now()?;
-    let gate = run_sentrux(repo, tool_path_prefix, "gate")?;
-    let check = run_sentrux(repo, tool_path_prefix, "check")?;
+    let (gate, check, capability_observations) =
+        collect_sentrux_capabilities(repo, tool_path_prefix)?;
     lease.verify_after(repo).map_err(AdapterError::Contract)?;
     let observed_at = now()?.max(collected_at);
     let identity = snapshot_identity(request)?;
@@ -197,15 +208,18 @@ pub(super) fn sentrux_admission(
         .map_err(AdapterError::Contract)?;
     let payload = json!({
         "schema":"code-intel-evidence-payload.v1",
-        "data":{"structuralEvidence":{
-            "schema":"code-intel-structural-evidence-payload.v1",
-            "snapshotIdentity":identity,
-            "provider":first["port"]["provider"],
-            "provenance":payload_provenance(request),
-            "effects":first["port"]["effects"],
-            "completeness":first["port"]["completeness"],
-            "rules":first["port"]["rules"]
-        }}
+        "data":{
+            "structuralEvidence":{
+                "schema":"code-intel-structural-evidence-payload.v1",
+                "snapshotIdentity":identity,
+                "provider":first["port"]["provider"],
+                "provenance":payload_provenance(request),
+                "effects":first["port"]["effects"],
+                "completeness":first["port"]["completeness"],
+                "rules":first["port"]["rules"]
+            },
+            "sentruxCapabilities":capability_observations
+        }
     });
     fs::create_dir(out)
         .map_err(|error| AdapterError::Io(format!("create Sentrux provider output: {error}")))?;
@@ -441,6 +455,130 @@ struct SentruxCommand {
     governed: bool,
 }
 
+fn collect_sentrux_capabilities(
+    repo: &Path,
+    tool_path_prefix: Option<&Path>,
+) -> Result<(SentruxCommand, SentruxCommand, Vec<Value>), AdapterError> {
+    let mut gate = None;
+    let mut check = None;
+    let mut observations = Vec::with_capacity(SENTRUX_CAPABILITY_COMMANDS.len());
+    for &(capability_id, subcommand) in &SENTRUX_CAPABILITY_COMMANDS {
+        if subcommand == "gate_save" {
+            observations.push(json!({
+                "capabilityId":capability_id,
+                "operation":subcommand,
+                "providerMode":sentrux_provider_mode(tool_path_prefix),
+                "status":"not_run",
+                "verdict":"unknown",
+                "command":Value::Null,
+                "failure":{
+                    "kind":"explicit_mutation_required",
+                    "message":"gate_save writes the repository baseline and requires explicit authority"
+                }
+            }));
+            continue;
+        }
+        let command = match run_sentrux(repo, tool_path_prefix, subcommand) {
+            Ok(command) => command,
+            Err(error) if matches!(subcommand, "gate" | "check") => return Err(error),
+            Err(error) => {
+                observations.push(json!({
+                    "capabilityId":capability_id,
+                    "operation":subcommand,
+                    "providerMode":sentrux_provider_mode(tool_path_prefix),
+                    "status":"failed",
+                    "verdict":"unknown",
+                    "command":Value::Null,
+                    "failure":{
+                        "kind":adapter_error_kind(&error),
+                        "message":format!("{error:?}")
+                    }
+                }));
+                continue;
+            }
+        };
+        observations.push(capability_observation(
+            capability_id,
+            subcommand,
+            tool_path_prefix,
+            &command,
+        ));
+        match subcommand {
+            "gate" => gate = Some(command),
+            "check" => check = Some(command),
+            _ => {}
+        }
+    }
+    Ok((
+        gate.ok_or_else(|| AdapterError::Internal("Sentrux gate observation is missing".into()))?,
+        check
+            .ok_or_else(|| AdapterError::Internal("Sentrux check observation is missing".into()))?,
+        observations,
+    ))
+}
+
+fn capability_observation(
+    capability_id: &str,
+    subcommand: &str,
+    tool_path_prefix: Option<&Path>,
+    command: &SentruxCommand,
+) -> Value {
+    let (status, verdict, failure) = if command.success {
+        ("succeeded", "pass", json!({"kind":"none"}))
+    } else if !command.governed {
+        ("succeeded", "unknown", json!({"kind":"none"}))
+    } else {
+        (
+            "failed",
+            "fail",
+            json!({
+                "kind":"command_failed",
+                "message":command_failure_message(command)
+            }),
+        )
+    };
+    json!({
+        "capabilityId":capability_id,
+        "operation":subcommand,
+        "providerMode":sentrux_provider_mode(tool_path_prefix),
+        "status":status,
+        "verdict":verdict,
+        "command":command_evidence(subcommand, command),
+        "failure":failure
+    })
+}
+
+fn sentrux_provider_mode(tool_path_prefix: Option<&Path>) -> &'static str {
+    if tool_path_prefix.is_some() {
+        "external"
+    } else {
+        "builtin_lite"
+    }
+}
+
+fn adapter_error_kind(error: &AdapterError) -> &'static str {
+    match error {
+        AdapterError::Unavailable(_) => "provider_unavailable",
+        AdapterError::Contract(_) => "contract_error",
+        AdapterError::InvalidOptions(_) => "invalid_options",
+        AdapterError::Internal(_) => "provider_error",
+        AdapterError::Io(_) => "io_error",
+    }
+}
+
+fn command_failure_message(command: &SentruxCommand) -> String {
+    command
+        .stderr
+        .lines()
+        .chain(command.stdout.lines())
+        .find(|line| !line.trim().is_empty())
+        .map(str::trim)
+        .unwrap_or("Sentrux command reported a failing verdict")
+        .chars()
+        .take(1024)
+        .collect()
+}
+
 impl SentruxCommand {
     fn from_native(run: sentrux_gate::EngineRun, subcommand: &str) -> Self {
         Self {
@@ -527,8 +665,14 @@ fn run_sentrux(
         }
         None => {
             let run = match subcommand {
-                "gate" => sentrux_gate::run_gate(repo, false),
+                "dsm" => {
+                    return json_command(sentrux_analysis::analyze(repo), subcommand);
+                }
+                "scan" => return json_command(sentrux_gate::scan_json(repo), subcommand),
+                "health" => return json_command(sentrux_health_json(repo), subcommand),
+                "check_rules" => sentrux_gate::run_check(repo),
                 "check" => sentrux_gate::run_check(repo),
+                "gate" => sentrux_gate::run_gate(repo, false),
                 other => {
                     return Err(AdapterError::Internal(format!(
                         "unsupported built-in Sentrux subcommand: {other}"
@@ -547,6 +691,54 @@ fn run_sentrux(
         )));
     }
     Ok(command)
+}
+
+fn json_command(
+    value: Result<Value, String>,
+    subcommand: &str,
+) -> Result<SentruxCommand, AdapterError> {
+    let value =
+        value.map_err(|error| AdapterError::Internal(format!("Sentrux {subcommand}: {error}")))?;
+    let stdout = serde_json::to_string_pretty(&value).map_err(|error| {
+        AdapterError::Internal(format!("serialize Sentrux {subcommand}: {error}"))
+    })?;
+    Ok(SentruxCommand {
+        argv: vec![
+            "code-intel".into(),
+            "sentrux".into(),
+            subcommand.into(),
+            ".".into(),
+        ],
+        exit_code: Some(0),
+        success: true,
+        stdout,
+        stderr: String::new(),
+        violations: Vec::new(),
+        governed: true,
+    })
+}
+
+fn sentrux_health_json(repo: &Path) -> Result<Value, String> {
+    let metrics = sentrux_gate::scan_json(repo)?;
+    let god_files = metrics["god_file_count"].as_i64().unwrap_or(0);
+    let complex = metrics["complex_fn_count"].as_i64().unwrap_or(0);
+    let coupling = metrics["coupling_score"].as_f64().unwrap_or(0.0);
+    let bottleneck = if god_files > 0 {
+        "god_files"
+    } else if complex > 0 {
+        "complexity"
+    } else if coupling > 20.0 {
+        "coupling"
+    } else {
+        "none"
+    };
+    Ok(json!({
+        "status":"ok",
+        "tool":sentrux_gate::ENGINE_ID,
+        "quality_signal":metrics["quality_signal"],
+        "files":metrics["files"],
+        "bottleneck":bottleneck
+    }))
 }
 
 fn external_command(path: &Path) -> Command {
