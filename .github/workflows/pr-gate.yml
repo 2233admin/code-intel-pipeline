@@ -249,8 +249,13 @@ jobs:
       - name: Install ripgrep
         shell: pwsh
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ripgrep
+          if (Get-Command rg -ErrorAction SilentlyContinue) {
+            rg --version
+          }
+          else {
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+          }
 
       - name: Build Rust CLI
         shell: pwsh
