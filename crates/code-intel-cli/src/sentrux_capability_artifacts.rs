@@ -480,7 +480,9 @@ fn observation_command(observation: &Value) -> Option<SentruxCommand> {
     let command = observation["command"].as_object()?;
     let stdout = command["stdout"].as_str().unwrap_or_default().to_owned();
     let stderr = command["stderr"].as_str().unwrap_or_default().to_owned();
-    let output_summary = command["outputSummary"]
+    let output_summary = command
+        .get("outputSummary")
+        .unwrap_or(&Value::Null)
         .as_object()
         .and_then(|summary| {
             Some(super::sentrux_command::OutputSummary::from_metadata(

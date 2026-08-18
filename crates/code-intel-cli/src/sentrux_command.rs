@@ -168,7 +168,6 @@ pub(crate) fn command_evidence(subcommand: &str, command: &SentruxCommand) -> Va
         "exitCode":command.exit_code,
         "success":command.success,
         "stdout":command.stdout,
-        "stderr":command.stderr,
-        "outputSummary":command.output_summary.to_json(&command.stdout, &command.stderr)
+        "stderr":command.stderr
     })
 }

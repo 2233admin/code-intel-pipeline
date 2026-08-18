@@ -353,7 +353,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
         }));
     assert_eq!(
         impact["testSelection"]["sentruxSignals"]["status"],
-        "advisory"
+        "available"
     );
     assert_eq!(
         impact["testSelection"]["sentruxSignals"]["testGap"]["status"],
@@ -365,11 +365,11 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     );
     assert_eq!(
         impact["testSelection"]["sentruxSignals"]["dsm"]["status"],
-        "degraded"
+        "available"
     );
     assert_eq!(
         impact["testSelection"]["sentruxSignals"]["candidateTestImpact"],
-        "withholds_sentrux_expansion"
+        "retains_graph_candidates"
     );
     assert!(
         impact["testSelection"]["sentruxSignals"]["testGap"]["limitations"]
