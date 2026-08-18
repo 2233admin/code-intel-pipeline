@@ -142,7 +142,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             Administrative,
             &[CommandEffect::RepoRead, CommandEffect::ProcessSpawn],
             stdout!("text-format:hardcoded-paths-scan.v1"),
-            exits!(0, 1),
+            exits!(0, 1, 74),
             "retire only after typed administration parity and release-package verification"
         ),
     },

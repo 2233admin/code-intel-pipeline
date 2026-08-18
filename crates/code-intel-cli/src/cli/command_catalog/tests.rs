@@ -419,6 +419,10 @@ fn observable_contracts_pin_exact_schemas_composites_and_exit_sets() {
         raw("evidence", None).exit_contract.codes(),
         &[0, 64, 65, 74]
     );
+    assert_eq!(
+        raw("lint", Some("hardcoded-paths")).exit_contract.codes(),
+        &[0, 1, 74]
+    );
     assert_eq!(legacy("help").exit_contract.codes(), &[0, 1]);
 
     // Every exit `edit apply` declares has to answer on stdout, including the

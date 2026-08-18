@@ -8,10 +8,10 @@
 //! (the PowerShell script strips `$env:NAME` before matching; this port keeps
 //! the same rule).
 //!
-//! Exit codes: 0 = clean, 1 = hits found (CI gate semantics).
+//! Exit codes: 0 = clean, 1 = hits found, 74 = scan I/O failure.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use serde_json::{json, Value};
@@ -61,16 +61,21 @@ fn strip_env_vars(line: &str) -> String {
             && bytes[i + 3].eq_ignore_ascii_case(&b'v')
             && bytes[i + 4] == b':'
         {
-            // Skip the whole `$env:NAME` token.
-            let mut j = i + 5;
-            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
-                j += 1;
+            let name_start = i + 5;
+            if name_start < bytes.len()
+                && (bytes[name_start].is_ascii_alphabetic() || bytes[name_start] == b'_')
+            {
+                // Skip only a grammatically valid `$env:NAME` token.
+                let mut j = name_start + 1;
+                while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
+                    j += 1;
+                }
+                i = j;
+                continue;
             }
-            i = j;
-        } else {
-            out.push(bytes[i] as char);
-            i += 1;
         }
+        out.push(bytes[i] as char);
+        i += 1;
     }
     out
 }
@@ -107,12 +112,10 @@ fn absolute_pipeline_path(line: &str) -> bool {
             // each segment excludes whitespace, quotes, and backslashes.
             let mut j = i + 2;
             let mut last_segment = String::new();
-            let mut saw_segment = false;
             while j < bytes.len() {
                 let c = bytes[j];
                 if c == b'\\' {
                     if !last_segment.is_empty() {
-                        saw_segment = true;
                         if last_segment == "code-intel-pipeline" {
                             // `\` is itself the word boundary after the
                             // final segment (`e` word char, `\` non-word),
@@ -129,6 +132,9 @@ fn absolute_pipeline_path(line: &str) -> bool {
                     j += 1;
                 }
             }
+            if last_segment == "code-intel-pipeline" {
+                return true;
+            }
         }
         i += 1;
     }
@@ -138,7 +144,7 @@ fn absolute_pipeline_path(line: &str) -> bool {
 /// List git-tracked files matching the scan globs. Uses `git ls-files` with
 /// the hardened wrapper so a scanned repository's `.git/config` cannot
 /// inject hooks (same invariant as every other git call in this crate).
-fn tracked_scan_files(repo: &Path) -> Vec<String> {
+fn tracked_scan_files(repo: &Path) -> Result<Vec<String>, String> {
     let mut command = Command::new("git");
     command
         .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -146,27 +152,41 @@ fn tracked_scan_files(repo: &Path) -> Vec<String> {
         .arg(repo)
         .arg("ls-files")
         .args(SCAN_GLOBS);
-    let output = match command.output() {
-        Ok(output) if output.status.success() => output,
-        _ => return Vec::new(),
-    };
-    String::from_utf8_lossy(&output.stdout)
+    let output = command
+        .output()
+        .map_err(|error| format!("run git ls-files for {}: {error}", repo.display()))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let status = output
+            .status
+            .code()
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| "terminated".to_string());
+        let suffix = if detail.is_empty() {
+            String::new()
+        } else {
+            format!(": {detail}")
+        };
+        return Err(format!(
+            "git ls-files failed for {} (exit {status}){suffix}",
+            repo.display()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
         .lines()
         .map(str::to_string)
         .filter(|line| !line.is_empty())
-        .collect()
+        .collect())
 }
 
 /// Scan the repository rooted at `repo` (defaults to CWD when `None`).
-pub(crate) fn scan(repo: &Path) -> ScanResult {
-    let files = tracked_scan_files(repo);
+pub(crate) fn scan(repo: &Path) -> Result<ScanResult, String> {
+    let files = tracked_scan_files(repo)?;
     let mut hits = Vec::new();
     for file in &files {
         let path = repo.join(file);
-        let content = match fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(_) => continue,
-        };
+        let content = fs::read_to_string(&path)
+            .map_err(|error| format!("read tracked file {}: {error}", path.display()))?;
         for (index, line) in content.lines().enumerate() {
             if line_has_hit(line) {
                 let line_number = index + 1;
@@ -178,17 +198,23 @@ pub(crate) fn scan(repo: &Path) -> ScanResult {
             }
         }
     }
-    ScanResult {
+    Ok(ScanResult {
         ok: hits.is_empty(),
         scanned_files: files.len(),
         hits,
-    }
+    })
 }
 
 /// Run the scan and print the human/CI report; returns the process exit code
 /// (0 clean, 1 hits). Mirrors the facade's console behavior.
 pub(crate) fn run_and_report(repo: &Path) -> i32 {
-    let result = scan(repo);
+    let result = match scan(repo) {
+        Ok(result) => result,
+        Err(error) => {
+            eprintln!("Hardcoded path scan: ERROR: {error}");
+            return 74;
+        }
+    };
     if result.ok {
         println!("Hardcoded path scan: OK ({} files)", result.scanned_files);
     } else {
@@ -205,8 +231,7 @@ pub(crate) fn run_and_report(repo: &Path) -> i32 {
 }
 
 /// JSON variant for tooling (`--json` flag parity with the facade).
-pub(crate) fn scan_json(repo: &Path) -> Value {
-    let result = scan(repo);
+fn scan_json(result: &ScanResult) -> Value {
     json!({
         "ok": result.ok,
         "scannedFiles": result.scanned_files,
@@ -226,14 +251,39 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
     let repo_arg = raw.iter().find(|argument| !argument.starts_with('-'));
     let repo = match repo_arg {
         Some(path) => Path::new(path).to_path_buf(),
-        None => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        None => match std::env::current_dir() {
+            Ok(path) => path,
+            Err(error) => return report_error(json, format!("resolve current directory: {error}")),
+        },
     };
     if json {
-        println!("{}", scan_json(&repo));
+        let result = match scan(&repo) {
+            Ok(result) => result,
+            Err(error) => return report_error(true, error),
+        };
+        println!("{}", scan_json(&result));
+        return if result.ok { 0 } else { 1 };
     } else {
         return run_and_report(&repo);
     }
-    0
+}
+
+fn report_error(json_output: bool, error: String) -> i32 {
+    if json_output {
+        println!(
+            "{}",
+            json!({
+                "ok": false,
+                "error": {
+                    "category": "local_tool_error",
+                    "message": error,
+                }
+            })
+        );
+    } else {
+        eprintln!("Hardcoded path scan: ERROR: {error}");
+    }
+    74
 }
 
 #[cfg(test)]
@@ -246,6 +296,9 @@ mod tests {
         assert!(!line_has_hit("path = $env:USERPROFILE\\code"));
         assert!(line_has_hit("path = USERPROFILE\\code"));
         assert!(!line_has_hit("dir: $env:LOCALAPPDATA\\temp"));
+        assert!(!line_has_hit("dir: $env:_APPDATA\\temp"));
+        assert!(line_has_hit("invalid: $env:1USERPROFILE"));
+        assert!(line_has_hit("invalid: $env:-APPDATA"));
     }
 
     #[test]
@@ -268,6 +321,8 @@ mod tests {
             "D:\\projects\\_tools\\code-intel-pipeline\\run.ps1"
         ));
         assert!(line_has_hit("D:\\code-intel-pipeline\\x"));
+        assert!(line_has_hit("D:\\projects\\code-intel-pipeline"));
+        assert!(line_has_hit("\"D:\\projects\\code-intel-pipeline\""));
         assert!(!line_has_hit(
             "D:/projects/_tools/code-intel-pipeline/run.ps1"
         ));
@@ -282,5 +337,70 @@ mod tests {
         assert!(line_has_hit("uses LOCALAPPDATA directly"));
         assert!(line_has_hit("APPDATA"));
         assert!(!line_has_hit("$env:APPDATA"));
+    }
+
+    #[test]
+    fn scan_fails_when_git_discovery_fails() {
+        let repo = fixture_repo_path("not-a-repository");
+        fs::create_dir_all(&repo).unwrap();
+
+        let error = scan(&repo).unwrap_err();
+
+        assert!(error.contains("git ls-files failed"), "{error}");
+        fs::remove_dir_all(repo).unwrap();
+    }
+
+    #[test]
+    fn scan_fails_when_a_tracked_file_cannot_be_read() {
+        let repo = initialized_fixture_repo("unreadable-tracked-file");
+        let tracked = repo.join("tracked.md");
+        fs::write(&tracked, "safe").unwrap();
+        run_git(&repo, &["add", "tracked.md"]);
+        fs::remove_file(&tracked).unwrap();
+
+        let error = scan(&repo).unwrap_err();
+
+        assert!(error.contains("read tracked file"), "{error}");
+        fs::remove_dir_all(repo).unwrap();
+    }
+
+    #[test]
+    fn json_mode_returns_findings_exit_code() {
+        let repo = initialized_fixture_repo("json-findings-exit");
+        fs::write(repo.join("tracked.md"), "uses USERPROFILE directly").unwrap();
+        run_git(&repo, &["add", "tracked.md"]);
+
+        let exit = run_raw(&[repo.display().to_string(), "--json".to_string()]);
+
+        assert_eq!(exit, 1);
+        fs::remove_dir_all(repo).unwrap();
+    }
+
+    fn initialized_fixture_repo(name: &str) -> std::path::PathBuf {
+        let repo = fixture_repo_path(name);
+        fs::create_dir_all(&repo).unwrap();
+        run_git(&repo, &["init", "--quiet"]);
+        repo
+    }
+
+    fn fixture_repo_path(name: &str) -> std::path::PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "code-intel-hardcoded-paths-{name}-{}-{nonce}",
+            std::process::id()
+        ))
+    }
+
+    fn run_git(repo: &Path, arguments: &[&str]) {
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(arguments)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {arguments:?} failed with {status}");
     }
 }
