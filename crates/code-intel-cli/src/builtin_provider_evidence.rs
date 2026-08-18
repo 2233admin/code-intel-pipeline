@@ -212,7 +212,6 @@ pub(super) fn sentrux_admission(
             &capability_observations,
             identity,
             &run_id,
-            tool_path_prefix,
         )?;
     let payload = json!({
         "schema":"code-intel-evidence-payload.v1",

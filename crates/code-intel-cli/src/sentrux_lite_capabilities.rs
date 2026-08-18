@@ -32,11 +32,33 @@ fn git_command(repo: &Path, args: &[&str]) -> Result<String, String> {
 }
 
 pub(super) fn git_stats_json(repo: &Path) -> Result<Value, String> {
-    let count = git_command(repo, &["rev-list", "--count", "HEAD"])?
+    let count_output = match git_command(repo, &["rev-list", "--count", "HEAD"]) {
+        Ok(output) => output,
+        Err(reason) => {
+            return Ok(json!({
+                "commitCount":0,
+                "recentCommits":[],
+                "status":"unavailable",
+                "reason":reason
+            }))
+        }
+    };
+    let count = count_output
         .trim()
         .parse::<u64>()
         .map_err(|error| format!("git commit count is invalid: {error}"))?;
-    let recent = git_command(repo, &["log", "-n", "20", "--format=%H%x09%aI"])?
+    let recent_output = match git_command(repo, &["log", "-n", "20", "--format=%H%x09%aI"]) {
+        Ok(output) => output,
+        Err(reason) => {
+            return Ok(json!({
+                "commitCount":count,
+                "recentCommits":[],
+                "status":"unavailable",
+                "reason":reason
+            }))
+        }
+    };
+    let recent = recent_output
         .lines()
         .filter_map(|line| {
             let (commit, authored_at) = line.split_once('\t')?;
@@ -47,7 +69,19 @@ pub(super) fn git_stats_json(repo: &Path) -> Result<Value, String> {
 }
 
 pub(super) fn evolution_json(repo: &Path) -> Result<Value, String> {
-    let recent = git_command(repo, &["log", "-n", "20", "--format=%H%x09%aI%x09%an"])?
+    let recent_output = match git_command(repo, &["log", "-n", "20", "--format=%H%x09%aI%x09%an"]) {
+        Ok(output) => output,
+        Err(reason) => {
+            return Ok(json!({
+                "status":"unavailable",
+                "windowCommits":0,
+                "trend":"unknown",
+                "recentCommits":[],
+                "reason":reason
+            }))
+        }
+    };
+    let recent = recent_output
         .lines()
         .filter_map(|line| {
             let mut fields = line.splitn(3, '\t');
@@ -64,6 +98,24 @@ pub(super) fn evolution_json(repo: &Path) -> Result<Value, String> {
         "trend":"observed",
         "recentCommits":recent
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn history_capabilities_are_auditable_without_git_history() {
+        let repo = std::path::Path::new("this-path-does-not-contain-a-git-checkout");
+        let stats =
+            super::git_stats_json(repo).expect("missing git history is a valid lite result");
+        let evolution =
+            super::evolution_json(repo).expect("missing git history is a valid lite result");
+
+        assert_eq!(stats["status"], "unavailable");
+        assert_eq!(stats["commitCount"], 0);
+        assert_eq!(evolution["status"], "unavailable");
+        assert_eq!(evolution["windowCommits"], 0);
+        assert_eq!(evolution["trend"], "unknown");
+    }
 }
 
 pub(super) fn test_gaps_json(repo: &Path) -> Result<Value, String> {

@@ -131,16 +131,22 @@ pub(super) fn collect_sentrux_capabilities(
     let mut check = None;
     let mut observations = Vec::with_capacity(SENTRUX_CAPABILITY_ROUTES.len());
     for route in SENTRUX_CAPABILITY_ROUTES {
+        let provider_mode = route_provider_mode(&route, tool_path_prefix);
+        let route_tool_path_prefix = if provider_mode == "lite_fallback" {
+            None
+        } else {
+            tool_path_prefix
+        };
         let observation = match route.kind {
             RouteKind::NotApplicable {
                 failure_kind,
                 message,
-            } => not_applicable_observation(&route, tool_path_prefix, failure_kind, message),
+            } => not_applicable_observation(&route, provider_mode, failure_kind, message),
             RouteKind::ReuseScan => {
                 match run_sentrux(
                     repo,
-                    tool_path_prefix,
-                    if tool_path_prefix.is_some() {
+                    route_tool_path_prefix,
+                    if route_tool_path_prefix.is_some() {
                         route.command
                     } else {
                         "scan"
@@ -148,15 +154,15 @@ pub(super) fn collect_sentrux_capabilities(
                 ) {
                     Ok(command) => capability_observation(
                         &route,
-                        tool_path_prefix,
+                        provider_mode,
                         &command,
                         Some("authoritative"),
                     ),
-                    Err(error) => route_error_observation(&route, tool_path_prefix, &error),
+                    Err(error) => route_error_observation(&route, provider_mode, &error),
                 }
             }
             RouteKind::Command => {
-                if tool_path_prefix.is_none()
+                if route_tool_path_prefix.is_none()
                     && !matches!(
                         route.command,
                         "gate"
@@ -173,21 +179,21 @@ pub(super) fn collect_sentrux_capabilities(
                 {
                     unavailable_observation(
                         &route,
-                        tool_path_prefix,
+                        provider_mode,
                         "the built-in Rust provider has no route for this capability",
                     )
                 } else {
-                    match run_sentrux(repo, tool_path_prefix, route.command) {
+                    match run_sentrux(repo, route_tool_path_prefix, route.command) {
                         Ok(command) => capability_observation(
                             &route,
-                            tool_path_prefix,
+                            provider_mode,
                             &command,
                             Some("authoritative"),
                         ),
                         Err(error) if matches!(route.command, "gate" | "check") => {
                             return Err(error)
                         }
-                        Err(error) => route_error_observation(&route, tool_path_prefix, &error),
+                        Err(error) => route_error_observation(&route, provider_mode, &error),
                     }
                 }
             }
@@ -215,9 +221,7 @@ pub(super) fn build_capability_artifacts(
     observations: &[Value],
     snapshot_identity: &str,
     run_id: &str,
-    tool_path_prefix: Option<&Path>,
 ) -> Result<(Vec<AdapterArtifact>, Vec<Value>), AdapterError> {
-    let provider = sentrux_capability_provider(tool_path_prefix);
     let mut artifacts = Vec::with_capacity(observations.len());
     let mut refs = Vec::with_capacity(observations.len());
     for observation in observations {
@@ -227,6 +231,8 @@ pub(super) fn build_capability_artifacts(
         let operation = observation["operation"].as_str().ok_or_else(|| {
             AdapterError::Contract("Sentrux capability observation has no operation".into())
         })?;
+        let provider =
+            sentrux_capability_provider(observation["providerMode"].as_str().unwrap_or("builtin"));
         let raw_status = observation["status"].as_str().unwrap_or("failed");
         let status = match raw_status {
             "not_run" | "not_applicable" => "not_applicable",
@@ -290,21 +296,26 @@ pub(super) fn build_capability_artifacts(
     Ok((artifacts, refs))
 }
 
-fn sentrux_capability_provider(tool_path_prefix: Option<&Path>) -> Value {
-    if tool_path_prefix.is_some() {
-        json!({
+fn sentrux_capability_provider(provider_mode: &str) -> Value {
+    match provider_mode {
+        "external" => json!({
             "mode":"external",
             "id":"sentrux.command-adapter",
             "version":"1.0.0",
             "digest":sha256_hex(include_bytes!("builtin_provider_evidence.rs"))
-        })
-    } else {
-        json!({
+        }),
+        "lite_fallback" => json!({
+            "mode":"lite_fallback",
+            "id":"sentrux.lite-capabilities",
+            "version":"1.0.0",
+            "digest":sha256_hex(include_bytes!("sentrux_lite_capabilities.rs"))
+        }),
+        _ => json!({
             "mode":"builtin",
             "id":super::sentrux_gate::ENGINE_ID,
             "version":super::sentrux_gate::ENGINE_VERSION,
             "digest":sha256_hex(include_bytes!("sentrux_gate.rs"))
-        })
+        }),
     }
 }
 
@@ -367,7 +378,7 @@ fn sentrux_decision_consumers(capability_id: &str) -> Value {
 
 fn capability_observation(
     route: &CapabilityRoute,
-    tool_path_prefix: Option<&Path>,
+    provider_mode: &str,
     command: &SentruxCommand,
     authority: Option<&str>,
 ) -> Value {
@@ -400,7 +411,7 @@ fn capability_observation(
     json!({
         "capabilityId":route.capability_id,
         "operation":route.operation,
-        "providerMode":sentrux_provider_mode(tool_path_prefix),
+        "providerMode":provider_mode,
         "authority":authority.unwrap_or("compatibility"),
         "status":status,
         "verdict":verdict,
@@ -419,14 +430,14 @@ fn capability_command_evidence(operation: &str, command: &SentruxCommand) -> Val
 
 fn not_applicable_observation(
     route: &CapabilityRoute,
-    tool_path_prefix: Option<&Path>,
+    provider_mode: &str,
     failure_kind: &str,
     message: &str,
 ) -> Value {
     json!({
         "capabilityId":route.capability_id,
         "operation":route.operation,
-        "providerMode":sentrux_provider_mode(tool_path_prefix),
+        "providerMode":provider_mode,
         "authority":"declared_only",
         "status":"not_applicable",
         "verdict":"unknown",
@@ -435,15 +446,11 @@ fn not_applicable_observation(
     })
 }
 
-fn unavailable_observation(
-    route: &CapabilityRoute,
-    tool_path_prefix: Option<&Path>,
-    message: &str,
-) -> Value {
+fn unavailable_observation(route: &CapabilityRoute, provider_mode: &str, message: &str) -> Value {
     json!({
         "capabilityId":route.capability_id,
         "operation":route.operation,
-        "providerMode":sentrux_provider_mode(tool_path_prefix),
+        "providerMode":provider_mode,
         "authority":"compatibility",
         "status":"unavailable",
         "verdict":"unknown",
@@ -454,14 +461,14 @@ fn unavailable_observation(
 
 fn route_error_observation(
     route: &CapabilityRoute,
-    tool_path_prefix: Option<&Path>,
+    provider_mode: &str,
     error: &AdapterError,
 ) -> Value {
     let unavailable = matches!(error, AdapterError::Unavailable(_));
     json!({
         "capabilityId":route.capability_id,
         "operation":route.operation,
-        "providerMode":sentrux_provider_mode(tool_path_prefix),
+        "providerMode":provider_mode,
         "authority":if unavailable { "compatibility" } else { "authoritative" },
         "status":if unavailable { "unavailable" } else { "failed" },
         "verdict":"unknown",
@@ -531,12 +538,21 @@ fn observation_command(observation: &Value) -> Option<SentruxCommand> {
     })
 }
 
-fn sentrux_provider_mode(tool_path_prefix: Option<&Path>) -> &'static str {
-    if tool_path_prefix.is_some() {
+fn route_provider_mode(route: &CapabilityRoute, tool_path_prefix: Option<&Path>) -> &'static str {
+    if matches!(route.kind, RouteKind::Command) && uses_lite_fallback(route.command) {
+        "lite_fallback"
+    } else if tool_path_prefix.is_some() {
         "external"
     } else {
-        "builtin_lite"
+        "builtin"
     }
+}
+
+fn uses_lite_fallback(command: &str) -> bool {
+    matches!(
+        command,
+        "git_stats" | "evolution" | "test_gaps" | "provider_discovery"
+    )
 }
 
 fn adapter_error_kind(error: &AdapterError) -> &'static str {
