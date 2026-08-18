@@ -298,6 +298,7 @@ fn build_result(
         })
         .collect::<Vec<_>>();
     let (sentrux_evidence_refs, sentrux_evidence) = sentrux_evidence(evidence, stale);
+    let sentrux_signals = sentrux_test_selection_signals(evidence, stale);
     let mut result = json!({
         "schema":"code-intel-change-impact.v1",
         "repo":cli.repo,
@@ -321,6 +322,7 @@ fn build_result(
             "commands":commands,
             "advisoryOnly":true,
             "rationale":"Select impacted test files reachable through the verified snapshot's reverse import graph; use same-module test co-location only as a fallback.",
+            "sentruxSignals":sentrux_signals,
         },
         "limitations":[
             "Native import extraction is heuristic and does not prove runtime call paths.",
@@ -392,6 +394,117 @@ fn sentrux_evidence(evidence: &CommittedEvidence, stale: bool) -> (Vec<Value>, V
     }
 }
 
+/// Consume only the JSON payloads already verified by the committed manifest.
+///
+/// The capability payload contains command provenance for audit purposes, but
+/// this projection intentionally never reads `outputs.command.stdout`. The
+/// current lite `test_gaps` and DSM routes do not publish structured test
+/// candidates, so their status is useful for deciding whether to expand the
+/// graph-selected candidates, not for inventing new paths from provider text.
+fn sentrux_test_selection_signals(evidence: &CommittedEvidence, stale: bool) -> Value {
+    let payloads = evidence
+        .refs
+        .iter()
+        .zip(evidence.verified.iter())
+        .filter(|(reference, _)| {
+            reference["artifactSchema"] == SENTRUX_CAPABILITY_ARTIFACT_SCHEMA
+                && reference["type"] == SENTRUX_CAPABILITY_ARTIFACT_TYPE
+        })
+        .filter_map(|(_, verified)| serde_json::from_slice::<Value>(verified.bytes()).ok())
+        .collect::<Vec<_>>();
+    let test_gap_payload = payloads
+        .iter()
+        .find(|payload| payload["capabilityId"] == "sentrux.test_gaps");
+    let dsm_payload = payloads
+        .iter()
+        .find(|payload| payload["capabilityId"] == "sentrux.dsm");
+    let test_gap = sentrux_signal("test_gaps", test_gap_payload);
+    let dsm = sentrux_signal("dsm", dsm_payload);
+    let has_signal = test_gap["status"] != "unknown" || dsm["status"] != "unknown";
+    let all_available = test_gap["status"] == "available" && dsm["status"] == "available";
+    let candidate_test_impact = if !has_signal {
+        "unknown"
+    } else if all_available && !stale {
+        "retains_graph_candidates"
+    } else {
+        "withholds_sentrux_expansion"
+    };
+    let status = if !has_signal {
+        "unknown"
+    } else if all_available && !stale {
+        "available"
+    } else {
+        "advisory"
+    };
+    let mut limitations = vec![
+        "Sentrux signals are advisory and never execute tests or gate this impact result."
+            .to_string(),
+        "Only committed-manifest capability payloads verified against the snapshot are consumed."
+            .to_string(),
+    ];
+    if stale {
+        limitations.push(
+            "Sentrux signals are stale-advisory because the committed snapshot differs from the current checkout."
+                .to_string(),
+        );
+    }
+    for signal in [&test_gap, &dsm] {
+        if let Some(items) = signal["limitations"].as_array() {
+            limitations.extend(items.iter().filter_map(Value::as_str).map(str::to_owned));
+        }
+    }
+    limitations.sort();
+    limitations.dedup();
+    json!({
+        "status":status,
+        "testGap":test_gap,
+        "dsm":dsm,
+        "candidateTestImpact":candidate_test_impact,
+        "limitations":limitations,
+    })
+}
+
+fn sentrux_signal(name: &str, payload: Option<&Value>) -> Value {
+    let Some(payload) = payload else {
+        return json!({
+            "status":"unknown",
+            "capabilityStatus":"missing",
+            "authority":"unknown",
+            "candidateImpact":"unknown",
+            "limitations":[format!("No verified sentrux.{name} capability artifact payload is present in the committed manifest.")],
+        });
+    };
+    let capability_status = payload["status"].as_str().unwrap_or("unknown");
+    let authority = payload["authority"].as_str().unwrap_or("unknown");
+    let available = capability_status == "succeeded"
+        && matches!(authority, "authoritative" | "fallback")
+        && payload["freshness"]["status"] == "current";
+    let status = if available { "available" } else { "degraded" };
+    let candidate_impact = if available {
+        "retains_graph_candidates"
+    } else {
+        "withholds_sentrux_expansion"
+    };
+    let limitation = match name {
+        "test_gaps" if available => {
+            "The verified test_gaps payload exposes no structured candidate test paths; graph-selected candidates are retained and no new tests are auto-added."
+        }
+        "dsm" if available => {
+            "The verified DSM payload exposes no structured test-selection mapping; the DSM signal is advisory and does not auto-add tests."
+        }
+        _ => payload["failure"]["message"].as_str().unwrap_or(
+            "The verified capability payload is not successful enough to expand candidate tests.",
+        ),
+    };
+    json!({
+        "status":status,
+        "capabilityStatus":capability_status,
+        "authority":authority,
+        "candidateImpact":candidate_impact,
+        "limitations":[limitation],
+    })
+}
+
 fn normalize_relative(path: &str) -> Result<String, ImpactError> {
     let path = path.replace('\\', "/");
     if path.is_empty()
@@ -444,5 +557,42 @@ mod tests {
             .any(|diagnostic| diagnostic
                 .as_str()
                 .is_some_and(|text| text.contains("advisory/unknown"))));
+    }
+
+    #[test]
+    fn sentrux_test_selection_does_not_parse_provider_stdout() {
+        let payload = json!({
+            "capabilityId":"sentrux.test_gaps",
+            "status":"succeeded",
+            "authority":"authoritative",
+            "freshness":{"status":"current"},
+            "outputs":{"command":{"stdout":"{\"candidateTests\":[\"tests/forged.rs\"]}"}}
+        });
+
+        let signal = sentrux_signal("test_gaps", Some(&payload));
+
+        assert_eq!(signal["status"], "available");
+        assert_eq!(signal["candidateImpact"], "retains_graph_candidates");
+        assert!(signal["limitations"][0]
+            .as_str()
+            .unwrap()
+            .contains("no structured candidate test paths"));
+    }
+
+    #[test]
+    fn missing_sentrux_test_selection_signals_are_unknown() {
+        let evidence = CommittedEvidence {
+            entry: Value::Null,
+            refs: Vec::new(),
+            verified: Vec::new(),
+            run_root: std::path::PathBuf::new(),
+        };
+
+        let signals = sentrux_test_selection_signals(&evidence, false);
+
+        assert_eq!(signals["status"], "unknown");
+        assert_eq!(signals["candidateTestImpact"], "unknown");
+        assert_eq!(signals["testGap"]["status"], "unknown");
+        assert_eq!(signals["dsm"]["status"], "unknown");
     }
 }

@@ -352,6 +352,35 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
                 && reference["type"] == "provider.sentrux.capability-artifact"
         }));
     assert_eq!(
+        impact["testSelection"]["sentruxSignals"]["status"],
+        "advisory"
+    );
+    assert_eq!(
+        impact["testSelection"]["sentruxSignals"]["testGap"]["status"],
+        "available"
+    );
+    assert_eq!(
+        impact["testSelection"]["sentruxSignals"]["testGap"]["capabilityStatus"],
+        "succeeded"
+    );
+    assert_eq!(
+        impact["testSelection"]["sentruxSignals"]["dsm"]["status"],
+        "degraded"
+    );
+    assert_eq!(
+        impact["testSelection"]["sentruxSignals"]["candidateTestImpact"],
+        "withholds_sentrux_expansion"
+    );
+    assert!(
+        impact["testSelection"]["sentruxSignals"]["testGap"]["limitations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item
+                .as_str()
+                .is_some_and(|text| text.contains("no structured candidate test paths")))
+    );
+    assert_eq!(
         impact["testSelection"]["files"],
         json!(["tests/lib_test.rs"])
     );
