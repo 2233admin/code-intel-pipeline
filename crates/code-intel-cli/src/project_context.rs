@@ -1,20 +1,17 @@
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
-use crate::committed_evidence::{CommittedEvidence, EvidenceError};
-use crate::committed_evidence_controller::{
-    CommittedAuthority, CommittedEvidenceController, FreshnessRequest,
-};
+use crate::committed_evidence::CommittedEvidence;
+use crate::committed_evidence_controller::{CommittedAuthority, CommittedEvidenceController};
 use crate::evidence_query::{EvidenceQueryRequest, MAX_LIMIT};
 use crate::{artifacts, authoritative_run, execution_policy};
 
 mod error;
 mod identity;
+mod status;
 #[cfg(test)]
 mod tests;
 
@@ -151,8 +148,8 @@ impl ProjectContext {
             .duration_since(UNIX_EPOCH)
             .map_err(|error| ProjectError::host_io(error.to_string()))?
             .as_millis();
-        let final_name = format!("{nonce}-{}-core", process::id());
-        let staging_root = env::temp_dir().join(format!("code-intel-a09-{final_name}"));
+        let final_name = format!("{nonce}-{}-core", std::process::id());
+        let staging_root = std::env::temp_dir().join(format!("code-intel-a09-{final_name}"));
         let request = authoritative_run::RunRequest::new(
             self.repo_path.clone(),
             staging_root,
@@ -196,177 +193,6 @@ impl ProjectContext {
                 })
             }
         }
-    }
-
-    pub(crate) fn status(&self) -> Result<Value, ProjectError> {
-        if !self.artifact_root.is_dir() {
-            return Ok(self.status_without_run(format!(
-                "artifact root is not present: {}",
-                self.artifact_root.display()
-            )));
-        }
-        let freshness = match CommittedEvidenceController::freshness(FreshnessRequest {
-            artifact_root: self.artifact_root.clone(),
-            repo: self.repo.clone(),
-            repo_path: Some(self.repo_path.clone()),
-        }) {
-            Ok(freshness) => freshness,
-            Err(error) if is_unindexed(&error) => {
-                return Ok(self.status_without_run(error_message(&error).to_string()));
-            }
-            Err(error) => return Err(ProjectError::from(error)),
-        };
-        Ok(self.status_with_run(freshness.value, &freshness.authority))
-    }
-
-    fn status_without_run(&self, reason: String) -> Value {
-        json!({
-            "schema": "code-intel-project-status.v1",
-            "status": "needs_run",
-            "project": self.project_identity(),
-            "freshness": {
-                "status": "unavailable",
-                "recordedIdentity": Value::Null,
-                "currentIdentity": Value::Null,
-                "workingTreePolicy": Value::Null,
-                "scope": [],
-            },
-            "committedRun": Value::Null,
-            "reason": reason,
-            "nextActions": [self.command_action(
-                "analyze",
-                "Analyze this project and publish the first committed run.",
-                vec!["code-intel".into(), self.repo_path.display().to_string()],
-            )],
-        })
-    }
-
-    fn status_with_run(&self, freshness: Value, authority: &CommittedAuthority) -> Value {
-        let receipt = authority.receipt();
-        let state = if freshness["status"] == "current" {
-            "ready"
-        } else {
-            "stale"
-        };
-        json!({
-            "schema": "code-intel-project-status.v1",
-            "status": state,
-            "project": self.project_identity(),
-            "freshness": freshness,
-            "committedRun": {
-                "repo": receipt.repo(),
-                "run": receipt.run(),
-                "runIdentity": receipt.run_identity(),
-                "snapshotIdentity": receipt.snapshot_identity(),
-                "authority": "committed",
-            },
-            "reason": Value::Null,
-            "nextActions": self.next_actions(state),
-        })
-    }
-
-    fn project_identity(&self) -> Value {
-        json!({
-            "repo": self.repo,
-            "path": self.repo_path,
-        })
-    }
-
-    fn next_actions(&self, state: &str) -> Value {
-        let repo_path = self.repo_path.display().to_string();
-        let artifact_root = self.artifact_root.display().to_string();
-        let mut actions = Vec::new();
-        if state == "stale" {
-            actions.push(self.command_action(
-                "refresh",
-                "Refresh committed evidence before querying it as current.",
-                vec!["code-intel".into(), repo_path.clone()],
-            ));
-        } else {
-            actions.push(self.command_action(
-                "context",
-                "Read the bounded ranked code context for this project.",
-                vec![
-                    "code-intel".into(),
-                    "query".into(),
-                    repo_path.clone(),
-                    "--kind".into(),
-                    "evidence".into(),
-                    "--type".into(),
-                    "code_evidence.agent_slice".into(),
-                    "--limit".into(),
-                    "5".into(),
-                    "--json".into(),
-                ],
-            ));
-            actions.push(self.command_action(
-                "query",
-                "Query the verified committed artifacts with a bounded result.",
-                vec![
-                    "code-intel".into(),
-                    "query".into(),
-                    repo_path.clone(),
-                    "--kind".into(),
-                    "evidence".into(),
-                    "--limit".into(),
-                    "20".into(),
-                    "--json".into(),
-                ],
-            ));
-            actions.push(json!({
-                "id": "trace",
-                "kind": "mcp_tool",
-                "summary": "Trace one finding through its committed evidence chain.",
-                "serverArgv": [
-                    "code-intel", "serve", "--mcp", "--repo-path", repo_path.clone(),
-                    "--repo", self.repo, "--artifact-root", artifact_root.clone(),
-                ],
-                "tool": "get_evidence",
-            }));
-        }
-        actions.push(self.command_action(
-            "impact",
-            "Estimate blast radius and candidate tests from committed imports as advisory evidence.",
-            vec![
-                "code-intel".into(),
-                "change".into(),
-                "impact".into(),
-                "--artifact-root".into(),
-                artifact_root,
-                "--repo".into(),
-                self.repo.clone(),
-                "--repo-path".into(),
-                repo_path,
-                "--changed".into(),
-                "<path>".into(),
-                "--staleness".into(),
-                "advisory".into(),
-            ],
-        ));
-        Value::Array(actions)
-    }
-
-    fn command_action(&self, id: &str, summary: &str, argv: Vec<String>) -> Value {
-        json!({
-            "id": id,
-            "kind": "command",
-            "summary": summary,
-            "argv": argv,
-        })
-    }
-}
-
-fn is_unindexed(error: &EvidenceError) -> bool {
-    matches!(
-        error,
-        EvidenceError::Contract(message)
-            if message.starts_with("no committed authoritative run is indexed for repository:")
-    )
-}
-
-fn error_message(error: &EvidenceError) -> &str {
-    match error {
-        EvidenceError::Contract(message) | EvidenceError::HostIo(message) => message,
     }
 }
 
