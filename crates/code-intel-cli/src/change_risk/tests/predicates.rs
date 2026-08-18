@@ -170,3 +170,64 @@ fn tip_token_extracts_the_range_head() {
     assert_eq!(tip_token("origin/main.."), "HEAD");
     assert_eq!(tip_token("abc123"), "abc123");
 }
+/// The workflow that consumes this module had no test at all, which is how
+/// issue #201 lived in it unnoticed: the gate judged `risk_percentile`, a rank
+/// against a rolling sample, so a pull request could turn red because its
+/// neighbours got smaller rather than because it got riskier — and ~10% of
+/// commits sit above the 90th percentile by construction, making the gate a
+/// quota no amount of repository health could clear.
+///
+/// This pins the contract, not the bytes: which field decides, that the
+/// percentile is reported but never gated, and that the threshold sits in the
+/// measured gap between the dense 66-69 cluster and the 90+ outliers. A silent
+/// revert to percentile gating, or a threshold quietly tuned down into the
+/// cluster to unblock something in flight, fails here.
+#[test]
+fn the_pr_gate_blocks_on_the_absolute_score_not_a_moving_rank() {
+    const WORKFLOW: &str = include_str!("../../../../../.github/workflows/pr-gate.yml");
+
+    assert!(
+        WORKFLOW.contains("RISK_SCORE_BLOCK:"),
+        "pr-gate.yml must declare an absolute score threshold"
+    );
+    assert!(
+        !WORKFLOW.contains("RISK_PERCENTILE_BLOCK"),
+        "the percentile threshold is retired (#201); a reintroduced one gates on a moving denominator"
+    );
+
+    let threshold: f64 = WORKFLOW
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("RISK_SCORE_BLOCK:"))
+        .map(|value| value.trim().trim_matches('"').to_string())
+        .expect("pr-gate.yml declares RISK_SCORE_BLOCK")
+        .parse()
+        .expect("RISK_SCORE_BLOCK is numeric");
+    assert!(
+        (70.0..=89.0).contains(&threshold),
+        "the threshold must stay inside the measured empty band between the 66-69 cluster and \
+         the 90+ outliers; re-derive the distribution before moving it outside: {threshold}"
+    );
+
+    // The gate reads `.score`; `risk_percentile` may only be narrated.
+    let gate_step = WORKFLOW
+        .split("- name: Evaluate gate")
+        .nth(1)
+        .expect("pr-gate.yml has an Evaluate gate step");
+    assert!(
+        gate_step.contains("'.score'") || gate_step.contains(".score >="),
+        "the gate step must decide on the absolute score"
+    );
+    assert!(
+        !gate_step.contains("risk_percentile"),
+        "the gate step must not read risk_percentile (#201)"
+    );
+
+    // `score` is a JSON number and `round2` can emit a fraction, which shell
+    // `-ge` rejects outright; under `bash -e` that aborts the job instead of
+    // deciding, so the comparison has to happen in jq.
+    assert!(
+        gate_step.contains("jq --argjson threshold"),
+        "the score comparison must run in jq, not shell -ge, so a fractional score cannot abort \
+         the job instead of blocking or passing"
+    );
+}
