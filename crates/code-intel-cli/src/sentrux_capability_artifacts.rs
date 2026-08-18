@@ -400,10 +400,17 @@ fn capability_observation(
         "authority":authority.unwrap_or("compatibility"),
         "status":status,
         "verdict":verdict,
-        "command":command_evidence(route.operation, command),
+        "command":capability_command_evidence(route.operation, command),
         "outputSummary":command.output_summary.to_json(&command.stdout, &command.stderr),
         "failure":failure
     })
+}
+
+fn capability_command_evidence(operation: &str, command: &SentruxCommand) -> Value {
+    let mut evidence = command_evidence(operation, command);
+    evidence["governed"] = json!(command.governed);
+    evidence["violations"] = command.violations_json();
+    evidence
 }
 
 fn not_applicable_observation(
@@ -503,8 +510,19 @@ fn observation_command(observation: &Value) -> Option<SentruxCommand> {
         success: command["success"].as_bool().unwrap_or(false),
         stdout,
         stderr,
-        violations: Vec::new(),
-        governed: true,
+        violations: SentruxCommand::violations_from_json(command.get("violations")),
+        // Capability artifacts intentionally retain an ungoverned gate as a
+        // successful, unknown observation. Rehydrate that distinction here so
+        // the capability evidence cannot turn an absent baseline into a
+        // structural failure when it is fed back into the authoritative rules.
+        governed: command
+            .get("governed")
+            .and_then(Value::as_bool)
+            .unwrap_or_else(|| {
+                !(command["success"] == false
+                    && observation["status"] == "succeeded"
+                    && observation["verdict"] == "unknown")
+            }),
         output_summary,
     })
 }

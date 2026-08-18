@@ -90,6 +90,37 @@ fn bounded_text(bytes: &[u8]) -> String {
 }
 
 impl SentruxCommand {
+    pub(crate) fn violations_json(&self) -> Value {
+        json!(self
+            .violations
+            .iter()
+            .map(Violation::to_json)
+            .collect::<Vec<_>>())
+    }
+
+    pub(crate) fn violations_from_json(value: Option<&Value>) -> Vec<Violation> {
+        value
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| {
+                        Some(Violation {
+                            rule: item["rule"].as_str()?.to_owned(),
+                            message: item["message"].as_str()?.to_owned(),
+                            targets: item["targets"]
+                                .as_array()?
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .map(str::to_owned)
+                                .collect(),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub(crate) fn from_native(run: super::sentrux_gate::EngineRun, subcommand: &str) -> Self {
         let stdout_bytes = run.stdout.into_bytes();
         let output_summary = OutputSummary::from_bytes(&stdout_bytes, &[]);
