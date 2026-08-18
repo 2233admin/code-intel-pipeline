@@ -38,6 +38,7 @@ pub(in crate::cli::command_catalog) struct VersionRoute {
 pub(in crate::cli::command_catalog) enum CommandRoute {
     Version(VersionRoute),
     RunAlias(CommandContract),
+    ProjectStatus(CommandContract),
     ProjectQuery(CommandContract),
     Primary(CommandContract),
     Raw(RawRoute),

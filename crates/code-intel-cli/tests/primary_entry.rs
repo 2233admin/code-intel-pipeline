@@ -177,6 +177,52 @@ fn root_entry_names_the_authority_root_path_when_a_file_blocks_it() {
 }
 
 #[test]
+fn project_status_turns_an_unindexed_project_into_a_guided_first_step() {
+    let root = std::env::temp_dir().join(format!(
+        "code-intel-project-status-empty-{}",
+        std::process::id()
+    ));
+    let repo = root.join("fixture-repo");
+    let artifacts = root.join("artifacts");
+    std::fs::create_dir_all(&repo).expect("create repository fixture");
+    std::fs::create_dir_all(&artifacts).expect("create artifact root fixture");
+
+    let output = common::cli()
+        .arg("status")
+        .arg(&repo)
+        .arg("--json")
+        .env("CODE_INTEL_ARTIFACT_ROOT", &artifacts)
+        .output()
+        .expect("run project status JSON");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let status: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("project status is JSON");
+    assert_eq!(status["schema"], "code-intel-project-status.v1");
+    assert_eq!(status["status"], "needs_run");
+    assert_eq!(status["freshness"]["status"], "unavailable");
+    assert_eq!(status["nextActions"][0]["id"], "analyze");
+    assert_eq!(status["nextActions"][0]["argv"][0], "code-intel");
+
+    let output = common::cli()
+        .arg("status")
+        .arg(&repo)
+        .env("CODE_INTEL_ARTIFACT_ROOT", &artifacts)
+        .output()
+        .expect("run human project status");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let summary = String::from_utf8(output.stdout).expect("status summary is UTF-8");
+    assert!(summary.contains("[NEEDS_RUN] fixture-repo"), "{summary}");
+    assert!(summary.contains("Next actions:"), "{summary}");
+    assert!(summary.contains("analyze:"), "{summary}");
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn named_commands_are_not_misclassified_as_repository_paths() {
     let output = common::cli()
         .args(["orchestrate", "--action", "List", "--json"])

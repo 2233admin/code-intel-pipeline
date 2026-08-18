@@ -1125,6 +1125,7 @@ Commands:
   --version|-V [--json]
   help|--help|-h [--all]
   run [<repo>] [--mode lite|normal|full] [--json]
+  status [<repo>] [--json]
   query [<repo>] --kind evidence [--artifact-schema <schema>] [--type <artifact-type>] [--contains <text>] [--limit <1..100>] --json
   report --repo <path> [--artifact-root <path>] [--json]
   resume --repo <path> [--artifact-root <path>] [--json]
