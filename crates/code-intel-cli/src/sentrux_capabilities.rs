@@ -85,6 +85,24 @@ fn capability_audit(matrix: &Value) -> Result<Value> {
         .iter()
         .filter_map(Value::as_str)
         .collect::<BTreeSet<_>>();
+    let automatic_modes = policy["automaticExecutionModes"]
+        .as_array()
+        .ok_or("sentrux capabilities matrix schema/header error: automatic execution modes must be an array")?
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<BTreeSet<_>>();
+    let explicit_modes = policy["explicitExecutionModes"]
+        .as_array()
+        .ok_or("sentrux capabilities matrix schema/header error: explicit execution modes must be an array")?
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<BTreeSet<_>>();
+    let forbidden_states = policy["forbiddenSilentStates"]
+        .as_array()
+        .ok_or("sentrux capabilities matrix schema/header error: forbidden silent states must be an array")?
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<BTreeSet<_>>();
 
     let mut state_counts = BTreeMap::<String, u64>::new();
     let mut required = 0u64;
@@ -99,7 +117,16 @@ fn capability_audit(matrix: &Value) -> Result<Value> {
         let current_state = item["currentState"].as_str().ok_or(
             "sentrux capabilities matrix schema/header error: currentState must be a string",
         )?;
-        let is_covered = required_states.contains(current_state);
+        let execution_mode = item["executionMode"].as_str().ok_or(
+            "sentrux capabilities matrix schema/header error: executionMode must be a string",
+        )?;
+        let is_covered = if automatic_modes.contains(execution_mode) {
+            required_states.contains(current_state)
+        } else if explicit_modes.contains(execution_mode) {
+            !forbidden_states.contains(current_state)
+        } else {
+            false
+        };
         *state_counts.entry(current_state.to_string()).or_default() += 1;
         if is_covered {
             covered += 1;
@@ -114,6 +141,7 @@ fn capability_audit(matrix: &Value) -> Result<Value> {
             "id": item["id"],
             "operation": item["operation"],
             "currentState": item["currentState"],
+            "executionMode": item["executionMode"],
             "route": item["route"],
             "decisionConsumers": item["decisionConsumers"],
         }));
@@ -123,16 +151,23 @@ fn capability_audit(matrix: &Value) -> Result<Value> {
         .iter()
         .filter(|item| item["requiredForRelease"].as_bool().unwrap_or(false))
         .all(|item| {
+            let execution_mode = item["executionMode"].as_str().unwrap_or("");
             let state_allowed = item["currentState"]
                 .as_str()
                 .is_some_and(|state| required_states.contains(state));
+            let explicit_state_allowed = item["currentState"]
+                .as_str()
+                .is_some_and(|state| !forbidden_states.contains(state));
             let has_artifact = item["artifacts"]
                 .as_array()
                 .is_some_and(|values| !values.is_empty());
             let has_consumer = item["decisionConsumers"]
                 .as_array()
                 .is_some_and(|values| !values.is_empty());
-            state_allowed && has_artifact && has_consumer
+            ((automatic_modes.contains(execution_mode) && state_allowed)
+                || (explicit_modes.contains(execution_mode) && explicit_state_allowed))
+                && has_artifact
+                && has_consumer
         });
 
     let coverage = serde_json::json!({
@@ -186,6 +221,8 @@ fn validate_capability_matrix(matrix: &Value, path: &Path) -> Result<()> {
         path,
         "completionPolicy",
     )?;
+    string_array(policy, "automaticExecutionModes", path, "completionPolicy")?;
+    string_array(policy, "explicitExecutionModes", path, "completionPolicy")?;
     string_array(policy, "forbiddenSilentStates", path, "completionPolicy")?;
     if policy.get("rule").and_then(Value::as_str).is_none() {
         return Err(matrix_error(path, "completionPolicy.rule must be a string"));
@@ -205,7 +242,7 @@ fn validate_capability_matrix(matrix: &Value, path: &Path) -> Result<()> {
         let item = capability.as_object().ok_or_else(|| {
             matrix_error(path, &format!("capabilities[{index}] must be an object"))
         })?;
-        for field in ["id", "operation", "currentState", "route"] {
+        for field in ["id", "operation", "executionMode", "currentState", "route"] {
             if item.get(field).and_then(Value::as_str).is_none() {
                 return Err(matrix_error(
                     path,
@@ -360,6 +397,8 @@ mod tests {
                 "coverageStatus": "partial",
                 "completionPolicy": {
                     "requiredStatesForComplete": ["authoritative_automatic"],
+                    "automaticExecutionModes": ["automatic"],
+                    "explicitExecutionModes": ["explicit_authority", "lifecycle_external"],
                     "forbiddenSilentStates": ["declared_only"],
                     "rule": "rule"
                 },
@@ -381,6 +420,8 @@ mod tests {
             "coverageStatus": "complete",
             "completionPolicy": {
                 "requiredStatesForComplete": ["authoritative_automatic"],
+                "automaticExecutionModes": ["automatic"],
+                "explicitExecutionModes": ["explicit_authority", "lifecycle_external"],
                 "forbiddenSilentStates": ["declared_only"],
                 "rule": "rule"
             },
@@ -389,6 +430,7 @@ mod tests {
                 "operation": "example",
                 "aliases": [],
                 "currentState": "authoritative_automatic",
+                "executionMode": "automatic",
                 "route": "provider.sentrux-adapt",
                 "requiredForRelease": true,
                 "artifacts": ["example.v1"],

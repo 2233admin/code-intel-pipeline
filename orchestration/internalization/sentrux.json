@@ -122,11 +122,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/builtin_provider_evidence.rs",
-        "sha256": "694eb43271ad1751cb50f556f0dd25bca0162ebfef8754d5002e59baaafb0d36"
+        "sha256": "1ee8976cc50b9a9f71bce61abe1be32fd406527d702040f7f223db48899b4150"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "ca6a8279c1f27850e3f37b6b286c93572b24c1bdfb2f75e677a02cec4df7a602",
+        "sha256": "8cd2aae94c5fdfd2678adcb1caa6fa6641bad2faccdb87c4ebcdb98428b58632",
         "testName": "production_dag_output_commits_and_enters_the_authoritative_index"
       }
     },
@@ -259,7 +259,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "ca6a8279c1f27850e3f37b6b286c93572b24c1bdfb2f75e677a02cec4df7a602",
+        "sha256": "8cd2aae94c5fdfd2678adcb1caa6fa6641bad2faccdb87c4ebcdb98428b58632",
         "testName": "production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch"
       }
     }

@@ -369,8 +369,12 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     );
     assert_eq!(
         impact["testSelection"]["sentruxSignals"]["candidateTestImpact"],
-        "retains_graph_candidates"
+        "retains_graph_candidates_with_what_if_risk"
     );
+    assert!(impact["testSelection"]["sentruxSignals"]["whatIfFailingScenarioCount"]
+        .as_u64()
+        .unwrap_or(0)
+        > 0);
     assert!(
         impact["testSelection"]["sentruxSignals"]["testGap"]["limitations"]
             .as_array()

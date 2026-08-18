@@ -14,9 +14,11 @@
     "completionPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["requiredStatesForComplete", "forbiddenSilentStates", "rule"],
+      "required": ["requiredStatesForComplete", "automaticExecutionModes", "explicitExecutionModes", "forbiddenSilentStates", "rule"],
       "properties": {
         "requiredStatesForComplete": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+        "automaticExecutionModes": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+        "explicitExecutionModes": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
         "forbiddenSilentStates": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
         "rule": { "type": "string", "minLength": 1 }
       }
@@ -27,7 +29,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "operation", "aliases", "scope", "trigger", "route", "currentState", "requiredForRelease", "inputs", "artifacts", "decisionConsumers", "failureSemantics", "platforms"],
+        "required": ["id", "operation", "aliases", "scope", "trigger", "route", "executionMode", "currentState", "requiredForRelease", "inputs", "artifacts", "decisionConsumers", "failureSemantics", "platforms"],
         "properties": {
           "id": { "type": "string", "pattern": "^sentrux\\.[a-z0-9_]+$" },
           "operation": { "type": "string", "pattern": "^[a-z0-9_]+$" },
@@ -35,7 +37,8 @@
           "scope": { "type": "string", "minLength": 1 },
           "trigger": { "type": "string", "minLength": 1 },
           "route": { "type": "string", "minLength": 1 },
-          "currentState": { "enum": ["authoritative_automatic", "native_manual", "compatibility_only", "declared_only"] },
+          "executionMode": { "enum": ["automatic", "explicit_authority", "lifecycle_external"] },
+          "currentState": { "enum": ["authoritative_automatic", "automatic_degraded", "not_applicable_dag", "explicit_authority_required", "lifecycle_external", "native_manual", "compatibility_only", "declared_only"] },
           "requiredForRelease": { "type": "boolean" },
           "inputs": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
           "artifacts": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },

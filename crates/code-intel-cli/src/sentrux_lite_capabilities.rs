@@ -9,8 +9,10 @@ pub(super) fn provider_discovery_json() -> Result<Value, String> {
         "provider":"sentrux",
         "mode":"builtin_lite",
         "available":true,
-        "operations":["scan","health","dsm","git_stats","evolution","test_gaps","check_rules","check","gate","rescan"],
+        "operations":["scan","health","dsm","git_stats","evolution","test_gaps","what_if","check_rules","check","gate","rescan"],
         "aliases":["pro_status","plugin_list","plugin_validate"],
+        "explicitAuthorityOperations":["gate_save"],
+        "lifecycleOperations":["session_start","session_end"],
         "legacyFallback":"legacy/Invoke-SentruxAgentTool.ps1"
     }))
 }
@@ -116,6 +118,38 @@ mod tests {
         assert_eq!(evolution["windowCommits"], 0);
         assert_eq!(evolution["trend"], "unknown");
     }
+
+    #[test]
+    fn what_if_is_a_bounded_snapshot_capability() {
+        let root = std::env::temp_dir().join(format!(
+            "code-intel-lite-what-if-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join(".sentrux")).expect("rules directory");
+        std::fs::create_dir_all(root.join("src")).expect("source directory");
+        std::fs::write(
+            root.join(".sentrux/rules.toml"),
+            "max_cc = 1\nmax_coupling = 1\n",
+        )
+        .expect("rules");
+        std::fs::write(
+            root.join("src/lib.rs"),
+            "pub fn sample() { if true { println!(\"x\"); } }\n",
+        )
+        .expect("source");
+
+        let value = super::what_if_json(&root).expect("what_if should be available");
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["summary"]["scenarioCount"], 4);
+        assert!(value["summary"]["failingScenarioCount"].as_u64().unwrap() > 0);
+        assert_eq!(value["scenarios"].as_array().unwrap().len(), 4);
+        assert!(value["limitations"].as_array().unwrap().len() >= 2);
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
 
 pub(super) fn test_gaps_json(repo: &Path) -> Result<Value, String> {
@@ -171,4 +205,181 @@ pub(super) fn test_gaps_json(repo: &Path) -> Result<Value, String> {
         "gapStatus":if test_files == 0 { "unknown" } else { "inventory_only" },
         "limitations":["This lite fallback inventories test files; it does not prove symbol-level test coverage."]
     }))
+}
+
+pub(super) fn what_if_json(repo: &Path) -> Result<Value, String> {
+    let dsm = super::sentrux_analysis::analyze(repo)?;
+    let max_cc = read_rule_number(repo, "max_cc").unwrap_or(25.0);
+    let max_coupling = read_rule_number(repo, "max_coupling").unwrap_or(76.0);
+    let blast_limit = max_coupling + 2.0;
+
+    let complexity = dsm["file_details"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|file| {
+            file["functions"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|function| {
+                    let value = function["complexity"].as_f64()?;
+                    (value > max_cc).then(|| {
+                        json!({
+                            "id":function["id"],
+                            "name":function["name"],
+                            "file":file["path"],
+                            "sourceAnchor":function["source_anchor"],
+                            "value":value,
+                            "limit":max_cc,
+                            "overBy":value - max_cc
+                        })
+                    })
+                })
+        })
+        .collect::<Vec<_>>();
+    let coupling = dsm["modules"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|module| {
+            let value = module["metrics"]["coupling"].as_f64()?;
+            (value > max_coupling).then(|| {
+                json!({
+                    "id":module["id"],
+                    "name":module["name"],
+                    "metric":"coupling",
+                    "value":value,
+                    "limit":max_coupling,
+                    "risk":module["metrics"]["risk"]
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    let blast_radius = dsm["modules"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|module| {
+            let value = module["metrics"]["blast_radius"].as_f64()?;
+            (value > blast_limit).then(|| {
+                json!({
+                    "id":module["id"],
+                    "name":module["name"],
+                    "metric":"blast_radius",
+                    "value":value,
+                    "limit":blast_limit,
+                    "risk":module["metrics"]["risk"]
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    let test_gaps = dsm["modules"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|module| {
+            let value = module["metrics"]["test_gap"].as_f64()?;
+            (value > 0.0).then(|| {
+                json!({
+                    "id":module["id"],
+                    "name":module["name"],
+                    "metric":"test_gap",
+                    "value":value,
+                    "limit":0,
+                    "risk":module["metrics"]["risk"]
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let scenarios = vec![
+        what_if_scenario(
+            "current_max_cc_gate",
+            "max_cc",
+            max_cc,
+            complexity,
+            "Split or simplify functions above the current Sentrux complexity ceiling.",
+        ),
+        what_if_scenario(
+            "module_coupling_cap",
+            "max_coupling",
+            max_coupling,
+            coupling,
+            "Inspect dependency edges and preserve provider boundaries before adding coupling.",
+        ),
+        what_if_scenario(
+            "blast_radius_cap",
+            "max_blast_radius",
+            blast_limit,
+            blast_radius,
+            "Reduce fan-out or split the highest-impact module before expanding its surface.",
+        ),
+        what_if_scenario(
+            "test_gap_gate",
+            "test_gap",
+            0.0,
+            test_gaps,
+            "Add or select tests for source-heavy modules before treating the change as fully covered.",
+        ),
+    ];
+    let failing = scenarios
+        .iter()
+        .filter(|scenario| scenario["pass"] == false)
+        .count();
+    let primary_risk = scenarios
+        .iter()
+        .find(|scenario| scenario["pass"] == false)
+        .and_then(|scenario| scenario["id"].as_str())
+        .unwrap_or("none");
+    Ok(json!({
+        "status":"ok",
+        "scope":"repository_snapshot",
+        "rules":{
+            "max_cc":max_cc,
+            "max_coupling":max_coupling,
+            "max_blast_radius":blast_limit,
+            "source":if repo.join(".sentrux/rules.toml").is_file() { "repository" } else { "defaults" }
+        },
+        "scenarios":scenarios,
+        "summary":{
+            "scenarioCount":4,
+            "failingScenarioCount":failing,
+            "primaryRisk":primary_risk
+        },
+        "limitations":[
+            "Lite what_if evaluates the current snapshot; it does not mutate or synthesize a hypothetical checkout.",
+            "Function and dependency extraction are heuristic and remain bounded by the lite DSM parser."
+        ]
+    }))
+}
+
+fn read_rule_number(repo: &Path, name: &str) -> Option<f64> {
+    let text = fs::read_to_string(repo.join(".sentrux/rules.toml")).ok()?;
+    text.lines()
+        .find_map(|line| {
+            let (key, value) = line.split_once('=')?;
+            (key.trim() == name).then(|| value.trim().trim_matches('"').parse().ok())
+        })
+        .flatten()
+}
+
+fn what_if_scenario(
+    id: &str,
+    metric: &str,
+    limit: f64,
+    affected: Vec<Value>,
+    action: &str,
+) -> Value {
+    let pass = affected.is_empty();
+    json!({
+        "id":id,
+        "metric":metric,
+        "pass":pass,
+        "severity":if pass { "ok" } else { "high" },
+        "impactCount":affected.len(),
+        "affected":affected.into_iter().take(20).collect::<Vec<_>>(),
+        "limit":limit,
+        "action":action
+    })
 }

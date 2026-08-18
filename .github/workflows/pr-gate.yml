@@ -312,12 +312,24 @@ jobs:
             $observed[$payload.capabilityId] = $payload
             if ($payload.status -ne "succeeded" -and $null -eq $payload.failure) { throw "non-success Sentrux capability has no explicit failure: $($payload.capabilityId)" }
           }
-          $required = @($matrix.capabilities | Where-Object { $_.requiredForRelease -and $_.currentState -eq "authoritative_automatic" } | ForEach-Object { $_.id })
-          foreach ($id in $required) {
-            if (-not $observed.ContainsKey($id)) { throw "required automatic Sentrux capability is missing from the committed run: $id" }
-            if ($observed[$id].status -ne "succeeded") { throw "required automatic Sentrux capability did not succeed: $id ($($observed[$id].status))" }
+          $required = @($matrix.capabilities | Where-Object { $_.requiredForRelease })
+          foreach ($capability in $required) {
+            $id = [string]$capability.id
+            if (-not $observed.ContainsKey($id)) { throw "required Sentrux capability is missing from the committed run: $id" }
+            $payload = $observed[$id]
+            $mode = [string]$capability.executionMode
+            if ($mode -eq "automatic") {
+              if ($capability.currentState -eq "authoritative_automatic" -and $payload.status -ne "succeeded") { throw "authoritative automatic Sentrux capability did not succeed: $id ($($payload.status))" }
+              if ($capability.currentState -eq "automatic_degraded" -and $payload.status -notin @("succeeded", "degraded")) { throw "degraded automatic Sentrux capability did not produce an accepted result: $id ($($payload.status))" }
+              if ($capability.currentState -notin @("authoritative_automatic", "automatic_degraded")) { throw "automatic Sentrux capability has an unsupported matrix state: $id ($($capability.currentState))" }
+            }
+            elseif ($mode -in @("explicit_authority", "lifecycle_external")) {
+              if ($payload.status -ne "not_applicable") { throw "explicit/lifecycle Sentrux capability must be explicitly not_applicable in a DAG run: $id ($($payload.status))" }
+              if ($null -eq $payload.failure -or [string]::IsNullOrWhiteSpace([string]$payload.failure.kind)) { throw "explicit/lifecycle Sentrux capability has no failure reason: $id" }
+            }
+            else { throw "Sentrux capability has no recognized execution mode: $id ($mode)" }
           }
-          Write-Host "Sentrux capability closure verified: $($capabilityRefs.Count) capability refs; required automatic=$($required.Count); matrix coverage=$($matrix.coverageStatus)"
+          Write-Host "Sentrux capability closure verified: $($capabilityRefs.Count) capability refs; required=$($required.Count); matrix coverage=$($matrix.coverageStatus)"
 
       - name: Upload Sentrux closure evidence
         if: always()

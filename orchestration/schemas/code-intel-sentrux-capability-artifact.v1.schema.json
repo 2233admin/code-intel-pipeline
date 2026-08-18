@@ -60,6 +60,9 @@
             { "type": "null" }
           ]
         },
+        "structuredData": {
+          "type": ["object", "array", "null"]
+        },
         "artifacts": {
           "type": "array",
           "items": { "$ref": "#/$defs/artifactRef" },

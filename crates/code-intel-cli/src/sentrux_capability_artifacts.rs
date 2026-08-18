@@ -74,15 +74,7 @@ const SENTRUX_CAPABILITY_ROUTES: [CapabilityRoute; 15] = [
         "test_gaps",
         RouteKind::Command,
     ),
-    route(
-        "sentrux.what_if",
-        "what_if",
-        "what_if",
-        RouteKind::NotApplicable {
-            failure_kind: "dag_scope_not_supported",
-            message: "what_if requires an explicit change set and is not applicable to this repository DAG snapshot",
-        },
-    ),
+    route("sentrux.what_if", "what_if", "what_if", RouteKind::Command),
     route(
         "sentrux.session_start",
         "session_start",
@@ -174,6 +166,7 @@ pub(super) fn collect_sentrux_capabilities(
                             | "git_stats"
                             | "evolution"
                             | "test_gaps"
+                            | "what_if"
                             | "provider_discovery"
                     )
                 {
@@ -257,7 +250,8 @@ pub(super) fn build_capability_artifacts(
             "outputs":{
                 "command":observation["command"],
                 "verdict":observation["verdict"],
-                "outputSummary":observation["outputSummary"]
+                "outputSummary":observation["outputSummary"],
+                "structuredData":capability_structured_data(observation)
             },
             "failure":capability_failure(observation, status),
             "freshness":{
@@ -296,6 +290,14 @@ pub(super) fn build_capability_artifacts(
     Ok((artifacts, refs))
 }
 
+fn capability_structured_data(observation: &Value) -> Value {
+    observation["command"]["stdout"]
+        .as_str()
+        .and_then(|stdout| serde_json::from_str::<Value>(stdout).ok())
+        .filter(|value| value.is_object() || value.is_array())
+        .unwrap_or(Value::Null)
+}
+
 fn sentrux_capability_provider(provider_mode: &str) -> Value {
     match provider_mode {
         "external" => json!({
@@ -325,6 +327,7 @@ fn capability_failure(observation: &Value, status: &str) -> Value {
     }
     let raw_kind = observation["failure"]["kind"].as_str().unwrap_or("unknown");
     let kind = match raw_kind {
+        "degraded" => "degraded",
         "explicit_mutation_required"
         | "dag_scope_not_supported"
         | "session_lifecycle_outside_dag"
@@ -551,7 +554,7 @@ fn route_provider_mode(route: &CapabilityRoute, tool_path_prefix: Option<&Path>)
 fn uses_lite_fallback(command: &str) -> bool {
     matches!(
         command,
-        "git_stats" | "evolution" | "test_gaps" | "provider_discovery"
+        "git_stats" | "evolution" | "test_gaps" | "what_if" | "provider_discovery"
     )
 }
 

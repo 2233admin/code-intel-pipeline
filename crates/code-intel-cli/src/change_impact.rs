@@ -398,9 +398,9 @@ fn sentrux_evidence(evidence: &CommittedEvidence, stale: bool) -> (Vec<Value>, V
 ///
 /// The capability payload contains command provenance for audit purposes, but
 /// this projection intentionally never reads `outputs.command.stdout`. The
-/// current lite `test_gaps` and DSM routes do not publish structured test
-/// candidates, so their status is useful for deciding whether to expand the
-/// graph-selected candidates, not for inventing new paths from provider text.
+/// Capability consumers use only structured data admitted into the artifact;
+/// provider stdout remains provenance/preview evidence and is never parsed by
+/// this projection.
 fn sentrux_test_selection_signals(evidence: &CommittedEvidence, stale: bool) -> Value {
     let payloads = evidence
         .refs
@@ -418,12 +418,23 @@ fn sentrux_test_selection_signals(evidence: &CommittedEvidence, stale: bool) -> 
     let dsm_payload = payloads
         .iter()
         .find(|payload| payload["capabilityId"] == "sentrux.dsm");
+    let what_if_payload = payloads
+        .iter()
+        .find(|payload| payload["capabilityId"] == "sentrux.what_if");
     let test_gap = sentrux_signal("test_gaps", test_gap_payload);
     let dsm = sentrux_signal("dsm", dsm_payload);
-    let has_signal = test_gap["status"] != "unknown" || dsm["status"] != "unknown";
+    let what_if = sentrux_signal("what_if", what_if_payload);
+    let has_signal = test_gap["status"] != "unknown"
+        || dsm["status"] != "unknown"
+        || what_if["status"] != "unknown";
     let all_available = test_gap["status"] == "available" && dsm["status"] == "available";
+    let what_if_risk = what_if["structuredData"]["summary"]["failingScenarioCount"]
+        .as_u64()
+        .unwrap_or(0);
     let candidate_test_impact = if !has_signal {
         "unknown"
+    } else if what_if_risk > 0 && !stale {
+        "retains_graph_candidates_with_what_if_risk"
     } else if all_available && !stale {
         "retains_graph_candidates"
     } else {
@@ -448,7 +459,7 @@ fn sentrux_test_selection_signals(evidence: &CommittedEvidence, stale: bool) -> 
                 .to_string(),
         );
     }
-    for signal in [&test_gap, &dsm] {
+    for signal in [&test_gap, &dsm, &what_if] {
         if let Some(items) = signal["limitations"].as_array() {
             limitations.extend(items.iter().filter_map(Value::as_str).map(str::to_owned));
         }
@@ -459,6 +470,8 @@ fn sentrux_test_selection_signals(evidence: &CommittedEvidence, stale: bool) -> 
         "status":status,
         "testGap":test_gap,
         "dsm":dsm,
+        "whatIf":what_if,
+        "whatIfFailingScenarioCount":what_if_risk,
         "candidateTestImpact":candidate_test_impact,
         "limitations":limitations,
     })
@@ -471,6 +484,7 @@ fn sentrux_signal(name: &str, payload: Option<&Value>) -> Value {
             "capabilityStatus":"missing",
             "authority":"unknown",
             "candidateImpact":"unknown",
+            "structuredData":Value::Null,
             "limitations":[format!("No verified sentrux.{name} capability artifact payload is present in the committed manifest.")],
         });
     };
@@ -501,6 +515,7 @@ fn sentrux_signal(name: &str, payload: Option<&Value>) -> Value {
         "capabilityStatus":capability_status,
         "authority":authority,
         "candidateImpact":candidate_impact,
+        "structuredData":payload["outputs"]["structuredData"],
         "limitations":[limitation],
     })
 }

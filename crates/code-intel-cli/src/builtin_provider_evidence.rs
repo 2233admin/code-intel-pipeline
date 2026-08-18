@@ -507,6 +507,9 @@ fn run_sentrux(
                         subcommand,
                     )
                 }
+                "what_if" => {
+                    return json_command(sentrux_lite_capabilities::what_if_json(repo), subcommand)
+                }
                 "provider_discovery" => {
                     return json_command(
                         sentrux_lite_capabilities::provider_discovery_json(),

@@ -269,13 +269,25 @@ jobs:
             $observed[$capabilityPayload.capabilityId] = $capabilityPayload
             if ($capabilityPayload.status -ne "succeeded" -and $null -eq $capabilityPayload.failure) { throw "packaged release non-success capability has no explicit failure: $($capabilityPayload.capabilityId)" }
           }
-          $required = @($matrix.capabilities | Where-Object { $_.requiredForRelease -and $_.currentState -eq "authoritative_automatic" } | ForEach-Object { $_.id })
-          if ($required.Count -eq 0) { throw "capability matrix exposes no required automatic capabilities" }
-          foreach ($id in $required) {
-            if (-not $observed.ContainsKey($id)) { throw "packaged release run is missing required automatic capability: $id" }
-            if ($observed[$id].status -ne "succeeded") { throw "packaged release required capability did not succeed: $id ($($observed[$id].status))" }
+          $required = @($matrix.capabilities | Where-Object { $_.requiredForRelease })
+          if ($required.Count -eq 0) { throw "capability matrix exposes no required capabilities" }
+          foreach ($capability in $required) {
+            $id = [string]$capability.id
+            if (-not $observed.ContainsKey($id)) { throw "packaged release run is missing required Sentrux capability: $id" }
+            $payload = $observed[$id]
+            $mode = [string]$capability.executionMode
+            if ($mode -eq "automatic") {
+              if ($capability.currentState -eq "authoritative_automatic" -and $payload.status -ne "succeeded") { throw "packaged release authoritative automatic capability did not succeed: $id ($($payload.status))" }
+              if ($capability.currentState -eq "automatic_degraded" -and $payload.status -notin @("succeeded", "degraded")) { throw "packaged release degraded automatic capability did not produce an accepted result: $id ($($payload.status))" }
+              if ($capability.currentState -notin @("authoritative_automatic", "automatic_degraded")) { throw "packaged release automatic capability has an unsupported matrix state: $id ($($capability.currentState))" }
+            }
+            elseif ($mode -in @("explicit_authority", "lifecycle_external")) {
+              if ($payload.status -ne "not_applicable") { throw "packaged release explicit/lifecycle capability must be explicitly not_applicable: $id ($($payload.status))" }
+              if ($null -eq $payload.failure -or [string]::IsNullOrWhiteSpace([string]$payload.failure.kind)) { throw "packaged release explicit/lifecycle capability has no failure reason: $id" }
+            }
+            else { throw "packaged release capability has no recognized execution mode: $id ($mode)" }
           }
-          Write-Host "Packaged release Sentrux closure verified from committed refs: $($capabilityRefs.Count) capability refs; matrix coverage=$($matrix.coverageStatus)"
+          Write-Host "Packaged release Sentrux closure verified from committed refs: $($capabilityRefs.Count) capability refs; required=$($required.Count); matrix coverage=$($matrix.coverageStatus)"
 
           # ai-safety-003 (issue #34): if the packaged snapshot carries an
           # audit report, it must pass the same fail-closed validate
@@ -487,13 +499,25 @@ jobs:
             $observed[$capabilityPayload.capabilityId] = $capabilityPayload
             if ($capabilityPayload.status -ne "succeeded" -and $null -eq $capabilityPayload.failure) { throw "packaged release non-success capability has no explicit failure: $($capabilityPayload.capabilityId)" }
           }
-          $required = @($matrix.capabilities | Where-Object { $_.requiredForRelease -and $_.currentState -eq "authoritative_automatic" } | ForEach-Object { $_.id })
-          if ($required.Count -eq 0) { throw "capability matrix exposes no required automatic capabilities" }
-          foreach ($id in $required) {
-            if (-not $observed.ContainsKey($id)) { throw "packaged release run is missing required automatic capability: $id" }
-            if ($observed[$id].status -ne "succeeded") { throw "packaged release required capability did not succeed: $id ($($observed[$id].status))" }
+          $required = @($matrix.capabilities | Where-Object { $_.requiredForRelease })
+          if ($required.Count -eq 0) { throw "capability matrix exposes no required capabilities" }
+          foreach ($capability in $required) {
+            $id = [string]$capability.id
+            if (-not $observed.ContainsKey($id)) { throw "packaged release run is missing required Sentrux capability: $id" }
+            $payload = $observed[$id]
+            $mode = [string]$capability.executionMode
+            if ($mode -eq "automatic") {
+              if ($capability.currentState -eq "authoritative_automatic" -and $payload.status -ne "succeeded") { throw "packaged release authoritative automatic capability did not succeed: $id ($($payload.status))" }
+              if ($capability.currentState -eq "automatic_degraded" -and $payload.status -notin @("succeeded", "degraded")) { throw "packaged release degraded automatic capability did not produce an accepted result: $id ($($payload.status))" }
+              if ($capability.currentState -notin @("authoritative_automatic", "automatic_degraded")) { throw "packaged release automatic capability has an unsupported matrix state: $id ($($capability.currentState))" }
+            }
+            elseif ($mode -in @("explicit_authority", "lifecycle_external")) {
+              if ($payload.status -ne "not_applicable") { throw "packaged release explicit/lifecycle capability must be explicitly not_applicable: $id ($($payload.status))" }
+              if ($null -eq $payload.failure -or [string]::IsNullOrWhiteSpace([string]$payload.failure.kind)) { throw "packaged release explicit/lifecycle capability has no failure reason: $id" }
+            }
+            else { throw "packaged release capability has no recognized execution mode: $id ($mode)" }
           }
-          Write-Host "Packaged release Sentrux closure verified from committed refs: $($capabilityRefs.Count) capability refs; matrix coverage=$($matrix.coverageStatus)"
+          Write-Host "Packaged release Sentrux closure verified from committed refs: $($capabilityRefs.Count) capability refs; required=$($required.Count); matrix coverage=$($matrix.coverageStatus)"
 
           # ai-safety-003 (issue #34): if the packaged snapshot carries an
           # audit report, it must pass the same fail-closed validate
