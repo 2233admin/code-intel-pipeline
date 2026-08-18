@@ -7,15 +7,121 @@ use crate::capability::{rfc3339_now, sha256_hex};
 
 use super::{command_evidence, run_sentrux, SentruxCommand};
 
-const SENTRUX_CAPABILITY_COMMANDS: [(&str, &str); 7] = [
-    ("sentrux.gate", "gate"),
-    ("sentrux.check", "check"),
-    ("sentrux.scan", "scan"),
-    ("sentrux.health", "health"),
-    ("sentrux.dsm", "dsm"),
-    ("sentrux.check_rules", "check_rules"),
-    ("sentrux.gate_save", "gate_save"),
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RouteKind {
+    Command,
+    ReuseScan,
+    NotApplicable {
+        failure_kind: &'static str,
+        message: &'static str,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CapabilityRoute {
+    capability_id: &'static str,
+    operation: &'static str,
+    command: &'static str,
+    kind: RouteKind,
+}
+
+// This is the executor's canonical dispatch table. The matrix remains the
+// inventory of record; keeping the table explicit here makes an omitted route
+// observable in tests and in the emitted artifact set instead of becoming a
+// silent loop omission.
+const SENTRUX_CAPABILITY_ROUTES: [CapabilityRoute; 15] = [
+    route("sentrux.gate", "gate", "gate", RouteKind::Command),
+    route("sentrux.check", "check", "check", RouteKind::Command),
+    route("sentrux.scan", "scan", "scan", RouteKind::Command),
+    route("sentrux.health", "health", "health", RouteKind::Command),
+    route("sentrux.dsm", "dsm", "dsm", RouteKind::Command),
+    route(
+        "sentrux.check_rules",
+        "check_rules",
+        "check_rules",
+        RouteKind::Command,
+    ),
+    route(
+        "sentrux.baseline_save",
+        "gate_save",
+        "gate_save",
+        RouteKind::NotApplicable {
+            failure_kind: "explicit_mutation_required",
+            message: "baseline_save mutates the repository baseline and requires explicit authority",
+        },
+    ),
+    route(
+        "sentrux.rescan",
+        "rescan",
+        "rescan",
+        RouteKind::ReuseScan,
+    ),
+    route(
+        "sentrux.git_stats",
+        "git_stats",
+        "git_stats",
+        RouteKind::Command,
+    ),
+    route(
+        "sentrux.evolution",
+        "evolution",
+        "evolution",
+        RouteKind::Command,
+    ),
+    route(
+        "sentrux.test_gaps",
+        "test_gaps",
+        "test_gaps",
+        RouteKind::Command,
+    ),
+    route(
+        "sentrux.what_if",
+        "what_if",
+        "what_if",
+        RouteKind::NotApplicable {
+            failure_kind: "dag_scope_not_supported",
+            message: "what_if requires an explicit change set and is not applicable to this repository DAG snapshot",
+        },
+    ),
+    route(
+        "sentrux.session_start",
+        "session_start",
+        "session_start",
+        RouteKind::NotApplicable {
+            failure_kind: "session_lifecycle_outside_dag",
+            message: "session_start is an agent lifecycle event and is not applicable to this repository DAG run",
+        },
+    ),
+    route(
+        "sentrux.session_end",
+        "session_end",
+        "session_end",
+        RouteKind::NotApplicable {
+            failure_kind: "session_lifecycle_outside_dag",
+            message: "session_end is an agent lifecycle event and is not applicable to this repository DAG run",
+        },
+    ),
+    route(
+        "sentrux.provider_discovery",
+        "provider_discovery",
+        "provider_discovery",
+        RouteKind::Command,
+    ),
 ];
+
+const fn route(
+    capability_id: &'static str,
+    operation: &'static str,
+    command: &'static str,
+    kind: RouteKind,
+) -> CapabilityRoute {
+    CapabilityRoute {
+        capability_id,
+        operation,
+        command,
+        kind,
+    }
+}
 
 pub(super) fn collect_sentrux_capabilities(
     repo: &Path,
@@ -23,53 +129,79 @@ pub(super) fn collect_sentrux_capabilities(
 ) -> Result<(SentruxCommand, SentruxCommand, Vec<Value>), AdapterError> {
     let mut gate = None;
     let mut check = None;
-    let mut observations = Vec::with_capacity(SENTRUX_CAPABILITY_COMMANDS.len());
-    for &(capability_id, subcommand) in &SENTRUX_CAPABILITY_COMMANDS {
-        if subcommand == "gate_save" {
-            observations.push(json!({
-                "capabilityId":capability_id,
-                "operation":subcommand,
-                "providerMode":sentrux_provider_mode(tool_path_prefix),
-                "status":"not_run",
-                "verdict":"unknown",
-                "command":Value::Null,
-                "failure":{
-                    "kind":"explicit_mutation_required",
-                    "message":"gate_save writes the repository baseline and requires explicit authority"
+    let mut observations = Vec::with_capacity(SENTRUX_CAPABILITY_ROUTES.len());
+    for route in SENTRUX_CAPABILITY_ROUTES {
+        let observation = match route.kind {
+            RouteKind::NotApplicable {
+                failure_kind,
+                message,
+            } => not_applicable_observation(&route, tool_path_prefix, failure_kind, message),
+            RouteKind::ReuseScan => {
+                match run_sentrux(
+                    repo,
+                    tool_path_prefix,
+                    if tool_path_prefix.is_some() {
+                        route.command
+                    } else {
+                        "scan"
+                    },
+                ) {
+                    Ok(command) => capability_observation(
+                        &route,
+                        tool_path_prefix,
+                        &command,
+                        Some("authoritative"),
+                    ),
+                    Err(error) => route_error_observation(&route, tool_path_prefix, &error),
                 }
-            }));
-            continue;
-        }
-        let command = match run_sentrux(repo, tool_path_prefix, subcommand) {
-            Ok(command) => command,
-            Err(error) if matches!(subcommand, "gate" | "check") => return Err(error),
-            Err(error) => {
-                observations.push(json!({
-                    "capabilityId":capability_id,
-                    "operation":subcommand,
-                    "providerMode":sentrux_provider_mode(tool_path_prefix),
-                    "status":"failed",
-                    "verdict":"unknown",
-                    "command":Value::Null,
-                    "failure":{
-                        "kind":adapter_error_kind(&error),
-                        "message":format!("{error:?}")
+            }
+            RouteKind::Command => {
+                if tool_path_prefix.is_none()
+                    && !matches!(
+                        route.command,
+                        "gate"
+                            | "check"
+                            | "scan"
+                            | "health"
+                            | "dsm"
+                            | "check_rules"
+                            | "git_stats"
+                            | "evolution"
+                            | "test_gaps"
+                            | "provider_discovery"
+                    )
+                {
+                    unavailable_observation(
+                        &route,
+                        tool_path_prefix,
+                        "the built-in Rust provider has no route for this capability",
+                    )
+                } else {
+                    match run_sentrux(repo, tool_path_prefix, route.command) {
+                        Ok(command) => capability_observation(
+                            &route,
+                            tool_path_prefix,
+                            &command,
+                            Some("authoritative"),
+                        ),
+                        Err(error) if matches!(route.command, "gate" | "check") => {
+                            return Err(error)
+                        }
+                        Err(error) => route_error_observation(&route, tool_path_prefix, &error),
                     }
-                }));
-                continue;
+                }
             }
         };
-        observations.push(capability_observation(
-            capability_id,
-            subcommand,
-            tool_path_prefix,
-            &command,
-        ));
-        match subcommand {
-            "gate" => gate = Some(command),
-            "check" => check = Some(command),
-            _ => {}
+        if route.capability_id == "sentrux.gate" {
+            if let Some(command) = observation_command(&observation) {
+                gate = Some(command);
+            }
+        } else if route.capability_id == "sentrux.check" {
+            if let Some(command) = observation_command(&observation) {
+                check = Some(command);
+            }
         }
+        observations.push(observation);
     }
     Ok((
         gate.ok_or_else(|| AdapterError::Internal("Sentrux gate observation is missing".into()))?,
@@ -97,7 +229,7 @@ pub(super) fn build_capability_artifacts(
         })?;
         let raw_status = observation["status"].as_str().unwrap_or("failed");
         let status = match raw_status {
-            "not_run" => "not_applicable",
+            "not_run" | "not_applicable" => "not_applicable",
             "succeeded" | "degraded" | "unavailable" | "skipped" | "failed" => raw_status,
             other => {
                 return Err(AdapterError::Contract(format!(
@@ -114,7 +246,7 @@ pub(super) fn build_capability_artifacts(
             "snapshotIdentity":snapshot_identity,
             "provider":provider.clone(),
             "status":status,
-            "authority":if status == "not_applicable" { "declared_only" } else { "authoritative" },
+            "authority":artifact_authority(observation, status),
             "inputs":{"snapshotIdentity":snapshot_identity},
             "outputs":{
                 "command":observation["command"],
@@ -177,8 +309,11 @@ fn capability_failure(observation: &Value, status: &str) -> Value {
     }
     let raw_kind = observation["failure"]["kind"].as_str().unwrap_or("unknown");
     let kind = match raw_kind {
-        "explicit_mutation_required" | "not_applicable" => "not_applicable",
-        "provider_unavailable" => "provider_unavailable",
+        "explicit_mutation_required"
+        | "dag_scope_not_supported"
+        | "session_lifecycle_outside_dag"
+        | "not_applicable" => "not_applicable",
+        "provider_unavailable" | "capability_unavailable" => "provider_unavailable",
         "contract_error" | "invalid_options" => "config_error",
         "io_error" => "local_tool_error",
         _ => "provider_error",
@@ -206,10 +341,10 @@ fn sentrux_decision_consumers(capability_id: &str) -> Value {
 }
 
 fn capability_observation(
-    capability_id: &str,
-    subcommand: &str,
+    route: &CapabilityRoute,
     tool_path_prefix: Option<&Path>,
     command: &SentruxCommand,
+    authority: Option<&str>,
 ) -> Value {
     let (status, verdict, failure) = if command.success {
         ("succeeded", "pass", json!({"kind":"none"}))
@@ -226,13 +361,102 @@ fn capability_observation(
         )
     };
     json!({
-        "capabilityId":capability_id,
-        "operation":subcommand,
+        "capabilityId":route.capability_id,
+        "operation":route.operation,
         "providerMode":sentrux_provider_mode(tool_path_prefix),
+        "authority":authority.unwrap_or("compatibility"),
         "status":status,
         "verdict":verdict,
-        "command":command_evidence(subcommand, command),
+        "command":command_evidence(route.operation, command),
         "failure":failure
+    })
+}
+
+fn not_applicable_observation(
+    route: &CapabilityRoute,
+    tool_path_prefix: Option<&Path>,
+    failure_kind: &str,
+    message: &str,
+) -> Value {
+    json!({
+        "capabilityId":route.capability_id,
+        "operation":route.operation,
+        "providerMode":sentrux_provider_mode(tool_path_prefix),
+        "authority":"declared_only",
+        "status":"not_applicable",
+        "verdict":"unknown",
+        "command":Value::Null,
+        "failure":{"kind":failure_kind,"message":message}
+    })
+}
+
+fn unavailable_observation(
+    route: &CapabilityRoute,
+    tool_path_prefix: Option<&Path>,
+    message: &str,
+) -> Value {
+    json!({
+        "capabilityId":route.capability_id,
+        "operation":route.operation,
+        "providerMode":sentrux_provider_mode(tool_path_prefix),
+        "authority":"compatibility",
+        "status":"unavailable",
+        "verdict":"unknown",
+        "command":Value::Null,
+        "failure":{"kind":"capability_unavailable","message":message}
+    })
+}
+
+fn route_error_observation(
+    route: &CapabilityRoute,
+    tool_path_prefix: Option<&Path>,
+    error: &AdapterError,
+) -> Value {
+    let unavailable = matches!(error, AdapterError::Unavailable(_));
+    json!({
+        "capabilityId":route.capability_id,
+        "operation":route.operation,
+        "providerMode":sentrux_provider_mode(tool_path_prefix),
+        "authority":if unavailable { "compatibility" } else { "authoritative" },
+        "status":if unavailable { "unavailable" } else { "failed" },
+        "verdict":"unknown",
+        "command":Value::Null,
+        "failure":{
+            "kind":if unavailable { "provider_unavailable" } else { adapter_error_kind(error) },
+            "message":format!("{error:?}")
+        }
+    })
+}
+
+fn artifact_authority(observation: &Value, status: &str) -> &'static str {
+    match observation["authority"].as_str() {
+        Some("authoritative") => "authoritative",
+        Some("fallback") => "fallback",
+        Some("compatibility") => "compatibility",
+        Some("declared_only") => "declared_only",
+        _ => match status {
+            "succeeded" | "failed" => "authoritative",
+            "not_applicable" => "declared_only",
+            _ => "compatibility",
+        },
+    }
+}
+
+fn observation_command(observation: &Value) -> Option<SentruxCommand> {
+    let command = observation["command"].as_object()?;
+    Some(SentruxCommand {
+        argv: command["argv"]
+            .as_array()?
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect(),
+        exit_code: command["exitCode"].as_i64().map(|value| value as i32),
+        success: command["success"].as_bool().unwrap_or(false),
+        stdout: command["stdout"].as_str().unwrap_or_default().to_owned(),
+        stderr: command["stderr"].as_str().unwrap_or_default().to_owned(),
+        violations: Vec::new(),
+        governed: true,
     })
 }
 

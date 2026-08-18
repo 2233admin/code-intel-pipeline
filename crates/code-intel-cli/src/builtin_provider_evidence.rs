@@ -35,6 +35,8 @@ mod sentrux_analysis;
 mod sentrux_capability_artifacts;
 #[path = "sentrux_gate.rs"]
 mod sentrux_gate;
+#[path = "sentrux_lite_capabilities.rs"]
+mod sentrux_lite_capabilities;
 
 use codenexus_scratch::{create_codenexus_scratch_dir, ScratchDir};
 use sentrux_gate::Violation;
@@ -523,8 +525,13 @@ fn run_sentrux(
         Some(prefix) => {
             let resolved = resolve_sentrux(prefix)?;
             let mut command = external_command(&resolved);
+            let provider_subcommand = if subcommand == "provider_discovery" {
+                "pro_status"
+            } else {
+                subcommand
+            };
             let output = command
-                .arg(subcommand)
+                .arg(provider_subcommand)
                 .arg(".")
                 .current_dir(repo)
                 .output()
@@ -537,7 +544,32 @@ fn run_sentrux(
             let run = match subcommand {
                 "dsm" => return json_command(sentrux_analysis::analyze(repo), subcommand),
                 "scan" => return json_command(sentrux_gate::scan_json(repo), subcommand),
+                "rescan" => return json_command(sentrux_gate::scan_json(repo), subcommand),
                 "health" => return json_command(sentrux_health_json(repo), subcommand),
+                "git_stats" => {
+                    return json_command(
+                        sentrux_lite_capabilities::git_stats_json(repo),
+                        subcommand,
+                    )
+                }
+                "evolution" => {
+                    return json_command(
+                        sentrux_lite_capabilities::evolution_json(repo),
+                        subcommand,
+                    )
+                }
+                "test_gaps" => {
+                    return json_command(
+                        sentrux_lite_capabilities::test_gaps_json(repo),
+                        subcommand,
+                    )
+                }
+                "provider_discovery" => {
+                    return json_command(
+                        sentrux_lite_capabilities::provider_discovery_json(),
+                        subcommand,
+                    )
+                }
                 "check_rules" => sentrux_gate::run_check(repo),
                 "check" => sentrux_gate::run_check_aligned(repo, true),
                 "gate" => sentrux_gate::run_gate(repo, false),
