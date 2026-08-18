@@ -122,11 +122,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/builtin_provider_evidence.rs",
-        "sha256": "004ad153b019ac9ae9869c095d90dce8b7a49bc5cdf745ce68f16dcd9ad795e0"
+        "sha256": "b5807ae41c1f3befde1ee2c62b0aa628f4fb0f4e916a27c409d3a855a624a723"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "198cb2ca6abaffd40445ce0e03f821356ab191ee084446fd78235dabe93ccc45",
+        "sha256": "ca6a8279c1f27850e3f37b6b286c93572b24c1bdfb2f75e677a02cec4df7a602",
         "testName": "production_dag_output_commits_and_enters_the_authoritative_index"
       }
     },
@@ -141,7 +141,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "e9eb3fcb06ffbd736dbb75c36af7126fed7a57b57fdab362124f7e19140f8066"
+        "sha256": "d69f51b84a1f60036acc42e72bc7fe99eef4e9d6333944e2ffc3c90848490724"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
@@ -160,7 +160,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "e9eb3fcb06ffbd736dbb75c36af7126fed7a57b57fdab362124f7e19140f8066"
+        "sha256": "d69f51b84a1f60036acc42e72bc7fe99eef4e9d6333944e2ffc3c90848490724"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
@@ -179,7 +179,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "e9eb3fcb06ffbd736dbb75c36af7126fed7a57b57fdab362124f7e19140f8066"
+        "sha256": "d69f51b84a1f60036acc42e72bc7fe99eef4e9d6333944e2ffc3c90848490724"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
@@ -259,7 +259,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "198cb2ca6abaffd40445ce0e03f821356ab191ee084446fd78235dabe93ccc45",
+        "sha256": "ca6a8279c1f27850e3f37b6b286c93572b24c1bdfb2f75e677a02cec4df7a602",
         "testName": "production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch"
       }
     }
