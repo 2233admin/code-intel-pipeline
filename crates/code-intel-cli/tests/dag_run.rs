@@ -341,6 +341,16 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     assert_eq!(impact["schema"], "code-intel-change-impact.v1");
     assert_eq!(impact["runOutcome"], "completed");
     assert_eq!(impact["freshness"]["status"], "current");
+    assert_eq!(impact["sentruxEvidence"]["status"], "available");
+    assert!(!impact["sentruxEvidenceRefs"].as_array().unwrap().is_empty());
+    assert!(impact["sentruxEvidenceRefs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|reference| {
+            reference["artifactSchema"] == "code-intel-sentrux-capability-artifact.v1"
+                && reference["type"] == "provider.sentrux.capability-artifact"
+        }));
     assert_eq!(
         impact["testSelection"]["files"],
         json!(["tests/lib_test.rs"])

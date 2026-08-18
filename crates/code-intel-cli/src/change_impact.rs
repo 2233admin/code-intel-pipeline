@@ -6,6 +6,9 @@ use serde_json::{json, Value};
 use crate::committed_evidence::{self, CommittedEvidence, EvidenceError};
 use crate::impact_graph::{impacted_files, reverse_import_graph, select_tests, test_commands};
 
+const SENTRUX_CAPABILITY_ARTIFACT_SCHEMA: &str = "code-intel-sentrux-capability-artifact.v1";
+const SENTRUX_CAPABILITY_ARTIFACT_TYPE: &str = "provider.sentrux.capability-artifact";
+
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
     // Leaf adapter only — controllers wrap the execute_* paths with typed
     // authority receipts and must not be imported here (import cycle).
@@ -294,6 +297,7 @@ fn build_result(
             })
         })
         .collect::<Vec<_>>();
+    let (sentrux_evidence_refs, sentrux_evidence) = sentrux_evidence(evidence, stale);
     let mut result = json!({
         "schema":"code-intel-change-impact.v1",
         "repo":cli.repo,
@@ -304,6 +308,8 @@ fn build_result(
         "freshness":freshness,
         "changed":changed,
         "evidenceRefs":[files_ref,imports_ref],
+        "sentruxEvidenceRefs":sentrux_evidence_refs,
+        "sentruxEvidence":sentrux_evidence,
         "impact":{
             "files":impact_rows,
             "resolvedImportEdges":resolved_edges,
@@ -344,6 +350,48 @@ fn build_result(
     Ok(ChangeImpactResult { value: result })
 }
 
+/// Project only manifest refs whose payloads were verified by
+/// `committed_evidence::load`. This deliberately does not inspect provider
+/// stdout or re-run Sentrux: change impact is a committed-snapshot consumer.
+fn sentrux_evidence(evidence: &CommittedEvidence, stale: bool) -> (Vec<Value>, Value) {
+    let refs = evidence
+        .refs
+        .iter()
+        .zip(evidence.verified.iter())
+        .filter(|(reference, _)| {
+            reference["artifactSchema"] == SENTRUX_CAPABILITY_ARTIFACT_SCHEMA
+                && reference["type"] == SENTRUX_CAPABILITY_ARTIFACT_TYPE
+        })
+        .map(|(reference, _)| reference.clone())
+        .collect::<Vec<_>>();
+    if refs.is_empty() {
+        return (
+            refs,
+            json!({
+                "status":"unknown",
+                "diagnostics":["No verified Sentrux capability artifact refs are present in the committed evidence; Sentrux-specific impact and test-gap signals are advisory/unknown."],
+            }),
+        );
+    }
+    if stale {
+        (
+            refs,
+            json!({
+                "status":"advisory",
+                "diagnostics":["Sentrux capability refs are verified against the committed snapshot, but this impact result is stale-advisory."],
+            }),
+        )
+    } else {
+        (
+            refs,
+            json!({
+                "status":"available",
+                "diagnostics":[],
+            }),
+        )
+    }
+}
+
 fn normalize_relative(path: &str) -> Result<String, ImpactError> {
     let path = path.replace('\\', "/");
     if path.is_empty()
@@ -370,4 +418,31 @@ pub(crate) fn map_evidence(error: EvidenceError) -> ImpactError {
 pub(crate) enum ImpactError {
     Contract(String),
     HostIo(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_sentrux_capability_refs_are_explicitly_unknown() {
+        let evidence = CommittedEvidence {
+            entry: Value::Null,
+            refs: Vec::new(),
+            verified: Vec::new(),
+            run_root: std::path::PathBuf::new(),
+        };
+
+        let (refs, projection) = sentrux_evidence(&evidence, false);
+
+        assert!(refs.is_empty());
+        assert_eq!(projection["status"], "unknown");
+        assert!(projection["diagnostics"]
+            .as_array()
+            .expect("missing evidence diagnostic array")
+            .iter()
+            .any(|diagnostic| diagnostic
+                .as_str()
+                .is_some_and(|text| text.contains("advisory/unknown"))));
+    }
 }

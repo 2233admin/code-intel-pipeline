@@ -45,6 +45,24 @@
       "maxItems": 2,
       "items": { "$ref": "code-intel-run-manifest.v1.schema.json#/definitions/artifactRef" }
     },
+    "sentruxEvidenceRefs": {
+      "type": "array",
+      "items": { "$ref": "code-intel-run-manifest.v1.schema.json#/definitions/artifactRef" },
+      "uniqueItems": true
+    },
+    "sentruxEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "diagnostics"],
+      "properties": {
+        "status": { "enum": ["available", "advisory", "unknown"] },
+        "diagnostics": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
     "impact": {
       "type": "object",
       "additionalProperties": false,
