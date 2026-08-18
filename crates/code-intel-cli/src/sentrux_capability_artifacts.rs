@@ -250,7 +250,8 @@ pub(super) fn build_capability_artifacts(
             "inputs":{"snapshotIdentity":snapshot_identity},
             "outputs":{
                 "command":observation["command"],
-                "verdict":observation["verdict"]
+                "verdict":observation["verdict"],
+                "outputSummary":observation["outputSummary"]
             },
             "failure":capability_failure(observation, status),
             "freshness":{
@@ -335,8 +336,28 @@ fn sentrux_decision_consumers(capability_id: &str) -> Value {
         "sentrux.gate" | "sentrux.check" => {
             json!(["diagnosis.hospital", "pr_gate", "release_gate"])
         }
-        "sentrux.gate_save" => json!(["sentrux.gate"]),
-        _ => json!(["evidence.sentrux", "diagnosis.hospital"]),
+        "sentrux.baseline_save" => json!(["sentrux.gate"]),
+        "sentrux.dsm" | "sentrux.test_gaps" => json!([
+            "evidence.sentrux",
+            "diagnosis.hospital",
+            "report",
+            "change_impact",
+            "test_selection",
+            "pr_gate",
+            "release_gate"
+        ]),
+        "sentrux.what_if" => json!(["change_impact", "pr_gate", "release_gate"]),
+        "sentrux.session_start" => json!(["sentrux.rescan", "sentrux.session_end"]),
+        "sentrux.session_end" => json!(["pr_gate", "release_gate"]),
+        "sentrux.provider_discovery" => {
+            json!(["doctor", "run_planner", "install_smoke", "release_gate"])
+        }
+        _ => json!([
+            "evidence.sentrux",
+            "diagnosis.hospital",
+            "report",
+            "release_gate"
+        ]),
     }
 }
 
@@ -346,7 +367,19 @@ fn capability_observation(
     command: &SentruxCommand,
     authority: Option<&str>,
 ) -> Value {
-    let (status, verdict, failure) = if command.success {
+    let (status, verdict, failure) = if command.success && !command.output_summary.complete() {
+        (
+            "degraded",
+            "unknown",
+            json!({
+                "kind":"degraded",
+                "message":format!(
+                    "Sentrux {} output exceeded the bounded evidence limit; only metadata and preview were retained",
+                    route.operation
+                )
+            }),
+        )
+    } else if command.success {
         ("succeeded", "pass", json!({"kind":"none"}))
     } else if !command.governed {
         ("succeeded", "unknown", json!({"kind":"none"}))
@@ -368,6 +401,7 @@ fn capability_observation(
         "status":status,
         "verdict":verdict,
         "command":command_evidence(route.operation, command),
+        "outputSummary":command.output_summary.to_json(&command.stdout, &command.stderr),
         "failure":failure
     })
 }
@@ -444,6 +478,18 @@ fn artifact_authority(observation: &Value, status: &str) -> &'static str {
 
 fn observation_command(observation: &Value) -> Option<SentruxCommand> {
     let command = observation["command"].as_object()?;
+    let stdout = command["stdout"].as_str().unwrap_or_default().to_owned();
+    let stderr = command["stderr"].as_str().unwrap_or_default().to_owned();
+    let output_summary = command["outputSummary"]
+        .as_object()
+        .and_then(|summary| {
+            Some(super::sentrux_command::OutputSummary::from_metadata(
+                summary,
+            ))
+        })
+        .unwrap_or_else(|| {
+            super::sentrux_command::OutputSummary::from_bytes(stdout.as_bytes(), stderr.as_bytes())
+        });
     Some(SentruxCommand {
         argv: command["argv"]
             .as_array()?
@@ -453,10 +499,11 @@ fn observation_command(observation: &Value) -> Option<SentruxCommand> {
             .collect(),
         exit_code: command["exitCode"].as_i64().map(|value| value as i32),
         success: command["success"].as_bool().unwrap_or(false),
-        stdout: command["stdout"].as_str().unwrap_or_default().to_owned(),
-        stderr: command["stderr"].as_str().unwrap_or_default().to_owned(),
+        stdout,
+        stderr,
         violations: Vec::new(),
         governed: true,
+        output_summary,
     })
 }
 

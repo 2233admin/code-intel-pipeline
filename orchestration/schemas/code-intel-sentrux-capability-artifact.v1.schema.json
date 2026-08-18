@@ -45,7 +45,16 @@
     "inputs": { "type": "object" },
     "outputs": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
+        "command": { "type": ["object", "null"] },
+        "verdict": { "enum": ["pass", "fail", "unknown"] },
+        "outputSummary": {
+          "oneOf": [
+            { "$ref": "#/$defs/outputSummary" },
+            { "type": "null" }
+          ]
+        },
         "artifacts": {
           "type": "array",
           "items": { "$ref": "#/$defs/artifactRef" },
@@ -188,6 +197,32 @@
         },
         "evaluatedAt": { "type": "string", "format": "date-time" },
         "consumedSnapshotIdentity": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "outputSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "complete", "bounded", "limitBytes", "totalBytes", "stdout", "stderr", "note"],
+      "properties": {
+        "authority": { "const": "metadata_only" },
+        "complete": { "type": "boolean" },
+        "bounded": { "type": "boolean" },
+        "limitBytes": { "type": "integer", "minimum": 1 },
+        "totalBytes": { "type": "integer", "minimum": 0 },
+        "stdout": { "$ref": "#/$defs/outputStream" },
+        "stderr": { "$ref": "#/$defs/outputStream" },
+        "note": { "$ref": "#/$defs/nonEmpty" }
+      }
+    },
+    "outputStream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "sha256", "preview", "previewBytes"],
+      "properties": {
+        "bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "preview": { "type": "string" },
+        "previewBytes": { "type": "integer", "minimum": 0 }
       }
     }
   }

@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -33,15 +33,17 @@ mod sentrux_adapter;
 mod sentrux_analysis;
 #[path = "sentrux_capability_artifacts.rs"]
 mod sentrux_capability_artifacts;
+#[path = "sentrux_command.rs"]
+mod sentrux_command;
 #[path = "sentrux_gate.rs"]
 mod sentrux_gate;
 #[path = "sentrux_lite_capabilities.rs"]
 mod sentrux_lite_capabilities;
 
 use codenexus_scratch::{create_codenexus_scratch_dir, ScratchDir};
+pub(super) use sentrux_command::{command_evidence, SentruxCommand};
 use sentrux_gate::Violation;
 const MAX_AGE_SECONDS: u64 = 300;
-const MAX_COMMAND_EVIDENCE_BYTES: usize = 1024 * 1024;
 // The codenexus-domain effect vocabulary validated by
 // `codenexus_adapter::validate_native` -- distinct from the generic
 // repo_read/local_write/process_spawn effects `publish_admission` reports at
@@ -458,64 +460,6 @@ fn sentrux_provider_options<'a>(
     Ok((repo, tool_path_prefix))
 }
 
-struct SentruxCommand {
-    argv: Vec<String>,
-    exit_code: Option<i32>,
-    success: bool,
-    stdout: String,
-    stderr: String,
-    violations: Vec<Violation>,
-    governed: bool,
-}
-
-impl SentruxCommand {
-    fn from_native(run: sentrux_gate::EngineRun, subcommand: &str) -> Self {
-        Self {
-            argv: vec![
-                "code-intel".into(),
-                "sentrux".into(),
-                subcommand.into(),
-                ".".into(),
-            ],
-            exit_code: Some(if run.success { 0 } else { 1 }),
-            success: run.success,
-            stdout: run.stdout,
-            stderr: String::new(),
-            violations: run.violations,
-            governed: run.governed,
-        }
-    }
-
-    fn from_external(output: Output, subcommand: &str) -> Self {
-        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-        let violations = if output.status.success() {
-            Vec::new()
-        } else {
-            stdout
-                .lines()
-                .filter_map(|line| line.strip_prefix("- "))
-                .map(str::trim)
-                .filter(|message| !message.is_empty())
-                .take(32)
-                .map(|message| Violation {
-                    rule: format!("sentrux_{subcommand}"),
-                    message: message.chars().take(1024).collect(),
-                    targets: Vec::new(),
-                })
-                .collect()
-        };
-        Self {
-            argv: vec!["sentrux".into(), subcommand.into(), ".".into()],
-            exit_code: output.status.code(),
-            success: output.status.success(),
-            stdout,
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-            violations,
-            governed: true,
-        }
-    }
-}
-
 fn run_sentrux(
     repo: &Path,
     tool_path_prefix: Option<&Path>,
@@ -583,13 +527,6 @@ fn run_sentrux(
             SentruxCommand::from_native(run, subcommand)
         }
     };
-    if command.stdout.len() > MAX_COMMAND_EVIDENCE_BYTES
-        || command.stderr.len() > MAX_COMMAND_EVIDENCE_BYTES
-    {
-        return Err(AdapterError::Contract(format!(
-            "Sentrux {subcommand} output exceeds the bounded evidence limit"
-        )));
-    }
     Ok(command)
 }
 
@@ -602,25 +539,7 @@ fn json_command(
     let stdout = serde_json::to_string_pretty(&value).map_err(|error| {
         AdapterError::Internal(format!("serialize Sentrux {subcommand}: {error}"))
     })?;
-    if stdout.len() > MAX_COMMAND_EVIDENCE_BYTES {
-        return Err(AdapterError::Contract(format!(
-            "Sentrux {subcommand} output exceeds the bounded evidence limit"
-        )));
-    }
-    Ok(SentruxCommand {
-        argv: vec![
-            "code-intel".into(),
-            "sentrux".into(),
-            subcommand.into(),
-            ".".into(),
-        ],
-        exit_code: Some(0),
-        success: true,
-        stdout,
-        stderr: String::new(),
-        violations: Vec::new(),
-        governed: true,
-    })
+    Ok(SentruxCommand::from_json(stdout.into_bytes(), subcommand))
 }
 
 fn sentrux_health_json(repo: &Path) -> Result<Value, String> {
@@ -671,17 +590,6 @@ fn resolve_sentrux(prefix: &Path) -> Result<PathBuf, AdapterError> {
                 prefix.display()
             ))
         })
-}
-
-fn command_evidence(subcommand: &str, command: &SentruxCommand) -> Value {
-    json!({
-        "id":subcommand,
-        "argv":command.argv,
-        "exitCode":command.exit_code,
-        "success":command.success,
-        "stdout":command.stdout,
-        "stderr":command.stderr
-    })
 }
 
 fn command_rule(kind: &str, command: &SentruxCommand) -> Value {

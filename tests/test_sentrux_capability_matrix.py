@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MATRIX_PATH = ROOT / "orchestration" / "sentrux-capability-matrix.v1.json"
 INTEGRATIONS_PATH = ROOT / "orchestration" / "integrations.json"
 RUST_SENTRUX_PATH = ROOT / "crates" / "code-intel-cli" / "src" / "sentrux.rs"
+EXECUTOR_PATH = ROOT / "crates" / "code-intel-cli" / "src" / "sentrux_capability_artifacts.rs"
 LEGACY_SENTRY_PATH = ROOT / "legacy" / "Invoke-SentruxAgentTool.ps1"
 
 
@@ -19,6 +20,7 @@ class SentruxCapabilityMatrixTests(unittest.TestCase):
         cls.matrix = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
         cls.integrations = json.loads(INTEGRATIONS_PATH.read_text(encoding="utf-8"))
         cls.rust_source = RUST_SENTRUX_PATH.read_text(encoding="utf-8")
+        cls.executor_source = EXECUTOR_PATH.read_text(encoding="utf-8")
         cls.legacy_source = LEGACY_SENTRY_PATH.read_text(encoding="utf-8")
 
     def test_matrix_has_a_single_identity_for_every_capability_and_alias(self) -> None:
@@ -79,6 +81,23 @@ class SentruxCapabilityMatrixTests(unittest.TestCase):
             set(self.matrix["completionPolicy"]["forbiddenSilentStates"]),
             {"declared_only", "compatibility_only"},
         )
+
+    def test_automatic_matrix_routes_have_executor_entries_and_consumers(self) -> None:
+        for capability in self.matrix["capabilities"]:
+            with self.subTest(capability=capability["id"]):
+                if capability["route"].startswith("provider.sentrux-adapt"):
+                    self.assertIn(f'"{capability["id"]}"', self.executor_source)
+                    self.assertNotEqual(capability["currentState"], "compatibility_only")
+                    self.assertNotEqual(capability["currentState"], "declared_only")
+                self.assertTrue(capability["artifacts"])
+                self.assertTrue(capability["decisionConsumers"])
+
+    def test_dag_non_applicable_capabilities_are_explicit(self) -> None:
+        states = {item["id"]: item["currentState"] for item in self.matrix["capabilities"]}
+        self.assertEqual(states["sentrux.what_if"], "not_applicable_dag")
+        self.assertEqual(states["sentrux.baseline_save"], "explicit_authority_required")
+        self.assertEqual(states["sentrux.session_start"], "lifecycle_external")
+        self.assertEqual(states["sentrux.session_end"], "lifecycle_external")
 
 
 if __name__ == "__main__":
