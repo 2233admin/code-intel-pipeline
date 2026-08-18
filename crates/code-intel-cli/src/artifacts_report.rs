@@ -267,7 +267,6 @@ fn reference_key(reference: &Value) -> Option<String> {
         "schema",
         "artifactSchema",
         "type",
-        "path",
         "sha256",
         "consumedSnapshotIdentity",
     ]
@@ -440,8 +439,10 @@ mod tests {
             "snapshotIdentity":snapshot,
             "nodes":{"evidence.sentrux":{"artifacts":[reference]}}
         });
+        let mut hospital_reference = reference.clone();
+        hospital_reference["path"] = json!("sentrux-capability-scan.json");
         let hospital = json!({
-            "tools":{"sentruxCapabilities":[reference, untrusted]}
+            "tools":{"sentruxCapabilities":[hospital_reference, untrusted]}
         });
 
         let evidence = project_sentrux_evidence(&root, &manifest, &hospital);
