@@ -11,7 +11,7 @@ use legacy_session::{
     assert_legacy_session_success, invoke_legacy_session, parse_legacy_session_json,
 };
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[test]
 fn root_help_leads_with_the_compiled_primary_entry() {
