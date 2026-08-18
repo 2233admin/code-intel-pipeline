@@ -132,11 +132,18 @@ impl ProjectContext {
 
     pub(crate) fn run(&self, intent: RunIntent) -> Result<RunAnswer, ProjectError> {
         ensure_run_authority(&self.artifact_root, &self.repo, &self.repo_path)?;
-        fs::create_dir_all(&self.artifact_root)
-            .map_err(|error| ProjectError::host_io(format!("create artifact root: {error}")))?;
-        let authority_root = self.artifact_root.join(&self.repo);
-        fs::create_dir_all(&authority_root).map_err(|error| {
-            ProjectError::host_io(format!("create repository authority root: {error}"))
+        let artifact_root = artifacts::ensure_directory(&self.artifact_root).map_err(|error| {
+            ProjectError::host_io(format!(
+                "create artifact root {}: {error}",
+                self.artifact_root.display()
+            ))
+        })?;
+        let authority_root = artifact_root.join(&self.repo);
+        let authority_root = artifacts::ensure_directory(&authority_root).map_err(|error| {
+            ProjectError::host_io(format!(
+                "create repository authority root {}: {error}",
+                authority_root.display()
+            ))
         })?;
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
