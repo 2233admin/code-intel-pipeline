@@ -694,4 +694,6 @@ jobs:
 
       - name: Hardcoded path scan
         shell: pwsh
-        run: ./legacy/tools/check-hardcoded-paths.ps1
+        run: |
+          $binary = if ($IsWindows) { "./target/release/code-intel.exe" } else { "./target/release/code-intel" }
+          & $binary lint hardcoded-paths

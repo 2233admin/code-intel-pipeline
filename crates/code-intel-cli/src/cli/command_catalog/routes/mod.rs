@@ -132,6 +132,21 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
         ),
     },
     raw_route! {
+        command: "lint",
+        subcommand: Some("hardcoded-paths"),
+        argument_offset: 2,
+        id: CompatibilityRoute::LintHardcodedPaths,
+        contract: command_contract!(
+            Internal,
+            ProviderAdmin,
+            Administrative,
+            &[CommandEffect::RepoRead, CommandEffect::ProcessSpawn],
+            stdout!("text-format:hardcoded-paths-scan.v1"),
+            exits!(0, 1, 74),
+            "retire only after typed administration parity and release-package verification"
+        ),
+    },
+    raw_route! {
         command: "provider",
         subcommand: Some("repowise-adapt"),
         argument_offset: 2,

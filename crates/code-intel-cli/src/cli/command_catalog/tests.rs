@@ -277,7 +277,7 @@ fn unified_route_inventory_owns_version_primary_raw_and_legacy_dispatch() {
             .iter()
             .filter(|route| matches!(route, CommandRoute::Raw(_)))
             .count(),
-        33
+        34
     );
     assert_eq!(
         COMMAND_ROUTES
@@ -418,6 +418,10 @@ fn observable_contracts_pin_exact_schemas_composites_and_exit_sets() {
     assert_eq!(
         raw("evidence", None).exit_contract.codes(),
         &[0, 64, 65, 74]
+    );
+    assert_eq!(
+        raw("lint", Some("hardcoded-paths")).exit_contract.codes(),
+        &[0, 1, 74]
     );
     assert_eq!(legacy("help").exit_contract.codes(), &[0, 1]);
 

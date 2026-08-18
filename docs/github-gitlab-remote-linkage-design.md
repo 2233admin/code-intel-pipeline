@@ -23,7 +23,7 @@ repowise's source, binary, or database.
 ### 2.1 Per-repo storage is not centralized
 
 Every repo repowise indexes gets its **own** `.repowise/wiki.db` inside that repo's directory
-(e.g. `D:\projects\code-intel-pipeline\.repowise\wiki.db`, 19.3 MB). The workspace root
+(e.g. `<repo-root>\.repowise\wiki.db`, 19.3 MB). The workspace root
 (`D:\projects`) also has its own `.repowise\wiki.db` (1018 MB) and treats itself as a
 pseudo-repo named `projects`. A filesystem walk of `D:\projects` (depth-bounded, 6 levels)
 found **136** `.repowise` directories — one per workspace member. There is no single
@@ -114,7 +114,7 @@ survives `repowise` reindexes, `repowise delete`/`init` cycles, and version upgr
 Follows the existing `CODE_INTEL_DATA_ROOT` convention already implemented in
 `crates/code-intel-cli/src/doctor_bootstrap/paths.rs` (`data_root()`): per-user data dir,
 `CODE_INTEL_DATA_ROOT` env override, else platform default (Windows:
-`%LOCALAPPDATA%\code-intel\code-intel`, else `~/.code-intel`). Proposed location:
+`$env:LOCALAPPDATA\code-intel\code-intel`, else `~/.code-intel`). Proposed location:
 
 ```text
 <CODE_INTEL_DATA_ROOT>/remote-links/registry.json
@@ -139,7 +139,7 @@ a different machine. That's fine — a cache miss is cheap to repair (one `git r
 shell-out), unlike trying to keep a cross-machine-portable identity in sync. Normalize
 Windows-vs-forward-slash and case before using it as a key (Windows paths are case-insensitive;
 we saw this matters — `local_path` values come back exactly as repowise stored them, e.g.
-`D:\\projects\\code-intel-pipeline`, and any join key derived by us independently, e.g. from a
+`X:\\repos\\example-repository`, and any join key derived by us independently, e.g. from a
 `git -C` invocation, must canonicalize to match).
 
 `repositories.id` (repowise's own row id) is recorded as an **opportunistic secondary index**
@@ -150,7 +150,7 @@ it is never treated as the durable identity, per §2.3.
 
 ```json
 {
-  "D:\\projects\\code-intel-pipeline": {
+  "X:\\repos\\example-repository": {
     "remote_url_normalized": "https://github.com/2233admin/code-intel-pipeline",
     "host_type": "github",
     "host": "github.com",
