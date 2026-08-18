@@ -287,7 +287,7 @@ jobs:
 
       - name: Pipeline smoke
         shell: pwsh
-        run: .\legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -Mode normal
+        run: .\legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -Mode normal
 
       - name: Model channel and automation regression suites
         shell: pwsh
@@ -672,7 +672,68 @@ jobs:
           if ($result.status -notin @("installed", "repaired", "already_installed")) {
             throw "Unexpected bootstrap status '$($result.status)':`n$raw"
           }
+          $result | ConvertTo-Json -Depth 20 | Set-Content -Encoding utf8 (Join-Path $env:RUNNER_TEMP "code-intel-smoketest-bootstrap.json")
           Write-Host "bootstrap.py installed $($result.tag) -> $($result.release_root)"
+
+      - name: Packaged Sentrux capability closure smoke
+        shell: pwsh
+        run: |
+          $bootstrap = Get-Content -Raw -LiteralPath (Join-Path $env:RUNNER_TEMP "code-intel-smoketest-bootstrap.json") | ConvertFrom-Json
+          $payload = [IO.Path]::GetFullPath([string]$bootstrap.release_root)
+          $binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
+          $binary = Join-Path $payload (Join-Path "bin" $binaryName)
+          $staging = Join-Path $env:RUNNER_TEMP "code-intel-packaged-sentrux-staging"
+          $authority = Join-Path $env:RUNNER_TEMP "code-intel-packaged-sentrux-authority"
+          $finalName = "packaged-sentrux-$env:GITHUB_RUN_ID"
+          $manifestPath = Join-Path $payload (Join-Path "orchestration" "integrations.json")
+          New-Item -ItemType Directory -Force -Path $authority | Out-Null
+          & $binary run execute --repo $payload --out $staging --authority-root $authority --final-name $finalName --manifest $manifestPath --doctor-require-repowise false
+          if ($LASTEXITCODE -ne 0) { throw "packaged install run execute failed with exit ${LASTEXITCODE}" }
+
+          $repoName = (Get-Item -LiteralPath $payload).Name
+          $runRoot = Join-Path (Join-Path $authority $repoName) $finalName
+          $index = Join-Path $authority "index.json"
+          & $binary artifact index --artifact-root $authority --output $index --operation rebuild
+          if ($LASTEXITCODE -ne 0) { throw "packaged Sentrux artifact index validation failed" }
+          $marker = Get-Content -Raw -LiteralPath (Join-Path $runRoot "run-complete.json") | ConvertFrom-Json
+          if ($marker.schema -ne "code-intel-run-commit.v1") { throw "packaged run completion marker is invalid" }
+          $manifest = Get-Content -Raw -LiteralPath (Join-Path $runRoot ($marker.manifest.path -replace '/', [IO.Path]::DirectorySeparatorChar)) | ConvertFrom-Json
+          if ($manifest.schema -ne "code-intel-run-manifest.v1" -or $manifest.outcome -ne "completed") { throw "packaged run manifest is not completed" }
+          if ($manifest.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged marker and manifest snapshots differ" }
+          if ($manifest.nodes.'evidence.sentrux'.status -ne "succeeded" -or $manifest.nodes.'evidence.sentrux'.verdict -ne "pass") { throw "packaged Sentrux evidence node is not a passing verified result" }
+
+          $indexValue = Get-Content -Raw -LiteralPath $index | ConvertFrom-Json
+          $entry = @($indexValue.entries | Where-Object { $_.repo -eq $repoName -and $_.run -eq $finalName })
+          if ($entry.Count -ne 1) { throw "packaged run was not admitted exactly once by artifact index" }
+          if ($entry[0].outcome -ne "completed" -or $entry[0].snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged artifact index identity does not match completion marker" }
+          $refs = @($entry[0].artifactRefs)
+          if (@($refs | Where-Object { $_.type -eq "diagnosis.hospital" }).Count -ne 1) { throw "packaged run is missing its verified hospital report ref" }
+          $capabilityRefs = @($refs | Where-Object { $_.artifactSchema -eq "code-intel-sentrux-capability-artifact.v1" -and $_.type -eq "provider.sentrux.capability-artifact" })
+          if ($capabilityRefs.Count -eq 0) { throw "packaged run has no verified Sentrux capability refs" }
+          $matrix = Get-Content -Raw -LiteralPath (Join-Path $payload (Join-Path "orchestration" "sentrux-capability-matrix.v1.json")) | ConvertFrom-Json
+          $matrixById = @{}
+          foreach ($capability in @($matrix.capabilities)) { $matrixById[$capability.id] = $capability }
+          $observed = @{}
+          foreach ($ref in $capabilityRefs) {
+            if ($ref.path -ne "objects/sha256/$($ref.sha256)") { throw "packaged capability ref is not content-addressed: $($ref.path)" }
+            $payloadPath = Join-Path $runRoot ($ref.path -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if (-not (Test-Path -LiteralPath $payloadPath -PathType Leaf)) { throw "packaged capability object is missing: $($ref.path)" }
+            if ((Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ref.sha256) { throw "packaged capability object digest mismatch: $($ref.path)" }
+            $capabilityPayload = Get-Content -Raw -LiteralPath $payloadPath | ConvertFrom-Json
+            if ($capabilityPayload.schema -ne "code-intel-sentrux-capability-artifact.v1" -or $capabilityPayload.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged capability artifact is not snapshot-bound: $($ref.path)" }
+            if (-not $matrixById.ContainsKey($capabilityPayload.capabilityId)) { throw "packaged capability is absent from the matrix: $($capabilityPayload.capabilityId)" }
+            if ($matrixById[$capabilityPayload.capabilityId].operation -ne $capabilityPayload.operation) { throw "packaged capability operation disagrees with the matrix: $($capabilityPayload.capabilityId)" }
+            if ($observed.ContainsKey($capabilityPayload.capabilityId)) { throw "duplicate packaged capability artifact: $($capabilityPayload.capabilityId)" }
+            $observed[$capabilityPayload.capabilityId] = $capabilityPayload
+            if ($capabilityPayload.status -ne "succeeded" -and $null -eq $capabilityPayload.failure) { throw "packaged non-success capability has no explicit failure: $($capabilityPayload.capabilityId)" }
+          }
+          $required = @($matrix.capabilities | Where-Object { $_.requiredForRelease -and $_.currentState -eq "authoritative_automatic" } | ForEach-Object { $_.id })
+          if ($required.Count -eq 0) { throw "capability matrix exposes no required automatic capabilities" }
+          foreach ($id in $required) {
+            if (-not $observed.ContainsKey($id)) { throw "packaged run is missing required automatic capability: $id" }
+            if ($observed[$id].status -ne "succeeded") { throw "packaged required capability did not succeed: $id ($($observed[$id].status))" }
+          }
+          Write-Host "Packaged Sentrux closure verified from committed refs: $($capabilityRefs.Count) capability refs; matrix coverage=$($matrix.coverageStatus)"
 
       - name: Assert PATH and CODE_INTEL_HOME persisted (Windows)
         if: runner.os == 'Windows'
@@ -738,7 +799,7 @@ jobs:
 
       - name: Pipeline smoke
         shell: pwsh
-        run: ./legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxCheck -SkipSentruxGate -Mode normal
+        run: ./legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -Mode normal
 
       - name: Hardcoded path scan
         shell: pwsh

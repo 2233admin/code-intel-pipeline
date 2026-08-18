@@ -170,7 +170,7 @@ jobs:
 
       - name: Pipeline smoke
         shell: pwsh
-        run: .\legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -SkipSentruxGate -Mode normal
+        run: .\legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -Mode normal
 
       - name: Package
         shell: pwsh
@@ -220,24 +220,62 @@ jobs:
             }
           }
           python (Join-Path $payload "skills\code-intel-pipeline\scripts\bootstrap.py") --help
-          # The packaged binary must pass its own structural gates against the
-          # packaged payload: release green, self-scan green, and published
-          # artifact green must refer to the same snapshot content.
+          # The packaged binary must publish a committed, snapshot-bound
+          # Sentrux closure. The manifest and content-addressed artifacts are
+          # authoritative; command stdout is intentionally not inspected.
           $packagedBinary = Join-Path $payload "bin\code-intel.exe"
-          & $packagedBinary sentrux --operation check --repo $payload
-          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own structural check" }
-          & $packagedBinary sentrux --operation gate --repo $payload
-          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own no-degradation gate" }
-          # scan/health/dsm are not gated (no baseline semantics), but they
-          # must at least run clean against the real packaged payload -- a
-          # regression here previously only showed up against synthetic unit
-          # fixtures, never against a real packaged tree.
-          & $packagedBinary sentrux --operation scan --repo $payload | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own structural scan" }
-          & $packagedBinary sentrux --operation health --repo $payload | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own structural health summary" }
-          & $packagedBinary sentrux --operation dsm --repo $payload | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own dependency-structure analysis" }
+          $staging = Join-Path $env:RUNNER_TEMP "code-intel-release-packaged-sentrux-staging-$env:GITHUB_RUN_ID"
+          $authority = Join-Path $env:RUNNER_TEMP "code-intel-release-packaged-sentrux-authority-$env:GITHUB_RUN_ID"
+          $finalName = "release-packaged-sentrux-$env:GITHUB_RUN_ID"
+          $manifestPath = Join-Path $payload (Join-Path "orchestration" "integrations.json")
+          New-Item -ItemType Directory -Force -Path $authority | Out-Null
+          & $packagedBinary run execute --repo $payload --out $staging --authority-root $authority --final-name $finalName --manifest $manifestPath --doctor-require-repowise false
+          if ($LASTEXITCODE -ne 0) { throw "packaged release run execute failed with exit ${LASTEXITCODE}" }
+
+          $repoName = (Get-Item -LiteralPath $payload).Name
+          $runRoot = Join-Path (Join-Path $authority $repoName) $finalName
+          $index = Join-Path $authority "index.json"
+          & $packagedBinary artifact index --artifact-root $authority --output $index --operation rebuild
+          if ($LASTEXITCODE -ne 0) { throw "packaged release artifact index validation failed" }
+          $marker = Get-Content -Raw -LiteralPath (Join-Path $runRoot "run-complete.json") | ConvertFrom-Json
+          if ($marker.schema -ne "code-intel-run-commit.v1") { throw "packaged release completion marker is invalid" }
+          $manifest = Get-Content -Raw -LiteralPath (Join-Path $runRoot ($marker.manifest.path -replace '/', [IO.Path]::DirectorySeparatorChar)) | ConvertFrom-Json
+          if ($manifest.schema -ne "code-intel-run-manifest.v1" -or $manifest.outcome -ne "completed") { throw "packaged release run manifest is not completed" }
+          if ($manifest.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release marker and manifest snapshots differ" }
+          if ($manifest.nodes.'evidence.sentrux'.status -ne "succeeded" -or $manifest.nodes.'evidence.sentrux'.verdict -ne "pass") { throw "packaged release Sentrux evidence node is not a passing verified result" }
+
+          $indexValue = Get-Content -Raw -LiteralPath $index | ConvertFrom-Json
+          $entry = @($indexValue.entries | Where-Object { $_.repo -eq $repoName -and $_.run -eq $finalName })
+          if ($entry.Count -ne 1) { throw "packaged release run was not admitted exactly once by artifact index" }
+          if ($entry[0].outcome -ne "completed" -or $entry[0].snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release artifact index identity does not match completion marker" }
+          $refs = @($entry[0].artifactRefs)
+          if (@($refs | Where-Object { $_.type -eq "diagnosis.hospital" }).Count -ne 1) { throw "packaged release run is missing its verified hospital report ref" }
+          $capabilityRefs = @($refs | Where-Object { $_.artifactSchema -eq "code-intel-sentrux-capability-artifact.v1" -and $_.type -eq "provider.sentrux.capability-artifact" })
+          if ($capabilityRefs.Count -eq 0) { throw "packaged release run has no verified Sentrux capability refs" }
+          $matrix = Get-Content -Raw -LiteralPath (Join-Path $payload (Join-Path "orchestration" "sentrux-capability-matrix.v1.json")) | ConvertFrom-Json
+          $matrixById = @{}
+          foreach ($capability in @($matrix.capabilities)) { $matrixById[$capability.id] = $capability }
+          $observed = @{}
+          foreach ($ref in $capabilityRefs) {
+            if ($ref.path -ne "objects/sha256/$($ref.sha256)") { throw "packaged release capability ref is not content-addressed: $($ref.path)" }
+            $payloadPath = Join-Path $runRoot ($ref.path -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if (-not (Test-Path -LiteralPath $payloadPath -PathType Leaf)) { throw "packaged release capability object is missing: $($ref.path)" }
+            if ((Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ref.sha256) { throw "packaged release capability object digest mismatch: $($ref.path)" }
+            $capabilityPayload = Get-Content -Raw -LiteralPath $payloadPath | ConvertFrom-Json
+            if ($capabilityPayload.schema -ne "code-intel-sentrux-capability-artifact.v1" -or $capabilityPayload.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release capability artifact is not snapshot-bound: $($ref.path)" }
+            if (-not $matrixById.ContainsKey($capabilityPayload.capabilityId)) { throw "packaged release capability is absent from the matrix: $($capabilityPayload.capabilityId)" }
+            if ($matrixById[$capabilityPayload.capabilityId].operation -ne $capabilityPayload.operation) { throw "packaged release capability operation disagrees with the matrix: $($capabilityPayload.capabilityId)" }
+            if ($observed.ContainsKey($capabilityPayload.capabilityId)) { throw "duplicate packaged release capability artifact: $($capabilityPayload.capabilityId)" }
+            $observed[$capabilityPayload.capabilityId] = $capabilityPayload
+            if ($capabilityPayload.status -ne "succeeded" -and $null -eq $capabilityPayload.failure) { throw "packaged release non-success capability has no explicit failure: $($capabilityPayload.capabilityId)" }
+          }
+          $required = @($matrix.capabilities | Where-Object { $_.requiredForRelease -and $_.currentState -eq "authoritative_automatic" } | ForEach-Object { $_.id })
+          if ($required.Count -eq 0) { throw "capability matrix exposes no required automatic capabilities" }
+          foreach ($id in $required) {
+            if (-not $observed.ContainsKey($id)) { throw "packaged release run is missing required automatic capability: $id" }
+            if ($observed[$id].status -ne "succeeded") { throw "packaged release required capability did not succeed: $id ($($observed[$id].status))" }
+          }
+          Write-Host "Packaged release Sentrux closure verified from committed refs: $($capabilityRefs.Count) capability refs; matrix coverage=$($matrix.coverageStatus)"
 
           # ai-safety-003 (issue #34): if the packaged snapshot carries an
           # audit report, it must pass the same fail-closed validate
@@ -396,23 +434,61 @@ jobs:
           $packagedBinary = Join-Path $payload "bin/code-intel"
           bash -c "test -x '$packagedBinary'"
           if ($LASTEXITCODE -ne 0) { throw "packaged binary lost its executable bit in the zip round trip: $packagedBinary" }
-          # The packaged binary must pass its own structural gates against the
-          # packaged payload: release green, self-scan green, and published
-          # artifact green must refer to the same snapshot content.
-          & $packagedBinary sentrux --operation check --repo $payload
-          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own structural check" }
-          & $packagedBinary sentrux --operation gate --repo $payload
-          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own no-degradation gate" }
-          # scan/health/dsm are not gated (no baseline semantics), but they
-          # must at least run clean against the real packaged payload -- a
-          # regression here previously only showed up against synthetic unit
-          # fixtures, never against a real packaged tree.
-          & $packagedBinary sentrux --operation scan --repo $payload | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own structural scan" }
-          & $packagedBinary sentrux --operation health --repo $payload | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own structural health summary" }
-          & $packagedBinary sentrux --operation dsm --repo $payload | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "packaged binary failed its own dependency-structure analysis" }
+          # The packaged binary must publish a committed, snapshot-bound
+          # Sentrux closure. The manifest and content-addressed artifacts are
+          # authoritative; command stdout is intentionally not inspected.
+          $staging = Join-Path $env:RUNNER_TEMP "code-intel-release-packaged-sentrux-staging-$env:GITHUB_RUN_ID"
+          $authority = Join-Path $env:RUNNER_TEMP "code-intel-release-packaged-sentrux-authority-$env:GITHUB_RUN_ID"
+          $finalName = "release-packaged-sentrux-$env:GITHUB_RUN_ID"
+          $manifestPath = Join-Path $payload (Join-Path "orchestration" "integrations.json")
+          New-Item -ItemType Directory -Force -Path $authority | Out-Null
+          & $packagedBinary run execute --repo $payload --out $staging --authority-root $authority --final-name $finalName --manifest $manifestPath --doctor-require-repowise false
+          if ($LASTEXITCODE -ne 0) { throw "packaged release run execute failed with exit ${LASTEXITCODE}" }
+
+          $repoName = (Get-Item -LiteralPath $payload).Name
+          $runRoot = Join-Path (Join-Path $authority $repoName) $finalName
+          $index = Join-Path $authority "index.json"
+          & $packagedBinary artifact index --artifact-root $authority --output $index --operation rebuild
+          if ($LASTEXITCODE -ne 0) { throw "packaged release artifact index validation failed" }
+          $marker = Get-Content -Raw -LiteralPath (Join-Path $runRoot "run-complete.json") | ConvertFrom-Json
+          if ($marker.schema -ne "code-intel-run-commit.v1") { throw "packaged release completion marker is invalid" }
+          $manifest = Get-Content -Raw -LiteralPath (Join-Path $runRoot ($marker.manifest.path -replace '/', [IO.Path]::DirectorySeparatorChar)) | ConvertFrom-Json
+          if ($manifest.schema -ne "code-intel-run-manifest.v1" -or $manifest.outcome -ne "completed") { throw "packaged release run manifest is not completed" }
+          if ($manifest.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release marker and manifest snapshots differ" }
+          if ($manifest.nodes.'evidence.sentrux'.status -ne "succeeded" -or $manifest.nodes.'evidence.sentrux'.verdict -ne "pass") { throw "packaged release Sentrux evidence node is not a passing verified result" }
+
+          $indexValue = Get-Content -Raw -LiteralPath $index | ConvertFrom-Json
+          $entry = @($indexValue.entries | Where-Object { $_.repo -eq $repoName -and $_.run -eq $finalName })
+          if ($entry.Count -ne 1) { throw "packaged release run was not admitted exactly once by artifact index" }
+          if ($entry[0].outcome -ne "completed" -or $entry[0].snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release artifact index identity does not match completion marker" }
+          $refs = @($entry[0].artifactRefs)
+          if (@($refs | Where-Object { $_.type -eq "diagnosis.hospital" }).Count -ne 1) { throw "packaged release run is missing its verified hospital report ref" }
+          $capabilityRefs = @($refs | Where-Object { $_.artifactSchema -eq "code-intel-sentrux-capability-artifact.v1" -and $_.type -eq "provider.sentrux.capability-artifact" })
+          if ($capabilityRefs.Count -eq 0) { throw "packaged release run has no verified Sentrux capability refs" }
+          $matrix = Get-Content -Raw -LiteralPath (Join-Path $payload (Join-Path "orchestration" "sentrux-capability-matrix.v1.json")) | ConvertFrom-Json
+          $matrixById = @{}
+          foreach ($capability in @($matrix.capabilities)) { $matrixById[$capability.id] = $capability }
+          $observed = @{}
+          foreach ($ref in $capabilityRefs) {
+            if ($ref.path -ne "objects/sha256/$($ref.sha256)") { throw "packaged release capability ref is not content-addressed: $($ref.path)" }
+            $payloadPath = Join-Path $runRoot ($ref.path -replace '/', [IO.Path]::DirectorySeparatorChar)
+            if (-not (Test-Path -LiteralPath $payloadPath -PathType Leaf)) { throw "packaged release capability object is missing: $($ref.path)" }
+            if ((Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ref.sha256) { throw "packaged release capability object digest mismatch: $($ref.path)" }
+            $capabilityPayload = Get-Content -Raw -LiteralPath $payloadPath | ConvertFrom-Json
+            if ($capabilityPayload.schema -ne "code-intel-sentrux-capability-artifact.v1" -or $capabilityPayload.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release capability artifact is not snapshot-bound: $($ref.path)" }
+            if (-not $matrixById.ContainsKey($capabilityPayload.capabilityId)) { throw "packaged release capability is absent from the matrix: $($capabilityPayload.capabilityId)" }
+            if ($matrixById[$capabilityPayload.capabilityId].operation -ne $capabilityPayload.operation) { throw "packaged release capability operation disagrees with the matrix: $($capabilityPayload.capabilityId)" }
+            if ($observed.ContainsKey($capabilityPayload.capabilityId)) { throw "duplicate packaged release capability artifact: $($capabilityPayload.capabilityId)" }
+            $observed[$capabilityPayload.capabilityId] = $capabilityPayload
+            if ($capabilityPayload.status -ne "succeeded" -and $null -eq $capabilityPayload.failure) { throw "packaged release non-success capability has no explicit failure: $($capabilityPayload.capabilityId)" }
+          }
+          $required = @($matrix.capabilities | Where-Object { $_.requiredForRelease -and $_.currentState -eq "authoritative_automatic" } | ForEach-Object { $_.id })
+          if ($required.Count -eq 0) { throw "capability matrix exposes no required automatic capabilities" }
+          foreach ($id in $required) {
+            if (-not $observed.ContainsKey($id)) { throw "packaged release run is missing required automatic capability: $id" }
+            if ($observed[$id].status -ne "succeeded") { throw "packaged release required capability did not succeed: $id ($($observed[$id].status))" }
+          }
+          Write-Host "Packaged release Sentrux closure verified from committed refs: $($capabilityRefs.Count) capability refs; matrix coverage=$($matrix.coverageStatus)"
 
           # ai-safety-003 (issue #34): if the packaged snapshot carries an
           # audit report, it must pass the same fail-closed validate
