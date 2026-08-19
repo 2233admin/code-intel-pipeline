@@ -249,15 +249,14 @@ jobs:
       - name: Install ripgrep
         shell: pwsh
         run: |
-          if (Get-Command rg -ErrorAction SilentlyContinue) {
-            rg --version
+          $rg = Get-Command rg -ErrorAction SilentlyContinue
+          if (-not $rg -and (Test-Path "/usr/bin/rg")) {
+            $rg = Get-Command "/usr/bin/rg"
           }
-          else {
-            sudo apt-get install -y ripgrep
-            if ($LASTEXITCODE -ne 0) {
-              throw "ripgrep bootstrap failed with exit $LASTEXITCODE"
-            }
+          if (-not $rg) {
+            throw "ripgrep is required on ubuntu-latest but was not present"
           }
+          & $rg.Source --version
 
       - name: Build Rust CLI
         shell: pwsh
