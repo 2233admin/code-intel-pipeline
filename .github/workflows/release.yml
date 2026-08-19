@@ -231,6 +231,12 @@ jobs:
           # input; using it as --repo bypasses the installed topology that the
           # release gate is required to prove.
           $payload = $installedRoot
+          # Let doctor validate the installed topology through PATH while
+          # keeping the Rust built-in Sentrux provider authoritative. Passing
+          # this directory as the provider prefix would force the optional
+          # external shim route on Unix and make packaged Sentrux disappear.
+          $installedBin = Join-Path $installedRoot "bin"
+          $env:PATH = "$installedBin$([IO.Path]::PathSeparator)$env:PATH"
           # The packaged binary must publish a committed, snapshot-bound
           # Sentrux closure. The manifest and content-addressed artifacts are
           # authoritative; command stdout is intentionally not inspected.
@@ -240,7 +246,7 @@ jobs:
           $finalName = "release-packaged-sentrux-$env:GITHUB_RUN_ID"
           $manifestPath = Join-Path $payload (Join-Path "orchestration" "integrations.json")
           New-Item -ItemType Directory -Force -Path $authority | Out-Null
-          & $packagedBinary run execute --repo $payload --out $staging --authority-root $authority --final-name $finalName --manifest $manifestPath --doctor-tool-path-prefix (Join-Path $installedRoot "bin") --doctor-require-repowise false
+          & $packagedBinary run execute --repo $payload --out $staging --authority-root $authority --final-name $finalName --manifest $manifestPath --doctor-require-repowise false
           if ($LASTEXITCODE -ne 0) { throw "packaged release run execute failed with exit ${LASTEXITCODE}" }
 
           $repoName = (Get-Item -LiteralPath $payload).Name
@@ -470,6 +476,12 @@ jobs:
           # input; using it as --repo bypasses the installed topology that the
           # release gate is required to prove.
           $payload = $installedRoot
+          # Let doctor validate the installed topology through PATH while
+          # keeping the Rust built-in Sentrux provider authoritative. Passing
+          # this directory as the provider prefix would force the optional
+          # external shim route on Unix and make packaged Sentrux disappear.
+          $installedBin = Join-Path $installedRoot "bin"
+          $env:PATH = "$installedBin$([IO.Path]::PathSeparator)$env:PATH"
           $packagedBinary = Join-Path $installedRoot "bin/code-intel"
           bash -c "test -x '$packagedBinary'"
           if ($LASTEXITCODE -ne 0) { throw "packaged binary lost its executable bit in the zip round trip: $packagedBinary" }
@@ -481,7 +493,7 @@ jobs:
           $finalName = "release-packaged-sentrux-$env:GITHUB_RUN_ID"
           $manifestPath = Join-Path $payload (Join-Path "orchestration" "integrations.json")
           New-Item -ItemType Directory -Force -Path $authority | Out-Null
-          & $packagedBinary run execute --repo $payload --out $staging --authority-root $authority --final-name $finalName --manifest $manifestPath --doctor-tool-path-prefix (Join-Path $installedRoot "bin") --doctor-require-repowise false
+          & $packagedBinary run execute --repo $payload --out $staging --authority-root $authority --final-name $finalName --manifest $manifestPath --doctor-require-repowise false
           if ($LASTEXITCODE -ne 0) { throw "packaged release run execute failed with exit ${LASTEXITCODE}" }
 
           $repoName = (Get-Item -LiteralPath $payload).Name
