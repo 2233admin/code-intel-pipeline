@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2-beta.3] — 2026-08-19
+
+### Fixed
+
+- 发布包验收现在先通过本地 zip 走 bootstrap 安装拓扑，再使用安装后的 binary 执行 packaged Sentrux closure；修复 release workflow 直接从解压目录运行导致 doctor readiness 误报失败的问题。
+
 ## [0.7.2-beta.2] — 2026-08-19
 
 ### Added

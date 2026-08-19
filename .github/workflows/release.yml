@@ -220,10 +220,16 @@ jobs:
             }
           }
           python (Join-Path $payload "skills\code-intel-pipeline\scripts\bootstrap.py") --help
+          $installRoot = Join-Path $env:RUNNER_TEMP "code-intel-release-install-$env:GITHUB_RUN_ID"
+          $bootstrapRaw = & python (Join-Path $payload "skills\code-intel-pipeline\scripts\bootstrap.py") --local-asset $asset --version $tag --repo-path $payload --install-root $installRoot --install-missing --json
+          if ($LASTEXITCODE -ne 0) { throw "release bootstrap install failed:`n$bootstrapRaw" }
+          $bootstrap = $bootstrapRaw | ConvertFrom-Json
+          if ($bootstrap.status -notin @("installed", "repaired", "already_installed")) { throw "Unexpected release bootstrap status '$($bootstrap.status)':`n$bootstrapRaw" }
+          $installedRoot = [IO.Path]::GetFullPath([string]$bootstrap.release_root)
           # The packaged binary must publish a committed, snapshot-bound
           # Sentrux closure. The manifest and content-addressed artifacts are
           # authoritative; command stdout is intentionally not inspected.
-          $packagedBinary = Join-Path $payload "bin\code-intel.exe"
+          $packagedBinary = Join-Path $installedRoot "bin\code-intel.exe"
           $staging = Join-Path $env:RUNNER_TEMP "code-intel-release-packaged-sentrux-staging-$env:GITHUB_RUN_ID"
           $authority = Join-Path $env:RUNNER_TEMP "code-intel-release-packaged-sentrux-authority-$env:GITHUB_RUN_ID"
           $finalName = "release-packaged-sentrux-$env:GITHUB_RUN_ID"
@@ -448,7 +454,13 @@ jobs:
             }
           }
           python (Join-Path $payload "skills/code-intel-pipeline/scripts/bootstrap.py") --help
-          $packagedBinary = Join-Path $payload "bin/code-intel"
+          $installRoot = Join-Path $env:RUNNER_TEMP "code-intel-release-install-$env:GITHUB_RUN_ID"
+          $bootstrapRaw = & python (Join-Path $payload "skills/code-intel-pipeline/scripts/bootstrap.py") --local-asset $asset --version $tag --repo-path $payload --install-root $installRoot --install-missing --json
+          if ($LASTEXITCODE -ne 0) { throw "release bootstrap install failed:`n$bootstrapRaw" }
+          $bootstrap = $bootstrapRaw | ConvertFrom-Json
+          if ($bootstrap.status -notin @("installed", "repaired", "already_installed")) { throw "Unexpected release bootstrap status '$($bootstrap.status)':`n$bootstrapRaw" }
+          $installedRoot = [IO.Path]::GetFullPath([string]$bootstrap.release_root)
+          $packagedBinary = Join-Path $installedRoot "bin/code-intel"
           bash -c "test -x '$packagedBinary'"
           if ($LASTEXITCODE -ne 0) { throw "packaged binary lost its executable bit in the zip round trip: $packagedBinary" }
           # The packaged binary must publish a committed, snapshot-bound
