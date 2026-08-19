@@ -244,22 +244,14 @@ fn result_outcome_allowed_by_schema(value: &Value) -> bool {
             Some("pass") | Some("not_applicable"),
             Some("pass") | Some("unknown") | Some("not_applicable"),
             Some(0)
-        ) | (
-            Some("completed"),
-            Some("fail"),
-            Some("fail"),
-            Some(10)
-        ) | (
-            Some("blocked"),
-            Some("unknown"),
-            Some("unknown"),
-            Some(20)
-        ) | (
-            Some("failed"),
-            Some("unknown"),
-            Some("unknown"),
-            Some(64 | 65 | 69 | 70 | 74)
-        )
+        ) | (Some("completed"), Some("fail"), Some("fail"), Some(10))
+            | (Some("blocked"), Some("unknown"), Some("unknown"), Some(20))
+            | (
+                Some("failed"),
+                Some("unknown"),
+                Some("unknown"),
+                Some(64 | 65 | 69 | 70 | 74)
+            )
     )
 }
 
@@ -396,7 +388,10 @@ fn capability_contract_vocabulary_and_bindings_are_stable() {
         registry["policy"]["capabilityContract"],
         "orchestration/capability-contract.v1.json"
     );
-    assert_eq!(string_list(&contract["vocabulary"], "vocabulary"), EXPECTED_VOCABULARY);
+    assert_eq!(
+        string_list(&contract["vocabulary"], "vocabulary"),
+        EXPECTED_VOCABULARY
+    );
     assert_eq!(
         string_list(&contract["result"]["verdicts"], "verdicts"),
         EXPECTED_VERDICTS
@@ -421,12 +416,18 @@ fn capability_contract_vocabulary_and_bindings_are_stable() {
     unique.dedup();
     assert_eq!(unique, codes, "exit codes must be unique");
     assert_eq!(contract["cacheKey"]["algorithm"], "sha256");
-    let components = string_list(&contract["cacheKey"]["orderedComponents"], "cache components");
+    let components = string_list(
+        &contract["cacheKey"]["orderedComponents"],
+        "cache components",
+    );
     assert!(components.contains(&"snapshotIdentity"));
     assert!(components.contains(&"orderedInputArtifactDigests"));
     let forbidden = string_list(&contract["cacheKey"]["forbiddenComponents"], "forbidden");
     assert!(forbidden.contains(&"generatedAt"));
-    assert_eq!(contract["publication"]["completionMarker"], "run-complete.json");
+    assert_eq!(
+        contract["publication"]["completionMarker"],
+        "run-complete.json"
+    );
 }
 
 #[test]
@@ -457,8 +458,7 @@ fn registry_toolchain_digest_evidence_pairs_and_matches_bytes() {
         }
         let id = integration["id"].as_str().unwrap_or("<missing-id>");
         assert_eq!(
-            integration["toolchainDigestEvidence"]["algorithm"],
-            "sha256",
+            integration["toolchainDigestEvidence"]["algorithm"], "sha256",
             "{id} toolchain evidence must use SHA-256"
         );
         let inputs = integration["toolchainDigestEvidence"]["inputs"]
@@ -466,7 +466,9 @@ fn registry_toolchain_digest_evidence_pairs_and_matches_bytes() {
             .unwrap_or_else(|| panic!("{id} toolchain evidence inputs"));
         let declared = integration["capabilityDeclaration"]["implementation"]["toolchainDigests"]
             .as_array()
-            .unwrap_or_else(|| panic!("{id} toolchain evidence requires an implementation declaration"));
+            .unwrap_or_else(|| {
+                panic!("{id} toolchain evidence requires an implementation declaration")
+            });
         assert!(
             !inputs.is_empty(),
             "{id} toolchain evidence must declare at least one input"
@@ -571,7 +573,10 @@ fn envelope_fixtures_and_outcome_matrix_match_the_schema_and_contract() {
 
     let mut unknown_field = request.clone();
     unknown_field["surprise"] = json!(true);
-    assert!(!schema_accepts(&unknown_field), "request with unknown field");
+    assert!(
+        !schema_accepts(&unknown_field),
+        "request with unknown field"
+    );
 
     let mut bad_digest = artifact.clone();
     bad_digest["sha256"] = json!("not-a-digest");
