@@ -253,8 +253,10 @@ jobs:
             rg --version
           }
           else {
-            sudo apt-get update
             sudo apt-get install -y ripgrep
+            if ($LASTEXITCODE -ne 0) {
+              throw "ripgrep bootstrap failed with exit $LASTEXITCODE"
+            }
           }
 
       - name: Build Rust CLI
