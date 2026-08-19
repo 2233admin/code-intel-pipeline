@@ -223,6 +223,7 @@ jobs:
           if ($LASTEXITCODE -notin @(0, 1)) {
             throw "installed Doctor process failed with exit code $LASTEXITCODE"
           }
+          $global:LASTEXITCODE = 0
           $observation = ($json -join [Environment]::NewLine) | ConvertFrom-Json
           $graph = $observation.checks.graphProvider
           if (-not $graph.binaryFound) {
@@ -575,6 +576,7 @@ jobs:
           if ($LASTEXITCODE -notin @(0, 1)) {
             throw "installed Doctor process failed with exit code $LASTEXITCODE"
           }
+          $global:LASTEXITCODE = 0
           $observation = ($json -join [Environment]::NewLine) | ConvertFrom-Json
           $graph = $observation.checks.graphProvider
           if (-not $graph.binaryFound) {
