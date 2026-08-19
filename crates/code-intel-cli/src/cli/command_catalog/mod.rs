@@ -20,7 +20,10 @@ use super::legacy::{
 use super::primary::{
     execute_primary, matches_primary_pattern, parse_primary_args, parse_run_alias_args, PrimaryArgs,
 };
-use super::project_query::{execute_project_query, parse_project_query_args, ProjectQueryArgs};
+use super::project_query::{
+    execute_project_query, execute_project_status, parse_project_query_args,
+    parse_project_status_args, render_project_status, ProjectQueryArgs, ProjectStatusArgs,
+};
 
 mod contract;
 mod routes;
@@ -37,6 +40,7 @@ use routes::{resolve_command_route, resolve_legacy_route, CommandRoute};
 pub(super) enum Command {
     Version(VersionCommand),
     Primary(PrimaryArgs),
+    ProjectStatus(ProjectStatusArgs),
     ProjectQuery(ProjectQueryArgs),
     Compatibility(CompatibilityCommand),
     Legacy(LegacyCommand),
@@ -142,6 +146,7 @@ pub(super) enum CommandError {
         message: String,
     },
     Project {
+        json: bool,
         kind: &'static str,
         exit_code: i32,
         message: String,
@@ -187,11 +192,29 @@ pub(super) fn parse_command(raw: &[String]) -> std::result::Result<Command, Comm
                 exit_code: 64,
                 message,
             }),
+        Some(CommandRoute::ProjectStatus(_)) => parse_project_status_args(&raw[1..])
+            .map(Command::ProjectStatus)
+            .map_err(|message| {
+                if raw.iter().any(|argument| argument == "--json") {
+                    CommandError::Project {
+                        json: true,
+                        kind: "usage",
+                        exit_code: 64,
+                        message,
+                    }
+                } else {
+                    CommandError::Usage {
+                        message,
+                        exit_code: 64,
+                    }
+                }
+            }),
         Some(CommandRoute::ProjectQuery(_)) => parse_project_query_args(&raw[1..])
             .map(Command::ProjectQuery)
             .map_err(|message| {
                 if raw.iter().any(|argument| argument == "--json") {
                     CommandError::Project {
+                        json: true,
                         kind: "usage",
                         exit_code: 64,
                         message,
@@ -269,6 +292,20 @@ pub(super) fn execute_command(
                 String::new(),
             )),
             Err(error) => Err(CommandError::Project {
+                json: true,
+                kind: error.kind(),
+                exit_code: error.exit_code(),
+                message: error.message().to_string(),
+            }),
+        },
+        Command::ProjectStatus(arguments) => match execute_project_status(&arguments) {
+            Ok(output) => Ok(buffered_outcome(
+                0,
+                render_project_status(&arguments, &output),
+                String::new(),
+            )),
+            Err(error) => Err(CommandError::Project {
+                json: arguments.json,
                 kind: error.kind(),
                 exit_code: error.exit_code(),
                 message: error.message().to_string(),
@@ -321,24 +358,35 @@ pub(super) fn render_outcome(
             exit_code: 1,
         },
         Err(CommandError::Project {
+            json,
             kind,
             exit_code,
             message,
-        }) => RenderedOutcome {
-            stdout: format!(
-                "{}\n",
-                serde_json::to_string(&json!({
-                    "schema": "code-intel-project-error.v1",
-                    "outcome": "error",
-                    "kind": kind,
-                    "exitCode": exit_code,
-                    "diagnostic": message,
-                }))
-                .expect("project error serializes")
-            ),
-            stderr: String::new(),
-            exit_code,
-        },
+        }) => {
+            if json {
+                RenderedOutcome {
+                    stdout: format!(
+                        "{}\n",
+                        serde_json::to_string(&json!({
+                            "schema": "code-intel-project-error.v1",
+                            "outcome": "error",
+                            "kind": kind,
+                            "exitCode": exit_code,
+                            "diagnostic": message,
+                        }))
+                        .expect("project error serializes")
+                    ),
+                    stderr: String::new(),
+                    exit_code,
+                }
+            } else {
+                RenderedOutcome {
+                    stdout: String::new(),
+                    stderr: format!("Code Intel status error: {message}\n"),
+                    exit_code,
+                }
+            }
+        }
         Err(CommandError::Usage { message, exit_code }) => RenderedOutcome {
             stdout: String::new(),
             stderr: format!("{message}\n"),

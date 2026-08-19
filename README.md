@@ -122,11 +122,18 @@ echo 'source "$HOME/.config/code-intel/env.sh"' >> ~/.zshrc
 重开 shell 后第一次运行：
 
 ```bash
+code-intel status ~/src/your-repo
 code-intel ~/src/your-repo
 code-intel query ~/src/your-repo --kind evidence --json
 ```
 
-`code-intel run <repo>` 是第一行主入口的等价命名形式。`query` 只接收仓库路径，
+`status` 是低摩擦的项目入口：它把仓库身份、最近一次 committed run 的新鲜度和
+下一步动作放在一起。未分析时返回 `needs_run`，证据与当前 checkout 一致时返回
+`ready`，不一致时返回 `stale`；Agent 可用 `--json` 读取同一个
+`code-intel-project-status.v1` envelope。它只组合现有 authority/freshness 契约，
+不会把未提交或过期证据伪装成当前事实。
+
+`code-intel run <repo>` 是分析主入口的等价命名形式。`query` 只接收仓库路径，
 由 ProjectContext 统一解析仓库键和 artifact root；日常调用不需要再传
 `--artifact-root`、`--repo`、run id 或 manifest。低层发布/排障仍可使用
 `run execute` 和 `artifact query` 的显式参数接口。
@@ -586,6 +593,18 @@ code-intel audit --operation scope --repo C:\path\to\repo --since <git-ref>
 `validate` 做结构、注册表和证据落地校验；`render` 先跑同一套校验，成功后才输出 Markdown 或自包含 HTML；`scope` 计算 diff 范围的 scope 块，用于 PR 级增量 audit。有 audit 时 `hospital-report.json` 增加可选 `audit` 块，`hospital.md` 增加 `## Audit` 段。完整契约见 [docs/audit-report.md](docs/audit-report.md)。
 
 ## Agent 工作流
+
+### 先看状态，再沿下一步工作
+
+```powershell
+code-intel status <path>
+code-intel status <path> --json
+```
+
+状态输出给出仓库绑定、committed run、新鲜度和一组有界的 `nextActions`：首次分析、
+上下文查询、证据查询、MCP 追踪或 advisory 影响分析。动作清单是可迭代的产品提示，
+不改变 artifact、provider 或 gate 的 authority；研究判断和后续 UX 次序仍可通过
+decision/research 文档与 issue 修订。
 
 ### 先接查询面，全量扫描是深检模式
 

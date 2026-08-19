@@ -126,3 +126,102 @@ fn explicit_repository_key_cannot_escape_the_artifact_root() {
 
     let _ = fs::remove_dir_all(root);
 }
+
+#[test]
+fn status_without_a_committed_run_guides_the_first_analysis() {
+    let context = ProjectContext::for_test(
+        PathBuf::from("repository"),
+        "repository".into(),
+        PathBuf::from("missing-artifact-root"),
+    );
+
+    let status = context
+        .status()
+        .expect("missing authority is a usable state");
+
+    assert_eq!(status["schema"], "code-intel-project-status.v1");
+    assert_eq!(status["status"], "needs_run");
+    assert_eq!(status["freshness"]["status"], "unavailable");
+    assert!(status["committedRun"].is_null());
+    assert_eq!(status["nextActions"][0]["id"], "analyze");
+    assert_eq!(status["nextActions"][0]["argv"][0], "code-intel");
+}
+
+#[test]
+fn current_status_exposes_committed_authority_and_the_bounded_workflow() {
+    let context = ProjectContext::for_test(
+        PathBuf::from("repository"),
+        "repository".into(),
+        PathBuf::from("artifacts"),
+    );
+    let authority = crate::committed_evidence_controller::CommittedAuthority::Receipt(
+        crate::committed_evidence_controller::CommittedReceipt::for_test(
+            "repository",
+            "run-1",
+            "run-identity",
+            "snapshot-1",
+        ),
+    );
+
+    let status = context.status_with_run(
+        serde_json::json!({
+            "status": "current",
+            "recordedIdentity": "snapshot-1",
+            "currentIdentity": "snapshot-1",
+            "workingTreePolicy": "head_only",
+            "scope": ["."],
+        }),
+        &authority,
+    );
+
+    assert_eq!(status["status"], "ready");
+    assert_eq!(status["committedRun"]["authority"], "committed");
+    assert_eq!(status["committedRun"]["run"], "run-1");
+    let actions = status["nextActions"]
+        .as_array()
+        .expect("next actions")
+        .iter()
+        .map(|action| action["id"].as_str().expect("action id"))
+        .collect::<Vec<_>>();
+    assert_eq!(actions, ["context", "query", "trace", "impact"]);
+    assert_eq!(status["nextActions"][2]["tool"], "get_evidence");
+}
+
+#[test]
+fn stale_status_preserves_freshness_and_prioritizes_refresh() {
+    let context = ProjectContext::for_test(
+        PathBuf::from("repository"),
+        "repository".into(),
+        PathBuf::from("artifacts"),
+    );
+    let authority = crate::committed_evidence_controller::CommittedAuthority::Receipt(
+        crate::committed_evidence_controller::CommittedReceipt::for_test(
+            "repository",
+            "run-1",
+            "run-identity",
+            "snapshot-old",
+        ),
+    );
+
+    let status = context.status_with_run(
+        serde_json::json!({
+            "status": "stale",
+            "recordedIdentity": "snapshot-old",
+            "currentIdentity": "snapshot-new",
+            "workingTreePolicy": "head_only",
+            "scope": ["."],
+        }),
+        &authority,
+    );
+
+    assert_eq!(status["status"], "stale");
+    assert_eq!(status["freshness"]["recordedIdentity"], "snapshot-old");
+    assert_eq!(status["freshness"]["currentIdentity"], "snapshot-new");
+    let actions = status["nextActions"]
+        .as_array()
+        .expect("next actions")
+        .iter()
+        .map(|action| action["id"].as_str().expect("action id"))
+        .collect::<Vec<_>>();
+    assert_eq!(actions, ["refresh", "impact"]);
+}

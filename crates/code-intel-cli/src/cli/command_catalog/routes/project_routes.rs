@@ -26,6 +26,28 @@ pub(super) const RUN_ALIAS: super::CommandRoute =
         retirement_condition: "retain as the named alias of the default production entry",
     });
 
+pub(super) const STATUS: super::CommandRoute =
+    super::CommandRoute::ProjectStatus(super::CommandContract {
+        stability: super::CommandStability::Public,
+        controller: super::ControllerOwnership::CommittedEvidence,
+        authority: super::CommandAuthority::Conditional(
+            super::AuthorityCondition::CommittedWhenPresent,
+        ),
+        effects: &[
+            super::CommandEffect::RepoRead,
+            super::CommandEffect::ProcessSpawn,
+        ],
+        output_contract: super::OutputContract::Stdout {
+            identities: &[
+                "code-intel-project-status.v1",
+                "code-intel-project-error.v1",
+                "text-format:project-status.v1",
+            ],
+        },
+        exit_contract: super::ExitContract::Exact(&[0, 64, 65, 74]),
+        retirement_condition: "retain as the project readiness and next-action entry",
+    });
+
 pub(super) const QUERY: super::CommandRoute =
     super::CommandRoute::ProjectQuery(super::CommandContract {
         stability: super::CommandStability::Public,

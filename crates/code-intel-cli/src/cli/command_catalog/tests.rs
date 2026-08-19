@@ -50,6 +50,9 @@ fn parser_exposes_typed_commands_and_hides_route_slicing() {
     ])
     .unwrap();
     assert!(matches!(project_query, Command::ProjectQuery(_)));
+
+    let project_status = parse_command(&["status".into(), "--json".into()]).unwrap();
+    assert!(matches!(project_status, Command::ProjectStatus(_)));
 }
 
 #[test]
@@ -197,6 +200,15 @@ fn command_inventory_is_complete_unique_and_dispatchable() {
                     Some(CommandRoute::RunAlias(_))
                 ));
             }
+            CommandRoute::ProjectStatus(contract) => {
+                contract.assert_complete("status");
+                assert!(!spellings.contains(&"status".to_string()));
+                spellings.push("status".into());
+                assert!(matches!(
+                    resolve_command_route(&["status".into()]),
+                    Some(CommandRoute::ProjectStatus(_))
+                ));
+            }
             CommandRoute::ProjectQuery(contract) => {
                 contract.assert_complete("query");
                 assert!(!spellings.contains(&"query".to_string()));
@@ -248,7 +260,9 @@ fn command_contracts_use_concrete_output_and_exit_types() {
     for route in COMMAND_ROUTES {
         let contract = match route {
             CommandRoute::Version(route) => &route.contract,
-            CommandRoute::RunAlias(contract) | CommandRoute::ProjectQuery(contract) => contract,
+            CommandRoute::RunAlias(contract)
+            | CommandRoute::ProjectStatus(contract)
+            | CommandRoute::ProjectQuery(contract) => contract,
             CommandRoute::Primary(contract) => contract,
             CommandRoute::Raw(route) => &route.contract,
             CommandRoute::Legacy(route) => &route.contract,
@@ -269,6 +283,9 @@ fn unified_route_inventory_owns_version_primary_raw_and_legacy_dispatch() {
     assert!(COMMAND_ROUTES
         .iter()
         .any(|route| matches!(route, CommandRoute::RunAlias(_))));
+    assert!(COMMAND_ROUTES
+        .iter()
+        .any(|route| matches!(route, CommandRoute::ProjectStatus(_))));
     assert!(COMMAND_ROUTES
         .iter()
         .any(|route| matches!(route, CommandRoute::ProjectQuery(_))));
@@ -307,6 +324,17 @@ fn command_authority_and_effect_contracts_cover_conditional_and_mutating_routes(
     assert_eq!(
         raw("change", Some("impact")).contract.authority,
         CommandAuthority::Conditional(AuthorityCondition::CommittedOrStaleAdvisory)
+    );
+    let status = COMMAND_ROUTES
+        .iter()
+        .find_map(|route| match route {
+            CommandRoute::ProjectStatus(contract) => Some(contract),
+            _ => None,
+        })
+        .expect("registered status command");
+    assert_eq!(
+        status.authority,
+        CommandAuthority::Conditional(AuthorityCondition::CommittedWhenPresent)
     );
     assert_eq!(
         raw("artifact", Some("index")).contract.effects,
@@ -527,7 +555,8 @@ fn full_help_documents_every_registered_route_alias() {
 }
 
 #[test]
-fn full_help_alias_discoverability_has_a_v3_output_contract() {
+fn full_help_alias_discoverability_has_a_v4_output_contract() {
+    assert!(FULL_HELP_TEXT.contains("  status [<repo>] [--json]"));
     let help = COMMAND_ROUTES
         .iter()
         .find_map(|route| match route {
@@ -539,7 +568,7 @@ fn full_help_alias_discoverability_has_a_v3_output_contract() {
     assert_eq!(
         help.contract.output_contract,
         OutputContract::Stdout {
-            identities: &["text-format:help-quick.v1", "text-format:help-full.v3"]
+            identities: &["text-format:help-quick.v1", "text-format:help-full.v4"]
         }
     );
 }

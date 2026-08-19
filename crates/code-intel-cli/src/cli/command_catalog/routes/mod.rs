@@ -749,7 +749,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             Internal,
             Internal,
             &[],
-            stdout!("text-format:help-quick.v1", "text-format:help-full.v3"),
+            stdout!("text-format:help-quick.v1", "text-format:help-full.v4"),
             exits!(0, 1),
             "retain while this major CLI contract is supported"
         ),
@@ -769,6 +769,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
         ),
     },
     project_routes::RUN_ALIAS,
+    project_routes::STATUS,
     project_routes::QUERY,
     project_routes::PRIMARY,
 ];
@@ -779,6 +780,7 @@ pub(super) fn resolve_command_route(raw: &[String]) -> Option<&'static CommandRo
             route.command == command || route.aliases.iter().any(|alias| alias == command)
         }),
         CommandRoute::RunAlias(_) => raw.first().is_some_and(|command| command == "run"),
+        CommandRoute::ProjectStatus(_) => raw.first().is_some_and(|command| command == "status"),
         CommandRoute::ProjectQuery(_) => raw.first().is_some_and(|command| command == "query"),
         CommandRoute::Primary(_) => matches_primary_pattern(raw),
         CommandRoute::Raw(route) => raw.first().is_some_and(|command| {

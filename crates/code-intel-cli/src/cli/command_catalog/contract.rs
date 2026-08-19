@@ -32,6 +32,7 @@ pub(super) enum CommandAuthority {
 #[allow(dead_code)]
 pub(super) enum AuthorityCondition {
     CommittedOrStaleAdvisory,
+    CommittedWhenPresent,
 }
 
 /// Mirrors the closed `effect` vocabulary in

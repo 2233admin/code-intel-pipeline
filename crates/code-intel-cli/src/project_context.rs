@@ -1,7 +1,5 @@
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -13,6 +11,7 @@ use crate::{artifacts, authoritative_run, execution_policy};
 
 mod error;
 mod identity;
+mod status;
 #[cfg(test)]
 mod tests;
 
@@ -149,8 +148,8 @@ impl ProjectContext {
             .duration_since(UNIX_EPOCH)
             .map_err(|error| ProjectError::host_io(error.to_string()))?
             .as_millis();
-        let final_name = format!("{nonce}-{}-core", process::id());
-        let staging_root = env::temp_dir().join(format!("code-intel-a09-{final_name}"));
+        let final_name = format!("{nonce}-{}-core", std::process::id());
+        let staging_root = std::env::temp_dir().join(format!("code-intel-a09-{final_name}"));
         let request = authoritative_run::RunRequest::new(
             self.repo_path.clone(),
             staging_root,
