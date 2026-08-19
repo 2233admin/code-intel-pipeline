@@ -249,14 +249,24 @@ jobs:
       - name: Install ripgrep
         shell: pwsh
         run: |
-          $rg = Get-Command rg -ErrorAction SilentlyContinue
-          if (-not $rg -and (Test-Path "/usr/bin/rg")) {
-            $rg = Get-Command "/usr/bin/rg"
+          $rgPath = (Get-Command rg -ErrorAction SilentlyContinue).Source
+          if (-not $rgPath) {
+            $version = '14.1.0'
+            $archiveName = "ripgrep-$version-x86_64-unknown-linux-musl.tar.gz"
+            $archivePath = Join-Path $env:RUNNER_TEMP $archiveName
+            $extractRoot = Join-Path $env:RUNNER_TEMP "ripgrep-$version"
+            $uri = "https://github.com/BurntSushi/ripgrep/releases/download/$version/$archiveName"
+            New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
+            Invoke-WebRequest -Uri $uri -OutFile $archivePath
+            tar -xzf $archivePath -C $extractRoot
+            $rgPath = (Get-ChildItem -Path $extractRoot -Filter rg -File -Recurse | Select-Object -First 1).FullName
           }
-          if (-not $rg) {
-            throw "ripgrep is required on ubuntu-latest but was not present"
+          if (-not $rgPath) {
+            throw "ripgrep bootstrap failed"
           }
-          & $rg.Source --version
+          $rgDirectory = Split-Path -Parent $rgPath
+          Add-Content -Path $env:GITHUB_PATH -Value $rgDirectory
+          & $rgPath --version
 
       - name: Build Rust CLI
         shell: pwsh
