@@ -682,6 +682,21 @@ jobs:
           $result | ConvertTo-Json -Depth 20 | Set-Content -Encoding utf8 (Join-Path $env:RUNNER_TEMP "code-intel-smoketest-bootstrap.json")
           Write-Host "bootstrap.py installed $($result.tag) -> $($result.release_root)"
 
+      - name: Packaged sentrux-shim install smoke
+        shell: pwsh
+        run: |
+          # #216 / #274 / DR-0001: after a packaged install the relocated
+          # legacy/tools/sentrux-shim payload must still be present, and the
+          # installed sentrux launcher must actually run. Checkout cargo tests
+          # cannot see this topology.
+          $bootstrap = Get-Content -Raw -LiteralPath (Join-Path $env:RUNNER_TEMP "code-intel-smoketest-bootstrap.json") | ConvertFrom-Json
+          Import-Module ./legacy/tools/code-intel-platform.psm1 -Force
+          $platform = if ($IsWindows) { "windows" } elseif ($IsMacOS) { "macos" } else { "linux" }
+          $env:CODE_INTEL_SMOKE_RELEASE_ROOT = [IO.Path]::GetFullPath([string]$bootstrap.release_root)
+          $env:CODE_INTEL_SMOKE_BIN = Get-CodeIntelBinDir -Platform $platform
+          cargo test -p code-intel --test install_smoke --locked packaged_install_runs_relocated_sentrux_shim -- --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { throw "packaged sentrux-shim install smoke failed with exit ${LASTEXITCODE}" }
+
       - name: Packaged Sentrux capability closure smoke
         shell: pwsh
         run: |
