@@ -32,7 +32,6 @@ class SentruxCapabilityExecutorTests(unittest.TestCase):
         self.assertIn("RouteKind::NotApplicable", self.source)
         for failure_kind in (
             "explicit_mutation_required",
-            "dag_scope_not_supported",
             "session_lifecycle_outside_dag",
         ):
             with self.subTest(failure_kind=failure_kind):

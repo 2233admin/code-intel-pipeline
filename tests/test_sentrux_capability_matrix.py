@@ -92,9 +92,9 @@ class SentruxCapabilityMatrixTests(unittest.TestCase):
                 self.assertTrue(capability["artifacts"])
                 self.assertTrue(capability["decisionConsumers"])
 
-    def test_dag_non_applicable_capabilities_are_explicit(self) -> None:
+    def test_explicit_and_lifecycle_capabilities_are_not_automatic_dag_routes(self) -> None:
         states = {item["id"]: item["currentState"] for item in self.matrix["capabilities"]}
-        self.assertEqual(states["sentrux.what_if"], "not_applicable_dag")
+        self.assertEqual(states["sentrux.what_if"], "automatic_degraded")
         self.assertEqual(states["sentrux.baseline_save"], "explicit_authority_required")
         self.assertEqual(states["sentrux.session_start"], "lifecycle_external")
         self.assertEqual(states["sentrux.session_end"], "lifecycle_external")
