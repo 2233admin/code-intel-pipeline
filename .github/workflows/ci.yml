@@ -228,7 +228,8 @@ jobs:
           if (-not $graph.binaryFound) {
             throw "installed Doctor did not find its packaged graph binary: $($graph | ConvertTo-Json -Compress)"
           }
-          $expected = [IO.Path]::GetFullPath((Join-Path $installBin (if ($IsWindows) { "code-intel.exe" } else { "code-intel" })))
+          $binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
+          $expected = [IO.Path]::GetFullPath((Join-Path $installBin $binaryName))
           $actual = [IO.Path]::GetFullPath([string]$graph.binaryPath)
           if ($actual -ne $expected) {
             throw "installed Doctor resolved $actual instead of the installed graph binary $expected"
@@ -579,7 +580,8 @@ jobs:
           if (-not $graph.binaryFound) {
             throw "installed Doctor did not find its packaged graph binary: $($graph | ConvertTo-Json -Compress)"
           }
-          $expected = [IO.Path]::GetFullPath((Join-Path $installBin (if ($IsWindows) { "code-intel.exe" } else { "code-intel" })))
+          $binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
+          $expected = [IO.Path]::GetFullPath((Join-Path $installBin $binaryName))
           $actual = [IO.Path]::GetFullPath([string]$graph.binaryPath)
           if ($actual -ne $expected) {
             throw "installed Doctor resolved $actual instead of the installed graph binary $expected"
