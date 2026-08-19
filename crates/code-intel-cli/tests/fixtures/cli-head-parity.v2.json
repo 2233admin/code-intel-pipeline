@@ -33,7 +33,7 @@
         "--json"
       ],
       "exitCode": 0,
-      "stdoutUtf8": "{\"name\":\"code-intel\",\"schema\":\"code-intel-version.v1\",\"version\":\"0.7.2-beta.5\"}\n",
+      "stdoutUtf8": "{\"name\":\"code-intel\",\"schema\":\"code-intel-version.v1\",\"version\":\"0.7.2-beta.6\"}\n",
       "stderrUtf8": ""
     },
     {
@@ -44,7 +44,7 @@
         "--json"
       ],
       "exitCode": 0,
-      "stdoutUtf8": "{\"name\":\"code-intel\",\"schema\":\"code-intel-version.v1\",\"version\":\"0.7.2-beta.5\"}\n",
+      "stdoutUtf8": "{\"name\":\"code-intel\",\"schema\":\"code-intel-version.v1\",\"version\":\"0.7.2-beta.6\"}\n",
       "stderrUtf8": ""
     },
     {

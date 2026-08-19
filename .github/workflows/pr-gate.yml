@@ -249,13 +249,29 @@ jobs:
       - name: Install ripgrep
         shell: pwsh
         run: |
-          if (Get-Command rg -ErrorAction SilentlyContinue) {
-            rg --version
+          $rgPath = (Get-Command rg -ErrorAction SilentlyContinue).Source
+          if (-not $rgPath) {
+            $version = '14.1.0'
+            $expectedSha256 = 'f84757b07f425fe5cf11d87df6644691c644a5cd2348a2c670894272999d3ba7'
+            $archiveName = "ripgrep-$version-x86_64-unknown-linux-musl.tar.gz"
+            $archivePath = Join-Path $env:RUNNER_TEMP $archiveName
+            $extractRoot = Join-Path $env:RUNNER_TEMP "ripgrep-$version"
+            $uri = "https://github.com/BurntSushi/ripgrep/releases/download/$version/$archiveName"
+            New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
+            Invoke-WebRequest -Uri $uri -OutFile $archivePath -TimeoutSec 60
+            $actualSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.ToLowerInvariant()
+            if ($actualSha256 -ne $expectedSha256) {
+              throw "ripgrep archive SHA-256 mismatch: expected $expectedSha256, got $actualSha256"
+            }
+            tar -xzf $archivePath -C $extractRoot
+            $rgPath = (Get-ChildItem -Path $extractRoot -Filter rg -File -Recurse | Select-Object -First 1).FullName
           }
-          else {
-            sudo apt-get update
-            sudo apt-get install -y ripgrep
+          if (-not $rgPath) {
+            throw "ripgrep bootstrap failed"
           }
+          $rgDirectory = Split-Path -Parent $rgPath
+          Add-Content -Path $env:GITHUB_PATH -Value $rgDirectory
+          & $rgPath --version
 
       - name: Build Rust CLI
         shell: pwsh

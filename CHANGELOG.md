@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2-beta.6] — 2026-08-19
+
+### Fixed
+
+- 发布包验证把安装后的 `bin` 加入进程 `PATH`，让 doctor 校验安装拓扑，同时保持 Rust 内置 Sentrux provider 在 Unix 上可用。
+
 ## [0.7.2-beta.5] — 2026-08-19
 
 ### Fixed
