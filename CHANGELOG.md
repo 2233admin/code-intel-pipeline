@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2-beta.4] — 2026-08-19
+
+### Fixed
+
+- 发布包验收在 bootstrap 安装后继续使用实际 `release_root` 作为 repo，确保 packaged Sentrux closure 和 doctor readiness 验证覆盖真实安装拓扑。
+
 ## [0.7.2-beta.3] — 2026-08-19
 
 ### Fixed

@@ -1,6 +1,6 @@
 [package]
 name = "code-intel"
-version = "0.7.2-beta.3"
+version = "0.7.2-beta.4"
 edition = "2021"
 description = "Local Code Intel Pipeline CLI for artifact resume and contract checks"
 license = "MIT"

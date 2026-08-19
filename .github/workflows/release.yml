@@ -226,6 +226,11 @@ jobs:
           $bootstrap = $bootstrapRaw | ConvertFrom-Json
           if ($bootstrap.status -notin @("installed", "repaired", "already_installed")) { throw "Unexpected release bootstrap status '$($bootstrap.status)':`n$bootstrapRaw" }
           $installedRoot = [IO.Path]::GetFullPath([string]$bootstrap.release_root)
+          # Continue the packaged validation from the exact release root that
+          # bootstrap installed. The extracted archive is only the installer
+          # input; using it as --repo bypasses the installed topology that the
+          # release gate is required to prove.
+          $payload = $installedRoot
           # The packaged binary must publish a committed, snapshot-bound
           # Sentrux closure. The manifest and content-addressed artifacts are
           # authoritative; command stdout is intentionally not inspected.
@@ -460,6 +465,11 @@ jobs:
           $bootstrap = $bootstrapRaw | ConvertFrom-Json
           if ($bootstrap.status -notin @("installed", "repaired", "already_installed")) { throw "Unexpected release bootstrap status '$($bootstrap.status)':`n$bootstrapRaw" }
           $installedRoot = [IO.Path]::GetFullPath([string]$bootstrap.release_root)
+          # Continue the packaged validation from the exact release root that
+          # bootstrap installed. The extracted archive is only the installer
+          # input; using it as --repo bypasses the installed topology that the
+          # release gate is required to prove.
+          $payload = $installedRoot
           $packagedBinary = Join-Path $installedRoot "bin/code-intel"
           bash -c "test -x '$packagedBinary'"
           if ($LASTEXITCODE -ne 0) { throw "packaged binary lost its executable bit in the zip round trip: $packagedBinary" }
