@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -29,13 +29,21 @@ mod graph;
 mod graph_adapter;
 #[path = "sentrux_adapter.rs"]
 mod sentrux_adapter;
+#[path = "sentrux_analysis.rs"]
+mod sentrux_analysis;
+#[path = "sentrux_capability_artifacts.rs"]
+mod sentrux_capability_artifacts;
+#[path = "sentrux_command.rs"]
+mod sentrux_command;
 #[path = "sentrux_gate.rs"]
 mod sentrux_gate;
+#[path = "sentrux_lite_capabilities.rs"]
+mod sentrux_lite_capabilities;
 
 use codenexus_scratch::{create_codenexus_scratch_dir, ScratchDir};
+pub(super) use sentrux_command::{command_evidence, SentruxCommand};
 use sentrux_gate::Violation;
 const MAX_AGE_SECONDS: u64 = 300;
-const MAX_COMMAND_EVIDENCE_BYTES: usize = 1024 * 1024;
 // The codenexus-domain effect vocabulary validated by
 // `codenexus_adapter::validate_native` -- distinct from the generic
 // repo_read/local_write/process_spawn effects `publish_admission` reports at
@@ -134,15 +142,18 @@ pub(super) fn sentrux_admission(
     let lease =
         snapshot::begin_consumption(repo, &request["snapshot"]).map_err(AdapterError::Contract)?;
     let collected_at = now()?;
-    let gate = run_sentrux(repo, tool_path_prefix, "gate")?;
-    let check = run_sentrux(repo, tool_path_prefix, "check")?;
+    let (gate, check, capability_observations) =
+        sentrux_capability_artifacts::collect_sentrux_capabilities(repo, tool_path_prefix)?;
     lease.verify_after(repo).map_err(AdapterError::Contract)?;
     let observed_at = now()?.max(collected_at);
     let identity = snapshot_identity(request)?;
     let command_observation = json!({
         "schema":"code-intel-sentrux-command-observation.v1",
         "snapshotIdentity":identity,
-        "commands":[command_evidence("gate", &gate), command_evidence("check", &check)]
+        "commands":[
+            command_evidence("gate", &gate),
+            command_evidence("check", &check)
+        ]
     });
     let command_observation_bytes = serde_json::to_vec(&command_observation).map_err(|error| {
         AdapterError::Internal(format!("serialize Sentrux command observation: {error}"))
@@ -195,17 +206,28 @@ pub(super) fn sentrux_admission(
     });
     let first = sentrux_adapter::translate(&native, observed_at, MAX_AGE_SECONDS)
         .map_err(AdapterError::Contract)?;
+    let run_id = format!("sentrux-{identity}");
+    let (capability_artifacts, capability_refs) =
+        sentrux_capability_artifacts::build_capability_artifacts(
+            &capability_observations,
+            identity,
+            &run_id,
+        )?;
     let payload = json!({
         "schema":"code-intel-evidence-payload.v1",
-        "data":{"structuralEvidence":{
-            "schema":"code-intel-structural-evidence-payload.v1",
-            "snapshotIdentity":identity,
-            "provider":first["port"]["provider"],
-            "provenance":payload_provenance(request),
-            "effects":first["port"]["effects"],
-            "completeness":first["port"]["completeness"],
-            "rules":first["port"]["rules"]
-        }}
+        "data":{
+            "structuralEvidence":{
+                "schema":"code-intel-structural-evidence-payload.v1",
+                "snapshotIdentity":identity,
+                "provider":first["port"]["provider"],
+                "provenance":payload_provenance(request),
+                "effects":first["port"]["effects"],
+                "completeness":first["port"]["completeness"],
+                "rules":first["port"]["rules"]
+            },
+            "sentruxCapabilities":capability_observations,
+            "capabilityArtifactRefs":capability_refs
+        }
     });
     fs::create_dir(out)
         .map_err(|error| AdapterError::Io(format!("create Sentrux provider output: {error}")))?;
@@ -218,6 +240,11 @@ pub(super) fn sentrux_admission(
         .map_err(|error| AdapterError::Internal(format!("serialize Sentrux payload: {error}")))?;
     fs::write(out.join("sentrux-payload.json"), &payload_bytes)
         .map_err(|error| AdapterError::Io(format!("write Sentrux payload: {error}")))?;
+    for artifact in &capability_artifacts {
+        fs::write(out.join(&artifact.relative_path), &artifact.bytes).map_err(|error| {
+            AdapterError::Io(format!("write Sentrux capability artifact: {error}"))
+        })?;
+    }
     let mut native = native;
     native["payload"] = payload_ref("sentrux-payload.json", &payload_bytes, identity);
     let adapter = sentrux_adapter::translate(&native, observed_at, MAX_AGE_SECONDS)
@@ -246,6 +273,7 @@ pub(super) fn sentrux_admission(
             bytes: command_observation_bytes,
         },
     ]);
+    output.artifacts.extend(capability_artifacts);
     Ok(output)
 }
 
@@ -431,81 +459,6 @@ fn sentrux_provider_options<'a>(
     Ok((repo, tool_path_prefix))
 }
 
-struct SentruxCommand {
-    argv: Vec<String>,
-    exit_code: Option<i32>,
-    success: bool,
-    stdout: String,
-    stderr: String,
-    violations: Vec<Violation>,
-    governed: bool,
-}
-
-impl SentruxCommand {
-    fn from_native(run: sentrux_gate::EngineRun, subcommand: &str) -> Self {
-        Self {
-            argv: vec![
-                "code-intel".into(),
-                "sentrux".into(),
-                subcommand.into(),
-                ".".into(),
-            ],
-            exit_code: Some(if run.success { 0 } else { 1 }),
-            success: run.success,
-            stdout: run.stdout,
-            stderr: String::new(),
-            violations: run.violations,
-            governed: run.governed,
-        }
-    }
-
-    fn from_external(output: Output, subcommand: &str) -> Self {
-        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-        // External engines only expose text; keep the per-line failure
-        // messages so downstream diagnosis is never target-blind. Bounded at
-        // the producer: an over-verbose external engine must degrade the
-        // details, never turn the domain verdict into a contract failure.
-        const MAX_EXTERNAL_VIOLATIONS: usize = 32;
-        const MAX_EXTERNAL_MESSAGE: usize = 1024;
-        let violations = if output.status.success() {
-            Vec::new()
-        } else {
-            stdout
-                .lines()
-                .filter_map(|line| line.strip_prefix("- "))
-                .map(str::trim)
-                .filter(|message| !message.is_empty())
-                .take(MAX_EXTERNAL_VIOLATIONS)
-                .map(|message| {
-                    let mut bounded = String::new();
-                    for character in message.chars() {
-                        if bounded.len() + character.len_utf8() > MAX_EXTERNAL_MESSAGE {
-                            break;
-                        }
-                        bounded.push(character);
-                    }
-                    Violation {
-                        rule: format!("sentrux_{subcommand}"),
-                        message: bounded,
-                        targets: Vec::new(),
-                    }
-                })
-                .collect()
-        };
-        Self {
-            argv: vec!["sentrux".into(), subcommand.into(), ".".into()],
-            exit_code: output.status.code(),
-            success: output.status.success(),
-            stdout,
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-            violations,
-            // External engines expose no governance signal, so their exit code
-            // is the only verdict available and is taken at face value.
-            governed: true,
-        }
-    }
-}
-
 fn run_sentrux(
     repo: &Path,
     tool_path_prefix: Option<&Path>,
@@ -515,8 +468,13 @@ fn run_sentrux(
         Some(prefix) => {
             let resolved = resolve_sentrux(prefix)?;
             let mut command = external_command(&resolved);
+            let provider_subcommand = if subcommand == "provider_discovery" {
+                "pro_status"
+            } else {
+                subcommand
+            };
             let output = command
-                .arg(subcommand)
+                .arg(provider_subcommand)
                 .arg(".")
                 .current_dir(repo)
                 .output()
@@ -527,8 +485,40 @@ fn run_sentrux(
         }
         None => {
             let run = match subcommand {
+                "dsm" => return json_command(sentrux_analysis::analyze(repo), subcommand),
+                "scan" => return json_command(sentrux_gate::scan_json(repo), subcommand),
+                "rescan" => return json_command(sentrux_gate::scan_json(repo), subcommand),
+                "health" => return json_command(sentrux_health_json(repo), subcommand),
+                "git_stats" => {
+                    return json_command(
+                        sentrux_lite_capabilities::git_stats_json(repo),
+                        subcommand,
+                    )
+                }
+                "evolution" => {
+                    return json_command(
+                        sentrux_lite_capabilities::evolution_json(repo),
+                        subcommand,
+                    )
+                }
+                "test_gaps" => {
+                    return json_command(
+                        sentrux_lite_capabilities::test_gaps_json(repo),
+                        subcommand,
+                    )
+                }
+                "what_if" => {
+                    return json_command(sentrux_lite_capabilities::what_if_json(repo), subcommand)
+                }
+                "provider_discovery" => {
+                    return json_command(
+                        sentrux_lite_capabilities::provider_discovery_json(),
+                        subcommand,
+                    )
+                }
+                "check_rules" => sentrux_gate::run_check(repo),
+                "check" => sentrux_gate::run_check_aligned(repo, true),
                 "gate" => sentrux_gate::run_gate(repo, false),
-                "check" => sentrux_gate::run_check(repo),
                 other => {
                     return Err(AdapterError::Internal(format!(
                         "unsupported built-in Sentrux subcommand: {other}"
@@ -539,14 +529,42 @@ fn run_sentrux(
             SentruxCommand::from_native(run, subcommand)
         }
     };
-    if command.stdout.len() > MAX_COMMAND_EVIDENCE_BYTES
-        || command.stderr.len() > MAX_COMMAND_EVIDENCE_BYTES
-    {
-        return Err(AdapterError::Contract(format!(
-            "Sentrux {subcommand} output exceeds the bounded evidence limit"
-        )));
-    }
     Ok(command)
+}
+
+fn json_command(
+    value: Result<Value, String>,
+    subcommand: &str,
+) -> Result<SentruxCommand, AdapterError> {
+    let value =
+        value.map_err(|error| AdapterError::Internal(format!("Sentrux {subcommand}: {error}")))?;
+    let stdout = serde_json::to_string_pretty(&value).map_err(|error| {
+        AdapterError::Internal(format!("serialize Sentrux {subcommand}: {error}"))
+    })?;
+    Ok(SentruxCommand::from_json(stdout.into_bytes(), subcommand))
+}
+
+fn sentrux_health_json(repo: &Path) -> Result<Value, String> {
+    let metrics = sentrux_gate::scan_json(repo)?;
+    let god_files = metrics["god_file_count"].as_i64().unwrap_or(0);
+    let complex = metrics["complex_fn_count"].as_i64().unwrap_or(0);
+    let coupling = metrics["coupling_score"].as_f64().unwrap_or(0.0);
+    let bottleneck = if god_files > 0 {
+        "god_files"
+    } else if complex > 0 {
+        "complexity"
+    } else if coupling > 20.0 {
+        "coupling"
+    } else {
+        "none"
+    };
+    Ok(json!({
+        "status":"ok",
+        "tool":sentrux_gate::ENGINE_ID,
+        "quality_signal":metrics["quality_signal"],
+        "files":metrics["files"],
+        "bottleneck":bottleneck
+    }))
 }
 
 fn external_command(path: &Path) -> Command {
@@ -564,7 +582,7 @@ fn external_command(path: &Path) -> Command {
 }
 
 fn resolve_sentrux(prefix: &Path) -> Result<PathBuf, AdapterError> {
-    sentrux_names()
+    ["sentrux.exe", "sentrux.cmd", "sentrux.bat", "sentrux"]
         .iter()
         .map(|name| prefix.join(name))
         .find(|path| path.is_file())
@@ -576,56 +594,16 @@ fn resolve_sentrux(prefix: &Path) -> Result<PathBuf, AdapterError> {
         })
 }
 
-fn sentrux_names() -> &'static [&'static str] {
-    if cfg!(windows) {
-        &["sentrux.exe", "sentrux.cmd", "sentrux.bat", "sentrux"]
-    } else {
-        &["sentrux"]
-    }
-}
-
-fn command_evidence(subcommand: &str, command: &SentruxCommand) -> Value {
-    json!({
-        "id":subcommand,
-        "argv":command.argv,
-        "exitCode":command.exit_code,
-        "success":command.success,
-        "stdout":command.stdout,
-        "stderr":command.stderr
-    })
-}
-
-/// Translates one Sentrux command into an authoritative rule verdict.
-///
-/// An ungoverned command carries no structural verdict: `check` without
-/// `.sentrux/rules.toml` evaluated no rule, and `gate` without
-/// `.sentrux/baseline.json` had no prior measurement to detect a regression
-/// against. Its nonzero exit code is an operator affordance ("save a
-/// baseline"), not evidence that an admitted rule failed, so reporting `fail`
-/// here made every never-baselined repository read as an architecture gate
-/// failure in diagnosis. The raw exit code and stdout stay verbatim in the
-/// command observation artifact, which is where the ungoverned state is
-/// auditable.
 fn command_rule(kind: &str, command: &SentruxCommand) -> Value {
     let verdict = if command.success || !command.governed {
         "pass"
     } else {
         "fail"
     };
-    let mut rule = json!({
-        "kind":kind,
-        "status":"evaluated",
-        "verdict":verdict,
-        "failure":{"kind":"none"}
-    });
+    let mut rule =
+        json!({"kind":kind,"status":"evaluated","verdict":verdict,"failure":{"kind":"none"}});
     if verdict == "fail" && !command.violations.is_empty() {
-        rule["details"] = json!({
-            "violations":command
-                .violations
-                .iter()
-                .map(Violation::to_json)
-                .collect::<Vec<_>>()
-        });
+        rule["details"] = json!({"violations":command.violations.iter().map(Violation::to_json).collect::<Vec<_>>()});
     }
     rule
 }

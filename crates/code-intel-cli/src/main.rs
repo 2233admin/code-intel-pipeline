@@ -62,6 +62,7 @@ mod run_error;
 mod runtime_ci_evidence;
 mod sentrux;
 mod sentrux_analysis;
+mod sentrux_capabilities;
 mod sentrux_gate;
 mod session_evidence;
 mod snapshot;

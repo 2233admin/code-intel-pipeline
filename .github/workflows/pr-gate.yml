@@ -227,3 +227,115 @@ jobs:
             exit 1
           fi
           echo "agent-approved label present — gate green"
+
+  sentrux-capability-gate:
+    # The PR gate consumes only the committed Run Commit boundary.  It never
+    # treats Sentrux stdout as authority: `artifact index` revalidates the
+    # completion marker, content-addressed manifest, and every Artifact Ref.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Rust
+        shell: pwsh
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+
+      - name: Install ripgrep
+        shell: pwsh
+        run: |
+          if (Get-Command rg -ErrorAction SilentlyContinue) {
+            rg --version
+          }
+          else {
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+          }
+
+      - name: Build Rust CLI
+        shell: pwsh
+        run: cargo build -p code-intel --release --locked
+
+      - name: Run authoritative Sentrux capability pipeline
+        shell: pwsh
+        run: |
+          $binary = "./target/release/code-intel"
+          $staging = Join-Path $env:RUNNER_TEMP "code-intel-pr-sentrux-staging"
+          $authority = Join-Path $env:RUNNER_TEMP "code-intel-pr-sentrux-authority"
+          $finalName = "pr-sentrux-$env:GITHUB_RUN_ID"
+          New-Item -ItemType Directory -Force -Path $authority | Out-Null
+          & $binary run execute --repo . --out $staging --authority-root $authority --final-name $finalName --manifest orchestration/integrations.json --doctor-require-repowise false
+          if ($LASTEXITCODE -ne 0) {
+            throw "authoritative Sentrux pipeline failed with exit ${LASTEXITCODE}; inspect the uploaded run closure evidence"
+          }
+
+          $repoName = (Get-Item .).Name
+          $runRoot = Join-Path (Join-Path $authority $repoName) $finalName
+          $index = Join-Path $authority "index.json"
+          & $binary artifact index --artifact-root $authority --output $index --operation rebuild
+          if ($LASTEXITCODE -ne 0) { throw "committed artifact index validation failed" }
+
+          $markerPath = Join-Path $runRoot "run-complete.json"
+          if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) { throw "Sentrux run has no completion marker: $markerPath" }
+          $marker = Get-Content -Raw -LiteralPath $markerPath | ConvertFrom-Json
+          if ($marker.schema -ne "code-intel-run-commit.v1") { throw "unexpected completion marker schema: $($marker.schema)" }
+          $manifestPath = Join-Path $runRoot ($marker.manifest.path -replace '/', [IO.Path]::DirectorySeparatorChar)
+          $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+          if ($manifest.schema -ne "code-intel-run-manifest.v1" -or $manifest.outcome -ne "completed") { throw "Sentrux run manifest is not completed and authoritative" }
+          if ($manifest.snapshotIdentity -ne $marker.snapshotIdentity) { throw "completion marker and run manifest snapshot identities differ" }
+
+          $indexValue = Get-Content -Raw -LiteralPath $index | ConvertFrom-Json
+          $entry = @($indexValue.entries | Where-Object { $_.repo -eq $repoName -and $_.run -eq $finalName })
+          if ($entry.Count -ne 1) { throw "artifact index did not admit exactly one completed PR run" }
+          $refs = @($entry[0].artifactRefs)
+          $hospitalRefs = @($refs | Where-Object { $_.type -eq "diagnosis.hospital" })
+          if ($hospitalRefs.Count -ne 1) { throw "completed run is missing its verified final hospital report Artifact Ref" }
+          $capabilityRefs = @($refs | Where-Object { $_.artifactSchema -eq "code-intel-sentrux-capability-artifact.v1" -and $_.type -eq "provider.sentrux.capability-artifact" })
+          if ($capabilityRefs.Count -eq 0) { throw "completed run has no verified Sentrux capability Artifact Refs" }
+
+          $matrix = Get-Content -Raw -LiteralPath "orchestration/sentrux-capability-matrix.v1.json" | ConvertFrom-Json
+          $matrixById = @{}
+          foreach ($capability in @($matrix.capabilities)) { $matrixById[$capability.id] = $capability }
+          $observed = @{}
+          foreach ($ref in $capabilityRefs) {
+            $payloadPath = Join-Path $runRoot ($ref.path -replace '/', [IO.Path]::DirectorySeparatorChar)
+            $payload = Get-Content -Raw -LiteralPath $payloadPath | ConvertFrom-Json
+            if ($payload.schema -ne "code-intel-sentrux-capability-artifact.v1" -or $payload.snapshotIdentity -ne $marker.snapshotIdentity) { throw "Sentrux capability artifact is not schema-valid and snapshot-bound: $($ref.path)" }
+            if (-not $matrixById.ContainsKey($payload.capabilityId)) { throw "Sentrux capability is absent from the capability matrix: $($payload.capabilityId)" }
+            if ($matrixById[$payload.capabilityId].operation -ne $payload.operation) { throw "Sentrux capability operation disagrees with the matrix: $($payload.capabilityId)" }
+            if ($observed.ContainsKey($payload.capabilityId)) { throw "duplicate Sentrux capability artifact: $($payload.capabilityId)" }
+            $observed[$payload.capabilityId] = $payload
+            if ($payload.status -ne "succeeded" -and $null -eq $payload.failure) { throw "non-success Sentrux capability has no explicit failure: $($payload.capabilityId)" }
+          }
+          $required = @($matrix.capabilities | Where-Object { $_.requiredForRelease })
+          foreach ($capability in $required) {
+            $id = [string]$capability.id
+            if (-not $observed.ContainsKey($id)) { throw "required Sentrux capability is missing from the committed run: $id" }
+            $payload = $observed[$id]
+            $mode = [string]$capability.executionMode
+            if ($mode -eq "automatic") {
+              if ($capability.currentState -eq "authoritative_automatic" -and $payload.status -ne "succeeded") { throw "authoritative automatic Sentrux capability did not succeed: $id ($($payload.status))" }
+              if ($capability.currentState -eq "automatic_degraded" -and $payload.status -notin @("succeeded", "degraded")) { throw "degraded automatic Sentrux capability did not produce an accepted result: $id ($($payload.status))" }
+              if ($capability.currentState -notin @("authoritative_automatic", "automatic_degraded")) { throw "automatic Sentrux capability has an unsupported matrix state: $id ($($capability.currentState))" }
+            }
+            elseif ($mode -in @("explicit_authority", "lifecycle_external")) {
+              if ($payload.status -ne "not_applicable") { throw "explicit/lifecycle Sentrux capability must be explicitly not_applicable in a DAG run: $id ($($payload.status))" }
+              if ($null -eq $payload.failure -or [string]::IsNullOrWhiteSpace([string]$payload.failure.kind)) { throw "explicit/lifecycle Sentrux capability has no failure reason: $id" }
+            }
+            else { throw "Sentrux capability has no recognized execution mode: $id ($mode)" }
+          }
+          Write-Host "Sentrux capability closure verified: $($capabilityRefs.Count) capability refs; required=$($required.Count); matrix coverage=$($matrix.coverageStatus)"
+
+      - name: Upload Sentrux closure evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sentrux-pr-closure
+          path: |
+            ${{ runner.temp }}/code-intel-pr-sentrux-authority
+          if-no-files-found: ignore

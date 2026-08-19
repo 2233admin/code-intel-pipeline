@@ -341,6 +341,51 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     assert_eq!(impact["schema"], "code-intel-change-impact.v1");
     assert_eq!(impact["runOutcome"], "completed");
     assert_eq!(impact["freshness"]["status"], "current");
+    assert_eq!(impact["sentruxEvidence"]["status"], "available");
+    assert!(!impact["sentruxEvidenceRefs"].as_array().unwrap().is_empty());
+    assert!(impact["sentruxEvidenceRefs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|reference| {
+            reference["artifactSchema"] == "code-intel-sentrux-capability-artifact.v1"
+                && reference["type"] == "provider.sentrux.capability-artifact"
+        }));
+    assert_eq!(
+        impact["testSelection"]["sentruxSignals"]["status"],
+        "available"
+    );
+    assert_eq!(
+        impact["testSelection"]["sentruxSignals"]["testGap"]["status"],
+        "available"
+    );
+    assert_eq!(
+        impact["testSelection"]["sentruxSignals"]["testGap"]["capabilityStatus"],
+        "succeeded"
+    );
+    assert_eq!(
+        impact["testSelection"]["sentruxSignals"]["dsm"]["status"],
+        "available"
+    );
+    assert_eq!(
+        impact["testSelection"]["sentruxSignals"]["candidateTestImpact"],
+        "retains_graph_candidates_with_what_if_risk"
+    );
+    assert!(
+        impact["testSelection"]["sentruxSignals"]["whatIfFailingScenarioCount"]
+            .as_u64()
+            .unwrap_or(0)
+            > 0
+    );
+    assert!(
+        impact["testSelection"]["sentruxSignals"]["testGap"]["limitations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item
+                .as_str()
+                .is_some_and(|text| text.contains("no structured candidate test paths")))
+    );
     assert_eq!(
         impact["testSelection"]["files"],
         json!(["tests/lib_test.rs"])

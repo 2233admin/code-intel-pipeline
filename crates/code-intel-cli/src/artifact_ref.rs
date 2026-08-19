@@ -289,6 +289,14 @@ fn diagnosis_family_contract(schema: &str, artifact_type: &str) -> Option<Artifa
                 validate_payload: validate_sentrux_command_observation,
             })
         }
+        ("code-intel-sentrux-capability-artifact.v1", "provider.sentrux.capability-artifact") => {
+            Some(ArtifactContract {
+                artifact_schema: "code-intel-sentrux-capability-artifact.v1",
+                artifact_type: "provider.sentrux.capability-artifact",
+                max_bytes: 8 * 1024 * 1024,
+                validate_payload: validate_sentrux_capability_artifact,
+            })
+        }
         ("code-intel-hospital.v1", "diagnosis.hospital") => Some(ArtifactContract {
             artifact_schema: "code-intel-hospital.v1",
             artifact_type: "diagnosis.hospital",
@@ -559,6 +567,69 @@ fn sentrux_command_result_is_valid(command: &Value, id: &str) -> bool {
         && command["success"].is_boolean()
         && command["stdout"].is_string()
         && command["stderr"].is_string()
+}
+
+fn validate_sentrux_capability_artifact(bytes: &[u8]) -> Result<(), String> {
+    let value = parse_contract_json(bytes, "Sentrux capability artifact")?;
+    exact_object_keys(
+        &value,
+        &[
+            "schema",
+            "contractVersion",
+            "capabilityId",
+            "operation",
+            "runId",
+            "snapshotIdentity",
+            "provider",
+            "status",
+            "authority",
+            "inputs",
+            "outputs",
+            "failure",
+            "freshness",
+            "decisionConsumers",
+        ],
+        "Sentrux capability artifact",
+    )?;
+    if value["schema"] != "code-intel-sentrux-capability-artifact.v1"
+        || value["contractVersion"] != 1
+        || !value["capabilityId"]
+            .as_str()
+            .is_some_and(|id| !id.is_empty() && id.starts_with("sentrux."))
+        || !value["operation"]
+            .as_str()
+            .is_some_and(|operation| !operation.is_empty())
+        || !value["runId"]
+            .as_str()
+            .is_some_and(|run_id| !run_id.is_empty())
+        || !value["snapshotIdentity"].as_str().is_some_and(valid_digest)
+        || !value["provider"].is_object()
+        || !matches!(
+            value["status"].as_str(),
+            Some(
+                "succeeded" | "degraded" | "unavailable" | "skipped" | "not_applicable" | "failed"
+            )
+        )
+        || !matches!(
+            value["authority"].as_str(),
+            Some("authoritative" | "fallback" | "compatibility" | "declared_only")
+        )
+        || !value["inputs"].is_object()
+        || !value["outputs"].is_object()
+        || if value["status"] == "succeeded" {
+            !value["failure"].is_null()
+        } else {
+            !value["failure"].is_object()
+        }
+        || !value["freshness"].is_object()
+        || !value["decisionConsumers"].is_array()
+    {
+        return Err("Sentrux capability artifact header or envelope fields are invalid".into());
+    }
+    if value["status"] == "succeeded" && value["outputs"].as_object().is_none_or(|v| v.is_empty()) {
+        return Err("successful Sentrux capability artifact must contain outputs".into());
+    }
+    Ok(())
 }
 
 fn validate_retirement_manifest(bytes: &[u8]) -> Result<(), String> {
@@ -3825,6 +3896,58 @@ mod tests {
                 "imports payload without string file/target passed: {imports_bad}"
             );
         }
+    }
+
+    #[test]
+    fn sentrux_capability_artifact_contract_accepts_success_and_requires_failure_details() {
+        let reference = json!({
+            "artifactSchema":"code-intel-sentrux-capability-artifact.v1",
+            "type":"provider.sentrux.capability-artifact"
+        });
+        let contract = registered_contract(&reference).expect("Sentrux artifact is registered");
+        let base = json!({
+            "schema":"code-intel-sentrux-capability-artifact.v1",
+            "contractVersion":1,
+            "capabilityId":"sentrux.scan",
+            "operation":"scan",
+            "runId":"run-1",
+            "snapshotIdentity":"a".repeat(64),
+            "provider":{
+                "mode":"builtin",
+                "id":"sentrux.builtin",
+                "version":"1.0.0",
+                "digest":"b".repeat(64)
+            },
+            "status":"succeeded",
+            "authority":"authoritative",
+            "inputs":{},
+            "outputs":{"artifacts":[]},
+            "failure":null,
+            "freshness":{
+                "status":"current",
+                "evaluatedAt":"2026-08-18T00:00:00Z",
+                "consumedSnapshotIdentity":"a".repeat(64)
+            },
+            "decisionConsumers":["release_gate"]
+        });
+        (contract.validate_payload)(&serde_json::to_vec(&base).unwrap())
+            .expect("successful Sentrux artifact with null failure must pass");
+
+        let mut failed = base.clone();
+        failed["status"] = json!("failed");
+        failed["failure"] = json!({
+            "kind":"provider_error",
+            "message":"command failed",
+            "retryable":true
+        });
+        (contract.validate_payload)(&serde_json::to_vec(&failed).unwrap())
+            .expect("failed Sentrux artifact with failure details must pass");
+
+        failed["failure"] = Value::Null;
+        assert!(
+            (contract.validate_payload)(&serde_json::to_vec(&failed).unwrap()).is_err(),
+            "failed Sentrux artifact must not silently omit failure details"
+        );
     }
 
     fn deletion_file(path: &str, base: &str, result: &str, added: Vec<&str>) -> Value {

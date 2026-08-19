@@ -34,6 +34,7 @@ struct Signals {
     modernization_debt: bool,
     top_target: Option<String>,
     failing_rules: Vec<Value>,
+    sentrux_capability_refs: Vec<Value>,
     admissions: BTreeMap<String, String>,
 }
 
@@ -55,6 +56,7 @@ impl Default for Signals {
             modernization_debt: false,
             top_target: None,
             failing_rules: Vec::new(),
+            sentrux_capability_refs: Vec::new(),
             admissions: BTreeMap::new(),
         }
     }
@@ -260,6 +262,15 @@ fn consume_admission(input: &VerifiedArtifact, signals: &mut Signals) -> Result<
             );
         }
     }
+    if let Some(refs) = data.get("capabilityArtifactRefs").and_then(Value::as_array) {
+        require_provider_modality(provider, "structural_evidence")?;
+        if !signals.sentrux_capability_refs.is_empty() {
+            return Err(AdapterError::Contract(
+                "duplicate admitted Sentrux capability artifacts".into(),
+            ));
+        }
+        signals.sentrux_capability_refs = refs.clone();
+    }
     if let Some(native) = data.get("nativeCode") {
         require_provider_modality(provider, "native_code")?;
         if signals.native_seen {
@@ -426,7 +437,7 @@ fn diagnose(request: &Value, s: &Signals, audit: Option<&AuditReport>) -> Value 
         "diagnosis":{"findings":[diagnosis],"impression":diagnosis,"risk":status,"evidence":evidence},
         "treatment":{"plan":treatment,"follow_up":["Rerun diagnosis.hospital with current admitted evidence."]},
         "protocols":[],
-        "tools":{},
+        "tools":{"sentruxCapabilities":s.sentrux_capability_refs},
         "surgery_plan":{
             "schema":"code-intel-surgery-plan.v1",
             "status":surgery_status,

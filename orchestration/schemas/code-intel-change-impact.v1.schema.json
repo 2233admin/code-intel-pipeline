@@ -45,6 +45,24 @@
       "maxItems": 2,
       "items": { "$ref": "code-intel-run-manifest.v1.schema.json#/definitions/artifactRef" }
     },
+    "sentruxEvidenceRefs": {
+      "type": "array",
+      "items": { "$ref": "code-intel-run-manifest.v1.schema.json#/definitions/artifactRef" },
+      "uniqueItems": true
+    },
+    "sentruxEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "diagnostics"],
+      "properties": {
+        "status": { "enum": ["available", "advisory", "unknown"] },
+        "diagnostics": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
     "impact": {
       "type": "object",
       "additionalProperties": false,
@@ -72,16 +90,42 @@
     "testSelection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "files", "commands", "advisoryOnly", "rationale"],
+      "required": ["status", "files", "commands", "advisoryOnly", "rationale", "sentruxSignals"],
       "properties": {
         "status": { "enum": ["candidates", "none"] },
         "files": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "commands": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "advisoryOnly": { "const": true },
-        "rationale": { "type": "string", "minLength": 1 }
+        "rationale": { "type": "string", "minLength": 1 },
+        "sentruxSignals": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "testGap", "dsm", "candidateTestImpact", "limitations"],
+          "properties": {
+            "status": { "enum": ["available", "advisory", "unknown"] },
+            "testGap": { "$ref": "#/$defs/sentruxSignal" },
+            "dsm": { "$ref": "#/$defs/sentruxSignal" },
+            "candidateTestImpact": { "enum": ["retains_graph_candidates", "withholds_sentrux_expansion", "unknown"] },
+            "limitations": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+          }
+        }
       }
     },
     "limitations": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
   },
-  "$defs": { "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "sentruxSignal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "capabilityStatus", "authority", "candidateImpact", "limitations"],
+      "properties": {
+        "status": { "enum": ["available", "degraded", "unknown"] },
+        "capabilityStatus": { "enum": ["succeeded", "degraded", "unavailable", "skipped", "failed", "not_applicable", "missing", "unknown"] },
+        "authority": { "enum": ["authoritative", "fallback", "compatibility", "declared_only", "unknown"] },
+        "candidateImpact": { "enum": ["retains_graph_candidates", "withholds_sentrux_expansion", "unknown"] },
+        "limitations": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    }
+  }
 }
