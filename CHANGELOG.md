@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2-beta.5] — 2026-08-19
+
+### Fixed
+
+- 发布包的 packaged Sentrux closure 显式把安装后的 `bin` 作为 doctor tool-path prefix，确保 doctor/capability executor 发现同一套安装内置 Sentrux binary。
+
 ## [0.7.2-beta.4] — 2026-08-19
 
 ### Fixed

@@ -240,7 +240,7 @@ jobs:
           $finalName = "release-packaged-sentrux-$env:GITHUB_RUN_ID"
           $manifestPath = Join-Path $payload (Join-Path "orchestration" "integrations.json")
           New-Item -ItemType Directory -Force -Path $authority | Out-Null
-          & $packagedBinary run execute --repo $payload --out $staging --authority-root $authority --final-name $finalName --manifest $manifestPath --doctor-require-repowise false
+          & $packagedBinary run execute --repo $payload --out $staging --authority-root $authority --final-name $finalName --manifest $manifestPath --doctor-tool-path-prefix (Join-Path $installedRoot "bin") --doctor-require-repowise false
           if ($LASTEXITCODE -ne 0) { throw "packaged release run execute failed with exit ${LASTEXITCODE}" }
 
           $repoName = (Get-Item -LiteralPath $payload).Name
@@ -481,7 +481,7 @@ jobs:
           $finalName = "release-packaged-sentrux-$env:GITHUB_RUN_ID"
           $manifestPath = Join-Path $payload (Join-Path "orchestration" "integrations.json")
           New-Item -ItemType Directory -Force -Path $authority | Out-Null
-          & $packagedBinary run execute --repo $payload --out $staging --authority-root $authority --final-name $finalName --manifest $manifestPath --doctor-require-repowise false
+          & $packagedBinary run execute --repo $payload --out $staging --authority-root $authority --final-name $finalName --manifest $manifestPath --doctor-tool-path-prefix (Join-Path $installedRoot "bin") --doctor-require-repowise false
           if ($LASTEXITCODE -ne 0) { throw "packaged release run execute failed with exit ${LASTEXITCODE}" }
 
           $repoName = (Get-Item -LiteralPath $payload).Name
