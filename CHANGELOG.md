@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2-beta.2] — 2026-08-19
+
+### Added
+
+- **Sentrux capability automation**：能力矩阵、自动发现与执行、lite fallback、统一 artifact/schema 和结果闭环接入报告、影响分析、测试选择、PR gate 与 release gate；发布包增加能力级 smoke 验收。
+- **安装拓扑 smoke**：跨平台 CI 通过真实安装后的 graph binary 验证 `doctor bootstrap`，覆盖安装后路径与能力发现边界。
+
+### Fixed
+
+- 刷新合并后受 frozen source set 约束的 E04/E07/E08 compatibility retirement packets，避免 Windows 发布门禁因 stale snapshot 误报。
+
 ## [0.7.2-beta.1] — 2026-08-13
 
 ### Added
