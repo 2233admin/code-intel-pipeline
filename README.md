@@ -338,7 +338,7 @@ Skill development benchmark contract 测试：
 Project management support contract 测试：
 
 ```powershell
-.\legacy/scripts/tests/test-project-management-support.ps1 -RepoPath C:\path\to\your\repo
+cargo test -p code-intel --test project_management_support
 ```
 
 从 GitHub Release ZIP 运行时，安装后直接使用编译入口；不需要 Cargo，也不依赖仓库里的 `target/`：
