@@ -213,6 +213,30 @@ jobs:
         # breaks — was unreachable from the step named "release gate parity".
         run: code-intel doctor bootstrap --repo-path . --no-require-repowise --require-provider-conformance
 
+      - name: Installed graph binary smoke
+        shell: pwsh
+        run: |
+          $installed = (Get-Command code-intel -ErrorAction Stop).Source
+          $installBin = Split-Path -Parent $installed
+          $installRoot = Split-Path -Parent $installBin
+          $json = & $installed doctor bootstrap --pipeline-root $installRoot --repo-path (Resolve-Path .) --no-require-repowise --json
+          if ($LASTEXITCODE -notin @(0, 1)) {
+            throw "installed Doctor process failed with exit code $LASTEXITCODE"
+          }
+          $global:LASTEXITCODE = 0
+          $observation = ($json -join [Environment]::NewLine) | ConvertFrom-Json
+          $graph = $observation.checks.graphProvider
+          if (-not $graph.binaryFound) {
+            throw "installed Doctor did not find its packaged graph binary: $($graph | ConvertTo-Json -Compress)"
+          }
+          $binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
+          $expected = [IO.Path]::GetFullPath((Join-Path $installBin $binaryName))
+          $actual = [IO.Path]::GetFullPath([string]$graph.binaryPath)
+          if ($actual -ne $expected) {
+            throw "installed Doctor resolved $actual instead of the installed graph binary $expected"
+          }
+          Write-Host "Installed graph binary smoke passed: $actual"
+
       - name: GitHub research contract tests
         shell: pwsh
         run: .\legacy/scripts/tests/test-github-solution-research.ps1 -RepoPath .
@@ -541,6 +565,30 @@ jobs:
         # the self-scan runs before the install, so this is the only place the
         # installed-overlay branch is reachable.
         run: code-intel doctor bootstrap --repo-path . --no-require-repowise --require-provider-conformance --json
+
+      - name: Installed graph binary smoke
+        shell: pwsh
+        run: |
+          $installed = (Get-Command code-intel -ErrorAction Stop).Source
+          $installBin = Split-Path -Parent $installed
+          $installRoot = Split-Path -Parent $installBin
+          $json = & $installed doctor bootstrap --pipeline-root $installRoot --repo-path (Resolve-Path .) --no-require-repowise --json
+          if ($LASTEXITCODE -notin @(0, 1)) {
+            throw "installed Doctor process failed with exit code $LASTEXITCODE"
+          }
+          $global:LASTEXITCODE = 0
+          $observation = ($json -join [Environment]::NewLine) | ConvertFrom-Json
+          $graph = $observation.checks.graphProvider
+          if (-not $graph.binaryFound) {
+            throw "installed Doctor did not find its packaged graph binary: $($graph | ConvertTo-Json -Compress)"
+          }
+          $binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
+          $expected = [IO.Path]::GetFullPath((Join-Path $installBin $binaryName))
+          $actual = [IO.Path]::GetFullPath([string]$graph.binaryPath)
+          if ($actual -ne $expected) {
+            throw "installed Doctor resolved $actual instead of the installed graph binary $expected"
+          }
+          Write-Host "Installed graph binary smoke passed: $actual"
 
       # The steps above install from the local checkout, never exercising the
       # actual release artifact a real user downloads (#59 proposal 6: this
