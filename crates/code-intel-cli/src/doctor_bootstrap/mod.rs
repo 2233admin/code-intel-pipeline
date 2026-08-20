@@ -203,7 +203,15 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
     let repo_state = repo_state(repo_path.as_deref(), sentrux_scope.as_deref());
     let home = code_intel_home(&options.pipeline_root);
     let weco_byok_configured = weco_byok_configured_from(|name| std::env::var_os(name).is_some());
-    let weco_reason = weco_reason(weco_present, weco_byok_configured);
+    let weco_account_configured = weco_account_configured_from(
+        std::env::var_os(WECO_ACCOUNT_ENV_VAR).is_some(),
+        home_dir
+            .join(".config")
+            .join("weco")
+            .join("credentials.json")
+            .is_file(),
+    );
+    let weco_reason = weco_reason(weco_present, weco_byok_configured, weco_account_configured);
 
     let checks = json!({
         "pipelineScript": {
@@ -258,7 +266,11 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
         // once ready; the operator-facing `doctor_provider_rows` provider row
         // deliberately excludes this text (its schema forbids extra
         // properties), so it only lives here.
-        "weco": {"byokConfigured": weco_byok_configured, "reason": weco_reason}
+        "weco": {
+            "byokConfigured": weco_byok_configured,
+            "accountConfigured": weco_account_configured,
+            "reason": weco_reason
+        }
     });
 
     let missing = missing_list(&checks, &tools, builtin_sentrux, options, &home);
@@ -292,19 +304,42 @@ fn weco_byok_configured_from(present: impl Fn(&str) -> bool) -> bool {
     WECO_BYOK_ENV_VARS.iter().any(|name| present(name))
 }
 
+/// weco.ai's own account token -- distinct from `WECO_BYOK_ENV_VARS`, and
+/// required unconditionally: verified against the weco-cli source (#301
+/// research) that weco's optimization loop is not local at all -- the
+/// decision logic runs server-side, polled over HTTP, with a heartbeat
+/// thread keeping the run alive on weco's backend. The BYOK key only pays
+/// for LLM generation; this token is what creates/tracks the run at all,
+/// with or without BYOK. Resolution order matches weco's own
+/// `config.py::load_weco_api_key`: the env var first, then the credentials
+/// file `weco login` writes.
+const WECO_ACCOUNT_ENV_VAR: &str = "WECO_API_KEY";
+
+/// Pure over injected presence bits, same reasoning as
+/// `weco_byok_configured_from`: testable without mutating process-global env
+/// vars or touching the real filesystem.
+fn weco_account_configured_from(env_present: bool, credentials_file_present: bool) -> bool {
+    env_present || credentials_file_present
+}
+
 /// Human-readable cause for #300's "unavailable" states, distinguishing
-/// not-installed from installed-but-unauthenticated. Lives in
-/// `checks.weco.reason` rather than the `doctor_provider_rows` provider row:
-/// that row's schema (`providerObservation`,
-/// code-intel-doctor-observation.v1.schema.json) sets
-/// `additionalProperties: false` on exactly
+/// not-installed from the two independent auth gates weco actually has
+/// (#301 research corrected the original assumption that BYOK alone was
+/// sufficient). Lives in `checks.weco.reason` rather than the
+/// `doctor_provider_rows` provider row: that row's schema
+/// (`providerObservation`, code-intel-doctor-observation.v1.schema.json)
+/// sets `additionalProperties: false` on exactly
 /// `[id,presence,readiness,conformance,admissibility]`, so a free-text field
 /// there would fail schema validation.
-fn weco_reason(present: bool, byok_configured: bool) -> &'static str {
+fn weco_reason(present: bool, byok_configured: bool, account_configured: bool) -> &'static str {
     if !present {
         "weco not found on PATH"
+    } else if !byok_configured && !account_configured {
+        "weco installed but neither an LLM provider key (BYOK) nor a weco.ai account (WECO_API_KEY) is configured"
     } else if !byok_configured {
         "weco installed but no LLM provider key configured (BYOK)"
+    } else if !account_configured {
+        "weco installed but no weco.ai account configured (WECO_API_KEY) -- weco's run loop is server-tracked and requires this even with your own LLM key"
     } else {
         ""
     }

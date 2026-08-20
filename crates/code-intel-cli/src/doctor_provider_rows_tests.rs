@@ -44,13 +44,13 @@ fn an_absent_provider_is_not_evaluated_rather_than_nonconforming() {
     assert!(nonconforming_providers(&raw).is_empty());
 }
 
-fn bootstrap_weco(tool_found: bool, byok_configured: bool) -> Value {
+fn bootstrap_weco(tool_found: bool, byok_configured: bool, account_configured: bool) -> Value {
     json!({
         "checks": {
             "tools": [
                 {"name": "weco", "required": false, "found": tool_found},
             ],
-            "weco": {"byokConfigured": byok_configured},
+            "weco": {"byokConfigured": byok_configured, "accountConfigured": account_configured},
         }
     })
 }
@@ -64,7 +64,7 @@ fn weco_row(raw: &Value) -> Value {
 
 #[test]
 fn weco_reports_missing_when_not_on_path() {
-    let row = weco_row(&bootstrap_weco(false, false));
+    let row = weco_row(&bootstrap_weco(false, false, false));
     assert_eq!(row["presence"], "missing");
     assert_eq!(row["readiness"], "unavailable");
 }
@@ -77,14 +77,24 @@ fn weco_reports_missing_when_not_on_path() {
 /// lives in `checks.weco.reason`, not this schema-constrained row).
 #[test]
 fn weco_reports_present_but_unauthenticated_distinctly_from_missing() {
-    let row = weco_row(&bootstrap_weco(true, false));
+    let row = weco_row(&bootstrap_weco(true, false, false));
+    assert_eq!(row["presence"], "present");
+    assert_eq!(row["readiness"], "unavailable");
+}
+
+/// #301 research: BYOK alone is not sufficient -- weco's own account token
+/// (`WECO_API_KEY`) is a second, independent gate its server-tracked run
+/// loop always requires. A BYOK key with no account must stay unavailable.
+#[test]
+fn weco_stays_unavailable_with_byok_but_no_account_configured() {
+    let row = weco_row(&bootstrap_weco(true, true, false));
     assert_eq!(row["presence"], "present");
     assert_eq!(row["readiness"], "unavailable");
 }
 
 #[test]
-fn weco_is_ready_when_present_and_authenticated() {
-    let row = weco_row(&bootstrap_weco(true, true));
+fn weco_is_ready_when_present_and_both_auth_gates_are_configured() {
+    let row = weco_row(&bootstrap_weco(true, true, true));
     assert_eq!(row["presence"], "present");
     assert_eq!(row["readiness"], "ready");
 }
@@ -97,7 +107,7 @@ fn weco_is_ready_when_present_and_authenticated() {
 /// `crates/code-intel-cli/tests/` currently exercises that check.
 #[test]
 fn weco_row_carries_no_field_outside_the_provider_observation_schema() {
-    let row = weco_row(&bootstrap_weco(true, false));
+    let row = weco_row(&bootstrap_weco(true, false, false));
     let mut keys: Vec<&str> = row
         .as_object()
         .unwrap()

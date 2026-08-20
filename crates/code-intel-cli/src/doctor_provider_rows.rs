@@ -88,7 +88,13 @@ pub(crate) fn provider_rows(raw: &Value) -> Vec<Value> {
         .pointer("/checks/weco/byokConfigured")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let weco_ready = weco_present && weco_byok;
+    // #301 research: weco's optimization loop is server-tracked and always
+    // needs its own account token, independent of (and in addition to) BYOK.
+    let weco_account = raw
+        .pointer("/checks/weco/accountConfigured")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let weco_ready = weco_present && weco_byok && weco_account;
     rows.push(json!({
         "id":"weco",
         "presence":if weco_present {"present"} else {"missing"},

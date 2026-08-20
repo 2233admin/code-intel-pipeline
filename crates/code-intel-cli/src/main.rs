@@ -53,6 +53,7 @@ mod method_catalog;
 mod model_channels;
 mod node_timeout;
 mod orchestration;
+mod perf_optimize;
 mod ponytail_gate;
 mod project_context;
 mod project_orientation_benchmark;
