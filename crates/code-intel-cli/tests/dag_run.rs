@@ -203,6 +203,79 @@ fn production_run_route_executes_snapshot_then_inventory() {
 }
 
 #[test]
+fn production_run_budget_reports_completed_failed_and_budget_stopped() {
+    for (limit, expected_outcome, expected_exit) in [
+        ("100", "completed", 0),
+        ("0", "failed", 70),
+        ("2", "budget_stopped", 76),
+    ] {
+        let root = temp_dir();
+        let repo = root.join("fixture-repo");
+        let source = root.join("run-source");
+        let authority = root.join("authority");
+        fs::create_dir_all(repo.join("src")).unwrap();
+        fs::create_dir_all(&authority).unwrap();
+        fs::write(repo.join("README.md"), "fixture\n").unwrap();
+        fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
+        let doctor_tools = doctor_tool_fixture(&root, true);
+
+        let output = common::cli()
+            .args(["run", "execute", "--repo"])
+            .arg(&repo)
+            .arg("--out")
+            .arg(&source)
+            .arg("--authority-root")
+            .arg(&authority)
+            .args(["--final-name", "budget-run", "--profile", "offline"])
+            .args(["--max-concurrency", "1", "--budget-wall-clock", limit])
+            .arg("--doctor-tool-path-prefix")
+            .arg(&doctor_tools)
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(expected_exit),
+            "limit={limit} stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let execution: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(execution["outcome"], expected_outcome, "limit={limit}");
+        assert_eq!(execution["exitCode"], expected_exit);
+        assert_eq!(execution["manifest"]["outcome"], expected_outcome);
+        assert!(
+            execution["manifest"]["budget"]["consumed"]["wallClockSeconds"]
+                .as_u64()
+                .is_some()
+        );
+        if expected_outcome == "budget_stopped" {
+            assert_eq!(execution["manifest"]["budget"]["exceeded"], true);
+            assert!(execution["manifest"]["budget"]["stoppedAt"]
+                .as_str()
+                .is_some_and(|node| !node.is_empty()));
+            assert!(execution["manifest"]["nodes"]["repo.snapshot"]["artifacts"]
+                .as_array()
+                .is_some());
+            assert!(execution["failures"]["notDispatched"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|item| item["reason"]
+                    .as_str()
+                    .is_some_and(|reason| !reason.is_empty())));
+        }
+        if expected_outcome == "failed" {
+            assert_eq!(execution["manifest"]["budget"]["exceeded"], true);
+            assert_eq!(
+                execution["manifest"]["nodes"]["repo.snapshot"]["status"],
+                "not_dispatched"
+            );
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[test]
 fn production_dag_output_commits_and_enters_the_authoritative_index() {
     let root = temp_dir();
     // Named to match the "fixture-repo" identity used below for the
@@ -769,7 +842,7 @@ fn checked_in_execution_result_schema_is_closed_and_binds_outcomes_to_exit_codes
     );
 
     let pairs = schema["oneOf"].as_array().unwrap();
-    assert_eq!(pairs.len(), 4);
+    assert_eq!(pairs.len(), 5);
     assert!(pairs.iter().any(|pair| {
         pair["properties"]["outcome"]["const"] == "completed"
             && pair["properties"]["exitCode"]["const"] == 0
@@ -783,8 +856,12 @@ fn checked_in_execution_result_schema_is_closed_and_binds_outcomes_to_exit_codes
             && pair["properties"]["exitCode"]["const"] == 20
     }));
     assert!(pairs.iter().any(|pair| {
-        pair["properties"]["outcome"]["enum"] == json!(["process_failed", "incomplete"])
+        pair["properties"]["outcome"]["enum"] == json!(["process_failed", "failed", "incomplete"])
             && pair["properties"]["exitCode"]["const"] == 70
+    }));
+    assert!(pairs.iter().any(|pair| {
+        pair["properties"]["outcome"]["const"] == "budget_stopped"
+            && pair["properties"]["exitCode"]["const"] == 76
     }));
 
     // #168: `to_execution_json()` emits `failures` on every run; a closed
@@ -796,7 +873,10 @@ fn checked_in_execution_result_schema_is_closed_and_binds_outcomes_to_exit_codes
         .any(|key| key == "failures"));
     let failures = &schema["properties"]["failures"];
     assert_eq!(failures["additionalProperties"], false);
-    assert_eq!(failures["required"], json!(["process", "domain"]));
+    assert_eq!(
+        failures["required"],
+        json!(["process", "domain", "notDispatched"])
+    );
     assert_eq!(
         failures["properties"]["process"]["items"]["required"],
         json!(["node", "diagnostic"])

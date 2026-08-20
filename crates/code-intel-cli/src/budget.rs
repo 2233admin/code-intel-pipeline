@@ -122,6 +122,13 @@ impl Budget {
         let bytes_exceeded = self.bytes_consumed > self.bytes_limit;
         wall_exceeded || bytes_exceeded
     }
+    pub(crate) fn limits(&self) -> (u64, u64) {
+        (self.wall_clock_limit, self.bytes_limit)
+    }
+
+    pub(crate) fn consumed(&self) -> (u64, u64) {
+        (self.wall_clock_consumed, self.bytes_consumed)
+    }
 }
 
 #[cfg(test)]
