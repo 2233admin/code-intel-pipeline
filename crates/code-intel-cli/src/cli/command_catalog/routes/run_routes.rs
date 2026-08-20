@@ -23,10 +23,9 @@ pub(super) const EXECUTE: super::RawRoute = super::RawRoute {
                 "code-intel-execution-failure.v1",
             ],
         },
-        // 73 (EX_CANTCREAT): the run succeeded but `--final-name` is already
-        // published under the authority root. Distinct from 65 so a caller can
-        // tell "your arguments were wrong" from "that name is taken".
-        exit_contract: super::ExitContract::Exact(&[0, 10, 20, 64, 65, 70, 73, 74]),
+        // 73 is reserved for publication-name collisions; budget truncation
+        // uses 76 so callers can distinguish the two terminal conditions.
+        exit_contract: super::ExitContract::Exact(&[0, 10, 20, 64, 65, 70, 73, 74, 76]),
         retirement_condition:
             "retain as the stable explicit production spelling; retire only by versioned replacement",
     },
@@ -51,7 +50,7 @@ pub(super) const DAG_COORDINATE: super::RawRoute = super::RawRoute {
             artifact_identities: &["code-intel-run-manifest.v1"],
             stdout_identities: &["code-intel-run-manifest.v1"],
         },
-        exit_contract: super::ExitContract::Exact(&[0, 10, 20, 64, 65, 70, 74]),
+        exit_contract: super::ExitContract::Exact(&[0, 10, 20, 64, 65, 70, 74, 76]),
         retirement_condition:
             "retire after every DAG integration invokes the typed kernel without this staging primitive",
     },

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use crate::artifacts::{self, ARTIFACT_ROOT_ENV};
 use crate::authoritative_run;
+use crate::budget::Budget;
 use crate::dag_run::{self, DagExecutionRequest};
 use crate::execution_policy::{ExecutionPolicy, RunMode, RunProfile, SkipFlags, WorkingTreePolicy};
 use crate::run_error::RunError;
@@ -58,6 +59,8 @@ struct Cli {
     final_name: Option<String>,
     manifest: Option<PathBuf>,
     max_concurrency: usize,
+    budget_wall_clock: Option<u64>,
+    budget_bytes: Option<u64>,
     policy: ExecutionPolicy,
     diagnosis_inputs: Option<PathBuf>,
     seed_artifact_root: Option<PathBuf>,
@@ -76,6 +79,8 @@ impl Cli {
         let mut artifact_root = None;
         let mut authority_root = None;
         let mut final_name = None;
+        let mut budget_wall_clock = None;
+        let mut budget_bytes = None;
         let mut manifest = None;
         let mut max_concurrency = 2usize;
         let mut working_tree_policy = "explicit_overlay".to_string();
@@ -109,6 +114,8 @@ impl Cli {
                     | "--skip-sentrux"
                     | "--require-understand-graph"
                     | "--max-concurrency"
+                    | "--budget-wall-clock"
+                    | "--budget-bytes"
                     | "--working-tree-policy"
                     | "--scope"
                     | "--diagnosis-inputs"
@@ -164,6 +171,20 @@ impl Cli {
                     max_concurrency = value
                         .parse::<usize>()
                         .map_err(|_| "--max-concurrency must be an integer".to_string())?;
+                }
+                "--budget-wall-clock" => {
+                    budget_wall_clock = Some(
+                        value
+                            .parse::<u64>()
+                            .map_err(|_| "--budget-wall-clock must be an integer".to_string())?,
+                    );
+                }
+                "--budget-bytes" => {
+                    budget_bytes = Some(
+                        value
+                            .parse::<u64>()
+                            .map_err(|_| "--budget-bytes must be an integer".to_string())?,
+                    );
                 }
                 "--working-tree-policy" => working_tree_policy = value.clone(),
                 "--scope" => scopes.push(value.clone()),
@@ -317,6 +338,8 @@ impl Cli {
             final_name,
             manifest,
             max_concurrency,
+            budget_wall_clock,
+            budget_bytes,
             policy,
             diagnosis_inputs,
             seed_artifact_root,
@@ -326,7 +349,8 @@ impl Cli {
 }
 
 pub(crate) fn usage() -> String {
-    "usage: run <dag-coordinate|execute> --repo <repo-root> <--out <run-staging-directory> | --artifact-root <root> (dag-coordinate only; also read from CODE_INTEL_ARTIFACT_ROOT)> [--authority-root <publication-root> --final-name <name>] [--profile <default|strict|offline>] [--mode <lite|normal|full>] [--skip-repowise <true|false>] [--skip-sentrux <true|false>] [--require-understand-graph <true|false>] [--manifest <integrations.json>] [--max-concurrency <n>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]".into()
+    "usage: run <dag-coordinate|execute> --repo <repo-root> <--out <run-staging-directory> | --artifact-root <root> (dag-coordinate only; also read from CODE_INTEL_ARTIFACT_ROOT)> [--authority-root <publication-root> --final-name <name>] [--profile <default|strict|offline>] [--mode <lite|normal|full>] [--skip-repowise <true|false>] [--skip-sentrux <true|false>] [--require-understand-graph <true|false>] [--manifest <integrations.json>] [--max-concurrency <n>] [--budget-wall-clock <seconds>] [--budget-bytes <bytes>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]"
+        .to_string()
 }
 
 fn parse_bool_flag(flag: &str, value: &str) -> Result<bool, String> {
@@ -336,8 +360,19 @@ fn parse_bool_flag(flag: &str, value: &str) -> Result<bool, String> {
         _ => Err(format!("{flag} must be true or false")),
     }
 }
+fn budget_from(cli: &Cli) -> Budget {
+    let mut budget = Budget::with_defaults();
+    if let Some(seconds) = cli.budget_wall_clock {
+        budget = budget.with_wall_clock(seconds);
+    }
+    if let Some(bytes) = cli.budget_bytes {
+        budget = budget.with_bytes(bytes);
+    }
+    budget
+}
 
 fn execute_cli(cli: Cli) -> Result<CliResult, RunError> {
+    let budget = budget_from(&cli);
     match cli.command {
         RunCommand::DagCoordinate => {
             let out = match cli.out {
@@ -352,6 +387,7 @@ fn execute_cli(cli: Cli) -> Result<CliResult, RunError> {
                 out,
                 manifest: cli.manifest,
                 max_concurrency: cli.max_concurrency,
+                budget,
                 policy: cli.policy,
                 diagnosis_inputs: cli.diagnosis_inputs,
                 seed_artifact_root: cli.seed_artifact_root,
@@ -373,6 +409,7 @@ fn execute_cli(cli: Cli) -> Result<CliResult, RunError> {
             )
             .with_manifest(cli.manifest)
             .with_max_concurrency(cli.max_concurrency)
+            .with_budget(budget)
             .with_session_evidence(cli.session_evidence);
             let result = authoritative_run::execute(request)?;
             let exit_code = result.exit_code();

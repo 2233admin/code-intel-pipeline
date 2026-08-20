@@ -12,6 +12,7 @@ mod audit_report;
 mod authoritative_run;
 mod authority;
 mod budget;
+mod budget_dispatch;
 mod capability;
 mod capability_inventory;
 mod change_agenda;

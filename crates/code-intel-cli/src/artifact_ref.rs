@@ -1937,17 +1937,23 @@ fn validate_run_manifest(bytes: &[u8]) -> Result<(), String> {
     reject_duplicate_json_keys(text)?;
     let value: Value =
         serde_json::from_str(text).map_err(|error| format!("run manifest is not JSON: {error}"))?;
-    exact_object_keys(
-        &value,
-        &[
-            "schema",
-            "runIdentity",
-            "snapshotIdentity",
-            "outcome",
-            "nodes",
-        ],
-        "run manifest",
-    )?;
+    let mut manifest_fields = vec![
+        "schema",
+        "runIdentity",
+        "snapshotIdentity",
+        "outcome",
+        "nodes",
+    ];
+    if value.get("budget").is_some() {
+        manifest_fields.push("budget");
+    }
+    exact_object_keys(&value, &manifest_fields, "run manifest")?;
+    if let Some(budget) = value.get("budget") {
+        if !budget.is_object() {
+            return Err("run manifest budget must be an object".into());
+        }
+        validate_run_budget(budget)?;
+    }
     if value["schema"] != "code-intel-run-manifest.v1"
         || !value["runIdentity"]
             .as_str()
@@ -1955,7 +1961,14 @@ fn validate_run_manifest(bytes: &[u8]) -> Result<(), String> {
         || !value["snapshotIdentity"].as_str().is_some_and(valid_digest)
         || !matches!(
             value["outcome"].as_str(),
-            Some("completed" | "domain_failed" | "domain_unknown" | "process_failed")
+            Some(
+                "completed"
+                    | "domain_failed"
+                    | "domain_unknown"
+                    | "process_failed"
+                    | "failed"
+                    | "budget_stopped"
+            )
         )
     {
         return Err("run manifest identity/outcome is invalid".into());
@@ -2019,8 +2032,41 @@ fn validate_run_manifest(bytes: &[u8]) -> Result<(), String> {
                     return Err("blocked run node is invalid".into());
                 }
             }
+            Some("not_dispatched") => {
+                exact_object_keys(node, &["status", "reason"], "not-dispatched run node")?;
+                if node["reason"].as_str().is_none_or(str::is_empty) {
+                    return Err("not-dispatched run node is invalid".into());
+                }
+            }
             _ => return Err("run manifest contains a non-terminal node".into()),
         }
+    }
+    Ok(())
+}
+fn validate_run_budget(value: &Value) -> Result<(), String> {
+    exact_object_keys(
+        value,
+        &["limits", "consumed", "exceeded", "stoppedAt"],
+        "run budget",
+    )?;
+    for (name, dimension) in [
+        ("limits", &value["limits"]),
+        ("consumed", &value["consumed"]),
+    ] {
+        exact_object_keys(
+            dimension,
+            &["wallClockSeconds", "bytes"],
+            &format!("run budget {name}"),
+        )?;
+        if dimension["wallClockSeconds"].as_u64().is_none() || dimension["bytes"].as_u64().is_none()
+        {
+            return Err(format!("run budget {name} is invalid"));
+        }
+    }
+    if !value["exceeded"].is_boolean()
+        || (!value["stoppedAt"].is_null() && value["stoppedAt"].as_str().is_none_or(str::is_empty))
+    {
+        return Err("run budget terminal fields are invalid".into());
     }
     Ok(())
 }

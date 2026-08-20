@@ -8,12 +8,13 @@
     "schema": { "const": "code-intel-run-manifest.v1" },
     "runIdentity": { "$ref": "#/definitions/runIdentity" },
     "snapshotIdentity": { "$ref": "#/definitions/digest" },
-    "outcome": { "enum": ["completed", "domain_failed", "domain_unknown", "process_failed", "incomplete"] },
+    "outcome": { "enum": ["completed", "domain_failed", "domain_unknown", "process_failed", "failed", "budget_stopped", "incomplete"] },
     "nodes": {
       "type": "object",
       "propertyNames": { "pattern": "^[a-z0-9][a-z0-9._-]*$" },
       "additionalProperties": { "$ref": "#/definitions/nodeState" }
-    }
+    },
+    "budget": { "$ref": "#/definitions/budget" }
   },
   "definitions": {
     "runIdentity": { "type": "string", "pattern": "^dag-v1:([a-f0-9]{2})+$" },
@@ -74,8 +75,42 @@
             "status": { "const": "dependency_blocked" },
             "blockedBy": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reason"],
+          "properties": {
+            "status": { "const": "not_dispatched" },
+            "reason": { "type": "string", "minLength": 1 }
+          }
         }
       ]
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["limits", "consumed", "exceeded", "stoppedAt"],
+      "properties": {
+        "limits": { "$ref": "#/definitions/budgetDimensions" },
+        "consumed": { "$ref": "#/definitions/budgetDimensions" },
+        "exceeded": { "type": "boolean" },
+        "stoppedAt": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "minLength": 1 }
+          ]
+        }
+      }
+    },
+    "budgetDimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wallClockSeconds", "bytes"],
+      "properties": {
+        "wallClockSeconds": { "type": "integer", "minimum": 0 },
+        "bytes": { "type": "integer", "minimum": 0 }
+      }
     }
   }
 }

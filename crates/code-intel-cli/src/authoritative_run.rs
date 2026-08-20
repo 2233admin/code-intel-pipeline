@@ -9,6 +9,7 @@ pub(crate) struct RunRequest {
     final_name: String,
     manifest: Option<std::path::PathBuf>,
     max_concurrency: usize,
+    budget: crate::budget::Budget,
     policy: crate::execution_policy::ExecutionPolicy,
     session_evidence: Option<std::path::PathBuf>,
     cleanup_staging: bool,
@@ -30,6 +31,7 @@ impl RunRequest {
             final_name,
             manifest: None,
             max_concurrency: 2,
+            budget: crate::budget::Budget::with_defaults(),
             policy,
             session_evidence: None,
             cleanup_staging: false,
@@ -48,6 +50,11 @@ impl RunRequest {
 
     pub(crate) fn with_max_concurrency(mut self, max_concurrency: usize) -> Self {
         self.max_concurrency = max_concurrency;
+        self
+    }
+
+    pub(crate) fn with_budget(mut self, budget: crate::budget::Budget) -> Self {
+        self.budget = budget;
         self
     }
 
@@ -146,6 +153,7 @@ pub(crate) fn execute(
         final_name: request.final_name,
         manifest: request.manifest,
         max_concurrency: request.max_concurrency,
+        budget: request.budget,
         policy: request.policy,
         session_evidence: request.session_evidence,
     })?;

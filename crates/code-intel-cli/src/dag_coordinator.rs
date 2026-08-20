@@ -120,7 +120,7 @@ pub struct CoordinatorError {
 }
 
 impl CoordinatorError {
-    fn new(kind: CoordinatorErrorKind, message: impl Into<String>) -> Self {
+    pub(crate) fn new(kind: CoordinatorErrorKind, message: impl Into<String>) -> Self {
         Self {
             kind,
             message: message.into(),
@@ -345,6 +345,9 @@ pub enum NodeState {
     DependencyBlocked {
         blocked_by: Vec<String>,
     },
+    NotDispatched {
+        reason: String,
+    },
 }
 
 impl NodeState {
@@ -355,6 +358,7 @@ impl NodeState {
                 | Self::DomainFailed { .. }
                 | Self::ProcessFailed { .. }
                 | Self::DependencyBlocked { .. }
+                | Self::NotDispatched { .. }
         )
     }
 
@@ -395,6 +399,10 @@ impl NodeState {
                 "status":"dependency_blocked",
                 "blockedBy":blocked_by,
             }),
+            Self::NotDispatched { reason } => json!({
+                "status":"not_dispatched",
+                "reason":reason,
+            }),
         }
     }
 }
@@ -434,7 +442,9 @@ pub enum RunOutcome {
     DomainFailed,
     DomainUnknown,
     ProcessFailed,
+    Failed,
     Incomplete,
+    BudgetStopped,
 }
 
 impl RunOutcome {
@@ -444,7 +454,9 @@ impl RunOutcome {
             Self::DomainFailed => "domain_failed",
             Self::DomainUnknown => "domain_unknown",
             Self::ProcessFailed => "process_failed",
+            Self::Failed => "failed",
             Self::Incomplete => "incomplete",
+            Self::BudgetStopped => "budget_stopped",
         }
     }
 
@@ -453,7 +465,10 @@ impl RunOutcome {
             Self::Completed => 0,
             Self::DomainFailed => 10,
             Self::DomainUnknown => 20,
-            Self::ProcessFailed | Self::Incomplete => 70,
+            Self::ProcessFailed | Self::Failed | Self::Incomplete => 70,
+            // 76 is reserved for budget truncation; 73 is already the
+            // publication-name collision exit used by run execute.
+            Self::BudgetStopped => 76,
         }
     }
 }
@@ -525,7 +540,9 @@ impl Coordinator {
         coordinator.validate_checkpoint_history(&checkpoint.nodes)?;
         for (id, state) in checkpoint.nodes {
             let restored = match state {
-                NodeState::Running | NodeState::Pending => NodeState::Pending,
+                NodeState::Running | NodeState::Pending | NodeState::NotDispatched { .. } => {
+                    NodeState::Pending
+                }
                 NodeState::DependencyBlocked { .. } => NodeState::Pending,
                 NodeState::Succeeded { verdict, artifacts } => {
                     if verdict == DomainVerdict::Fail
@@ -589,6 +606,36 @@ impl Coordinator {
 
     pub fn state(&self, node_id: &str) -> Option<&NodeState> {
         self.states.get(node_id)
+    }
+    pub fn record_not_dispatched(
+        &mut self,
+        node_id: &str,
+        reason: impl Into<String>,
+    ) -> Result<(), CoordinatorError> {
+        if !matches!(self.states.get(node_id), Some(NodeState::Running)) {
+            return Err(CoordinatorError::new(
+                CoordinatorErrorKind::InvalidTransition,
+                format!("node is not running: {node_id}"),
+            ));
+        }
+        self.states.insert(
+            node_id.to_string(),
+            NodeState::NotDispatched {
+                reason: nonempty_diagnostic(reason.into(), "node was not dispatched"),
+            },
+        );
+        Ok(())
+    }
+
+    pub fn mark_pending_not_dispatched(&mut self, reason: impl Into<String>) {
+        let reason = nonempty_diagnostic(reason.into(), "node was not dispatched");
+        for state in self.states.values_mut() {
+            if matches!(state, NodeState::Pending) {
+                *state = NodeState::NotDispatched {
+                    reason: reason.clone(),
+                };
+            }
+        }
     }
 
     pub fn next_batch(&mut self) -> Result<Vec<Dispatch>, CoordinatorError> {
