@@ -121,6 +121,14 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
     let builtin_sentrux = probe::locate("code-intel", prefix).is_some()
         || built_binaries(&options.pipeline_root).any(|path| path.is_file());
 
+    // #300: optional weco perf-optimize provider (WecoAI's AIDE-style
+    // tree-search CLI). Never required — the built-in pipeline has no hard
+    // dependency on it, mirroring repomix/ast-grep below. Captured separately
+    // (rather than inline in `tools`) because `checks.weco.reason` below
+    // needs its `found` bit alongside the BYOK check.
+    let weco_probe = probe::probe_tool("weco", false, prefix);
+    let weco_present = weco_probe["found"].as_bool().unwrap_or(false);
+
     let tools = vec![
         probe::probe_tool("rg", true, prefix),
         probe::probe_tool("git", true, prefix),
@@ -136,6 +144,7 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
         // `required: false` — but observed, so the doctor stops omitting a
         // tool a shipped capability cannot run without.
         probe::probe_tool("ast-grep", false, prefix),
+        weco_probe,
     ];
 
     let sentrux_core = probe::probe_command_output(
@@ -193,6 +202,8 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
 
     let repo_state = repo_state(repo_path.as_deref(), sentrux_scope.as_deref());
     let home = code_intel_home(&options.pipeline_root);
+    let weco_byok_configured = weco_byok_configured_from(|name| std::env::var_os(name).is_some());
+    let weco_reason = weco_reason(weco_present, weco_byok_configured);
 
     let checks = json!({
         "pipelineScript": {
@@ -240,7 +251,14 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
         },
         "assistancePlugins": assistance_plugins,
         "repo": repo_state,
-        "env": {"codeIntelHome": home.observation()}
+        "env": {"codeIntelHome": home.observation()},
+        // #300: BYOK is presence, not validity — this never calls out to an
+        // LLM provider to confirm the key works, matching how `tools` above
+        // never confirms a found binary actually runs. `reason` is empty
+        // once ready; the operator-facing `doctor_provider_rows` provider row
+        // deliberately excludes this text (its schema forbids extra
+        // properties), so it only lives here.
+        "weco": {"byokConfigured": weco_byok_configured, "reason": weco_reason}
     });
 
     let missing = missing_list(&checks, &tools, builtin_sentrux, options, &home);
@@ -258,6 +276,38 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
             "requireUnderstand": options.require_understand
         }
     }))
+}
+
+/// Env vars weco's own BYOK (bring-your-own-key) contract recognizes for its
+/// supported providers (OpenAI, Anthropic, Gemini). Presence only — this
+/// never validates that a key actually authenticates, mirroring how
+/// `probe::probe_tool` never validates that a found binary actually runs.
+const WECO_BYOK_ENV_VARS: &[&str] = &["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"];
+
+/// Pure over an injected `present` predicate so the three-state behavior
+/// (#300: not-installed / installed-but-unauthenticated / available) is
+/// testable without mutating process-global env vars, which would race
+/// against Rust's default parallel test execution.
+fn weco_byok_configured_from(present: impl Fn(&str) -> bool) -> bool {
+    WECO_BYOK_ENV_VARS.iter().any(|name| present(name))
+}
+
+/// Human-readable cause for #300's "unavailable" states, distinguishing
+/// not-installed from installed-but-unauthenticated. Lives in
+/// `checks.weco.reason` rather than the `doctor_provider_rows` provider row:
+/// that row's schema (`providerObservation`,
+/// code-intel-doctor-observation.v1.schema.json) sets
+/// `additionalProperties: false` on exactly
+/// `[id,presence,readiness,conformance,admissibility]`, so a free-text field
+/// there would fail schema validation.
+fn weco_reason(present: bool, byok_configured: bool) -> &'static str {
+    if !present {
+        "weco not found on PATH"
+    } else if !byok_configured {
+        "weco installed but no LLM provider key configured (BYOK)"
+    } else {
+        ""
+    }
 }
 
 /// The packaged release binary first, then a source checkout's
@@ -690,198 +740,5 @@ fn fail(message: &str) -> i32 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    fn scratch(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "code-intel-doctor-bootstrap-{}-{tag}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("clock")
-                .as_nanos()
-        ));
-        fs::create_dir_all(&dir).expect("scratch");
-        dir
-    }
-
-    fn home(set: bool, exists: bool) -> CodeIntelHome {
-        CodeIntelHome {
-            value: "C:/nope".into(),
-            resolved: "C:/nope".into(),
-            set,
-            exists,
-            matches_default: false,
-            expected: "C:/expected".into(),
-        }
-    }
-
-    fn strict(require_understand: bool) -> Options {
-        let mut options = Options::new(PathBuf::from("."));
-        options.require_understand = require_understand;
-        options
-    }
-
-    #[test]
-    fn missing_list_preserves_the_retired_scripts_wording_and_order() {
-        let checks = json!({
-            "pipelineScript": {"found": false},
-            "config": {"found": true, "parsed": false, "parseError": "bad json"},
-            "sentrux": {"core": {"found": false}, "pro": {"found": false}},
-            "graphProvider": {"sourceFound": false, "cargoFound": false},
-            "repo": {"path": "x", "exists": false}
-        });
-        let tools = vec![
-            json!({"name": "rg", "required": true, "found": false}),
-            json!({"name": "repomix", "required": false, "found": false}),
-        ];
-        assert_eq!(
-            missing_list(&checks, &tools, false, &strict(true), &home(true, false)),
-            vec![
-                "pipeline script".to_string(),
-                "pipeline config: invalid JSON (bad json)".to_string(),
-                "rg".to_string(),
-                "sentrux core".to_string(),
-                "sentrux pro auto-activation".to_string(),
-                "internal graph provider source".to_string(),
-                "code-intel Rust runtime".to_string(),
-                "Understand Anything skill or plugin".to_string(),
-                "repo path".to_string(),
-                "CODE_INTEL_HOME: directory does not exist (C:/nope)".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn builtin_sentrux_makes_the_external_overlay_optional() {
-        let checks = json!({
-            "pipelineScript": {"found": true},
-            "config": {"found": true, "parsed": true},
-            "sentrux": {"core": {"found": false}, "pro": {"found": false}},
-            "graphProvider": {"sourceFound": true, "cargoFound": true},
-            "repo": {"exists": true}
-        });
-        let tools = vec![json!({"name": "sentrux", "required": false, "found": false})];
-        assert!(
-            missing_list(&checks, &tools, true, &strict(false), &home(false, false)).is_empty()
-        );
-    }
-
-    #[test]
-    fn observation_carries_the_v1_contract_and_every_retired_check() {
-        let root = scratch("contract");
-        let mut options = Options::new(root.clone());
-        options.repo_path = Some(display(&root));
-        let observation = observe(&options).unwrap();
-        assert_eq!(observation["schema"], BOOTSTRAP_SCHEMA);
-        assert_eq!(observation["authority"], "observation_only");
-        assert!(observation["ok"].is_boolean());
-        // `serde_json::Map` is a `BTreeMap` here, so the key order is stable.
-        // A silently dropped check has to surface as a test failure rather
-        // than as a missing field downstream.
-        let checks = observation["checks"]
-            .as_object()
-            .expect("checks object")
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>();
-        assert_eq!(
-            checks,
-            vec![
-                "assistancePlugins".to_string(),
-                "config".to_string(),
-                "env".to_string(),
-                "graphProvider".to_string(),
-                "pipelineScript".to_string(),
-                "repo".to_string(),
-                "sentrux".to_string(),
-                "tools".to_string(),
-                "understandAnything".to_string(),
-            ]
-        );
-        let names = observation["checks"]["tools"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|tool| tool["name"].as_str().unwrap_or_default().to_string())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            names,
-            vec!["rg", "git", "python", "repowise", "repomix", "sentrux", "ast-grep"]
-        );
-        fs::remove_dir_all(root).ok();
-    }
-
-    #[test]
-    fn a_missing_repo_path_is_a_domain_observation_not_an_error() {
-        let root = scratch("absent");
-        let mut options = Options::new(root.clone());
-        options.repo_path = Some(display(&root.join("does-not-exist")));
-        let observation = observe(&options).unwrap();
-        assert_eq!(observation["checks"]["repo"]["exists"], json!(false));
-        assert_eq!(observation["ok"], json!(false));
-        assert!(observation["missing"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|value| value == "repo path"));
-        fs::remove_dir_all(root).ok();
-    }
-
-    #[test]
-    fn configured_sentrux_path_resolves_the_scope_and_finds_scoped_rules() {
-        let root = scratch("scope");
-        let repo = root.join("ConfiguredRepo");
-        let sentrux = repo.join("backend").join(".sentrux");
-        fs::create_dir_all(&sentrux).unwrap();
-        fs::write(sentrux.join("rules.toml"), b"").unwrap();
-        fs::write(sentrux.join("baseline.json"), b"{}").unwrap();
-        let config_path = root.join("pipeline.config.json");
-        fs::write(
-            &config_path,
-            serde_json::to_vec(&json!({"repos": {"fixture": {
-                "path": format!("{}{}", display(&repo), std::path::MAIN_SEPARATOR),
-                "sentruxPath": "backend"
-            }}}))
-            .unwrap(),
-        )
-        .unwrap();
-
-        let mut options = Options::new(root.clone());
-        options.config = Some(config_path);
-        // A `.` segment in the argument, exactly the shape the retired
-        // PowerShell contract test exercised.
-        options.repo_path = Some(display(&repo.join(".")));
-        let observation = observe(&options).unwrap();
-
-        let expected = display(&paths::resolve_code_intel_path(&repo.join("backend")));
-        assert_eq!(
-            observation["checks"]["repo"]["sentruxScope"],
-            json!(expected)
-        );
-        assert_eq!(observation["checks"]["repo"]["sentruxRules"], json!(true));
-        assert_eq!(
-            observation["checks"]["repo"]["sentruxBaseline"],
-            json!(true)
-        );
-        fs::remove_dir_all(root).ok();
-    }
-
-    #[test]
-    fn human_rendering_keeps_the_retired_scripts_first_line() {
-        let ok = json!({"ok": true, "missing": [], "checks": {}});
-        assert!(render_human(&ok).starts_with("Code intel doctor: OK"));
-        let bad = json!({"ok": false, "missing": ["rg", "git"], "checks": {}});
-        assert!(render_human(&bad).starts_with("Code intel doctor: missing rg, git"));
-    }
-
-    #[test]
-    fn binary_candidates_prefer_packaged_release_over_checkout_builds() {
-        let candidates = binary_candidates(Path::new("root"), "windows");
-        assert!(candidates[0].ends_with(Path::new("bin/code-intel.exe")));
-        assert!(candidates[1].ends_with(Path::new("target/release/code-intel.exe")));
-        assert!(candidates[2].ends_with(Path::new("target/debug/code-intel.exe")));
-    }
-}
+#[path = "tests.rs"]
+mod tests;

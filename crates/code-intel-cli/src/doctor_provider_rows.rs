@@ -75,6 +75,27 @@ pub(crate) fn provider_rows(raw: &Value) -> Vec<Value> {
         json!({"id":"sentrux","presence":if sentrux_builtin || tool_present("sentrux") {"present"} else {"missing"},"readiness":if sentrux_ready {"ready"} else {"unavailable"},"conformance":if sentrux_ready {"conforming"} else if tool_present("sentrux") {"nonconforming"} else {"not_evaluated"},"admissibility":"not_evaluated"}),
         json!({"id":"graph.code-intel","presence":if graph_source && graph_cargo {"present"} else {"missing"},"readiness":if graph_source && graph_cargo && graph_binary {"ready"} else {"unavailable"},"conformance":if graph_source && graph_cargo {"conforming"} else {"not_evaluated"},"admissibility":"not_evaluated"}),
     ];
+    // weco (#300): optional external perf-optimize engine, PATH presence plus
+    // BYOK auth. The human-readable reason for "unavailable" lives in
+    // `checks.weco.reason` (doctor_bootstrap::mod.rs), not here — this row
+    // feeds the `providerObservation` schema
+    // (orchestration/schemas/code-intel-doctor-observation.v1.schema.json),
+    // which sets `additionalProperties: false` and has no `reason` property.
+    // presence + readiness already disambiguate the two "unavailable" causes
+    // for any caller that wants to derive one.
+    let weco_present = tool_present("weco");
+    let weco_byok = raw
+        .pointer("/checks/weco/byokConfigured")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let weco_ready = weco_present && weco_byok;
+    rows.push(json!({
+        "id":"weco",
+        "presence":if weco_present {"present"} else {"missing"},
+        "readiness":if weco_ready {"ready"} else {"unavailable"},
+        "conformance":"not_evaluated",
+        "admissibility":"not_evaluated"
+    }));
     // Assistance candidates the catalog routes to. Presence is the only claim
     // made: nothing here reads the plugin's contents, so a present one stays
     // `not_evaluated` rather than `conforming`, and an absent one can never
@@ -109,50 +130,5 @@ pub(crate) fn nonconforming_providers(raw: &Value) -> Vec<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn bootstrap(builtin: bool, external: bool, core: bool, pro: bool) -> Value {
-        json!({
-            "checks": {
-                "tools": [
-                    {"name": "sentrux", "required": false, "found": external},
-                ],
-                "sentrux": {
-                    "builtin": {"found": builtin},
-                    "core": {"found": core},
-                    "pro": {"found": pro},
-                },
-            }
-        })
-    }
-
-    #[test]
-    fn a_present_but_broken_overlay_is_nonconforming_even_with_the_builtin_engine() {
-        // The exact shape a stale installed shim produces: the built-in
-        // engine is fine, `sentrux` resolves on PATH, and both probes fail.
-        let raw = bootstrap(true, true, false, false);
-        assert_eq!(nonconforming_providers(&raw), vec!["sentrux".to_string()]);
-    }
-
-    #[test]
-    fn builtin_alone_and_a_working_overlay_are_both_conformant() {
-        // CI before the install step: no external sentrux anywhere.
-        assert!(nonconforming_providers(&bootstrap(true, false, false, false)).is_empty());
-        // An installed machine with a working overlay.
-        assert!(nonconforming_providers(&bootstrap(true, true, true, true)).is_empty());
-    }
-
-    #[test]
-    fn an_absent_provider_is_not_evaluated_rather_than_nonconforming() {
-        let raw = bootstrap(false, false, false, false);
-        let rows = provider_rows(&raw);
-        let sentrux = rows
-            .iter()
-            .find(|row| row["id"] == "sentrux")
-            .expect("sentrux row");
-        assert_eq!(sentrux["presence"], "missing");
-        assert_eq!(sentrux["conformance"], "not_evaluated");
-        assert!(nonconforming_providers(&raw).is_empty());
-    }
-}
+#[path = "doctor_provider_rows_tests.rs"]
+mod tests;
