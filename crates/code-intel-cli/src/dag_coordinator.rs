@@ -147,6 +147,12 @@ pub struct VerifiedArtifactRef {
     path: String,
     sha256: String,
     consumed_snapshot_identity: String,
+    /// Number of payload bytes the artifact carried when A03 verified it.
+    /// Captured at artifact-ref creation (issue #307) so the dispatch
+    /// estimator can sum a dispatch's referenced input sizes without
+    /// re-reading the underlying files. Distinct from the path length
+    /// or the dispatch JSON size, which the previous estimator conflated.
+    byte_size: u64,
 }
 
 impl VerifiedArtifactRef {
@@ -164,6 +170,7 @@ impl VerifiedArtifactRef {
             path: path.into(),
             sha256: sha256.into(),
             consumed_snapshot_identity: consumed_snapshot_identity.into(),
+            byte_size: 0,
         };
         value.validate()?;
         Ok(value)
@@ -179,6 +186,7 @@ impl VerifiedArtifactRef {
             path,
             verified.sha256().to_string(),
             verified.consumed_snapshot_identity().to_string(),
+            verified.bytes().len() as u64,
         )
     }
 
@@ -188,6 +196,7 @@ impl VerifiedArtifactRef {
         path: impl Into<String>,
         sha256: impl Into<String>,
         consumed_snapshot_identity: impl Into<String>,
+        byte_size: u64,
     ) -> Result<Self, CoordinatorError> {
         let value = Self {
             artifact_schema: artifact_schema.into(),
@@ -195,6 +204,7 @@ impl VerifiedArtifactRef {
             path: path.into(),
             sha256: sha256.into(),
             consumed_snapshot_identity: consumed_snapshot_identity.into(),
+            byte_size,
         };
         value.validate()?;
         Ok(value)
@@ -221,6 +231,15 @@ impl VerifiedArtifactRef {
 
     pub(crate) fn artifact_type(&self) -> &str {
         &self.artifact_type
+    }
+
+    /// Number of payload bytes the artifact carried when A03 verified it.
+    /// Used by the budget dispatcher's estimator (issue #307) to size
+    /// a dispatch's referenced inputs without re-reading the underlying
+    /// files. Captured at A03 verification, not at dispatch time, so
+    /// the estimator sees the bytes the artifact actually has.
+    pub(crate) fn byte_size(&self) -> u64 {
+        self.byte_size
     }
 
     pub(crate) fn to_json(&self) -> Value {
@@ -359,6 +378,21 @@ pub enum NodeState {
     NotDispatched {
         reason: String,
     },
+    /// Issue #307: a dispatch was refused pre-dispatch because the
+    /// estimated input size exceeded the per-node oversize threshold
+    /// (the configured percentage of `Budget::bytes_limit`). Distinct
+    /// from `NotDispatched` (budget exhausted -- the budget was already
+    /// used up by sibling dispatches) and from the future `Timeout`
+    /// (issue #306 -- a dispatch started but ran too long). The dispatch
+    /// never reached the executor; budget was not consumed; the run
+    /// outcome is not affected. Dependents see the producer's input as
+    /// not coming, so `blocks_dependents` returns true here and
+    /// `propagate_blocked` cascade-blocks them.
+    SkippedOversize {
+        reason: String,
+        actual_bytes: u64,
+        byte_limit: u64,
+    },
 }
 impl NodeState {
     fn is_terminal(&self) -> bool {
@@ -370,16 +404,24 @@ impl NodeState {
                 | Self::ProcessFailed { .. }
                 | Self::DependencyBlocked { .. }
                 | Self::NotDispatched { .. }
+                | Self::SkippedOversize { .. }
         )
     }
 
     fn blocks_dependents(&self) -> bool {
+        // SkippedOversize blocks dependents: the producer's input will
+        // never be produced, so any downstream node that depends on
+        // the producer's artifacts cannot run. Unlike DomainFailed /
+        // ProcessFailed this is not a defect in the producer -- the
+        // input was refused at admission -- but the downstream effect
+        // is the same: a `dependency_blocked` cascade is honest.
         matches!(
             self,
             Self::DomainFailed { .. }
                 | Self::TimedOut { .. }
                 | Self::ProcessFailed { .. }
                 | Self::DependencyBlocked { .. }
+                | Self::SkippedOversize { .. }
         )
     }
 
@@ -420,6 +462,16 @@ impl NodeState {
             Self::NotDispatched { reason } => json!({
                 "status":"not_dispatched",
                 "reason":reason,
+            }),
+            Self::SkippedOversize {
+                reason,
+                actual_bytes,
+                byte_limit,
+            } => json!({
+                "status":"skipped_oversize",
+                "reason":reason,
+                "actualBytes":actual_bytes,
+                "byteLimit":byte_limit,
             }),
         }
     }
@@ -561,9 +613,10 @@ impl Coordinator {
         coordinator.validate_checkpoint_history(&checkpoint.nodes)?;
         for (id, state) in checkpoint.nodes {
             let restored = match state {
-                NodeState::Running | NodeState::Pending | NodeState::NotDispatched { .. } => {
-                    NodeState::Pending
-                }
+                NodeState::Running
+                | NodeState::Pending
+                | NodeState::NotDispatched { .. }
+                | NodeState::SkippedOversize { .. } => NodeState::Pending,
                 NodeState::DependencyBlocked { .. } => NodeState::Pending,
                 NodeState::Succeeded { verdict, artifacts } => {
                     if verdict == DomainVerdict::Fail
@@ -654,6 +707,38 @@ impl Coordinator {
                 reason: nonempty_diagnostic(reason.into(), "node was not dispatched"),
             },
         );
+        Ok(())
+    }
+
+    /// Issue #307: mark a running dispatch as `SkippedOversize` (its
+    /// estimated input size exceeded the configured oversize threshold).
+    /// The dispatch never reached the executor; budget was not
+    /// consumed; run outcome is not rewritten. Dependents see this as
+    /// a non-Succeeded terminal state, so `propagate_blocked` will
+    /// cascade-block them.
+    pub fn record_skipped_oversize(
+        &mut self,
+        node_id: &str,
+        reason: impl Into<String>,
+        actual_bytes: u64,
+        byte_limit: u64,
+    ) -> Result<(), CoordinatorError> {
+        if !matches!(self.states.get(node_id), Some(NodeState::Running)) {
+            return Err(CoordinatorError::new(
+                CoordinatorErrorKind::InvalidTransition,
+                format!("node is not running: {node_id}"),
+            ));
+        }
+        self.states.insert(
+            node_id.to_string(),
+            NodeState::SkippedOversize {
+                reason: nonempty_diagnostic(reason.into(), "node was skipped as oversize"),
+                actual_bytes,
+                byte_limit,
+            },
+        );
+
+        self.propagate_blocked();
         Ok(())
     }
 

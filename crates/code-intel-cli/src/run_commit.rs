@@ -579,6 +579,22 @@ fn validate_run_manifest(value: &Value) -> Result<(), String> {
                     return Err("not-dispatched run node is invalid".to_string());
                 }
             }
+            // #307: pre-dispatch oversize refusal. Distinct from
+            // `not_dispatched` (budget exhausted by siblings) -- carries the
+            // actual/limit bytes that tripped the policy.
+            Some("skipped_oversize") => {
+                exact(
+                    node,
+                    &["status", "reason", "actualBytes", "byteLimit"],
+                    "skipped-oversize run node",
+                )?;
+                if !node["reason"].as_str().is_some_and(|text| !text.is_empty())
+                    || node["actualBytes"].as_u64().is_none()
+                    || node["byteLimit"].as_u64().is_none()
+                {
+                    return Err("skipped-oversize run node is invalid".to_string());
+                }
+            }
             _ => return Err("run manifest contains a non-terminal node".to_string()),
         }
     }
@@ -588,7 +604,7 @@ fn validate_run_manifest(value: &Value) -> Result<(), String> {
 fn validate_run_budget(value: Value) -> Result<(), String> {
     exact(
         &value,
-        &["limits", "consumed", "exceeded", "stoppedAt"],
+        &["limits", "consumed", "exceeded", "stoppedAt", "oversize"],
         "run budget",
     )?;
     for (name, dimension) in [
@@ -609,6 +625,38 @@ fn validate_run_budget(value: Value) -> Result<(), String> {
         || (!value["stoppedAt"].is_null() && value["stoppedAt"].as_str().is_none_or(str::is_empty))
     {
         return Err("run budget terminal fields are invalid".to_string());
+    }
+
+    // Issue #307: the `oversize` sub-object is part of the run budget.
+    // Validate its top-level shape (`thresholdPercent` integer 1..=100
+    // and `skippedNodes` array of `{nodeId, actualBytes, byteLimit}`).
+    // Empty `skippedNodes` is the common case (no oversize refusals),
+    // so the validator must accept that without complaint.
+    let oversize = &value["oversize"];
+    exact(
+        oversize,
+        &["thresholdPercent", "skippedNodes"],
+        "run budget oversize",
+    )?;
+    match oversize["thresholdPercent"].as_u64() {
+        Some(p) if (1..=100).contains(&p) => {}
+        _ => return Err("run budget oversize threshold is invalid".into()),
+    }
+    let skipped = oversize["skippedNodes"]
+        .as_array()
+        .ok_or_else(|| "run budget oversize skippedNodes must be an array")?;
+    for entry in skipped {
+        exact(
+            entry,
+            &["nodeId", "actualBytes", "byteLimit"],
+            "run budget oversize skipped node",
+        )?;
+        if entry["nodeId"].as_str().is_none_or(str::is_empty)
+            || entry["actualBytes"].as_u64().is_none()
+            || entry["byteLimit"].as_u64().is_none()
+        {
+            return Err("run budget oversize skipped node is invalid".into());
+        }
     }
     Ok(())
 }

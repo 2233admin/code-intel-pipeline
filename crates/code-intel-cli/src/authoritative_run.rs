@@ -11,6 +11,7 @@ pub(crate) struct RunRequest {
     max_concurrency: usize,
     budget: crate::budget::Budget,
     node_timeout: std::time::Duration,
+    oversize_policy: crate::budget_dispatch::OversizePolicy,
     policy: crate::execution_policy::ExecutionPolicy,
     session_evidence: Option<std::path::PathBuf>,
     cleanup_staging: bool,
@@ -36,6 +37,7 @@ impl RunRequest {
                 crate::node_timeout::DEFAULT_NODE_TIMEOUT_SECONDS,
             ),
             budget: crate::budget::Budget::with_defaults(),
+            oversize_policy: crate::budget_dispatch::OversizePolicy::default(),
             policy,
             session_evidence: None,
             cleanup_staging: false,
@@ -63,6 +65,14 @@ impl RunRequest {
     }
     pub(crate) fn with_node_timeout(mut self, node_timeout: std::time::Duration) -> Self {
         self.node_timeout = node_timeout;
+        self
+    }
+
+    pub(crate) fn with_oversize_policy(
+        mut self,
+        oversize_policy: crate::budget_dispatch::OversizePolicy,
+    ) -> Self {
+        self.oversize_policy = oversize_policy;
         self
     }
 
@@ -163,6 +173,7 @@ pub(crate) fn execute(
         max_concurrency: request.max_concurrency,
         budget: request.budget,
         node_timeout: request.node_timeout,
+        oversize_policy: request.oversize_policy,
         policy: request.policy,
         session_evidence: request.session_evidence,
     })?;

@@ -4,6 +4,7 @@ mod artifact_ref {
         artifact_type: String,
         sha256: String,
         consumed_snapshot_identity: String,
+        bytes: Vec<u8>,
     }
 
     impl VerifiedArtifact {
@@ -21,6 +22,15 @@ mod artifact_ref {
 
         pub(crate) fn consumed_snapshot_identity(&self) -> &str {
             &self.consumed_snapshot_identity
+        }
+
+        // Issue #307: `dag_coordinator::VerifiedArtifactRef::from_a03` reads
+        // this to size a dispatch's referenced inputs. This test binary's
+        // hand-copied `VerifiedArtifact` stub (not the real
+        // `src/artifact_ref.rs`, see module doc below) needs the same
+        // accessor or `from_a03`'s body fails to compile in this binary.
+        pub(crate) fn bytes(&self) -> &[u8] {
+            &self.bytes
         }
     }
 }

@@ -5,6 +5,7 @@ use std::time::Duration;
 use crate::artifacts::{self, ARTIFACT_ROOT_ENV};
 use crate::authoritative_run;
 use crate::budget::Budget;
+use crate::budget_dispatch;
 use crate::dag_run::{self, DagExecutionRequest};
 use crate::execution_policy::{ExecutionPolicy, RunMode, RunProfile, SkipFlags, WorkingTreePolicy};
 use crate::node_timeout::DEFAULT_NODE_TIMEOUT_SECONDS;
@@ -64,6 +65,7 @@ struct Cli {
     budget_wall_clock: Option<u64>,
     budget_bytes: Option<u64>,
     node_timeout_seconds: Option<u64>,
+    oversize_threshold: Option<u8>,
     policy: ExecutionPolicy,
     diagnosis_inputs: Option<PathBuf>,
     seed_artifact_root: Option<PathBuf>,
@@ -85,6 +87,7 @@ impl Cli {
         let mut budget_wall_clock = None;
         let mut node_timeout_seconds = None;
         let mut budget_bytes = None;
+        let mut oversize_threshold = None;
         let mut manifest = None;
         let mut max_concurrency = 2usize;
         let mut working_tree_policy = "explicit_overlay".to_string();
@@ -121,6 +124,7 @@ impl Cli {
                     | "--budget-wall-clock"
                     | "--node-timeout"
                     | "--budget-bytes"
+                    | "--oversize-threshold"
                     | "--working-tree-policy"
                     | "--scope"
                     | "--diagnosis-inputs"
@@ -197,6 +201,11 @@ impl Cli {
                             .parse::<u64>()
                             .map_err(|_| "--budget-bytes must be an integer".to_string())?,
                     );
+                }
+                "--oversize-threshold" => {
+                    oversize_threshold = Some(value.parse::<u8>().map_err(|_| {
+                        "--oversize-threshold must be an integer 1-100".to_string()
+                    })?);
                 }
                 "--working-tree-policy" => working_tree_policy = value.clone(),
                 "--scope" => scopes.push(value.clone()),
@@ -353,6 +362,7 @@ impl Cli {
             budget_wall_clock,
             budget_bytes,
             node_timeout_seconds,
+            oversize_threshold,
             policy,
             diagnosis_inputs,
             seed_artifact_root,
@@ -362,7 +372,7 @@ impl Cli {
 }
 
 pub(crate) fn usage() -> String {
-    "usage: run <dag-coordinate|execute> --repo <repo-root> <--out <run-staging-directory> | --artifact-root <root> (dag-coordinate only; also read from CODE_INTEL_ARTIFACT_ROOT)> [--authority-root <publication-root> --final-name <name>] [--profile <default|strict|offline>] [--mode <lite|normal|full>] [--skip-repowise <true|false>] [--skip-sentrux <true|false>] [--require-understand-graph <true|false>] [--manifest <integrations.json>] [--max-concurrency <n>] [--budget-wall-clock <seconds>] [--budget-bytes <bytes>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]"
+    "usage: run <dag-coordinate|execute> --repo <repo-root> <--out <run-staging-directory> | --artifact-root <root> (dag-coordinate only; also read from CODE_INTEL_ARTIFACT_ROOT)> [--authority-root <publication-root> --final-name <name>] [--profile <default|strict|offline>] [--mode <lite|normal|full>] [--skip-repowise <true|false>] [--skip-sentrux <true|false>] [--require-understand-graph <true|false>] [--manifest <integrations.json>] [--max-concurrency <n>] [--budget-wall-clock <seconds>] [--budget-bytes <bytes>] [--oversize-threshold <1-100>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]"
         .to_string()
 }
 
@@ -390,9 +400,21 @@ fn budget_from(cli: &Cli) -> Budget {
     budget
 }
 
+/// #307: the default 80% threshold unless `--oversize-threshold` overrides
+/// it. `OversizePolicy::new` rejects 0/100 (see its own doc comment), so an
+/// invalid CLI value surfaces as a normal argument error, not a panic.
+fn oversize_policy_from(cli: &Cli) -> Result<budget_dispatch::OversizePolicy, RunError> {
+    match cli.oversize_threshold {
+        Some(threshold) => budget_dispatch::OversizePolicy::new(threshold)
+            .map_err(|error| RunError::contract(error.to_string())),
+        None => Ok(budget_dispatch::OversizePolicy::default()),
+    }
+}
+
 fn execute_cli(cli: Cli) -> Result<CliResult, RunError> {
     let budget = budget_from(&cli);
     let node_timeout = node_timeout_from(&cli);
+    let oversize_policy = oversize_policy_from(&cli)?;
     match cli.command {
         RunCommand::DagCoordinate => {
             let out = match cli.out {
@@ -409,6 +431,7 @@ fn execute_cli(cli: Cli) -> Result<CliResult, RunError> {
                 max_concurrency: cli.max_concurrency,
                 node_timeout,
                 budget,
+                oversize_policy,
                 policy: cli.policy,
                 diagnosis_inputs: cli.diagnosis_inputs,
                 seed_artifact_root: cli.seed_artifact_root,
@@ -432,6 +455,7 @@ fn execute_cli(cli: Cli) -> Result<CliResult, RunError> {
             .with_max_concurrency(cli.max_concurrency)
             .with_budget(budget)
             .with_node_timeout(node_timeout)
+            .with_oversize_policy(oversize_policy)
             .with_session_evidence(cli.session_evidence);
             let result = authoritative_run::execute(request)?;
             let exit_code = result.exit_code();

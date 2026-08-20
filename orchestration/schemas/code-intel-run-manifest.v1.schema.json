@@ -99,7 +99,7 @@
     "budget": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["limits", "consumed", "exceeded", "stoppedAt"],
+      "required": ["limits", "consumed", "exceeded", "stoppedAt", "oversize"],
       "properties": {
         "limits": { "$ref": "#/definitions/budgetDimensions" },
         "consumed": { "$ref": "#/definitions/budgetDimensions" },
@@ -109,7 +109,30 @@
             { "type": "null" },
             { "type": "string", "minLength": 1 }
           ]
+        },
+        "oversize": { "$ref": "#/definitions/budgetOversize" }
+      }
+    },
+    "budgetOversize": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["thresholdPercent", "skippedNodes"],
+      "properties": {
+        "thresholdPercent": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "skippedNodes": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/budgetOversizeSkippedNode" }
         }
+      }
+    },
+    "budgetOversizeSkippedNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeId", "actualBytes", "byteLimit"],
+      "properties": {
+        "nodeId": { "type": "string", "minLength": 1 },
+        "actualBytes": { "type": "integer", "minimum": 0 },
+        "byteLimit": { "type": "integer", "minimum": 0 }
       }
     },
     "budgetDimensions": {
