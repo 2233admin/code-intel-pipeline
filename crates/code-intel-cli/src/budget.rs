@@ -86,6 +86,14 @@ impl Budget {
         self
     }
 
+    /// The configured wall-clock limit, in seconds. #301: lets a caller
+    /// outside the dispatch path (perf-optimize's `--steps` derivation) read
+    /// the same default/override this budget already resolved, instead of
+    /// duplicating `DEFAULT_WALL_CLOCK_SECONDS` as a second magic number.
+    pub(crate) fn wall_clock_limit(&self) -> u64 {
+        self.wall_clock_limit
+    }
+
     /// Query whether an estimated cost fits within the remaining budget.
     ///
     /// Returns `true` if both time and bytes fit; `false` if either dimension

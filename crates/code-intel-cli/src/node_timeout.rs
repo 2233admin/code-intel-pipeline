@@ -21,7 +21,7 @@ pub(crate) enum NodeTimeoutError {
     TimedOut { elapsed: Duration, limit: Duration },
 }
 
-fn terminate_process_tree(child: &mut Child) {
+pub(crate) fn terminate_process_tree(child: &mut Child) {
     #[cfg(windows)]
     {
         let pid = child.id().to_string();
