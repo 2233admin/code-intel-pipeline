@@ -53,7 +53,7 @@ pub(super) fn production_run_timeout_keeps_sibling_artifact_and_commits_manifest
             "--max-concurrency",
             "2",
             "--node-timeout",
-            "1",
+            "4",
         ])
         .arg("--doctor-tool-path-prefix")
         .arg(&doctor_tools)
@@ -69,11 +69,14 @@ pub(super) fn production_run_timeout_keeps_sibling_artifact_and_commits_manifest
         String::from_utf8_lossy(&output.stderr)
     );
     // The fixture's Windows branch is a 50,000,000-iteration busy loop with
-    // no fixed duration; without the 1s --node-timeout actually cutting it
-    // off, this would run far longer than any bound here. 30s (not 5s)
-    // leaves headroom for this binary's other 15 tests contending for the
-    // CPU when the whole `dag_run` target runs together, while still being
-    // an order of magnitude below what the untimed-out loop would take.
+    // no fixed duration; without the 4s --node-timeout actually cutting it
+    // off, this would run far longer than any bound here. --node-timeout is
+    // 4s (not 1s) so the normally-fast repo.snapshot node has headroom to
+    // finish under CI contention instead of timing out alongside doctor —
+    // CI hit exactly that race with a 1s budget. 30s (not 5s) leaves further
+    // headroom for this binary's other 15 tests contending for the CPU when
+    // the whole `dag_run` target runs together, while still being an order
+    // of magnitude below what the untimed-out loop would take.
     assert!(
         elapsed < Duration::from_secs(30),
         "timed-out run waited for the sleeping child: {elapsed:?}"
@@ -90,7 +93,7 @@ pub(super) fn production_run_timeout_keeps_sibling_artifact_and_commits_manifest
     assert_eq!(timeout["status"], "timeout");
     let diagnostic = timeout["diagnostic"].as_str().unwrap();
     assert!(diagnostic.contains("doctor"));
-    assert!(diagnostic.contains("configured timeout limit: 1000ms"));
+    assert!(diagnostic.contains("configured timeout limit: 4000ms"));
     assert!(diagnostic.contains("actual elapsed"));
 
     assert_eq!(manifest["nodes"]["repo.snapshot"]["status"], "succeeded");
