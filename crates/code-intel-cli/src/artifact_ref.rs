@@ -1937,18 +1937,17 @@ fn validate_run_manifest(bytes: &[u8]) -> Result<(), String> {
     reject_duplicate_json_keys(text)?;
     let value: Value =
         serde_json::from_str(text).map_err(|error| format!("run manifest is not JSON: {error}"))?;
-    exact_object_keys(
-        &value,
-        &[
-            "schema",
-            "runIdentity",
-            "snapshotIdentity",
-            "outcome",
-            "nodes",
-            "budget",
-        ],
-        "run manifest",
-    )?;
+    let mut manifest_fields = vec![
+        "schema",
+        "runIdentity",
+        "snapshotIdentity",
+        "outcome",
+        "nodes",
+    ];
+    if value.get("budget").is_some() {
+        manifest_fields.push("budget");
+    }
+    exact_object_keys(&value, &manifest_fields, "run manifest")?;
     if let Some(budget) = value.get("budget") {
         if !budget.is_object() {
             return Err("run manifest budget must be an object".into());
