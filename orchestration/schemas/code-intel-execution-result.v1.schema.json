@@ -25,6 +25,12 @@
     },
     {
       "properties": {
+        "outcome": { "const": "timeout" },
+        "exitCode": { "const": 71 }
+      }
+    },
+    {
+      "properties": {
         "outcome": { "enum": ["process_failed", "failed", "incomplete"] },
         "exitCode": { "const": 70 }
       }
@@ -39,9 +45,9 @@
   "properties": {
     "schema": { "const": "code-intel-execution-result.v1" },
     "outcome": {
-      "enum": ["completed", "domain_failed", "domain_unknown", "process_failed", "failed", "budget_stopped", "incomplete"]
+      "enum": ["completed", "domain_failed", "domain_unknown", "timeout", "process_failed", "failed", "budget_stopped", "incomplete"]
     },
-    "exitCode": { "enum": [0, 10, 20, 70, 76] },
+    "exitCode": { "enum": [0, 10, 20, 70, 71, 76] },
     "anchors": {
       "type": "object",
       "additionalProperties": false,
@@ -55,7 +61,7 @@
     "failures": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["process", "domain", "notDispatched"],
+      "required": ["process", "domain", "notDispatched", "timeout"],
       "properties": {
         "process": {
           "type": "array",
@@ -90,6 +96,18 @@
             "properties": {
               "node": { "type": "string", "minLength": 1 },
               "reason": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "timeout": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["node", "diagnostic"],
+            "properties": {
+              "node": { "type": "string", "minLength": 1 },
+              "diagnostic": { "type": "string" }
             }
           }
         }

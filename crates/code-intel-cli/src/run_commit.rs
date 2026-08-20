@@ -474,6 +474,7 @@ fn validate_run_manifest(value: &Value) -> Result<(), String> {
                 "completed"
                     | "domain_failed"
                     | "domain_unknown"
+                    | "timeout"
                     | "process_failed"
                     | "failed"
                     | "budget_stopped"
@@ -527,6 +528,15 @@ fn validate_run_manifest(value: &Value) -> Result<(), String> {
                     || !node["artifacts"].is_array()
                 {
                     return Err("domain-failed run node is invalid".to_string());
+                }
+            }
+            Some("timeout") => {
+                exact(node, &["status", "diagnostic"], "timeout run node")?;
+                if !node["diagnostic"]
+                    .as_str()
+                    .is_some_and(|text| !text.is_empty())
+                {
+                    return Err("timeout run node is invalid".to_string());
                 }
             }
             Some("process_failed") => {

@@ -10,6 +10,7 @@ pub(crate) struct RunRequest {
     manifest: Option<std::path::PathBuf>,
     max_concurrency: usize,
     budget: crate::budget::Budget,
+    node_timeout: std::time::Duration,
     policy: crate::execution_policy::ExecutionPolicy,
     session_evidence: Option<std::path::PathBuf>,
     cleanup_staging: bool,
@@ -31,6 +32,9 @@ impl RunRequest {
             final_name,
             manifest: None,
             max_concurrency: 2,
+            node_timeout: std::time::Duration::from_secs(
+                crate::node_timeout::DEFAULT_NODE_TIMEOUT_SECONDS,
+            ),
             budget: crate::budget::Budget::with_defaults(),
             policy,
             session_evidence: None,
@@ -55,6 +59,10 @@ impl RunRequest {
 
     pub(crate) fn with_budget(mut self, budget: crate::budget::Budget) -> Self {
         self.budget = budget;
+        self
+    }
+    pub(crate) fn with_node_timeout(mut self, node_timeout: std::time::Duration) -> Self {
+        self.node_timeout = node_timeout;
         self
     }
 
@@ -154,6 +162,7 @@ pub(crate) fn execute(
         manifest: request.manifest,
         max_concurrency: request.max_concurrency,
         budget: request.budget,
+        node_timeout: request.node_timeout,
         policy: request.policy,
         session_evidence: request.session_evidence,
     })?;

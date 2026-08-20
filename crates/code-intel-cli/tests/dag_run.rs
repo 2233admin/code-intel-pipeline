@@ -1,4 +1,12 @@
 mod common;
+// Not a bare `tests/dag_run_timeout.rs`: Cargo's default test-target
+// autodiscovery (`tests/*.rs`) would register it as its own top-level
+// integration binary in addition to this `#[path]` inclusion, and its
+// `super::`/`crate::common` references only resolve inside *this* file's
+// module tree. Nesting it one directory down as `mod.rs` opts it out of
+// autodiscovery the same way `tests/common/mod.rs` already does.
+#[path = "dag_run_support/timeout.rs"]
+mod dag_run_timeout;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -200,6 +208,10 @@ fn production_run_route_executes_snapshot_then_inventory() {
         .any(|artifact| artifact["type"] == "observed.evidence.payload"));
 
     let _ = fs::remove_dir_all(root);
+}
+#[test]
+fn production_run_timeout_keeps_sibling_artifact_and_commits_manifest() {
+    dag_run_timeout::production_run_timeout_keeps_sibling_artifact_and_commits_manifest();
 }
 
 #[test]
@@ -842,7 +854,7 @@ fn checked_in_execution_result_schema_is_closed_and_binds_outcomes_to_exit_codes
     );
 
     let pairs = schema["oneOf"].as_array().unwrap();
-    assert_eq!(pairs.len(), 5);
+    assert_eq!(pairs.len(), 6);
     assert!(pairs.iter().any(|pair| {
         pair["properties"]["outcome"]["const"] == "completed"
             && pair["properties"]["exitCode"]["const"] == 0
@@ -854,6 +866,10 @@ fn checked_in_execution_result_schema_is_closed_and_binds_outcomes_to_exit_codes
     assert!(pairs.iter().any(|pair| {
         pair["properties"]["outcome"]["const"] == "domain_unknown"
             && pair["properties"]["exitCode"]["const"] == 20
+    }));
+    assert!(pairs.iter().any(|pair| {
+        pair["properties"]["outcome"]["const"] == "timeout"
+            && pair["properties"]["exitCode"]["const"] == 71
     }));
     assert!(pairs.iter().any(|pair| {
         pair["properties"]["outcome"]["enum"] == json!(["process_failed", "failed", "incomplete"])
@@ -875,7 +891,7 @@ fn checked_in_execution_result_schema_is_closed_and_binds_outcomes_to_exit_codes
     assert_eq!(failures["additionalProperties"], false);
     assert_eq!(
         failures["required"],
-        json!(["process", "domain", "notDispatched"])
+        json!(["process", "domain", "notDispatched", "timeout"])
     );
     assert_eq!(
         failures["properties"]["process"]["items"]["required"],
@@ -927,7 +943,7 @@ fn strict_key_check_rejects_fields_the_schema_does_not_declare() {
         "schema": "code-intel-execution-result.v1",
         "outcome": "completed",
         "exitCode": 0,
-        "failures": {"process": [], "domain": []},
+        "failures": {"process": [], "domain": [], "notDispatched": [], "timeout": []},
         "manifest": {},
         "publication": {
             "status": "committed",
