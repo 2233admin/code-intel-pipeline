@@ -12,7 +12,10 @@ mod audit_report;
 mod authoritative_run;
 mod authority;
 mod budget;
+
 mod budget_dispatch;
+#[cfg(test)]
+mod budget_dispatch_oversize;
 mod capability;
 mod capability_inventory;
 mod change_agenda;

@@ -26,6 +26,7 @@ pub(crate) struct DagExecutionRequest {
     pub(crate) node_timeout: Duration,
     pub(crate) max_concurrency: usize,
     pub(crate) budget: Budget,
+    pub(crate) oversize_policy: budget_dispatch::OversizePolicy,
     pub(crate) policy: ExecutionPolicy,
     pub(crate) diagnosis_inputs: Option<PathBuf>,
     pub(crate) seed_artifact_root: Option<PathBuf>,
@@ -238,10 +239,11 @@ pub(crate) fn execute_dag(cli: DagExecutionRequest) -> Result<DagExecutionResult
         policy: cli.policy,
         node_timeout: cli.node_timeout,
     };
-    let budgeted = budget_dispatch::run_to_completion(
+    let budgeted = budget_dispatch::run_to_completion_with_oversize_threshold(
         Coordinator::new(spec).map_err(|error| RunError::contract(error.to_string()))?,
         &executor,
         cli.budget,
+        cli.oversize_policy,
     )
     .map_err(|error| RunError::contract(error.to_string()))?;
     let outcome = budgeted.manifest.outcome;

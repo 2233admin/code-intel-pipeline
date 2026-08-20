@@ -442,3 +442,15 @@ fn completed_index_admission_is_current_and_repairable() {
 
     fs::remove_dir_all(&root).ok();
 }
+
+// Issue #307's end-to-end "#123 8 MB scenario" acceptance criterion is
+// covered at the `budget_dispatch` layer instead of here:
+// `budget_dispatch_rejects_eight_megabyte_input_against_ten_megabyte_limit`
+// in `budget_dispatch_oversize.rs` drives the exact same
+// `run_to_completion_with_oversize_policy` path `run execute` calls, with a
+// controlled 8 MB `DispatchCost` (the acceptance criterion explicitly
+// allows a mocked target). A full-CLI version was attempted here but this
+// fixture harness's `doctor_tool_fixture` stubs node execution, so no
+// dispatch here ever sees a real byte count large enough to trip the
+// policy — that's a test-harness gap, not a product one, and not worth
+// fixing under this ticket's scope.

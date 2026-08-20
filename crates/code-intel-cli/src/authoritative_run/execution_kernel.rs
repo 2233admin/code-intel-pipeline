@@ -16,6 +16,7 @@ pub(crate) struct RunRequest {
     pub(crate) max_concurrency: usize,
     pub(crate) budget: crate::budget::Budget,
     pub(crate) node_timeout: std::time::Duration,
+    pub(crate) oversize_policy: crate::budget_dispatch::OversizePolicy,
     pub(crate) policy: crate::execution_policy::ExecutionPolicy,
     pub(crate) session_evidence: Option<PathBuf>,
 }
@@ -142,6 +143,7 @@ pub(crate) fn execute(request: RunRequest) -> Result<ExecutionResult, RunError> 
         max_concurrency: request.max_concurrency,
         node_timeout: request.node_timeout,
         budget: request.budget,
+        oversize_policy: request.oversize_policy,
         policy: request.policy,
         diagnosis_inputs: None,
         seed_artifact_root: None,
