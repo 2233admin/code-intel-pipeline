@@ -11,6 +11,7 @@ mod artifacts;
 mod audit_report;
 mod authoritative_run;
 mod authority;
+mod budget;
 mod capability;
 mod capability_inventory;
 mod change_agenda;
