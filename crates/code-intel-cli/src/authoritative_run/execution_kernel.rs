@@ -14,6 +14,7 @@ pub(crate) struct RunRequest {
     pub(crate) final_name: String,
     pub(crate) manifest: Option<PathBuf>,
     pub(crate) max_concurrency: usize,
+    pub(crate) budget: crate::budget::Budget,
     pub(crate) policy: crate::execution_policy::ExecutionPolicy,
     pub(crate) session_evidence: Option<PathBuf>,
 }
@@ -72,6 +73,7 @@ impl ExecutionResult {
 pub(crate) fn failures(manifest: &Value) -> Value {
     let mut process = Vec::new();
     let mut domain = Vec::new();
+    let mut not_dispatched = Vec::new();
     if let Some(nodes) = manifest["nodes"].as_object() {
         for (node, state) in nodes {
             match state["status"].as_str() {
@@ -93,11 +95,19 @@ pub(crate) fn failures(manifest: &Value) -> Value {
                     "node": node,
                     "verdict": "unknown",
                 })),
+                Some("not_dispatched") => not_dispatched.push(json!({
+                    "node": node,
+                    "reason": state["reason"].as_str().unwrap_or(""),
+                })),
                 _ => {}
             }
         }
     }
-    json!({"process": process, "domain": domain})
+    json!({
+        "process": process,
+        "domain": domain,
+        "notDispatched": not_dispatched,
+    })
 }
 
 pub(crate) fn execute(request: RunRequest) -> Result<ExecutionResult, RunError> {
@@ -113,16 +123,17 @@ pub(crate) fn execute(request: RunRequest) -> Result<ExecutionResult, RunError> 
     // `main.rs` — keeps the write side and the query side agreeing on the
     // path without changing either reader.
     let repo_name = resolve_repository_key(&request.repo, request.repository_key.as_deref())?;
+    let repo_root = request.repo.clone();
     // Cloned before `request.repo` moves into the DAG request below: the
     // anchor-verification gate (issue #151) re-resolves each claim against
     // the same live repository the DAG scanned, after the DAG has already
     // consumed the original.
-    let repo_root = request.repo.clone();
     let mut dag = dag_run::execute_dag(DagExecutionRequest {
         repo: request.repo,
         out: request.staging_root,
         manifest: request.manifest,
         max_concurrency: request.max_concurrency,
+        budget: request.budget,
         policy: request.policy,
         diagnosis_inputs: None,
         seed_artifact_root: None,

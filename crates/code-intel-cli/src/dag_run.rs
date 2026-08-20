@@ -6,6 +6,8 @@ use std::process::Command;
 use serde_json::{json, Value};
 
 use crate::artifact_ref::{self, ArtifactError};
+use crate::budget::Budget;
+use crate::budget_dispatch;
 use crate::capability::{self, sha256_hex};
 use crate::dag_coordinator::{
     Coordinator, DagSpec, Dispatch, DomainVerdict, EdgeSpec, ExecutionFailure, NodeExecutor,
@@ -20,6 +22,7 @@ pub(crate) struct DagExecutionRequest {
     pub(crate) out: PathBuf,
     pub(crate) manifest: Option<PathBuf>,
     pub(crate) max_concurrency: usize,
+    pub(crate) budget: Budget,
     pub(crate) policy: ExecutionPolicy,
     pub(crate) diagnosis_inputs: Option<PathBuf>,
     pub(crate) seed_artifact_root: Option<PathBuf>,
@@ -231,17 +234,20 @@ pub(crate) fn execute_dag(cli: DagExecutionRequest) -> Result<DagExecutionResult
         seed_artifact_root,
         policy: cli.policy,
     };
-    let manifest = Coordinator::new(spec)
-        .map_err(|error| RunError::contract(error.to_string()))?
-        .run_to_completion(&executor)
-        .map_err(|error| RunError::contract(error.to_string()))?;
-    let exit_code = manifest.outcome.exit_code();
-    let manifest_json = manifest.to_json();
+    let budgeted = budget_dispatch::run_to_completion(
+        Coordinator::new(spec).map_err(|error| RunError::contract(error.to_string()))?,
+        &executor,
+        cli.budget,
+    )
+    .map_err(|error| RunError::contract(error.to_string()))?;
+    let outcome = budgeted.manifest.outcome;
+    let exit_code = outcome.exit_code();
+    let manifest_json = budgeted.manifest_json;
     persist_commit_handoff(&run_root, &manifest_json, &snapshot_identity)?;
-    debug_assert_eq!(exit_code, manifest.outcome.exit_code());
+    debug_assert_eq!(exit_code, outcome.exit_code());
     Ok(DagExecutionResult {
         manifest: manifest_json,
-        outcome: manifest.outcome,
+        outcome,
         run_root,
     })
 }
