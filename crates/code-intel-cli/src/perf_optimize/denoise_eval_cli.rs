@@ -40,12 +40,10 @@ fn parse(raw: &[String]) -> Result<Cli, String> {
     while let Some(argument) = iter.next() {
         match argument.as_str() {
             "--command" => {
-                command = Some(iter.next().ok_or("--command requires a value")?.to_string());
+                command = Some(super::next_value(&mut iter, "--command")?.clone());
             }
             "--n" => {
-                n = iter
-                    .next()
-                    .ok_or("--n requires a value")?
+                n = super::next_value(&mut iter, "--n")?
                     .parse::<usize>()
                     .map_err(|_| "--n must be a positive integer".to_string())?;
             }

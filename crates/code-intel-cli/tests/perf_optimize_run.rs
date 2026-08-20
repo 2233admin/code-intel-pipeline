@@ -128,6 +128,39 @@ fn a_candidate_clearing_the_threshold_reports_no_stopped_by() {
 }
 
 #[test]
+fn a_candidate_that_never_clears_the_threshold_reports_steps_exhausted() {
+    let dir = temp_dir("steps-exhausted-path");
+    // weco runs every step it was given and exits cleanly (no timeout), but
+    // never finds a candidate good enough to clear the default 5% bar --
+    // distinct from the timeout case: nothing here cut the search short.
+    write_weco_fixture(
+        &dir,
+        "e2e-fixture-run-exhausted",
+        &["latency_ms: 99", "latency_ms: 97", "latency_ms: 98"],
+        false,
+    );
+
+    let report = run(
+        &dir,
+        &[
+            "--eval-command",
+            &baseline_eval_command("100"),
+            "--seconds-per-step",
+            "1",
+        ],
+    );
+
+    assert_eq!(report["baseline"], 100.0);
+    assert_eq!(report["bestCandidate"], 97.0);
+    assert_eq!(report["stepsRun"], 3);
+    // 3% improvement is under the 5% default threshold.
+    assert_eq!(report["metThreshold"], false);
+    assert_eq!(report["stoppedBy"], "steps_exhausted");
+
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn a_wall_clock_timeout_reports_budget_exhausted_with_whatever_was_captured() {
     let dir = temp_dir("timeout-path");
     write_weco_fixture(&dir, "e2e-fixture-run-timeout", &["latency_ms: 98"], true);

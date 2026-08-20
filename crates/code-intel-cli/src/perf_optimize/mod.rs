@@ -168,30 +168,25 @@ fn parse_percent(value: &str) -> Result<f64, String> {
         .map_err(|_| format!("value must be a percentage like '5' or '5%': {value:?}"))
 }
 
-fn unavailable(reason: &str) -> i32 {
+fn status_report(status: &str, reason: &str, exit_code: i32) -> i32 {
     let report = serde_json::json!({
         "schema": "code-intel-perf-optimize-run.v1",
-        "status": "unavailable",
+        "status": status,
         "reason": reason,
     });
     println!(
         "{}",
         serde_json::to_string(&report).expect("report serializes")
     );
-    69
+    exit_code
+}
+
+fn unavailable(reason: &str) -> i32 {
+    status_report("unavailable", reason, 69)
 }
 
 fn failed(reason: &str) -> i32 {
-    let report = serde_json::json!({
-        "schema": "code-intel-perf-optimize-run.v1",
-        "status": "failed",
-        "reason": reason,
-    });
-    println!(
-        "{}",
-        serde_json::to_string(&report).expect("report serializes")
-    );
-    76
+    status_report("failed", reason, 76)
 }
 
 fn pipeline_root() -> PathBuf {
@@ -209,17 +204,17 @@ fn pipeline_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// Presence comes from `tool_path::locate` directly (the same primitive
-/// `execute` uses moments later to resolve the actual binary to spawn) so
-/// there is exactly one answer to "is weco on PATH", not two that could
-/// disagree. BYOK still comes from `doctor_bootstrap::observe`'s
+/// Presence comes from `tool_path::locate` directly, returned as the
+/// resolved path so `execute` never has to look it up a second time -- one
+/// answer to "is weco on PATH", not two that could disagree or duplicate the
+/// search. BYOK still comes from `doctor_bootstrap::observe`'s
 /// `checks.weco.byokConfigured` -- that check (which env vars count as BYOK)
 /// belongs to #300, not duplicated here.
-fn weco_availability(cli: &Cli) -> Result<(), String> {
+fn weco_availability(cli: &Cli) -> Result<PathBuf, String> {
     let prefix = cli.doctor_tool_path_prefix.as_deref();
-    if tool_path::locate("weco", prefix).is_none() {
+    let Some(weco_binary) = tool_path::locate("weco", prefix) else {
         return Err("weco is not on PATH".to_string());
-    }
+    };
     let mut options = crate::doctor_bootstrap::Options::new(pipeline_root());
     options.tool_path_prefix = cli.doctor_tool_path_prefix.clone();
     let observation = crate::doctor_bootstrap::observe(&options)?;
@@ -233,7 +228,7 @@ fn weco_availability(cli: &Cli) -> Result<(), String> {
                 .to_string(),
         );
     }
-    Ok(())
+    Ok(weco_binary)
 }
 
 fn execute(cli: &Cli) -> i32 {
@@ -257,12 +252,9 @@ fn execute(cli: &Cli) -> i32 {
             "no --eval-command provided: target has no known-reusable benchmark/eval script",
         );
     };
-    if let Err(reason) = weco_availability(cli) {
-        return unavailable(&reason);
-    }
-    let prefix = cli.doctor_tool_path_prefix.as_deref();
-    let Some(weco_binary) = tool_path::locate("weco", prefix) else {
-        return unavailable("weco is not on PATH");
+    let weco_binary = match weco_availability(cli) {
+        Ok(weco_binary) => weco_binary,
+        Err(reason) => return unavailable(&reason),
     };
 
     let baseline_result = match denoise::run_denoised(eval_command, cli.denoise_n) {
@@ -314,6 +306,16 @@ fn execute(cli: &Cli) -> i32 {
         }
     };
 
+    // **Needs verification against a real weco install**, same as
+    // `extract_run_id` (weco_process.rs) and `best_candidate_diff` below:
+    // this assumes weco echoes each step's eval-command stdout verbatim
+    // into its own stdout, so every `metric: value` line our wrapped
+    // `denoise-eval` subcommand printed is still findable here. If real
+    // weco buffers or summarizes eval-command output instead, every step
+    // reading is silently lost -- `step_readings` comes back empty and the
+    // run reports "weco exited without ever invoking the wrapped
+    // eval-command" (exit 74) rather than fabricating a result, so this
+    // assumption being wrong fails loudly, not silently.
     let step_readings: Vec<f64> = outcome
         .stdout
         .lines()
