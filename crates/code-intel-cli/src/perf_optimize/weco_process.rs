@@ -74,6 +74,19 @@ fn snapshot(output: &SharedOutput) -> String {
         .clone()
 }
 
+/// `observed` comes from the channel the reader thread sends on as it goes
+/// -- for a process that exits very quickly after printing its run id, the
+/// main loop's next `try_wait()` can race ahead of that message actually
+/// arriving (the channel send happens after the mutex-guarded buffer write,
+/// on a background thread the main loop doesn't synchronize with). Falling
+/// back to scanning the buffer snapshot closes that race: by the time a
+/// snapshot is taken here, the line that would have carried the run id is
+/// either already in the buffer, or lost forever with the process --
+/// there's no third case to race against.
+fn run_id_from(observed: Option<String>, stdout_snapshot: &str) -> Option<String> {
+    observed.or_else(|| stdout_snapshot.lines().find_map(extract_run_id))
+}
+
 fn spawn_line_reader(
     pipe: impl std::io::Read + Send + 'static,
     output: SharedOutput,
@@ -145,17 +158,23 @@ pub(crate) fn run_weco_with_wall_clock_backstop(
             // safe to join before snapshotting, so the buffers are complete.
             join_best_effort(stdout_reader);
             join_best_effort(stderr_reader);
+            let stdout = snapshot(&stdout_buffer);
+            let run_id = run_id_from(observed_run_id, &stdout);
             return Ok(WecoRunOutcome {
-                stdout: snapshot(&stdout_buffer),
+                stdout,
                 stderr: snapshot(&stderr_buffer),
                 exit_status: Some(status),
                 timed_out,
                 graceful_stop_invoked,
-                run_id: observed_run_id,
+                run_id,
             });
         }
         if started.elapsed() >= wall_clock_timeout {
             timed_out = true;
+            // Same race as the return points below: the channel message can
+            // lag the buffer write, so re-check the buffer directly before
+            // deciding there's no run id to stop.
+            observed_run_id = run_id_from(observed_run_id, &snapshot(&stdout_buffer));
             if let Some(run_id) = &observed_run_id {
                 let stop_status = Command::new(weco_binary)
                     .args(["run", "stop", run_id])
@@ -173,13 +192,15 @@ pub(crate) fn run_weco_with_wall_clock_backstop(
                     // case above: safe to join before snapshotting.
                     join_best_effort(stdout_reader);
                     join_best_effort(stderr_reader);
+                    let stdout = snapshot(&stdout_buffer);
+                    let run_id = run_id_from(observed_run_id, &stdout);
                     return Ok(WecoRunOutcome {
-                        stdout: snapshot(&stdout_buffer),
+                        stdout,
                         stderr: snapshot(&stderr_buffer),
                         exit_status: Some(status),
                         timed_out,
                         graceful_stop_invoked,
-                        run_id: observed_run_id,
+                        run_id,
                     });
                 }
                 thread::sleep(Duration::from_millis(5));
@@ -194,13 +215,15 @@ pub(crate) fn run_weco_with_wall_clock_backstop(
             // background (harmless; they exit whenever their pipe finally
             // closes) and this returns a snapshot of whatever they'd
             // captured up to now instead.
+            let stdout = snapshot(&stdout_buffer);
+            let run_id = run_id_from(observed_run_id, &stdout);
             return Ok(WecoRunOutcome {
-                stdout: snapshot(&stdout_buffer),
+                stdout,
                 stderr: snapshot(&stderr_buffer),
                 exit_status: status,
                 timed_out,
                 graceful_stop_invoked,
-                run_id: observed_run_id,
+                run_id,
             });
         }
         thread::sleep(Duration::from_millis(5));
