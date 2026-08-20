@@ -8,15 +8,31 @@
 //! (`weco run stop <run-id>`) rather than reusing the DAG's generic
 //! hard-kill node timeout.
 //!
+//! **weco is not a local-only tool** (confirmed by reading weco-cli's own
+//! source, since the original design assumed otherwise): its optimization
+//! decision loop runs server-side, polled over HTTP with a heartbeat thread
+//! keeping the run alive on weco's backend. A BYOK key (`OPENAI_API_KEY` /
+//! `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`) only pays for LLM generation --
+//! weco's own account token (`WECO_API_KEY`, distinct from BYOK) is required
+//! unconditionally to create or track a run at all. `weco_availability`
+//! checks both, independently, via `doctor_bootstrap`'s
+//! `checks.weco.{byokConfigured,accountConfigured}`.
+//!
+//! `run status`/`run diff` (not stdout-scraping) are the verified source for
+//! step counts, the best metric, and the winning candidate's diff -- see
+//! `weco_run_status` and `best_candidate_diff` below for the exact shapes,
+//! confirmed against weco-cli's source rather than guessed.
+//!
 //! Exit codes: 0 success (a candidate was measured, threshold met or not —
 //! "didn't clear the bar" is still a full report, not a failure); 64 usage
-//! error; 69 unavailable (no `--eval-command`, the eval command itself can't
-//! be run, or weco is missing/BYOK-unconfigured — the same three-way
-//! collapse `doctor_provider_rows.rs` already uses for "not ready"); 74 weco
-//! ran but never produced a usable metric reading; 76 the wall-clock budget
-//! can't afford even one step, so no report was attempted (#157's own
-//! precedent: a budget too small for the first unit of work is a failure,
-//! not a degraded success).
+//! error; 69 unavailable (no `--eval-command`/`--source`, the eval command
+//! itself can't be run, or weco is missing/not fully authenticated — the
+//! same collapse `doctor_provider_rows.rs` already uses for "not ready");
+//! 74 weco ran but produced no usable result (no run id ever printed, the
+//! status query itself failed, or zero steps completed before it stopped);
+//! 76 the wall-clock budget can't afford even one step, so no report was
+//! attempted (#157's own precedent: a budget too small for the first unit
+//! of work is a failure, not a degraded success).
 
 mod denoise;
 mod denoise_eval_cli;
@@ -56,6 +72,7 @@ fn run_dispatch(raw: &[String], _subcommand: &str) -> i32 {
 struct Cli {
     repo: PathBuf,
     target: String,
+    source: Option<PathBuf>,
     eval_command: Option<String>,
     metric: String,
     goal: Goal,
@@ -78,6 +95,7 @@ impl Cli {
     fn parse(raw: &[String]) -> Result<Self, String> {
         let mut repo = None;
         let mut target = None;
+        let mut source = None;
         let mut eval_command = None;
         let mut metric = None;
         let mut goal = None;
@@ -94,6 +112,7 @@ impl Cli {
             match argument.as_str() {
                 "--repo" => repo = Some(PathBuf::from(next_value(&mut iter, "--repo")?)),
                 "--target" => target = Some(next_value(&mut iter, "--target")?.clone()),
+                "--source" => source = Some(PathBuf::from(next_value(&mut iter, "--source")?)),
                 "--eval-command" => {
                     eval_command = Some(next_value(&mut iter, "--eval-command")?.clone())
                 }
@@ -139,6 +158,7 @@ impl Cli {
         Ok(Self {
             repo: repo.ok_or("--repo is required")?,
             target: target.ok_or("--target is required")?,
+            source,
             eval_command,
             metric: metric.ok_or("--metric is required")?,
             goal: goal.ok_or("--goal is required")?,
@@ -207,9 +227,12 @@ fn pipeline_root() -> PathBuf {
 /// Presence comes from `tool_path::locate` directly, returned as the
 /// resolved path so `execute` never has to look it up a second time -- one
 /// answer to "is weco on PATH", not two that could disagree or duplicate the
-/// search. BYOK still comes from `doctor_bootstrap::observe`'s
-/// `checks.weco.byokConfigured` -- that check (which env vars count as BYOK)
-/// belongs to #300, not duplicated here.
+/// search. BYOK and account-token status still come from
+/// `doctor_bootstrap::observe`'s `checks.weco.{byokConfigured,
+/// accountConfigured}` -- those checks belong to #300, not duplicated here.
+/// weco's own run loop is server-tracked (verified against its source, #301
+/// research): the account token is required unconditionally, in addition to
+/// -- not instead of -- a BYOK key that only pays for LLM generation.
 fn weco_availability(cli: &Cli) -> Result<PathBuf, String> {
     let prefix = cli.doctor_tool_path_prefix.as_deref();
     let Some(weco_binary) = tool_path::locate("weco", prefix) else {
@@ -222,9 +245,19 @@ fn weco_availability(cli: &Cli) -> Result<PathBuf, String> {
         .pointer("/checks/weco/byokConfigured")
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
+    let account_configured = observation
+        .pointer("/checks/weco/accountConfigured")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
     if !byok_configured {
         return Err(
             "weco is present but no BYOK provider key is configured (OPENAI_API_KEY/ANTHROPIC_API_KEY/GEMINI_API_KEY)"
+                .to_string(),
+        );
+    }
+    if !account_configured {
+        return Err(
+            "weco is present but no weco.ai account is configured (WECO_API_KEY) -- required by weco's server-tracked run loop even with a BYOK key"
                 .to_string(),
         );
     }
@@ -251,6 +284,13 @@ fn execute(cli: &Cli) -> i32 {
         return unavailable(
             "no --eval-command provided: target has no known-reusable benchmark/eval script",
         );
+    };
+    // #301 correction: weco requires a source file to mutate (its own
+    // `-s/--source`, a hard requirement -- confirmed against a real install,
+    // not a guess) -- a target with no known file to optimize is no more
+    // "usable" than one with no eval-command.
+    let Some(source) = &cli.source else {
+        return unavailable("no --source provided: target has no known file for weco to optimize");
     };
     let weco_binary = match weco_availability(cli) {
         Ok(weco_binary) => weco_binary,
@@ -279,15 +319,18 @@ fn execute(cli: &Cli) -> i32 {
 
     let mut weco_command = Command::new(&weco_binary);
     weco_command
-        .args([
-            "run",
-            "--metric",
-            &cli.metric,
-            "--goal",
-            goal_flag(cli.goal),
-        ])
+        .args(["run", "--source"])
+        .arg(source)
+        .args(["--metric", &cli.metric, "--goal", goal_flag(cli.goal)])
         .args(["--steps", &steps_planned.to_string()])
         .args(["--eval-command", &wrapped_eval_command])
+        // "plain" is weco's own machine-readable mode (confirmed via source:
+        // a dedicated `[METRIC] Step N: value (best so far: best)` line
+        // separate from the raw eval-command echo) -- not currently parsed
+        // here (see the status-query comment below for why), but still the
+        // right mode for a non-interactive subprocess: the default "rich"
+        // mode is an interactive TUI that assumes a real terminal.
+        .args(["--output", "plain"])
         .current_dir(&cli.repo);
     if let Some(model) = &cli.model {
         weco_command.args(["--model", model]);
@@ -306,27 +349,27 @@ fn execute(cli: &Cli) -> i32 {
         }
     };
 
-    // **Needs verification against a real weco install**, same as
-    // `extract_run_id` (weco_process.rs) and `best_candidate_diff` below:
-    // this assumes weco echoes each step's eval-command stdout verbatim
-    // into its own stdout, so every `metric: value` line our wrapped
-    // `denoise-eval` subcommand printed is still findable here. If real
-    // weco buffers or summarizes eval-command output instead, every step
-    // reading is silently lost -- `step_readings` comes back empty and the
-    // run reports "weco exited without ever invoking the wrapped
-    // eval-command" (exit 74) rather than fabricating a result, so this
-    // assumption being wrong fails loudly, not silently.
-    let step_readings: Vec<f64> = outcome
-        .stdout
-        .lines()
-        .filter_map(|line| denoise::parse_metric_line(line))
-        .filter(|(name, _)| *name == cli.metric)
-        .map(|(_, value)| value)
-        .collect();
-    let steps_run = step_readings.len() as u64;
-
-    let Some(best) = extremum(&step_readings, cli.goal) else {
-        eprintln!("weco exited without ever invoking the wrapped eval-command");
+    // weco's run loop is server-tracked (#301 research, verified against
+    // source): `run status` is the authoritative source for how far a run
+    // got, not stdout -- weco's own dedicated `[METRIC] Step N: value (best
+    // so far: best)` plain-output lines exist and could be scanned, but the
+    // server already aggregates exactly this, so querying it once after the
+    // process ends is simpler and doesn't require re-deriving an extremum
+    // ourselves.
+    let Some(run_id) = &outcome.run_id else {
+        eprintln!("weco exited without ever printing a run id");
+        return 74;
+    };
+    let status = match weco_run_status(&weco_binary, run_id) {
+        Ok(status) => status,
+        Err(reason) => {
+            eprintln!("failed to query weco run status: {reason}");
+            return 74;
+        }
+    };
+    let steps_run = status.current_step;
+    let Some(best) = status.best_metric else {
+        eprintln!("weco completed zero steps before stopping");
         return 74;
     };
 
@@ -340,7 +383,7 @@ fn execute(cli: &Cli) -> i32 {
         Some(StoppedBy::StepsExhausted)
     };
 
-    let diff = best_candidate_diff(&weco_binary, outcome.run_id.as_deref());
+    let diff = best_candidate_diff(&weco_binary, run_id);
     let report = report::build_report(
         &cli.target,
         &cli.metric,
@@ -360,17 +403,6 @@ fn execute(cli: &Cli) -> i32 {
     0
 }
 
-fn extremum(values: &[f64], goal: Goal) -> Option<f64> {
-    match goal {
-        Goal::Maximize => values.iter().copied().fold(None, |acc, value| {
-            Some(acc.map_or(value, |current: f64| current.max(value)))
-        }),
-        Goal::Minimize => values.iter().copied().fold(None, |acc, value| {
-            Some(acc.map_or(value, |current: f64| current.min(value)))
-        }),
-    }
-}
-
 fn goal_flag(goal: Goal) -> &'static str {
     match goal {
         Goal::Maximize => "maximize",
@@ -378,24 +410,64 @@ fn goal_flag(goal: Goal) -> &'static str {
     }
 }
 
-/// Best-effort only: **needs verification against a real `weco` install**.
-/// Assumes `weco run status <run-id> --format json` exists and may carry the
-/// winning candidate's diff under one of a few plausible field names. A
-/// missing command, non-JSON output, or absent field all just mean no diff
-/// in the report — never a failed command.
-fn best_candidate_diff(weco_binary: &Path, run_id: Option<&str>) -> Option<String> {
-    let run_id = run_id?;
+/// `weco run status <run-id>`'s fields relevant to this report. Verified
+/// against weco-cli's own source (#301 research), not guessed: the command
+/// always prints JSON (no `--format` flag needed, unlike `run results`).
+struct WecoStatus {
+    current_step: u64,
+    best_metric: Option<f64>,
+}
+
+fn weco_run_status(weco_binary: &Path, run_id: &str) -> Result<WecoStatus, String> {
     let output = Command::new(weco_binary)
-        .args(["run", "status", run_id, "--format", "json"])
+        .args(["run", "status", run_id])
+        .output()
+        .map_err(|error| error.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "weco run status exited non-zero: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).map_err(|error| error.to_string())?;
+    Ok(WecoStatus {
+        current_step: value
+            .get("current_step")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0),
+        best_metric: value.get("best_metric").and_then(serde_json::Value::as_f64),
+    })
+}
+
+/// `weco run diff <run-id> --step best --against baseline` prints a raw
+/// unified diff to stdout on success, or `{"error": "..."}` JSON on failure
+/// (verified against weco-cli's own source, #301 research -- not the
+/// guessed `run status` JSON-field approach this replaced). Best-effort: a
+/// missing command, a failed diff, or empty output all just mean no diff in
+/// the report, never a failed run.
+fn best_candidate_diff(weco_binary: &Path, run_id: &str) -> Option<String> {
+    let output = Command::new(weco_binary)
+        .args([
+            "run",
+            "diff",
+            run_id,
+            "--step",
+            "best",
+            "--against",
+            "baseline",
+        ])
         .output()
         .ok()?;
     if !output.status.success() {
         return None;
     }
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-    ["diff", "patch", "bestDiff", "solutionDiff"]
-        .iter()
-        .find_map(|key| value.get(key).and_then(|v| v.as_str()).map(str::to_string))
+    let text = String::from_utf8_lossy(&output.stdout).into_owned();
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed.starts_with("{\"error\"") {
+        return None;
+    }
+    Some(text)
 }
 
 /// Cross-platform "quote this token for the target shell" helper —

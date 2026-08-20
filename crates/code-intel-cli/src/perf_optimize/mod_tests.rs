@@ -37,6 +37,7 @@ fn cli_parse_succeeds_with_the_required_flags_and_sensible_defaults() {
     assert_eq!(cli.metric, "latency_ms");
     assert_eq!(cli.goal, Goal::Minimize);
     assert!(cli.eval_command.is_none());
+    assert!(cli.source.is_none());
     assert_eq!(
         cli.min_improvement_percent,
         report::DEFAULT_MIN_IMPROVEMENT_PERCENT
@@ -80,10 +81,51 @@ fn cli_parse_rejects_an_unknown_flag() {
 }
 
 #[test]
+fn cli_parse_accepts_source() {
+    let cli = Cli::parse(&args(&[
+        "--repo",
+        ".",
+        "--target",
+        "t",
+        "--metric",
+        "m",
+        "--goal",
+        "maximize",
+        "--source",
+        "fixture.rs",
+    ]))
+    .unwrap();
+    assert_eq!(cli.source, Some(PathBuf::from("fixture.rs")));
+}
+
+#[test]
 fn no_eval_command_reports_unavailable_without_touching_weco() {
     let exit_code = execute(
         &Cli::parse(&args(&[
             "--repo", ".", "--target", "t", "--metric", "m", "--goal", "maximize",
+        ]))
+        .unwrap(),
+    );
+    assert_eq!(exit_code, 69);
+}
+
+/// #301 correction: weco requires `--source` (a file to mutate) just as
+/// much as it requires `--eval-command` -- a target missing either one is
+/// equally "not usable", checked before ever touching weco.
+#[test]
+fn no_source_reports_unavailable_without_touching_weco() {
+    let exit_code = execute(
+        &Cli::parse(&args(&[
+            "--repo",
+            ".",
+            "--target",
+            "t",
+            "--metric",
+            "m",
+            "--goal",
+            "maximize",
+            "--eval-command",
+            "echo unused",
         ]))
         .unwrap(),
     );
@@ -117,21 +159,6 @@ fn a_wall_clock_budget_too_small_for_one_step_fails_before_touching_weco() {
     .unwrap();
     let exit_code = execute(&cli);
     assert_eq!(exit_code, 76);
-}
-
-#[test]
-fn extremum_maximize_picks_the_largest_value() {
-    assert_eq!(extremum(&[1.0, 5.0, 3.0], Goal::Maximize), Some(5.0));
-}
-
-#[test]
-fn extremum_minimize_picks_the_smallest_value() {
-    assert_eq!(extremum(&[5.0, 1.0, 3.0], Goal::Minimize), Some(1.0));
-}
-
-#[test]
-fn extremum_of_no_readings_is_none() {
-    assert_eq!(extremum(&[], Goal::Maximize), None);
 }
 
 #[test]

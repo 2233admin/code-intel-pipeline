@@ -14,14 +14,34 @@ fn weco_byok_is_configured_when_any_recognized_provider_key_is_present() {
 }
 
 #[test]
-fn weco_reason_distinguishes_not_installed_from_unauthenticated() {
-    assert_eq!(weco_reason(false, false), "weco not found on PATH");
-    assert_eq!(weco_reason(false, true), "weco not found on PATH");
+fn weco_account_is_unconfigured_when_neither_env_nor_credentials_file_is_present() {
+    assert!(!weco_account_configured_from(false, false));
+}
+
+#[test]
+fn weco_account_is_configured_by_either_the_env_var_or_the_credentials_file() {
+    assert!(weco_account_configured_from(true, false));
+    assert!(weco_account_configured_from(false, true));
+    assert!(weco_account_configured_from(true, true));
+}
+
+#[test]
+fn weco_reason_distinguishes_not_installed_from_each_missing_auth_gate() {
+    assert_eq!(weco_reason(false, false, false), "weco not found on PATH");
+    assert_eq!(weco_reason(false, true, true), "weco not found on PATH");
     assert_eq!(
-        weco_reason(true, false),
+        weco_reason(true, false, false),
+        "weco installed but neither an LLM provider key (BYOK) nor a weco.ai account (WECO_API_KEY) is configured"
+    );
+    assert_eq!(
+        weco_reason(true, false, true),
         "weco installed but no LLM provider key configured (BYOK)"
     );
-    assert_eq!(weco_reason(true, true), "");
+    assert_eq!(
+        weco_reason(true, true, false),
+        "weco installed but no weco.ai account configured (WECO_API_KEY) -- weco's run loop is server-tracked and requires this even with your own LLM key"
+    );
+    assert_eq!(weco_reason(true, true, true), "");
 }
 
 fn scratch(tag: &str) -> PathBuf {
@@ -141,6 +161,7 @@ fn observation_carries_the_v1_contract_and_every_retired_check() {
         vec!["rg", "git", "python", "repowise", "repomix", "sentrux", "ast-grep", "weco"]
     );
     assert!(observation["checks"]["weco"]["byokConfigured"].is_boolean());
+    assert!(observation["checks"]["weco"]["accountConfigured"].is_boolean());
     assert!(observation["checks"]["weco"]["reason"].is_string());
     fs::remove_dir_all(root).ok();
 }

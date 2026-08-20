@@ -6,16 +6,11 @@
 //! `node_timeout`'s hard-kill if weco doesn't exit within a short grace
 //! period afterward — never hangs forever either way.
 //!
-//! **Needs verification against a real `weco` install**: `extract_run_id`
-//! assumes weco prints a `run id: <id>` line (case/separator-insensitive)
-//! early in its stdout, since the local weco CLI has no other documented way
-//! to learn the run id `weco run stop` needs. Stdout is read and scanned
-//! line-by-line as it streams (not after the process exits), so a run id
-//! printed before the timeout fires is available in time to use. If real
-//! weco output doesn't match this shape, the graceful-stop path silently
-//! degrades to "never had a run id" and falls straight to the hard-kill
-//! fallback below — still correct, just not graceful, and worth confirming
-//! before this ships.
+//! `extract_run_id`'s pattern is confirmed against weco-cli's own source
+//! (#301 research), not a guess: it prints exactly `Run ID: {run_id}` at
+//! the start of every run. Stdout is still read and scanned line-by-line as
+//! it streams (not after the process exits), so a run id printed before the
+//! timeout fires is available in time to use for the graceful stop.
 
 use std::io::{BufRead, BufReader};
 use std::process::{Command, ExitStatus, Stdio};
