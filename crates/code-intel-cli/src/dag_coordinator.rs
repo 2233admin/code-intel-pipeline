@@ -283,6 +283,9 @@ pub enum NodeOutcome {
         diagnostic: String,
         artifacts: Vec<VerifiedArtifactRef>,
     },
+    Timeout {
+        diagnostic: String,
+    },
     ProcessFailure {
         failure: ExecutionFailure,
         diagnostic: String,
@@ -317,6 +320,11 @@ impl NodeOutcome {
             artifacts,
         }
     }
+    pub fn timeout(diagnostic: impl Into<String>) -> Self {
+        Self::Timeout {
+            diagnostic: diagnostic.into(),
+        }
+    }
 
     pub fn process_failure(failure: ExecutionFailure, diagnostic: impl Into<String>) -> Self {
         Self::ProcessFailure {
@@ -338,6 +346,9 @@ pub enum NodeState {
         diagnostic: String,
         artifacts: Vec<VerifiedArtifactRef>,
     },
+    TimedOut {
+        diagnostic: String,
+    },
     ProcessFailed {
         failure: ExecutionFailure,
         diagnostic: String,
@@ -349,13 +360,13 @@ pub enum NodeState {
         reason: String,
     },
 }
-
 impl NodeState {
     fn is_terminal(&self) -> bool {
         matches!(
             self,
             Self::Succeeded { .. }
                 | Self::DomainFailed { .. }
+                | Self::TimedOut { .. }
                 | Self::ProcessFailed { .. }
                 | Self::DependencyBlocked { .. }
                 | Self::NotDispatched { .. }
@@ -365,7 +376,10 @@ impl NodeState {
     fn blocks_dependents(&self) -> bool {
         matches!(
             self,
-            Self::DomainFailed { .. } | Self::ProcessFailed { .. } | Self::DependencyBlocked { .. }
+            Self::DomainFailed { .. }
+                | Self::TimedOut { .. }
+                | Self::ProcessFailed { .. }
+                | Self::DependencyBlocked { .. }
         )
     }
 
@@ -386,6 +400,10 @@ impl NodeState {
                 "verdict":"fail",
                 "diagnostic":diagnostic,
                 "artifacts":artifacts.iter().map(VerifiedArtifactRef::to_json).collect::<Vec<_>>(),
+            }),
+            Self::TimedOut { diagnostic } => json!({
+                "status":"timeout",
+                "diagnostic":diagnostic,
             }),
             Self::ProcessFailed {
                 failure,
@@ -441,6 +459,7 @@ pub enum RunOutcome {
     Completed,
     DomainFailed,
     DomainUnknown,
+    Timeout,
     ProcessFailed,
     Failed,
     Incomplete,
@@ -453,6 +472,7 @@ impl RunOutcome {
             Self::Completed => "completed",
             Self::DomainFailed => "domain_failed",
             Self::DomainUnknown => "domain_unknown",
+            Self::Timeout => "timeout",
             Self::ProcessFailed => "process_failed",
             Self::Failed => "failed",
             Self::Incomplete => "incomplete",
@@ -465,6 +485,7 @@ impl RunOutcome {
             Self::Completed => 0,
             Self::DomainFailed => 10,
             Self::DomainUnknown => 20,
+            Self::Timeout => 71,
             Self::ProcessFailed | Self::Failed | Self::Incomplete => 70,
             // 76 is reserved for budget truncation; 73 is already the
             // publication-name collision exit used by run execute.
@@ -577,6 +598,15 @@ impl Coordinator {
                         diagnostic,
                         artifacts,
                     }
+                }
+                NodeState::TimedOut { diagnostic } => {
+                    if diagnostic.trim().is_empty() {
+                        return Err(CoordinatorError::new(
+                            CoordinatorErrorKind::ResumeIdentityMismatch,
+                            format!("checkpoint has empty timeout diagnostic: {id}"),
+                        ));
+                    }
+                    NodeState::TimedOut { diagnostic }
                 }
                 NodeState::ProcessFailed {
                     failure,
@@ -727,6 +757,9 @@ impl Coordinator {
                     artifacts,
                 }
             }
+            NodeOutcome::Timeout { diagnostic } => NodeState::TimedOut {
+                diagnostic: nonempty_diagnostic(diagnostic, "node execution timed out"),
+            },
             NodeOutcome::ProcessFailure {
                 failure,
                 diagnostic,
@@ -807,6 +840,12 @@ impl Coordinator {
         let outcome = if self
             .states
             .values()
+            .any(|state| matches!(state, NodeState::TimedOut { .. }))
+        {
+            RunOutcome::Timeout
+        } else if self
+            .states
+            .values()
             .any(|state| matches!(state, NodeState::ProcessFailed { .. }))
         {
             RunOutcome::ProcessFailed
@@ -862,6 +901,7 @@ impl Coordinator {
             match state {
                 NodeState::Succeeded { .. }
                 | NodeState::DomainFailed { .. }
+                | NodeState::TimedOut { .. }
                 | NodeState::ProcessFailed { .. }
                     if !dependencies.iter().all(|dependency| {
                         matches!(

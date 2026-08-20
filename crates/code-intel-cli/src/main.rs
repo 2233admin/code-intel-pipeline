@@ -48,6 +48,7 @@ mod language_pref;
 mod mcp_serve;
 mod method_catalog;
 mod model_channels;
+mod node_timeout;
 mod orchestration;
 mod ponytail_gate;
 mod project_context;

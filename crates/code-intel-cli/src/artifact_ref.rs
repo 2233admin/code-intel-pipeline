@@ -1965,6 +1965,7 @@ fn validate_run_manifest(bytes: &[u8]) -> Result<(), String> {
                 "completed"
                     | "domain_failed"
                     | "domain_unknown"
+                    | "timeout"
                     | "process_failed"
                     | "failed"
                     | "budget_stopped"
@@ -2010,6 +2011,12 @@ fn validate_run_manifest(bytes: &[u8]) -> Result<(), String> {
                 }
                 for reference in node["artifacts"].as_array().unwrap() {
                     validate_artifact_ref_shape(reference)?;
+                }
+            }
+            Some("timeout") => {
+                exact_object_keys(node, &["status", "diagnostic"], "timeout run node")?;
+                if node["diagnostic"].as_str().is_none_or(str::is_empty) {
+                    return Err("timeout run node is invalid".into());
                 }
             }
             Some("process_failed") => {

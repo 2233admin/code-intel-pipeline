@@ -15,6 +15,7 @@ pub(crate) struct RunRequest {
     pub(crate) manifest: Option<PathBuf>,
     pub(crate) max_concurrency: usize,
     pub(crate) budget: crate::budget::Budget,
+    pub(crate) node_timeout: std::time::Duration,
     pub(crate) policy: crate::execution_policy::ExecutionPolicy,
     pub(crate) session_evidence: Option<PathBuf>,
 }
@@ -74,9 +75,14 @@ pub(crate) fn failures(manifest: &Value) -> Value {
     let mut process = Vec::new();
     let mut domain = Vec::new();
     let mut not_dispatched = Vec::new();
+    let mut timeout = Vec::new();
     if let Some(nodes) = manifest["nodes"].as_object() {
         for (node, state) in nodes {
             match state["status"].as_str() {
+                Some("timeout") => timeout.push(json!({
+                    "node": node,
+                    "diagnostic": state["diagnostic"].as_str().unwrap_or(""),
+                })),
                 Some("process_failed") => process.push(json!({
                     "node": node,
                     "diagnostic": state["diagnostic"].as_str().unwrap_or(""),
@@ -107,6 +113,7 @@ pub(crate) fn failures(manifest: &Value) -> Value {
         "process": process,
         "domain": domain,
         "notDispatched": not_dispatched,
+        "timeout": timeout,
     })
 }
 
@@ -133,6 +140,7 @@ pub(crate) fn execute(request: RunRequest) -> Result<ExecutionResult, RunError> 
         out: request.staging_root,
         manifest: request.manifest,
         max_concurrency: request.max_concurrency,
+        node_timeout: request.node_timeout,
         budget: request.budget,
         policy: request.policy,
         diagnosis_inputs: None,

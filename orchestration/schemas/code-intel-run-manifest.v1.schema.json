@@ -8,7 +8,7 @@
     "schema": { "const": "code-intel-run-manifest.v1" },
     "runIdentity": { "$ref": "#/definitions/runIdentity" },
     "snapshotIdentity": { "$ref": "#/definitions/digest" },
-    "outcome": { "enum": ["completed", "domain_failed", "domain_unknown", "process_failed", "failed", "budget_stopped", "incomplete"] },
+    "outcome": { "enum": ["completed", "domain_failed", "domain_unknown", "timeout", "process_failed", "failed", "budget_stopped", "incomplete"] },
     "nodes": {
       "type": "object",
       "propertyNames": { "pattern": "^[a-z0-9][a-z0-9._-]*$" },
@@ -55,6 +55,15 @@
             "verdict": { "const": "fail" },
             "diagnostic": { "type": "string", "minLength": 1 },
             "artifacts": { "type": "array", "items": { "$ref": "#/definitions/artifactRef" } }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "diagnostic"],
+          "properties": {
+            "status": { "const": "timeout" },
+            "diagnostic": { "type": "string", "minLength": 1 }
           }
         },
         {

@@ -1,11 +1,13 @@
 use std::env;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use crate::artifacts::{self, ARTIFACT_ROOT_ENV};
 use crate::authoritative_run;
 use crate::budget::Budget;
 use crate::dag_run::{self, DagExecutionRequest};
 use crate::execution_policy::{ExecutionPolicy, RunMode, RunProfile, SkipFlags, WorkingTreePolicy};
+use crate::node_timeout::DEFAULT_NODE_TIMEOUT_SECONDS;
 use crate::run_error::RunError;
 
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
@@ -61,6 +63,7 @@ struct Cli {
     max_concurrency: usize,
     budget_wall_clock: Option<u64>,
     budget_bytes: Option<u64>,
+    node_timeout_seconds: Option<u64>,
     policy: ExecutionPolicy,
     diagnosis_inputs: Option<PathBuf>,
     seed_artifact_root: Option<PathBuf>,
@@ -80,6 +83,7 @@ impl Cli {
         let mut authority_root = None;
         let mut final_name = None;
         let mut budget_wall_clock = None;
+        let mut node_timeout_seconds = None;
         let mut budget_bytes = None;
         let mut manifest = None;
         let mut max_concurrency = 2usize;
@@ -115,6 +119,7 @@ impl Cli {
                     | "--require-understand-graph"
                     | "--max-concurrency"
                     | "--budget-wall-clock"
+                    | "--node-timeout"
                     | "--budget-bytes"
                     | "--working-tree-policy"
                     | "--scope"
@@ -177,6 +182,13 @@ impl Cli {
                         value
                             .parse::<u64>()
                             .map_err(|_| "--budget-wall-clock must be an integer".to_string())?,
+                    );
+                }
+                "--node-timeout" => {
+                    node_timeout_seconds = Some(
+                        value
+                            .parse::<u64>()
+                            .map_err(|_| "--node-timeout must be an integer".to_string())?,
                     );
                 }
                 "--budget-bytes" => {
@@ -340,6 +352,7 @@ impl Cli {
             max_concurrency,
             budget_wall_clock,
             budget_bytes,
+            node_timeout_seconds,
             policy,
             diagnosis_inputs,
             seed_artifact_root,
@@ -360,6 +373,12 @@ fn parse_bool_flag(flag: &str, value: &str) -> Result<bool, String> {
         _ => Err(format!("{flag} must be true or false")),
     }
 }
+fn node_timeout_from(cli: &Cli) -> Duration {
+    Duration::from_secs(
+        cli.node_timeout_seconds
+            .unwrap_or(DEFAULT_NODE_TIMEOUT_SECONDS),
+    )
+}
 fn budget_from(cli: &Cli) -> Budget {
     let mut budget = Budget::with_defaults();
     if let Some(seconds) = cli.budget_wall_clock {
@@ -373,6 +392,7 @@ fn budget_from(cli: &Cli) -> Budget {
 
 fn execute_cli(cli: Cli) -> Result<CliResult, RunError> {
     let budget = budget_from(&cli);
+    let node_timeout = node_timeout_from(&cli);
     match cli.command {
         RunCommand::DagCoordinate => {
             let out = match cli.out {
@@ -387,6 +407,7 @@ fn execute_cli(cli: Cli) -> Result<CliResult, RunError> {
                 out,
                 manifest: cli.manifest,
                 max_concurrency: cli.max_concurrency,
+                node_timeout,
                 budget,
                 policy: cli.policy,
                 diagnosis_inputs: cli.diagnosis_inputs,
@@ -410,6 +431,7 @@ fn execute_cli(cli: Cli) -> Result<CliResult, RunError> {
             .with_manifest(cli.manifest)
             .with_max_concurrency(cli.max_concurrency)
             .with_budget(budget)
+            .with_node_timeout(node_timeout)
             .with_session_evidence(cli.session_evidence);
             let result = authoritative_run::execute(request)?;
             let exit_code = result.exit_code();

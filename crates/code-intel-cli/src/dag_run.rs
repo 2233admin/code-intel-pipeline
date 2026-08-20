@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use serde_json::{json, Value};
 
@@ -14,6 +15,7 @@ use crate::dag_coordinator::{
     NodeOutcome, NodeSpec, RunOutcome, VerifiedArtifactRef,
 };
 use crate::execution_policy::ExecutionPolicy;
+use crate::node_timeout::{self, NodeTimeoutError};
 use crate::run_error::RunError;
 use crate::snapshot;
 
@@ -21,6 +23,7 @@ pub(crate) struct DagExecutionRequest {
     pub(crate) repo: PathBuf,
     pub(crate) out: PathBuf,
     pub(crate) manifest: Option<PathBuf>,
+    pub(crate) node_timeout: Duration,
     pub(crate) max_concurrency: usize,
     pub(crate) budget: Budget,
     pub(crate) policy: ExecutionPolicy,
@@ -233,6 +236,7 @@ pub(crate) fn execute_dag(cli: DagExecutionRequest) -> Result<DagExecutionResult
         session_inputs,
         seed_artifact_root,
         policy: cli.policy,
+        node_timeout: cli.node_timeout,
     };
     let budgeted = budget_dispatch::run_to_completion(
         Coordinator::new(spec).map_err(|error| RunError::contract(error.to_string()))?,
@@ -337,6 +341,7 @@ struct CapabilityEnvelopeExecutor {
     session_inputs: Vec<VerifiedArtifactRef>,
     seed_artifact_root: Option<PathBuf>,
     policy: ExecutionPolicy,
+    node_timeout: Duration,
 }
 
 impl NodeExecutor for CapabilityEnvelopeExecutor {
@@ -444,12 +449,23 @@ impl CapabilityEnvelopeExecutor {
             })
             .arg("--manifest")
             .arg(&self.registry_path);
-        let output = command.output().map_err(|error| {
-            (
-                ExecutionFailure::Unavailable,
-                format!("launch A01 capability executor: {error}"),
-            )
-        })?;
+        let output = match node_timeout::run_with_timeout(command, self.node_timeout) {
+            Ok(output) => output,
+            Err(NodeTimeoutError::TimedOut { elapsed, limit }) => {
+                return Ok(NodeOutcome::timeout(format!(
+                    "node '{}' timed out; configured timeout limit: {}ms; actual elapsed: {}ms",
+                    dispatch.node_id,
+                    limit.as_millis(),
+                    elapsed.as_millis(),
+                )));
+            }
+            Err(NodeTimeoutError::Io(error)) => {
+                return Err((
+                    ExecutionFailure::Unavailable,
+                    format!("launch A01 capability executor: {error}"),
+                ))
+            }
+        };
         fs::write(
             self.run_root
                 .join(format!("{}.result.json", dispatch.node_id)),
