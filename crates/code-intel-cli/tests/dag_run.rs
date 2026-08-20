@@ -1,5 +1,11 @@
 mod common;
-#[path = "dag_run_timeout.rs"]
+// Not a bare `tests/dag_run_timeout.rs`: Cargo's default test-target
+// autodiscovery (`tests/*.rs`) would register it as its own top-level
+// integration binary in addition to this `#[path]` inclusion, and its
+// `super::`/`crate::common` references only resolve inside *this* file's
+// module tree. Nesting it one directory down as `mod.rs` opts it out of
+// autodiscovery the same way `tests/common/mod.rs` already does.
+#[path = "dag_run_support/timeout.rs"]
 mod dag_run_timeout;
 use std::fs;
 use std::path::{Path, PathBuf};

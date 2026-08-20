@@ -68,8 +68,14 @@ pub(super) fn production_run_timeout_keeps_sibling_artifact_and_commits_manifest
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    // The fixture's Windows branch is a 50,000,000-iteration busy loop with
+    // no fixed duration; without the 1s --node-timeout actually cutting it
+    // off, this would run far longer than any bound here. 30s (not 5s)
+    // leaves headroom for this binary's other 15 tests contending for the
+    // CPU when the whole `dag_run` target runs together, while still being
+    // an order of magnitude below what the untimed-out loop would take.
     assert!(
-        elapsed < Duration::from_secs(5),
+        elapsed < Duration::from_secs(30),
         "timed-out run waited for the sleeping child: {elapsed:?}"
     );
     let execution: Value = serde_json::from_slice(&output.stdout).unwrap();
