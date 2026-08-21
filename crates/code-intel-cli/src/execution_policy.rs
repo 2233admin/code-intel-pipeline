@@ -13,6 +13,7 @@ pub(crate) struct ProviderPolicy {
     graph: ProviderRequirement,
     sentrux: ProviderRequirement,
     codenexus: ProviderRequirement,
+    open_spec: ProviderRequirement,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,6 +30,7 @@ pub(crate) struct ExecutionPolicy {
     providers: ProviderPolicy,
     effects: EffectPolicy,
     tool_path_prefix: Option<PathBuf>,
+    open_spec_auto: bool,
 }
 
 impl ExecutionPolicy {
@@ -40,6 +42,7 @@ impl ExecutionPolicy {
                 graph: ProviderRequirement::Required,
                 sentrux: ProviderRequirement::Optional,
                 codenexus: ProviderRequirement::Optional,
+                open_spec: ProviderRequirement::Optional,
             },
             RunProfile::Strict => ProviderPolicy {
                 repowise: ProviderRequirement::Required,
@@ -47,6 +50,7 @@ impl ExecutionPolicy {
                 graph: ProviderRequirement::Required,
                 sentrux: ProviderRequirement::Required,
                 codenexus: ProviderRequirement::Required,
+                open_spec: ProviderRequirement::Required,
             },
             RunProfile::Compatibility => ProviderPolicy {
                 repowise: ProviderRequirement::Required,
@@ -54,6 +58,7 @@ impl ExecutionPolicy {
                 graph: ProviderRequirement::Required,
                 sentrux: ProviderRequirement::Required,
                 codenexus: ProviderRequirement::Required,
+                open_spec: ProviderRequirement::Required,
             },
             RunProfile::Offline => ProviderPolicy {
                 repowise: ProviderRequirement::Disabled,
@@ -61,6 +66,7 @@ impl ExecutionPolicy {
                 graph: ProviderRequirement::Disabled,
                 sentrux: ProviderRequirement::Disabled,
                 codenexus: ProviderRequirement::Disabled,
+                open_spec: ProviderRequirement::Disabled,
             },
         };
         Self {
@@ -71,6 +77,7 @@ impl ExecutionPolicy {
             providers,
             effects: EffectPolicy::RegistryDeclared,
             tool_path_prefix: None,
+            open_spec_auto: false,
         }
     }
 
@@ -110,6 +117,9 @@ impl ExecutionPolicy {
         }
         if skips.sentrux {
             self.providers.sentrux = self.providers.sentrux.narrowed();
+        }
+        if skips.open_spec {
+            self.providers.open_spec = self.providers.open_spec.narrowed();
         }
         if skips.require_understand_graph
             && self.providers.understand == ProviderRequirement::Optional
@@ -154,6 +164,16 @@ impl ExecutionPolicy {
         self
     }
 
+    /// Compose the launcher's `-AutoOpenSpec` passthrough option.
+    ///
+    /// Unlike a skip, this never changes whether `advisory.workflow-recommend`
+    /// runs — only whether its recommendation is auto-applied. It therefore
+    /// composes independently of the requirement-narrowing rules above.
+    pub(crate) fn with_open_spec_auto(mut self, auto: bool) -> Self {
+        self.open_spec_auto = auto;
+        self
+    }
+
     pub(crate) fn working_tree(&self) -> &'static str {
         self.working_tree.as_str()
     }
@@ -167,6 +187,7 @@ impl ExecutionPolicy {
             "provider.graph-adapt" => Some(self.providers.graph),
             "provider.sentrux-adapt" => Some(self.providers.sentrux),
             "provider.codenexus-adapt" => Some(self.providers.codenexus),
+            "advisory.workflow-recommend" => Some(self.providers.open_spec),
             _ => None,
         }
     }
@@ -202,6 +223,10 @@ impl ExecutionPolicy {
                 "manifestPath":manifest,
                 "requireRepowise":self.providers.repowise.is_required(),
                 "requireUnderstand":self.providers.understand.is_required(),
+            }),
+            "advisory.workflow-recommend" => json!({
+                "repoPath":repo,
+                "auto":self.open_spec_auto,
             }),
             _ => json!({"repoPath":repo}),
         };
@@ -241,14 +266,18 @@ mod tests {
         assert!(!default.providers.repowise.is_required());
         assert!(default.providers.graph.is_required());
         assert!(!default.providers.sentrux.is_required());
+        assert!(!default.providers.open_spec.is_required());
         assert!(strict.providers.repowise.is_required());
         assert!(strict.providers.understand.is_required());
         assert!(strict.providers.graph.is_required());
         assert!(strict.providers.sentrux.is_required());
+        assert!(strict.providers.open_spec.is_required());
         assert_eq!(offline.providers.repowise, ProviderRequirement::Disabled);
         assert_eq!(offline.providers.understand, ProviderRequirement::Disabled);
+        assert_eq!(offline.providers.open_spec, ProviderRequirement::Disabled);
         assert!(!offline.capability_enabled("provider.graph-adapt"));
         assert!(!offline.capability_enabled("provider.sentrux-adapt"));
+        assert!(!offline.capability_enabled("advisory.workflow-recommend"));
         assert!(!offline.provider_diagnosis_enabled());
     }
 
@@ -323,19 +352,52 @@ mod tests {
         let all = SkipFlags {
             repowise: true,
             sentrux: true,
+            open_spec: true,
             require_understand_graph: true,
         };
         let strict = ExecutionPolicy::for_profile(RunProfile::Strict).with_skips(all);
         assert!(strict.providers.repowise.is_required());
         assert!(strict.providers.sentrux.is_required());
         assert!(strict.capability_enabled("provider.sentrux-adapt"));
+        assert!(strict.capability_enabled("advisory.workflow-recommend"));
 
         let offline = ExecutionPolicy::for_profile(RunProfile::Offline).with_skips(all);
         assert_eq!(offline.providers.repowise, ProviderRequirement::Disabled);
         assert_eq!(offline.providers.sentrux, ProviderRequirement::Disabled);
+        assert_eq!(offline.providers.open_spec, ProviderRequirement::Disabled);
         // require_understand_graph strengthens, but must not resurrect a
         // capability the profile disabled.
         assert_eq!(offline.providers.understand, ProviderRequirement::Disabled);
+    }
+
+    #[test]
+    fn skip_open_spec_narrows_the_default_profile_and_auto_is_independent() {
+        let skipped = ExecutionPolicy::for_profile(RunProfile::Default).with_skips(SkipFlags {
+            open_spec: true,
+            ..SkipFlags::default()
+        });
+        assert!(!skipped.capability_enabled("advisory.workflow-recommend"));
+
+        // `-AutoOpenSpec` is a passthrough option, not a requirement toggle:
+        // it must reach the capability request even when the stage still runs,
+        // and it must not itself enable/disable the stage.
+        let auto = ExecutionPolicy::for_profile(RunProfile::Default).with_open_spec_auto(true);
+        assert!(auto.capability_enabled("advisory.workflow-recommend"));
+        let options = auto.capability_options(
+            "advisory.workflow-recommend",
+            Path::new("repo"),
+            Path::new("integrations.json"),
+        );
+        assert_eq!(options["repoPath"], json!(Path::new("repo")));
+        assert_eq!(options["auto"], json!(true));
+
+        let no_auto = ExecutionPolicy::for_profile(RunProfile::Default);
+        let options = no_auto.capability_options(
+            "advisory.workflow-recommend",
+            Path::new("repo"),
+            Path::new("integrations.json"),
+        );
+        assert_eq!(options["auto"], json!(false));
     }
 
     #[test]

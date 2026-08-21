@@ -119,16 +119,22 @@ impl ProviderRequirement {
 /// - `-SkipSentruxCheck` / `-SkipSentruxGate` are sub-stage granularity; the
 ///   DAG has a single `provider.sentrux-adapt` node, so honouring them means
 ///   splitting that node or giving it options, not toggling a requirement.
-/// - `-SkipOpenSpec` / `-AutoOpenSpec` and `-SkipRepomix` / `-RepomixStyle` /
-///   `-RepomixCompress` gate stages with no Rust node at all.
+/// - `-SkipRepomix` / `-RepomixStyle` / `-RepomixCompress` gate a stage with
+///   no Rust node at all.
 /// - `-WorkspaceAdd` and `-AllowRepowiseShadowMutation` are options of the
 ///   repowise stage rather than switches over whether it runs.
+///
+/// `-SkipOpenSpec` maps onto the `advisory.workflow-recommend` DAG node
+/// (`ProviderPolicy::open_spec`); `-AutoOpenSpec` is a same-shape passthrough
+/// option, not a requirement toggle, so it is not part of `SkipFlags` — see
+/// `ExecutionPolicy::with_open_spec_auto`.
 ///
 /// See docs/ps1-exit/t2-launcher-classification.md §1.2.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct SkipFlags {
     pub(crate) repowise: bool,
     pub(crate) sentrux: bool,
+    pub(crate) open_spec: bool,
     pub(crate) require_understand_graph: bool,
 }
 

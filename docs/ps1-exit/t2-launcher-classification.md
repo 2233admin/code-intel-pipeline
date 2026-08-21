@@ -94,7 +94,7 @@ run.
 |---|---|---|
 | `-Mode lite\|normal\|full` | mode gates the sentrux stage and repowise docs | a `RunProfile`-adjacent input, not a fourth profile — see §2 |
 | `-SkipRepowise` / `-SkipSentrux` / `-SkipSentruxCheck` / `-SkipSentruxGate` | per-stage gates | `ProviderRequirement::Disabled` on the matching capability |
-| `-SkipOpenSpec` / `-AutoOpenSpec` | OpenSpec stage | `?` — no Rust DAG node exists for OpenSpec today |
+| `-SkipOpenSpec` / `-AutoOpenSpec` | OpenSpec stage | **ported.** `advisory.workflow-recommend` is a standalone `run execute`/`dag-coordinate` DAG node gated by `ProviderPolicy::open_spec` (Optional under Default/Offline-disabled, Required under Strict/Compatibility); `-SkipOpenSpec` maps to `--skip-open-spec` narrowing that requirement, `-AutoOpenSpec` maps to `--auto-open-spec`, a passthrough option independent of the requirement (`ExecutionPolicy::with_open_spec_auto`) |
 | `-SkipRepomix` / `-RepomixStyle` / `-RepomixCompress` | external `repomix` invocation | `?` — no Rust node; may belong in the dead bucket if unconsumed |
 | `-RequireUnderstandGraph` | missing graph is fatal vs advisory | maps onto `providers.understand` requirement |
 | `-SaveSentruxBaseline` / `-AutoSaveMissingSentruxBaseline` | writes `.sentrux/baseline.json` inside the scanned repo | needs an explicit effect declaration; writing into the scanned tree is a declared effect, not a side effect |
