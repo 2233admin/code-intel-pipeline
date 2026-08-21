@@ -1,6 +1,6 @@
 ---
 name: code-intel-pipeline
-description: Install, validate, and run Code Intel Pipeline for local repository understanding, architecture analysis, structural regression gates, code indexing, hotspot diagnosis, and artifact-based handoff. Use when Codex needs to bootstrap Code Intel from a GitHub Release, check its dependencies, analyze a repository with rg/repowise/Understand/Sentrux providers, inspect pipeline health, or interpret Code Intel reports. Also use before implementing, refactoring, or fixing code in an analyzed repository, when a mid-edit question is what breaks if these files change or which tests should run, and when planning mechanical structural rewrites with a preview-only edit plan.
+description: Install, validate, and query Code Intel Pipeline evidence for repository understanding, architecture analysis, code indexing, hotspot diagnosis, structural regression gates, and artifact handoff. Use when an agent needs to bootstrap a verified GitHub Release, run `code-intel`, inspect committed artifacts or gate freshness, choose impacted tests before editing, preview AST rewrites, or diagnose provider boundaries. Also use before implementing, refactoring, or fixing code in an analyzed repository. NOT: do not use this skill for reviewing diffs, designing implementations, type-shape review, swallowed-error hunting, vulnerability scanning, or same-stack upgrades; route those gaps to the catalog-bound assistance skills.
 ---
 
 # Code Intel Pipeline
@@ -8,16 +8,29 @@ description: Install, validate, and run Code Intel Pipeline for local repository
 Use the released pipeline and its artifact contracts. Do not reconstruct its scanners inside the
 skill.
 
+## Fast routing
+
+Choose the narrowest surface that answers the question:
+
+- Install or repair: `python scripts/bootstrap.py ...`; do not reinstall a healthy binary.
+- Run or refresh evidence: `code-intel "<repo-path>" [--mode lite|normal|full]`.
+- Read committed evidence: `artifact query`; use MCP projections for one-off questions when available.
+- Ask what an edit affects: `change impact --staleness advisory`; this is advisory, not a fresh scan or gate.
+- Plan a mechanical rewrite: `capability exec edit.ast-grep-plan`; preview only.
+- Prove a structural change: run `code-intel sentrux gate "<scope-path>"` before and after tests.
+
+Do not infer a clean result from a partial run, provider outage, stale advisory, or read-only MCP verdict.
+
+
 ## Resolve the installation
 
 1. Check whether `code-intel --help` succeeds.
-2. Reuse that installation when it is valid. Use `legacy/code-intel.ps1` only to repair a missing or
-   invalid installation.
+2. Reuse that installation when it is valid. Repair only a missing or invalid installation.
 3. Bootstrap only when the user requested installation or the task explicitly requires the
    missing pipeline.
 4. From this skill directory, inspect the latest published stable release plan:
 
-```powershell
+```text
 python scripts/bootstrap.py --repo-path "<repo-path>" --dry-run --json
 ```
 
@@ -25,7 +38,7 @@ python scripts/bootstrap.py --repo-path "<repo-path>" --dry-run --json
    target repository.
 6. Install the verified stable release:
 
-```powershell
+```text
 python scripts/bootstrap.py --repo-path "<repo-path>" --json
 ```
 
@@ -43,18 +56,19 @@ archive.
 
 Run the compiled Primary Operator Entry:
 
-```powershell
+```text
 code-intel "<repo-path>"
 ```
 
 Use `--mode lite` for local-only core evidence. Use `--mode full` only when every optional provider
-must be present. Do not call the legacy PowerShell pipeline.
+must be present. The production path is the compiled Rust CLI; do not invoke retired compatibility
+entry points.
 
 The committed run directory is content-addressed: `run-complete.json` plus `objects/sha256/<hash>`
 blobs. Report file names never exist there — `summary.md`, `understanding.md`, and `report.json`
-are produced only by the legacy runner, and hospital output lives under artifact `type` identities
-read through `artifact query --artifact-root <root> --repo <name>` (the run prints its publication
-path as `<artifact-root>/<repo-name>/<run-id>`).
+are produced only by retired compatibility runners, and hospital output lives under artifact `type`
+identities read through `artifact query --artifact-root <root> --repo <name>` (the run prints its
+publication path as `<artifact-root>/<repo-name>/<run-id>`).
 
 Read a published run in this order:
 
@@ -97,11 +111,11 @@ version boundary; do not install a prerelease or source checkout implicitly.
 
 ## Guard structural changes
 
-Use the Sentrux session wrapper for an Agent coding session:
+Use the compiled Rust structural gate for an Agent coding session:
 
-```powershell
-& "$env:CODE_INTEL_HOME/legacy/Invoke-SentruxAgentTool.ps1" session_start "<scope-path>"
-& "$env:CODE_INTEL_HOME/legacy/Invoke-SentruxAgentTool.ps1" session_end "<scope-path>"
+
+```text
+code-intel sentrux gate "<scope-path>"
 ```
 
 Keep `.sentrux/rules.toml` separate from `.sentrux/baseline.json`. Rules define architecture
@@ -112,7 +126,7 @@ boundaries; baselines detect change. Never save a new baseline to hide a regress
 If the host can register MCP servers, register this one and ask through it instead of shelling out
 per question:
 
-```powershell
+```text
 code-intel serve --mcp --repo <name>
 ```
 
@@ -139,15 +153,15 @@ question.
 
 Run this loop whenever implementing, refactoring, or fixing code in an analyzed repository:
 
-1. Start the regression baseline before the first edit:
+1. Run the Rust structural gate before the first edit:
 
-```powershell
-& "$env:CODE_INTEL_HOME/legacy/Invoke-SentruxAgentTool.ps1" session_start "<scope-path>"
+```text
+code-intel sentrux gate "<scope-path>"
 ```
 
 2. Query blast radius and test candidates mid-edit:
 
-```powershell
+```text
 code-intel change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> --staleness advisory
 ```
 
@@ -156,7 +170,7 @@ files and test selection while the working tree is dirty.
 
 3. Preview a structural edit plan before any mechanical rewrite:
 
-```powershell
+```text
 code-intel capability exec edit.ast-grep-plan --request <request.json> --out <staging-dir>
 ```
 
@@ -164,7 +178,7 @@ The plan is preview-only (`repositoryMutation=false`); it never rewrites files.
 
 4. Apply a change you can address by span, instead of rewriting the line around it:
 
-```powershell
+```text
 code-intel edit apply --repo-path <checkout> --file <repo-relative-path> --span <startLine:startColumn-endLine:endColumn> --expect-sha256 <sha256-of-the-span-current-bytes> --replacement <text>
 ```
 
@@ -177,24 +191,26 @@ they are all resolved against the pre-edit bytes and land as one atomic file rep
 
 5. Edit, run the selected tests, then close the gate:
 
-```powershell
-& "$env:CODE_INTEL_HOME/legacy/Invoke-SentruxAgentTool.ps1" session_end "<scope-path>"
+```text
+code-intel sentrux gate "<scope-path>"
 ```
 
-`session_end` fails on structural regression. Verify it passes before reporting the change
-complete.
+Verify the gate passes after the selected tests before reporting the change complete.
+
 
 ## Reach for full-chain commands, not just the local loop
 
-`session_start` / `session_end` and `change impact` above answer from the last committed run and never
-trigger a fresh authoritative scan. Four more commands are CI-grade — visible only via
-`code-intel --help --all`, not the default `--help`:
+The gate and `change impact` above answer from the last committed run and never trigger a fresh
+authoritative scan. Four more commands are CI-grade — visible only via `code-intel --help --all`,
+not the default `--help`:
 
 - `artifact query --artifact-root <root> --repo <name> --type <artifact-type>`: read a committed run's
   evidence directly. Prefer this over rerunning the pipeline when the answer is already committed.
 - `run execute --repo <repo-root> --out <staging-dir> --authority-root <publication-root> --final-name <name>
   --manifest orchestration/integrations.json`: the authoritative full scan; the same command
-  `ci.yml` / `release.yml` self-scan steps run.
+  `ci.yml` / `release.yml` self-scan steps run. The publication root must contain the target repository
+  name (`<publication-root>/<repo-name>/<run-id>`), and `artifact query --repo` must use that same
+  repository identity; a flat `<publication-root>/<run-id>` is committed but not queryable.
 - `change risk <revspec> --format json`: git-only PR defect-risk score, no index / network / LLM;
   powers `pr-gate.yml`. Run it from inside the target repository — it takes no `--repo` flag.
 - `repin --write --json`: resync stale sha256 pins repository-wide in one pass.
@@ -213,7 +229,7 @@ repository.
 Ask for candidates instead of picking one from memory — the catalog carries a fit, license,
 security, integration, and reversibility rating decided once and committed:
 
-```powershell
+```text
 code-intel capability exec assistance.discovery --request <request.json> --out <staging-dir>
 ```
 
@@ -238,7 +254,7 @@ Route directly when the signal is unambiguous:
 | A release needs a vulnerability read no `diagnosis.*` artifact provides | `claude-security` |
 
 Bracket anything that writes — `code-simplifier`, `claude-security` patches — with the Sentrux
-session gate above, and confirm `session_end` passes before reporting the change complete.
+session gate above, and confirm the Rust gate passes before reporting the change complete.
 
 `doctor bootstrap` reports each candidate under `checks.assistancePlugins`, and the doctor node
 publishes it as an `assistance:<candidate-id>` provider row. A missing candidate is an observation,
