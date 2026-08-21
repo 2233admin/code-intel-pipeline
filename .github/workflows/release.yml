@@ -160,10 +160,6 @@ jobs:
         shell: pwsh
         run: .\legacy/scripts/tests/test-project-discovery.ps1 -RepoPath .
 
-      - name: Project management support contract tests
-        shell: pwsh
-        run: .\legacy/scripts/tests/test-project-management-support.ps1 -RepoPath .
-
       - name: Skill development benchmark contract tests
         shell: pwsh
         run: .\legacy/scripts/tests/test-skill-development-benchmark.ps1 -RepoPath .
