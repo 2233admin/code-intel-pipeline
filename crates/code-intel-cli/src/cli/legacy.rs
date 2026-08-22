@@ -63,6 +63,10 @@ impl Args {
     pub(super) fn command(&self) -> &str {
         &self.command
     }
+
+    pub(super) fn json(&self) -> bool {
+        self.json
+    }
 }
 
 #[cfg(test)]

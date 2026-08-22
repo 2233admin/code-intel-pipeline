@@ -154,6 +154,7 @@ pub(super) enum CommandError {
         message: String,
     },
     Legacy {
+        json: bool,
         message: String,
     },
     Usage {
@@ -233,11 +234,13 @@ pub(super) fn parse_command(raw: &[String]) -> std::result::Result<Command, Comm
             arguments: raw[route.argument_offset..].to_vec(),
         })),
         Some(CommandRoute::Legacy(_)) => {
+            let json_requested = raw.iter().any(|argument| argument == "--json");
             parse_args(raw.to_vec())
-                .map_err(legacy_error)
+                .map_err(|error| legacy_error(json_requested, error))
                 .and_then(|arguments| {
                     let route = resolve_legacy_route(arguments.command()).ok_or_else(|| {
                         CommandError::Legacy {
+                            json: arguments.json(),
                             message: format!(
                                 "parsed legacy command has no registered route: {}",
                                 arguments.command()
@@ -258,7 +261,10 @@ pub(super) fn parse_command(raw: &[String]) -> std::result::Result<Command, Comm
                 ),
                 exit_code: 64,
             }),
-            Err(error) => Err(legacy_error(error)),
+            Err(error) => Err(legacy_error(
+                raw.iter().any(|argument| argument == "--json"),
+                error,
+            )),
         },
     }
 }
@@ -318,7 +324,8 @@ pub(super) fn execute_command(
             emission: CommandEmission::CompatibilityAlreadyEmitted,
         }),
         Command::Legacy(command) => {
-            execute_legacy(&command).map_err(legacy_error)?;
+            let json_requested = command.arguments.json();
+            execute_legacy(&command).map_err(|error| legacy_error(json_requested, error))?;
             Ok(CommandOutcome {
                 exit_code: 0,
                 emission: CommandEmission::CompatibilityAlreadyEmitted,
@@ -354,11 +361,7 @@ pub(super) fn render_outcome(
             exit_code,
             message,
         }) => render_primary_error(json, repo.as_deref(), mode.as_deref(), exit_code, &message),
-        Err(CommandError::Legacy { message }) => RenderedOutcome {
-            stdout: String::new(),
-            stderr: format!("error: {message}\n"),
-            exit_code: 1,
-        },
+        Err(CommandError::Legacy { json, message }) => render_legacy_error(json, &message),
         Err(CommandError::Project {
             json,
             kind,
@@ -404,9 +407,34 @@ fn buffered_outcome(exit_code: i32, stdout: String, stderr: String) -> CommandOu
     }
 }
 
-fn legacy_error(error: Box<dyn Error>) -> CommandError {
+fn legacy_error(json: bool, error: Box<dyn Error>) -> CommandError {
     CommandError::Legacy {
+        json,
         message: error.to_string(),
+    }
+}
+
+fn render_legacy_error(json: bool, message: &str) -> RenderedOutcome {
+    if json {
+        RenderedOutcome {
+            stdout: format!(
+                "{}\n",
+                serde_json::to_string(&json!({
+                    "schema": "code-intel-legacy-error.v1",
+                    "outcome": "error",
+                    "diagnostic": message,
+                }))
+                .expect("legacy error result serializes")
+            ),
+            stderr: String::new(),
+            exit_code: 1,
+        }
+    } else {
+        RenderedOutcome {
+            stdout: String::new(),
+            stderr: format!("error: {message}\n"),
+            exit_code: 1,
+        }
     }
 }
 
