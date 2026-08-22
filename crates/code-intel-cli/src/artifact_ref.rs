@@ -205,6 +205,7 @@ pub(crate) fn registered_contract(artifact: &Value) -> Result<ArtifactContract, 
     repository_family_contract(schema, artifact_type)
         .or_else(|| diagnosis_family_contract(schema, artifact_type))
         .or_else(|| orientation_family_contract(schema, artifact_type))
+        .or_else(|| advisory_family_contract(schema, artifact_type))
         .or_else(|| retirement_family_contract(schema, artifact_type))
         .or_else(|| run_delivery_family_contract(schema, artifact_type))
         .or_else(|| method_decision_family_contract(schema, artifact_type))
@@ -327,6 +328,20 @@ fn diagnosis_family_contract(schema: &str, artifact_type: &str) -> Option<Artifa
                 artifact_type: "diagnosis.surgery-plan-view",
                 max_bytes: 8 * 1024 * 1024,
                 validate_payload: validate_surgery_markdown,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn advisory_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {
+    match (schema, artifact_type) {
+        ("code-intel-advisory-workflow-recommendation.v1", "advisory.workflow-recommendation") => {
+            Some(ArtifactContract {
+                artifact_schema: "code-intel-advisory-workflow-recommendation.v1",
+                artifact_type: "advisory.workflow-recommendation",
+                max_bytes: 8 * 1024 * 1024,
+                validate_payload: validate_workflow_recommendation,
             })
         }
         _ => None,
@@ -2934,6 +2949,54 @@ fn validate_repository_snapshot(bytes: &[u8]) -> Result<(), String> {
         || members.values().any(|value| !valid_path_array(value))
     {
         return Err("repository snapshot dirtyOverlay members are invalid".to_string());
+    }
+    Ok(())
+}
+
+// Mirrors `capability_inventory::validate_workflow_proposal`'s contract:
+// both guard the same artifact before it crosses the same boundary, once at
+// publish time inside the adapter and once here at consumption/staging time.
+fn validate_workflow_recommendation(bytes: &[u8]) -> Result<(), String> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|error| format!("workflow recommendation is not UTF-8: {error}"))?;
+    reject_duplicate_json_keys(text)?;
+    let value: Value = serde_json::from_str(text)
+        .map_err(|error| format!("workflow recommendation is invalid JSON: {error}"))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| "workflow recommendation must be an object".to_string())?;
+    let expected = [
+        "schema",
+        "kind",
+        "recommendation",
+        "evidence",
+        "confidence",
+        "alternatives",
+        "provenance",
+        "effects",
+    ]
+    .into_iter()
+    .collect::<BTreeSet<_>>();
+    if object.keys().map(String::as_str).collect::<BTreeSet<_>>() != expected
+        || value["schema"] != "code-intel-advisory-workflow-recommendation.v1"
+        || value["kind"] != "proposal"
+        || !matches!(
+            value["confidence"].as_str(),
+            Some("low" | "medium" | "high")
+        )
+        || value["evidence"].as_array().map_or(true, Vec::is_empty)
+        || value["alternatives"]
+            .as_array()
+            .map_or(true, |items| items.len() < 3)
+        || value["effects"]
+            .as_array()
+            .map_or(true, |items| !items.is_empty())
+        || value
+            .pointer("/provenance/capabilityId")
+            .and_then(Value::as_str)
+            != Some("advisory.workflow-recommend")
+    {
+        return Err("workflow recommendation violates the advisory proposal boundary".into());
     }
     Ok(())
 }

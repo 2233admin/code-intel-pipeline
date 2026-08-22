@@ -188,7 +188,7 @@ PowerShell 合同测试在 `legacy/scripts/tests/`。`legacy/` 下的兼容 faca
 
 - Repowise 语义索引与文档生成
 - Understand Anything 图谱
-- CodeNexus context、Repomix、模型辅助通道
+- CodeNexus context、模型辅助通道
 - runtime/CI 证据和 file-boundary provider
 
 缺少这些增强工具时，流水线必须明确记录 skipped、manual-required 或 provider failure，不能把它们冒充成功，也不能因此阻断只依赖核心路径的 public beta。详细支持矩阵和已知边界见 [Public beta guide](docs/public-beta.md)。
@@ -402,7 +402,6 @@ install -> doctor -> smoke test
 | CodeNexus compatibility adapter | 可选热点定位、引用搜索、下一步上下文；失败不阻塞 beta core | `codenexus-context.json` |
 | `rg` | 快速文件清单、文本搜索 | `files.txt` |
 | `Repowise` | 语义索引、长期记忆、项目上下文 | `.repowise/` 或 scoped shadow |
-| `Repomix` | 把本地或远程仓库打包成 AI 友好的单文件上下文 | `repomix-output.md`、`repomix-summary.json` |
 | `Understand Anything` | 架构图谱快照 | `.understand-anything/knowledge-graph.json` |
 | `Sentrux` | 结构质量、规则门禁、Agent 会话回归 | DSM、hotspots、what-if、evolution |
 | `CodeNexus-lite` | 热点定位、引用搜索、下一步上下文 | `codenexus-context.json` |
@@ -495,8 +494,6 @@ sentrux-debt-register.json
 sentrux-evolution.json
 sentrux-what-if.json
 codenexus-context.json
-repomix-output.md
-repomix-summary.json
 greenfield-manifest.json
 greenfield-plan.md
 ```
@@ -508,12 +505,11 @@ greenfield-plan.md
 3. 做治理判断查 `--type diagnosis.hospital-view`（人读）或 `diagnosis.hospital`（机器读 JSON）。
 4. 要开工修结构查 `--type diagnosis.surgery-plan-view`。
 
-读报告顺序（旧兼容 runner）：
+读报告顺序（旧兼容 runner；Repomix 打包已 R05 治理审查退役，`repomixPack.status` 恒为 `skipped`，不产出 `repomix-output.*`）：
 
-1. Repomix 成功时先看 `repomix-output.*`，它是给人和 Agent 快速理解陌生仓库的整仓包。
-2. 再看 `summary.md`，它是整轮运行状态、失败分类、关键 artifact 的入口页。
-3. 交接给人或 Agent 前看 `understanding.md`。
-4. 治理与行动计划同主入口：`hospital.md`、`surgery-plan.md`。
+1. 先看 `summary.md`，它是整轮运行状态、失败分类、关键 artifact 的入口页。
+2. 交接给人或 Agent 前看 `understanding.md`。
+3. 治理与行动计划同主入口：`hospital.md`、`surgery-plan.md`。
 
 ## Portable Snapshot Identity
 

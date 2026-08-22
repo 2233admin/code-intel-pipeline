@@ -103,6 +103,7 @@ impl Cli {
         };
         let mut mode = RunMode::default();
         let mut skips = SkipFlags::default();
+        let mut open_spec_auto = false;
         let mut session_evidence = None;
         let mut index = 1;
         while index < raw.len() {
@@ -119,6 +120,8 @@ impl Cli {
                     | "--mode"
                     | "--skip-repowise"
                     | "--skip-sentrux"
+                    | "--skip-open-spec"
+                    | "--auto-open-spec"
                     | "--require-understand-graph"
                     | "--max-concurrency"
                     | "--budget-wall-clock"
@@ -173,6 +176,8 @@ impl Cli {
                 }
                 "--skip-repowise" => skips.repowise = parse_bool_flag(flag, value)?,
                 "--skip-sentrux" => skips.sentrux = parse_bool_flag(flag, value)?,
+                "--skip-open-spec" => skips.open_spec = parse_bool_flag(flag, value)?,
+                "--auto-open-spec" => open_spec_auto = parse_bool_flag(flag, value)?,
                 "--require-understand-graph" => {
                     skips.require_understand_graph = parse_bool_flag(flag, value)?
                 }
@@ -341,6 +346,7 @@ impl Cli {
         let policy = ExecutionPolicy::for_profile(profile)
             .with_mode(mode)
             .with_skips(skips)
+            .with_open_spec_auto(open_spec_auto)
             .with_working_tree(WorkingTreePolicy::parse(&working_tree_policy)?, scopes)
             .with_doctor_overrides(
                 doctor_require_repowise,
@@ -372,7 +378,7 @@ impl Cli {
 }
 
 pub(crate) fn usage() -> String {
-    "usage: run <dag-coordinate|execute> --repo <repo-root> <--out <run-staging-directory> | --artifact-root <root> (dag-coordinate only; also read from CODE_INTEL_ARTIFACT_ROOT)> [--authority-root <publication-root> --final-name <name>] [--profile <default|strict|offline>] [--mode <lite|normal|full>] [--skip-repowise <true|false>] [--skip-sentrux <true|false>] [--require-understand-graph <true|false>] [--manifest <integrations.json>] [--max-concurrency <n>] [--budget-wall-clock <seconds>] [--budget-bytes <bytes>] [--oversize-threshold <1-100>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]"
+    "usage: run <dag-coordinate|execute> --repo <repo-root> <--out <run-staging-directory> | --artifact-root <root> (dag-coordinate only; also read from CODE_INTEL_ARTIFACT_ROOT)> [--authority-root <publication-root> --final-name <name>] [--profile <default|strict|offline>] [--mode <lite|normal|full>] [--skip-repowise <true|false>] [--skip-sentrux <true|false>] [--skip-open-spec <true|false>] [--auto-open-spec <true|false>] [--require-understand-graph <true|false>] [--manifest <integrations.json>] [--max-concurrency <n>] [--budget-wall-clock <seconds>] [--budget-bytes <bytes>] [--oversize-threshold <1-100>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]"
         .to_string()
 }
 

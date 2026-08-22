@@ -110,6 +110,9 @@ pub(crate) fn execute_dag(cli: DagExecutionRequest) -> Result<DagExecutionResult
         if cli.policy.capability_enabled("provider.codenexus-adapt") {
             required.push("provider.codenexus-adapt");
         }
+        if cli.policy.capability_enabled("advisory.workflow-recommend") {
+            required.push("advisory.workflow-recommend");
+        }
         if cli.policy.provider_diagnosis_enabled() {
             required.push("diagnosis.hospital");
         }
@@ -203,6 +206,17 @@ pub(crate) fn execute_dag(cli: DagExecutionRequest) -> Result<DagExecutionResult
             ));
             edges.push(EdgeSpec::new("repo.snapshot", "evidence.codenexus"));
             edges.push(EdgeSpec::new("evidence.codenexus", "diagnosis.hospital"));
+        }
+        if cli.policy.capability_enabled("advisory.workflow-recommend") {
+            // Standalone root node: the adapter takes options only (repoPath
+            // is a static CLI value, and `self.snapshot` is already attached
+            // to every request) and rejects any input artifacts outright, so
+            // it gets no inbound edge from repo.snapshot or anywhere else.
+            nodes.push(NodeSpec::new(
+                "advisory.workflow-recommend",
+                "advisory.workflow-recommend",
+                request_identity("advisory.workflow-recommend"),
+            ));
         }
         if cli.policy.provider_diagnosis_enabled() {
             nodes.push(NodeSpec::new(
