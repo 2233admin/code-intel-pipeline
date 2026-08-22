@@ -1,6 +1,6 @@
 ---
 name: code-intel-pipeline
-description: Install, validate, and query Code Intel Pipeline evidence for repository understanding, architecture analysis, code indexing, hotspot diagnosis, structural regression gates, and artifact handoff. Use when an agent needs to bootstrap a verified GitHub Release, run `code-intel`, inspect committed artifacts or gate freshness, choose impacted tests before editing, preview AST rewrites, or diagnose provider boundaries. Also use before implementing, refactoring, or fixing code in an analyzed repository. NOT: do not use this skill for reviewing diffs, designing implementations, type-shape review, swallowed-error hunting, vulnerability scanning, or same-stack upgrades; route those gaps to the catalog-bound assistance skills.
+description: "Install, validate, and query Code Intel Pipeline evidence for repository understanding, architecture analysis, code indexing, hotspot diagnosis, structural regression gates, and artifact handoff. Use when an agent needs to bootstrap a verified GitHub Release, run `code-intel`, inspect committed artifacts or gate freshness, choose impacted tests before editing, preview AST rewrites, or diagnose provider boundaries. Also use before implementing, refactoring, or fixing code in an analyzed repository. NOT: do not use this skill for reviewing diffs, designing implementations, type-shape review, swallowed-error hunting, vulnerability scanning, or same-stack upgrades; route those gaps to the catalog-bound assistance skills."
 ---
 
 # Code Intel Pipeline
