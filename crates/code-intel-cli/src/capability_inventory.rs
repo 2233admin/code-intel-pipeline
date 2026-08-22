@@ -46,6 +46,8 @@ mod tool_path;
 #[path = "understanding_quadrant.rs"]
 mod understanding_quadrant;
 
+#[path = "workflow_recommendation.rs"]
+mod workflow_recommendation;
 const EXCLUDES: [&str; 11] = [
     "!**/.git/**",
     // In a linked git worktree `.git` is a pointer FILE, which `!**/.git/**`
@@ -129,131 +131,7 @@ fn workflow_recommendation(
     verified_inputs: &[VerifiedArtifact],
     out: &Path,
 ) -> Result<AdapterOutput, AdapterError> {
-    if !verified_inputs.is_empty() {
-        return Err(AdapterError::Contract(
-            "advisory.workflow-recommend does not accept input artifacts".into(),
-        ));
-    }
-    let options = request
-        .get("options")
-        .and_then(Value::as_object)
-        .ok_or_else(|| AdapterError::InvalidOptions("options must be an object".into()))?;
-    if options
-        .keys()
-        .any(|key| !matches!(key.as_str(), "repoPath" | "auto"))
-    {
-        return Err(AdapterError::InvalidOptions(
-            "advisory.workflow-recommend accepts only repoPath/auto".into(),
-        ));
-    }
-    let repo = options
-        .get("repoPath")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .map(Path::new)
-        .ok_or_else(|| AdapterError::InvalidOptions("options.repoPath must be non-empty".into()))?;
-    if !repo.is_dir() {
-        return Err(AdapterError::InvalidOptions(format!(
-            "repoPath is not a directory: {}",
-            repo.display()
-        )));
-    }
-    let auto = match options.get("auto") {
-        None => false,
-        Some(value) => value.as_bool().ok_or_else(|| {
-            AdapterError::InvalidOptions("options.auto must be boolean when present".into())
-        })?,
-    };
-    let script = pipeline_root().join("legacy/Invoke-WorkflowRecommendation.ps1");
-    if !script.is_file() {
-        return Err(AdapterError::Unavailable(format!(
-            "workflow recommendation facade is unavailable: {}",
-            script.display()
-        )));
-    }
-    let mut command = Command::new("pwsh");
-    command
-        .args(["-NoLogo", "-NoProfile", "-File"])
-        .arg(&script)
-        .arg("-RepoPath")
-        .arg(repo)
-        .args(["-Quiet", "-Json"]);
-    if auto {
-        command.arg("-Auto");
-    }
-    let output = command
-        .output()
-        .map_err(|error| AdapterError::Unavailable(format!("start workflow atom: {error}")))?;
-    if !output.status.success() {
-        return Err(AdapterError::Internal(format!(
-            "workflow atom failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    let proposal: Value = serde_json::from_slice(&output.stdout).map_err(|error| {
-        AdapterError::Contract(format!(
-            "workflow atom stdout is not one JSON proposal: {error}"
-        ))
-    })?;
-    validate_workflow_proposal(&proposal)?;
-    let bytes = serde_json::to_vec(&proposal)
-        .map_err(|error| AdapterError::Internal(format!("serialize workflow proposal: {error}")))?;
-    publish_named(out, "workflow-recommendation.json", &bytes, |_| Ok(()))?;
-    Ok(AdapterOutput {
-        artifacts: vec![AdapterArtifact {
-            artifact_schema: "code-intel-advisory-workflow-recommendation.v1".into(),
-            artifact_type: "advisory.workflow-recommendation".into(),
-            relative_path: "workflow-recommendation.json".into(),
-            bytes,
-        }],
-        observed_effects: vec![],
-        domain_verdict: AdapterDomainVerdict::Pass,
-        domain_failure: None,
-    })
-}
-
-fn validate_workflow_proposal(value: &Value) -> Result<(), AdapterError> {
-    let object = value.as_object().ok_or_else(|| {
-        AdapterError::Contract("workflow recommendation must be an object".into())
-    })?;
-    let expected = [
-        "schema",
-        "kind",
-        "recommendation",
-        "evidence",
-        "confidence",
-        "alternatives",
-        "provenance",
-        "effects",
-    ];
-    if object.len() != expected.len() || expected.iter().any(|key| !object.contains_key(*key)) {
-        return Err(AdapterError::Contract(
-            "workflow recommendation top-level contract is not exact".into(),
-        ));
-    }
-    if value["schema"] != "code-intel-advisory-workflow-recommendation.v1"
-        || value["kind"] != "proposal"
-        || !matches!(
-            value["confidence"].as_str(),
-            Some("low" | "medium" | "high")
-        )
-        || value["evidence"].as_array().map_or(true, Vec::is_empty)
-        || value["alternatives"]
-            .as_array()
-            .map_or(true, |items| items.len() < 3)
-        || value["effects"]
-            .as_array()
-            .map_or(true, |items| !items.is_empty())
-        || value
-            .pointer("/provenance/capabilityId")
-            .and_then(Value::as_str)
-            != Some("advisory.workflow-recommend")
-    {
-        return Err(AdapterError::Contract(
-            "workflow recommendation violates the advisory proposal boundary".into(),
-        ));
-    }
-    Ok(())
+    workflow_recommendation::execute(request, verified_inputs, out)
 }
 
 // Mirrors `doctor_adapter::pipeline_root`: resolve the installed pipeline
@@ -1156,16 +1034,6 @@ mod tests {
     #[test]
     fn nul_serialization_preserves_embedded_newlines() {
         assert_eq!(join_records(&[b"a\nb".to_vec()], 0), b"a\nb\0");
-    }
-
-    #[test]
-    fn workflow_recommendation_script_resolves_from_the_pipeline_root() {
-        assert!(
-            pipeline_root()
-                .join("legacy/Invoke-WorkflowRecommendation.ps1")
-                .is_file(),
-            "workflow facade must resolve through the discovered pipeline root"
-        );
     }
 
     #[test]

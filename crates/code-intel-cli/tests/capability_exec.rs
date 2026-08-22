@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
-    "295eb1ce67760638a81136febf727285f0feb4692a228df65ac75316b4a566c5";
+    "9fad4644b8cfb88fbec6f4603e7fcb099dc296fdf29286a6909279fab1450d0e";
 const STRUCTURED_EDIT_DIGEST: &str =
     "fb1bc02fbe9335e1ccbe66ad12ca2927bb3bace4722735e62b1fb2ab053af72d";
 const REPO_SNAPSHOT_DIGEST: &str =
@@ -1633,7 +1633,7 @@ fn normalized_inventory_matches_real_legacy_runner_with_custom_exclude() {
 }
 
 #[test]
-fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_parity() {
+fn advisory_workflow_recommend_runs_through_a01_with_zero_effects() {
     let root = temp_dir("workflow-recommend");
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("openspec")).unwrap();
@@ -1646,7 +1646,8 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
         "version":"1.0.0",
         "toolchainDigests":[
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-            "295eb1ce67760638a81136febf727285f0feb4692a228df65ac75316b4a566c5"
+            "690845df138fdad8c96bdc35857716da0bf50d9737e6f8ee50eb99a873b1183a",
+            "9fad4644b8cfb88fbec6f4603e7fcb099dc296fdf29286a6909279fab1450d0e"
         ]
     });
     value["options"] = json!({"repoPath":repo,"auto":true});
@@ -1678,28 +1679,23 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects_and_facade_par
     let envelope_proposal: Value =
         serde_json::from_slice(&fs::read(out.join("workflow-recommendation.json")).unwrap())
             .unwrap();
-    assert_eq!(envelope_proposal["effects"], json!([]));
-    assert_eq!(envelope_proposal["kind"], "proposal");
-
-    let facade = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("legacy/Invoke-WorkflowRecommendation.ps1");
-    let direct = Command::new("pwsh")
-        .args(["-NoLogo", "-NoProfile", "-File"])
-        .arg(facade)
-        .arg("-RepoPath")
-        .arg(&repo)
-        .args(["-Auto", "-Quiet", "-Json"])
-        .output()
-        .unwrap();
-    assert!(
-        direct.status.success(),
-        "{}",
-        String::from_utf8_lossy(&direct.stderr)
+    assert_eq!(
+        envelope_proposal["schema"],
+        "code-intel-advisory-workflow-recommendation.v1"
     );
-    let direct_proposal: Value =
-        serde_json::from_slice(&direct.stdout).expect("facade JSON mode must keep stdout pure");
-    assert_eq!(envelope_proposal, direct_proposal);
+    assert_eq!(envelope_proposal["kind"], "proposal");
+    assert!(matches!(
+        envelope_proposal["confidence"].as_str(),
+        Some("low" | "medium" | "high")
+    ));
+    assert!(envelope_proposal["evidence"].as_array().unwrap().len() >= 1);
+    assert!(envelope_proposal["alternatives"].as_array().unwrap().len() >= 3);
+    assert_eq!(envelope_proposal["effects"], json!([]));
+    assert_eq!(
+        envelope_proposal["provenance"]["capabilityId"],
+        "advisory.workflow-recommend"
+    );
+
     let _ = fs::remove_dir_all(root);
 }
 

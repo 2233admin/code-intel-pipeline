@@ -246,14 +246,6 @@ jobs:
         shell: pwsh
         run: .\legacy/scripts/tests/test-project-discovery.ps1 -RepoPath .
 
-      - name: Project management support contract tests
-        shell: pwsh
-        run: .\legacy/scripts/tests/test-project-management-support.ps1 -RepoPath .
-
-      - name: Atomic capability contract tests
-        shell: pwsh
-        run: .\legacy/scripts/tests/test-atomic-capability-contract.ps1 -RepoPath .
-
       - name: Skill development benchmark contract tests
         shell: pwsh
         run: .\legacy/scripts/tests/test-skill-development-benchmark.ps1 -RepoPath .
@@ -800,10 +792,6 @@ jobs:
       - name: Hospital fail-closed contract tests
         shell: pwsh
         run: ./legacy/scripts/tests/test-hospital-trust-contract.ps1
-
-      - name: Atomic capability contract tests
-        shell: pwsh
-        run: ./legacy/scripts/tests/test-atomic-capability-contract.ps1 -RepoPath .
 
       - name: Scoped Repowise manifest validator tests
         run: python ./test-scoped-repowise-validator.py

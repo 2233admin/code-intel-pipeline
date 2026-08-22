@@ -154,9 +154,11 @@ pub(super) enum CommandError {
         message: String,
     },
     Legacy {
+        json: bool,
         message: String,
     },
     Usage {
+        json: bool,
         message: String,
         exit_code: i32,
     },
@@ -206,6 +208,7 @@ pub(super) fn parse_command(raw: &[String]) -> std::result::Result<Command, Comm
                     }
                 } else {
                     CommandError::Usage {
+                        json: false,
                         message,
                         exit_code: 64,
                     }
@@ -223,6 +226,7 @@ pub(super) fn parse_command(raw: &[String]) -> std::result::Result<Command, Comm
                     }
                 } else {
                     CommandError::Usage {
+                        json: false,
                         message,
                         exit_code: 64,
                     }
@@ -233,11 +237,13 @@ pub(super) fn parse_command(raw: &[String]) -> std::result::Result<Command, Comm
             arguments: raw[route.argument_offset..].to_vec(),
         })),
         Some(CommandRoute::Legacy(_)) => {
+            let json_requested = raw.iter().any(|argument| argument == "--json");
             parse_args(raw.to_vec())
-                .map_err(legacy_error)
+                .map_err(|error| legacy_error(json_requested, error))
                 .and_then(|arguments| {
                     let route = resolve_legacy_route(arguments.command()).ok_or_else(|| {
                         CommandError::Legacy {
+                            json: arguments.json(),
                             message: format!(
                                 "parsed legacy command has no registered route: {}",
                                 arguments.command()
@@ -252,13 +258,17 @@ pub(super) fn parse_command(raw: &[String]) -> std::result::Result<Command, Comm
         }
         None => match parse_args(raw.to_vec()) {
             Ok(arguments) => Err(CommandError::Usage {
+                json: arguments.json(),
                 message: format!(
                     "unknown command: {}; run `code-intel --help` for available commands",
                     arguments.command()
                 ),
                 exit_code: 64,
             }),
-            Err(error) => Err(legacy_error(error)),
+            Err(error) => Err(legacy_error(
+                raw.iter().any(|argument| argument == "--json"),
+                error,
+            )),
         },
     }
 }
@@ -318,7 +328,8 @@ pub(super) fn execute_command(
             emission: CommandEmission::CompatibilityAlreadyEmitted,
         }),
         Command::Legacy(command) => {
-            execute_legacy(&command).map_err(legacy_error)?;
+            let json_requested = command.arguments.json();
+            execute_legacy(&command).map_err(|error| legacy_error(json_requested, error))?;
             Ok(CommandOutcome {
                 exit_code: 0,
                 emission: CommandEmission::CompatibilityAlreadyEmitted,
@@ -354,11 +365,7 @@ pub(super) fn render_outcome(
             exit_code,
             message,
         }) => render_primary_error(json, repo.as_deref(), mode.as_deref(), exit_code, &message),
-        Err(CommandError::Legacy { message }) => RenderedOutcome {
-            stdout: String::new(),
-            stderr: format!("error: {message}\n"),
-            exit_code: 1,
-        },
+        Err(CommandError::Legacy { json, message }) => render_legacy_error(json, &message),
         Err(CommandError::Project {
             json,
             kind,
@@ -389,11 +396,11 @@ pub(super) fn render_outcome(
                 }
             }
         }
-        Err(CommandError::Usage { message, exit_code }) => RenderedOutcome {
-            stdout: String::new(),
-            stderr: format!("{message}\n"),
+        Err(CommandError::Usage {
+            json,
+            message,
             exit_code,
-        },
+        }) => render_usage_error(json, &message, exit_code),
     }
 }
 
@@ -404,9 +411,68 @@ fn buffered_outcome(exit_code: i32, stdout: String, stderr: String) -> CommandOu
     }
 }
 
-fn legacy_error(error: Box<dyn Error>) -> CommandError {
+fn legacy_error(json: bool, error: Box<dyn Error>) -> CommandError {
     CommandError::Legacy {
+        json,
         message: error.to_string(),
+    }
+}
+
+fn render_usage_error(json: bool, message: &str, exit_code: i32) -> RenderedOutcome {
+    if json {
+        RenderedOutcome {
+            stdout: String::new(),
+            stderr: format!(
+                "{}\n",
+                serde_json::to_string(&json!({
+                    "schema": "code-intel-legacy-error.v1",
+                    "outcome": "error",
+                    "diagnostic": message,
+                }))
+                .expect("usage error result serializes")
+            ),
+            exit_code,
+        }
+    } else {
+        RenderedOutcome {
+            stdout: String::new(),
+            stderr: format!("{message}\n"),
+            exit_code,
+        }
+    }
+}
+
+fn render_legacy_error(json: bool, message: &str) -> RenderedOutcome {
+    if json {
+        // Unlike Primary, several legacy commands (e.g. `orchestrate`) print
+        // their own JSON report to stdout and then return `Err` purely to
+        // signal a nonzero exit code -- stdout already holds a complete,
+        // valid document by the time this runs. Putting the error object on
+        // stdout too would append a second JSON value after it, breaking any
+        // caller that expects stdout to parse as exactly one document
+        // (`doctor_adapter::validate_manifest` is exactly this caller). So
+        // unlike `render_primary_error`, the JSON error goes to stderr,
+        // preserving the pre-existing "stdout holds command output or
+        // nothing" invariant while still fixing the plain-text/locale leak.
+        RenderedOutcome {
+            stdout: String::new(),
+            stderr: format!(
+                "{}\n",
+                serde_json::to_string(&json!({
+                    "schema": "code-intel-legacy-error.v1",
+                    "outcome": "error",
+                    "diagnostic": message,
+                }))
+                .expect("legacy error result serializes")
+            ),
+            exit_code: 1,
+        }
+    } else {
+        RenderedOutcome {
+            stdout: String::new(),
+            stderr: format!("error: {message}\n"),
+            exit_code: 1,
+        }
     }
 }
 
