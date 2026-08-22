@@ -95,7 +95,6 @@ run.
 | `-Mode lite\|normal\|full` | mode gates the sentrux stage and repowise docs | a `RunProfile`-adjacent input, not a fourth profile — see §2 |
 | `-SkipRepowise` / `-SkipSentrux` / `-SkipSentruxCheck` / `-SkipSentruxGate` | per-stage gates | `ProviderRequirement::Disabled` on the matching capability |
 | `-SkipOpenSpec` / `-AutoOpenSpec` | OpenSpec stage | **ported.** `advisory.workflow-recommend` is a standalone `run execute`/`dag-coordinate` DAG node gated by `ProviderPolicy::open_spec` (Optional under Default/Offline-disabled, Required under Strict/Compatibility); `-SkipOpenSpec` maps to `--skip-open-spec` narrowing that requirement, `-AutoOpenSpec` maps to `--auto-open-spec`, a passthrough option independent of the requirement (`ExecutionPolicy::with_open_spec_auto`) |
-| `-SkipRepomix` / `-RepomixStyle` / `-RepomixCompress` | external `repomix` invocation | `?` — no Rust node; may belong in the dead bucket if unconsumed |
 | `-RequireUnderstandGraph` | missing graph is fatal vs advisory | maps onto `providers.understand` requirement |
 | `-SaveSentruxBaseline` / `-AutoSaveMissingSentruxBaseline` | writes `.sentrux/baseline.json` inside the scanned repo | needs an explicit effect declaration; writing into the scanned tree is a declared effect, not a side effect |
 | `-InventoryExclude` | feeds the `rg` inventory | `inventory.rg` node options |
@@ -108,6 +107,7 @@ run.
 |---|---|---|
 | `-SkipGitHubResearch` | T1 §1.1 and §7.1: zero other references to `$SkipGitHubResearch`; `$githubResearch` is unconditionally the `New-GitHubSolutionResearchNotApplicable` stub regardless of the flag | the switch has no effect at all — five test files pass it and none assert on it, because there is nothing to assert |
 | `Test-GitHubSolutionResearchRequired` | T1 §1.1: defined, zero call sites | dead function reachable only by dot-sourcing |
+| `-SkipRepomix` / `-RepomixStyle` / `-RepomixCompress` | `orchestration/integrations.json` productionRegistry: `pack.repomix` `status: "deleted"`, `reviewedDeletion` 2026-07-14, evidence "R05 audited host and npm cache: no Repomix executable or pinned package; production call site removed fail-closed"; launcher's own repomix block (pre-edit `:3612-3639`) never invoked `repomix` — the three params only toggled a static `reason` string on a `$repomixPack` object permanently pinned to `status: "skipped"` | the underlying `pack.repomix` capability was already governance-closed before this ticket; the launcher's params were vestigial surface over a stub that could never do real work either way |
 
 Both were recorded by T1 as findings and deliberately left unfixed there
 ("record, don't fix"). T2 is the ticket that removes them.
@@ -135,6 +135,32 @@ overall `ok:false` verdict is pre-existing (documented node-coverage and
 hospital-shape drift this same document already catalogs in §0/§3, plus a
 worktree-local `doctor`/`sentrux` self-scan false-negative unrelated to this
 change), not something this removal introduced.
+
+**Status (2026-08-22): removed.** `-SkipRepomix`, `-RepomixStyle`, and
+`-RepomixCompress` are deleted from `run-code-intel.ps1`'s param block, along
+with the `$repomixConfig`-driven resolution block that only ever fed them.
+`$repomixPack` is now an unconditional literal — `status: "skipped"`, a fixed
+`reason` string, `style: "markdown"` — instead of a three-branch conditional
+over params that could never change real behavior (the block never invoked
+`repomix` either way). The literal reason string is preserved verbatim
+because `crates/code-intel-cli/tests/internalization_record.rs`'s
+`ticket_r05_repomix_is_a_measured_reviewed_deletion_not_fake_production`
+asserts it appears in the launcher's source text as part of the permanent
+R05 governance record; `report.json`'s `repomixPack.schema` field is
+preserved too, since `test-code-intel-pipeline.ps1` still asserts on it.
+Every real caller that passed `-SkipRepomix` — `test-transactional-publication.ps1`,
+`legacy/tests/test-model-channel-degraded-pipeline.ps1`, and
+`crates/code-intel-cli/tests/native_code_evidence.rs` — had the argument
+dropped too (dropping it is a no-op: the flag never changed observable
+behavior). `pipeline.config.example.json`'s now-inert `"repomix": {...}`
+block is removed, and README's tool table/reading-order sections no longer
+describe Repomix packing as something that can succeed. Verified: pwsh AST
+parse on every edited `.ps1`, `cargo test -p code-intel --test
+native_code_evidence` (7 passed), `cargo test -p code-intel --test
+internalization_record ticket_r05` (1 passed), and every directly-touched
+PowerShell contract test run standalone (`test-transactional-publication.ps1`,
+`test-model-channel-degraded-pipeline.ps1`, `test-code-intel-pipeline.ps1`
+with `-RepoPath .`) — all exit 0 with `"ok": true`.
 
 The rest of §1.2/§1.3/§1.4 (flag porting, remaining dead-item removal, the
 route-away items) and the launcher shrink itself (blocked on the §0

@@ -35,7 +35,7 @@ try {
     & pwsh -NoProfile -File $pipeline `
         -RepoPath $fixtureRepo -ArtifactRoot $artifacts -Mode lite `
         -RepowiseDocs -ModelRoutingResult $routePath `
-        -SkipRepowise -SkipSentrux -SkipOpenSpec -SkipRepomix | Out-Null
+        -SkipRepowise -SkipSentrux -SkipOpenSpec | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "model-unavailable degraded pipeline exited $LASTEXITCODE" }
     $reportPath = (Get-ChildItem -LiteralPath $artifacts -Recurse -Filter report.json | Select-Object -First 1).FullName
     $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json

@@ -71,10 +71,6 @@ param(
     [switch]$SkipRepowise,
     [switch]$RepowiseDocs,
     [switch]$AllowRepowiseShadowMutation,
-    [switch]$SkipRepomix,
-    [ValidateSet("xml", "markdown", "json", "plain")]
-    [string]$RepomixStyle = "markdown",
-    [switch]$RepomixCompress,
     [switch]$SkipSentrux,
 [switch]$SkipSentruxCheck,
 [switch]$SkipSentruxGate,
@@ -3609,33 +3605,18 @@ $inventoryFiles = if (Test-Path -LiteralPath $inventoryFileListPath -PathType Le
 }
 $codeEvidenceConfig = Get-JsonProperty $configData "codeEvidence"
 $codeEvidence = New-CodeEvidenceLayer -RepoPath $repoPath -RunDir $runDir -Files $inventoryFiles -CodeEvidenceConfig $codeEvidenceConfig
-$repomixConfig = Get-JsonProperty $configData "repomix"
-if ($null -ne $repomixConfig) {
-    $configuredRepomixStyle = Get-JsonProperty $repomixConfig "style"
-    if (-not [string]::IsNullOrWhiteSpace([string]$configuredRepomixStyle) -and [string]$configuredRepomixStyle -in @("xml", "markdown", "json", "plain")) {
-        $RepomixStyle = [string]$configuredRepomixStyle
-    }
-    $configuredRepomixCompress = Get-JsonProperty $repomixConfig "compress"
-    if ($null -ne $configuredRepomixCompress) {
-        $RepomixCompress = [bool]$configuredRepomixCompress
-    }
-    $configuredRepomixEnabled = Get-JsonProperty $repomixConfig "enabled"
-    if ($null -ne $configuredRepomixEnabled -and -not [bool]$configuredRepomixEnabled) {
-        $SkipRepomix = $true
-    }
-}
+# R05 (2026-07-14): pack.repomix is a governance-reviewed deletion, not a
+# live stage — no pinned executable or production conformance evidence was
+# found. See orchestration/integrations.json's productionRegistry entry and
+# crates/code-intel-cli/tests/internalization_record.rs's
+# ticket_r05_repomix_is_a_measured_reviewed_deletion_not_fake_production.
 $repomixPack = [ordered]@{
     schema = "code-intel-repomix-pack.v1"
     status = "skipped"
-    reason = "repomix disabled or unavailable"
-    style = $RepomixStyle
+    reason = "Repomix production participation was reviewed and removed; no pinned executable or production conformance evidence is present."
+    style = "markdown"
     path = ""
     summaryPath = ""
-}
-$repomixPack["reason"] = if ($SkipRepomix) {
-    "Skipped by -SkipRepomix."
-} else {
-    "Repomix production participation was reviewed and removed; no pinned executable or production conformance evidence is present."
 }
 
 $nodeLintHygieneStep = Get-NodeLintHygieneStep -RepoPath $repoPath -RgAvailable $toolState.rg

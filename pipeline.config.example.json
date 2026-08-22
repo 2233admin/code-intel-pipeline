@@ -13,11 +13,6 @@
       }
     }
   },
-  "repomix": {
-    "enabled": true,
-    "style": "markdown",
-    "compress": false
-  },
   "followUpAutomation": {
     "proactiveSkillSuggestions": {
       "enabled": true,

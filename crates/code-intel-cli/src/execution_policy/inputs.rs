@@ -119,8 +119,11 @@ impl ProviderRequirement {
 /// - `-SkipSentruxCheck` / `-SkipSentruxGate` are sub-stage granularity; the
 ///   DAG has a single `provider.sentrux-adapt` node, so honouring them means
 ///   splitting that node or giving it options, not toggling a requirement.
-/// - `-SkipRepomix` / `-RepomixStyle` / `-RepomixCompress` gate a stage with
-///   no Rust node at all.
+/// - `-SkipRepomix` / `-RepomixStyle` / `-RepomixCompress` are gone from the
+///   launcher (declared dead, not ported — R05 governance review found no
+///   pinned `repomix` executable or production conformance evidence; see
+///   docs/ps1-exit/t2-launcher-classification.md §1.3), so there is nothing
+///   here to map onto a requirement.
 /// - `-WorkspaceAdd` and `-AllowRepowiseShadowMutation` are options of the
 ///   repowise stage rather than switches over whether it runs.
 ///

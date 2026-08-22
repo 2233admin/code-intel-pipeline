@@ -137,7 +137,7 @@ fn run_legacy(repo: &Path, root: &Path) -> PathBuf {
         .arg("lite")
         .arg("-ArtifactRoot")
         .arg(&artifacts)
-        .args(["-SkipRepowise", "-SkipSentrux", "-SkipRepomix"])
+        .args(["-SkipRepowise", "-SkipSentrux"])
         .output()
         .unwrap();
     assert_eq!(
