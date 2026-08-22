@@ -416,8 +416,19 @@ fn legacy_error(json: bool, error: Box<dyn Error>) -> CommandError {
 
 fn render_legacy_error(json: bool, message: &str) -> RenderedOutcome {
     if json {
+        // Unlike Primary, several legacy commands (e.g. `orchestrate`) print
+        // their own JSON report to stdout and then return `Err` purely to
+        // signal a nonzero exit code -- stdout already holds a complete,
+        // valid document by the time this runs. Putting the error object on
+        // stdout too would append a second JSON value after it, breaking any
+        // caller that expects stdout to parse as exactly one document
+        // (`doctor_adapter::validate_manifest` is exactly this caller). So
+        // unlike `render_primary_error`, the JSON error goes to stderr,
+        // preserving the pre-existing "stdout holds command output or
+        // nothing" invariant while still fixing the plain-text/locale leak.
         RenderedOutcome {
-            stdout: format!(
+            stdout: String::new(),
+            stderr: format!(
                 "{}\n",
                 serde_json::to_string(&json!({
                     "schema": "code-intel-legacy-error.v1",
@@ -426,7 +437,6 @@ fn render_legacy_error(json: bool, message: &str) -> RenderedOutcome {
                 }))
                 .expect("legacy error result serializes")
             ),
-            stderr: String::new(),
             exit_code: 1,
         }
     } else {
