@@ -12,7 +12,7 @@ skill.
 
 Choose the narrowest surface that answers the question:
 
-- Install or repair: `python scripts/bootstrap.py ...`; do not reinstall a healthy binary.
+- Install or repair: check `code-intel --help` first; use `python scripts/bootstrap.py ...` only when the installation is missing or invalid.
 - Run or refresh evidence: `code-intel "<repo-path>" [--mode lite|normal|full]`.
 - Read committed evidence: `artifact query`; use MCP projections for one-off questions when available.
 - Ask what an edit affects: `change impact --staleness advisory`; this is advisory, not a fresh scan or gate.
@@ -200,9 +200,10 @@ Verify the gate passes after the selected tests before reporting the change comp
 
 ## Reach for full-chain commands, not just the local loop
 
-The gate and `change impact` above answer from the last committed run and never trigger a fresh
-authoritative scan. Four more commands are CI-grade — visible only via `code-intel --help --all`,
-not the default `--help`:
+`change impact` above answers from the last committed run and never triggers a fresh scan; the gate
+above compares a fresh structural scan of the current working tree against `.sentrux/baseline.json`.
+Neither is the authoritative full scan — that's `run execute` below. Four more commands are
+CI-grade — visible only via `code-intel --help --all`, not the default `--help`:
 
 - `artifact query --artifact-root <root> --repo <name> --type <artifact-type>`: read a committed run's
   evidence directly. Prefer this over rerunning the pipeline when the answer is already committed.
@@ -253,8 +254,8 @@ Route directly when the signal is unambiguous:
 | A runtime or framework major version is behind the target, same stack | `modernize-uplift` |
 | A release needs a vulnerability read no `diagnosis.*` artifact provides | `claude-security` |
 
-Bracket anything that writes — `code-simplifier`, `claude-security` patches — with the Sentrux
-session gate above, and confirm the Rust gate passes before reporting the change complete.
+Bracket anything that writes — `code-simplifier`, `claude-security` patches — with the
+`code-intel sentrux gate` above, and confirm it passes before reporting the change complete.
 
 `doctor bootstrap` reports each candidate under `checks.assistancePlugins`, and the doctor node
 publishes it as an `assistance:<candidate-id>` provider row. A missing candidate is an observation,

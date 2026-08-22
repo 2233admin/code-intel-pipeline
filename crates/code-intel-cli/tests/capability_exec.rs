@@ -1646,6 +1646,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects() {
         "version":"1.0.0",
         "toolchainDigests":[
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
+            "690845df138fdad8c96bdc35857716da0bf50d9737e6f8ee50eb99a873b1183a",
             "9fad4644b8cfb88fbec6f4603e7fcb099dc296fdf29286a6909279fab1450d0e"
         ]
     });

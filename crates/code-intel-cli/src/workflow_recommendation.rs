@@ -249,7 +249,7 @@ fn collaboration(repo: &Path) -> Value {
         .duration_since(UNIX_EPOCH)
         .map(|v| v.as_secs())
         .unwrap_or(0);
-    json!({"contributors":contributors, "repoAgeDays": now.saturating_sub(first) / 86400, "lastCommitAgeDays": if last == 0 {9999} else {now.saturating_sub(last) / 86400}})
+    json!({"contributors":contributors, "repoAgeDays": if first == 0 {0} else {now.saturating_sub(first) / 86400}, "lastCommitAgeDays": if last == 0 {9999} else {now.saturating_sub(last) / 86400}})
 }
 
 fn git_lines(repo: &Path, args: &[&str]) -> Vec<String> {
@@ -310,7 +310,8 @@ fn has_tests(repo: &Path) -> bool {
             .file_stem()
             .and_then(|value| value.to_str())
             .unwrap_or_default();
-        let in_test_dir = path.components().any(|component| {
+        let relative = path.strip_prefix(repo).unwrap_or(path);
+        let in_test_dir = relative.components().any(|component| {
             component
                 .as_os_str()
                 .to_str()
