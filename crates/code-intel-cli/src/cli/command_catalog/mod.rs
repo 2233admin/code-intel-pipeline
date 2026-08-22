@@ -158,6 +158,7 @@ pub(super) enum CommandError {
         message: String,
     },
     Usage {
+        json: bool,
         message: String,
         exit_code: i32,
     },
@@ -207,6 +208,7 @@ pub(super) fn parse_command(raw: &[String]) -> std::result::Result<Command, Comm
                     }
                 } else {
                     CommandError::Usage {
+                        json: false,
                         message,
                         exit_code: 64,
                     }
@@ -224,6 +226,7 @@ pub(super) fn parse_command(raw: &[String]) -> std::result::Result<Command, Comm
                     }
                 } else {
                     CommandError::Usage {
+                        json: false,
                         message,
                         exit_code: 64,
                     }
@@ -255,6 +258,7 @@ pub(super) fn parse_command(raw: &[String]) -> std::result::Result<Command, Comm
         }
         None => match parse_args(raw.to_vec()) {
             Ok(arguments) => Err(CommandError::Usage {
+                json: arguments.json(),
                 message: format!(
                     "unknown command: {}; run `code-intel --help` for available commands",
                     arguments.command()
@@ -392,11 +396,11 @@ pub(super) fn render_outcome(
                 }
             }
         }
-        Err(CommandError::Usage { message, exit_code }) => RenderedOutcome {
-            stdout: String::new(),
-            stderr: format!("{message}\n"),
+        Err(CommandError::Usage {
+            json,
+            message,
             exit_code,
-        },
+        }) => render_usage_error(json, &message, exit_code),
     }
 }
 
@@ -411,6 +415,30 @@ fn legacy_error(json: bool, error: Box<dyn Error>) -> CommandError {
     CommandError::Legacy {
         json,
         message: error.to_string(),
+    }
+}
+
+fn render_usage_error(json: bool, message: &str, exit_code: i32) -> RenderedOutcome {
+    if json {
+        RenderedOutcome {
+            stdout: String::new(),
+            stderr: format!(
+                "{}\n",
+                serde_json::to_string(&json!({
+                    "schema": "code-intel-legacy-error.v1",
+                    "outcome": "error",
+                    "diagnostic": message,
+                }))
+                .expect("usage error result serializes")
+            ),
+            exit_code,
+        }
+    } else {
+        RenderedOutcome {
+            stdout: String::new(),
+            stderr: format!("{message}\n"),
+            exit_code,
+        }
     }
 }
 
