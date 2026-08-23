@@ -378,4 +378,78 @@ mod tests {
             "fail"
         );
     }
+
+    #[test]
+    fn report_quality_dimensions_keep_legal_identifiers_commands_and_paths() {
+        let mut machine = quality_machine();
+        machine["surgery_plan"]["status"] = json!("planned");
+        machine["surgery_plan"]["primary_target"]["file"] =
+            json!("crates/code-intel-cli/src/hospital_diagnosis.rs");
+        machine["surgery_plan"]["operating_plan"] = json!([
+            "Open hospital_diagnosis.rs before editing.",
+            "Keep diagnosis.hospital.compat as the runtime adapter."
+        ]);
+        machine["surgery_plan"]["verification"] = json!([
+            "cargo test -p code-intel --test hospital_diagnosis",
+            "cargo test -p code-intel report_quality_dimensions",
+            "code-intel lint hardcoded-paths ."
+        ]);
+        machine["triage"]["failing_rules"] = json!([{
+            "kind": "max_cycles",
+            "details": {
+                "violations": [{
+                    "rule": "max_cycles",
+                    "message": "cycles exceeded",
+                    "targets": [
+                        "crates/code-intel-cli/src/hospital_diagnosis.rs",
+                        "crates/code-intel-cli/src/report_quality.rs"
+                    ]
+                }]
+            }
+        }]);
+
+        let request = quality_request(json!(["crates/code-intel-cli"]));
+        let dimensions = report_quality_dimensions(&machine, &request);
+        let replay = report_quality_dimensions(&machine, &request);
+        assert_eq!(dimensions, replay);
+        assert_eq!(
+            quality_dimension(&dimensions, "missing_evidence_anchor")["status"],
+            "pass"
+        );
+        assert_eq!(
+            quality_dimension(&dimensions, "plan_without_verification")["status"],
+            "pass"
+        );
+        assert_eq!(
+            quality_dimension(&dimensions, "scope_leak")["status"],
+            "pass"
+        );
+    }
+
+    #[test]
+    fn report_quality_dimensions_fail_closed_without_admitted_modalities() {
+        let mut machine = quality_machine();
+        machine["modalities"] = json!([]);
+
+        let dimensions = report_quality_dimensions(&machine, &quality_request(json!(["."])));
+        let replay = report_quality_dimensions(&machine, &quality_request(json!(["."])));
+        assert_eq!(dimensions, replay);
+        assert_eq!(
+            quality_dimension(&dimensions, "missing_evidence_anchor")["status"],
+            "fail"
+        );
+    }
+
+    #[test]
+    fn report_quality_dimensions_fail_closed_when_scope_missing() {
+        let mut machine = quality_machine();
+        machine["surgery_plan"]["status"] = json!("planned");
+        machine["surgery_plan"]["primary_target"]["file"] = json!("src/lib.rs");
+
+        let dimensions = report_quality_dimensions(&machine, &quality_request(json!([])));
+        assert_eq!(
+            quality_dimension(&dimensions, "scope_leak")["status"],
+            "fail"
+        );
+    }
 }
