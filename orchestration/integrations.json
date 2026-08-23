@@ -1586,7 +1586,7 @@
           "id": "diagnosis.hospital.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "196e6364b88635ceea6216545a680a486d57399636d58e9aefbf0b55dbc4704c"
+            "b5137a75205a8163a6b42fee4fe22274f9a19b4bc9b4f9dad3c44521bc723a6a"
           ]
         },
         "determinism": "deterministic",

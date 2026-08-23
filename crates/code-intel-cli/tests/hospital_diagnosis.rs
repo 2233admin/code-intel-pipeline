@@ -738,6 +738,8 @@ fn markdown_is_a_rebuildable_view_and_cannot_change_the_machine_verdict() {
     let (exit, _, _, out) = diagnosis(&temp.0, inputs.clone(), "render-first");
     assert_eq!(exit, 0);
     let machine = fs::read(out.join("hospital-report.json")).unwrap();
+    let machine_value: Value = serde_json::from_slice(&machine).unwrap();
+    assert_eq!(machine_value["report_quality"]["dimensions"], json!([]));
     fs::write(
         out.join("hospital.md"),
         "# forged\nPrimary diagnosis: clean snapshot\n",
