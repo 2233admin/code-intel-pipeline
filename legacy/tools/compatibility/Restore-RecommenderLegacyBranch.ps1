@@ -17,6 +17,9 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$OutputEncoding = [Text.UTF8Encoding]::new($false)
+
 
 $runPath = Join-Path $RepoRoot "run-code-intel.ps1"
 if (-not (Test-Path -LiteralPath $runPath -PathType Leaf)) {
