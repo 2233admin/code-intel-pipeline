@@ -72,9 +72,14 @@ fn assess_evidence_anchors(machine: &Value) -> (bool, Vec<String>) {
                                 && violation["message"]
                                     .as_str()
                                     .is_some_and(|value| !value.is_empty())
-                                && violation["targets"]
-                                    .as_array()
-                                    .is_some_and(|targets| !targets.is_empty())
+                                && violation["targets"].as_array().is_some_and(|targets| {
+                                    !targets.is_empty()
+                                        && targets.iter().all(|target| {
+                                            target
+                                                .as_str()
+                                                .is_some_and(|value| !value.trim().is_empty())
+                                        })
+                                })
                         })
                 });
             if !structured {
@@ -322,6 +327,27 @@ mod tests {
 
         let dimensions = report_quality_dimensions(&machine, &quality_request(json!(["."])));
 
+        assert_eq!(
+            quality_dimension(&dimensions, "missing_evidence_anchor")["status"],
+            "fail"
+        );
+    }
+
+    #[test]
+    fn report_quality_dimensions_reject_null_rule_targets() {
+        let mut machine = quality_machine();
+        machine["triage"]["failing_rules"] = json!([{
+            "kind": "max_cycles",
+            "details": {
+                "violations": [{
+                    "rule": "max_cycles",
+                    "message": "cycles exceeded",
+                    "targets": [null]
+                }]
+            }
+        }]);
+
+        let dimensions = report_quality_dimensions(&machine, &quality_request(json!(["."])));
         assert_eq!(
             quality_dimension(&dimensions, "missing_evidence_anchor")["status"],
             "fail"
