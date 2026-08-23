@@ -1,12 +1,14 @@
+use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use serde_json::{json, Value};
-
 use crate::adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterError, AdapterOutput};
 use crate::artifact_ref::VerifiedArtifact;
 use crate::audit_report::AuditReport;
+#[cfg(test)]
+#[path = "report_quality.rs"]
+mod report_quality;
 
 struct Signals {
     local_tool_failure: bool,
