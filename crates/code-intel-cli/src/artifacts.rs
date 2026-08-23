@@ -468,7 +468,18 @@ fn absolute_existing_dir(path: &Path) -> Result<PathBuf> {
 
 fn latest_run_dir(repo_artifacts: &Path) -> Result<PathBuf> {
     let mut dirs = Vec::new();
-    for entry in fs::read_dir(repo_artifacts)? {
+    let entries = fs::read_dir(repo_artifacts).map_err(|error| -> Box<dyn Error> {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            format!(
+                "no committed run found for this repository under {}; run `code-intel <repo>` first",
+                repo_artifacts.display()
+            )
+            .into()
+        } else {
+            format!("cannot read {}: {error}", repo_artifacts.display()).into()
+        }
+    })?;
+    for entry in entries {
         let entry = entry?;
         if entry.file_type()?.is_dir() {
             dirs.push(entry.path());

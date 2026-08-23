@@ -52,3 +52,10 @@ Thumbs.db
 mutants.out/
 mutants.out.old/
 target-msvc/
+
+# Local agent / BMAD / harness working copies. Never ship.
+.adal/
+.agents/
+.github/agents/
+_bmad/
+_bmad-output/
