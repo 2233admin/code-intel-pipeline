@@ -119,7 +119,7 @@ fn recommend(repo: &Path, auto: bool) -> Result<Value, AdapterError> {
         "schema":"code-intel-advisory-workflow-recommendation.v1",
         "kind":"proposal",
         "recommendation": {
-            "candidate": spec["tool"], "stack": spec["stack"], "verdict": spec["verdict"],
+            "candidate": spec["candidate"], "stack": spec["stack"], "verdict": spec["verdict"],
             "score": spec["score"], "reasons": spec["reasons"], "entrySkills": spec["entrySkills"],
             "brief": spec["brief"]
         },
@@ -200,9 +200,14 @@ fn validate_proposal(value: &Value) -> Result<(), AdapterError> {
             Some("low" | "medium" | "high")
         )
         || value["evidence"].as_array().map_or(true, Vec::is_empty)
-        || value["alternatives"]
-            .as_array()
-            .map_or(true, |items| items.len() < 3)
+        || value["alternatives"].as_array().map_or(true, |items| {
+            items.len() < 3
+                || items.iter().any(|item| {
+                    item["candidate"]
+                        .as_str()
+                        .map_or(true, |candidate| candidate.is_empty())
+                })
+        })
         || value["effects"]
             .as_array()
             .map_or(true, |items| !items.is_empty())
@@ -444,7 +449,7 @@ fn spec_result(
     } else {
         tool
     };
-    json!({"stack":"spec-driven","tool":tool,"verdict":verdict,"score":score,"reasons":reasons,"entrySkills":entry,"brief":{"recommended":recommended,"verdict":verdict,"confidence":if score >= 70 {"high"} else if score >= 30 {"medium"} else {"low"},"why":reasons.iter().take(6).collect::<Vec<_>>(),"whyNot":[],"doFirst":entry,"doNotDoYet":["Do not auto-run init from Code Intel Pipeline.","Do not create or update external issue trackers without explicit authorization."],"fallback":"Re-run the detector when repository scope or governance changes.","acceptance":["PRD or feature requirements are decomposed into explicit phases.","Each phase names deliverables and requirement coverage.","Tasks map to acceptance tests before implementation starts.","Completion conditions are explicit and verifiable."],"sourceMethod":"EternallLight/improving-ai-agent-openspec methodology"}})
+    json!({"candidate":tool,"stack":"spec-driven","verdict":verdict,"score":score,"reasons":reasons,"entrySkills":entry,"brief":{"recommended":recommended,"verdict":verdict,"confidence":if score >= 70 {"high"} else if score >= 30 {"medium"} else {"low"},"why":reasons.iter().take(6).collect::<Vec<_>>(),"whyNot":[],"doFirst":entry,"doNotDoYet":["Do not auto-run init from Code Intel Pipeline.","Do not create or update external issue trackers without explicit authorization."],"fallback":"Re-run the detector when repository scope or governance changes.","acceptance":["PRD or feature requirements are decomposed into explicit phases.","Each phase names deliverables and requirement coverage.","Tasks map to acceptance tests before implementation starts.","Completion conditions are explicit and reviewable."]}})
 }
 
 fn matt_recommendation(

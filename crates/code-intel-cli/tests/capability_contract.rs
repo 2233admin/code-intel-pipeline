@@ -82,10 +82,7 @@ fn valid_effect_set(value: &Value) -> bool {
         let Some(effect) = item.as_str() else {
             return false;
         };
-        let known = matches!(
-            effect,
-            "repo_read" | "local_write" | "process_spawn" | "network" | "repo_mutation"
-        );
+        let known = EXPECTED_EFFECTS.contains(&effect);
         let unique = !seen.contains(&effect);
         seen.push(effect);
         known && unique

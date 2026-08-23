@@ -1646,7 +1646,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects() {
         "version":"1.0.0",
         "toolchainDigests":[
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-            "690845df138fdad8c96bdc35857716da0bf50d9737e6f8ee50eb99a873b1183a",
+            "ed042e1da97eabf254c2333b7d867039908da450573560666b49d548c8ba1c29",
             "9fad4644b8cfb88fbec6f4603e7fcb099dc296fdf29286a6909279fab1450d0e"
         ]
     });
@@ -1676,6 +1676,10 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects() {
     assert_eq!(envelope["declaredEffects"], json!([]));
     assert_eq!(envelope["observedEffects"], json!([]));
     assert_eq!(envelope["artifacts"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        envelope["artifacts"][0]["type"],
+        "advisory.workflow-recommendation"
+    );
     let envelope_proposal: Value =
         serde_json::from_slice(&fs::read(out.join("workflow-recommendation.json")).unwrap())
             .unwrap();
