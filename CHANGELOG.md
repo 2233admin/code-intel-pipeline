@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **advisory.workflow-recommend 接入 run execute DAG**：`-SkipOpenSpec`/`-AutoOpenSpec` 补齐 `ProviderPolicy::open_spec` 门控，是 T2 launcher 最后一个未接入 Rust DAG 的开关（#315）。
 - **BMAD 作为第四个 advisory-workflow-recommend 候选**：抽出 `ALTERNATIVE_CANDIDATES` 注册表，新增候选不再需要改 `recommend()`；新增 `orchestration/internalization/bmad.json`（ADR-0010 Internalization Standard）。
 - **确定性报告质量诊断**：新增私有 report quality evaluator，对 evidence anchor、surgery verification、snapshot scope 做确定性检查，v1 hospital artifact 形状不变（#317/#318）。
-- **知识图谱生成 Rust 化**：`legacy/run-code-intel.ps1` 的 `graph.code-intel-understand` 阶段接入 Rust 知识图谱生成器（rust-first/manual-fallback，`CODE_INTEL_GRAPH_PROVIDER=rust|manual`），是原先该 orchestrator 唯一纯文本"生成"步骤（#321）。
+- **知识图谱生成 Rust 化**：新增 `code-intel graph --repo <path> --write` 生成知识图谱（rust-first/manual-fallback，`CODE_INTEL_GRAPH_PROVIDER=rust|manual`）；现存的 `legacy/run-code-intel.ps1` 兼容路径的 `graph.code-intel-understand` 阶段随之接入该 CLI（此前是该 orchestrator 唯一纯文本"生成"步骤）（#321）。
 
 ### Fixed
 
