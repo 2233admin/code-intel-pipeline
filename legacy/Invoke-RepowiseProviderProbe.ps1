@@ -141,7 +141,7 @@ provider = env("CODE_INTEL_PROVIDER").lower() or "anthropic"
 model = env("CODE_INTEL_MODEL")
 api_key = env("CODE_INTEL_API_KEY")
 base_url = env("CODE_INTEL_BASE_URL")
-model = model or {"anthropic": "MiniMax-M2.7"}.get(provider, "")
+model = model or env("CODE_INTEL_REPOWISE_DEFAULT_MODEL") or env("CODE_INTEL_DEFAULT_MODEL") or {"anthropic": "MiniMax-M2.7"}.get(provider, "")
 result = {"ok": False, "provider": provider, "model": model, "category": "", "message": ""}
 
 try:

@@ -21,6 +21,7 @@ evidence, so the engine emits diagnostics and keeps `productionEnabled=false`.
 | `internalization.spec-kit-record` | 8 `spec-kit` occurrences in the current advisory atom | upstream revision, license, update, security |
 | `internalization.matt-flow-record` | 1 matt-flow candidate branch | upstream revision, license, update, security |
 | `internalization.gstack-record` | 1 gstack candidate branch | canonical source, upstream revision, license, update, security |
+| `internalization.bmad-record` | 1 bmad candidate branch | upstream revision, license, update, security |
 | `internalization.qiaomu-goal-record` | 7 locally documented goal-contract semantics | upstream revision, license, upstream conformance, update, security |
 | `internalization.agent-loops-record` | 3 locally documented loop-pattern choices | upstream revision, license, upstream conformance, update, security |
 | `internalization.metaharness-record` | 6 locally documented harness design concerns | upstream revision, license, upstream conformance, retention authority, update, security |

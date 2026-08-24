@@ -85,6 +85,37 @@ pub(crate) fn execute(
     })
 }
 
+/// Inputs shared by every non-primary candidate function in [`ALTERNATIVE_CANDIDATES`].
+/// Adding a new candidate means writing one function of this shape and appending it to that
+/// slice — `recommend()` itself does not need to change.
+struct CandidateInputs<'a> {
+    repo: &'a Path,
+    files: usize,
+    lines: usize,
+    governance: &'a Value,
+    collaboration: &'a Value,
+}
+
+const ALTERNATIVE_CANDIDATES: &[fn(&CandidateInputs) -> Value] = &[
+    |inputs| {
+        matt_recommendation(
+            inputs.files,
+            inputs.lines,
+            inputs.governance,
+            inputs.collaboration,
+        )
+    },
+    |inputs| gstack_recommendation(inputs.repo, inputs.collaboration),
+    |inputs| {
+        bmad_recommendation(
+            inputs.files,
+            inputs.lines,
+            inputs.governance,
+            inputs.collaboration,
+        )
+    },
+];
+
 fn recommend(repo: &Path, auto: bool) -> Result<Value, AdapterError> {
     let (files, lines) = source_metrics(repo);
     let governance = governance(repo);
@@ -100,9 +131,18 @@ fn recommend(repo: &Path, auto: bool) -> Result<Value, AdapterError> {
         cicd_score,
         has_tests,
     );
-    let matt = matt_recommendation(files, lines, &governance, &collaboration);
-    let gstack = gstack_recommendation(repo, &collaboration);
-    let alternatives = vec![matt, gstack, spec.clone()];
+    let inputs = CandidateInputs {
+        repo,
+        files,
+        lines,
+        governance: &governance,
+        collaboration: &collaboration,
+    };
+    let mut alternatives: Vec<Value> = ALTERNATIVE_CANDIDATES
+        .iter()
+        .map(|candidate| candidate(&inputs))
+        .collect();
+    alternatives.push(spec.clone());
     let confidence =
         if spec["verdict"] == "already_adopted" || spec["score"].as_i64().unwrap_or(0) >= 70 {
             "high"
@@ -231,6 +271,7 @@ fn governance(repo: &Path) -> Value {
         "hasArchitecture": repo.join("architecture.md").is_file(),
         "hasOpenSpec": repo.join("openspec").is_dir(),
         "hasSpecKit": repo.join(".specify").is_dir(),
+        "hasBmad": repo.join("_bmad").is_dir() || repo.join("bmad.config.yaml").is_file(),
         "hasADRs": repo.join("docs/adr").is_dir() || repo.join("adr").is_dir(),
         "hasConstitution": repo.join("constitution.md").is_file(),
         "hasIssueTemplates": repo.join(".github/ISSUE_TEMPLATE").is_dir()
@@ -515,6 +556,48 @@ fn gstack_recommendation(repo: &Path, collaboration: &Value) -> Value {
     json!({"candidate":"gstack","stack":"gstack","verdict":verdict,"score":0,"reasons":[if active {"活跃开发"} else {"90天内无提交"}],"entrySkills":skills})
 }
 
+fn bmad_recommendation(
+    files: usize,
+    lines: usize,
+    governance: &Value,
+    collaboration: &Value,
+) -> Value {
+    if governance["hasBmad"] == true {
+        return json!({
+            "candidate":"bmad","stack":"spec-driven","verdict":"already_adopted","score":100,
+            "reasons":["检测到 _bmad/ 目录或 bmad.config.yaml (已在用 BMAD)"],
+            "entrySkills":Vec::<&str>::new()
+        });
+    }
+    let active = collaboration["lastCommitAgeDays"].as_u64().unwrap_or(9999) <= 90;
+    let contributors = collaboration["contributors"].as_u64().unwrap_or(0);
+    let verdict = if active && contributors > 2 && lines > 5000 {
+        "recommended"
+    } else if active && files > 5 {
+        "optional"
+    } else {
+        "not_needed"
+    };
+    let reasons = vec![
+        if active {
+            "活跃开发".to_string()
+        } else {
+            "90天内无提交".to_string()
+        },
+        format!("协作规模 (contributors={contributors})"),
+        format!("代码规模 (lines={lines})"),
+    ];
+    let mut skills = Vec::new();
+    if verdict != "not_needed" {
+        skills.push("/bmad-prd");
+        skills.push("/bmad-architecture");
+        if contributors > 2 {
+            skills.push("/bmad-create-epics-and-stories");
+        }
+    }
+    json!({"candidate":"bmad","stack":"spec-driven","verdict":verdict,"score":0,"reasons":reasons,"entrySkills":skills})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -546,5 +629,49 @@ mod tests {
         fs::write(root.join("Tests/contract.rs"), "#[test]\nfn works() {}\n").unwrap();
         assert!(has_tests(&root));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bmad_already_adopted_when_local_marker_present() {
+        let governance = json!({"hasBmad": true});
+        let collaboration = json!({"lastCommitAgeDays": 10, "contributors": 5});
+        let result = bmad_recommendation(100, 20000, &governance, &collaboration);
+        assert_eq!(result["candidate"], "bmad");
+        assert_eq!(result["stack"], "spec-driven");
+        assert_eq!(result["verdict"], "already_adopted");
+    }
+
+    #[test]
+    fn bmad_not_needed_for_small_inactive_repo() {
+        let governance = json!({"hasBmad": false});
+        let collaboration = json!({"lastCommitAgeDays": 9999, "contributors": 1});
+        let result = bmad_recommendation(2, 100, &governance, &collaboration);
+        assert_eq!(result["verdict"], "not_needed");
+        assert_eq!(result["entrySkills"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn candidate_registry_includes_bmad() {
+        let governance = json!({"hasBmad": false});
+        let collaboration = json!({"lastCommitAgeDays": 10, "contributors": 5, "repoAgeDays": 400});
+        let inputs = CandidateInputs {
+            repo: Path::new("."),
+            files: 100,
+            lines: 20000,
+            governance: &governance,
+            collaboration: &collaboration,
+        };
+        let candidates: Vec<String> = ALTERNATIVE_CANDIDATES
+            .iter()
+            .map(|candidate| {
+                candidate(&inputs)["candidate"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        assert!(candidates.contains(&"bmad".to_string()));
+        assert!(candidates.contains(&"matt-flow".to_string()));
+        assert!(candidates.contains(&"gstack".to_string()));
     }
 }

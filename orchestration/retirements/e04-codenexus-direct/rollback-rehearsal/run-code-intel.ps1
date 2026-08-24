@@ -3200,7 +3200,20 @@ $RepowiseProvider = Normalize-RepowiseProvider (Resolve-ConfigString `
     -Name "repowiseProvider" `
     -EnvNames @("CODE_INTEL_REPOWISE_PROVIDER", "REPOWISE_PROVIDER") `
     -Default $defaultRepowiseProvider)
-$defaultRepowiseModel = if ($RepowiseProvider -ieq "anthropic") { "MiniMax-M2.7" } else { "" }
+# The anthropic default model used to be hardcoded to "MiniMax-M2.7", which
+# forced every unconfigured anthropic-provider run onto one vendor's model
+# with no way to override it short of editing this file. It is now itself a
+# configurable default: repo config, global config, or an env var can name a
+# different model; an anthropic run with nothing configured anywhere still
+# falls back to MiniMax-M2.7, matching prior behavior exactly.
+$anthropicDefaultRepowiseModel = Resolve-ConfigString `
+    -Value "" `
+    -RepoConfig $repoConfig `
+    -ConfigData $configData `
+    -Name "repowiseAnthropicDefaultModel" `
+    -EnvNames @("CODE_INTEL_REPOWISE_DEFAULT_MODEL", "CODE_INTEL_DEFAULT_MODEL") `
+    -Default "MiniMax-M2.7"
+$defaultRepowiseModel = if ($RepowiseProvider -ieq "anthropic") { $anthropicDefaultRepowiseModel } else { "" }
 $RepowiseModel = Resolve-ConfigString `
     -Value $RepowiseModel `
     -RepoConfig $repoConfig `
@@ -3416,7 +3429,7 @@ if (-not [string]::IsNullOrWhiteSpace($ModelRoutingResult)) {
         if ($null -ne $selected.provider -and -not $repowiseProviderExplicit) {
             $RepowiseProvider = Normalize-RepowiseProvider ([string]$selected.provider)
             if ($null -eq $selected.model -and -not $repowiseModelConfigured) {
-                $RepowiseModel = if ($RepowiseProvider -ieq "anthropic") { "MiniMax-M2.7" } else { "" }
+                $RepowiseModel = if ($RepowiseProvider -ieq "anthropic") { $anthropicDefaultRepowiseModel } else { "" }
             }
         }
         if ($null -ne $selected.model -and -not $repowiseModelExplicit) { $RepowiseModel = [string]$selected.model }
@@ -3497,7 +3510,7 @@ if (-not $SkipOpenSpec) {
             version = "1.0.0"
             toolchainDigests = @(
                 "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
-                "ed042e1da97eabf254c2333b7d867039908da450573560666b49d548c8ba1c29",
+                "25a2185026cb61771ff2e5f4c2364687d01158cfc9a8266d00a20e5573ba1bde",
                 "9fad4644b8cfb88fbec6f4603e7fcb099dc296fdf29286a6909279fab1450d0e"
             )
         }
@@ -3633,7 +3646,80 @@ if ($Mode -eq "full") {
     $understandCommand = "$understandCommand --full"
 }
 
-if (Test-Path -LiteralPath $knowledgeGraph) {
+$graphPreference = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_GRAPH_PROVIDER)) {
+    "rust"
+} else {
+    $env:CODE_INTEL_GRAPH_PROVIDER.Trim().ToLowerInvariant()
+}
+if ($graphPreference -notin @("rust", "manual")) {
+    throw "CODE_INTEL_GRAPH_PROVIDER must be 'rust' or 'manual'"
+}
+$graphProvider = ""
+$graphAttemptFailed = $false
+if ($graphPreference -eq "rust") {
+    # Same discovery order as the artifact-index update script uses: explicit override
+    # wins, then local builds (release before debug -- installed/CI machines
+    # only ever have release or PATH binaries, so debug must not be
+    # mandatory), then an installed code-intel on PATH. Resolved only inside
+    # this branch so manual mode never risks [IO.Path]::GetFullPath throwing
+    # on an unnormalizable CODE_INTEL_RUST_CLI value it will not even use.
+    $graphRustCliCandidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_RUST_CLI)) {
+        $graphRustCliCandidates += [IO.Path]::GetFullPath($env:CODE_INTEL_RUST_CLI)
+    }
+    $graphRustCliCandidates += Join-Path (Split-Path -Parent $PSScriptRoot) (Join-Path "target/release" $rustExecutableName)
+    $graphRustCliCandidates += $defaultRustCli
+    $graphRustCli = $graphRustCliCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if ($null -eq $graphRustCli) {
+        $graphPathCommand = Get-Command "code-intel" -ErrorAction SilentlyContinue
+        if ($null -ne $graphPathCommand -and -not [string]::IsNullOrWhiteSpace([string]$graphPathCommand.Source)) {
+            $graphRustCli = $graphPathCommand.Source
+        }
+    }
+    if ($null -ne $graphRustCli) {
+        # The generator's own exit code is the single source of truth for
+        # whether generation succeeded; this shim only forwards the
+        # invocation and its outcome, matching the thin-facade pattern the
+        # other Rust-backed stages in this file already use (see
+        # docs/ps1-exit/contract-inventory.md section 1.8).
+        $graphArgs = @("graph", "--repo", $repoPath, "--language", $Language, "--write")
+        if ($Mode -eq "full") { $graphArgs += "--full" }
+        $previousErrorActionPreference = $ErrorActionPreference
+        $graphFailureReason = ""
+        try {
+            $ErrorActionPreference = "Continue"
+            $global:LASTEXITCODE = 0
+            try {
+                $null = & $graphRustCli @graphArgs 2>&1
+                if ($global:LASTEXITCODE -eq 0) {
+                    $graphProvider = "rust"
+                } else {
+                    $graphFailureReason = "exited with code $($global:LASTEXITCODE)"
+                }
+            }
+            catch {
+                $graphFailureReason = "could not be launched ($($_.Exception.Message))"
+            }
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+        }
+        if (-not [string]::IsNullOrWhiteSpace($graphFailureReason)) {
+            $graphAttemptFailed = $true
+            $notes.Add("Rust knowledge graph $graphFailureReason; falling back to the manual /understand instruction.")
+        }
+    }
+    else {
+        $graphAttemptFailed = $true
+        $notes.Add("Rust knowledge graph binary was unavailable (tried: $($graphRustCliCandidates -join ', '), and 'code-intel' on PATH); falling back to the manual /understand instruction.")
+    }
+}
+if (-not [string]::IsNullOrWhiteSpace($graphProvider)) {
+    $notes.Add("Knowledge graph provider: $graphProvider")
+}
+
+$graphStaleUnderRequire = $graphAttemptFailed -and $RequireUnderstandGraph -and (Test-Path -LiteralPath $knowledgeGraph)
+if ((Test-Path -LiteralPath $knowledgeGraph) -and -not $graphStaleUnderRequire) {
     $graphItem = Get-Item -LiteralPath $knowledgeGraph
     $notes.Add("Understand graph found: $knowledgeGraph")
     $steps.Add([pscustomobject][ordered]@{
@@ -3648,7 +3734,11 @@ if (Test-Path -LiteralPath $knowledgeGraph) {
     })
 }
 else {
-    $message = "Understand graph missing. Run in Claude: $understandCommand"
+    $message = if ($graphStaleUnderRequire) {
+        "Understand graph generation just failed and -RequireUnderstandGraph is set; an existing knowledge-graph.json is not trusted as current. Run in Claude: $understandCommand"
+    } else {
+        "Understand graph missing. Run in Claude: $understandCommand"
+    }
     $notes.Add($message)
     $status = if ($RequireUnderstandGraph) { "failed" } else { "manual_required" }
     $steps.Add([pscustomobject][ordered]@{
@@ -3657,7 +3747,7 @@ else {
         status = $status
         exitCode = if ($RequireUnderstandGraph) { 1 } else { 0 }
         output = $message
-        error = if ($RequireUnderstandGraph) { "knowledge-graph.json is required but missing" } else { "" }
+        error = if ($RequireUnderstandGraph) { if ($graphStaleUnderRequire) { "knowledge-graph.json generation failed and the existing file is stale" } else { "knowledge-graph.json is required but missing" } } else { "" }
         finishedAt = (Get-Date).ToString("o")
         durationMs = 0
     })
@@ -3819,7 +3909,17 @@ elseif (-not $SkipSentrux) {
         $sentruxTargetPath = Resolve-ChildPath $repoPath $SentruxPath
         $sentruxDir = Join-Path $sentruxTargetPath ".sentrux"
         $hasSentruxConfig = Test-Path -LiteralPath (Join-Path $sentruxDir "rules.toml")
-        $baselinePath = Join-Path $sentruxDir "baseline.json"
+        # `sentrux gate` (the lite engine this step actually invokes -- see
+        # Get-BaselinePath in sentrux-lite-core.ps1) keeps its own baseline at
+        # .sentrux/cache/lite-baseline.json, separate from the native engine's
+        # committed .sentrux/baseline.json (different schema, different scale
+        # -- issue #182). This precondition must watch the file `sentrux gate`
+        # itself reads, or a fresh checkout (native baseline present, lite
+        # cache never populated) always falls through to the bare `sentrux
+        # gate` call below and hard-crashes with "Sentrux baseline missing"
+        # instead of hitting the graceful manual_required branch a few lines
+        # down (issue #322).
+        $baselinePath = Join-Path (Join-Path $sentruxDir "cache") "lite-baseline.json"
 
         if ($hasSentruxConfig -and -not $SkipSentruxCheck) {
             $steps.Add((Invoke-LoggedStep "sentrux check" {
@@ -3855,7 +3955,7 @@ elseif (-not $SkipSentrux) {
         }
         elseif ($SaveSentruxBaseline -or ($AutoSaveMissingSentruxBaseline -and -not (Test-Path -LiteralPath $baselinePath))) {
             $previousBaseline = $null
-            $baselinePrevPath = Join-Path $sentruxDir "baseline.prev.json"
+            $baselinePrevPath = Join-Path (Join-Path $sentruxDir "cache") "lite-baseline.prev.json"
             if (Test-Path -LiteralPath $baselinePath -PathType Leaf) {
                 $previousBaseline = Read-JsonFileSafe $baselinePath
                 Copy-Item -LiteralPath $baselinePath -Destination $baselinePrevPath -Force
