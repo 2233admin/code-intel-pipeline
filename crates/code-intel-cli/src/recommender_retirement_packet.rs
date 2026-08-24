@@ -2,6 +2,12 @@
 //! `New-RecommenderRetirementPacket.ps1`, `Test-RecommenderRetirementPacket.ps1`,
 //! and `Restore-RecommenderLegacyBranch.ps1`. Pilot for #341's 22-file
 //! `legacy/tools/compatibility` migration (AGENTS.md's language direction).
+//! Split across four files to stay under the repo's `god_files` line-count
+//! rule, along the PS1 originals' own script boundaries: this file
+//! (generate/verify), `recommender_retirement_restore` (Restore-),
+//! `recommender_retirement_diff` (the deletion-diff computation shared by
+//! generate and its own tests), and `recommender_retirement_shared`
+//! (constants and primitives common to all three).
 //!
 //! Preserves the PS1 originals' safety semantics exactly, not just their
 //! shape: [`generate`] refuses (returns `Err`) to write anything but the
@@ -19,240 +25,20 @@
 //! ordering.
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::Path;
 
 use serde_json::{json, Value};
 
 use crate::capability::{self, sha256_hex};
 use crate::capability_inventory;
 use crate::frozen_manifest_projection::frozen_source_identity;
-
-const RETIREMENT_ID: &str = "retire-recommender-branch";
-const BRANCH_ID: &str = "run-code-intel.workflow-recommender.inline";
-const LEGACY_CAPABILITY: &str = "facade.workflow-recommender.inline";
-const REPLACEMENT_ID: &str = "advisory.workflow-recommend";
-const DEFAULT_SOURCE_REVISION: &str = "e6e73e4f720ab2ae2bca531a07ed638f55fecd1d";
-
-const LEGACY_FUNCTIONS_START: &str =
-    "# ============ 三栈工作流推荐器 (Workflow Stack Recommender) ============";
-const LEGACY_INVOCATION_START: &str =
-    "# Three-stack workflow recommender (matt-flow / gstack / spec-driven).";
-const CURRENT_FUNCTIONS_START: &str =
-    "# Workflow recommendations are owned by the standalone advisory atom in OpenSpec-Detector.ps1.";
-const CURRENT_INVOCATION_START: &str =
-    "# Historical options now map to the standalone advisory atom: Skip disables it and";
-const FUNCTIONS_END: &str = "\nfunction Get-JsonProperty";
-const INVOCATION_END: &str = "\nif (-not $toolState.rg)";
-
-fn frozen_set() -> Vec<String> {
-    vec![
-        "run-code-intel.ps1".into(),
-        "OpenSpec-Detector.ps1".into(),
-        "Invoke-WorkflowRecommendation.ps1".into(),
-        "manifest-projection:orchestration/integrations.json#advisory.workflow-recommend".into(),
-    ]
-}
-
-fn expected_blockers() -> Vec<&'static str> {
-    vec![
-        "dependency_approval_set_mismatch",
-        "unproven_compatibility_window",
-        "unproven_dependency_approval",
-        "unproven_independent_approval",
-        "unproven_usage_observation",
-    ]
-}
-
-// ---------------------------------------------------------------------
-// Shared text-surgery primitive (replaces PS1's `(?s)START.*?(?=\nEND)`).
-// ---------------------------------------------------------------------
-
-/// Byte range `[start, end)` of the bounded block beginning at the first
-/// occurrence of `start_marker` and ending immediately before the next
-/// occurrence of `end_marker` (which is not itself part of the block) --
-/// the same shape as the PowerShell originals' `(?s)START.*?(?=END)`.
-fn find_bounded_block(
-    haystack: &str,
-    start_marker: &str,
-    end_marker: &str,
-) -> Result<(usize, usize), String> {
-    let start = haystack
-        .find(start_marker)
-        .ok_or_else(|| format!("bounded deletion marker is absent: {start_marker}"))?;
-    let end_offset = haystack[start..].find(end_marker).ok_or_else(|| {
-        format!("bounded deletion marker end is absent: {end_marker} (after {start_marker})")
-    })?;
-    Ok((start, start + end_offset))
-}
-
-// ---------------------------------------------------------------------
-// Restore-RecommenderLegacyBranch.ps1
-// ---------------------------------------------------------------------
-
-pub(crate) enum RestoreMode {
-    /// Extract into a fresh, exclusive rehearsal directory (never touches a
-    /// real checkout).
-    Rehearsal(PathBuf),
-    /// Apply directly to an existing target path -- an explicit, bounded,
-    /// independently-authorized action, never the default.
-    Apply(PathBuf),
-}
-
-/// Restore the historical inline recommender branch from `source_revision`
-/// into a rehearsal copy (or, in `Apply` mode, a real target) of
-/// `run-code-intel.ps1`. Proves the deletion diff is reversible without
-/// ever writing to the live file by default.
-pub(crate) fn restore_legacy_branch(
-    repo_root: &Path,
-    mode: RestoreMode,
-    source_revision: &str,
-) -> Result<Value, String> {
-    let run_path = repo_root.join("run-code-intel.ps1");
-    if !run_path.is_file() {
-        return Err(format!(
-            "run-code-intel.ps1 is missing from repository root: {}",
-            repo_root.display()
-        ));
-    }
-
-    let (target_path, rehearsal) = match mode {
-        RestoreMode::Rehearsal(rehearsal_root) => {
-            if rehearsal_root.exists() {
-                return Err(format!(
-                    "rollback rehearsal root must not already exist: {}",
-                    rehearsal_root.display()
-                ));
-            }
-            fs::create_dir_all(&rehearsal_root).map_err(|e| e.to_string())?;
-            let target = rehearsal_root.join("run-code-intel.ps1");
-            fs::copy(&run_path, &target).map_err(|e| e.to_string())?;
-            (target, true)
-        }
-        RestoreMode::Apply(target) => (target, false),
-    };
-    if !target_path.is_file() {
-        return Err(format!(
-            "rollback target is missing: {}",
-            target_path.display()
-        ));
-    }
-
-    // `git show <rev>:<path>` is always repository-root-relative; the
-    // archive move relocated run-code-intel.ps1, so try both locations
-    // rather than pinning either.
-    let legacy_candidates = ["legacy/run-code-intel.ps1", "run-code-intel.ps1"];
-    let mut legacy_text = None;
-    for candidate in legacy_candidates {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(repo_root)
-            .arg("show")
-            .arg(format!("{source_revision}:{candidate}"))
-            .output();
-        if let Ok(output) = output {
-            if output.status.success() && !output.stdout.is_empty() {
-                legacy_text = Some(String::from_utf8_lossy(&output.stdout).into_owned());
-                break;
-            }
-        }
-    }
-    let legacy = legacy_text.ok_or_else(|| {
-        format!(
-            "cannot load legacy recommender source from {source_revision} at any of: {}",
-            legacy_candidates.join(", ")
-        )
-    })?;
-    let current = fs::read_to_string(&target_path).map_err(|e| e.to_string())?;
-
-    let (lf_s, lf_e) =
-        find_bounded_block(&legacy, LEGACY_FUNCTIONS_START, FUNCTIONS_END).map_err(|_| {
-            format!(
-                "legacy recommender markers are absent from {source_revision}:run-code-intel.ps1"
-            )
-        })?;
-    let (li_s, li_e) = find_bounded_block(&legacy, LEGACY_INVOCATION_START, INVOCATION_END)
-        .map_err(|_| {
-            format!(
-                "legacy recommender markers are absent from {source_revision}:run-code-intel.ps1"
-            )
-        })?;
-    let legacy_functions = legacy[lf_s..lf_e].to_string();
-    let legacy_invocation = legacy[li_s..li_e].to_string();
-
-    let (cf_s, cf_e) = find_bounded_block(&current, CURRENT_FUNCTIONS_START, FUNCTIONS_END)
-        .map_err(|_| {
-            "target does not contain the retired recommender adapter markers".to_string()
-        })?;
-    let mut restored = format!(
-        "{}{}{}",
-        &current[..cf_s],
-        legacy_functions,
-        &current[cf_e..]
-    );
-    let (ci_s, ci_e) = find_bounded_block(&restored, CURRENT_INVOCATION_START, INVOCATION_END)
-        .map_err(|_| {
-            "target does not contain the retired recommender adapter markers".to_string()
-        })?;
-    restored = format!(
-        "{}{}{}",
-        &restored[..ci_s],
-        legacy_invocation,
-        &restored[ci_e..]
-    );
-
-    if !restored.contains("function Invoke-WorkflowStackDetector")
-        || !restored
-            .contains("Invoke-WorkflowStackDetector -RepoPath $repoPath -AutoMode $AutoOpenSpec")
-    {
-        return Err(
-            "restored target does not contain the bounded legacy recommender branch".into(),
-        );
-    }
-
-    fs::write(&target_path, &restored).map_err(|e| e.to_string())?;
-
-    Ok(json!({
-        "schema": "code-intel-compatibility-rollback-rehearsal.v1",
-        "branchId": BRANCH_ID,
-        "target": target_path.to_string_lossy(),
-        "sourceRevision": source_revision,
-        "rehearsal": rehearsal,
-        "changedFiles": [target_path.to_string_lossy()],
-        "replacementChanged": false,
-    }))
-}
-
-// ---------------------------------------------------------------------
-// New-RecommenderRetirementPacket.ps1
-// ---------------------------------------------------------------------
-
-fn write_json_file(path: &Path, value: &Value) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let bytes = serde_json::to_vec(value).map_err(|e| e.to_string())?;
-    fs::write(path, bytes).map_err(|e| format!("write {}: {e}", path.display()))
-}
-
-fn artifact_ref(
-    out_dir: &Path,
-    artifact_schema: &str,
-    kind: &str,
-    relative_path: &str,
-    snapshot_identity: &str,
-) -> Result<Value, String> {
-    let path = out_dir.join(relative_path);
-    let bytes = fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    Ok(json!({
-        "schema": "code-intel-artifact-ref.v1",
-        "artifactSchema": artifact_schema,
-        "type": kind,
-        "path": relative_path.replace('\\', "/"),
-        "sha256": sha256_hex(&bytes),
-        "consumedSnapshotIdentity": snapshot_identity,
-    }))
-}
+use crate::recommender_retirement_diff::{build_result_text, compute_delete_hunks};
+use crate::recommender_retirement_restore::{restore_legacy_branch, RestoreMode};
+use crate::recommender_retirement_shared::{
+    artifact_ref, expected_blockers, frozen_set, write_json_file, BRANCH_ID,
+    CURRENT_FUNCTIONS_START, CURRENT_INVOCATION_START, DEFAULT_SOURCE_REVISION, FUNCTIONS_END,
+    INVOCATION_END, LEGACY_CAPABILITY, REPLACEMENT_ID, RETIREMENT_ID,
+};
 
 struct Evidence<'a> {
     out_dir: &'a Path,
@@ -287,7 +73,7 @@ impl Evidence<'_> {
 /// PS1 generator does with `pwsh`/`cargo test` -- these are downstream test
 /// commands, not PowerShell orchestration logic being ported.
 fn command_passes(program: &str, args: &[&str], cwd: &Path) -> bool {
-    Command::new(program)
+    std::process::Command::new(program)
         .args(args)
         .current_dir(cwd)
         .output()
@@ -304,57 +90,6 @@ fn placeholder_snapshot(identity: &str) -> Value {
         "scope": ["."],
         "inputDigest": "d".repeat(64),
     })
-}
-
-struct DeleteHunk {
-    deleted_lines: Vec<String>,
-    old_start: usize,
-    old_lines: usize,
-    new_start: usize,
-}
-
-fn compute_delete_hunks(
-    base_text: &str,
-    patterns: &[(&str, &str)],
-) -> Result<Vec<DeleteHunk>, String> {
-    let mut spans: Vec<(usize, usize)> = Vec::with_capacity(patterns.len());
-    for (start_marker, end_marker) in patterns {
-        spans.push(find_bounded_block(base_text, start_marker, end_marker)?);
-    }
-    spans.sort_by_key(|span| span.0);
-    let mut deleted_before = 0usize;
-    let mut hunks = Vec::with_capacity(spans.len());
-    for (start, end) in spans {
-        let deleted_lines: Vec<String> = base_text[start..end]
-            .split('\n')
-            .map(str::to_string)
-            .collect();
-        let old_start = base_text[..start].matches('\n').count() + 1;
-        let old_lines = deleted_lines.len();
-        hunks.push(DeleteHunk {
-            deleted_lines,
-            old_start,
-            old_lines,
-            new_start: old_start - deleted_before,
-        });
-        deleted_before += old_lines;
-    }
-    Ok(hunks)
-}
-
-fn build_result_text(base_text: &str, hunks: &[DeleteHunk]) -> String {
-    base_text
-        .split('\n')
-        .enumerate()
-        .filter(|(index, _)| {
-            let line = index + 1;
-            !hunks
-                .iter()
-                .any(|hunk| line >= hunk.old_start && line < hunk.old_start + hunk.old_lines)
-        })
-        .map(|(_, line)| line)
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 /// Generate a fresh E02 packet at `out_dir` (which must not already exist),
@@ -748,10 +483,6 @@ pub(crate) fn generate(
     Ok(status)
 }
 
-// ---------------------------------------------------------------------
-// Test-RecommenderRetirementPacket.ps1
-// ---------------------------------------------------------------------
-
 fn read_json(packet_root: &Path, relative: &str) -> Result<Value, String> {
     let path = packet_root.join(relative);
     if !path.is_file() {
@@ -935,86 +666,12 @@ mod tests {
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    fn scratch_dir(name: &str) -> PathBuf {
+    fn scratch_dir(name: &str) -> std::path::PathBuf {
         let nonce = COUNTER.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!(
-            "recommender-retirement-test-{name}-{}-{nonce}",
+            "recommender-packet-test-{name}-{}-{nonce}",
             std::process::id()
         ))
-    }
-
-    #[test]
-    fn bounded_block_excludes_the_end_marker_line() {
-        let text = "before\nSTART middle text\nmore\nEND_LINE\nafter";
-        let (s, e) = find_bounded_block(text, "START", "\nEND_LINE").unwrap();
-        assert_eq!(&text[s..e], "START middle text\nmore");
-    }
-
-    #[test]
-    fn bounded_block_reports_a_missing_start_marker() {
-        assert!(find_bounded_block("no markers here", "START", "\nEND").is_err());
-    }
-
-    #[test]
-    fn bounded_block_reports_a_missing_end_marker() {
-        assert!(find_bounded_block("STARTonly, no end", "START", "\nEND").is_err());
-    }
-
-    #[test]
-    fn delete_hunks_are_ordered_by_position_regardless_of_pattern_order() {
-        let base = "line1\nSECOND block\nx\nEND2\nline5\nFIRST block\ny\nEND1\nline9";
-        let hunks = compute_delete_hunks(
-            &base,
-            &[("FIRST block", "\nEND1"), ("SECOND block", "\nEND2")],
-        )
-        .unwrap();
-        assert_eq!(hunks.len(), 2);
-        assert!(
-            hunks[0].old_start < hunks[1].old_start,
-            "hunks must be position-ordered, not pattern-ordered"
-        );
-        assert_eq!(hunks[0].old_start, 2);
-        assert_eq!(hunks[0].old_lines, 2);
-        assert_eq!(hunks[1].new_start, hunks[1].old_start - hunks[0].old_lines);
-    }
-
-    #[test]
-    fn result_text_drops_exactly_the_deleted_line_ranges() {
-        let base = "keep1\nSTART\nmid\nEND_MARK\nkeep2";
-        let hunks = compute_delete_hunks(&base, &[("START", "\nEND_MARK")]).unwrap();
-        let result = build_result_text(&base, &hunks);
-        assert_eq!(result, "keep1\nEND_MARK\nkeep2");
-    }
-
-    #[test]
-    fn restore_rehearsal_refuses_an_existing_root() {
-        let dir = scratch_dir("existing-root");
-        fs::create_dir_all(dir.join("run-code-intel.ps1").parent().unwrap()).unwrap();
-        fs::write(dir.join("run-code-intel.ps1"), "irrelevant").unwrap();
-        let rehearsal_root = dir.join("rehearsal");
-        fs::create_dir_all(&rehearsal_root).unwrap();
-        let result = restore_legacy_branch(
-            &dir,
-            RestoreMode::Rehearsal(rehearsal_root),
-            DEFAULT_SOURCE_REVISION,
-        );
-        assert!(result.is_err());
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn restore_refuses_when_run_code_intel_is_missing() {
-        let dir = scratch_dir("missing-run-file");
-        fs::create_dir_all(&dir).unwrap();
-        let result = restore_legacy_branch(
-            &dir,
-            RestoreMode::Rehearsal(dir.join("rehearsal")),
-            DEFAULT_SOURCE_REVISION,
-        );
-        assert!(result
-            .unwrap_err()
-            .contains("run-code-intel.ps1 is missing"));
-        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -1024,36 +681,6 @@ mod tests {
         let result = verify(&dir, Path::new("."), Path::new(".."));
         assert!(result.unwrap_err().contains("packet file is missing"));
         fs::remove_dir_all(&dir).ok();
-    }
-
-    /// Real test against this repository's actual git history and current
-    /// `legacy/run-code-intel.ps1` -- proves the ported regex-to-literal-block
-    /// extraction still finds the same markers PowerShell's regex did,
-    /// against the real file, not a synthetic fixture.
-    #[test]
-    fn restore_rehearsal_recovers_the_real_legacy_branch_from_git_history() {
-        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../legacy");
-        if !repo_root.join("run-code-intel.ps1").is_file() {
-            eprintln!("skipping: legacy/run-code-intel.ps1 not present in this checkout");
-            return;
-        }
-        let rehearsal_root = scratch_dir("real-history-rehearsal");
-        let result = restore_legacy_branch(
-            &repo_root,
-            RestoreMode::Rehearsal(rehearsal_root.clone()),
-            DEFAULT_SOURCE_REVISION,
-        );
-        match &result {
-            Ok(value) => {
-                assert_eq!(value["rehearsal"], true);
-                assert_eq!(value["replacementChanged"], false);
-                let restored =
-                    fs::read_to_string(rehearsal_root.join("run-code-intel.ps1")).unwrap();
-                assert!(restored.contains("function Invoke-WorkflowStackDetector"));
-            }
-            Err(message) => panic!("rollback rehearsal against real history failed: {message}"),
-        }
-        fs::remove_dir_all(&rehearsal_root).ok();
     }
 
     /// Full generate -> verify round trip against the real repository.
