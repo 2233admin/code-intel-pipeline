@@ -284,11 +284,40 @@ fn parse_scope_requires_repo_and_since() {
 /// content was already squash-merged into the base branch). Both are real
 /// repository topologies `scope()` must handle without panicking; a test
 /// asserting on the ambient repo's current commit shape can't pin that
-/// down. Uses a synthetic two-commit fixture repo instead, mirroring
-/// `sentrux_evolution::tests::init_repo`.
+/// down. Uses a synthetic two-commit fixture repo instead (inlined here
+/// rather than a standalone helper, mirroring `sentrux_evolution::tests::
+/// init_repo` in spirit but keeping this file's function count flat): the
+/// first commit adds `first.txt`, the second adds `second.txt`, so
+/// `HEAD~1...HEAD` is guaranteed non-empty and points at a file that still
+/// exists on disk, independent of the ambient checkout's own commit graph.
 #[test]
 fn scope_against_head_tilde_1_lists_only_existing_changed_files() {
-    let repo = init_scope_repo();
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let repo = std::env::temp_dir().join(format!(
+        "code-intel-audit-scope-{nonce}-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&repo).expect("scope fixture dir");
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(&repo)
+            .output()
+            .unwrap_or_else(|error| panic!("git {args:?}: {error}"))
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "test@example.com"]);
+    git(&["config", "user.name", "Test"]);
+    fs::write(repo.join("first.txt"), "first\n").expect("write first.txt");
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "first"]);
+    fs::write(repo.join("second.txt"), "second\n").expect("write second.txt");
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "second"]);
+
     let value = scope(&repo, "HEAD~1").unwrap();
     assert_eq!(value["kind"], "diff");
     assert_eq!(value["since"], "HEAD~1");
@@ -306,39 +335,6 @@ fn scope_against_head_tilde_1_lists_only_existing_changed_files() {
         );
     }
     fs::remove_dir_all(&repo).ok();
-}
-
-/// Two commits: the first adds `first.txt`, the second adds `second.txt`.
-/// `HEAD~1...HEAD` is guaranteed non-empty and points at a file that still
-/// exists on disk, independent of whatever the ambient checkout's actual
-/// commit graph looks like.
-fn init_scope_repo() -> PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock")
-        .as_nanos();
-    let root = std::env::temp_dir().join(format!(
-        "code-intel-audit-scope-{nonce}-{}",
-        std::process::id()
-    ));
-    fs::create_dir_all(&root).expect("scope fixture dir");
-    let git = |args: &[&str]| {
-        std::process::Command::new("git")
-            .args(args)
-            .current_dir(&root)
-            .output()
-            .unwrap_or_else(|error| panic!("git {args:?}: {error}"))
-    };
-    git(&["init", "-q"]);
-    git(&["config", "user.email", "test@example.com"]);
-    git(&["config", "user.name", "Test"]);
-    fs::write(root.join("first.txt"), "first\n").expect("write first.txt");
-    git(&["add", "-A"]);
-    git(&["commit", "-q", "-m", "first"]);
-    fs::write(root.join("second.txt"), "second\n").expect("write second.txt");
-    git(&["add", "-A"]);
-    git(&["commit", "-q", "-m", "second"]);
-    root
 }
 
 #[test]
