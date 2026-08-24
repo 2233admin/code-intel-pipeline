@@ -21,10 +21,15 @@
 ## Language direction
 
 - Do not add new PowerShell scripts or new product behavior to existing `.ps1` files.
-- Treat current PowerShell entry points as legacy compatibility surfaces only. Limit edits to critical fixes or thin forwarding shims while their Rust replacements are being delivered.
-- Implement production CLI, orchestration, artifact, policy, and provider-boundary work in Rust by default.
-- MoonBit is an approved experimental language for small, isolated components. Keep experiments outside the production path until they prove artifact-contract parity, cross-platform builds, tests, and a measured advantage over the Rust implementation.
-- Do not perform a big-bang PowerShell deletion. Retire each compatibility entry point only after its Rust or promoted MoonBit replacement passes the existing contract tests and release packaging checks.
+- Treat `.ps1` files as retired compatibility surfaces. New production paths must not invoke
+  PowerShell; migrate the capability to Rust and keep only a tested forwarding shim when external
+  compatibility still requires it.
+- Implement production CLI, orchestration, artifact, policy, and provider-boundary work in Rust.
+- MoonBit is an approved experimental language for small, isolated components. Keep experiments
+  outside the production path until they prove artifact-contract parity, cross-platform builds,
+  tests, and a measured advantage over the Rust implementation.
+- Retire a compatibility entry point only after its Rust replacement passes the existing contract
+  tests and release packaging checks; do not delete historical rollback fixtures in the same change.
 
 ## Reading the crate's warning count
 
@@ -64,8 +69,17 @@ Consequences:
   move, and a pin can chain: editing `legacy/run-code-intel.ps1` to update a digest it
   quotes changes `legacy/run-code-intel.ps1`'s own pinned digest too.
 - MoonBit experiments require `moon test` and parity fixtures against the current artifact contract before promotion.
-- New documentation and command examples should lead with the compiled `code-intel` CLI. Mention PowerShell only when documenting an existing compatibility path.
+- New documentation and command examples must lead with the compiled `code-intel` CLI. Do not
+  document PowerShell as an operational prerequisite; mention it only when identifying a retained
+  compatibility fixture or migration boundary.
 
 ## While writing code
 
-Wrap every coding session in the pipeline gate: `legacy/Invoke-SentruxAgentTool.ps1 session_start` before the first edit, `session_end` after the last (`session_end` fails on structural regression). Mid-edit, query `code-intel change impact --changed <paths> --staleness advisory` for impacted files and test candidates — advisory answers come from the last committed run and never gate. Preview mechanical rewrites with `capability exec edit.ast-grep-plan` (preview-only, `repositoryMutation=false`) before applying them. Apply a known-span change with `code-intel edit apply --repo-path <checkout> --file <path> --span <startLine:startColumn-endLine:endColumn> --expect-sha256 <sha256 of the span's current bytes> --replacement <text>` instead of rewriting the surrounding line: it verifies the span's current bytes against your digest first and refuses with evidence (exit 10, `applied:false`) rather than editing the wrong place when an address has drifted.
+Use the compiled Rust gate `code-intel sentrux gate "<scope-path>"` before editing and after the
+focused tests. Mid-edit, query `code-intel change impact --changed <paths> --staleness advisory`
+for impacted files and test candidates — advisory answers come from the last committed run and
+never gate. Preview mechanical rewrites with `capability exec edit.ast-grep-plan` (preview-only,
+`repositoryMutation=false`) before applying them. Apply a known-span change with `code-intel edit
+apply --repo-path <checkout> --file <path> --span <startLine:startColumn-endLine:endColumn>
+--expect-sha256 <sha256 of the span's current bytes> --replacement <text>` instead of rewriting
+the surrounding line.

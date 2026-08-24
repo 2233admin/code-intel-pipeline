@@ -4131,9 +4131,71 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -Liter
             topFunction = $topFunction
         }
 
-        $evolutionRaw = & $sentruxAgentTool evolution $sentruxTargetPath 2>&1
-        $evolutionText = ($evolutionRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
-        $evolutionObject = $evolutionText | ConvertFrom-Json
+        $evolutionObject = $null
+        $evolutionText = ""
+        $evolutionProvider = ""
+        $sentruxEvolutionPreference = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_SENTRUX_EVOLUTION_PROVIDER)) {
+            "rust"
+        } else {
+            $env:CODE_INTEL_SENTRUX_EVOLUTION_PROVIDER.Trim().ToLowerInvariant()
+        }
+        if ($sentruxEvolutionPreference -notin @("rust", "powershell")) {
+            throw "CODE_INTEL_SENTRUX_EVOLUTION_PROVIDER must be 'rust' or 'powershell'"
+        }
+        if ($sentruxEvolutionPreference -eq "rust" -and (Test-Path -LiteralPath $sentruxDsmRustCli -PathType Leaf)) {
+            $previousErrorActionPreference = $ErrorActionPreference
+            $evolutionRaw = @()
+            $evolutionExitCode = $null
+            $evolutionLaunchError = $null
+            try {
+                $ErrorActionPreference = "Continue"
+                $global:LASTEXITCODE = 0
+                try {
+                    $evolutionRaw = & $sentruxDsmRustCli sentrux evolution $sentruxTargetPath 2>&1
+                    $evolutionExitCode = $global:LASTEXITCODE
+                }
+                catch {
+                    $evolutionLaunchError = $_.Exception.Message
+                }
+            }
+            finally {
+                $ErrorActionPreference = $previousErrorActionPreference
+            }
+            if (-not [string]::IsNullOrWhiteSpace($evolutionLaunchError)) {
+                $notes.Add("Rust Sentrux evolution could not be launched ($evolutionLaunchError); using the explicit PowerShell compatibility fallback.")
+            }
+            elseif ($evolutionExitCode -eq 0) {
+                $evolutionCandidateText = ($evolutionRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
+                try {
+                    $evolutionObject = $evolutionCandidateText | ConvertFrom-Json
+                    $evolutionText = $evolutionCandidateText
+                    $evolutionProvider = "rust"
+                }
+                catch {
+                    $notes.Add("Rust Sentrux evolution returned invalid JSON; using the explicit PowerShell compatibility fallback.")
+                }
+            }
+            else {
+                $notes.Add("Rust Sentrux evolution exited with code $evolutionExitCode; using the explicit PowerShell compatibility fallback.")
+            }
+        }
+        elseif ($sentruxEvolutionPreference -eq "rust") {
+            $notes.Add("Rust Sentrux binary was unavailable at $sentruxDsmRustCli; using the explicit PowerShell compatibility fallback for evolution.")
+        }
+        if ($null -eq $evolutionObject) {
+            $previousErrorActionPreference = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = "Continue"
+                $evolutionRaw = & $sentruxAgentTool evolution $sentruxTargetPath 2>&1
+            }
+            finally {
+                $ErrorActionPreference = $previousErrorActionPreference
+            }
+            $evolutionText = ($evolutionRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
+            $evolutionObject = $evolutionText | ConvertFrom-Json
+            $evolutionProvider = "powershell_compatibility"
+        }
+        $notes.Add("Sentrux evolution provider: $evolutionProvider")
         $evolutionText | Set-Content -LiteralPath $sentruxEvolutionPath -Encoding UTF8
         $evolutionFunctions = @($evolutionObject.hotspots.functions)
         $evolutionCouplingModules = @($evolutionObject.coupling.modules)
@@ -4150,9 +4212,71 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -Liter
             topBusFactorRisk = $topEvolutionBusFactor
         }
 
-        $whatIfRaw = & $sentruxAgentTool what_if $sentruxTargetPath 2>&1
-        $whatIfText = ($whatIfRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
-        $whatIfObject = $whatIfText | ConvertFrom-Json
+        $whatIfObject = $null
+        $whatIfText = ""
+        $whatIfProvider = ""
+        $sentruxWhatIfPreference = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_SENTRUX_WHATIF_PROVIDER)) {
+            "rust"
+        } else {
+            $env:CODE_INTEL_SENTRUX_WHATIF_PROVIDER.Trim().ToLowerInvariant()
+        }
+        if ($sentruxWhatIfPreference -notin @("rust", "powershell")) {
+            throw "CODE_INTEL_SENTRUX_WHATIF_PROVIDER must be 'rust' or 'powershell'"
+        }
+        if ($sentruxWhatIfPreference -eq "rust" -and (Test-Path -LiteralPath $sentruxDsmRustCli -PathType Leaf)) {
+            $previousErrorActionPreference = $ErrorActionPreference
+            $whatIfRaw = @()
+            $whatIfExitCode = $null
+            $whatIfLaunchError = $null
+            try {
+                $ErrorActionPreference = "Continue"
+                $global:LASTEXITCODE = 0
+                try {
+                    $whatIfRaw = & $sentruxDsmRustCli sentrux what_if $sentruxTargetPath 2>&1
+                    $whatIfExitCode = $global:LASTEXITCODE
+                }
+                catch {
+                    $whatIfLaunchError = $_.Exception.Message
+                }
+            }
+            finally {
+                $ErrorActionPreference = $previousErrorActionPreference
+            }
+            if (-not [string]::IsNullOrWhiteSpace($whatIfLaunchError)) {
+                $notes.Add("Rust Sentrux what_if could not be launched ($whatIfLaunchError); using the explicit PowerShell compatibility fallback.")
+            }
+            elseif ($whatIfExitCode -eq 0) {
+                $whatIfCandidateText = ($whatIfRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
+                try {
+                    $whatIfObject = $whatIfCandidateText | ConvertFrom-Json
+                    $whatIfText = $whatIfCandidateText
+                    $whatIfProvider = "rust"
+                }
+                catch {
+                    $notes.Add("Rust Sentrux what_if returned invalid JSON; using the explicit PowerShell compatibility fallback.")
+                }
+            }
+            else {
+                $notes.Add("Rust Sentrux what_if exited with code $whatIfExitCode; using the explicit PowerShell compatibility fallback.")
+            }
+        }
+        elseif ($sentruxWhatIfPreference -eq "rust") {
+            $notes.Add("Rust Sentrux binary was unavailable at $sentruxDsmRustCli; using the explicit PowerShell compatibility fallback for what_if.")
+        }
+        if ($null -eq $whatIfObject) {
+            $previousErrorActionPreference = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = "Continue"
+                $whatIfRaw = & $sentruxAgentTool what_if $sentruxTargetPath 2>&1
+            }
+            finally {
+                $ErrorActionPreference = $previousErrorActionPreference
+            }
+            $whatIfText = ($whatIfRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
+            $whatIfObject = $whatIfText | ConvertFrom-Json
+            $whatIfProvider = "powershell_compatibility"
+        }
+        $notes.Add("Sentrux what_if provider: $whatIfProvider")
         $whatIfText | Set-Content -LiteralPath $sentruxWhatIfPath -Encoding UTF8
         $failingScenarios = @($whatIfObject.scenarios | Where-Object { -not $_.pass })
         $topWhatIf = if ($failingScenarios.Count -gt 0) { "{0}:{1}" -f $failingScenarios[0].name, $failingScenarios[0].impact_count } else { "" }

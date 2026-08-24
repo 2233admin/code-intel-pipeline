@@ -1,0 +1,19 @@
+{
+  "happy": [
+    "安装或验证本地 code-intel，并分析当前仓库",
+    "改这个 Rust 文件前，Code Intel 说会影响哪些文件和测试？",
+    "读取最近一次 Code Intel run 的 hospital artifact"
+  ],
+  "edge": [
+    "机械重命名前先预览 AST rewrite，不要改文件",
+    "change impact 返回 stale-advisory，这个结果能当门禁吗？"
+  ],
+  "confuser": [
+    "请审查这个 PR 有没有安全漏洞",
+    "请设计这个模块的实现架构"
+  ],
+  "wrong": [
+    "把 React 组件的按钮做得更好看",
+    "把 Java 8 项目升级到 Java 21"
+  ]
+}

@@ -1340,7 +1340,7 @@ fn cli_path(path: &Path) -> String {
         .to_string()
 }
 
-fn stable_id(text: &str) -> String {
+pub(crate) fn stable_id(text: &str) -> String {
     sha1(text.as_bytes())[..8]
         .iter()
         .map(|byte| format!("{byte:02x}"))

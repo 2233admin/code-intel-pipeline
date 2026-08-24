@@ -1,5 +1,6 @@
 use crate::sentrux_analysis;
 use crate::sentrux_capabilities;
+use crate::sentrux_evolution;
 use crate::sentrux_gate;
 use crate::Result;
 use std::path::Path;
@@ -33,6 +34,16 @@ pub fn run(options: &Options<'_>) -> Result<()> {
         "dsm" => {
             let snapshot = sentrux_analysis::analyze(&repo)?;
             println!("{}", serde_json::to_string(&snapshot)?);
+            Ok(())
+        }
+        "evolution" => {
+            let doc = sentrux_evolution::evolution(&repo)?;
+            println!("{}", serde_json::to_string(&doc)?);
+            Ok(())
+        }
+        "what_if" => {
+            let doc = sentrux_evolution::what_if(&repo)?;
+            println!("{}", serde_json::to_string(&doc)?);
             Ok(())
         }
         "scan" => {
