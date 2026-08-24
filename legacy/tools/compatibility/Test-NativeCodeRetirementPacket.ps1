@@ -118,7 +118,7 @@ if ([int]$e01Envelope.exitCode -ne 65 -or
 }
 
 $directFunctionCount = [regex]::Matches($currentRunText, '(?m)^function New-CodeEvidenceLayer \{').Count
-$directCallCount = [regex]::Matches($currentRunText, '(?m)^\$codeEvidence = New-CodeEvidenceLayer ').Count
+$directCallCount = [regex]::Matches($currentRunText, '(?m)^\s*\$codeEvidence = New-CodeEvidenceLayer ').Count
 $dagCount = [regex]::Matches($currentRunText, '& \$rustCli run dag-coordinate --repo \$repoPath --out \$dagOut').Count
 if ($directFunctionCount -ne 1 -or $directCallCount -ne 1 -or $dagCount -ne 1) { throw "current E07 call graph changed after packet generation" }
 
