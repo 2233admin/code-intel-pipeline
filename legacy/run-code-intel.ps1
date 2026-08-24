@@ -3200,7 +3200,20 @@ $RepowiseProvider = Normalize-RepowiseProvider (Resolve-ConfigString `
     -Name "repowiseProvider" `
     -EnvNames @("CODE_INTEL_REPOWISE_PROVIDER", "REPOWISE_PROVIDER") `
     -Default $defaultRepowiseProvider)
-$defaultRepowiseModel = if ($RepowiseProvider -ieq "anthropic") { "MiniMax-M2.7" } else { "" }
+# The anthropic default model used to be hardcoded to "MiniMax-M2.7", which
+# forced every unconfigured anthropic-provider run onto one vendor's model
+# with no way to override it short of editing this file. It is now itself a
+# configurable default: repo config, global config, or an env var can name a
+# different model; an anthropic run with nothing configured anywhere still
+# falls back to MiniMax-M2.7, matching prior behavior exactly.
+$anthropicDefaultRepowiseModel = Resolve-ConfigString `
+    -Value "" `
+    -RepoConfig $repoConfig `
+    -ConfigData $configData `
+    -Name "repowiseAnthropicDefaultModel" `
+    -EnvNames @("CODE_INTEL_REPOWISE_DEFAULT_MODEL", "CODE_INTEL_DEFAULT_MODEL") `
+    -Default "MiniMax-M2.7"
+$defaultRepowiseModel = if ($RepowiseProvider -ieq "anthropic") { $anthropicDefaultRepowiseModel } else { "" }
 $RepowiseModel = Resolve-ConfigString `
     -Value $RepowiseModel `
     -RepoConfig $repoConfig `
@@ -3416,7 +3429,7 @@ if (-not [string]::IsNullOrWhiteSpace($ModelRoutingResult)) {
         if ($null -ne $selected.provider -and -not $repowiseProviderExplicit) {
             $RepowiseProvider = Normalize-RepowiseProvider ([string]$selected.provider)
             if ($null -eq $selected.model -and -not $repowiseModelConfigured) {
-                $RepowiseModel = if ($RepowiseProvider -ieq "anthropic") { "MiniMax-M2.7" } else { "" }
+                $RepowiseModel = if ($RepowiseProvider -ieq "anthropic") { $anthropicDefaultRepowiseModel } else { "" }
             }
         }
         if ($null -ne $selected.model -and -not $repowiseModelExplicit) { $RepowiseModel = [string]$selected.model }

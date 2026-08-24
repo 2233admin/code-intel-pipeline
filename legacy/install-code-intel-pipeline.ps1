@@ -1365,6 +1365,18 @@ if ($CheckProvider) {
     if ([string]::IsNullOrWhiteSpace($providerModel)) {
         $providerModel = [Environment]::GetEnvironmentVariable("CODE_INTEL_MODEL", "User")
     }
+    if ([string]::IsNullOrWhiteSpace($providerModel)) {
+        $providerModel = [Environment]::GetEnvironmentVariable("CODE_INTEL_REPOWISE_DEFAULT_MODEL", "Process")
+        if ([string]::IsNullOrWhiteSpace($providerModel)) {
+            $providerModel = [Environment]::GetEnvironmentVariable("CODE_INTEL_REPOWISE_DEFAULT_MODEL", "User")
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($providerModel)) {
+        $providerModel = [Environment]::GetEnvironmentVariable("CODE_INTEL_DEFAULT_MODEL", "Process")
+        if ([string]::IsNullOrWhiteSpace($providerModel)) {
+            $providerModel = [Environment]::GetEnvironmentVariable("CODE_INTEL_DEFAULT_MODEL", "User")
+        }
+    }
     if ([string]::IsNullOrWhiteSpace($providerModel) -and $providerName -eq "anthropic") { $providerModel = "MiniMax-M2.7" }
     $providerLabel = if ([string]::IsNullOrWhiteSpace($providerModel)) { "provider:$providerName" } else { "provider:$providerName/$providerModel" }
     try {
