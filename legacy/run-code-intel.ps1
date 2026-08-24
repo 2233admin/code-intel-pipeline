@@ -3654,50 +3654,72 @@ $graphPreference = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_GRAPH_PROVID
 if ($graphPreference -notin @("rust", "manual")) {
     throw "CODE_INTEL_GRAPH_PROVIDER must be 'rust' or 'manual'"
 }
-$graphRustCli = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_RUST_CLI)) {
-    $defaultRustCli
-} else {
-    [IO.Path]::GetFullPath($env:CODE_INTEL_RUST_CLI)
-}
 $graphProvider = ""
-if ($graphPreference -eq "rust" -and (Test-Path -LiteralPath $graphRustCli -PathType Leaf)) {
-    $graphArgs = @("graph", "--repo", $repoPath, "--language", $Language, "--write")
-    if ($Mode -eq "full") { $graphArgs += "--full" }
-    $previousErrorActionPreference = $ErrorActionPreference
-    $graphExitCode = $null
-    $graphLaunchError = $null
-    try {
-        $ErrorActionPreference = "Continue"
-        $global:LASTEXITCODE = 0
+$graphAttemptFailed = $false
+if ($graphPreference -eq "rust") {
+    # Same discovery order as the artifact-index update script uses: explicit override
+    # wins, then local builds (release before debug -- installed/CI machines
+    # only ever have release or PATH binaries, so debug must not be
+    # mandatory), then an installed code-intel on PATH. Resolved only inside
+    # this branch so manual mode never risks [IO.Path]::GetFullPath throwing
+    # on an unnormalizable CODE_INTEL_RUST_CLI value it will not even use.
+    $graphRustCliCandidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_RUST_CLI)) {
+        $graphRustCliCandidates += [IO.Path]::GetFullPath($env:CODE_INTEL_RUST_CLI)
+    }
+    $graphRustCliCandidates += Join-Path (Split-Path -Parent $PSScriptRoot) (Join-Path "target/release" $rustExecutableName)
+    $graphRustCliCandidates += $defaultRustCli
+    $graphRustCli = $graphRustCliCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if ($null -eq $graphRustCli) {
+        $graphPathCommand = Get-Command "code-intel" -ErrorAction SilentlyContinue
+        if ($null -ne $graphPathCommand -and -not [string]::IsNullOrWhiteSpace([string]$graphPathCommand.Source)) {
+            $graphRustCli = $graphPathCommand.Source
+        }
+    }
+    if ($null -ne $graphRustCli) {
+        # The generator's own exit code is the single source of truth for
+        # whether generation succeeded; this shim only forwards the
+        # invocation and its outcome, matching the thin-facade pattern the
+        # other Rust-backed stages in this file already use (see
+        # docs/ps1-exit/contract-inventory.md section 1.8).
+        $graphArgs = @("graph", "--repo", $repoPath, "--language", $Language, "--write")
+        if ($Mode -eq "full") { $graphArgs += "--full" }
+        $previousErrorActionPreference = $ErrorActionPreference
+        $graphFailureReason = ""
         try {
-            $null = & $graphRustCli @graphArgs 2>&1
-            $graphExitCode = $global:LASTEXITCODE
+            $ErrorActionPreference = "Continue"
+            $global:LASTEXITCODE = 0
+            try {
+                $null = & $graphRustCli @graphArgs 2>&1
+                if ($global:LASTEXITCODE -eq 0) {
+                    $graphProvider = "rust"
+                } else {
+                    $graphFailureReason = "exited with code $($global:LASTEXITCODE)"
+                }
+            }
+            catch {
+                $graphFailureReason = "could not be launched ($($_.Exception.Message))"
+            }
         }
-        catch {
-            $graphLaunchError = $_.Exception.Message
+        finally {
+            $ErrorActionPreference = $previousErrorActionPreference
         }
-    }
-    finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-    if (-not [string]::IsNullOrWhiteSpace($graphLaunchError)) {
-        $notes.Add("Rust knowledge graph could not be launched ($graphLaunchError); falling back to the manual /understand instruction.")
-    }
-    elseif ($graphExitCode -eq 0) {
-        $graphProvider = "rust"
+        if (-not [string]::IsNullOrWhiteSpace($graphFailureReason)) {
+            $graphAttemptFailed = $true
+            $notes.Add("Rust knowledge graph $graphFailureReason; falling back to the manual /understand instruction.")
+        }
     }
     else {
-        $notes.Add("Rust knowledge graph exited with code $graphExitCode; falling back to the manual /understand instruction.")
+        $graphAttemptFailed = $true
+        $notes.Add("Rust knowledge graph binary was unavailable (tried: $($graphRustCliCandidates -join ', '), and 'code-intel' on PATH); falling back to the manual /understand instruction.")
     }
-}
-elseif ($graphPreference -eq "rust") {
-    $notes.Add("Rust knowledge graph binary was unavailable at $graphRustCli; falling back to the manual /understand instruction.")
 }
 if (-not [string]::IsNullOrWhiteSpace($graphProvider)) {
     $notes.Add("Knowledge graph provider: $graphProvider")
 }
 
-if (Test-Path -LiteralPath $knowledgeGraph) {
+$graphStaleUnderRequire = $graphAttemptFailed -and $RequireUnderstandGraph -and (Test-Path -LiteralPath $knowledgeGraph)
+if ((Test-Path -LiteralPath $knowledgeGraph) -and -not $graphStaleUnderRequire) {
     $graphItem = Get-Item -LiteralPath $knowledgeGraph
     $notes.Add("Understand graph found: $knowledgeGraph")
     $steps.Add([pscustomobject][ordered]@{
@@ -3712,7 +3734,11 @@ if (Test-Path -LiteralPath $knowledgeGraph) {
     })
 }
 else {
-    $message = "Understand graph missing. Run in Claude: $understandCommand"
+    $message = if ($graphStaleUnderRequire) {
+        "Understand graph generation just failed and -RequireUnderstandGraph is set; an existing knowledge-graph.json is not trusted as current. Run in Claude: $understandCommand"
+    } else {
+        "Understand graph missing. Run in Claude: $understandCommand"
+    }
     $notes.Add($message)
     $status = if ($RequireUnderstandGraph) { "failed" } else { "manual_required" }
     $steps.Add([pscustomobject][ordered]@{
@@ -3721,7 +3747,7 @@ else {
         status = $status
         exitCode = if ($RequireUnderstandGraph) { 1 } else { 0 }
         output = $message
-        error = if ($RequireUnderstandGraph) { "knowledge-graph.json is required but missing" } else { "" }
+        error = if ($RequireUnderstandGraph) { if ($graphStaleUnderRequire) { "knowledge-graph.json generation failed and the existing file is stale" } else { "knowledge-graph.json is required but missing" } } else { "" }
         finishedAt = (Get-Date).ToString("o")
         durationMs = 0
     })
