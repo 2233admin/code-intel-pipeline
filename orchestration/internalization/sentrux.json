@@ -65,7 +65,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux_analysis.rs",
-        "sha256": "7b48d4d32702539ec625e547130c889ee7430f9b5267e37c690887903ec1d590"
+        "sha256": "833f5bf5e522c79f3de248568d995466c077b0ad3196ffda32152dbfba529214"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_analysis.rs",
@@ -141,7 +141,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "d69f51b84a1f60036acc42e72bc7fe99eef4e9d6333944e2ffc3c90848490724"
+        "sha256": "8075d61ff05f9501a06746b0c45721085d79a9718c4d5ddf4d4d09d56785be21"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
@@ -160,7 +160,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "d69f51b84a1f60036acc42e72bc7fe99eef4e9d6333944e2ffc3c90848490724"
+        "sha256": "8075d61ff05f9501a06746b0c45721085d79a9718c4d5ddf4d4d09d56785be21"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
@@ -179,7 +179,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "d69f51b84a1f60036acc42e72bc7fe99eef4e9d6333944e2ffc3c90848490724"
+        "sha256": "8075d61ff05f9501a06746b0c45721085d79a9718c4d5ddf4d4d09d56785be21"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
@@ -335,7 +335,7 @@
       "path": "crates/code-intel-cli/src/sentrux_analysis.rs",
       "description": "native Rust governed-source, file/function metric, module graph, and DSM risk kernel",
       "evidenceIds": [
-        "local:sentrux:rust-dsm-source-sha256:7b48d4d32702539ec625e547130c889ee7430f9b5267e37c690887903ec1d590",
+        "local:sentrux:rust-dsm-source-sha256:833f5bf5e522c79f3de248568d995466c077b0ad3196ffda32152dbfba529214",
         "local:sentrux:rust-dsm-conformance-sha256:be65a1f14799e43a58836ae4e9e6c93d07ea7dd25f8518c4e6f19e57833fe09b"
       ]
     },
