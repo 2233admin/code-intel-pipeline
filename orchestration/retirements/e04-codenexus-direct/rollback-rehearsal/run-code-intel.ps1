@@ -3633,6 +3633,57 @@ if ($Mode -eq "full") {
     $understandCommand = "$understandCommand --full"
 }
 
+$graphPreference = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_GRAPH_PROVIDER)) {
+    "rust"
+} else {
+    $env:CODE_INTEL_GRAPH_PROVIDER.Trim().ToLowerInvariant()
+}
+if ($graphPreference -notin @("rust", "manual")) {
+    throw "CODE_INTEL_GRAPH_PROVIDER must be 'rust' or 'manual'"
+}
+$graphRustCli = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_RUST_CLI)) {
+    $defaultRustCli
+} else {
+    [IO.Path]::GetFullPath($env:CODE_INTEL_RUST_CLI)
+}
+$graphProvider = ""
+if ($graphPreference -eq "rust" -and (Test-Path -LiteralPath $graphRustCli -PathType Leaf)) {
+    $graphArgs = @("graph", "--repo", $repoPath, "--language", $Language, "--write")
+    if ($Mode -eq "full") { $graphArgs += "--full" }
+    $previousErrorActionPreference = $ErrorActionPreference
+    $graphExitCode = $null
+    $graphLaunchError = $null
+    try {
+        $ErrorActionPreference = "Continue"
+        $global:LASTEXITCODE = 0
+        try {
+            $null = & $graphRustCli @graphArgs 2>&1
+            $graphExitCode = $global:LASTEXITCODE
+        }
+        catch {
+            $graphLaunchError = $_.Exception.Message
+        }
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if (-not [string]::IsNullOrWhiteSpace($graphLaunchError)) {
+        $notes.Add("Rust knowledge graph could not be launched ($graphLaunchError); falling back to the manual /understand instruction.")
+    }
+    elseif ($graphExitCode -eq 0) {
+        $graphProvider = "rust"
+    }
+    else {
+        $notes.Add("Rust knowledge graph exited with code $graphExitCode; falling back to the manual /understand instruction.")
+    }
+}
+elseif ($graphPreference -eq "rust") {
+    $notes.Add("Rust knowledge graph binary was unavailable at $graphRustCli; falling back to the manual /understand instruction.")
+}
+if (-not [string]::IsNullOrWhiteSpace($graphProvider)) {
+    $notes.Add("Knowledge graph provider: $graphProvider")
+}
+
 if (Test-Path -LiteralPath $knowledgeGraph) {
     $graphItem = Get-Item -LiteralPath $knowledgeGraph
     $notes.Add("Understand graph found: $knowledgeGraph")
