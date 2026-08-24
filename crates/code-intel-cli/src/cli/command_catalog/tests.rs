@@ -294,7 +294,7 @@ fn unified_route_inventory_owns_version_primary_raw_and_legacy_dispatch() {
             .iter()
             .filter(|route| matches!(route, CommandRoute::Raw(_)))
             .count(),
-        36
+        40
     );
     assert_eq!(
         COMMAND_ROUTES
