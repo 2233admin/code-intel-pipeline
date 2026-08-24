@@ -323,6 +323,11 @@ fn check_compatibility_window(
         referenced,
         blockers,
         |d| {
+            if d["proofMode"] == "static_unreachability" {
+                return static_unreachability_proof(d)
+                    && d["checkedAt"].as_u64().is_some_and(|c| c <= evaluated_at)
+                    && d["expiresAt"].as_u64().is_some_and(|e| e >= evaluated_at);
+            }
             let start = d["startedAt"].as_u64().unwrap_or(u64::MAX);
             let end = d["observedThrough"].as_u64().unwrap_or(0);
             let days = d["minimumDays"].as_u64().unwrap_or(u64::MAX);
@@ -343,6 +348,9 @@ fn check_compatibility_window(
             "compatibilityWindow ref",
         )?)
         .ok_or_else(|| AdapterError::Contract("compatibility window evidence is absent".into()))?;
+    if compatibility["details"]["proofMode"] == "static_unreachability" {
+        return Ok((u64::MAX, u64::MAX));
+    }
     let compatibility_start = compatibility["details"]["startedAt"]
         .as_u64()
         .unwrap_or(u64::MAX);
@@ -350,6 +358,26 @@ fn check_compatibility_window(
         .as_u64()
         .unwrap_or(0);
     Ok((compatibility_start, compatibility_end))
+}
+
+/// A branch already proven unreachable in source (a CI-enforced absence
+/// assertion, not a runtime sample) makes `legacyInvocations` structurally
+/// zero forever -- see DR-0006. Scoped to that narrow claim only: this does
+/// not attest replacement adoption or elapsed time.
+fn static_unreachability_proof(d: &Value) -> bool {
+    d["outcome"] == "passed"
+        && !d["staticProof"]["testFile"]
+            .as_str()
+            .unwrap_or("")
+            .is_empty()
+        && !d["staticProof"]["testName"]
+            .as_str()
+            .unwrap_or("")
+            .is_empty()
+        && !d["staticProof"]["assertsAbsenceOf"]
+            .as_str()
+            .unwrap_or("")
+            .is_empty()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -392,6 +420,11 @@ fn check_rollback_and_usage(
         referenced,
         blockers,
         |d| {
+            if compatibility_start == u64::MAX && compatibility_end == u64::MAX {
+                return d["proofMode"] == "static_unreachability"
+                    && static_unreachability_proof(d)
+                    && d["legacyInvocations"].as_u64() == Some(0);
+            }
             let start = d["startedAt"].as_u64().unwrap_or(u64::MAX);
             let end = d["endedAt"].as_u64().unwrap_or(0);
             let total = d["totalInvocations"].as_u64().unwrap_or(0);
@@ -886,5 +919,75 @@ mod tests {
             .as_array()
             .unwrap()
             .contains(&json!("unproven_independent_approval")));
+    }
+
+    #[test]
+    fn static_unreachability_proof_satisfies_usage_and_compatibility_window() {
+        let (manifest, mut evidence) = fixture();
+        let window_digest = evidence_digest(&manifest, "/approvalSubject/compatibilityWindow");
+        evidence.get_mut(&window_digest).unwrap()["details"] = json!({
+            "outcome":"passed",
+            "proofMode":"static_unreachability",
+            "staticProof":{
+                "testFile":"scripts/tests/test-workflow-recommendation-brief.ps1",
+                "testName":"asserts inline recommender absent",
+                "assertsAbsenceOf":"Invoke-WorkflowStackDetector"
+            },
+            "checkedAt":2_600_000,
+            "expiresAt":NOW + 100
+        });
+        let usage_digest = evidence_digest(&manifest, "/approvalSubject/usageObservation");
+        evidence.get_mut(&usage_digest).unwrap()["details"] = json!({
+            "outcome":"passed",
+            "proofMode":"static_unreachability",
+            "staticProof":{
+                "testFile":"scripts/tests/test-workflow-recommendation-brief.ps1",
+                "testName":"asserts inline recommender absent",
+                "assertsAbsenceOf":"Invoke-WorkflowStackDetector"
+            },
+            "legacyInvocations":0
+        });
+        let decision = evaluate(&manifest, &evidence, NOW).unwrap();
+        assert_eq!(decision["decision"], "approved");
+        assert_eq!(decision["blockers"], json!([]));
+    }
+
+    #[test]
+    fn static_compatibility_window_cannot_pair_with_telemetry_usage_evidence() {
+        let (manifest, mut evidence) = fixture();
+        let window_digest = evidence_digest(&manifest, "/approvalSubject/compatibilityWindow");
+        evidence.get_mut(&window_digest).unwrap()["details"] = json!({
+            "outcome":"passed",
+            "proofMode":"static_unreachability",
+            "staticProof":{
+                "testFile":"scripts/tests/test-repowise-adapter-contract.ps1",
+                "testName":"fails if direct call site returns",
+                "assertsAbsenceOf":"test-code-intel-provider.ps1"
+            },
+            "checkedAt":2_600_000,
+            "expiresAt":NOW + 100
+        });
+        // usageObservation evidence is left as the fixture's telemetry-shaped
+        // details, which no longer matches the sentinel compatibility window.
+        let decision = evaluate(&manifest, &evidence, NOW).unwrap();
+        assert!(decision["blockers"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("unproven_usage_observation")));
+    }
+
+    #[test]
+    fn e04_e07_e08_shaped_evidence_without_proof_mode_is_unaffected() {
+        // No proofMode field at all -- the default/legacy telemetry shape
+        // used by branches whose replacement is still incomplete (E04/E07/E08)
+        // must keep failing closed exactly as before this change.
+        let (manifest, mut evidence) = fixture();
+        let usage_digest = evidence_digest(&manifest, "/approvalSubject/usageObservation");
+        evidence.get_mut(&usage_digest).unwrap()["details"]["legacyInvocations"] = json!(3);
+        let decision = evaluate(&manifest, &evidence, NOW).unwrap();
+        assert!(decision["blockers"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("unproven_usage_observation")));
     }
 }
