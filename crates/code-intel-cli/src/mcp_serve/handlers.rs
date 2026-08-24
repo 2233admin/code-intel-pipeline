@@ -20,6 +20,7 @@ use crate::project_context::{EvidenceQuery, ProjectError, Query};
 use crate::{capability, capability_inventory, change_impact, execution_policy, snapshot};
 
 const EDIT_PLAN_CAPABILITY: &str = "edit.ast-grep-plan";
+const SECURITY_SCAN_CAPABILITY: &str = "scan.ast-grep-security";
 const DEFAULT_LIMIT: usize = 20;
 /// Read from `evidence_query` rather than restated: the tool descriptors, the
 /// `--limit` flag, and this surface must agree on the ceiling, and three copies
@@ -41,6 +42,7 @@ pub(super) fn call(
         "get_audit_status" => audit_status(context, arguments),
         "get_change_impact" => blast_radius(context, arguments),
         "plan_structural_edit" => structural_edit(context, arguments),
+        "scan_security_findings" => security_findings(context, arguments),
         other => Err(ProjectError::contract(format!("unknown tool: {other}"))),
     }
 }
@@ -310,7 +312,7 @@ fn structural_edit(context: &ServeContext, arguments: &Value) -> Result<Value, P
     // `.ok()` reported "produced no artifact" for a plan that was produced and
     // then turned out to be unreadable or malformed — three very different
     // things for whoever has to work out why.
-    let plan = read_plan_artifact(&outcome, &staging);
+    let plan = read_capability_artifact(&outcome, &staging);
     let _ = fs::remove_dir_all(&staging);
     match plan {
         Ok(plan) => Ok(json!({
@@ -333,7 +335,7 @@ fn structural_edit(context: &ServeContext, arguments: &Value) -> Result<Value, P
     }
 }
 
-fn read_plan_artifact(
+fn read_capability_artifact(
     outcome: &capability::ExecOutcome,
     staging: &Path,
 ) -> Result<Value, ProjectError> {
@@ -341,17 +343,82 @@ fn read_plan_artifact(
         .result
         .as_ref()
         .and_then(|result| result["artifacts"][0]["path"].as_str())
-        .ok_or_else(|| ProjectError::contract("edit plan produced no artifact"))?;
+        .ok_or_else(|| ProjectError::contract("capability produced no artifact"))?;
     let bytes = fs::read(staging.join(relative)).map_err(|error| {
-        ProjectError::host_io(format!(
-            "edit plan artifact {relative} could not be read: {error}"
-        ))
+        ProjectError::host_io(format!("artifact {relative} could not be read: {error}"))
     })?;
     serde_json::from_slice(&bytes).map_err(|error| {
-        ProjectError::contract(format!(
-            "edit plan artifact {relative} is not valid JSON: {error}"
-        ))
+        ProjectError::contract(format!("artifact {relative} is not valid JSON: {error}"))
     })
+}
+
+fn security_findings(context: &ServeContext, arguments: &Value) -> Result<Value, ProjectError> {
+    expect_keys(arguments, &["language", "paths"])?;
+    let language = required_text(arguments, "language")?;
+    let paths = match arguments.get("paths") {
+        None | Some(Value::Null) => vec![".".to_string()],
+        Some(_) => required_string_array(arguments, "paths")?,
+    };
+    let declaration =
+        capability::declaration_for(SECURITY_SCAN_CAPABILITY, context.manifest.as_deref())
+            .map_err(|error| ProjectError::contract(format!("capability registry: {error}")))?;
+    let policy =
+        execution_policy::ExecutionPolicy::for_profile(execution_policy::RunProfile::Default);
+    let allowed_effects = policy.allowed_effects(&declaration);
+    refuse_repository_mutation(&allowed_effects)?;
+    let snapshot = snapshot::build_for_dag(&context.repo_path, "explicit_overlay", &paths)
+        .map_err(|error| {
+            ProjectError::contract(format!(
+                "snapshot identity for the requested paths: {error}"
+            ))
+        })?;
+
+    let mut options = Map::new();
+    options.insert("repoPath".into(), json!(context.repo_path));
+    options.insert("language".into(), json!(language));
+    options.insert("paths".into(), json!(paths));
+
+    let request = json!({
+        "schema": "code-intel-capability-request.v1",
+        "capability": SECURITY_SCAN_CAPABILITY,
+        "contractVersion": 1,
+        "implementation": declaration["implementation"],
+        "snapshot": snapshot["snapshot"],
+        "options": options,
+        "inputs": [],
+        "effectPolicy": {"allowedEffects": allowed_effects},
+    });
+
+    let staging = staging_path()?;
+    let outcome = capability::exec_in_process(
+        SECURITY_SCAN_CAPABILITY,
+        &request,
+        &staging,
+        None,
+        context.manifest.as_deref(),
+        capability_inventory::execute,
+    );
+    let findings = read_capability_artifact(&outcome, &staging);
+    let _ = fs::remove_dir_all(&staging);
+    match findings {
+        Ok(findings) => Ok(json!({
+            "schema": "code-intel-mcp-security-findings.v1",
+            "capability": SECURITY_SCAN_CAPABILITY,
+            "repo": context.repo,
+            "snapshotIdentity": snapshot["snapshot"]["identity"],
+            "authority": {"mode": "advisory_only", "repositoryMutation": false, "gates": false},
+            "exitCode": outcome.exit_code,
+            "findings": findings,
+        })),
+        Err(error) => Err(ProjectError::contract(format!(
+            "{} (exit {}): {}",
+            error.message(),
+            outcome.exit_code,
+            outcome
+                .diagnostic
+                .unwrap_or_else(|| "no diagnostic was emitted".into())
+        ))),
+    }
 }
 
 /// The read-only boundary, enforced against the registry rather than asserted

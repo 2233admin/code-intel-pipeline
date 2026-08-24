@@ -9,10 +9,10 @@
 use serde_json::{json, Value};
 
 /// Every served tool, in the order an agent should reach for them: the four
-/// read projections #54 specified, then the two write-assist projections #58
-/// added. `plan_structural_edit` is last deliberately — it is the only one
-/// that spawns a child process, and an agent scanning this list top-down
-/// should find the cheap answers first.
+/// read projections #54 specified, then the write-assist projections #58 and
+/// #345 added. `plan_structural_edit` and `scan_security_findings` are last
+/// deliberately — they are the only two that spawn a child process, and an
+/// agent scanning this list top-down should find the cheap answers first.
 pub(super) const NAMES: &[&str] = &[
     "get_gate_verdict",
     "get_facts",
@@ -20,6 +20,7 @@ pub(super) const NAMES: &[&str] = &[
     "get_audit_status",
     "get_change_impact",
     "plan_structural_edit",
+    "scan_security_findings",
 ];
 
 pub(super) fn is_registered(name: &str) -> bool {
@@ -34,6 +35,7 @@ pub(super) fn descriptors() -> Vec<Value> {
         audit_status(),
         change_impact(),
         structural_edit(),
+        security_findings(),
     ]
 }
 
@@ -168,6 +170,32 @@ fn structural_edit() -> Value {
                 }
             },
             "required": ["language", "pattern"],
+            "additionalProperties": false
+        },
+        "annotations": {"readOnlyHint": true, "destructiveHint": false, "openWorldHint": false},
+    })
+}
+
+fn security_findings() -> Value {
+    json!({
+        "name": "scan_security_findings",
+        "title": "Scan for security findings",
+        "description": "Run the bundled, originally-authored ast-grep security rule set for one \
+    language (csharp, go, java, javascript, python, rust, typescript) across the checkout and \
+    return every finding. Advisory only: findings are review prompts, never a verified \
+    vulnerability, and never change get_gate_verdict.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "language": {"type": "string", "description": "Bundled rule-set language id: csharp, go, java, javascript, python, rust, or typescript."},
+                "paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 64,
+                    "description": "Repository-relative paths to scan (default the whole checkout)."
+                }
+            },
+            "required": ["language"],
             "additionalProperties": false
         },
         "annotations": {"readOnlyHint": true, "destructiveHint": false, "openWorldHint": false},

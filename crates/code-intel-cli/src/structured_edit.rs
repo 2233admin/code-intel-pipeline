@@ -192,7 +192,10 @@ pub(crate) fn execute(
     })
 }
 
-fn required_string<'a>(value: Option<&'a Value>, name: &str) -> Result<&'a str, AdapterError> {
+pub(super) fn required_string<'a>(
+    value: Option<&'a Value>,
+    name: &str,
+) -> Result<&'a str, AdapterError> {
     value
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
@@ -210,7 +213,7 @@ fn bounded_string<'a>(value: Option<&'a Value>, name: &str) -> Result<&'a str, A
     }
 }
 
-fn requested_paths(value: Option<&Value>) -> Result<Vec<&str>, AdapterError> {
+pub(super) fn requested_paths(value: Option<&Value>) -> Result<Vec<&str>, AdapterError> {
     match value {
         None => Ok(vec!["."]),
         Some(value) => {
@@ -230,7 +233,7 @@ fn requested_paths(value: Option<&Value>) -> Result<Vec<&str>, AdapterError> {
     }
 }
 
-fn validate_path(
+pub(super) fn validate_path(
     repo: &Path,
     canonical_repo: &Path,
     snapshot_scopes: &[String],
@@ -310,7 +313,7 @@ pub(super) fn within_scope(path: &str, scope: &str) -> bool {
     scope == "." || path == scope || path.starts_with(&format!("{scope}/"))
 }
 
-fn normalize_match_file(
+pub(super) fn normalize_match_file(
     repo: &Path,
     canonical_repo: &Path,
     file: &str,
@@ -338,7 +341,7 @@ fn normalize_match_file(
 /// npm-style installs ship a `.cmd` shim on Windows, which `CreateProcess`
 /// cannot start directly, so those are wrapped in `cmd.exe` the same way
 /// `builtin_provider_evidence::external_command` wraps them.
-fn ast_grep_command() -> Command {
+pub(super) fn ast_grep_command() -> Command {
     let path = tool_path::resolve("ast-grep");
     #[cfg(windows)]
     if path
@@ -353,7 +356,7 @@ fn ast_grep_command() -> Command {
     Command::new(path)
 }
 
-fn ast_grep_version() -> Result<String, AdapterError> {
+pub(super) fn ast_grep_version() -> Result<String, AdapterError> {
     let output = ast_grep_command()
         .arg("--version")
         .output()
@@ -371,13 +374,13 @@ fn ast_grep_version() -> Result<String, AdapterError> {
         })
 }
 
-fn bounded_diagnostic(bytes: &[u8]) -> String {
+pub(super) fn bounded_diagnostic(bytes: &[u8]) -> String {
     String::from_utf8_lossy(&bytes[..bytes.len().min(4096)])
         .trim()
         .to_string()
 }
 
-fn ast_grep_status_is_acceptable(success: bool, code: Option<i32>, empty: bool) -> bool {
+pub(super) fn ast_grep_status_is_acceptable(success: bool, code: Option<i32>, empty: bool) -> bool {
     success || (code == Some(1) && empty)
 }
 

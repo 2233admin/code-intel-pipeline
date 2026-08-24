@@ -620,8 +620,9 @@ stdio MCP server，按需起、随 session 生灭。注册进 `.mcp.json` 后 Cl
 | `get_audit_status` | 各科室审计结论、评分、覆盖；没跑过 audit 会明说"不可用"而不是装绿 | 已提交 run |
 | `get_change_impact` | 改这些文件会波及谁、该先跑哪些测试 | **已提交 import 图 × 当前 `--repo-path`**；默认标 stale-advisory 并同时给出 recorded/current 两个 snapshot identity |
 | `plan_structural_edit` | ast-grep 结构改写预览，只出匹配清单，不落盘 | **当前工作树**（不是已提交 run） |
+| `scan_security_findings` | 跑内置原创 ast-grep 安全规则集（csharp/go/java/javascript/python/rust/typescript），出 finding 清单 | **当前工作树**；advisory-only，findings 是复核提示不是已验证漏洞，从不影响 `get_gate_verdict` |
 
-**这个面只读，不裁决。** 门禁判定照旧只走 CLI 与 CI 路径——查询面被 prompt injection 说服也改不了结论。唯一会执行东西的工具是 `plan_structural_edit`，它在跑之前拿注册表核对自己的 capability 声明，一旦声明里出现 `repo_mutation` 就直接拒绝。
+**这个面只读，不裁决。** 门禁判定照旧只走 CLI 与 CI 路径——查询面被 prompt injection 说服也改不了结论。唯一会执行东西的两个工具是 `plan_structural_edit` 和 `scan_security_findings`，各自在跑之前拿注册表核对自己的 capability 声明，一旦声明里出现 `repo_mutation` 就直接拒绝。
 
 `--repo` 建议显式给：worktree 的目录名不是 `run commit` 发布时用的仓名，不给就会去查错仓的 run。`--repo-path` 默认取工作目录。
 

@@ -1,0 +1,121 @@
+# Original ast-grep security rules for Python, authored for
+# code-intel-pipeline.
+#
+# Provenance: the rule taxonomy (dynamic-code execution, insecure
+# deserialization, command/SQL injection, weak crypto, hardcoded
+# credentials) is the standard OWASP/CWE vulnerability-class set;
+# independently authored here (own ids, messages, and pattern choices)
+# rather than copied from any upstream project. See
+# orchestration/internalization/ast-grep-security-rules.json for the
+# concept-absorption record and its "reimplement, not vendor" boundary.
+#
+# Consumed by the `scan.ast-grep-security` capability via
+# `ast-grep scan --rule <this file>`. Findings are advisory-only: they
+# never gate `get_gate_verdict` and never authorize a rewrite.
+id: cip-py-dynamic-eval
+language: python
+severity: warning
+message: >-
+  eval() executes an arbitrary string as code; an attacker-controlled
+  input reaches interpreter execution
+metadata: {cwe: "CWE-95", category: "injection"}
+rule:
+  pattern: eval($$$ARGS)
+---
+id: cip-py-dynamic-exec
+language: python
+severity: warning
+message: >-
+  exec() executes an arbitrary string as code; an attacker-controlled
+  input reaches interpreter execution
+metadata: {cwe: "CWE-95", category: "injection"}
+rule:
+  pattern: exec($$$ARGS)
+---
+id: cip-py-insecure-deserialize
+language: python
+severity: warning
+message: >-
+  pickle.loads() deserializes untrusted bytes into arbitrary objects;
+  a crafted payload can execute code on load
+metadata: {cwe: "CWE-502", category: "deserialization"}
+rule:
+  any:
+    - pattern: pickle.loads($$$ARGS)
+    - pattern: pickle.load($$$ARGS)
+---
+id: cip-py-unsafe-yaml-load
+language: python
+severity: warning
+message: >-
+  yaml.load() without an explicit SafeLoader can construct arbitrary
+  Python objects from the document
+metadata: {cwe: "CWE-502", category: "deserialization"}
+rule:
+  pattern: yaml.load($ARG)
+---
+id: cip-py-command-injection
+language: python
+severity: warning
+message: >-
+  os.system() runs a shell command; string-built input is a
+  command-injection surface
+metadata: {cwe: "CWE-78", category: "injection"}
+rule:
+  any:
+    - pattern: os.system($$$ARGS)
+    - all:
+        - pattern: subprocess.$METHOD($$$ARGS)
+        - has: {regex: 'shell\s*=\s*True', stopBy: end}
+---
+id: cip-py-sql-string-building
+language: python
+severity: warning
+message: >-
+  SQL execute() called with a concatenated, %-formatted, or f-string
+  query; build parameterized queries instead
+metadata: {cwe: "CWE-89", category: "injection"}
+rule:
+  any:
+    - pattern: $CURSOR.execute($A + $B)
+    - all:
+        - pattern: $CURSOR.execute($A % $B)
+        - has: {kind: string, stopBy: end}
+    - all:
+        - pattern: $CURSOR.execute($ARG)
+        - has: {kind: string, regex: '^[fF]', stopBy: end}
+---
+id: cip-py-weak-hash
+language: python
+severity: info
+message: >-
+  MD5/SHA1 are not collision-resistant; do not use them for passwords,
+  tokens, or integrity checks
+metadata: {cwe: "CWE-327", category: "crypto"}
+rule:
+  any:
+    - pattern: hashlib.md5($$$ARGS)
+    - pattern: hashlib.sha1($$$ARGS)
+---
+id: cip-py-hardcoded-credential
+language: python
+severity: warning
+message: >-
+  a credential-named variable is assigned a non-trivial string literal
+  instead of being read from config/secret storage
+metadata: {cwe: "CWE-798", category: "secrets"}
+rule:
+  kind: assignment
+  all:
+    - has:
+        field: left
+        regex: '(?i)^(password|secret|api_key|token)$'
+    - has:
+        field: right
+        all:
+          - kind: string
+          - regex: '^.{10,}$'
+          - not:
+              any:
+                - regex: '\{[^{}]*\}'
+                - regex: '%[sdrifeEgGxXoc(]'

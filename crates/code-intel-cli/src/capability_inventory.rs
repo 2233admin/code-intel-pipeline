@@ -11,6 +11,8 @@ use crate::adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterErro
 use crate::artifact_ref::VerifiedArtifact;
 use crate::snapshot;
 
+#[path = "ast_grep_security_scan.rs"]
+mod ast_grep_security_scan;
 #[path = "assistance_adapter.rs"]
 mod assistance_adapter;
 #[path = "assistance_discovery.rs"]
@@ -88,6 +90,9 @@ pub(crate) fn execute(
             native_code_evidence::execute(request, verified_inputs, out)
         }
         "edit.ast-grep-plan.compat" => structured_edit::execute(request, verified_inputs, out),
+        "scan.ast-grep-security.compat" => {
+            ast_grep_security_scan::execute(request, verified_inputs, out)
+        }
         "edit.span-apply.compat" => span_apply::execute(request, verified_inputs, out),
         "project.orientation.compat" => project_orientation::execute(request, verified_inputs, out),
         "understanding.quadrant.compat" => {

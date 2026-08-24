@@ -60,6 +60,11 @@ Tool evidence:
 - Optional `structured-edit-plan.json` using `code-intel-structured-edit-plan.v1`. It is a
   snapshot-bound ast-grep structural search/rewrite preview. It has no repository-mutation
   authority; applying a rewrite remains a separate explicitly authorized operation.
+- Optional `ast-grep-security-findings.json` using `code-intel-ast-grep-security-findings.v1`. It is
+  a snapshot-bound scan against the bundled, originally-authored per-language security rule set
+  (`orchestration/ast-grep-rules/`). `authority.mode` is `advisory_only`: findings are review
+  prompts, never a verified vulnerability, and never affect `get_gate_verdict` or any hospital
+  discharge decision.
 - Optional `session-evidence.json` using `code-intel-session-evidence.v1`. It is a privacy-reduced,
   snapshot-bound session-review artifact with advisory-only authority; raw traces, prompts, event
   summaries, user-message marks, absolute paths, and outside-path values are not published.

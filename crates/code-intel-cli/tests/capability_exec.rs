@@ -8,9 +8,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
-    "9fad4644b8cfb88fbec6f4603e7fcb099dc296fdf29286a6909279fab1450d0e";
+    "1cfb33454282cef128eb62116508879454cc50f004386b09f2824db031d33c7a";
 const STRUCTURED_EDIT_DIGEST: &str =
-    "fb1bc02fbe9335e1ccbe66ad12ca2927bb3bace4722735e62b1fb2ab053af72d";
+    "ec36694a8ffca7ef068982cc574e6e42499a4634eb12f86a742026558bd1867d";
+const AST_GREP_SECURITY_DIGEST: &str =
+    "cb5a2dab5a8153966ea904fa57693607311a1445d42fb64865d6b50f1445c117";
 const REPO_SNAPSHOT_DIGEST: &str =
     "4f42b080fd19e501a6315ee204add188d69625bedd15c566fea48bb1f3e78764";
 const CODENEXUS_TOOLCHAIN_DIGESTS: [&str; 5] = [
@@ -1647,7 +1649,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects() {
         "toolchainDigests":[
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
             "25a2185026cb61771ff2e5f4c2364687d01158cfc9a8266d00a20e5573ba1bde",
-            "9fad4644b8cfb88fbec6f4603e7fcb099dc296fdf29286a6909279fab1450d0e"
+            "1cfb33454282cef128eb62116508879454cc50f004386b09f2824db031d33c7a"
         ]
     });
     value["options"] = json!({"repoPath":repo,"auto":true});
@@ -1898,6 +1900,90 @@ fn structured_edit_plan_is_scope_bound_and_preview_only() {
     assert_eq!(
         fs::read_to_string(repo.join("src/example.py")).unwrap(),
         "print(\"hello\")\n"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn ast_grep_security_scan_is_scope_bound_and_advisory_only() {
+    let root = temp_dir("ast-grep-security");
+    let repo = root.join("repo");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(repo.join("src/example.py"), "eval(user_input)\n").unwrap();
+
+    let mut value = request(&repo, "scan.ast-grep-security");
+    value["implementation"] = json!({
+        "id":"scan.ast-grep-security.compat",
+        "version":"1.0.0",
+        "toolchainDigests":[AST_GREP_SECURITY_DIGEST]
+    });
+    value["options"] = json!({
+        "repoPath":repo,
+        "language":"python",
+        "paths":["../outside.py"]
+    });
+    value["effectPolicy"]["allowedEffects"] = json!(["repo_read", "local_write", "process_spawn"]);
+    let rejected = run_with_request_file(
+        &value,
+        &root.join("rejected-request.json"),
+        &root.join("rejected-out"),
+        "scan.ast-grep-security",
+    );
+    assert_eq!(rejected.status.code(), Some(64));
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("escapes repository"));
+
+    let ast_grep_available = Command::new("ast-grep")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success());
+    if !ast_grep_available {
+        let _ = fs::remove_dir_all(root);
+        return;
+    }
+
+    // an unbundled language is rejected before any process is spawned.
+    let mut bad_language = value.clone();
+    bad_language["options"]["language"] = json!("cobol");
+    bad_language["options"]["paths"] = json!(["src"]);
+    let bad_language_output = run_with_request_file(
+        &bad_language,
+        &root.join("bad-language-request.json"),
+        &root.join("bad-language-out"),
+        "scan.ast-grep-security",
+    );
+    assert_eq!(bad_language_output.status.code(), Some(64));
+    assert!(String::from_utf8_lossy(&bad_language_output.stderr)
+        .contains("no bundled ast-grep security rules for language"));
+
+    value["options"]["paths"] = json!(["src"]);
+    let out = root.join("out");
+    let output = run_with_request_file(&value, &root.join("request.json"), &out, "scan.ast-grep-security");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr={} stdout={}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["capability"], "scan.ast-grep-security");
+    assert_eq!(
+        result["observedEffects"],
+        json!(["repo_read", "local_write", "process_spawn"])
+    );
+    let findings: Value = serde_json::from_slice(
+        &fs::read(out.join("ast-grep-security-findings.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(findings["summary"]["findings"], 1);
+    assert_eq!(findings["findings"][0]["ruleId"], "cip-py-dynamic-eval");
+    assert_eq!(findings["findings"][0]["file"], "src/example.py");
+    assert_eq!(findings["authority"]["mode"], "advisory_only");
+    assert_eq!(findings["authority"]["repositoryMutation"], false);
+    // the scan never proposes or applies a rewrite: source bytes are untouched.
+    assert_eq!(
+        fs::read_to_string(repo.join("src/example.py")).unwrap(),
+        "eval(user_input)\n"
     );
     let _ = fs::remove_dir_all(root);
 }
