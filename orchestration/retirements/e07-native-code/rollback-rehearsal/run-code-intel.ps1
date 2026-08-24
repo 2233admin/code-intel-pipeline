@@ -3909,7 +3909,17 @@ elseif (-not $SkipSentrux) {
         $sentruxTargetPath = Resolve-ChildPath $repoPath $SentruxPath
         $sentruxDir = Join-Path $sentruxTargetPath ".sentrux"
         $hasSentruxConfig = Test-Path -LiteralPath (Join-Path $sentruxDir "rules.toml")
-        $baselinePath = Join-Path $sentruxDir "baseline.json"
+        # `sentrux gate` (the lite engine this step actually invokes -- see
+        # Get-BaselinePath in sentrux-lite-core.ps1) keeps its own baseline at
+        # .sentrux/cache/lite-baseline.json, separate from the native engine's
+        # committed .sentrux/baseline.json (different schema, different scale
+        # -- issue #182). This precondition must watch the file `sentrux gate`
+        # itself reads, or a fresh checkout (native baseline present, lite
+        # cache never populated) always falls through to the bare `sentrux
+        # gate` call below and hard-crashes with "Sentrux baseline missing"
+        # instead of hitting the graceful manual_required branch a few lines
+        # down (issue #322).
+        $baselinePath = Join-Path (Join-Path $sentruxDir "cache") "lite-baseline.json"
 
         if ($hasSentruxConfig -and -not $SkipSentruxCheck) {
             $steps.Add((Invoke-LoggedStep "sentrux check" {
@@ -3945,7 +3955,7 @@ elseif (-not $SkipSentrux) {
         }
         elseif ($SaveSentruxBaseline -or ($AutoSaveMissingSentruxBaseline -and -not (Test-Path -LiteralPath $baselinePath))) {
             $previousBaseline = $null
-            $baselinePrevPath = Join-Path $sentruxDir "baseline.prev.json"
+            $baselinePrevPath = Join-Path (Join-Path $sentruxDir "cache") "lite-baseline.prev.json"
             if (Test-Path -LiteralPath $baselinePath -PathType Leaf) {
                 $previousBaseline = Read-JsonFileSafe $baselinePath
                 Copy-Item -LiteralPath $baselinePath -Destination $baselinePrevPath -Force
