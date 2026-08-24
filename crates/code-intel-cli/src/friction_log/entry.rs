@@ -25,7 +25,7 @@ pub(crate) enum Status {
 }
 
 impl Status {
-    fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             Status::Pending => "pending",
             Status::Published => "published",
@@ -52,6 +52,19 @@ pub(crate) struct Entry {
     pub(crate) status: Status,
     pub(crate) issue: Option<String>,
     pub(crate) body: String,
+}
+
+/// Rejects a title containing an embedded newline (\n or \r): the
+/// frontmatter block this crate writes and parses is one key per line
+/// (see the module doc), so a newline in `title` would silently split
+/// into extra frontmatter lines and corrupt the round-trip rather than
+/// erroring, which is why this is checked at input-validation time
+/// instead of escaped.
+pub(crate) fn validate_title(title: &str) -> Result<(), String> {
+    if title.contains('\n') || title.contains('\r') {
+        return Err("title must not contain newline characters".to_string());
+    }
+    Ok(())
 }
 
 impl Entry {

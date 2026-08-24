@@ -33,7 +33,7 @@ fn run(raw: &[String]) -> Result<i32, FrictionError> {
                     "ok": true,
                     "id": entry.id,
                     "title": entry.title,
-                    "status": status_str(entry),
+                    "status": entry.status.as_str(),
                     "issue": entry.issue,
                 }),
                 Err(message) => json!({ "ok": false, "error": message }),
@@ -52,7 +52,7 @@ fn run(raw: &[String]) -> Result<i32, FrictionError> {
                 Ok(entry) => println!(
                     "{} [{}] {}{}",
                     entry.id,
-                    status_str(entry),
+                    entry.status.as_str(),
                     entry.title,
                     entry
                         .issue
@@ -66,13 +66,6 @@ fn run(raw: &[String]) -> Result<i32, FrictionError> {
     }
 
     Ok(if malformed > 0 { 65 } else { 0 })
-}
-
-fn status_str(entry: &Entry) -> &'static str {
-    match entry.status {
-        entry::Status::Pending => "pending",
-        entry::Status::Published => "published",
-    }
 }
 
 fn parse_cli(raw: &[String]) -> Result<bool, FrictionError> {

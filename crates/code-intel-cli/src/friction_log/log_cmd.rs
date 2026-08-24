@@ -16,6 +16,11 @@ fn run(raw: &[String]) -> Result<(), FrictionError> {
     let dir_name = entry::dir_name(&cli.title);
     let entry = Entry::new(dir_name.clone(), cli.title, cli.summary);
     let dir = repo.join(entry::ROOT).join(&dir_name);
+    if dir.join("friction.md").exists() {
+        return Err(FrictionError::DataErr(format!(
+            "{dir_name}: entry already exists (duplicate title logged within the same second)"
+        )));
+    }
     entry
         .write_atomic(&dir)
         .map_err(|error| FrictionError::HostIo(error.to_string()))?;
@@ -56,6 +61,7 @@ fn parse_cli(raw: &[String]) -> Result<Cli, FrictionError> {
         match raw[index].as_str() {
             "--title" => {
                 let value = value_of(raw, index, "--title")?;
+                entry::validate_title(value).map_err(FrictionError::Usage)?;
                 if title.replace(value.clone()).is_some() {
                     return Err(FrictionError::Usage("duplicate --title".into()));
                 }
@@ -122,5 +128,66 @@ mod tests {
             cli.artifacts,
             vec![PathBuf::from("a.txt"), PathBuf::from("b.txt")]
         );
+    }
+
+    #[test]
+    fn run_rejects_a_same_second_duplicate_title_without_touching_the_first_entry() {
+        let repo = std::env::temp_dir().join(format!(
+            "code-intel-friction-log-collision-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&repo).unwrap();
+
+        // Construct the same-second collision directly rather than relying
+        // on two real `run()` calls landing in the same wall-clock second:
+        // compute the directory name `run()` will independently derive for
+        // this title and pre-populate it, standing in for "an earlier
+        // `friction log` call with the same title landed here already".
+        let title = "Duplicate friction title";
+        let dir_name = entry::dir_name(title);
+        let dir = repo.join(entry::ROOT).join(&dir_name);
+        let first = Entry::new(dir_name.clone(), title.into(), "first summary".into());
+        first.write_atomic(&dir).unwrap();
+        let first_contents = std::fs::read_to_string(dir.join("friction.md")).unwrap();
+
+        let raw = vec![
+            "--repo".to_string(),
+            repo.to_string_lossy().into_owned(),
+            "--title".to_string(),
+            title.to_string(),
+            "--summary".to_string(),
+            "second summary".to_string(),
+        ];
+        let result = run(&raw);
+        assert!(
+            result.is_err(),
+            "same-second duplicate title must fail, not overwrite"
+        );
+        assert_eq!(result.unwrap_err().exit_code(), 65);
+
+        let after_contents = std::fs::read_to_string(dir.join("friction.md")).unwrap();
+        assert_eq!(
+            after_contents, first_contents,
+            "first entry's friction.md must be untouched by the rejected second call"
+        );
+
+        std::fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn parse_cli_rejects_title_with_embedded_newline() {
+        match parse_cli(&[
+            "--title".into(),
+            "line one\nline two".into(),
+            "--summary".into(),
+            "s".into(),
+        ]) {
+            Ok(_) => panic!("expected an error for a title with an embedded newline"),
+            Err(FrictionError::Usage(message)) => assert!(
+                message.contains("newline"),
+                "expected a newline-related message, got: {message}"
+            ),
+            Err(other) => panic!("expected FrictionError::Usage, got {other:?}"),
+        }
     }
 }

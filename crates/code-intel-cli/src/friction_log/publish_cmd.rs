@@ -46,11 +46,17 @@ fn run(raw: &[String]) -> Result<(), FrictionError> {
         return Ok(());
     }
 
-    let body_file = std::env::temp_dir().join(format!(
-        "code-intel-friction-publish-{}-{}.md",
-        std::process::id(),
-        entry.id
-    ));
+    // Write the issue body inside the entry's own directory, not the
+    // shared system temp dir: `std::env::temp_dir()` is world-writable on
+    // multi-user hosts, so a predictable path there
+    // (`code-intel-friction-publish-<pid>-<id>.md`) could be pre-created by
+    // another local user as a symlink, and `std::fs::write` would follow it
+    // and clobber whatever it points at. `dir` is this command's own
+    // caller-owned entry directory; the tmp-name convention mirrors
+    // `Entry::write_atomic`'s `<name>.tmp-<pid>` scratch file below it.
+    let mut body_name = std::ffi::OsString::from("body.md");
+    body_name.push(format!(".tmp-{}", std::process::id()));
+    let body_file = dir.join(body_name);
     std::fs::write(&body_file, &entry.body)
         .map_err(|error| FrictionError::HostIo(error.to_string()))?;
     let output = hardened_gh::command(&repo)
@@ -109,6 +115,7 @@ fn parse_cli(raw: &[String]) -> Result<Cli, FrictionError> {
                     .get(index + 1)
                     .filter(|value| !value.starts_with("--"))
                     .ok_or_else(|| FrictionError::Usage("--slug requires one value".into()))?;
+                validate_slug(value)?;
                 if slug.replace(value.clone()).is_some() {
                     return Err(FrictionError::Usage("duplicate --slug".into()));
                 }
@@ -131,6 +138,29 @@ fn parse_cli(raw: &[String]) -> Result<Cli, FrictionError> {
     })
 }
 
+/// Rejects any `--slug` value that isn't the `<timestamp>-<slug>` shape
+/// `entry::dir_name` produces: ASCII letters, digits, and interior dashes
+/// only, non-empty, no leading/trailing/doubled dash. That charset has no
+/// room for `/`, `\`, or a `.` (so no `..`), which is what keeps
+/// `repo.join(entry::ROOT).join(&cli.slug)` in `run`, above, from ever
+/// resolving outside `.agents/friction-log`.
+fn validate_slug(slug: &str) -> Result<(), FrictionError> {
+    let shape_ok = !slug.is_empty()
+        && !slug.starts_with('-')
+        && !slug.ends_with('-')
+        && !slug.contains("--")
+        && slug
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-');
+    if shape_ok {
+        Ok(())
+    } else {
+        Err(FrictionError::Usage(format!(
+            "invalid --slug {slug:?}: expected the <timestamp>-<slug> shape `friction log` prints, not a path"
+        )))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,5 +176,32 @@ mod tests {
         let cli = parse_cli(&["--slug".into(), "abc".into(), "--yes".into()]).unwrap();
         assert_eq!(cli.slug, "abc");
         assert!(cli.yes);
+    }
+
+    #[test]
+    fn parse_cli_accepts_a_dir_name_shaped_slug() {
+        let cli = parse_cli(&["--slug".into(), "20260825T000000Z-example".into()]).unwrap();
+        assert_eq!(cli.slug, "20260825T000000Z-example");
+    }
+
+    #[test]
+    fn parse_cli_rejects_slugs_that_could_escape_the_friction_log_root() {
+        for slug in [
+            "../evil",
+            "..\\evil",
+            "a/b",
+            "a\\b",
+            "..",
+            ".",
+            "",
+            "-leading-dash",
+            "trailing-dash-",
+            "double--dash",
+        ] {
+            assert!(
+                parse_cli(&["--slug".into(), slug.into()]).is_err(),
+                "expected --slug {slug:?} to be rejected"
+            );
+        }
     }
 }

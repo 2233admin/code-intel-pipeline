@@ -231,13 +231,69 @@ fn publish_defaults_to_dry_run_and_calls_gh_only_with_yes() {
         invocations[0]
     );
     assert!(
-        !invocations[0].contains("s\n") && !invocations[0].to_lowercase().contains("--body s"),
+        !invocations[0].contains("--body "),
         "the entry summary text must never appear inline on argv: {}",
         invocations[0]
     );
     let content_after = fs::read_to_string(entry_dirs(&repo.0)[0].join("friction.md")).unwrap();
     assert!(content_after.contains("status: published"));
     assert!(content_after.contains("issue: https://github.com/example/repo/issues/1"));
+}
+
+#[test]
+fn publish_writes_the_issue_body_inside_the_entry_dir_not_the_shared_temp_dir() {
+    let repo = TempTree::new("friction-publish-body-location");
+    run(&repo.0, &["log", "--title", "t", "--summary", "s"], None);
+    let entry_dir = entry_dirs(&repo.0)[0].clone();
+    let slug = entry_dir
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let stub = FakeGh::new();
+
+    let published = run(
+        &repo.0,
+        &["publish", "--slug", &slug, "--yes"],
+        Some((&stub, "OPEN")),
+    );
+    assert!(
+        published.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&published.stderr)
+    );
+
+    // The scratch body file is written and cleaned up inside the entry's
+    // own directory, so only friction.md should remain there afterward.
+    let remaining: Vec<_> = fs::read_dir(&entry_dir)
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name())
+        .collect();
+    assert_eq!(
+        remaining,
+        vec![std::ffi::OsString::from("friction.md")],
+        "expected only friction.md left in the entry dir after publish: {remaining:?}"
+    );
+}
+
+#[test]
+fn publish_rejects_a_slug_that_could_escape_the_friction_log_root() {
+    let repo = TempTree::new("friction-publish-invalid-slug");
+
+    for slug in ["../../etc/passwd", "..\\..\\windows", "a/b", ".."] {
+        let output = run(&repo.0, &["publish", "--slug", slug, "--yes"], None);
+        assert_eq!(
+            output.status.code(),
+            Some(64),
+            "expected a usage error for slug {slug:?}: stderr={}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    assert!(
+        entry_dirs(&repo.0).is_empty(),
+        "a rejected slug must never create anything under .agents/friction-log"
+    );
 }
 
 #[test]
@@ -288,4 +344,42 @@ fn sync_keeps_entries_whose_issue_is_still_open() {
     let output = run(&repo.0, &["sync", "--yes"], Some((&stub, "OPEN")));
     assert!(output.status.success());
     assert_eq!(entry_dirs(&repo.0).len(), 1, "open entry must be kept");
+}
+
+#[test]
+fn sync_rejects_a_committed_issue_url_that_does_not_start_with_https_github_com() {
+    // Simulates a `friction.md` whose `issue:` frontmatter field was
+    // committed (not produced by `gh issue create`) with a value shaped
+    // like a `gh` flag. `sync` must refuse to pass it to `gh issue view`
+    // at all rather than let `gh` interpret it as an argument.
+    let repo = TempTree::new("friction-sync-malicious-issue-url");
+    let entry_dir = repo.0.join(".agents/friction-log/20260101T000000Z-evil");
+    fs::create_dir_all(&entry_dir).unwrap();
+    fs::write(
+        entry_dir.join("friction.md"),
+        "title: t
+created: 20260101T000000Z
+status: published
+issue: --exec=rm -rf /
+---
+
+body
+",
+    )
+    .unwrap();
+    let stub = FakeGh::new();
+
+    let output = run(&repo.0, &["sync"], Some((&stub, "OPEN")));
+
+    assert_eq!(output.status.code(), Some(65));
+    assert!(
+        stub.invocations().is_empty(),
+        "gh must never be invoked when the committed issue URL fails validation: {:?}",
+        stub.invocations()
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("20260101T000000Z-evil"),
+        "error must name the offending entry: {stderr}"
+    );
 }

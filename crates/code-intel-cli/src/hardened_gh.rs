@@ -33,7 +33,7 @@ pub(crate) fn command(repo: &Path) -> Command {
 
 /// Prefixes `gh`/GitHub issue tokens and PATs use, per
 /// <https://github.blog/2021-04-05-behind-githubs-new-authentication-token-formats/>.
-const TOKEN_PREFIXES: [&str; 5] = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"];
+const TOKEN_PREFIXES: [&str; 6] = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_"];
 
 /// Scrub GitHub token-shaped substrings out of text before it is printed or
 /// written to a friction entry: `gh` output (an error message, a `--json`
@@ -85,6 +85,15 @@ mod tests {
     #[test]
     fn redacts_a_token_shaped_run_after_a_known_prefix() {
         let token = "ghp_".to_string() + &"a".repeat(36);
+        let text = format!("gh: authenticated as x using token {token}\n");
+        let redacted = redact(&text);
+        assert!(!redacted.contains(&token));
+        assert!(redacted.contains("[REDACTED_GITHUB_TOKEN]"));
+    }
+
+    #[test]
+    fn redacts_a_fine_grained_pat_token() {
+        let token = "github_pat_".to_string() + &"a".repeat(36);
         let text = format!("gh: authenticated as x using token {token}\n");
         let redacted = redact(&text);
         assert!(!redacted.contains(&token));

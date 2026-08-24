@@ -65,7 +65,25 @@ fn run(raw: &[String]) -> Result<i32, FrictionError> {
     Ok(if any_error { 65 } else { 0 })
 }
 
+/// `issue_url` is read straight out of a committed `friction.md`
+/// frontmatter field and then lands positionally on `gh`'s argv
+/// (`hardened_gh`'s module docs name that exact argument-injection
+/// concern: a value starting with `-` would be read by `gh` as a flag
+/// rather than an issue reference). A committed file is attacker-editable,
+/// so it is validated here, before `gh` is ever spawned, rather than
+/// trusted because it once came from a `gh issue create` response.
+fn validate_issue_url(issue_url: &str) -> Result<(), String> {
+    if issue_url.starts_with("https://github.com/") {
+        Ok(())
+    } else {
+        Err(format!(
+            "issue URL is not a https://github.com/ URL, refusing to pass it to gh: {issue_url}"
+        ))
+    }
+}
+
 fn issue_state(repo: &std::path::Path, issue_url: &str) -> Result<String, String> {
+    validate_issue_url(issue_url)?;
     let output = hardened_gh::command(repo)
         .args(["issue", "view", issue_url, "--json", "state"])
         .output()
@@ -115,5 +133,21 @@ mod tests {
     #[test]
     fn parse_cli_rejects_unknown_flags() {
         assert!(parse_cli(&["--bogus".into()]).is_err());
+    }
+
+    #[test]
+    fn validate_issue_url_accepts_github_urls() {
+        assert!(validate_issue_url("https://github.com/example/repo/issues/1").is_ok());
+    }
+
+    #[test]
+    fn validate_issue_url_rejects_flag_shaped_values() {
+        let error = validate_issue_url("--exec=rm -rf /").unwrap_err();
+        assert!(error.contains("--exec=rm -rf /"), "{error}");
+    }
+
+    #[test]
+    fn validate_issue_url_rejects_non_github_urls() {
+        assert!(validate_issue_url("https://evil.example/issues/1").is_err());
     }
 }
