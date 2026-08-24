@@ -40,6 +40,7 @@ mod evidence_query;
 mod execution_policy;
 mod file_boundary;
 mod friction_log;
+mod frozen_manifest_projection;
 mod git_remote_registry;
 mod graph;
 mod hardcoded_paths;
