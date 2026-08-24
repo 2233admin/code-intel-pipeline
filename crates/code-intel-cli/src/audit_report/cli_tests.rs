@@ -275,14 +275,58 @@ fn parse_scope_requires_repo_and_since() {
     assert!(error.contains("requires --since"), "{error}");
 }
 
+/// Regression for issue #320: the original version of this test ran
+/// `scope()` against the *live* checkout (`repo_root()`), which silently
+/// assumes `HEAD~1` and `HEAD` always differ on disk. That assumption
+/// breaks for delete-only commits and — a second, broader trigger found
+/// while investigating — for any merge commit whose tree is identical to
+/// its first parent (e.g. a GitHub test-merge commit for a PR whose
+/// content was already squash-merged into the base branch). Both are real
+/// repository topologies `scope()` must handle without panicking; a test
+/// asserting on the ambient repo's current commit shape can't pin that
+/// down. Uses a synthetic two-commit fixture repo instead (inlined here
+/// rather than a standalone helper, mirroring `sentrux_evolution::tests::
+/// init_repo` in spirit but keeping this file's function count flat): the
+/// first commit adds `first.txt`, the second adds `second.txt`, so
+/// `HEAD~1...HEAD` is guaranteed non-empty and points at a file that still
+/// exists on disk, independent of the ambient checkout's own commit graph.
 #[test]
 fn scope_against_head_tilde_1_lists_only_existing_changed_files() {
-    let repo = repo_root();
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let repo = std::env::temp_dir().join(format!(
+        "code-intel-audit-scope-{nonce}-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&repo).expect("scope fixture dir");
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(&repo)
+            .output()
+            .unwrap_or_else(|error| panic!("git {args:?}: {error}"))
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "test@example.com"]);
+    git(&["config", "user.name", "Test"]);
+    fs::write(repo.join("first.txt"), "first\n").expect("write first.txt");
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "first"]);
+    fs::write(repo.join("second.txt"), "second\n").expect("write second.txt");
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "second"]);
+
     let value = scope(&repo, "HEAD~1").unwrap();
     assert_eq!(value["kind"], "diff");
     assert_eq!(value["since"], "HEAD~1");
     let files = value["files"].as_array().unwrap();
-    assert!(!files.is_empty(), "{value}");
+    assert_eq!(
+        files,
+        &vec![Value::String("second.txt".to_string())],
+        "{value}"
+    );
     for file in files {
         let relative = file.as_str().unwrap();
         assert!(
@@ -290,6 +334,7 @@ fn scope_against_head_tilde_1_lists_only_existing_changed_files() {
             "{relative} should exist on disk"
         );
     }
+    fs::remove_dir_all(&repo).ok();
 }
 
 #[test]
