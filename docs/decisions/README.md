@@ -25,5 +25,6 @@ Enforcement: 谁在什么时机强制它（gate / 测试 / 评审规约），没
 | [DR-0003](DR-0003-manifest-discovery-precedence.md) | manifest 发现优先级与 probe 语义 | active |
 | [DR-0004](DR-0004-issue-claim-protocol.md) | issue 认领协议：开工先打 claimed label | active |
 | [DR-0005](DR-0005-integration-debt-ceiling.md) | 整合债上限：修复 PR 积压时停产新 feature | active |
+| [DR-0006](DR-0006-solo-operator-retirement-gate.md) | 已证死代码分支（E02/E03）可用静态不可达证明替代 30 天遥测窗口 | active |
 
 平行 session 开工前先扫本目录（一次 `ls docs/decisions/` + 读 README 表格，30 秒）。与已有决策相悖的工作，先开 issue 挑战决策本身，不要直接实现相反语义。
