@@ -12,7 +12,7 @@ $sourcePath = Join-Path $RepoRoot "run-code-intel.ps1"
 $source = [IO.File]::ReadAllText($sourcePath).Replace("`r`n", "`n").Replace("`r", "`n")
 $patterns = @(
     '(?sm)^function Get-CodeEvidenceLanguage \{.*?(?=\nfunction ConvertTo-NullableDouble \{)',
-    '(?m)^\$codeEvidenceConfig = Get-JsonProperty \$configData "codeEvidence"\n\$codeEvidence = New-CodeEvidenceLayer -RepoPath \$repoPath -RunDir \$runDir -Files \$inventoryFiles -CodeEvidenceConfig \$codeEvidenceConfig'
+    '(?m)^\s*\$codeEvidence = New-CodeEvidenceLayer -RepoPath \$repoPath -RunDir \$runDir -Files \$inventoryFiles -CodeEvidenceConfig \$codeEvidenceConfig'
 )
 $matches = @($patterns | ForEach-Object {
     $all = [regex]::Matches($source, $_)

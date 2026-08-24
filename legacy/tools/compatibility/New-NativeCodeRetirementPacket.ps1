@@ -37,7 +37,7 @@ $runPath = Join-Path $RepoRoot "run-code-intel.ps1"
 $runText = [IO.File]::ReadAllText($runPath).Replace("`r`n", "`n").Replace("`r", "`n")
 $deletePatterns = @(
     '(?sm)^function Get-CodeEvidenceLanguage \{.*?(?=\nfunction ConvertTo-NullableDouble \{)',
-    '(?m)^\$codeEvidenceConfig = Get-JsonProperty \$configData "codeEvidence"\n\$codeEvidence = New-CodeEvidenceLayer -RepoPath \$repoPath -RunDir \$runDir -Files \$inventoryFiles -CodeEvidenceConfig \$codeEvidenceConfig'
+    '(?m)^\s*\$codeEvidence = New-CodeEvidenceLayer -RepoPath \$repoPath -RunDir \$runDir -Files \$inventoryFiles -CodeEvidenceConfig \$codeEvidenceConfig'
 )
 $matches = @($deletePatterns | ForEach-Object {
     $all = [regex]::Matches($runText, $_)

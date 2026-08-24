@@ -3617,8 +3617,140 @@ $inventoryFiles = if (Test-Path -LiteralPath $inventoryFileListPath -PathType Le
 } else {
     @()
 }
+# E07 rust-first path: runs the Rust `evidence.native-code` capability via a
+# scratch, non-authoritative `run execute --profile offline` invocation
+# (repo.snapshot -> doctor, inventory.rg -> evidence.native-code only --
+# `offline` disables graph/sentrux/codenexus/hospital so this never
+# duplicates work the rest of this script's other stages already do).
+# Returns $null on any failure so the caller falls back to
+# New-CodeEvidenceLayer below -- same rust-first/manual-fallback shape as
+# the graph provider and Sentrux dsm/evolution/what_if stages already use
+# in this file (see docs/ps1-exit/contract-inventory.md section 1.8).
+function Invoke-RustCodeEvidenceLayer {
+param(
+[string]$RepoPath,
+[string]$RunDir,
+[System.Collections.Generic.List[string]]$Notes
+)
+
+$candidates = @()
+if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_RUST_CLI)) {
+$candidates += [IO.Path]::GetFullPath($env:CODE_INTEL_RUST_CLI)
+}
+$candidates += Join-Path (Split-Path -Parent $PSScriptRoot) (Join-Path "target/release" $rustExecutableName)
+$candidates += $defaultRustCli
+$rustCli = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+if ($null -eq $rustCli) {
+$pathCommand = Get-Command "code-intel" -ErrorAction SilentlyContinue
+if ($null -ne $pathCommand -and -not [string]::IsNullOrWhiteSpace([string]$pathCommand.Source)) {
+$rustCli = $pathCommand.Source
+}
+}
+if ($null -eq $rustCli) {
+$Notes.Add("Rust native-code evidence binary was unavailable (tried: $($candidates -join ', '), and 'code-intel' on PATH); falling back to the PowerShell code evidence layer.")
+return $null
+}
+
+$stagingRoot = Join-Path $RunDir "rust-evidence-staging"
+New-Item -ItemType Directory -Force -Path $stagingRoot | Out-Null
+$nonce = [guid]::NewGuid().ToString("N").Substring(0, 12)
+$dagOut = Join-Path $stagingRoot $nonce
+# `run dag-coordinate` cannot be scoped to a node subset (--profile is
+# execute-only), so this uses `run execute --profile offline` instead --
+# offline disables graph/sentrux/codenexus/hospital, leaving exactly
+# repo.snapshot/doctor/inventory.rg/evidence.native-code. --authority-root
+# and --out both point at this call's own disposable staging directory
+# (never a shared or committed authority root), deleted below regardless
+# of outcome -- this never touches the real production artifact index.
+$scratchAuthority = Join-Path $stagingRoot "$nonce-authority"
+New-Item -ItemType Directory -Force -Path $scratchAuthority | Out-Null
+
+$previousErrorActionPreference = $ErrorActionPreference
+$failureReason = ""
+try {
+$ErrorActionPreference = "Continue"
+$global:LASTEXITCODE = 0
+try {
+$null = & $rustCli run execute --repo $RepoPath --out $dagOut --authority-root $scratchAuthority --final-name $nonce --profile offline 2>&1
+if ($global:LASTEXITCODE -ne 0) {
+$failureReason = "exited with code $($global:LASTEXITCODE)"
+}
+}
+catch {
+$failureReason = "could not be launched ($($_.Exception.Message))"
+}
+}
+finally {
+$ErrorActionPreference = $previousErrorActionPreference
+}
+
+# The overall run's exit code can reflect an unrelated node (e.g. doctor)
+# domain-failing under this scratch invocation; evidence.native-code's own
+# artifacts are the real success signal, so a non-zero exit only degrades
+# to fallback if the expected scorecard genuinely never landed.
+$sourceRoot = Join-Path $dagOut (Join-Path "evidence.native-code" "code-evidence")
+$scorecardPath = Join-Path $sourceRoot "merged\scorecard.json"
+if (-not (Test-Path -LiteralPath $scorecardPath -PathType Leaf)) {
+$reason = if (-not [string]::IsNullOrWhiteSpace($failureReason)) { $failureReason } else { "did not produce a scorecard at the expected path" }
+$Notes.Add("Rust native-code evidence $reason; falling back to the PowerShell code evidence layer.")
+Remove-Item -LiteralPath $stagingRoot -Recurse -Force -ErrorAction SilentlyContinue
+return $null
+}
+$scorecard = Get-Content -LiteralPath $scorecardPath -Raw | ConvertFrom-Json
+
+$destinationRoot = Join-Path $RunDir "code-evidence"
+if (Test-Path -LiteralPath $destinationRoot) {
+Remove-Item -LiteralPath $destinationRoot -Recurse -Force
+}
+Move-Item -LiteralPath $sourceRoot -Destination $destinationRoot
+Remove-Item -LiteralPath $stagingRoot -Recurse -Force -ErrorAction SilentlyContinue
+
+$cocoOutcome = @($scorecard.adapters)[0]
+$scorecardMarkdownPath = Join-Path $destinationRoot "merged\scorecard.md"
+@(
+"# Code Evidence Scorecard",
+"",
+"- Status: $($scorecard.status)",
+"- Native minimal: $($scorecard.nativeMinimal)",
+"- Files: $($scorecard.metrics.files)",
+"- Symbols: $($scorecard.metrics.symbols)",
+"- Chunks: $($scorecard.metrics.chunks)",
+"- Imports: $($scorecard.metrics.imports)",
+"- cocoindex-code: $($cocoOutcome.status) ($($cocoOutcome.reasonCode))"
+) | Set-Content -LiteralPath $scorecardMarkdownPath -Encoding UTF8
+
+$Notes.Add("Code evidence provider: rust")
+return [ordered]@{
+schema = "code-evidence-summary.v1"
+status = [string]$scorecard.status
+fatal = $false
+root = $destinationRoot
+agentIndex = Join-Path $destinationRoot "merged\agent\index.md"
+scorecard = Join-Path $destinationRoot "merged\scorecard.json"
+scorecardMarkdown = $scorecardMarkdownPath
+files = [int]$scorecard.metrics.files
+symbols = [int]$scorecard.metrics.symbols
+chunks = [int]$scorecard.metrics.chunks
+imports = [int]$scorecard.metrics.imports
+adapters = @($scorecard.adapters)
+}
+}
 $codeEvidenceConfig = Get-JsonProperty $configData "codeEvidence"
-$codeEvidence = New-CodeEvidenceLayer -RepoPath $repoPath -RunDir $runDir -Files $inventoryFiles -CodeEvidenceConfig $codeEvidenceConfig
+$codeEvidencePreference = if ([string]::IsNullOrWhiteSpace($env:CODE_INTEL_EVIDENCE_PROVIDER)) {
+    "rust"
+} else {
+    $env:CODE_INTEL_EVIDENCE_PROVIDER.Trim().ToLowerInvariant()
+}
+if ($codeEvidencePreference -notin @("rust", "manual")) {
+    throw "CODE_INTEL_EVIDENCE_PROVIDER must be 'rust' or 'manual'"
+}
+$codeEvidence = $null
+if ($codeEvidencePreference -eq "rust") {
+    $codeEvidence = Invoke-RustCodeEvidenceLayer -RepoPath $repoPath -RunDir $runDir -Notes $notes
+}
+if ($null -eq $codeEvidence) {
+    $codeEvidence = New-CodeEvidenceLayer -RepoPath $repoPath -RunDir $runDir -Files $inventoryFiles -CodeEvidenceConfig $codeEvidenceConfig
+}
 # R05 (2026-07-14): pack.repomix is a governance-reviewed deletion, not a
 # live stage — no pinned executable or production conformance evidence was
 # found. See orchestration/integrations.json's productionRegistry entry and
