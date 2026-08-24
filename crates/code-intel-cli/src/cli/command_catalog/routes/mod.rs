@@ -6,6 +6,7 @@ use super::{matches_primary_pattern, CompatibilityRoute, LegacyRouteId};
 use crate::cli::help_contract::{HELP_ALIASES, HELP_COMMAND};
 
 mod edit_routes;
+mod friction_routes;
 mod perf_optimize_routes;
 mod project_routes;
 mod provider_routes;
@@ -431,6 +432,10 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
         ),
     },
     CommandRoute::Raw(repowise_routes::HOOKS),
+    CommandRoute::Raw(friction_routes::LOG),
+    CommandRoute::Raw(friction_routes::LIST),
+    CommandRoute::Raw(friction_routes::PUBLISH),
+    CommandRoute::Raw(friction_routes::SYNC),
     raw_route! {
         command: "evidence",
         subcommand: None,

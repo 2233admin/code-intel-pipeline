@@ -1160,6 +1160,10 @@ Commands:
   snapshot identity --repo <root> --working-tree-policy <head_only|explicit_overlay> [--scope <relative-path>]...
   repin [--repo <root>] [--write] [--json] [--exclude <path-prefix>]...
   repowise-hooks [--repo <root>] [--write] (detects/installs the optional repowise post-commit and distill-rewrite hooks; no-op if repowise is not on PATH)
+  friction log --title <text> --summary <text> [--repo <root>] [--artifact <path>]... (records a friction-log entry under .agents/friction-log/)
+  friction list [--repo <root>] [--json] (lists friction-log entries; exits 65 if any entry fails to parse)
+  friction publish --slug <entry-id> [--repo <root>] [--yes] (opens the entry as a GitHub issue via gh; dry-run preview unless --yes)
+  friction sync [--repo <root>] [--yes] (checks published entries' issues via gh; removes closed ones only with --yes)
   evidence validate --request <request.json> --artifact-root <directory>
   repository survival-scan --request <request.json|-> --artifact-root <directory>
   audit --operation validate|render --repo <root> --report <report.json> [--format markdown|html]

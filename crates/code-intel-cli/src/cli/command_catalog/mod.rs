@@ -6,9 +6,9 @@ use serde_json::{json, Value};
 use crate::{
     admissibility, artifact_index, audit_report, change_agenda, change_impact, change_risk,
     compatibility_retirement_ticket, decision_port, decision_record, doctor_bootstrap, edit_apply,
-    edit_impact, evidence_query, hardcoded_paths, invocation_identity, mcp_serve, model_channels,
-    perf_optimize, ponytail_gate, providers, repin, repowise_hooks, run_cli, run_commit,
-    session_evidence, snapshot, survival_scan,
+    edit_impact, evidence_query, friction_log, hardcoded_paths, invocation_identity, mcp_serve,
+    model_channels, perf_optimize, ponytail_gate, providers, repin, repowise_hooks, run_cli,
+    run_commit, session_evidence, snapshot, survival_scan,
 };
 
 use super::legacy::{
@@ -93,6 +93,10 @@ enum CompatibilityRoute {
     Snapshot,
     Repin,
     RepowiseHooks,
+    FrictionLog,
+    FrictionList,
+    FrictionPublish,
+    FrictionSync,
     Evidence,
     Decision,
     RunExecute,
@@ -637,6 +641,10 @@ fn execute_compatibility(command: CompatibilityCommand) -> i32 {
         CompatibilityRoute::Snapshot => snapshot::run_raw(raw),
         CompatibilityRoute::Repin => repin::run_raw(raw),
         CompatibilityRoute::RepowiseHooks => repowise_hooks::run_raw(raw),
+        CompatibilityRoute::FrictionLog => friction_log::log_cmd::run_raw(raw),
+        CompatibilityRoute::FrictionList => friction_log::list_cmd::run_raw(raw),
+        CompatibilityRoute::FrictionPublish => friction_log::publish_cmd::run_raw(raw),
+        CompatibilityRoute::FrictionSync => friction_log::sync_cmd::run_raw(raw),
         CompatibilityRoute::Evidence => admissibility::run_raw(raw),
         CompatibilityRoute::Decision => decision_port::run_raw(raw),
         CompatibilityRoute::RunExecute | CompatibilityRoute::RunDagCoordinate => {
