@@ -1149,6 +1149,7 @@ Commands:
   provider file-boundary --request <request.json> --out <result.json>
   provider runtime-ci-evidence --artifact-root <directory> --request <request.json> --out <summary.json>
   compatibility retirement-ticket lint --ticket <ticket.json> --evaluated-at <unix-seconds>
+  retirement guard --repo-root <path> [--retirements-dir <path>]
   lint hardcoded-paths [<repo-path>] [--json]
   route|routes [--action List|Plan|Validate] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--json]
   sentrux <dsm|scan|health|check|gate|check_rules|gate_save> <path> [--no-ratchet]

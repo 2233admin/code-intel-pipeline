@@ -271,6 +271,15 @@ jobs:
         shell: pwsh
         run: .\legacy/scripts/tests/test-retirement-packets.ps1
 
+      - name: Retirement boundary guard
+        shell: pwsh
+        run: |
+          $binary = if ($IsWindows) { "./target/release/code-intel.exe" } else { "./target/release/code-intel" }
+          & $binary retirement guard --repo-root legacy
+          if ($LASTEXITCODE -ne 0) {
+            throw "retirement boundary guard failed with exit code ${LASTEXITCODE}: a tracked legacy branch under orchestration/retirements/* disappeared from the tree without its packet's status.json saying retired: true"
+          }
+
       - name: Python 3.14 and project conformance
         shell: pwsh
         run: |
