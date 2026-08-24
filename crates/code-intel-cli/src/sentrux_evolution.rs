@@ -536,7 +536,10 @@ fn session_trend(sessions: &[Value]) -> Value {
     let deltas: Vec<i64> = completed
         .iter()
         .filter_map(|session| {
-            match (session["start_signal"].as_i64(), session["end_signal"].as_i64()) {
+            match (
+                session["start_signal"].as_i64(),
+                session["end_signal"].as_i64(),
+            ) {
                 (Some(start), Some(end)) => Some(end - start),
                 _ => None,
             }
@@ -619,7 +622,9 @@ fn parse_pollution_list(raw: &str) -> Vec<String> {
         .into_iter()
         .filter_map(|item| {
             let item = item.trim().trim_matches('\'').trim_matches('"');
-            let item = item.trim_start_matches(['\\', '/']).trim_end_matches(['\\', '/']);
+            let item = item
+                .trim_start_matches(['\\', '/'])
+                .trim_end_matches(['\\', '/']);
             if item.is_empty() {
                 None
             } else {
@@ -687,22 +692,86 @@ struct NoisyDir {
 }
 
 const NOISY_DIRS: &[NoisyDir] = &[
-    NoisyDir { path: "node_modules", reason: "dependency directory excluded from governed source graph", inspect_nested_git: false },
-    NoisyDir { path: ".pnpm", reason: "dependency store excluded from governed source graph", inspect_nested_git: false },
-    NoisyDir { path: ".yarn", reason: "dependency store excluded from governed source graph", inspect_nested_git: false },
-    NoisyDir { path: "vendor", reason: "vendored code excluded from governed source graph", inspect_nested_git: true },
-    NoisyDir { path: "vendors", reason: "vendored code excluded from governed source graph", inspect_nested_git: true },
-    NoisyDir { path: "third_party", reason: "third-party code excluded from governed source graph", inspect_nested_git: true },
-    NoisyDir { path: "third-party", reason: "third-party code excluded from governed source graph", inspect_nested_git: true },
-    NoisyDir { path: "external", reason: "external code excluded from governed source graph", inspect_nested_git: true },
-    NoisyDir { path: "research", reason: "research or reference tree excluded from governed source graph", inspect_nested_git: true },
-    NoisyDir { path: "sandbox", reason: "sandbox tree excluded from governed source graph", inspect_nested_git: false },
-    NoisyDir { path: "dist", reason: "build output excluded from governed source graph", inspect_nested_git: false },
-    NoisyDir { path: "build", reason: "build output excluded from governed source graph", inspect_nested_git: false },
-    NoisyDir { path: "target", reason: "build output excluded from governed source graph", inspect_nested_git: false },
-    NoisyDir { path: "static/assets", reason: "bundled static assets excluded from governed source graph", inspect_nested_git: false },
-    NoisyDir { path: "public/assets", reason: "bundled static assets excluded from governed source graph", inspect_nested_git: false },
-    NoisyDir { path: "tools", reason: "common tool or generated-support directory", inspect_nested_git: true },
+    NoisyDir {
+        path: "node_modules",
+        reason: "dependency directory excluded from governed source graph",
+        inspect_nested_git: false,
+    },
+    NoisyDir {
+        path: ".pnpm",
+        reason: "dependency store excluded from governed source graph",
+        inspect_nested_git: false,
+    },
+    NoisyDir {
+        path: ".yarn",
+        reason: "dependency store excluded from governed source graph",
+        inspect_nested_git: false,
+    },
+    NoisyDir {
+        path: "vendor",
+        reason: "vendored code excluded from governed source graph",
+        inspect_nested_git: true,
+    },
+    NoisyDir {
+        path: "vendors",
+        reason: "vendored code excluded from governed source graph",
+        inspect_nested_git: true,
+    },
+    NoisyDir {
+        path: "third_party",
+        reason: "third-party code excluded from governed source graph",
+        inspect_nested_git: true,
+    },
+    NoisyDir {
+        path: "third-party",
+        reason: "third-party code excluded from governed source graph",
+        inspect_nested_git: true,
+    },
+    NoisyDir {
+        path: "external",
+        reason: "external code excluded from governed source graph",
+        inspect_nested_git: true,
+    },
+    NoisyDir {
+        path: "research",
+        reason: "research or reference tree excluded from governed source graph",
+        inspect_nested_git: true,
+    },
+    NoisyDir {
+        path: "sandbox",
+        reason: "sandbox tree excluded from governed source graph",
+        inspect_nested_git: false,
+    },
+    NoisyDir {
+        path: "dist",
+        reason: "build output excluded from governed source graph",
+        inspect_nested_git: false,
+    },
+    NoisyDir {
+        path: "build",
+        reason: "build output excluded from governed source graph",
+        inspect_nested_git: false,
+    },
+    NoisyDir {
+        path: "target",
+        reason: "build output excluded from governed source graph",
+        inspect_nested_git: false,
+    },
+    NoisyDir {
+        path: "static/assets",
+        reason: "bundled static assets excluded from governed source graph",
+        inspect_nested_git: false,
+    },
+    NoisyDir {
+        path: "public/assets",
+        reason: "bundled static assets excluded from governed source graph",
+        inspect_nested_git: false,
+    },
+    NoisyDir {
+        path: "tools",
+        reason: "common tool or generated-support directory",
+        inspect_nested_git: true,
+    },
 ];
 
 fn count_nested_git_dirs(root: &Path, limit: usize) -> usize {
@@ -1076,7 +1145,10 @@ pub fn what_if(repo: &Path) -> Result<Value, String> {
         ),
     ];
 
-    let failed: Vec<&Value> = scenarios.iter().filter(|s| s["pass"] == json!(false)).collect();
+    let failed: Vec<&Value> = scenarios
+        .iter()
+        .filter(|s| s["pass"] == json!(false))
+        .collect();
     let primary = failed
         .first()
         .and_then(|s| s["name"].as_str())
@@ -1085,7 +1157,8 @@ pub fn what_if(repo: &Path) -> Result<Value, String> {
 
     let mut recommendations: Vec<String> = Vec::new();
     if !rule_hints.exists {
-        recommendations.push("Add .sentrux/rules.toml before treating this scope as governed.".to_string());
+        recommendations
+            .push("Add .sentrux/rules.toml before treating this scope as governed.".to_string());
     }
     for scenario in failed.iter().take(5) {
         recommendations.push(format!(
@@ -1209,7 +1282,9 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .any(|entry| entry["path"] == "src/lib.rs" && entry["touches"].as_i64().unwrap_or(0) > 0));
+            .any(
+                |entry| entry["path"] == "src/lib.rs" && entry["touches"].as_i64().unwrap_or(0) > 0
+            ));
         fs::remove_dir_all(&repo).ok();
     }
 
@@ -1217,8 +1292,11 @@ mod tests {
     fn what_if_evaluates_scenarios_and_reports_scope_pollution() {
         let repo = init_repo("what-if");
         fs::create_dir_all(repo.join(".sentrux")).expect("rules dir");
-        fs::write(repo.join(".sentrux/rules.toml"), "max_cc = 1\nmax_coupling = \"A\"\n")
-            .expect("rules");
+        fs::write(
+            repo.join(".sentrux/rules.toml"),
+            "max_cc = 1\nmax_coupling = \"A\"\n",
+        )
+        .expect("rules");
         fs::create_dir_all(repo.join("vendor")).expect("vendor dir");
         let doc = what_if(&repo).expect("what_if should run against a real git repo");
         assert_eq!(doc["tool"], "what_if");
