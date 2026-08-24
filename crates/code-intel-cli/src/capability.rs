@@ -133,6 +133,7 @@ pub(crate) fn exec_in_process(
     capability: &str,
     request: &Value,
     out_dir: &Path,
+    artifact_root: Option<&Path>,
     manifest: Option<&Path>,
     execute_adapter: AdapterExecutor,
 ) -> ExecOutcome {
@@ -140,7 +141,7 @@ pub(crate) fn exec_in_process(
         capability,
         request.clone(),
         out_dir,
-        None,
+        artifact_root,
         manifest,
         execute_adapter,
     );

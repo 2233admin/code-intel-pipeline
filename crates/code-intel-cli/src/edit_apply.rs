@@ -308,6 +308,7 @@ fn execute(cli: &Cli) -> Result<(i32, Value), (i32, &'static str, String)> {
         CAPABILITY,
         &request,
         staging.path(),
+        None,
         cli.manifest.as_deref(),
         capability_inventory::execute,
     );
