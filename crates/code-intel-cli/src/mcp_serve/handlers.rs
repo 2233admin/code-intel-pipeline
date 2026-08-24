@@ -302,6 +302,7 @@ fn structural_edit(context: &ServeContext, arguments: &Value) -> Result<Value, P
         EDIT_PLAN_CAPABILITY,
         &request,
         &staging,
+        None,
         context.manifest.as_deref(),
         capability_inventory::execute,
     );
