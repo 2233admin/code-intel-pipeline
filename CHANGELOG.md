@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Dispatch budget primitives**：新增 `Budget` 类型做二维（wall-clock、输入字节）派发成本控制，三级优先链（CLI flag > config > 内置默认），配 `estimate_ok`/`consume`/`exceeded` 查询方法（#308）。
+- **Bounded DAG dispatch**：派发前逐节点过闸，保留已完成 artifact，显式发布带 not-dispatched 原因的 budget 结果（#312，closes #305）。
+- **超大输入预派发拦截**：新增可配置 `OversizePolicy`（默认 `Budget::bytes_limit` 的 80%），在 `Budget::estimate_ok` 之前拦截，超阈值节点标记 `SkippedOversize`（#307/#311）。
+- **单节点超时独立分类**：新增 `node_timeout.rs::run_with_timeout`，超时后杀整个进程树（Windows `taskkill /T`，其余平台 `kill`），不再产生孤儿进程，超时不再误落进 `domain_unknown`（#306/#310）。
+- **weco 性能优化通道**：doctor bootstrap 探测新增可选外部工具 weco（AIDE 风格 perf-optimize CLI），支持 BYOK；对已有 benchmark/eval 脚本的目标可发起一次去噪、budget-bounded 的优化 pass 并出报告，不改代码、不开 PR（#300/#303，#301/#313）。
+- **advisory.workflow-recommend 接入 run execute DAG**：`-SkipOpenSpec`/`-AutoOpenSpec` 补齐 `ProviderPolicy::open_spec` 门控，是 T2 launcher 最后一个未接入 Rust DAG 的开关（#315）。
+- **BMAD 作为第四个 advisory-workflow-recommend 候选**：抽出 `ALTERNATIVE_CANDIDATES` 注册表，新增候选不再需要改 `recommend()`；新增 `orchestration/internalization/bmad.json`（ADR-0010 Internalization Standard）。
+- **确定性报告质量诊断**：新增私有 report quality evaluator，对 evidence anchor、surgery verification、snapshot scope 做确定性检查，v1 hospital artifact 形状不变（#317/#318）。
+- **知识图谱生成 Rust 化**：新增 `code-intel graph --repo <path> --write` 生成知识图谱（rust-first/manual-fallback，`CODE_INTEL_GRAPH_PROVIDER=rust|manual`）；现存的 `legacy/run-code-intel.ps1` 兼容路径的 `graph.code-intel-understand` 阶段随之接入该 CLI（此前是该 orchestrator 唯一纯文本"生成"步骤）（#321）。
+
+### Fixed
+
+- `sentrux gate` 在全新 checkout 上因缺基线硬崩溃：missing-baseline 前置检查原本查的是 native baseline 路径，实际 `sentrux gate` 读的是 lite 引擎的 `.sentrux/cache/lite-baseline.json`，现已对齐，缺失时正确落回 `manual_required`（fixes #322）。
+- 修复 workflow recommendation 的 Rust 侧 parity 回归（#314）。
+
+### Changed
+
+- (a) 类 CI/release PowerShell 调用点归零：atomic-capability 与 project-management-support 契约锁改为 cargo 测试，PS1 脚本保留在磁盘上（PM 走 internalization pin，atomic 保留避免耦合棘轮）；退役 35 个孤儿 legacy PowerShell 文件（#296/#298/#319）。
+
 ## [0.7.2-beta.6] — 2026-08-19
 
 ### Fixed
