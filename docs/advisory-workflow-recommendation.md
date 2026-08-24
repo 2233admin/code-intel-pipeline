@@ -1,6 +1,6 @@
 # Advisory workflow recommendation
 
-`advisory.workflow-recommend` is a deterministic, read-only proposal atom. It compares the existing matt-flow, gstack, OpenSpec OPSX, and spec-kit candidates using repository-local evidence and returns `code-intel-advisory-workflow-recommendation.v1`.
+`advisory.workflow-recommend` is a deterministic, read-only proposal atom. It compares the existing matt-flow, gstack, OpenSpec OPSX, spec-kit, and BMAD candidates using repository-local evidence and returns `code-intel-advisory-workflow-recommendation.v1`.
 
 The atom owns recommendation only. Its `effects` array is always empty; it never prompts, initializes a tool, edits the repository, or emits an Adoption Decision. Promotion from `proposal` to `adoption_decision` remains protected by the A05 authority-transition gate and requires an explicit approved authority event.
 

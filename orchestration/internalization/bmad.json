@@ -1,0 +1,22 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.bmad-record",
+  "projectId": "code-intel-pipeline",
+  "subject": { "name": "BMAD advisory candidate", "kind": "design_reference", "source": { "uri": "https://github.com/bmad-code-org/BMAD-METHOD", "revision": "unverified-upstream; local-atom-sha256:25a2185026cb61771ff2e5f4c2364687d01158cfc9a8266d00a20e5573ba1bde" }, "license": { "id": "UNKNOWN-RESEARCH-ONLY", "obligations": ["do not distribute, vendor, invoke, or production-enable until canonical upstream URI, exact revision, and license are verified", "retain the local reference provenance and gap notice"] } },
+  "adoption": {
+    "rung": "reimplement",
+    "ownedBoundary": ["pipeline-owned spec-driven advisory candidate data only", "no BMAD runtime dependency", "no skill execution, deployment, commit, publish, or external-write authority"],
+    "necessityEvidence": { "evidenceIds": ["local:atom:one-bmad-branch", "gap:bmad:upstream-revision", "gap:bmad:license"], "checkedAt": 1787529600, "expiresAt": 1795305600 },
+    "compatibilityEvidence": { "evidenceIds": ["local:b06:proposal-effects-empty", "local:b06:no-execution-authority"], "checkedAt": 1787529600, "expiresAt": 1795305600 },
+    "conformanceEvidence": { "evidenceIds": ["local:atom:one-bmad-branch", "local:b06:a01-envelope-parity"], "checkedAt": 1787529600, "expiresAt": 1795305600 }
+  },
+  "economics": { "benefit": { "metric": "bmad candidate branches traced in the advisory atom", "value": 1, "unit": "branches" }, "cost": { "metric": "pipeline-owned bmad lifecycle records", "value": 1, "unit": "records" }, "benefitEvidence": { "evidenceIds": ["local:atom:one-bmad-branch"], "checkedAt": 1787529600, "expiresAt": 1795305600 }, "costEvidence": { "evidenceIds": ["local:record:bmad"], "checkedAt": 1787529600, "expiresAt": 1795305600 } },
+  "assurance": { "maintenanceEvidence": { "evidenceIds": ["gap:bmad:update-check"], "checkedAt": 1787529600, "expiresAt": 1795305600 }, "securityEvidence": { "evidenceIds": ["gap:bmad:security-review"], "checkedAt": 1787529600, "expiresAt": 1795305600 } },
+  "update": { "policy": "Before 2026-11-22, establish canonical source URI, exact revision, license, release status, and relevant workflow semantics", "nextCheckAt": 1795305600, "evidence": { "evidenceIds": ["gap:bmad:update-check"], "checkedAt": 1787529600, "expiresAt": 1795305600 } },
+  "ownedModifications": [ { "path": "crates/code-intel-cli/src/workflow_recommendation.rs", "description": "Pipeline-owned bmad spec-driven recommendation branch; does not execute BMAD", "evidenceIds": ["local:atom:one-bmad-branch", "local:b06:no-execution-authority"] } ],
+  "rollback": { "strategy": "delete the bmad candidate record and alternative while preserving facts, plan authority, and proposal schema", "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1787529600, "expiresAt": 1795305600 } },
+  "exit": { "strategy": "replace with a pinned licensed spec-driven candidate or retire the reference", "replacementCriteria": ["canonical provenance and license are verified", "replacement passes conformance, measurement, and zero-execution-authority tests"], "evidence": { "evidenceIds": ["local:b06:candidate-removal-boundary"], "checkedAt": 1787529600, "expiresAt": 1795305600 } },
+  "retirement": { "status": "candidate", "triggers": ["canonical source cannot be established", "candidate adds no unique measured advisory value", "execution-authority isolation regresses"], "evidence": { "evidenceIds": ["local:record:bmad"], "checkedAt": 1787529600, "expiresAt": 1795305600 } },
+  "lifecycle": { "previousStatus": null, "status": "research", "effectiveAt": 1787529600, "replacementRecordId": null, "evidenceIds": ["local:record:bmad", "gap:bmad:upstream-revision", "gap:bmad:license"], "authorityEvent": null },
+  "provenance": { "recordedAt": 1787529600, "recordedBy": "dependency-expert" }
+}
