@@ -169,11 +169,7 @@ fn log_writes_frontmatter_body_and_artifacts() {
 #[test]
 fn list_reports_a_logged_entry_and_exits_zero() {
     let repo = TempTree::new("friction-list-happy");
-    run(
-        &repo.0,
-        &["log", "--title", "t", "--summary", "s"],
-        None,
-    );
+    run(&repo.0, &["log", "--title", "t", "--summary", "s"], None);
 
     let output = run(&repo.0, &["list"], None);
     assert!(output.status.success());
@@ -195,11 +191,7 @@ fn list_exits_65_when_an_entry_fails_to_parse() {
 #[test]
 fn publish_defaults_to_dry_run_and_calls_gh_only_with_yes() {
     let repo = TempTree::new("friction-publish-dry-run");
-    run(
-        &repo.0,
-        &["log", "--title", "t", "--summary", "s"],
-        None,
-    );
+    run(&repo.0, &["log", "--title", "t", "--summary", "s"], None);
     let slug = entry_dirs(&repo.0)[0]
         .file_name()
         .unwrap()
@@ -271,7 +263,10 @@ fn sync_dry_run_lists_without_deleting_then_yes_removes_closed_entries() {
 
     let applied = run(&repo.0, &["sync", "--yes"], Some((&stub, "CLOSED")));
     assert!(applied.status.success());
-    assert!(entry_dirs(&repo.0).is_empty(), "closed entry must be removed");
+    assert!(
+        entry_dirs(&repo.0).is_empty(),
+        "closed entry must be removed"
+    );
 }
 
 #[test]

@@ -90,8 +90,8 @@ pub(crate) fn take_repo(raw: &[String]) -> Result<(PathBuf, Vec<String>), Fricti
             repo.display()
         )));
     }
-    let repo = std::fs::canonicalize(&repo)
-        .map_err(|error| FrictionError::HostIo(error.to_string()))?;
+    let repo =
+        std::fs::canonicalize(&repo).map_err(|error| FrictionError::HostIo(error.to_string()))?;
     Ok((repo, rest))
 }
 
@@ -102,7 +102,10 @@ mod tests {
     #[test]
     fn take_repo_defaults_to_the_current_directory() {
         let (repo, rest) = take_repo(&["--title".into(), "x".into()]).unwrap();
-        assert_eq!(repo, std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap());
+        assert_eq!(
+            repo,
+            std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap()
+        );
         assert_eq!(rest, vec!["--title".to_string(), "x".to_string()]);
     }
 
@@ -115,12 +118,6 @@ mod tests {
     fn take_repo_rejects_duplicate_flags() {
         let dir = std::env::temp_dir();
         let arg = dir.to_string_lossy().into_owned();
-        assert!(take_repo(&[
-            "--repo".into(),
-            arg.clone(),
-            "--repo".into(),
-            arg
-        ])
-        .is_err());
+        assert!(take_repo(&["--repo".into(), arg.clone(), "--repo".into(), arg]).is_err());
     }
 }

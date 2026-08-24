@@ -35,7 +35,10 @@ fn run(raw: &[String]) -> Result<(), FrictionError> {
     }
 
     if !cli.yes {
-        println!("friction: dry run, would create an issue titled {:?}", entry.title);
+        println!(
+            "friction: dry run, would create an issue titled {:?}",
+            entry.title
+        );
         println!("---");
         println!("{}", entry.body);
         println!("---");

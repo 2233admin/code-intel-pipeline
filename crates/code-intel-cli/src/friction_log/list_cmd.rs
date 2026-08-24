@@ -80,7 +80,11 @@ fn parse_cli(raw: &[String]) -> Result<bool, FrictionError> {
     for argument in raw {
         match argument.as_str() {
             "--json" => as_json = true,
-            other => return Err(FrictionError::Usage(format!("unknown friction list argument: {other}"))),
+            other => {
+                return Err(FrictionError::Usage(format!(
+                    "unknown friction list argument: {other}"
+                )))
+            }
         }
     }
     Ok(as_json)

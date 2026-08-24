@@ -26,7 +26,10 @@ fn run(raw: &[String]) -> Result<(), FrictionError> {
             .map_err(|error| FrictionError::HostIo(error.to_string()))?;
         for artifact in &cli.artifacts {
             let file_name = artifact.file_name().ok_or_else(|| {
-                FrictionError::Usage(format!("--artifact has no file name: {}", artifact.display()))
+                FrictionError::Usage(format!(
+                    "--artifact has no file name: {}",
+                    artifact.display()
+                ))
             })?;
             std::fs::copy(artifact, artifacts_dir.join(file_name)).map_err(|error| {
                 FrictionError::HostIo(format!("copying {}: {error}", artifact.display()))
@@ -70,7 +73,11 @@ fn parse_cli(raw: &[String]) -> Result<Cli, FrictionError> {
                 artifacts.push(PathBuf::from(value));
                 index += 2;
             }
-            other => return Err(FrictionError::Usage(format!("unknown friction log argument: {other}"))),
+            other => {
+                return Err(FrictionError::Usage(format!(
+                    "unknown friction log argument: {other}"
+                )))
+            }
         }
     }
     Ok(Cli {
@@ -111,6 +118,9 @@ mod tests {
         .unwrap();
         assert_eq!(cli.title, "t");
         assert_eq!(cli.summary, "s");
-        assert_eq!(cli.artifacts, vec![PathBuf::from("a.txt"), PathBuf::from("b.txt")]);
+        assert_eq!(
+            cli.artifacts,
+            vec![PathBuf::from("a.txt"), PathBuf::from("b.txt")]
+        );
     }
 }

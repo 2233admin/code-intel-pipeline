@@ -48,7 +48,10 @@ fn run(raw: &[String]) -> Result<i32, FrictionError> {
                         .map_err(|error| FrictionError::HostIo(error.to_string()))?;
                     println!("friction: removed {} (issue closed)", entry.id);
                 } else {
-                    println!("friction: would remove {} (issue closed, dry run)", entry.id);
+                    println!(
+                        "friction: would remove {} (issue closed, dry run)",
+                        entry.id
+                    );
                 }
             }
             Ok(state) => println!("friction: kept {} (issue {state})", entry.id),
@@ -89,7 +92,11 @@ fn parse_cli(raw: &[String]) -> Result<bool, FrictionError> {
     for argument in raw {
         match argument.as_str() {
             "--yes" => yes = true,
-            other => return Err(FrictionError::Usage(format!("unknown friction sync argument: {other}"))),
+            other => {
+                return Err(FrictionError::Usage(format!(
+                    "unknown friction sync argument: {other}"
+                )))
+            }
         }
     }
     Ok(yes)

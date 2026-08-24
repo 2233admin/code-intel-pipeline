@@ -257,7 +257,10 @@ mod tests {
 
     #[test]
     fn slugify_strips_punctuation_and_collapses_separators() {
-        assert_eq!(slugify("Config loader turns `undefined` into a string!"), "config-loader-turns-undefined-into-a-string");
+        assert_eq!(
+            slugify("Config loader turns `undefined` into a string!"),
+            "config-loader-turns-undefined-into-a-string"
+        );
     }
 
     #[test]
