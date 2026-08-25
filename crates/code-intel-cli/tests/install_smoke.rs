@@ -123,6 +123,42 @@ fn checkout_ships_relocated_sentrux_shim_and_no_root_orchestration() {
 }
 
 #[test]
+fn checkout_ships_legacy_pipeline_entrypoint_deploy_step() {
+    let root = repo_root();
+    let installer = fs::read_to_string(root.join("legacy/install-code-intel-pipeline.ps1"))
+        .expect("read installer");
+    assert!(
+        installer.contains("function Install-LegacyPipelineEntrypoint"),
+        "installer must deploy legacy/run-code-intel.ps1 and pipeline.config.json into <bin> (#232)"
+    );
+    assert!(
+        installer.contains("Install-LegacyPipelineEntrypoint $Actions $Root $binDir"),
+        "Install-CodeIntelBinary must call the legacy pipeline entrypoint deploy step"
+    );
+}
+
+#[test]
+#[ignore = "DR-0001 topology gate; CI sets CODE_INTEL_SMOKE_* after packaged install"]
+fn packaged_install_deploys_legacy_pipeline_entrypoint() {
+    let bin = env::var("CODE_INTEL_SMOKE_BIN")
+        .expect("CODE_INTEL_SMOKE_BIN must point at the installed bin directory");
+    let bin = PathBuf::from(bin);
+
+    let script = bin.join("legacy").join("run-code-intel.ps1");
+    assert!(
+        script.is_file(),
+        "installed bin is missing legacy/run-code-intel.ps1 (#232): {}",
+        script.display()
+    );
+    let config = bin.join("pipeline.config.json");
+    assert!(
+        config.is_file(),
+        "installed bin is missing pipeline.config.json (#232): {}",
+        config.display()
+    );
+}
+
+#[test]
 #[ignore = "DR-0001 topology gate; CI sets CODE_INTEL_SMOKE_* after packaged install"]
 fn packaged_install_runs_relocated_sentrux_shim() {
     let release_root = env::var("CODE_INTEL_SMOKE_RELEASE_ROOT")

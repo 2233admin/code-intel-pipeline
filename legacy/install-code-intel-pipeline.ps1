@@ -751,6 +751,7 @@ function Install-CodeIntelBinary {
         $digest = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
         Add-InstallAction $Actions "code-intel" "installed" "$destination sha256=$digest path=$($pathResult.detail)" (Get-PathRefreshFix "code-intel") "repo-local" $false
         Install-IntegrationsManifest $Actions $Root $binDir
+        Install-LegacyPipelineEntrypoint $Actions $Root $binDir
     }
     catch {
         Add-InstallAction $Actions "code-intel" "install_failed" $_.Exception.Message "Check write permission for the code-intel bin directory and close any process locking the old binary." "repo-local" $false
@@ -786,6 +787,47 @@ function Install-IntegrationsManifest {
     }
     catch {
         Add-InstallAction $Actions "integrations-manifest" "install_failed" $_.Exception.Message "Check write permission for the code-intel bin directory." "repo-local" $false
+    }
+}
+
+function Install-LegacyPipelineEntrypoint {
+    param(
+        [System.Collections.Generic.List[object]]$Actions,
+        [string]$Root,
+        [string]$BinDir
+    )
+
+    # crates/code-intel-cli/src/doctor_bootstrap/mod.rs resolves both of
+    # these unconditionally against `pipeline_root` (which is `<bin>` on an
+    # installed machine, per capability::discover_manifest falling through to
+    # CODE_INTEL_HOME): <bin>/legacy/run-code-intel.ps1 and
+    # <bin>/pipeline.config.json. Install-IntegrationsManifest already copies
+    # orchestration/integrations.json for the same reason; these two were
+    # missing from that deploy step, so a from-release install always failed
+    # the doctor node's bootstrap-readiness check (#232). Overwrites on
+    # reinstall to keep both copies current.
+    $scriptSource = Join-Path (Join-Path $Root "legacy") "run-code-intel.ps1"
+    $configSource = Join-Path $Root "pipeline.config.json"
+    if (-not (Test-Path -LiteralPath $scriptSource -PathType Leaf)) {
+        Add-InstallAction $Actions "legacy-pipeline-entrypoint" "install_failed" "missing $scriptSource" "Restore legacy/run-code-intel.ps1 from the repository." "repo-local" $false
+        return
+    }
+    if (-not (Test-Path -LiteralPath $configSource -PathType Leaf)) {
+        Add-InstallAction $Actions "legacy-pipeline-entrypoint" "install_failed" "missing $configSource" "Restore pipeline.config.json from the repository." "repo-local" $false
+        return
+    }
+
+    try {
+        $scriptDir = Join-Path $BinDir "legacy"
+        New-Item -ItemType Directory -Force -Path $scriptDir | Out-Null
+        $scriptDestination = Join-Path $scriptDir "run-code-intel.ps1"
+        Copy-Item -LiteralPath $scriptSource -Destination $scriptDestination -Force
+        $configDestination = Join-Path $BinDir "pipeline.config.json"
+        Copy-Item -LiteralPath $configSource -Destination $configDestination -Force
+        Add-InstallAction $Actions "legacy-pipeline-entrypoint" "installed" "$scriptDestination, $configDestination" "" "repo-local" $false
+    }
+    catch {
+        Add-InstallAction $Actions "legacy-pipeline-entrypoint" "install_failed" $_.Exception.Message "Check write permission for the code-intel bin directory." "repo-local" $false
     }
 }
 
@@ -1164,6 +1206,7 @@ switch ($script:EffectivePlatform) {
 Add-InstallPlan $installPlan "repowise" "pip" "python/python3 -m pip install --user repowise==$script:RepowisePinnedVersion" "Semantic index and wiki/docs memory." "MEDIUM: Python package supply chain; installed version is pinned to repowise==$script:RepowisePinnedVersion." "Skip repowise with -SkipRepowise for exact-search-only runs." "pip" $false
 Add-InstallPlan $installPlan "code-intel" "repo-local release binary" "copy bin/code-intel or target/release/code-intel into CODE_INTEL_BIN; build with cargo when no binary is present" "Manifest-bound DAG, evidence query, impact analysis, and atomic publication." "LOW: Pipeline-owned binary; installed digest is reported and --help is executed before success." "Use code-intel.ps1 only when the compiled command needs recovery." "repo-local" $false
 Add-InstallPlan $installPlan "integrations-manifest" "repo-local" "copy orchestration/integrations.json into CODE_INTEL_BIN/orchestration so the installed binary resolves capabilities outside a repo checkout" "Capability registry for the installed code-intel binary; overwritten on every reinstall." "LOW: repo-owned JSON manifest copied verbatim." "Set CODE_INTEL_INTEGRATIONS_MANIFEST to point at a custom manifest instead." "repo-local" $false
+Add-InstallPlan $installPlan "legacy-pipeline-entrypoint" "repo-local" "copy legacy/run-code-intel.ps1 and pipeline.config.json into CODE_INTEL_BIN so the installed binary's doctor bootstrap check finds them without a repo checkout" "Bootstrap readiness for the doctor DAG node; overwritten on every reinstall." "LOW: repo-owned PowerShell entrypoint and JSON config copied verbatim, not executed by the installer." "Compatibility surface only; the compiled code-intel binary is the production entry." "repo-local" $false
 $sentruxBinaryName = if ($script:EffectivePlatform -eq "windows") { "sentrux.exe" } else { "sentrux" }
 Add-InstallPlan $installPlan "sentrux" "repo-local shim or preinstalled binary" "install legacy/tools/sentrux-shim first; optionally place a real $sentruxBinaryName on PATH" "Structural quality and regression gate." "LOW for repo-owned shim; MEDIUM for any separately supplied $sentruxBinaryName." "The repo-owned sentrux-lite core keeps scan/check/gate/plugin usable until the real binary is installed." "repo-local" $false
 Add-InstallPlan $installPlan "sentrux-shim" "repo-local" "copy legacy/tools/sentrux-shim launcher to CODE_INTEL_BIN and prepend PATH" "Opt-in local Pro activation, stable forwarding to real sentrux, and deterministic lite-core fallback." "LOW: repo-owned PowerShell/CMD/sh shim; review legacy/tools/sentrux-shim before install." "Pro auto-activation is off by default; set SENTRUX_AUTO_PRO=1 to opt in." "repo-local" $false
