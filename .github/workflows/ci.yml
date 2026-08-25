@@ -683,7 +683,7 @@ jobs:
           $result | ConvertTo-Json -Depth 20 | Set-Content -Encoding utf8 (Join-Path $env:RUNNER_TEMP "code-intel-smoketest-bootstrap.json")
           Write-Host "bootstrap.py installed $($result.tag) -> $($result.release_root)"
 
-      - name: Packaged sentrux-shim install smoke
+      - name: Packaged sentrux-shim and legacy-entrypoint install smoke
         shell: pwsh
         run: |
           # #216 / #274 / DR-0001: after a packaged install the relocated
@@ -697,6 +697,14 @@ jobs:
           $env:CODE_INTEL_SMOKE_BIN = Get-CodeIntelBinDir -Platform $platform
           cargo test -p code-intel --test install_smoke --locked packaged_install_runs_relocated_sentrux_shim -- --ignored --nocapture
           if ($LASTEXITCODE -ne 0) { throw "packaged sentrux-shim install smoke failed with exit ${LASTEXITCODE}" }
+          # #232 / DR-0001: the doctor bootstrap node reads
+          # <bin>/legacy/run-code-intel.ps1 and <bin>/pipeline.config.json
+          # unconditionally; a from-release install that skips deploying them
+          # (as this installer did before Install-LegacyPipelineEntrypoint)
+          # fails the doctor node on every platform. Checkout cargo tests
+          # cannot see this topology either.
+          cargo test -p code-intel --test install_smoke --locked packaged_install_deploys_legacy_pipeline_entrypoint -- --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { throw "packaged legacy-pipeline-entrypoint install smoke failed with exit ${LASTEXITCODE}" }
 
       - name: Packaged Sentrux capability closure smoke
         shell: pwsh
