@@ -1,0 +1,72 @@
+# Original ast-grep security rules for JavaScript, authored for
+# code-intel-pipeline. See python.yaml for the provenance note; this
+# file follows the same "reimplement, not vendor" boundary.
+id: cip-js-dynamic-eval
+language: javascript
+severity: warning
+message: >-
+  eval() executes an arbitrary string as code; an attacker-controlled
+  input reaches interpreter execution
+metadata: {cwe: "CWE-95", category: "injection"}
+rule:
+  pattern: eval($$$ARGS)
+---
+id: cip-js-dynamic-function-ctor
+language: javascript
+severity: warning
+message: >-
+  new Function() compiles a string into executable code, the same
+  injection surface as eval()
+metadata: {cwe: "CWE-95", category: "injection"}
+rule:
+  pattern: new Function($$$ARGS)
+---
+id: cip-js-unsafe-inner-html
+language: javascript
+severity: warning
+message: >-
+  assigning a non-literal value to innerHTML can inject attacker
+  markup/script; use textContent or a sanitizer
+metadata: {cwe: "CWE-79", category: "xss"}
+rule:
+  kind: assignment_expression
+  all:
+    - has: {field: left, regex: '\.innerHTML$'}
+    - has: {field: right, not: {kind: string}}
+---
+id: cip-js-command-injection
+language: javascript
+severity: warning
+message: >-
+  a .exec()-style call built from string concatenation is a
+  command-injection surface; pass argv arrays instead
+metadata: {cwe: "CWE-78", category: "injection"}
+rule:
+  pattern: $OBJ.exec($A + $B)
+---
+id: cip-js-sql-string-building
+language: javascript
+severity: warning
+message: >-
+  a .query()-style call built from string concatenation is a
+  SQL-injection surface; use parameterized queries instead
+metadata: {cwe: "CWE-89", category: "injection"}
+rule:
+  pattern: $OBJ.query($A + $B)
+---
+id: cip-js-hardcoded-credential
+language: javascript
+severity: warning
+message: >-
+  a credential-named variable is assigned a non-trivial string literal
+  instead of being read from config/secret storage
+metadata: {cwe: "CWE-798", category: "secrets"}
+rule:
+  kind: variable_declarator
+  all:
+    - has: {field: name, regex: '(?i)^(password|secret|api_key|token)$'}
+    - has:
+        field: value
+        all:
+          - kind: string
+          - regex: '^.{12,}$'

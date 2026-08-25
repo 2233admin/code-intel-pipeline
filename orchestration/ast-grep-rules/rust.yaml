@@ -1,0 +1,63 @@
+# Original ast-grep security rules for Rust, authored for
+# code-intel-pipeline. See python.yaml for the provenance note; this
+# file follows the same "reimplement, not vendor" boundary.
+id: cip-rs-command-injection
+language: rust
+severity: warning
+message: >-
+  Command::new() built from string concatenation is a
+  command-injection surface; pass argv elements as separate .arg()
+  calls instead
+metadata: {cwe: "CWE-78", category: "injection"}
+rule:
+  pattern: Command::new($A + $B)
+---
+id: cip-rs-transmute
+language: rust
+severity: warning
+message: >-
+  std::mem::transmute reinterprets bytes across types with no runtime
+  check; a mismatched layout is undefined behavior
+metadata: {cwe: "CWE-704", category: "memory-safety"}
+rule:
+  any:
+    - pattern: std::mem::transmute($$$ARGS)
+    - pattern: mem::transmute($$$ARGS)
+    - pattern: transmute($$$ARGS)
+---
+id: cip-rs-weak-hash
+language: rust
+severity: info
+message: >-
+  MD5/SHA1 are not collision-resistant; do not use them for passwords,
+  tokens, or integrity checks
+metadata: {cwe: "CWE-327", category: "crypto"}
+rule:
+  any:
+    - pattern: md5::compute($$$ARGS)
+    - pattern: Md5::new($$$ARGS)
+    - pattern: Sha1::new($$$ARGS)
+---
+id: cip-rs-sql-string-building
+language: rust
+severity: warning
+message: >-
+  a query call built from a runtime-formatted string is a
+  SQL-injection surface; use compile-time/bound query parameters
+  instead
+metadata: {cwe: "CWE-89", category: "injection"}
+rule:
+  pattern: $CONN.execute(&format!($$$ARGS))
+---
+id: cip-rs-hardcoded-credential
+language: rust
+severity: warning
+message: >-
+  a credential-named binding is assigned a non-trivial string literal
+  instead of being read from config/secret storage
+metadata: {cwe: "CWE-798", category: "secrets"}
+rule:
+  kind: let_declaration
+  all:
+    - has: {field: pattern, regex: '(?i)^(password|secret|api_key|token)$'}
+    - has: {field: value, kind: string_literal, regex: '^.{12,}$'}

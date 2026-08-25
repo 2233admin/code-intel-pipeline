@@ -1,0 +1,68 @@
+# Original ast-grep security rules for Java, authored for
+# code-intel-pipeline. See python.yaml for the provenance note; this
+# file follows the same "reimplement, not vendor" boundary.
+id: cip-java-command-injection
+language: java
+severity: warning
+message: >-
+  Runtime.exec() built from string concatenation is a
+  command-injection surface; pass argv elements as a String[] instead
+metadata: {cwe: "CWE-78", category: "injection"}
+rule:
+  pattern: $RT.exec($A + $B)
+---
+id: cip-java-sql-string-building
+language: java
+severity: warning
+message: >-
+  a Statement executeQuery/executeUpdate call built from string
+  concatenation is a SQL-injection surface; use PreparedStatement
+  instead
+metadata: {cwe: "CWE-89", category: "injection"}
+rule:
+  any:
+    - pattern: $STMT.executeQuery($A + $B)
+    - pattern: $STMT.executeUpdate($A + $B)
+---
+id: cip-java-insecure-deserialize
+language: java
+severity: warning
+message: >-
+  ObjectInputStream deserializes an arbitrary object graph; a crafted
+  stream on an untrusted source can execute code during readObject()
+metadata: {cwe: "CWE-502", category: "deserialization"}
+rule:
+  pattern: new ObjectInputStream($$$ARGS)
+---
+id: cip-java-weak-crypto
+language: java
+severity: info
+message: >-
+  MD5/SHA1/DES are not fit for passwords, tokens, or confidentiality;
+  use SHA-256+ and AES
+metadata: {cwe: "CWE-327", category: "crypto"}
+rule:
+  any:
+    - all:
+        - pattern: MessageDigest.getInstance($ALG)
+        - has: {kind: string_literal, regex: '(?i)(md5|sha-?1)', stopBy: end}
+    - all:
+        - pattern: Cipher.getInstance($ALG)
+        - has: {kind: string_literal, regex: '(?i)^"des', stopBy: end}
+---
+id: cip-java-hardcoded-credential
+language: java
+severity: warning
+message: >-
+  a credential-named variable is assigned a non-trivial string literal
+  instead of being read from config/secret storage
+metadata: {cwe: "CWE-798", category: "secrets"}
+rule:
+  kind: variable_declarator
+  all:
+    - has: {field: name, regex: '(?i)^(password|secret|apikey|token)$'}
+    - has:
+        field: value
+        all:
+          - kind: string_literal
+          - regex: '^.{12,}$'

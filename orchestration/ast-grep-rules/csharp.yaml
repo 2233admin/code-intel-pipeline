@@ -1,0 +1,61 @@
+# Original ast-grep security rules for C#, authored for
+# code-intel-pipeline. See python.yaml for the provenance note; this
+# file follows the same "reimplement, not vendor" boundary.
+id: cip-cs-command-injection
+language: csharp
+severity: warning
+message: >-
+  a ProcessStartInfo built from string concatenation is a
+  command-injection surface; pass arguments via ArgumentList instead
+metadata: {cwe: "CWE-78", category: "injection"}
+rule:
+  pattern: new ProcessStartInfo($A + $B)
+---
+id: cip-cs-sql-string-building
+language: csharp
+severity: warning
+message: >-
+  a SqlCommand built from string concatenation/interpolation is a
+  SQL-injection surface; use parameterized commands instead
+metadata: {cwe: "CWE-89", category: "injection"}
+rule:
+  any:
+    - pattern: new SqlCommand($A + $B, $$$REST)
+    - all:
+        - pattern: new SqlCommand($ARG, $$$REST)
+        - has: {kind: interpolated_string_expression, stopBy: end}
+---
+id: cip-cs-insecure-deserialize
+language: csharp
+severity: warning
+message: >-
+  BinaryFormatter deserializes an arbitrary object graph from
+  untrusted input, a well-known remote-code-execution vector
+metadata: {cwe: "CWE-502", category: "deserialization"}
+rule:
+  pattern: new BinaryFormatter($$$ARGS)
+---
+id: cip-cs-weak-hash
+language: csharp
+severity: info
+message: >-
+  MD5/SHA1 are not collision-resistant; do not use them for passwords,
+  tokens, or integrity checks
+metadata: {cwe: "CWE-327", category: "crypto"}
+rule:
+  any:
+    - pattern: MD5.Create($$$ARGS)
+    - pattern: SHA1.Create($$$ARGS)
+---
+id: cip-cs-hardcoded-credential
+language: csharp
+severity: warning
+message: >-
+  a credential-named variable is assigned a non-trivial string literal
+  instead of being read from config/secret storage
+metadata: {cwe: "CWE-798", category: "secrets"}
+rule:
+  kind: variable_declarator
+  all:
+    - has: {field: name, regex: '(?i)^(password|secret|apikey|token)$'}
+    - has: {kind: string_literal, regex: '^.{12,}$'}

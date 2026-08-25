@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BMAD 作为第四个 advisory-workflow-recommend 候选**：抽出 `ALTERNATIVE_CANDIDATES` 注册表，新增候选不再需要改 `recommend()`；新增 `orchestration/internalization/bmad.json`（ADR-0010 Internalization Standard）。
 - **确定性报告质量诊断**：新增私有 report quality evaluator，对 evidence anchor、surgery verification、snapshot scope 做确定性检查，v1 hospital artifact 形状不变（#317/#318）。
 - **知识图谱生成 Rust 化**：新增 `code-intel graph --repo <path> --write` 生成知识图谱（rust-first/manual-fallback，`CODE_INTEL_GRAPH_PROVIDER=rust|manual`）；现存的 `legacy/run-code-intel.ps1` 兼容路径的 `graph.code-intel-understand` 阶段随之接入该 CLI（此前是该 orchestrator 唯一纯文本"生成"步骤）（#321）。
+- **`scan.ast-grep-security`：原创 ast-grep 安全规则库 + advisory-only 扫描能力**（#345）。`orchestration/ast-grep-rules/<lang>.yaml` 覆盖本管线自身识别的 7 种语言（python/javascript/typescript/go/rust/java/csharp），每语言一份独立编写的 security 规则文件（SQLi、命令注入、eval/exec、不安全反序列化、硬编码密钥、弱哈希等常见 CWE 类别），规则概念来源于 vitali87/code-graph-rag 的规则分类思路但**不 vendor 其源文件**（`orchestration/internalization/ast-grep-security-rules.json` 记录 reimplement rung 与 MIT 义务）。新 capability 走 CLI 版 `ast-grep scan --rule`，产出 `code-intel-ast-grep-security-findings.v1` artifact，`authority.mode: advisory_only`，从不进 `get_gate_verdict`、从不提议改写；MCP 新增第 7 个工具 `scan_security_findings`。
 
 ### Fixed
 
