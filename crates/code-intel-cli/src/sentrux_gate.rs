@@ -198,6 +198,30 @@ pub(crate) fn run_check(repo: &Path) -> Result<EngineRun, String> {
     })
 }
 
+/// Test-only wrapper around `run_check`: an `Err` here means the sentrux
+/// engine itself did not complete (subprocess spawn, git, or path-resolution
+/// problem -- e.g. the #178 shared-temp-path collision, or any other reason
+/// `measure_project` bailed), which is not the same failure as a real rule
+/// violation and must never be reported as one (#192). Panics with a message
+/// that cannot be mistaken for the business assertion below it: readers
+/// hitting this text go straight to the actual error, not the dependency
+/// graph. Deliberately does not guess a specific cause (subprocess vs. path
+/// vs. something else) beyond what `error` itself already says -- claiming a
+/// cause this helper cannot verify would just be a differently-shaped
+/// misdiagnosis.
+#[cfg(test)]
+pub(crate) fn expect_check_ran(repo: &Path) -> EngineRun {
+    match run_check(repo) {
+        Ok(run) => run,
+        Err(error) => panic!(
+            "sentrux engine did not complete against {} -- nothing below was evaluated this \
+             run; this is NOT a rule-violation failure, do not chase the dependency graph. \
+             The underlying error names the actual cause: {error}",
+            repo.display()
+        ),
+    }
+}
+
 pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
     let (metrics, _file_gate) = measure_project(repo)?;
     let baseline_path = repo.join(".sentrux").join("baseline.json");
@@ -405,6 +429,23 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
         violations,
         governed: true,
     })
+}
+
+/// Test-only wrapper around `run_gate`, same rationale as
+/// `expect_check_ran` (#192): an engine-completion failure here must never
+/// read as a baseline/ratchet business failure, and this deliberately does
+/// not guess a cause beyond what `error` already says.
+#[cfg(test)]
+pub(crate) fn expect_gate_ran(repo: &Path, save: bool) -> EngineRun {
+    match run_gate(repo, save) {
+        Ok(run) => run,
+        Err(error) => panic!(
+            "sentrux engine did not complete against {} -- nothing below was evaluated this \
+             run; this is NOT a rule-violation failure, do not chase the dependency graph. \
+             The underlying error names the actual cause: {error}",
+            repo.display()
+        ),
+    }
 }
 
 /// The CLI-level `check` operation: `run_check`'s static `.sentrux/rules.toml`
@@ -1355,6 +1396,30 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "this is NOT a rule-violation failure")]
+    fn expect_check_ran_reports_engine_failure_distinctly_from_a_violation() {
+        // #192 regression: an engine that could not run (here, a repository
+        // path that cannot resolve) must panic with wording that sends the
+        // reader to the underlying error, never with the shape of the
+        // `resolved Rust import cycle(s) detected` business assertion below.
+        let missing = std::env::temp_dir().join(format!(
+            "code-intel-192-missing-repo-{}",
+            std::process::id()
+        ));
+        expect_check_ran(&missing);
+    }
+
+    #[test]
+    #[should_panic(expected = "this is NOT a rule-violation failure")]
+    fn expect_gate_ran_reports_engine_failure_distinctly_from_a_violation() {
+        let missing = std::env::temp_dir().join(format!(
+            "code-intel-192-missing-repo-gate-{}",
+            std::process::id()
+        ));
+        expect_gate_ran(&missing, false);
+    }
+
+    #[test]
     fn this_repository_has_no_resolved_import_cycles() {
         // Regression guard for the `dag_run <-> execution_kernel` cycle (and
         // the `artifact_ref <-> capability` cycle found alongside it)
@@ -1367,7 +1432,7 @@ mod tests {
         // seconds instead of only surfacing later in a full self-scan
         // build.
         let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let run = run_check(&repo).expect("sentrux check should run against this repository");
+        let run = expect_check_ran(&repo);
         let cycle_violations: Vec<&Violation> = run
             .violations
             .iter()
@@ -1506,7 +1571,7 @@ mod tests {
             b"{\"timestamp\":1.0,\"quality_signal\":0.5}",
         )
         .expect("write legacy baseline");
-        let run = run_gate(&root, false).expect("gate runs");
+        let run = expect_gate_ran(&root, false);
         assert!(!run.success);
         assert_eq!(run.violations[0].rule, "baseline_engine_mismatch");
         fs::remove_dir_all(&root).expect("remove fixture");
@@ -1526,7 +1591,7 @@ mod tests {
             ),
         )
         .expect("write baseline");
-        let run = run_gate(&root, false).expect("gate runs");
+        let run = expect_gate_ran(&root, false);
         assert!(!run.success);
         assert_eq!(run.violations[0].rule, "baseline_engine_mismatch");
         assert!(
@@ -1560,9 +1625,9 @@ mod tests {
         .expect("write b.rs");
         fs::write(root.join("Cargo.toml"), "[package]\n").expect("write manifest");
 
-        let saved = run_gate(&root, true).expect("save baseline");
+        let saved = expect_gate_ran(&root, true);
         assert!(saved.success);
-        let clean = run_gate(&root, false).expect("gate after save");
+        let clean = expect_gate_ran(&root, false);
         assert!(clean.success, "stdout: {}", clean.stdout);
 
         fs::create_dir_all(root.join(".sentrux")).expect("sentrux dir exists");
@@ -1571,7 +1636,7 @@ mod tests {
             "[constraints]\nmax_cycles = 0\n",
         )
         .expect("write rules");
-        let check = run_check(&root).expect("check runs");
+        let check = expect_check_ran(&root);
         assert!(!check.success);
         assert_eq!(check.violations[0].rule, "max_cycles");
         assert_eq!(
@@ -1604,7 +1669,7 @@ mod tests {
         )
         .expect("write rules");
 
-        let saved = run_gate(&root, true).expect("save baseline");
+        let saved = expect_gate_ran(&root, true);
         assert!(saved.success, "stdout: {}", saved.stdout);
 
         // Grow src/a.rs past the god-file threshold (loc > 800) without
@@ -1618,7 +1683,7 @@ mod tests {
 
         // Pre-fix behavior, still reachable directly: the static-only check
         // never looks at the baseline and stays green.
-        let static_only = run_check(&root).expect("static check runs");
+        let static_only = expect_check_ran(&root);
         assert!(
             static_only.success,
             "static rules alone should still pass (no_god_files is off): {}",
@@ -1626,7 +1691,7 @@ mod tests {
         );
 
         // The authoritative ratchet catches it directly.
-        let gate = run_gate(&root, false).expect("gate runs");
+        let gate = expect_gate_ran(&root, false);
         assert!(!gate.success, "stdout: {}", gate.stdout);
         let gate_rules: BTreeSet<&str> = gate.violations.iter().map(|v| v.rule.as_str()).collect();
         assert!(gate_rules.contains("god_files_increased"), "{gate_rules:?}");
@@ -1678,7 +1743,7 @@ mod tests {
         fs::write(root.join("src/old_god.rs"), &old_god).expect("write old god file");
         fs::write(root.join("src/small.rs"), "pub fn small() {}\n").expect("write small file");
 
-        let saved = run_gate(&root, true).expect("save baseline");
+        let saved = expect_gate_ran(&root, true);
         assert!(saved.success, "stdout: {}", saved.stdout);
 
         // Fix the tolerated god file and introduce a brand-new one: the god
@@ -1691,7 +1756,7 @@ mod tests {
         }
         fs::write(root.join("src/new_god.rs"), &new_god).expect("write new god file");
 
-        let gate = run_gate(&root, false).expect("gate runs");
+        let gate = expect_gate_ran(&root, false);
         assert!(!gate.success, "stdout: {}", gate.stdout);
         let violation = gate
             .violations
@@ -1726,7 +1791,7 @@ mod tests {
         let root = fixture_root("sentrux-native-god-functions");
         fs::create_dir_all(root.join("src")).expect("create fixture");
         fs::write(root.join("src/small.rs"), "pub fn small() {}\n").expect("write small file");
-        let saved = run_gate(&root, true).expect("save baseline");
+        let saved = expect_gate_ran(&root, true);
         assert!(saved.success, "stdout: {}", saved.stdout);
 
         let mut dense = String::new();
@@ -1743,7 +1808,7 @@ mod tests {
         }
         fs::write(root.join("src/dense.rs"), &dense).expect("write dense file");
 
-        let gate = run_gate(&root, false).expect("gate runs");
+        let gate = expect_gate_ran(&root, false);
         assert!(!gate.success, "stdout: {}", gate.stdout);
         let violation = gate
             .violations
@@ -1773,11 +1838,11 @@ mod tests {
             god.push_str(&format!("// padding {line}\n"));
         }
         fs::write(root.join("src/was_god.rs"), &god).expect("write god file");
-        let saved = run_gate(&root, true).expect("save baseline");
+        let saved = expect_gate_ran(&root, true);
         assert!(saved.success, "stdout: {}", saved.stdout);
 
         fs::write(root.join("src/was_god.rs"), "pub fn entry() {}\n").expect("shrink god file");
-        let gate = run_gate(&root, false).expect("gate runs");
+        let gate = expect_gate_ran(&root, false);
         assert!(gate.success, "stdout: {}", gate.stdout);
         assert!(
             gate.stdout.contains("no longer over threshold"),
@@ -1802,7 +1867,7 @@ mod tests {
             ),
         )
         .expect("write baseline");
-        let run = run_gate(&root, false).expect("gate runs");
+        let run = expect_gate_ran(&root, false);
         assert!(!run.success);
         assert_eq!(run.violations[0].rule, "baseline_engine_mismatch");
         assert!(
