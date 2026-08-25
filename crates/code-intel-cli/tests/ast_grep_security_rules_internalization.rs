@@ -91,4 +91,3 @@ fn every_owned_rule_file_pin_matches_its_current_bytes() {
         );
     }
 }
-

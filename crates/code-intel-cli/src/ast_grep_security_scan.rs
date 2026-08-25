@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 
 use super::structured_edit::{
     ast_grep_command, ast_grep_status_is_acceptable, ast_grep_version, bounded_diagnostic,
-    normalize_match_file, normalize_relative, required_string, requested_paths, validate_path,
+    normalize_match_file, normalize_relative, requested_paths, required_string, validate_path,
 };
 use super::{publish_named, snapshot_adapter_error, AdapterArtifact, AdapterError, AdapterOutput};
 use crate::adapter_contract::AdapterDomainVerdict;
@@ -30,8 +30,15 @@ const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 /// Languages with a bundled, originally-authored security rule file. Keep in
 /// sync with `orchestration/ast-grep-rules/`; `every_bundled_language_has_a_rule_file_on_disk`
 /// fails if this list and the directory drift apart.
-pub(super) const BUNDLED_LANGUAGES: [&str; 7] =
-    ["csharp", "go", "java", "javascript", "python", "rust", "typescript"];
+pub(super) const BUNDLED_LANGUAGES: [&str; 7] = [
+    "csharp",
+    "go",
+    "java",
+    "javascript",
+    "python",
+    "rust",
+    "typescript",
+];
 
 pub(crate) fn execute(
     request: &Value,
@@ -86,7 +93,12 @@ pub(crate) fn execute(
         .as_array()
         .expect("validated snapshot scope")
         .iter()
-        .map(|value| normalize_relative(value.as_str().expect("validated snapshot scope item"), false))
+        .map(|value| {
+            normalize_relative(
+                value.as_str().expect("validated snapshot scope item"),
+                false,
+            )
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let paths = paths
         .into_iter()
@@ -97,10 +109,13 @@ pub(crate) fn execute(
         snapshot::begin_consumption(repo, &request["snapshot"]).map_err(snapshot_adapter_error)?;
     let version = ast_grep_version()?;
     let mut command = ast_grep_command();
-    command
-        .args(["scan", "--rule"])
-        .arg(&rule_file)
-        .args(["--json=compact", "--include-metadata", "--threads", "0", "--"]);
+    command.args(["scan", "--rule"]).arg(&rule_file).args([
+        "--json=compact",
+        "--include-metadata",
+        "--threads",
+        "0",
+        "--",
+    ]);
     command.args(&paths).current_dir(repo);
     let command_line = format!("{command:?}");
     let output = command
@@ -224,11 +239,14 @@ mod tests {
 
     #[test]
     fn every_bundled_language_has_a_rule_file_on_disk() {
-        let root =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../orchestration/ast-grep-rules");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../orchestration/ast-grep-rules");
         for language in BUNDLED_LANGUAGES {
             let file = root.join(format!("{language}.yaml"));
-            assert!(file.is_file(), "missing bundled rule file: {}", file.display());
+            assert!(
+                file.is_file(),
+                "missing bundled rule file: {}",
+                file.display()
+            );
         }
     }
 }

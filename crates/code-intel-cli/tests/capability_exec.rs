@@ -8,11 +8,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
-    "1cfb33454282cef128eb62116508879454cc50f004386b09f2824db031d33c7a";
+    "5090efd13c07531c249637d8e5857f0d13f3ecb8f0d02fb6e858747ea7d8c3d8";
 const STRUCTURED_EDIT_DIGEST: &str =
     "ec36694a8ffca7ef068982cc574e6e42499a4634eb12f86a742026558bd1867d";
 const AST_GREP_SECURITY_DIGEST: &str =
-    "cb5a2dab5a8153966ea904fa57693607311a1445d42fb64865d6b50f1445c117";
+    "d3a55f2a70f1d13581258e34344826fa26433c586907945fdc797363853d43c6";
 const REPO_SNAPSHOT_DIGEST: &str =
     "4f42b080fd19e501a6315ee204add188d69625bedd15c566fea48bb1f3e78764";
 const CODENEXUS_TOOLCHAIN_DIGESTS: [&str; 5] = [
@@ -1649,7 +1649,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects() {
         "toolchainDigests":[
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
             "25a2185026cb61771ff2e5f4c2364687d01158cfc9a8266d00a20e5573ba1bde",
-            "1cfb33454282cef128eb62116508879454cc50f004386b09f2824db031d33c7a"
+            "5090efd13c07531c249637d8e5857f0d13f3ecb8f0d02fb6e858747ea7d8c3d8"
         ]
     });
     value["options"] = json!({"repoPath":repo,"auto":true});
@@ -1957,7 +1957,12 @@ fn ast_grep_security_scan_is_scope_bound_and_advisory_only() {
 
     value["options"]["paths"] = json!(["src"]);
     let out = root.join("out");
-    let output = run_with_request_file(&value, &root.join("request.json"), &out, "scan.ast-grep-security");
+    let output = run_with_request_file(
+        &value,
+        &root.join("request.json"),
+        &out,
+        "scan.ast-grep-security",
+    );
     assert_eq!(
         output.status.code(),
         Some(0),
@@ -1971,10 +1976,9 @@ fn ast_grep_security_scan_is_scope_bound_and_advisory_only() {
         result["observedEffects"],
         json!(["repo_read", "local_write", "process_spawn"])
     );
-    let findings: Value = serde_json::from_slice(
-        &fs::read(out.join("ast-grep-security-findings.json")).unwrap(),
-    )
-    .unwrap();
+    let findings: Value =
+        serde_json::from_slice(&fs::read(out.join("ast-grep-security-findings.json")).unwrap())
+            .unwrap();
     assert_eq!(findings["summary"]["findings"], 1);
     assert_eq!(findings["findings"][0]["ruleId"], "cip-py-dynamic-eval");
     assert_eq!(findings["findings"][0]["file"], "src/example.py");
