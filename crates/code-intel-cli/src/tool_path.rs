@@ -93,15 +93,31 @@ pub(crate) fn resolve(name: &str) -> PathBuf {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static PROBE_NONCE: AtomicU64 = AtomicU64::new(0);
 
     #[test]
     fn path_search_skips_relative_entries() {
         let names = candidates("__code_intel_relative_probe__");
-        // One planted directory per included copy of this module: the file
-        // is compiled under several parents and their tests run in parallel
-        // inside the same process.
+        // One planted directory per included copy of this module (the file
+        // is compiled under several different parent modules, e.g.
+        // `builtin_provider_evidence::tool_path` and `hardened_git::tool_path`,
+        // and those copies' tests can run concurrently as threads inside one
+        // process) *and* per process: `cargo test` runs each integration test
+        // target as its own OS process, and several of those targets pull
+        // this file in under the identical parent module name (`run_commit`,
+        // `survival_scan`, ... via `#[path]`), so `module_path!()` alone
+        // collides across processes even though it disambiguates within one
+        // (#178 — the same shared-mutable-path-without-owner class as #175's
+        // `unique_temp_dir()`). Owned the same way #175 fixed it: pid for the
+        // process component, plus a process-local counter so this stays safe
+        // even if this exact probe is ever invoked more than once per
+        // process/module-path combination.
         let unique = module_path!().replace("::", "-");
-        let relative = Path::new("../../target").join(format!("tool-path-{unique}"));
+        let nonce = PROBE_NONCE.fetch_add(1, Ordering::Relaxed);
+        let relative = Path::new("../../target")
+            .join(format!("tool-path-{unique}-{}-{nonce}", std::process::id()));
         let absolute = env::current_dir().expect("cwd").join(&relative);
         fs::create_dir_all(&absolute).expect("create probe dir");
         for name in &names {

@@ -255,7 +255,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux_gate.rs",
-        "sha256": "f69776e6800f917099794a5a28dbdb1117eaf657568dd09e34bf33e4207ddb4c"
+        "sha256": "a26d9d69b16c7626e17b0ce13463b22807e35a2e9e6072d281c751792fcb6ff2"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
@@ -351,7 +351,7 @@
       "path": "crates/code-intel-cli/src/sentrux_gate.rs",
       "description": "Pipeline-owned built-in structural gate engine (metrics, rules check, no-degradation gate, cycle detection)",
       "evidenceIds": [
-        "local:b03:native-gate-source-sha256:f69776e6800f917099794a5a28dbdb1117eaf657568dd09e34bf33e4207ddb4c",
+        "local:b03:native-gate-source-sha256:a26d9d69b16c7626e17b0ce13463b22807e35a2e9e6072d281c751792fcb6ff2",
         "local:b03:native-gate-conformance:198cb2ca6abaffd40445ce0e03f821356ab191ee084446fd78235dabe93ccc45"
       ]
     }

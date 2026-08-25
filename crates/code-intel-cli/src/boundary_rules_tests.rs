@@ -139,8 +139,7 @@ fn this_repository_declares_no_boundary_or_layer_violation() {
     // regressed to always returning nothing -- that's what the fixture test
     // below is for.
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let run =
-        super::super::run_check(&repo).expect("sentrux check should run against this repository");
+    let run = super::super::expect_check_ran(&repo);
     let violations: Vec<&Violation> = run
         .violations
         .iter()
@@ -189,7 +188,7 @@ fn run_check_detects_a_real_boundary_and_layer_violation_end_to_end() {
     )
     .expect("write rules.toml");
 
-    let run = super::super::run_check(&repo).expect("sentrux check should run against the fixture");
+    let run = super::super::expect_check_ran(&repo);
     assert!(
         !run.success,
         "the fixture's core -> cli edge must fail check"
@@ -230,7 +229,7 @@ fn run_check_passes_a_fixture_with_no_forbidden_edge() {
     )
     .expect("write rules.toml");
 
-    let run = super::super::run_check(&repo).expect("sentrux check should run against the fixture");
+    let run = super::super::expect_check_ran(&repo);
     let violations: Vec<&Violation> = run
         .violations
         .iter()
