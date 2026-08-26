@@ -1,14 +1,5 @@
 use super::*;
 use serde_json::json;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-fn unique_temp_dir(name: &str) -> PathBuf {
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock should be after epoch")
-        .as_nanos();
-    env::temp_dir().join(format!("code-intel-{name}-{stamp}"))
-}
 
 fn touch(path: &Path, text: &str) {
     fs::write(path, text).expect("fixture file should be writable");
@@ -26,7 +17,7 @@ fn summary_for(report: Value, hospital: Value, artifact_dir: &Path) -> ResumeSum
 
 #[test]
 fn resume_contract_routes_graph_missing_to_understanding() {
-    let dir = unique_temp_dir("graph-missing");
+    let dir = crate::test_support::unique_temp_dir("graph-missing");
     fs::create_dir_all(&dir).expect("fixture dir should be created");
     touch(&dir.join("summary.md"), "# Summary");
     touch(&dir.join("understanding.md"), "# Understanding");
@@ -79,7 +70,7 @@ fn resume_contract_routes_graph_missing_to_understanding() {
 
 #[test]
 fn resume_contract_prioritizes_github_research_when_required() {
-    let dir = unique_temp_dir("research-required");
+    let dir = crate::test_support::unique_temp_dir("research-required");
     fs::create_dir_all(&dir).expect("fixture dir should be created");
     touch(&dir.join("understanding.md"), "# Understanding");
     let research_markdown = dir.join("github-solution-research.md");
@@ -151,7 +142,7 @@ fn classify_contract_requires_research_for_upstream_or_tool_blockers() {
 
 #[test]
 fn ensure_directory_creates_a_fresh_nested_directory() {
-    let dir = unique_temp_dir("ensure-directory-fresh");
+    let dir = crate::test_support::unique_temp_dir("ensure-directory-fresh");
     let target = dir.join("nested").join("leaf");
 
     let resolved = ensure_directory(&target).expect("create a fresh nested directory");
@@ -166,7 +157,7 @@ fn ensure_directory_is_idempotent_for_an_existing_directory() {
     // Re-running against an already-analyzed repo is the ordinary case, not
     // an exotic one: the authority root container directory is meant to be
     // reused run after run.
-    let dir = unique_temp_dir("ensure-directory-idempotent");
+    let dir = crate::test_support::unique_temp_dir("ensure-directory-idempotent");
     fs::create_dir_all(&dir).expect("fixture dir");
 
     let resolved = ensure_directory(&dir).expect("re-create an already-existing directory");
@@ -181,7 +172,7 @@ fn ensure_directory_reports_a_real_file_collision_with_its_path_preserved() {
     // A genuine blocker (something real occupying the path) must still fail
     // — self-healing is only for the false-positive Windows symlink case
     // below, never for an actual collision.
-    let dir = unique_temp_dir("ensure-directory-file-collision");
+    let dir = crate::test_support::unique_temp_dir("ensure-directory-file-collision");
     fs::create_dir_all(&dir).expect("fixture parent");
     let blocked = dir.join("blocked");
     fs::write(&blocked, b"not a directory").expect("fixture blocking file");
@@ -235,7 +226,7 @@ fn ensure_directory_recovers_from_a_spurious_already_exists_through_a_cross_volu
     ));
     fs::create_dir_all(&real_target).expect("create real target on the other drive");
 
-    let link_parent = unique_temp_dir("ensure-directory-symlink-parent");
+    let link_parent = crate::test_support::unique_temp_dir("ensure-directory-symlink-parent");
     fs::create_dir_all(&link_parent).expect("create link parent");
     let link = link_parent.join("artifacts");
     if std::os::windows::fs::symlink_dir(&real_target, &link).is_err() {
