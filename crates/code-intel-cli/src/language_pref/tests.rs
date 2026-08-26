@@ -1,21 +1,5 @@
 use super::*;
 
-fn unique_temp_dir(label: &str) -> PathBuf {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let mut dir = std::env::temp_dir();
-    dir.push(format!(
-        "code-intel-language-pref-test-{label}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
 fn write_config(path: &Path, language: &str) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, format!(r#"{{"language": "{language}"}}"#)).unwrap();
@@ -29,7 +13,7 @@ fn absent_user_config(root: &Path) -> PathBuf {
 
 #[test]
 fn explicit_flag_wins_over_every_configured_tier() {
-    let root = unique_temp_dir("flag-wins");
+    let root = crate::test_support::unique_temp_dir("flag-wins");
     write_config(&project_config_path(&root), "en");
     let user_config = root.join("user").join("config.json");
     write_config(&user_config, "en");
@@ -43,7 +27,7 @@ fn explicit_flag_wins_over_every_configured_tier() {
 
 #[test]
 fn project_config_wins_when_no_explicit_flag() {
-    let root = unique_temp_dir("project-wins");
+    let root = crate::test_support::unique_temp_dir("project-wins");
     write_config(&project_config_path(&root), "zh");
     let user_config = root.join("user").join("config.json");
     write_config(&user_config, "en");
@@ -57,7 +41,7 @@ fn project_config_wins_when_no_explicit_flag() {
 
 #[test]
 fn user_config_wins_when_no_flag_and_no_project_config() {
-    let root = unique_temp_dir("user-wins");
+    let root = crate::test_support::unique_temp_dir("user-wins");
     // No project config written at all: repo exists, but
     // `.code-intel/config.json` is absent.
     let user_config = root.join("user").join("config.json");
@@ -72,7 +56,7 @@ fn user_config_wins_when_no_flag_and_no_project_config() {
 
 #[test]
 fn user_config_is_still_consulted_with_no_repo_at_all() {
-    let root = unique_temp_dir("user-wins-no-repo");
+    let root = crate::test_support::unique_temp_dir("user-wins-no-repo");
     let user_config = root.join("user").join("config.json");
     write_config(&user_config, "zh");
 
@@ -85,7 +69,7 @@ fn user_config_is_still_consulted_with_no_repo_at_all() {
 
 #[test]
 fn system_locale_wins_when_nothing_configured() {
-    let root = unique_temp_dir("locale-wins");
+    let root = crate::test_support::unique_temp_dir("locale-wins");
     let user_config = absent_user_config(&root);
 
     let resolved = resolve_from(None, Some(&root), &user_config, Some("zh"));
@@ -97,7 +81,7 @@ fn system_locale_wins_when_nothing_configured() {
 
 #[test]
 fn falls_back_to_en_when_no_tier_resolves() {
-    let root = unique_temp_dir("default-wins");
+    let root = crate::test_support::unique_temp_dir("default-wins");
     let user_config = absent_user_config(&root);
 
     let resolved = resolve_from(None, Some(&root), &user_config, None);
@@ -118,7 +102,7 @@ fn an_explicit_flag_is_trimmed_but_never_validated_against_known_languages() {
 
 #[test]
 fn blank_explicit_flag_falls_through_instead_of_winning() {
-    let root = unique_temp_dir("blank-flag-falls-through");
+    let root = crate::test_support::unique_temp_dir("blank-flag-falls-through");
     write_config(&project_config_path(&root), "zh");
 
     let resolved = resolve_from(Some("   "), Some(&root), &absent_user_config(&root), None);
@@ -142,7 +126,7 @@ fn locale_strings_normalize_to_the_two_supported_languages() {
 
 #[test]
 fn write_project_config_round_trips_through_read_language() {
-    let root = unique_temp_dir("write-round-trip");
+    let root = crate::test_support::unique_temp_dir("write-round-trip");
 
     let path = write_project_config(&root, "zh").unwrap();
 
@@ -153,7 +137,7 @@ fn write_project_config_round_trips_through_read_language() {
 
 #[test]
 fn write_project_config_merges_instead_of_clobbering_other_keys() {
-    let root = unique_temp_dir("write-merge");
+    let root = crate::test_support::unique_temp_dir("write-merge");
     let path = project_config_path(&root);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, r#"{"otherSetting": "keep-me"}"#).unwrap();
@@ -169,7 +153,7 @@ fn write_project_config_merges_instead_of_clobbering_other_keys() {
 
 #[test]
 fn write_project_config_recovers_from_a_corrupt_existing_file() {
-    let root = unique_temp_dir("write-corrupt-recovery");
+    let root = crate::test_support::unique_temp_dir("write-corrupt-recovery");
     let path = project_config_path(&root);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, "not valid json").unwrap();
@@ -182,7 +166,7 @@ fn write_project_config_recovers_from_a_corrupt_existing_file() {
 
 #[test]
 fn an_absent_config_file_is_neither_data_nor_an_error() {
-    let root = unique_temp_dir("absent-config");
+    let root = crate::test_support::unique_temp_dir("absent-config");
     assert_eq!(read_language(&project_config_path(&root)), None);
     fs::remove_dir_all(root).ok();
 }

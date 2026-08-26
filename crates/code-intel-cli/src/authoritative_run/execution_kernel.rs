@@ -321,15 +321,6 @@ fn map_commit_error(error: crate::run_commit::CommitError) -> RunError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn unique_temp_dir(name: &str) -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock should be after epoch")
-            .as_nanos();
-        std::env::temp_dir().join(format!("code-intel-execution-kernel-{name}-{stamp}"))
-    }
 
     #[test]
     fn typed_result_owns_outcome_exit_and_publication_serialization() {
@@ -369,7 +360,7 @@ mod tests {
 
     #[test]
     fn resolve_repo_name_takes_the_final_path_component_of_the_resolved_repo() {
-        let root = unique_temp_dir("resolve-name");
+        let root = crate::test_support::unique_temp_dir("resolve-name");
         let repo = root.join("widget-repo");
         std::fs::create_dir_all(&repo).expect("fixture repo dir");
 
@@ -389,13 +380,13 @@ mod tests {
 
     #[test]
     fn resolve_repo_name_rejects_a_repo_path_that_does_not_exist() {
-        let missing = unique_temp_dir("resolve-name-missing");
+        let missing = crate::test_support::unique_temp_dir("resolve-name-missing");
         assert!(resolve_repo_name(&missing).is_err());
     }
 
     #[test]
     fn explicit_repository_key_preserves_authority_across_checkout_rename() {
-        let missing = unique_temp_dir("stable-repository-key");
+        let missing = crate::test_support::unique_temp_dir("stable-repository-key");
         let name = resolve_repository_key(&missing, Some("original-checkout"))
             .expect("explicit authority key does not depend on checkout directory name");
         assert_eq!(name, "original-checkout");
@@ -403,7 +394,7 @@ mod tests {
 
     #[test]
     fn explicit_repository_key_rejects_nested_or_parent_paths() {
-        let repo = unique_temp_dir("invalid-repository-key");
+        let repo = crate::test_support::unique_temp_dir("invalid-repository-key");
         for key in ["", ".", "..", "nested/repo", "nested\\repo"] {
             assert!(resolve_repository_key(&repo, Some(key)).is_err(), "{key:?}");
         }
@@ -411,7 +402,7 @@ mod tests {
 
     #[test]
     fn nest_authority_root_appends_the_repo_name_exactly_once() {
-        let root = unique_temp_dir("nest-once");
+        let root = crate::test_support::unique_temp_dir("nest-once");
         std::fs::create_dir_all(&root).expect("fixture authority root");
 
         let nested = nest_authority_root(&root, "widget-repo").expect("nest under authority root");
@@ -427,7 +418,7 @@ mod tests {
         // name into --authority-root themselves. The fix must recognize
         // that and publish there directly, not append a second
         // widget-repo/widget-repo layer.
-        let root = unique_temp_dir("nest-workaround").join("widget-repo");
+        let root = crate::test_support::unique_temp_dir("nest-workaround").join("widget-repo");
         std::fs::create_dir_all(&root).expect("fixture pre-nested authority root");
 
         let nested = nest_authority_root(&root, "widget-repo").expect("reuse pre-nested root");
@@ -449,7 +440,7 @@ mod tests {
     /// `artifacts_tests.rs`).
     #[test]
     fn nest_authority_root_names_the_path_when_something_real_blocks_it() {
-        let root = unique_temp_dir("nest-blocked");
+        let root = crate::test_support::unique_temp_dir("nest-blocked");
         std::fs::create_dir_all(&root).expect("fixture authority root");
         let blocked = root.join("widget-repo");
         std::fs::write(&blocked, b"not a directory").expect("fixture blocking file");

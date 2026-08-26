@@ -374,15 +374,6 @@ fn latest_committed_run(repo_artifacts: &Path) -> Result<(PathBuf, Value)> {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn unique_temp_dir() -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock should be after epoch")
-            .as_nanos();
-        std::env::temp_dir().join(format!("code-intel-report-sentrux-{stamp}"))
-    }
 
     fn capability_fixture(root: &Path) -> (String, Value) {
         let snapshot = "a".repeat(64);
@@ -430,7 +421,7 @@ mod tests {
 
     #[test]
     fn report_projects_verified_refs_and_marks_untrusted_refs_degraded() {
-        let root = unique_temp_dir();
+        let root = crate::test_support::unique_temp_dir("sentrux-report");
         fs::create_dir_all(&root).expect("fixture root should be created");
         let (snapshot, reference) = capability_fixture(&root);
         let mut untrusted = reference.clone();
@@ -466,7 +457,7 @@ mod tests {
 
     #[test]
     fn report_marks_missing_hospital_projection_unknown_or_degraded() {
-        let root = unique_temp_dir();
+        let root = crate::test_support::unique_temp_dir("sentrux-report");
         fs::create_dir_all(&root).expect("fixture root should be created");
         let (snapshot, reference) = capability_fixture(&root);
         let manifest = json!({

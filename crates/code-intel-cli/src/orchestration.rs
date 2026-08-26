@@ -840,15 +840,6 @@ fn read_manifest_integration_count(result: &Value) -> Option<usize> {
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn unique_temp_dir(name: &str) -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock should be after epoch")
-            .as_nanos();
-        env::temp_dir().join(format!("code-intel-{name}-{stamp}"))
-    }
 
     fn touch(path: &Path, text: &str) {
         if let Some(parent) = path.parent() {
@@ -858,7 +849,7 @@ mod tests {
     }
 
     fn orchestration_fixture_dir(name: &str) -> PathBuf {
-        let dir = unique_temp_dir(name);
+        let dir = crate::test_support::unique_temp_dir(name);
         fs::create_dir_all(dir.join("orchestration")).expect("fixture orchestration dir");
         fs::create_dir_all(dir.join("crates/code-intel-cli")).expect("fixture crate dir");
         touch(&dir.join("crates/code-intel-cli/Cargo.toml"), "[package]\n");

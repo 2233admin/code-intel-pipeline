@@ -1332,25 +1332,9 @@ mod tests {
         assert!(args.json);
     }
 
-    fn unique_temp_dir(label: &str) -> PathBuf {
-        use std::time::{SystemTime, UNIX_EPOCH};
-
-        let mut dir = std::env::temp_dir();
-        dir.push(format!(
-            "code-intel-cli-legacy-test-{label}-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     #[test]
     fn cmd_language_set_persists_the_project_config() {
-        let repo = unique_temp_dir("language-set");
+        let repo = crate::test_support::unique_temp_dir("language-set");
         let args = Args {
             command: "language".to_string(),
             operation: Some("set".to_string()),
@@ -1395,7 +1379,7 @@ mod tests {
 
     #[test]
     fn cmd_language_set_requires_language() {
-        let repo = unique_temp_dir("language-set-missing-language");
+        let repo = crate::test_support::unique_temp_dir("language-set-missing-language");
         let args = Args {
             command: "language".to_string(),
             operation: Some("set".to_string()),

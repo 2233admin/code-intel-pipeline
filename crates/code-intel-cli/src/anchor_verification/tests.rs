@@ -1,13 +1,4 @@
 use super::*;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-fn unique_temp_dir(name: &str) -> std::path::PathBuf {
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock should be after epoch")
-        .as_nanos();
-    std::env::temp_dir().join(format!("code-intel-anchor-verification-{name}-{stamp}"))
-}
 
 #[test]
 fn verified_round_trips_through_json() {
@@ -80,7 +71,7 @@ fn approximate_relabeled_verified_by_state_only_is_rejected() {
 
 #[test]
 fn verify_file_anchor_is_verified_when_file_exists() {
-    let root = unique_temp_dir("file-verified");
+    let root = crate::test_support::unique_temp_dir("file-verified");
     fs::create_dir_all(&root).expect("fixture root");
     fs::write(root.join("present.rs"), b"fn present() {}").expect("fixture file");
 
@@ -94,7 +85,7 @@ fn verify_file_anchor_is_verified_when_file_exists() {
 
 #[test]
 fn verify_file_anchor_is_dropped_when_file_missing() {
-    let root = unique_temp_dir("file-dropped");
+    let root = crate::test_support::unique_temp_dir("file-dropped");
     fs::create_dir_all(&root).expect("fixture root");
 
     assert!(matches!(
@@ -107,7 +98,7 @@ fn verify_file_anchor_is_dropped_when_file_missing() {
 
 #[test]
 fn verify_file_anchor_is_dropped_when_path_escapes_repository() {
-    let root = unique_temp_dir("file-escape");
+    let root = crate::test_support::unique_temp_dir("file-escape");
     fs::create_dir_all(&root).expect("fixture root");
 
     assert!(matches!(
@@ -120,7 +111,7 @@ fn verify_file_anchor_is_dropped_when_path_escapes_repository() {
 
 #[test]
 fn verify_symbol_anchor_is_verified_at_the_exact_claimed_line() {
-    let root = unique_temp_dir("symbol-verified");
+    let root = crate::test_support::unique_temp_dir("symbol-verified");
     fs::create_dir_all(&root).expect("fixture root");
     fs::write(&root.join("lib.rs"), "fn alpha() {}\nfn beta() {}\n").expect("fixture file");
 
@@ -139,7 +130,7 @@ fn verify_symbol_anchor_is_verified_at_the_exact_claimed_line() {
 /// the stale claim as verified.
 #[test]
 fn verify_symbol_anchor_degrades_to_approximate_after_the_symbol_moves() {
-    let root = unique_temp_dir("symbol-drifted");
+    let root = crate::test_support::unique_temp_dir("symbol-drifted");
     fs::create_dir_all(&root).expect("fixture root");
     let target = root.join("lib.rs");
     fs::write(&target, "fn alpha() {}\nfn beta() {}\n").expect("fixture file (frozen state)");
@@ -165,7 +156,7 @@ fn verify_symbol_anchor_degrades_to_approximate_after_the_symbol_moves() {
 
 #[test]
 fn verify_symbol_anchor_is_dropped_when_the_symbol_is_removed() {
-    let root = unique_temp_dir("symbol-removed");
+    let root = crate::test_support::unique_temp_dir("symbol-removed");
     fs::create_dir_all(&root).expect("fixture root");
     let target = root.join("lib.rs");
     fs::write(&target, "fn alpha() {}\nfn beta() {}\n").expect("fixture file (frozen state)");
@@ -189,7 +180,7 @@ fn verify_symbol_anchor_is_dropped_when_the_symbol_is_removed() {
 
 #[test]
 fn verify_symbol_anchor_is_dropped_when_the_file_itself_is_deleted() {
-    let root = unique_temp_dir("file-deleted-after-freeze");
+    let root = crate::test_support::unique_temp_dir("file-deleted-after-freeze");
     fs::create_dir_all(&root).expect("fixture root");
     let target = root.join("lib.rs");
     fs::write(&target, "fn alpha() {}\n").expect("fixture file (frozen state)");
@@ -235,7 +226,7 @@ fn anchor_counts_records_each_state_exhaustively() {
 
 #[test]
 fn verify_and_report_produces_all_three_states_from_one_manifest() {
-    let root = unique_temp_dir("verify-and-report");
+    let root = crate::test_support::unique_temp_dir("verify-and-report");
     fs::create_dir_all(&root).expect("fixture root");
     fs::write(&root.join("present.rs"), "fn kept() {}\n").expect("fixture file");
     // "gone.rs" is referenced by the fixture artifacts below but never
