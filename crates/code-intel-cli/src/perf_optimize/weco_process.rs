@@ -13,7 +13,7 @@
 //! timeout fires is available in time to use for the graceful stop.
 
 use std::io::{BufRead, BufReader};
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -30,6 +30,15 @@ pub(crate) struct WecoRunOutcome {
     pub(crate) exit_status: Option<ExitStatus>,
     pub(crate) timed_out: bool,
     pub(crate) graceful_stop_invoked: bool,
+    /// #349: `graceful_stop_invoked` only means the `weco run stop` command
+    /// was *issued* -- it stays true whether the child then actually exits
+    /// on its own within `grace_period` or has to be hard-killed at the end
+    /// of it. A test asserting "no hard kill happened" needs this explicit
+    /// bit, not a timing proxy: under CPU contention severe enough to
+    /// starve the fixture's own polling loop, the graceful path can
+    /// legitimately take over a second, which a tight elapsed-time
+    /// assertion cannot distinguish from "fell through to hard-kill."
+    pub(crate) hard_killed: bool,
     pub(crate) run_id: Option<String>,
 }
 
@@ -111,6 +120,51 @@ fn spawn_line_reader(
     })
 }
 
+/// #349: abstracts "has the process exited yet" so
+/// `resolve_after_timeout`'s decision logic can be driven by a synthetic
+/// mock in tests instead of a real `std::process::Child` racing real OS
+/// scheduling -- the actual source of #349's flakiness. The real
+/// implementation is a one-line passthrough.
+trait TimeoutChild {
+    fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>>;
+}
+
+impl TimeoutChild for Child {
+    fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {
+        Child::try_wait(self)
+    }
+}
+
+/// #349: the graceful-stop/hard-kill decision, isolated from
+/// `run_weco_with_wall_clock_backstop`'s real process spawning and real
+/// wall-clock waits so it can be exercised deterministically. `issue_stop`,
+/// `deadline_reached`, and `wait_a_bit` abstract the three real-world waits
+/// this decision depends on (spawning `weco run stop`, the grace-period
+/// clock, and the between-polls sleep); production wires all three to real
+/// behavior below, tests drive them synthetically and instantly. Returns
+/// `(graceful_stop_invoked, hard_killed, exit_status_if_graceful)`.
+fn resolve_after_timeout(
+    child: &mut impl TimeoutChild,
+    run_id: Option<&str>,
+    mut issue_stop: impl FnMut(&str) -> bool,
+    mut deadline_reached: impl FnMut() -> bool,
+    mut wait_a_bit: impl FnMut(),
+) -> std::io::Result<(bool, bool, Option<ExitStatus>)> {
+    let graceful_stop_invoked = match run_id {
+        Some(id) => issue_stop(id),
+        None => false,
+    };
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok((graceful_stop_invoked, false, Some(status)));
+        }
+        if deadline_reached() {
+            return Ok((graceful_stop_invoked, true, None));
+        }
+        wait_a_bit();
+    }
+}
+
 /// Runs `command` (a fully-configured `weco run ...` invocation) to
 /// completion, or until `wall_clock_timeout` elapses. On timeout, attempts
 /// `<weco_binary> run stop <run-id>` if a run id was ever seen on stdout,
@@ -166,6 +220,7 @@ pub(crate) fn run_weco_with_wall_clock_backstop(
                 exit_status: Some(status),
                 timed_out,
                 graceful_stop_invoked,
+                hard_killed: false,
                 run_id,
             });
         }
@@ -175,36 +230,48 @@ pub(crate) fn run_weco_with_wall_clock_backstop(
             // lag the buffer write, so re-check the buffer directly before
             // deciding there's no run id to stop.
             observed_run_id = run_id_from(observed_run_id, &snapshot(&stdout_buffer));
-            if let Some(run_id) = &observed_run_id {
-                let stop_status = Command::new(weco_binary)
-                    .args(["run", "stop", run_id])
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status();
-                graceful_stop_invoked = stop_status.is_ok();
-            }
             let stop_deadline = Instant::now() + grace_period;
-            while Instant::now() < stop_deadline {
-                if let Some(status) = child.try_wait().map_err(WecoRunError::Io)? {
-                    // Exited on its own within the grace period (the
-                    // graceful-stop path) -- same reasoning as the clean-exit
-                    // case above: safe to join before snapshotting.
-                    join_best_effort(stdout_reader);
-                    join_best_effort(stderr_reader);
-                    let stdout = snapshot(&stdout_buffer);
-                    let run_id = run_id_from(observed_run_id, &stdout);
-                    return Ok(WecoRunOutcome {
-                        stdout,
-                        stderr: snapshot(&stderr_buffer),
-                        exit_status: Some(status),
-                        timed_out,
-                        graceful_stop_invoked,
-                        run_id,
-                    });
-                }
-                thread::sleep(Duration::from_millis(5));
+            let (graceful, hard_killed, exited_gracefully) = resolve_after_timeout(
+                &mut child,
+                observed_run_id.as_deref(),
+                |run_id| {
+                    Command::new(weco_binary)
+                        .args(["run", "stop", run_id])
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .status()
+                        .is_ok()
+                },
+                || Instant::now() >= stop_deadline,
+                || thread::sleep(Duration::from_millis(5)),
+            )
+            .map_err(WecoRunError::Io)?;
+            graceful_stop_invoked = graceful;
+
+            if let Some(status) = exited_gracefully {
+                // Exited on its own within the grace period -- same
+                // reasoning as the clean-exit case above: safe to join
+                // before snapshotting.
+                join_best_effort(stdout_reader);
+                join_best_effort(stderr_reader);
+                let stdout = snapshot(&stdout_buffer);
+                let run_id = run_id_from(observed_run_id, &stdout);
+                return Ok(WecoRunOutcome {
+                    stdout,
+                    stderr: snapshot(&stderr_buffer),
+                    exit_status: Some(status),
+                    timed_out,
+                    graceful_stop_invoked,
+                    hard_killed: false,
+                    run_id,
+                });
             }
+
+            debug_assert!(
+                hard_killed,
+                "resolve_after_timeout always hard-kills when it does not return a graceful exit status"
+            );
             crate::node_timeout::terminate_process_tree(&mut child);
             let status = child.wait().ok();
             // Deliberately does not join the reader threads: a descendant of
@@ -223,6 +290,7 @@ pub(crate) fn run_weco_with_wall_clock_backstop(
                 exit_status: status,
                 timed_out,
                 graceful_stop_invoked,
+                hard_killed: true,
                 run_id,
             });
         }
