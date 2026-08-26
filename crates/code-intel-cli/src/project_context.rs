@@ -30,6 +30,42 @@ fn validate_repository_key(repo: &str) -> Result<(), ProjectError> {
     Ok(())
 }
 
+static RUN_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+struct RunAllocation {
+    final_name: String,
+    staging_root: PathBuf,
+}
+
+/// #352: `run()`'s identity used to be `millis + pid`, nothing else -- both
+/// the informational `RunRequest` name *and* the staging directory derived
+/// from it were built off that single colliding value, so two concurrent
+/// `run()` calls whose clock reads landed in the same millisecond (a much
+/// coarser window than nanoseconds, and therefore a much likelier
+/// collision) would be handed the identical staging root *and* publish
+/// under the identical name. `clock` is a parameter, not a direct
+/// `SystemTime::now()` call, so a test can force that exact condition. The
+/// clock reading is kept only so identities stay sortable by age;
+/// `RUN_SEQUENCE` is what actually buys uniqueness. Both fields are
+/// computed here, together, from one identity -- `run()` cannot build them
+/// independently and let them drift apart. `validate_final_name`
+/// (`run_commit.rs`) treats `final_name` as opaque -- no shape but
+/// non-empty/no-separators/no-leading-dot/no-"staging"-substring -- so
+/// widening the format here does not break that contract.
+fn allocate_run_identity(
+    pid: u32,
+    clock: impl FnOnce() -> Result<u128, ProjectError>,
+) -> Result<RunAllocation, ProjectError> {
+    let nonce = clock()?;
+    let sequence = RUN_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let final_name = format!("{nonce}-{pid}-{sequence}-core");
+    let staging_root = std::env::temp_dir().join(format!("code-intel-a09-{final_name}"));
+    Ok(RunAllocation {
+        final_name,
+        staging_root,
+    })
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct ProjectSelector {
     repo_path: PathBuf,
@@ -144,17 +180,17 @@ impl ProjectContext {
                 authority_root.display()
             ))
         })?;
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|error| ProjectError::host_io(error.to_string()))?
-            .as_millis();
-        let final_name = format!("{nonce}-{}-core", std::process::id());
-        let staging_root = std::env::temp_dir().join(format!("code-intel-a09-{final_name}"));
+        let allocation = allocate_run_identity(std::process::id(), || {
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|duration| duration.as_millis())
+                .map_err(|error| ProjectError::host_io(error.to_string()))
+        })?;
         let request = authoritative_run::RunRequest::new(
             self.repo_path.clone(),
-            staging_root,
+            allocation.staging_root,
             authority_root,
-            final_name,
+            allocation.final_name,
             execution_policy::ExecutionPolicy::for_profile(intent.mode.profile()),
         )
         .with_repository_key(self.repo.clone())

@@ -474,15 +474,40 @@ pub(super) fn rerun_command(context: &ServeContext) -> String {
     }
 }
 
+fn temp_staging_path(pid: u32, nonce: u128, sequence: u64) -> PathBuf {
+    env::temp_dir().join(format!("code-intel-mcp-plan-{pid}-{nonce}-{sequence}"))
+}
+
+static STAGING_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// #352: the previous allocator was `pid + a raw clock read`, nothing else.
+/// A server handling two tool calls whose clock reads land in the same
+/// resolution window would hand out the identical staging directory to
+/// both. `clock` is a parameter (not a direct `SystemTime::now()` call) so
+/// a test can force that exact condition -- an identical reading on
+/// consecutive calls -- instead of depending on a real collision to occur.
+/// `STAGING_SEQUENCE` is what actually buys uniqueness; the clock reading
+/// is kept only so leftover directories stay sortable by age. This
+/// production path has no `#[path]`-remounting exposure (unlike the
+/// `audit_report`/`tool_path` test helpers): `handlers.rs` compiles exactly
+/// once, as part of the `code-intel` binary, so pid + sequence alone is a
+/// complete fix here.
+pub(super) fn allocate_staging_path(
+    pid: u32,
+    clock: impl FnOnce() -> Result<u128, ProjectError>,
+) -> Result<PathBuf, ProjectError> {
+    let nonce = clock()?;
+    let sequence = STAGING_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Ok(temp_staging_path(pid, nonce, sequence))
+}
+
 fn staging_path() -> Result<PathBuf, ProjectError> {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| ProjectError::host_io(format!("resolve staging nonce: {error}")))?
-        .as_nanos();
-    Ok(env::temp_dir().join(format!(
-        "code-intel-mcp-plan-{}-{nonce}",
-        std::process::id()
-    )))
+    allocate_staging_path(std::process::id(), || {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .map_err(|error| ProjectError::host_io(format!("resolve staging nonce: {error}")))
+    })
 }
 
 /// A closed argument set, checked before anything is read.
