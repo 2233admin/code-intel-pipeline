@@ -85,6 +85,8 @@ mod snapshot;
 mod stable_artifact;
 mod staged_artifact;
 mod survival_scan;
+#[cfg(test)]
+mod test_support;
 mod tool_effectiveness_benchmark;
 mod workspace_advisory_controller;
 
