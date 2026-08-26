@@ -481,3 +481,21 @@ fn serve_refuses_repository_keys_that_escape_the_artifact_root() {
         );
     }
 }
+
+#[test]
+fn allocate_staging_path_differs_even_when_the_clock_repeats() {
+    // #352 regression: `staging_path()`'s allocator used to be pid + a raw
+    // clock read, nothing else. Two tool calls whose clock reads land in
+    // the same resolution window would be handed the identical staging
+    // directory. `clock` is stubbed to return the exact same reading twice
+    // in a row -- the condition that caused #352's confirmed sibling bug in
+    // `audit_report`'s `TempReport` -- instead of hoping a real collision
+    // happens to occur.
+    let fixed_clock = || Ok(0xC352_u128);
+    let first = handlers::allocate_staging_path(4242, fixed_clock).expect("allocate");
+    let second = handlers::allocate_staging_path(4242, fixed_clock).expect("allocate");
+    assert_ne!(
+        first, second,
+        "allocator must stay unique even when the clock reading repeats"
+    );
+}

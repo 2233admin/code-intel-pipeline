@@ -225,3 +225,47 @@ fn stale_status_preserves_freshness_and_prioritizes_refresh() {
         .collect::<Vec<_>>();
     assert_eq!(actions, ["refresh", "impact"]);
 }
+
+#[test]
+fn allocate_run_identity_differs_even_when_the_clock_repeats() {
+    // #352 regression: `run()`'s identity used to be millis + pid, nothing
+    // else. `clock` is stubbed to return the exact same millisecond
+    // reading twice in a row -- millisecond resolution collides far more
+    // easily under real concurrency than the nanosecond case #352 already
+    // confirmed in `audit_report::TempReport` -- instead of hoping a real
+    // collision happens to occur.
+    let fixed_clock = || Ok(0xC352_u128);
+    let first = allocate_run_identity(4242, fixed_clock).expect("allocate");
+    let second = allocate_run_identity(4242, fixed_clock).expect("allocate");
+    assert_ne!(
+        first.final_name, second.final_name,
+        "published name must stay unique even when the clock reading repeats"
+    );
+    assert_ne!(
+        first.staging_root, second.staging_root,
+        "staging root must stay unique even when the clock reading repeats"
+    );
+}
+
+#[test]
+fn allocate_run_identity_derives_staging_root_from_the_same_final_name_it_publishes() {
+    // #352: fixing only the staging path while leaving the published
+    // `RunRequest` name on the old colliding identity would just move the
+    // collision from "shared staging directory" to "two concurrent runs
+    // publish under the identical name" -- still a real bug, just a
+    // different failure mode. This inspects the actual `RunAllocation`
+    // `run()` consumes (not an independently reconstructed expectation):
+    // `staging_root` must be built from the exact `final_name` this same
+    // allocation carries, so there is one identity allocation per run, not
+    // two that could drift apart.
+    let allocation = allocate_run_identity(4242, || Ok(0xC352_u128)).expect("allocate");
+    assert!(
+        allocation
+            .staging_root
+            .to_string_lossy()
+            .ends_with(&allocation.final_name),
+        "staging_root {:?} must be derived from final_name {:?}",
+        allocation.staging_root,
+        allocation.final_name
+    );
+}

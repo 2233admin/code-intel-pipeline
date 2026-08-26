@@ -56,28 +56,8 @@ fn synthetic_enabled_registry() -> DepartmentRegistry {
     DepartmentRegistry::from_value(&value).unwrap()
 }
 
-struct TempReport(PathBuf);
-
-impl TempReport {
-    fn write(value: &Value) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-audit-cli-test-{}-{nonce}.json",
-            std::process::id()
-        ));
-        fs::write(&path, serde_json::to_vec(value).unwrap()).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for TempReport {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
-    }
-}
+mod temp_report;
+use temp_report::TempReport;
 
 #[test]
 fn parse_requires_repo_for_validate_and_for_render() {
@@ -150,7 +130,7 @@ fn validate_rejects_a_disabled_run_status_against_the_real_registry() {
         }
     }
     let temp = TempReport::write(&value);
-    let error = validate(&repo_root(), &temp.0).unwrap_err();
+    let error = validate(&repo_root(), temp.path()).unwrap_err();
     assert!(error.contains("run status is \"disabled\""), "{error}");
 }
 
@@ -165,7 +145,7 @@ fn run_raw_exits_nonzero_on_a_failing_validate() {
         "--repo".to_string(),
         repo_root().to_string_lossy().into_owned(),
         "--report".to_string(),
-        temp.0.to_string_lossy().into_owned(),
+        temp.path().to_string_lossy().into_owned(),
     ];
     assert_eq!(run_raw(&raw), 65);
 }
@@ -199,7 +179,7 @@ fn render_rejects_a_report_that_fails_validation() {
         }
     }
     let temp = TempReport::write(&value);
-    let error = render(&repo_root(), &temp.0, RenderFormat::Markdown).unwrap_err();
+    let error = render(&repo_root(), temp.path(), RenderFormat::Markdown).unwrap_err();
     assert!(error.contains("run status is \"disabled\""), "{error}");
 }
 
