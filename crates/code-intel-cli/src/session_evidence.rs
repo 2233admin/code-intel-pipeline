@@ -978,6 +978,26 @@ fn read_bounded_regular(path: &Path, max_bytes: u64, label: &str) -> Result<Vec<
     fs::read(path).map_err(|error| AdapterError::Io(format!("cannot read {label}: {error}")))
 }
 
+static STAGING_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// #352: the previous temp-file name was `pid + a raw clock read`, nothing
+/// else. Two concurrent writes whose clock reads land in the same
+/// resolution window would target the identical staging path; `create_new`
+/// would then make the second writer fail loud (lowest-severity instance
+/// of the #352 family -- a spurious error, not silent data loss -- but a
+/// real bug all the same). `clock` is a parameter so a test can force that
+/// exact condition instead of hoping a real collision occurs.
+fn staged_output_path(
+    parent: &Path,
+    name: &str,
+    pid: u32,
+    clock: impl FnOnce() -> Result<u128, AdapterError>,
+) -> Result<PathBuf, AdapterError> {
+    let nonce = clock()?;
+    let sequence = STAGING_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    Ok(parent.join(format!(".{name}.tmp-{pid}-{nonce}-{sequence}")))
+}
+
 fn write_new_artifact(path: &Path, bytes: &[u8]) -> Result<(), AdapterError> {
     if path.exists() {
         return Err(AdapterError::Usage(format!(
@@ -993,11 +1013,12 @@ fn write_new_artifact(path: &Path, bytes: &[u8]) -> Result<(), AdapterError> {
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| AdapterError::Usage("output file name is invalid".into()))?;
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| AdapterError::Io(error.to_string()))?
-        .as_nanos();
-    let temporary = parent.join(format!(".{name}.tmp-{}-{nonce}", std::process::id()));
+    let temporary = staged_output_path(parent, name, std::process::id(), || {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .map_err(|error| AdapterError::Io(error.to_string()))
+    })?;
     let result = (|| {
         let mut file = OpenOptions::new()
             .write(true)
@@ -1015,3 +1036,7 @@ fn write_new_artifact(path: &Path, bytes: &[u8]) -> Result<(), AdapterError> {
     }
     result
 }
+
+#[cfg(test)]
+#[path = "session_evidence_tests.rs"]
+mod tests;
