@@ -566,7 +566,21 @@ fn metrics_json(repo: &Path, metrics: &ProjectMetrics) -> Value {
         "total_import_edges": metrics.total_import_edges,
         "cross_module_edges": metrics.total_import_edges,
         "call_edges": metrics.call_edges,
-        "unresolved_imports": 0,
+        // `unresolved_imports` was a constant `0` here (and, before that, in
+        // the sentrux-lite shim this engine replaced --
+        // `legacy/tools/sentrux-shim/sentrux-lite-core.ps1:248` has the exact
+        // same literal). No import-resolution pass has ever populated it
+        // anywhere in this repository's history (issue #375). `null` says
+        // "not computed" instead of the previous `0`, which read as "computed
+        // and found zero unresolved imports" to any consumer that did not
+        // know better -- `evidence.sentrux`/`diagnosis.hospital`/`report`/
+        // `pr_gate`/`release_gate` all read this field via
+        // `capability_structured_data`. A real value needs an actual
+        // import-resolution pass; building one here would duplicate #297's
+        // separate (Sentrux-excluded) effort, so real implementation is
+        // scoped to a follow-up issue instead. See DR-0009.
+        "unresolved_imports": null,
+        "unresolved_imports_status": "not_implemented",
     })
 }
 
@@ -1503,6 +1517,23 @@ mod tests {
         fs::remove_file(root.join("helper0.ps1")).expect("remove one powershell fixture");
         let (after_deletion, _) = measure_project(&root).expect("measure tree after deletion");
         assert_eq!(after_deletion.coupling_score, mixed.coupling_score);
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn scan_json_reports_unresolved_imports_as_unmeasured_not_zero() {
+        // #375: `unresolved_imports` was a hardcoded `0`, which reads as "an
+        // import-resolution pass ran and found nothing unresolved" to any
+        // consumer of `evidence.sentrux`/`diagnosis.hospital`/`report`/
+        // `pr_gate`/`release_gate`. No such pass exists in this engine (or
+        // ever existed in the sentrux-lite shim it replaced), so the field
+        // must say "not computed", not fabricate a count.
+        let root = fixture_root("sentrux-native-scan-unresolved-imports");
+        fs::write(root.join("lib.rs"), "use std::fs;\npub fn f() {}\n")
+            .expect("write rust fixture");
+        let value = scan_json(&root).expect("scan_json on fixture");
+        assert_eq!(value["unresolved_imports"], Value::Null);
+        assert_eq!(value["unresolved_imports_status"], "not_implemented");
         fs::remove_dir_all(&root).expect("remove fixture");
     }
 
