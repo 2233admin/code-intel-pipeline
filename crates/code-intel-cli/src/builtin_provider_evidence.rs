@@ -584,24 +584,17 @@ fn json_command(
 
 fn sentrux_health_json(repo: &Path) -> Result<Value, String> {
     let metrics = sentrux_gate::scan_json(repo)?;
-    let god_files = metrics["god_file_count"].as_i64().unwrap_or(0);
-    let complex = metrics["complex_fn_count"].as_i64().unwrap_or(0);
-    let coupling = metrics["coupling_score"].as_f64().unwrap_or(0.0);
-    let bottleneck = if god_files > 0 {
-        "god_files"
-    } else if complex > 0 {
-        "complexity"
-    } else if coupling > 20.0 {
-        "coupling"
-    } else {
-        "none"
-    };
+    let bottleneck = metrics["quality_signal_detail"]["bottleneck"]
+        .as_str()
+        .unwrap_or("unknown")
+        .to_string();
     Ok(json!({
         "status":"ok",
         "tool":sentrux_gate::ENGINE_ID,
         "quality_signal":metrics["quality_signal"],
         "files":metrics["files"],
-        "bottleneck":bottleneck
+        "bottleneck":bottleneck,
+        "root_causes":metrics["quality_signal_detail"]["root_causes"],
     }))
 }
 

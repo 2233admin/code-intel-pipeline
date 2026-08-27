@@ -34,12 +34,14 @@ mod boundary_rules;
 mod file_gate;
 #[path = "hardened_git.rs"]
 mod hardened_git;
+#[path = "sentrux_quality_signal.rs"]
+mod sentrux_quality_signal;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
 pub(crate) const ENGINE_ID: &str = "sentrux-native";
-pub(crate) const ENGINE_VERSION: &str = "2.2.0";
+pub(crate) const ENGINE_VERSION: &str = "3.0.0";
 // The schema tracks metric *definitions*, not just field names, because every
 // gate comparison is a comparison against numbers a previous engine produced.
 //   v3 (2.1.0): `coupling_score` changed denominator.
@@ -51,12 +53,25 @@ pub(crate) const ENGINE_VERSION: &str = "2.2.0";
 //               a fix+regress swap kept the count flat while a new monolith
 //               appeared (#165) — the ratchet now compares file identities,
 //               which a count-only baseline cannot express.
+//   v6 (3.0.0): `quality_signal` is no longer `10000 - penalty` (a proxy
+//               score with no upstream equivalent, issue #385). It is now
+//               the upstream-compatible Quality Signal: the geometric mean
+//               of five normalized root-cause scores (modularity,
+//               acyclicity, depth, equality, redundancy), ported from
+//               https://sentrux.dev/docs/quality-signal/ and pinned source
+//               commit `6f8ff3c14b0423e4b58f42d1813d4d5f7fdc1d11` (see
+//               `sentrux_quality_signal.rs`). The two scales are not
+//               comparable numbers — an older baseline's `quality_signal`
+//               was never a Quality Signal at all — so this is a schema
+//               bump, not just an engine-version bump, and a v5 baseline
+//               must fail closed via `baseline_engine_mismatch` rather than
+//               produce a fabricated before/after delta. See DR-0011.
 // These moves make an older baseline describe a tree this engine cannot
 // reproduce. Comparing anyway is worse than refusing: v2 would have reported
 // a fabricated coupling regression, and v3 would silently pocket a quality
 // gain instead of re-anchoring the ratchet. The mismatch turns either case
 // into `baseline_engine_mismatch` with the re-baseline instruction.
-pub(crate) const BASELINE_SCHEMA: &str = "code-intel-sentrux-baseline.v5";
+pub(crate) const BASELINE_SCHEMA: &str = "code-intel-sentrux-baseline.v6";
 
 // Metric keys the gate comparisons in `run_gate` read from the baseline.
 // `number()` defaults an absent key to 0.0, so a baseline missing any of
@@ -149,7 +164,12 @@ struct ProjectMetrics {
     complex_fn_count: i64,
     max_complexity: i64,
     coupling_score: f64,
+    /// Upstream-compatible Quality Signal (issue #385): geometric mean of
+    /// the five normalized root causes, 0..10000. Replaces the old
+    /// `10000 - penalty` proxy — see `sentrux_quality_signal.rs`.
     quality_signal: i64,
+    quality_signal_detail: sentrux_quality_signal::QualitySignal,
+    quality_signal_raw: sentrux_quality_signal::RootCauseRaw,
     cycle_count: i64,
     cycles: Vec<Vec<String>>,
 }
@@ -542,12 +562,55 @@ fn baseline_document(repo: &Path, metrics: &ProjectMetrics) -> Result<Value, Str
     }))
 }
 
+fn root_cause_json(cause: sentrux_quality_signal::RootCause, raw: Value) -> Value {
+    json!({
+        "score": cause.score,
+        "raw": raw,
+        "completeness": "full",
+    })
+}
+
+fn quality_signal_json(metrics: &ProjectMetrics) -> Value {
+    let detail = &metrics.quality_signal_detail;
+    let raw = &metrics.quality_signal_raw;
+    json!({
+        "schema": "code-intel-sentrux-quality-signal.v1",
+        "formula_version": sentrux_quality_signal::FORMULA_VERSION,
+        "provider_version": sentrux_quality_signal::PROVIDER_VERSION,
+        "score": detail.quality_signal,
+        "bottleneck": detail.bottleneck,
+        // Worst of the five root causes' own completeness. Only
+        // `redundancy` is ever less than "full" today (see
+        // `sentrux_quality_signal.rs` module doc: dead-function detection
+        // is not implemented, so redundancy is duplicate-only).
+        "completeness": "partial",
+        "root_causes": {
+            "modularity": root_cause_json(detail.modularity, json!(round2(raw.modularity_q))),
+            "acyclicity": root_cause_json(detail.acyclicity, json!(raw.cycle_count)),
+            "depth": root_cause_json(detail.depth, json!(raw.max_depth)),
+            "equality": {
+                "score": detail.equality.score,
+                "raw": round2(raw.equality_gini),
+                "completeness": "full",
+                "basis": "file_loc_fallback",
+            },
+            "redundancy": {
+                "score": detail.redundancy.score,
+                "raw": round2(raw.redundancy_ratio),
+                "completeness": "partial",
+                "note": "dead-function detection not implemented; ratio reflects duplicate-file redundancy only",
+            },
+        },
+    })
+}
+
 fn metrics_json(repo: &Path, metrics: &ProjectMetrics) -> Value {
     json!({
         "tool": ENGINE_ID,
         "engine": {"id": ENGINE_ID, "version": ENGINE_VERSION},
         "path": repo.display().to_string(),
         "quality_signal": metrics.quality_signal,
+        "quality_signal_detail": quality_signal_json(metrics),
         "files": metrics.file_count,
         "import_modeled_files": metrics.import_modeled_file_count,
         "functions": metrics.function_count,
@@ -807,10 +870,31 @@ fn measure_project(repo: &Path) -> Result<(ProjectMetrics, file_gate::GateReport
     let config = file_gate::GateConfig::built_in();
     let report = file_gate::evaluate(&repo, &config)?;
     let paths = report.included.clone();
+    let known_paths: BTreeSet<String> = paths.iter().cloned().collect();
     let mut files = Vec::new();
+    // Raw import-target candidates (from, raw target text) and each file's
+    // duplicate-check normalized content, gathered in the same pass that
+    // already reads every file's content -- feeds `sentrux_quality_signal`'s
+    // modularity/acyclicity/depth/redundancy raw inputs without a second
+    // filesystem read.
+    let mut edge_candidates: Vec<(String, String)> = Vec::new();
+    let mut normalized_content: BTreeMap<String, String> = BTreeMap::new();
     for relative in &paths {
         let content = fs::read(repo.join(relative)).unwrap_or_default();
         let content = String::from_utf8_lossy(&content);
+        for line in content.lines() {
+            let trimmed = line.trim_start();
+            if is_import_line(trimmed) {
+                if let Some(candidate) = sentrux_quality_signal::import_target_candidate(trimmed) {
+                    edge_candidates.push((relative.clone(), candidate));
+                }
+            }
+        }
+        let normalized =
+            sentrux_quality_signal::normalize_for_duplicate_check(&strip_comments_and_strings(
+                relative, &content,
+            ));
+        normalized_content.insert(relative.clone(), normalized);
         files.push(measure_file(relative, &content));
     }
     let file_count = files.len() as i64;
@@ -834,13 +918,62 @@ fn measure_project(repo: &Path) -> Result<(ProjectMetrics, file_gate::GateReport
     } else {
         0.0
     };
-    let quality_signal = (10000.0
-        - coupling_score * 8.0
-        - complex_fn_count as f64 * 60.0
-        - god_file_count as f64 * 120.0
-        - ((max_complexity - 15).max(0) as f64) * 10.0)
-        .max(0.0) as i64;
     let cycles = rust_import_cycles(&repo, &paths);
+
+    // ── Quality Signal (issue #385): resolve the multi-language file
+    // dependency graph, then feed the five root-cause computations. ──
+    let quality_signal_edges: BTreeSet<(String, String)> = edge_candidates
+        .iter()
+        .filter_map(|(from, raw_target)| {
+            sentrux_quality_signal::resolve_edge(from, raw_target, &known_paths)
+                .filter(|to| to != from)
+                .map(|to| (from.clone(), to))
+        })
+        .collect();
+    let mut qs_adjacency: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for (from, to) in &quality_signal_edges {
+        qs_adjacency.entry(from.clone()).or_default().insert(to.clone());
+    }
+    let qs_cycles = strongly_connected_cycles(&qs_adjacency);
+    let (qs_cycle_count, qs_max_depth) =
+        sentrux_quality_signal::compute_cycles_and_depth(&quality_signal_edges, &qs_cycles);
+    let modularity_q = sentrux_quality_signal::compute_modularity_q(&quality_signal_edges);
+    let file_loc: Vec<f64> = files.iter().map(|file| file.loc as f64).collect();
+    let equality_gini = sentrux_quality_signal::gini(&file_loc);
+
+    // Duplicate-file groups (redundancy's `duplicate` half — see
+    // `sentrux_quality_signal.rs` module doc for why `dead` is absent
+    // rather than fabricated).
+    let functions_by_path: BTreeMap<&str, i64> = files
+        .iter()
+        .map(|file| (file.path.as_str(), file.functions))
+        .collect();
+    let mut duplicate_groups: BTreeMap<&String, Vec<&String>> = BTreeMap::new();
+    for (path, normalized) in &normalized_content {
+        if normalized.len() >= sentrux_quality_signal::MIN_DUPLICATE_CONTENT_LEN {
+            duplicate_groups.entry(normalized).or_default().push(path);
+        }
+    }
+    let duplicate_function_total: i64 = duplicate_groups
+        .values()
+        .filter(|members| members.len() >= 2)
+        .flat_map(|members| members.iter())
+        .filter_map(|path| functions_by_path.get(path.as_str()).copied())
+        .sum();
+    let redundancy_ratio =
+        sentrux_quality_signal::redundancy_ratio(duplicate_function_total, function_count);
+
+    let quality_signal_raw = sentrux_quality_signal::RootCauseRaw {
+        modularity_q,
+        cycle_count: qs_cycle_count,
+        max_depth: qs_max_depth,
+        equality_gini,
+        redundancy_ratio,
+    };
+    let quality_signal_detail =
+        sentrux_quality_signal::normalize_and_aggregate(&quality_signal_raw);
+    let quality_signal = quality_signal_detail.quality_signal;
+
     let metrics = ProjectMetrics {
         cycle_count: cycles.len() as i64,
         cycles,
@@ -855,6 +988,8 @@ fn measure_project(repo: &Path) -> Result<(ProjectMetrics, file_gate::GateReport
         max_complexity,
         coupling_score,
         quality_signal,
+        quality_signal_detail,
+        quality_signal_raw,
     };
     Ok((metrics, report))
 }
@@ -1906,6 +2041,129 @@ mod tests {
             "{}",
             run.violations[0].message
         );
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn gate_rejects_a_v5_schema_baseline_from_before_the_quality_signal_rewrite() {
+        // #385/DR-0011: `quality_signal` changed meaning (10000-penalty ->
+        // upstream-compatible geometric mean), so a v5-schema baseline's
+        // `quality_signal` number is not comparable to this engine's output
+        // at all -- comparing it would silently report a fabricated
+        // before/after delta rather than the real one. The schema bump
+        // (v5 -> v6) alone must fail this closed.
+        let root = fixture_root("sentrux-native-v5-baseline-rejected");
+        fs::create_dir_all(root.join(".sentrux")).expect("create fixture");
+        fs::write(root.join("lib.rs"), "pub fn fixture() {}\n").expect("write fixture source");
+        fs::write(
+            root.join(".sentrux/baseline.json"),
+            format!(
+                "{{\"schema\":\"code-intel-sentrux-baseline.v5\",\"engine\":{{\"id\":\"{ENGINE_ID}\",\"version\":\"2.2.0\"}},\"metrics\":{{\"quality_signal\":9500,\"coupling_score\":0.0,\"cycle_count\":0,\"god_file_count\":0}},\"godFiles\":[]}}"
+            ),
+        )
+        .expect("write v5 baseline");
+        let run = expect_gate_ran(&root, false);
+        assert!(!run.success);
+        assert_eq!(run.violations[0].rule, "baseline_engine_mismatch");
+        assert!(
+            run.violations[0].message.contains(BASELINE_SCHEMA),
+            "rejection reason must name the required schema so it is machine-readable: {}",
+            run.violations[0].message
+        );
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn scan_json_exposes_the_full_quality_signal_v1_contract() {
+        // #385 acceptance: scan/health's structured result must carry
+        // quality_signal, bottleneck, and root_causes.<metric>.{score,raw}
+        // for all five root causes, plus the formula/provider version and
+        // completeness the issue names explicitly.
+        let root = fixture_root("sentrux-native-quality-signal-contract");
+        fs::create_dir_all(root.join("src")).expect("create fixture");
+        fs::write(
+            root.join("src/a.rs"),
+            "use crate::b;\npub fn a() { b::b(); }\n",
+        )
+        .expect("write a.rs");
+        fs::write(root.join("src/b.rs"), "pub fn b() {}\n").expect("write b.rs");
+        let value = scan_json(&root).expect("scan_json on fixture");
+        assert!(value["quality_signal"].as_i64().is_some());
+        let detail = &value["quality_signal_detail"];
+        assert_eq!(detail["schema"], "code-intel-sentrux-quality-signal.v1");
+        assert_eq!(
+            detail["formula_version"],
+            sentrux_quality_signal::FORMULA_VERSION
+        );
+        assert_eq!(
+            detail["provider_version"],
+            sentrux_quality_signal::PROVIDER_VERSION
+        );
+        assert!(detail["bottleneck"].as_str().is_some());
+        for metric in ["modularity", "acyclicity", "depth", "equality", "redundancy"] {
+            let cause = &detail["root_causes"][metric];
+            assert!(
+                cause["score"].as_i64().is_some(),
+                "{metric}.score missing: {cause}"
+            );
+            assert!(!cause["raw"].is_null(), "{metric}.raw missing: {cause}");
+            assert!(
+                cause["completeness"].as_str().is_some(),
+                "{metric}.completeness missing: {cause}"
+            );
+        }
+        // Redundancy honestly discloses its known gap instead of a fake 0.
+        assert_eq!(detail["root_causes"]["redundancy"]["completeness"], "partial");
+        assert!(detail["root_causes"]["redundancy"]["note"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("dead-function detection not implemented"));
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn empty_repository_quality_signal_has_no_nan_and_reports_trivial_defaults() {
+        // #385 acceptance: empty repo / zero functions must not produce
+        // NaN/Inf, and the JSON must still parse and stay in [0, 10000].
+        let root = fixture_root("sentrux-native-quality-signal-empty");
+        fs::create_dir_all(&root).expect("create empty fixture root");
+        let value = scan_json(&root).expect("scan_json on empty repository");
+        let score = value["quality_signal"].as_i64().expect("integer score");
+        assert!((0..=10000).contains(&score));
+        let detail = &value["quality_signal_detail"];
+        for metric in ["modularity", "acyclicity", "depth", "equality", "redundancy"] {
+            let raw = &detail["root_causes"][metric]["raw"];
+            assert!(raw.is_number(), "{metric}.raw must be a number, not NaN/null: {raw}");
+        }
+        // No edges, no cycles, no functions: every trivial-input convention
+        // upstream itself defines yields a perfect score.
+        assert_eq!(score, 10000);
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn quality_signal_bottleneck_names_the_true_lowest_root_cause_on_a_real_cycle() {
+        // End-to-end: a real mutual-import cycle between two files must
+        // depress `acyclicity` and surface as the bottleneck, proving the
+        // resolved multi-language edge graph -> SCC -> aggregate pipeline
+        // is wired correctly, not just its pure-math unit tests.
+        let root = fixture_root("sentrux-native-quality-signal-cycle");
+        fs::create_dir_all(root.join("src")).expect("create fixture");
+        fs::write(
+            root.join("src/a.rs"),
+            "use crate::b;\npub fn a() { crate::b::b(); }\n",
+        )
+        .expect("write a.rs");
+        fs::write(
+            root.join("src/b.rs"),
+            "use crate::a;\npub fn b() { crate::a::a(); }\n",
+        )
+        .expect("write b.rs");
+        let value = scan_json(&root).expect("scan_json on cyclic fixture");
+        let raw_cycles = value["quality_signal_detail"]["root_causes"]["acyclicity"]["raw"]
+            .as_i64()
+            .expect("acyclicity raw cycle count");
+        assert!(raw_cycles >= 1, "expected at least one detected cycle, got {raw_cycles}");
         fs::remove_dir_all(&root).expect("remove fixture");
     }
 }

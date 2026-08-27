@@ -44,8 +44,8 @@ fn god_file_body(lines: usize) -> String {
 }
 
 #[test]
-fn save_baseline_records_the_v5_god_file_identity_list() {
-    let root = fixture_root("save-v5");
+fn save_baseline_records_the_v6_god_file_identity_list() {
+    let root = fixture_root("save-v6");
     fs::write(root.join("src/big.rs"), god_file_body(850)).expect("write god file");
     fs::write(root.join("src/small.rs"), "pub fn small() {}\n").expect("write small file");
     write_rules(&root);
@@ -69,7 +69,11 @@ fn save_baseline_records_the_v5_god_file_identity_list() {
         &fs::read(root.join(".sentrux/baseline.json")).expect("read baseline"),
     )
     .expect("parse baseline");
-    assert_eq!(baseline["schema"], "code-intel-sentrux-baseline.v5");
+    // v6 (#385): `quality_signal` became the upstream-compatible Quality
+    // Signal, which is why the schema itself bumped (DR-0011) -- the
+    // `godFiles` identity-ratchet contract this test exists to pin is
+    // otherwise unchanged.
+    assert_eq!(baseline["schema"], "code-intel-sentrux-baseline.v6");
     let gods = baseline["godFiles"].as_array().expect("godFiles list");
     assert_eq!(gods.len(), 1);
     assert_eq!(gods[0]["path"], "src/big.rs");
