@@ -446,6 +446,26 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             "retire only after a typed administration replacement preserves literal repinning"
         ),
     },
+    raw_route! {
+        // Aggregates lint hardcoded-paths + sentrux gate + repin's
+        // check-only scan into one pass/fail verdict (issue #367). Never
+        // mutates -- repin runs in check-only mode here, never `--write` --
+        // and deliberately excludes `cargo test`, which is a separate,
+        // much heavier, whole-workspace operation.
+        command: "verify",
+        subcommand: None,
+        argument_offset: 1,
+        id: CompatibilityRoute::Verify,
+        contract: command_contract!(
+            Public,
+            WorkspaceAdvisory,
+            Advisory,
+            &[CommandEffect::RepoRead, CommandEffect::ProcessSpawn],
+            stdout!("code-intel-verify-report.v1", "text-format:verify-human.v1"),
+            exits!(0, 1, 64, 74),
+            "retire only through a versioned aggregated-verification replacement"
+        ),
+    },
     CommandRoute::Raw(repowise_routes::HOOKS),
     CommandRoute::Raw(friction_routes::LOG),
     CommandRoute::Raw(friction_routes::LIST),

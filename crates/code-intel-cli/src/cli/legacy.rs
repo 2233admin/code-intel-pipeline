@@ -1160,6 +1160,7 @@ Commands:
   model route --request <routing-request.json> [--out <routing-result.json>]
   snapshot identity --repo <root> --working-tree-policy <head_only|explicit_overlay> [--scope <relative-path>]...
   repin [--repo <root>] [--write] [--json] [--exclude <path-prefix>]...
+  verify <path> [--json] (aggregates lint hardcoded-paths + sentrux gate + repin check-only into one pass/fail verdict; never mutates, excludes cargo test)
   repowise-hooks [--repo <root>] [--write] (detects/installs the optional repowise post-commit and distill-rewrite hooks; no-op if repowise is not on PATH)
   friction log --title <text> --summary <text> [--repo <root>] [--artifact <path>]... (records a friction-log entry under .agents/friction-log/)
   friction list [--repo <root>] [--json] (lists friction-log entries; exits 65 if any entry fails to parse)

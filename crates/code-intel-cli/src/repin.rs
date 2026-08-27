@@ -29,6 +29,9 @@ use crate::declared_pins;
 use crate::evidence_outcome::{EvidenceOutcome, EvidenceScope, PartialReason};
 use crate::snapshot;
 
+mod check;
+pub(crate) use check::run_check;
+
 const DEFAULT_EXCLUDES: [&str; 1] = ["orchestration/retirements/"];
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_PASSES: usize = 25;
@@ -114,7 +117,7 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
             }
         }
     }
-    declared_pins::print_findings(&declared, cli.write);
+    print!("{}", declared_pins::render_findings(&declared, cli.write));
     if cli.json {
         println!(
             "{}",
@@ -122,7 +125,7 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
                 .expect("repin report serializes")
         );
     } else {
-        print_human(&report, cli.write);
+        print!("{}", render_human(&report, cli.write));
     }
     // A declared pin that `--write` refused to touch (ambiguous, or its source
     // is gone) is unresolved in exactly the sense `has_unresolved` already
@@ -322,41 +325,42 @@ impl RepinReport {
     }
 }
 
-fn print_human(report: &RepinReport, write: bool) {
+fn render_human(report: &RepinReport, write: bool) -> String {
+    let mut out = String::new();
     for finding in &report.findings {
-        println!("{}", finding.path);
+        out.push_str(&format!("{}\n", finding.path));
         for site in &finding.sites {
-            println!(
-                "  {}...{} -> {}...{}  ({}x, source: {})",
+            out.push_str(&format!(
+                "  {}...{} -> {}...{}  ({}x, source: {})\n",
                 &site.old[..12],
                 &site.old[56..],
                 &site.new[..12],
                 &site.new[56..],
                 site.count,
                 site.source_path
-            );
+            ));
         }
     }
     for orphan in &report.orphaned {
-        println!(
-            "{}: orphaned pin {}...{} (deleted source: {})",
+        out.push_str(&format!(
+            "{}: orphaned pin {}...{} (deleted source: {})\n",
             orphan.path,
             &orphan.old[..12],
             &orphan.old[56..],
             orphan.deleted_source_path
-        );
+        ));
     }
     for ambiguous in &report.ambiguous {
-        println!(
-            "ambiguous: {}...{} is shared by {} \u{2014} not resolved, resync by hand",
+        out.push_str(&format!(
+            "ambiguous: {}...{} is shared by {} \u{2014} not resolved, resync by hand\n",
             &ambiguous.digest[..12],
             &ambiguous.digest[56..],
             ambiguous.paths.join(", ")
-        );
+        ));
     }
     for skip in &report.skipped {
-        println!(
-            "skipped: {} ({}{})",
+        out.push_str(&format!(
+            "skipped: {} ({}{})\n",
             skip.path,
             skip.reason,
             if skip.gates_clean {
@@ -364,29 +368,30 @@ fn print_human(report: &RepinReport, write: bool) {
             } else {
                 ", informational"
             }
-        );
+        ));
     }
     if report.is_clean() {
-        println!(
-            "repin: clean \u{2014} no stale pins ({} pass{})",
+        out.push_str(&format!(
+            "repin: clean \u{2014} no stale pins ({} pass{})\n",
             report.passes,
             if report.passes == 1 { "" } else { "es" }
-        );
-        return;
+        ));
+        return out;
     }
     if !report.outcome.is_complete() {
-        println!("scan coverage: {}", report.outcome.describe());
+        out.push_str(&format!("scan coverage: {}\n", report.outcome.describe()));
     }
     let action = if write { "rewrote" } else { "found" };
-    println!(
-        "repin: {action} {} substitution(s) across {} file(s) in {} pass(es); {} orphaned pin(s), {} ambiguous digest(s), {} skipped file(s)",
+    out.push_str(&format!(
+        "repin: {action} {} substitution(s) across {} file(s) in {} pass(es); {} orphaned pin(s), {} ambiguous digest(s), {} skipped file(s)\n",
         report.total_substitutions(),
         report.findings.len(),
         report.passes,
         report.orphaned.len(),
         report.ambiguous.len(),
         report.skipped.len()
-    );
+    ));
+    out
 }
 
 fn flush(repo: &Path, report: &RepinReport) -> Result<(), String> {

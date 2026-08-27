@@ -205,6 +205,26 @@ pub(crate) fn scan(repo: &Path) -> Result<ScanResult, String> {
     })
 }
 
+/// Renders the human/CI report for a scan result. Shared by `run_and_report`
+/// (the standalone `lint hardcoded-paths` command) and `code-intel verify`
+/// (issue #367), which composes this instead of reimplementing the format.
+pub(crate) fn render_report(result: &ScanResult) -> String {
+    let mut out = String::new();
+    if result.ok {
+        out.push_str(&format!(
+            "Hardcoded path scan: OK ({} files)\n",
+            result.scanned_files
+        ));
+    } else {
+        out.push_str("Hardcoded path scan: FAILED\n");
+        for hit in &result.hits {
+            out.push_str(&hit.text);
+            out.push('\n');
+        }
+    }
+    out
+}
+
 /// Run the scan and print the human/CI report; returns the process exit code
 /// (0 clean, 1 hits). Mirrors the facade's console behavior.
 pub(crate) fn run_and_report(repo: &Path) -> i32 {
@@ -215,14 +235,7 @@ pub(crate) fn run_and_report(repo: &Path) -> i32 {
             return 74;
         }
     };
-    if result.ok {
-        println!("Hardcoded path scan: OK ({} files)", result.scanned_files);
-    } else {
-        println!("Hardcoded path scan: FAILED");
-        for hit in &result.hits {
-            println!("{}", hit.text);
-        }
-    }
+    print!("{}", render_report(&result));
     if result.ok {
         0
     } else {
@@ -231,7 +244,7 @@ pub(crate) fn run_and_report(repo: &Path) -> i32 {
 }
 
 /// JSON variant for tooling (`--json` flag parity with the facade).
-fn scan_json(result: &ScanResult) -> Value {
+pub(crate) fn scan_json(result: &ScanResult) -> Value {
     json!({
         "ok": result.ok,
         "scannedFiles": result.scanned_files,
