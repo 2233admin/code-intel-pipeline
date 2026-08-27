@@ -83,3 +83,17 @@ never gate. Preview mechanical rewrites with `capability exec edit.ast-grep-plan
 apply --repo-path <checkout> --file <path> --span <startLine:startColumn-endLine:endColumn>
 --expect-sha256 <sha256 of the span's current bytes> --replacement <text>` instead of rewriting
 the surrounding line.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in this repo's GitHub Issues (`gh` CLI); repo issues are the delivery SSOT (DR-0007). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles, label string = role name. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.

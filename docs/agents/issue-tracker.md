@@ -1,36 +1,51 @@
-# Work Control Plane
+# Issue tracker: GitHub
 
-Code Intel Pipeline does not require a SaaS issue tracker. The active control plane is selected per initiative, with this precedence:
+Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations. Repo issues are the delivery SSOT: work state belongs here, not in chat memory, hosted project boards, or side documents. This is codified in [DR-0007](../decisions/DR-0007-github-issues-delivery-ssot.md); see that record for the evidence and for the boundary on when another tracker may become an initiative's explicit authority instead.
 
-1. an explicit user choice;
-2. an existing Git-backed project Work-OS or repo-native task graph;
-3. a hosted tracker already bound to the project;
-4. a new hosted tracker only after explicit authorization.
+## Conventions
 
-Exactly one system owns mutable task state. GitHub, Gitea, Linear, and an LLM Wiki may link to one another, but must not all become bidirectional status authorities.
+- **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
+- **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
+- **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
+- **Comment on an issue**: `gh issue comment <number> --body "..."`
+- **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
+- **Close**: `gh issue close <number> --comment "..."`
 
-Record each initiative's selected task authority in its reviewed project record or ADR. The pipeline repository remains authority for code, contracts, tests, and generated scanner evidence.
+Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
-## Hosted Tracker Usage
+## Boundaries
 
-- Create hosted issues from verified plans, PRDs, hospital reports, or surgery plans only when the user requested external issue creation or the hosted tracker is already selected as authority.
-- Link Code Intel artifact files instead of copying scanner output wholesale.
-- Include verification commands and stop conditions in each issue.
-- Keep labels/statuses aligned with `docs/agents/triage-labels.md` when the selected tracker uses them.
+- Do not store tracker credentials, OAuth tokens, workspace IDs, or user secrets in this repository. Tracker automation reads credentials from user-scoped environment and requires explicit authorization before creating or updating anything outside this repo.
+- The scanner does not write to issue trackers. Issue creation and updates are agent/human actions on top of scanner evidence, never a pipeline side effect.
+- Link Code Intel artifact files instead of copying scanner output wholesale; include verification commands and stop conditions in each issue.
 
-## External Action Boundary
+## Pull requests as a triage surface
 
-The scanner does not write to hosted trackers. Code Intel Pipeline has no Linear runtime dependency and no GitHub Projects or Gitea Projects runtime dependency.
+**PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
 
-Do not store Linear API keys, other tracker credentials, OAuth tokens, workspace IDs, or user secrets in this repository. Hosted-tracker automation must read credentials from user-scoped environment or an approved secret store and require explicit authorization before creating or updating external issues.
+When set to `yes`, PRs run through the same labels and states as issues, using the `gh pr` equivalents:
 
-## Pull Requests
+- **Read a PR**: `gh pr view <number> --comments` and `gh pr diff <number>` for the diff.
+- **List external PRs for triage**: `gh pr list --state open --json number,title,body,labels,author,authorAssociation,comments` then keep only `authorAssociation` of `CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, or `NONE` (drop `OWNER`/`MEMBER`/`COLLABORATOR`).
+- **Comment / label / close**: `gh pr comment`, `gh pr edit --add-label`/`--remove-label`, `gh pr close`.
 
-External pull requests are not the default triage request surface. Treat pull requests as code-review or upstream-evidence inputs unless a workflow explicitly opts into PR triage.
+GitHub shares one number space across issues and PRs, so a bare `#42` may be either — resolve with `gh pr view 42` and fall back to `gh issue view 42`.
 
-## Local Work-OS Boundary
+## When a skill says "publish to the issue tracker"
 
-- Store logical project and issue identities in reviewed Markdown; keep machine-specific paths in local, ignored bindings.
-- Use Git branches or pull requests as the promotion ledger.
-- Keep boards, canvases, and indexes derived from issue notes; they are views, not alternate state stores.
-- Never broad-stage a dirty vault. Stage only the exact project files owned by the active task.
+Create a GitHub issue.
+
+## When a skill says "fetch the relevant ticket"
+
+Run `gh issue view <number> --comments`.
+
+## Wayfinding operations
+
+Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.
+
+- **Map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. `gh issue create --label wayfinder:map`.
+- **Child ticket**: an issue linked to the map as a GitHub sub-issue (`gh api` on the sub-issues endpoint). Where sub-issues aren't enabled, add the child to a task list in the map body and put `Part of #<map>` at the top of the child body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
+- **Blocking**: GitHub's **native issue dependencies** — the canonical, UI-visible representation. Add an edge with `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). GitHub reports `issue_dependencies_summary.blocked_by` (open blockers only — the live gate). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
+- **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
+- **Claim**: `gh issue edit <n> --add-assignee @me` — the session's first write.
+- **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
