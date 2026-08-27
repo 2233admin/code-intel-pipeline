@@ -44,18 +44,18 @@ const CHECKS: &[(&str, &str, &str)] = &[
     ),
     (
         "docs/agents/issue-tracker.md",
-        "Linear",
-        "Issue tracker doc must configure Linear.",
+        "DR-0007",
+        "Issue tracker doc must cite the delivery-SSOT decision record.",
     ),
     (
         "docs/agents/issue-tracker.md",
-        "no Linear runtime dependency",
-        "Issue tracker doc must preserve no-runtime-dependency boundary.",
+        "delivery SSOT",
+        "Issue tracker doc must state GitHub issues are the delivery SSOT.",
     ),
     (
         "docs/agents/issue-tracker.md",
-        "Do not store Linear API keys",
-        "Issue tracker doc must forbid stored Linear secrets.",
+        "Do not store tracker credentials",
+        "Issue tracker doc must preserve the no-stored-credentials boundary.",
     ),
     (
         "docs/agents/triage-labels.md",
