@@ -4279,67 +4279,52 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -Liter
             files = $fileDetails
         }
         $fileDetailsPayload | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $sentruxFileDetailsPath -Encoding UTF8
-        $moduleHotspots = @($dsmObject.modules |
-            Sort-Object { $_.colors.Risk.score } -Descending |
-            Select-Object -First 20 |
-            ForEach-Object {
-                [ordered]@{
-                    id = $_.id
-                    name = $_.name
-                    risk = $_.metrics.risk
-                    riskScore = $_.colors.Risk.score
-                    color = $_.colors.Risk.color
-                    files = $_.files
-                    blastRadius = $_.metrics.blast_radius
-                    gitFiles = $_.metrics.git_files
-                }
-            })
-        $fileHotspots = @($fileDetails |
-            Sort-Object { $_.max_complexity } -Descending |
-            Select-Object -First 30 |
-            ForEach-Object {
-                [ordered]@{
-                    id = $_.id
-                    path = $_.path
-                    sourceAnchor = $_.source_anchor
-                    functionCount = $_.function_count
-                    maxComplexity = $_.max_complexity
-                    avgComplexity = $_.avg_complexity
-                    loc = $_.loc
-                    git = $_.git
-                }
-            })
-        $functionHotspots = @()
-        foreach ($file in $fileDetails) {
-            foreach ($fn in @($file.functions)) {
-                $functionHotspots += [ordered]@{
-                    id = $fn.id
-                    fileId = $file.id
-                    file = $file.path
-                    name = $fn.name
-                    sourceAnchor = $fn.source_anchor
-                    startLine = $fn.start_line
-                    endLine = $fn.end_line
-                    complexity = $fn.complexity
-                    loc = $fn.loc
-                    params = $fn.params
-                    async = $fn.async
-                    public = $fn.public
-                }
-            }
+        # Issue #361: hotspots has no safe fallback. Every prior fallback
+        # path here reimplemented Select-Object -First 20/30/50, which is
+        # the exact silent truncation bug this facade must not reintroduce.
+        # If the Rust producer cannot run, fail the pipeline rather than
+        # emit a lossy sentrux-hotspots.json.
+        if ($sentruxDsmPreference -notin @("rust")) {
+            throw "sentrux hotspots has no PowerShell fallback (issue #361); CODE_INTEL_SENTRUX_DSM_PROVIDER must be 'rust'"
         }
-        $functionHotspots = @($functionHotspots | Sort-Object { $_["complexity"] } -Descending | Select-Object -First 50)
-        $hotspotsPayload = [ordered]@{
-            tool = "hotspots"
-            path = $sentruxTargetPath
-            generated_from = [ordered]@{
-                dsm = $sentruxDsmPath
-                fileDetails = $sentruxFileDetailsPath
-            }
-            modules = $moduleHotspots
-            files = $fileHotspots
-            functions = $functionHotspots
+        if (-not (Test-Path -LiteralPath $sentruxDsmRustCli -PathType Leaf)) {
+            throw "Rust Sentrux hotspots binary is missing at $sentruxDsmRustCli; sentrux hotspots has no PowerShell fallback (issue #361)"
         }
+        $hotspotsLaunchError = $null
+        $previousErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            $hotspotsRaw = & $sentruxDsmRustCli sentrux hotspots $sentruxTargetPath --json 2>&1
+            $hotspotsExitCode = $LASTEXITCODE
+        }
+        catch {
+            $hotspotsLaunchError = $_.Exception.Message
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+        }
+        if (-not [string]::IsNullOrWhiteSpace($hotspotsLaunchError)) {
+            throw "Rust Sentrux hotspots could not be launched ($hotspotsLaunchError); sentrux hotspots has no PowerShell fallback (issue #361)"
+        }
+        if ($hotspotsExitCode -ne 0) {
+            throw "Rust Sentrux hotspots exited with code $hotspotsExitCode; sentrux hotspots has no PowerShell fallback (issue #361)"
+        }
+        $hotspotsText = ($hotspotsRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
+        try {
+            $hotspotsPayload = $hotspotsText | ConvertFrom-Json
+        }
+        catch {
+            throw "Rust Sentrux hotspots returned invalid JSON; sentrux hotspots has no PowerShell fallback (issue #361)"
+        }
+        $hotspotsProvider = "rust"
+        $hotspotsPayload.generated_from = [ordered]@{
+            dsm = $sentruxDsmPath
+            fileDetails = $sentruxFileDetailsPath
+        }
+        $moduleHotspots = @($hotspotsPayload.modules)
+        $fileHotspots = @($hotspotsPayload.files)
+        $functionHotspots = @($hotspotsPayload.functions)
+        $notes.Add("Sentrux hotspots provider: $hotspotsProvider")
         $hotspotsPayload | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $sentruxHotspotsPath -Encoding UTF8
         $sentruxDsmSummary = [ordered]@{
             path = $sentruxDsmPath
