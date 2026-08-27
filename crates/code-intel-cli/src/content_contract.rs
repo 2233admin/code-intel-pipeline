@@ -180,10 +180,10 @@ pub(crate) fn validate_artifact_ref_shape(value: &Value) -> Result<(), String> {
         return Err("input Artifact Ref schema is invalid".to_string());
     }
     for key in ["artifactSchema", "type", "path"] {
-        if !object
+        if object
             .get(key)
             .and_then(Value::as_str)
-            .is_some_and(|v| !v.is_empty())
+            .is_none_or(|v| v.is_empty())
         {
             return Err(format!("input Artifact Ref {key} is invalid"));
         }
