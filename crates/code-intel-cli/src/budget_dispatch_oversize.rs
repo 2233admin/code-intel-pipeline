@@ -204,12 +204,19 @@ mod tests {
             oversize.manifest_json["nodes"]["a"]["status"],
             "not_dispatched"
         );
-        // Per the per-dispatch refusal semantics, the run is NOT
-        // rewritten to `BudgetStopped` and the executor is not invoked.
+        // Per the per-dispatch refusal semantics, the executor is never
+        // invoked and the budget itself is not consumed -- but issue
+        // #123's Bug 2 follow-up: a run where the only node is
+        // `skipped_oversize` produced no evidence at all and must not
+        // report `Completed` either. `Coordinator::manifest()`'s outcome
+        // chain has no `SkippedOversize` arm and falls through to
+        // `Completed` when the DAG is otherwise terminal; the dispatch
+        // loop overrides that the same way it already does for full
+        // budget exhaustion with nothing executed.
         assert_eq!(
             oversize.manifest.outcome,
-            RunOutcome::Completed,
-            "oversize is a per-dispatch refusal, not a run-level failure"
+            RunOutcome::Failed,
+            "an oversize-only run with nothing executed must not report Completed"
         );
         assert_eq!(counter.dispatched.load(Ordering::SeqCst), 0);
     }

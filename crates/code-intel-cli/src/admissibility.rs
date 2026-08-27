@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
 
 use crate::artifact_ref::{self, ArtifactContract, ArtifactError};
-use crate::capability::{reject_duplicate_json_keys, sha256_hex};
+use crate::capability::{reject_duplicate_json_keys, reject_duplicate_json_keys_within, sha256_hex};
 
 const MAX_REQUEST_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_PAYLOAD_BYTES: u64 = 64 * 1024 * 1024;
@@ -354,7 +354,7 @@ fn validate_provenance(v: &Value) -> Result<(), String> {
 fn validate_payload(bytes: &[u8]) -> Result<(), String> {
     let text =
         std::str::from_utf8(bytes).map_err(|e| format!("evidence payload is not UTF-8: {e}"))?;
-    reject_duplicate_json_keys(text)?;
+    reject_duplicate_json_keys_within(text, MAX_PAYLOAD_BYTES as usize)?;
     let value: Value =
         serde_json::from_str(text).map_err(|e| format!("evidence payload is invalid JSON: {e}"))?;
     exact_object(&value, &["schema", "data"], "evidence payload")?;
@@ -397,6 +397,35 @@ fn rejected(message: &str) -> Value {
 
 #[cfg(test)]
 mod tests {
+    use super::{validate_payload, MAX_PAYLOAD_BYTES};
+
+    /// Issue #123 Bug 3 regression: `verify_artifact_ref` already bounds
+    /// `observed.evidence.payload` to this file's own `MAX_PAYLOAD_BYTES`
+    /// (64 MiB), but `validate_payload` used to call the shared JSON
+    /// scanner's *default*, hard-coded 8 MiB ceiling underneath that --
+    /// silently reclamping any in-budget payload between 8 MiB and 64 MiB
+    /// with `"JSON input exceeds 8388608 bytes"`. This reproduces with a
+    /// real large-repository payload without any untracked junk directory
+    /// involved.
+    #[test]
+    fn validate_payload_accepts_between_default_scanner_ceiling_and_contract_budget() {
+        let padding = "a".repeat(9 * 1024 * 1024);
+        let payload =
+            format!(r#"{{"schema":"code-intel-evidence-payload.v1","data":{{"padding":"{padding}"}}}}"#);
+        assert!(payload.len() > 8 * 1024 * 1024);
+        assert!((payload.len() as u64) < MAX_PAYLOAD_BYTES);
+        assert!(validate_payload(payload.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn validate_payload_still_rejects_beyond_its_own_contract_budget() {
+        let padding = "a".repeat(MAX_PAYLOAD_BYTES as usize + 1024);
+        let payload =
+            format!(r#"{{"schema":"code-intel-evidence-payload.v1","data":{{"padding":"{padding}"}}}}"#);
+        let err = validate_payload(payload.as_bytes()).unwrap_err();
+        assert!(err.contains("exceeds"));
+    }
+
     #[test]
     fn core_source_contains_no_provider_specific_branch_names() {
         let source = include_str!("admissibility.rs").to_ascii_lowercase();

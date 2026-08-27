@@ -9,10 +9,12 @@ mod content_contract;
 use crate::stable_artifact::{self, FileId, StableReadError};
 use content_contract::{
     is_digest as valid_digest, is_run_identity as valid_run_identity, reject_duplicate_json_keys,
-    require_exact_keys, sha256_hex, validate_artifact_ref_shape,
+    reject_duplicate_json_keys_within, require_exact_keys, sha256_hex, validate_artifact_ref_shape,
 };
 
 const MAX_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_EVIDENCE_ADMISSION_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_SESSION_EVIDENCE_BYTES: u64 = 128 * 1024 * 1024;
 
 pub(crate) const REPOSITORY_ITERATION_SCHEMA: &str =
     "code-intel-repository-iteration-provenance.v1";
@@ -272,14 +274,14 @@ fn diagnosis_family_contract(schema: &str, artifact_type: &str) -> Option<Artifa
             Some(ArtifactContract {
                 artifact_schema: "code-intel-evidence-admissibility-result.v1",
                 artifact_type: "evidence.admission",
-                max_bytes: 16 * 1024 * 1024,
+                max_bytes: MAX_EVIDENCE_ADMISSION_BYTES,
                 validate_payload: validate_evidence_admission,
             })
         }
         ("code-intel-evidence-payload.v1", "observed.evidence.payload") => Some(ArtifactContract {
             artifact_schema: "code-intel-evidence-payload.v1",
             artifact_type: "observed.evidence.payload",
-            max_bytes: 64 * 1024 * 1024,
+            max_bytes: MAX_ARTIFACT_BYTES,
             validate_payload: validate_evidence_payload,
         }),
         ("code-intel-sentrux-command-observation.v1", "provider.sentrux.command-observation") => {
@@ -370,7 +372,7 @@ fn orientation_family_contract(schema: &str, artifact_type: &str) -> Option<Arti
         ) => Some(ArtifactContract {
             artifact_schema: "code-intel-project-orientation-benchmark-observations.v1",
             artifact_type: "benchmark.orientation-observations",
-            max_bytes: 64 * 1024 * 1024,
+            max_bytes: MAX_ARTIFACT_BYTES,
             validate_payload: validate_orientation_benchmark_observations,
         }),
         ("code-intel-project-orientation-benchmark.v1", "benchmark.orientation-report") => {
@@ -451,7 +453,7 @@ fn run_delivery_family_contract(schema: &str, artifact_type: &str) -> Option<Art
             Some(ArtifactContract {
                 artifact_schema: "code-intel-run-timing-events.v1",
                 artifact_type: "delivery.run-timing-events",
-                max_bytes: 64 * 1024 * 1024,
+                max_bytes: MAX_ARTIFACT_BYTES,
                 validate_payload: validate_run_timing_events,
             })
         }
@@ -471,7 +473,7 @@ fn run_delivery_family_contract(schema: &str, artifact_type: &str) -> Option<Art
             Some(ArtifactContract {
                 artifact_schema: "code-intel-session-evidence.v1",
                 artifact_type: "verification.session-evidence",
-                max_bytes: 128 * 1024 * 1024,
+                max_bytes: MAX_SESSION_EVIDENCE_BYTES,
                 validate_payload: validate_session_evidence,
             })
         }
@@ -526,7 +528,7 @@ fn method_decision_family_contract(schema: &str, artifact_type: &str) -> Option<
 }
 
 fn validate_evidence_payload(bytes: &[u8]) -> Result<(), String> {
-    let value = parse_contract_json(bytes, "observed evidence payload")?;
+    let value = parse_contract_json_within(bytes, "observed evidence payload", MAX_ARTIFACT_BYTES)?;
     exact_object_keys(&value, &["schema", "data"], "observed evidence payload")?;
     if value["schema"] != "code-intel-evidence-payload.v1"
         || value["data"].as_object().is_none_or(|data| data.is_empty())
@@ -1269,6 +1271,12 @@ fn parse_contract_json(bytes: &[u8], label: &str) -> Result<Value, String> {
     serde_json::from_str(text).map_err(|e| format!("{label} is not JSON: {e}"))
 }
 
+fn parse_contract_json_within(bytes: &[u8], label: &str, max_bytes: u64) -> Result<Value, String> {
+    let text = std::str::from_utf8(bytes).map_err(|e| format!("{label} is not UTF-8: {e}"))?;
+    reject_duplicate_json_keys_within(text, max_bytes as usize)?;
+    serde_json::from_str(text).map_err(|e| format!("{label} is not JSON: {e}"))
+}
+
 fn validate_hospital_report(bytes: &[u8]) -> Result<(), String> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| format!("hospital report is not UTF-8: {error}"))?;
@@ -1759,7 +1767,7 @@ fn validate_understanding_quadrant_summary(
 fn validate_orientation_benchmark_observations(bytes: &[u8]) -> Result<(), String> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| format!("orientation benchmark observations are not UTF-8: {error}"))?;
-    reject_duplicate_json_keys(text)?;
+    reject_duplicate_json_keys_within(text, MAX_ARTIFACT_BYTES as usize)?;
     let value: Value = serde_json::from_str(text)
         .map_err(|error| format!("orientation benchmark observations are not JSON: {error}"))?;
     exact_object_keys(
@@ -2261,7 +2269,7 @@ fn validate_method_card(bytes: &[u8]) -> Result<(), String> {
 fn validate_run_timing_events(bytes: &[u8]) -> Result<(), String> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| format!("run timing events are not UTF-8: {error}"))?;
-    reject_duplicate_json_keys(text)?;
+    reject_duplicate_json_keys_within(text, MAX_ARTIFACT_BYTES as usize)?;
     let value: Value = serde_json::from_str(text)
         .map_err(|error| format!("run timing events are not JSON: {error}"))?;
     exact_object_keys(
@@ -2401,13 +2409,12 @@ fn light_speed_report_is_valid(value: &Value) -> bool {
             .as_array()
             .is_some_and(|v| !v.is_empty())
 }
-
 fn validate_light_speed_markdown(bytes: &[u8]) -> Result<(), String> {
     validate_markdown_view(bytes, "# Delivery Light-Speed Measurement")
 }
 
 fn validate_session_evidence(bytes: &[u8]) -> Result<(), String> {
-    let value = parse_contract_json(bytes, "session evidence")?;
+    let value = parse_contract_json_within(bytes, "session evidence", MAX_SESSION_EVIDENCE_BYTES)?;
     validate_session_evidence_value(&value)
 }
 
@@ -2468,7 +2475,7 @@ fn validate_session_evidence_value(value: &Value) -> Result<(), String> {
 /// `counts` claiming `dropped: 0` while an anchor entry underneath it is
 /// actually `"state":"dropped"` is rejected here, not merely well-formed.
 fn validate_anchor_verification(bytes: &[u8]) -> Result<(), String> {
-    let value = parse_contract_json(bytes, "anchor verification report")?;
+    let value = parse_contract_json_within(bytes, "anchor verification report", MAX_ARTIFACT_BYTES)?;
     exact_object_keys(
         &value,
         &["schema", "counts", "sources"],
@@ -2571,7 +2578,7 @@ fn validate_markdown_view(bytes: &[u8], heading: &str) -> Result<(), String> {
 fn validate_evidence_admission(bytes: &[u8]) -> Result<(), String> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| format!("evidence admission is not UTF-8: {error}"))?;
-    reject_duplicate_json_keys(text)?;
+    reject_duplicate_json_keys_within(text, MAX_EVIDENCE_ADMISSION_BYTES as usize)?;
     let value: Value = serde_json::from_str(text)
         .map_err(|error| format!("evidence admission is not JSON: {error}"))?;
     let keys = value
@@ -2717,7 +2724,7 @@ fn validate_native_ranking(bytes: &[u8]) -> Result<(), String> {
 fn parse_native_object(bytes: &[u8]) -> Result<Value, String> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| format!("native code evidence artifact is not UTF-8: {error}"))?;
-    reject_duplicate_json_keys(text)?;
+    reject_duplicate_json_keys_within(text, MAX_ARTIFACT_BYTES as usize)?;
     let value: Value = serde_json::from_str(text)
         .map_err(|error| format!("native code evidence artifact is invalid JSON: {error}"))?;
     value
