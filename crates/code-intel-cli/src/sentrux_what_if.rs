@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
-use crate::sentrux_analysis;
+use super::sentrux_analysis;
 
 use super::{as_array, evolution_bus_factor};
 

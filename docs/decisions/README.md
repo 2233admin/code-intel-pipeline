@@ -27,6 +27,7 @@ Enforcement: 谁在什么时机强制它（gate / 测试 / 评审规约），没
 | [DR-0005](DR-0005-integration-debt-ceiling.md) | 整合债上限：修复 PR 积压时停产新 feature | active |
 | [DR-0006](DR-0006-solo-operator-retirement-gate.md) | 已证死代码分支（E02/E03）可用静态不可达证明替代 30 天遥测窗口 | active |
 | [DR-0007](DR-0007-github-issues-delivery-ssot.md) | GitHub Issues 是本仓库自身工作的交付任务状态权威 | active |
+| [DR-0008](DR-0008-evolution-degraded-classification.md) | sentrux.evolution 与 sentrux.what_if 同型病灶，evolution 分类改判 automatic_degraded | active |
 | [DR-0009](DR-0009-sentrux-scan-stub-field-honesty.md) | sentrux.scan/rescan 的伪造 stub 字段必须诚实化（null+status，非假 0），scan/rescan 提升为 authoritative_automatic | active |
 
 平行 session 开工前先扫本目录（一次 `ls docs/decisions/` + 读 README 表格，30 秒）。与已有决策相悖的工作，先开 issue 挑战决策本身，不要直接实现相反语义。

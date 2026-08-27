@@ -123,12 +123,34 @@ pub(super) fn collect_sentrux_capabilities(
     let mut check = None;
     let mut observations = Vec::with_capacity(SENTRUX_CAPABILITY_ROUTES.len());
     for route in SENTRUX_CAPABILITY_ROUTES {
-        let provider_mode = route_provider_mode(&route, tool_path_prefix);
-        let route_tool_path_prefix = if provider_mode == "lite_fallback" {
+        // `what_if`'s builtin engine (`sentrux_evolution::what_if`) has no
+        // parameter for an external tool prefix, structurally the same
+        // constraint the still-lite fallbacks have -- but issue #374 moved
+        // it out of `uses_lite_fallback` (it's correctly attributed
+        // `"builtin"` now, not `"lite_fallback"`), so forcing off the
+        // external branch needs its own check here rather than piggybacking
+        // on `uses_lite_fallback`. Without this, `what_if` would newly start
+        // reaching `Some(prefix)` in `run_sentrux` whenever a
+        // `toolPathPrefix` is configured -- resolving #374's decision 3 (the
+        // external-Sentrux branch's fate) as a side effect, which the issue
+        // explicitly scoped out ("do not resolve it, just don't break it").
+        //
+        // `route_tool_path_prefix` must be resolved before `provider_mode`,
+        // not the other way around: `provider_mode` labels which engine
+        // actually ran, so it has to read the post-override prefix. Deriving
+        // it from the raw `tool_path_prefix` mislabelled `what_if` as
+        // `"external"` whenever a tool prefix was configured, even though
+        // this override was about to force it onto the builtin engine
+        // regardless (caught in review on #374).
+        let route_tool_path_prefix = if (matches!(route.kind, RouteKind::Command)
+            && uses_lite_fallback(route.command))
+            || route.command == "what_if"
+        {
             None
         } else {
             tool_path_prefix
         };
+        let provider_mode = route_provider_mode(&route, route_tool_path_prefix);
         let observation = match route.kind {
             RouteKind::NotApplicable {
                 failure_kind,
@@ -541,20 +563,31 @@ fn observation_command(observation: &Value) -> Option<SentruxCommand> {
     })
 }
 
-fn route_provider_mode(route: &CapabilityRoute, tool_path_prefix: Option<&Path>) -> &'static str {
+fn route_provider_mode(
+    route: &CapabilityRoute,
+    route_tool_path_prefix: Option<&Path>,
+) -> &'static str {
     if matches!(route.kind, RouteKind::Command) && uses_lite_fallback(route.command) {
         "lite_fallback"
-    } else if tool_path_prefix.is_some() {
+    } else if route_tool_path_prefix.is_some() {
         "external"
     } else {
         "builtin"
     }
 }
 
+// Issue #374: `what_if` no longer routes through
+// `sentrux_lite_capabilities.rs` -- `builtin_provider_evidence.rs::run_sentrux`
+// calls the real `sentrux_evolution::what_if` engine directly, so it must
+// not be classified `lite_fallback` here (that would misattribute its
+// capability artifact's `provider` identity/digest to
+// `sentrux_lite_capabilities.rs`, a file it no longer touches at all).
+// `evolution` stays listed: its own DAG dispatch arm is unchanged, tracked
+// separately in #377 (see DR-0008).
 fn uses_lite_fallback(command: &str) -> bool {
     matches!(
         command,
-        "git_stats" | "evolution" | "test_gaps" | "what_if" | "provider_discovery"
+        "git_stats" | "evolution" | "test_gaps" | "provider_discovery"
     )
 }
 
@@ -579,4 +612,76 @@ fn command_failure_message(command: &SentruxCommand) -> String {
         .chars()
         .take(1024)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn temp_dir(label: &str) -> std::path::PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "code-intel-374-{label}-{}-{nonce}",
+            std::process::id()
+        ))
+    }
+
+    fn write_fake_sentrux_tool(prefix: &std::path::Path) {
+        fs::create_dir_all(prefix).expect("tool prefix directory");
+        #[cfg(windows)]
+        fs::write(
+            prefix.join("sentrux.cmd"),
+            "@echo off\r\necho {}\r\nexit /b 0\r\n",
+        )
+        .expect("fake sentrux.cmd");
+        #[cfg(not(windows))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let path = prefix.join("sentrux");
+            fs::write(&path, "#!/bin/sh\necho '{}'\nexit 0\n").expect("fake sentrux script");
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+                .expect("fake sentrux script permissions");
+        }
+    }
+
+    /// Regression for a review finding on #374: `route_provider_mode` used
+    /// to be derived from the *pre-override* `tool_path_prefix`, so
+    /// `what_if` was mislabelled `providerMode: "external"` whenever a tool
+    /// prefix was configured, even though `route_tool_path_prefix` forces
+    /// `what_if` onto the builtin engine regardless (it has no parameter for
+    /// an external prefix at all). `dsm` is asserted alongside it as a
+    /// control: a capability that genuinely does honor the configured
+    /// prefix must still show `"external"`, proving the fix didn't just
+    /// make everything default to `"builtin"`.
+    #[test]
+    fn what_if_stays_builtin_even_with_a_configured_external_tool_prefix() {
+        let repo = temp_dir("repo");
+        fs::create_dir_all(repo.join("src")).expect("repo src directory");
+        fs::write(repo.join("src/lib.rs"), "pub fn f() {}\n").expect("repo source file");
+
+        let tool_prefix = temp_dir("tool");
+        write_fake_sentrux_tool(&tool_prefix);
+
+        let (_, _, observations) = collect_sentrux_capabilities(&repo, Some(tool_prefix.as_path()))
+            .expect("capability collection succeeds with a resolvable external tool");
+
+        let what_if = observations
+            .iter()
+            .find(|observation| observation["capabilityId"] == "sentrux.what_if")
+            .expect("sentrux.what_if observation is present");
+        assert_eq!(what_if["providerMode"], "builtin");
+
+        let dsm = observations
+            .iter()
+            .find(|observation| observation["capabilityId"] == "sentrux.dsm")
+            .expect("sentrux.dsm observation is present");
+        assert_eq!(dsm["providerMode"], "external");
+
+        let _ = fs::remove_dir_all(&repo);
+        let _ = fs::remove_dir_all(&tool_prefix);
+    }
 }
