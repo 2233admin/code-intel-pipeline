@@ -1,15 +1,15 @@
 # Triage Labels
 
-These labels define the project-management state machine agents can use when converting Code Intel evidence into Linear work.
+The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker.
 
-| Matt Pocock role | Code Intel / Linear label | Meaning |
-| --- | --- | --- |
-| `needs-triage` | `needs-evaluation` | Maintainer or agent must decide whether the report is actionable. |
-| `needs-info` | `needs-reporter-response` | Waiting on reporter, owner, or operator for missing context. |
-| `ready-for-agent` | `ready-for-afk-agent` | Fully specified and safe for an agent to pick up without more human context. |
-| `ready-for-human` | `ready-for-human` | Requires human implementation, approval, credentials, or product judgment. |
-| `wontfix` | `wontfix` | Will not be actioned. Preserve the reason in the issue or wiki note. |
+| Label in mattpocock/skills | Label in our tracker | Meaning                                  |
+| -------------------------- | -------------------- | ---------------------------------------- |
+| `needs-triage`             | `needs-triage`       | Maintainer needs to evaluate this issue  |
+| `needs-info`               | `needs-info`         | Waiting on reporter for more information |
+| `ready-for-agent`          | `ready-for-agent`    | Fully specified, ready for an AFK agent  |
+| `ready-for-human`          | `ready-for-human`    | Requires human implementation            |
+| `wontfix`                  | `wontfix`            | Will not be actioned                     |
 
-Use the Code Intel / Linear label as the canonical project label. Keep the Matt Pocock role visible so skills that expect the original vocabulary can map cleanly.
+When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
 
-Do not treat a label as proof of scanner evidence. Before moving work to `ready-for-afk-agent`, link the artifact run, relevant report, verification command, and stop condition.
+Do not treat a label as proof of scanner evidence. Before moving work to `ready-for-agent`, link the artifact run, relevant report, verification command, and stop condition in the issue.

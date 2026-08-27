@@ -1,27 +1,42 @@
 # Domain Docs
 
-Code Intel Pipeline uses a single-context domain layout:
+How the engineering skills should consume this repo's domain documentation when exploring the codebase.
 
-- `CONTEXT.md`: shared vocabulary and terms agents must use.
-- `docs/adr/`: accepted architectural and workflow decisions.
-- `docs/project-management-support.md`: project-management intake and wiki boundary.
-- `docs/agents/issue-tracker.md`: issue tracker selection.
-- `docs/agents/triage-labels.md`: triage state vocabulary.
+## Before exploring, read these
 
-## Before Work
+- **`CONTEXT.md`** at the repo root — shared vocabulary and terms agents must use.
+- **`docs/adr/`** — read ADRs that touch the area you're about to work in.
+- **`docs/project-management-support.md`** — project-management intake and wiki boundary, when work may become an issue or wiki note.
 
-Before planning or coding, read the relevant repo-local domain docs first:
+If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill creates them lazily when terms or decisions actually get resolved.
 
-1. `CONTEXT.md`
-2. ADRs in `docs/adr/` that touch the workflow
-3. `docs/project-management-support.md` when work may become a Linear issue or wiki note
+## File structure
 
-Proceed silently when optional files are missing in a target repository. Do not create domain docs unless the task requires it.
+Single-context repo:
+
+```
+/
+├── CONTEXT.md
+├── docs/adr/
+│   ├── 0001-rust-cli-reads-artifacts.md
+│   └── 0009-atomic-capability-execution-model.md
+└── crates/
+```
+
+## Use the glossary's vocabulary
+
+When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `CONTEXT.md`. Don't drift to synonyms the glossary explicitly avoids.
+
+If the concept you need isn't in the glossary yet, that's a signal — either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling` rather than inventing a parallel vocabulary).
+
+## Flag ADR conflicts
+
+If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
+
+> _Contradicts ADR-0009 (atomic capability execution model) — but worth reopening because…_
 
 ## Obsidian/LLM Wiki
 
 An Obsidian/LLM wiki may mirror or index these docs, artifact summaries, and handoff notes. It is a project-management knowledge surface, not artifact authority.
 
 If wiki content conflicts with repo-local docs or artifact reports, prefer `CONTEXT.md`, ADRs, `summary.md`, `hospital.md`, `understanding.md`, and machine-readable artifact files until the source docs are deliberately updated.
-
-Use glossary vocabulary from `CONTEXT.md` in issue titles, wiki notes, code comments, and test names. If the needed term is missing, record the gap rather than inventing a parallel vocabulary.
