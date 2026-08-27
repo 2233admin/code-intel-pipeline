@@ -252,12 +252,12 @@ fn missing_path_argument_is_a_usage_error_not_a_false_ok() {
 }
 
 #[test]
-fn verify_never_passes_a_mutating_flag_to_its_sub_checks() {
+fn verify_rejects_write_flag_as_a_usage_error_without_mutating_the_repo() {
     // Adversarial code-review-style assertion (AGENTS.md #7's "check anyway"
     // instruction): the compiled binary's argv contract for `verify` must
-    // not accept or forward `--write`. A stray `--write` on the `verify`
-    // invocation itself is simply an unrecognized positional/ignored flag,
-    // not a mutating switch, because `run_raw` never reads it.
+    // not accept or silently forward `--write`. A stray `--write` on the
+    // `verify` invocation is an unrecognized argument and must be rejected
+    // as a usage error (exit 64), not silently ignored into a false OK.
     let tree = clean_fixture("no-write-flag");
     save_baseline(&tree.0);
     let before = fs::read(tree.0.join("lib.rs")).unwrap();
@@ -269,7 +269,25 @@ fn verify_never_passes_a_mutating_flag_to_its_sub_checks() {
         .arg("--json")
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.status.code(), Some(64), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("unrecognized argument")
+        || String::from_utf8_lossy(&output.stdout).contains("unrecognized argument"));
 
     assert_eq!(fs::read(tree.0.join("lib.rs")).unwrap(), before);
+}
+
+#[test]
+fn extra_positional_argument_is_a_usage_error_not_a_false_ok() {
+    let tree = clean_fixture("extra-positional");
+    save_baseline(&tree.0);
+
+    let output = common::cli()
+        .arg("verify")
+        .arg(&tree.0)
+        .arg("extra-arg")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(64), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("exactly one path"));
 }
