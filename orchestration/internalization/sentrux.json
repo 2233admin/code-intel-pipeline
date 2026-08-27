@@ -65,11 +65,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux_analysis.rs",
-        "sha256": "833f5bf5e522c79f3de248568d995466c077b0ad3196ffda32152dbfba529214"
+        "sha256": "2ceeb4596a6a126dfa404cf566b021cca62117a1d716ce016e66235d52ce3cc8"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_analysis.rs",
-        "sha256": "be65a1f14799e43a58836ae4e9e6c93d07ea7dd25f8518c4e6f19e57833fe09b",
+        "sha256": "c25439a0edd24d72ec906e38a9b4706f71d737730a30c6a009f48fab42122307",
         "testName": "dsm_snapshot_preserves_contract_and_excludes_non_governed_source"
       }
     },
@@ -335,8 +335,8 @@
       "path": "crates/code-intel-cli/src/sentrux_analysis.rs",
       "description": "native Rust governed-source, file/function metric, module graph, and DSM risk kernel",
       "evidenceIds": [
-        "local:sentrux:rust-dsm-source-sha256:833f5bf5e522c79f3de248568d995466c077b0ad3196ffda32152dbfba529214",
-        "local:sentrux:rust-dsm-conformance-sha256:be65a1f14799e43a58836ae4e9e6c93d07ea7dd25f8518c4e6f19e57833fe09b"
+        "local:sentrux:rust-dsm-source-sha256:2ceeb4596a6a126dfa404cf566b021cca62117a1d716ce016e66235d52ce3cc8",
+        "local:sentrux:rust-dsm-conformance-sha256:c25439a0edd24d72ec906e38a9b4706f71d737730a30c6a009f48fab42122307"
       ]
     },
     {

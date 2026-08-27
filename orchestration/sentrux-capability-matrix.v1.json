@@ -57,7 +57,7 @@
       "trigger": "repository_run",
       "route": "provider.sentrux-adapt/builtin_bounded",
       "executionMode": "automatic",
-      "currentState": "automatic_degraded",
+      "currentState": "authoritative_automatic",
       "requiredForRelease": true,
       "inputs": ["repository.snapshot"],
       "artifacts": ["code-intel-sentrux-capability-artifact.v1"],

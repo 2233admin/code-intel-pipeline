@@ -408,6 +408,40 @@ mod tests {
     }
 
     #[test]
+    fn dsm_is_declared_authoritative_automatic() {
+        // #376/DR-0010: sentrux.dsm was promoted from automatic_degraded to
+        // authoritative_automatic once `dsm_edges` stopped being
+        // structurally blind to single-crate/PowerShell-heavy repositories
+        // (finer module granularity under crates/packages src/app/tests
+        // roots, plus a new PowerShell dot-source/Import-Module resolver).
+        // Same precedent as DR-0009: capability_audit only ever trusts this
+        // hand-declared currentState field, so pin it here rather than let
+        // a future edit flip it back silently.
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let repo = manifest_dir
+            .parent()
+            .and_then(Path::parent)
+            .expect("repository root");
+        let matrix = load_capability_matrix(repo).expect("load repository matrix");
+        let audit = capability_audit(&matrix).expect("render audit");
+        let capabilities = audit["capabilities"]
+            .as_array()
+            .expect("capabilities array");
+        let entry = capabilities
+            .iter()
+            .find(|item| item["id"] == "sentrux.dsm")
+            .expect("sentrux.dsm missing from capability audit");
+        assert_eq!(
+            entry["executionMode"], "automatic",
+            "sentrux.dsm executionMode must stay automatic for this test's covered-bit reasoning to hold"
+        );
+        assert_eq!(
+            entry["currentState"], "authoritative_automatic",
+            "sentrux.dsm regressed off authoritative_automatic -- if this is an intentional new decision, update DR-0010 rather than just this assertion"
+        );
+    }
+
+    #[test]
     fn missing_matrix_is_an_explicit_error() {
         let repo = temp_repo("missing");
         let error = load_capability_matrix(&repo).expect_err("missing matrix must fail");
