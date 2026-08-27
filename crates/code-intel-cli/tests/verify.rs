@@ -235,7 +235,10 @@ fn human_output_reports_a_short_pass_fail_summary_per_subcheck() {
     let output = verify_text(&tree.0);
     assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.starts_with("code-intel verify: FAILED\n"), "{stdout}");
+    assert!(
+        stdout.starts_with("code-intel verify: FAILED\n"),
+        "{stdout}"
+    );
     assert!(stdout.contains("[PASS] lint hardcoded-paths"), "{stdout}");
     assert!(stdout.contains("[FAIL] sentrux gate"), "{stdout}");
     assert!(stdout.contains("[PASS] repin (check-only)"), "{stdout}");

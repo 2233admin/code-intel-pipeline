@@ -211,7 +211,10 @@ pub(crate) fn scan(repo: &Path) -> Result<ScanResult, String> {
 pub(crate) fn render_report(result: &ScanResult) -> String {
     let mut out = String::new();
     if result.ok {
-        out.push_str(&format!("Hardcoded path scan: OK ({} files)\n", result.scanned_files));
+        out.push_str(&format!(
+            "Hardcoded path scan: OK ({} files)\n",
+            result.scanned_files
+        ));
     } else {
         out.push_str("Hardcoded path scan: FAILED\n");
         for hit in &result.hits {
