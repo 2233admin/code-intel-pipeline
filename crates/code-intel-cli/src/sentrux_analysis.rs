@@ -111,7 +111,7 @@ pub fn analyze(target: &Path) -> Result<Value, String> {
         "modules": module_output(&modules),
         "file_details": file_details,
         "edges": edge_output(&edges),
-        "note": "Lightweight DSM with 9 color modes. Git-derived modes depend on local git history; use Sentrux/CodeNexus for authoritative graph detail."
+        "note": "Lightweight DSM with 9 color modes. Heuristic text-based import detection across Python, Rust, V, and PowerShell (dot-source/Import-Module); does not resolve dynamic imports, aliases, or re-exports. Git-derived modes depend on local git history. See DR-0010 for scope and promotion reasoning."
     }))
 }
 
@@ -686,7 +686,7 @@ fn dsm_edges(
     let mut edges = BTreeMap::new();
     for file in files {
         let ext = extension(file);
-        if !matches!(ext.as_str(), ".py" | ".rs" | ".v") {
+        if !matches!(ext.as_str(), ".py" | ".rs" | ".v" | ".ps1" | ".psm1") {
             continue;
         }
         let from = module_name(file);
@@ -709,6 +709,9 @@ fn import_targets(
     files: &[String],
     modules: &BTreeMap<String, ModuleMetrics>,
 ) -> Vec<String> {
+    if matches!(extension, ".ps1" | ".psm1") {
+        return powershell_targets(source, content, files);
+    }
     let mut targets = Vec::new();
     for line in content.lines() {
         let trimmed = line.trim_start();
@@ -768,6 +771,207 @@ fn import_targets(
         }
     }
     targets
+}
+
+/// Resolves the two PowerShell dependency idioms actually used anywhere in
+/// this repository's own `.ps1`/`.psm1` files: dot-sourcing a sibling
+/// script (`. (Join-Path $PSScriptRoot "Foo.ps1")` / `. "Foo.ps1"`) and
+/// `Import-Module` of either a literal path or a variable assigned earlier
+/// in the same file from one of those same path-building forms
+/// (`$platformModule = Join-Path (Join-Path $PSScriptRoot "tools")
+/// "code-intel-platform.psm1"`, then `Import-Module $platformModule`).
+/// `$PSScriptRoot` is PowerShell's automatic variable for "the directory
+/// containing the currently executing script" and is the only base this
+/// heuristic understands, resolved here as `source`'s own directory. Bare
+/// module names (`Import-Module SomeModule`, no path) and any other
+/// computed expression are left unresolved -- this extracts the
+/// literal-path idiom this codebase's own scripts actually use, not a full
+/// PowerShell parser (issue #376/#148 E1: cross-language coupling was
+/// previously entirely unmodeled -- dsm_edges never parsed `.ps1`/`.psm1`
+/// at all).
+fn powershell_targets(source: &str, content: &str, files: &[String]) -> Vec<String> {
+    let source_dir = source.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+    let mut variables: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        let Some(rest) = trimmed.strip_prefix('$') else {
+            continue;
+        };
+        let Some((name, value)) = rest.split_once('=') else {
+            continue;
+        };
+        let Some(name) = powershell_identifier(name.trim_end()) else {
+            continue;
+        };
+        let value = value.trim().trim_end_matches(';').trim();
+        if let Some(segments) = parse_ps1_path_expr(value) {
+            variables.insert(name.to_string(), segments);
+        }
+    }
+
+    let mut targets = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        let expr = if let Some(rest) = trimmed.strip_prefix(". ") {
+            Some(leading_ps1_expr(rest.trim_start()))
+        } else if let Some(rest) = trimmed
+            .strip_prefix("Import-Module ")
+            .or_else(|| trimmed.strip_prefix("import-module "))
+        {
+            Some(leading_ps1_expr(rest.trim_start()))
+        } else {
+            None
+        };
+        let Some(expr) = expr else {
+            continue;
+        };
+        let segments = match expr.strip_prefix('$') {
+            Some(name) => variables.get(name).cloned(),
+            None => parse_ps1_path_expr(expr),
+        };
+        let Some(segments) = segments else {
+            continue;
+        };
+        if segments.is_empty() {
+            continue;
+        }
+        let mut parts: Vec<&str> = source_dir
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .collect();
+        for segment in &segments {
+            parts.extend(segment.split('/').filter(|part| !part.is_empty()));
+        }
+        let candidate = parts.join("/");
+        if let Some(target) = files.iter().find(|file| **file == candidate) {
+            targets.push(module_name(target));
+        }
+    }
+    targets
+}
+
+/// Extracts a PowerShell variable name (`$name = ...`): letters, digits,
+/// and underscore, matching PowerShell's own identifier rules for the plain
+/// (non-scoped, non-braced) variable form used everywhere in this repo's
+/// scripts.
+fn powershell_identifier(text: &str) -> Option<&str> {
+    let trimmed = text.trim();
+    let end = trimmed
+        .char_indices()
+        .take_while(|(_, ch)| ch.is_ascii_alphanumeric() || *ch == '_')
+        .last()
+        .map(|(index, ch)| index + ch.len_utf8())?;
+    let value = &trimmed[..end];
+    value
+        .chars()
+        .next()
+        .filter(|ch| ch.is_ascii_alphabetic() || *ch == '_')
+        .map(|_| value)
+}
+
+/// Resolves a *bounded* subset of PowerShell path-building expressions: the
+/// `$PSScriptRoot` automatic variable (an empty base -- "start here"), a
+/// quoted string literal, or a `Join-Path <left> <right>` call (PowerShell
+/// 5.1's two-positional-argument form; the only nesting shape anywhere in
+/// this repository's own scripts is `Join-Path (Join-Path $PSScriptRoot
+/// "sub") "leaf"`, but arbitrary nesting is supported the same way).
+/// Returns path segments relative to `$PSScriptRoot`, or `None` for
+/// anything this heuristic doesn't recognize (a bare variable, string
+/// concatenation, a computed expression, named `-Path`/`-ChildPath`
+/// parameters).
+fn parse_ps1_path_expr(expr: &str) -> Option<Vec<String>> {
+    let trimmed = expr.trim();
+    let unwrapped = trimmed
+        .strip_prefix('(')
+        .and_then(|rest| rest.strip_suffix(')'))
+        .map(str::trim)
+        .unwrap_or(trimmed);
+    if unwrapped == "$PSScriptRoot" {
+        return Some(Vec::new());
+    }
+    if let Some(literal) = parse_ps1_string_literal(unwrapped) {
+        return Some(vec![literal]);
+    }
+    let rest = unwrapped
+        .strip_prefix("Join-Path ")
+        .or_else(|| unwrapped.strip_prefix("join-path "))?;
+    let (left, right) = split_ps1_call_args(rest)?;
+    let mut segments = parse_ps1_path_expr(left)?;
+    segments.push(parse_ps1_string_literal(right.trim())?);
+    Some(segments)
+}
+
+/// Splits `Join-Path`'s two positional arguments at the first top-level
+/// (paren/quote-balanced) whitespace run, so a parenthesized nested
+/// `Join-Path` call in the first argument isn't mistaken for the argument
+/// boundary.
+fn split_ps1_call_args(rest: &str) -> Option<(&str, &str)> {
+    let bytes = rest.as_bytes();
+    let mut depth = 0i32;
+    let mut quote: Option<u8> = None;
+    for (index, &byte) in bytes.iter().enumerate() {
+        match quote {
+            Some(open) => {
+                if byte == open {
+                    quote = None;
+                }
+            }
+            None => match byte {
+                b'(' => depth += 1,
+                b')' => depth -= 1,
+                b'"' | b'\'' => quote = Some(byte),
+                b' ' | b'\t' if depth == 0 => {
+                    let left = rest[..index].trim();
+                    let right = rest[index..].trim();
+                    if !left.is_empty() && !right.is_empty() {
+                        return Some((left, right));
+                    }
+                }
+                _ => {}
+            },
+        }
+    }
+    None
+}
+
+/// Returns the leading PowerShell expression in `text` up to (but not
+/// including) the first paren/quote-balanced whitespace -- one grouped unit
+/// (`$var`, `"literal"`, or a parenthesized `(Join-Path ...)` call), so
+/// trailing flags like `Import-Module $x -Force` don't get folded into the
+/// expression.
+fn leading_ps1_expr(text: &str) -> &str {
+    let bytes = text.as_bytes();
+    let mut depth = 0i32;
+    let mut quote: Option<u8> = None;
+    for (index, &byte) in bytes.iter().enumerate() {
+        match quote {
+            Some(open) => {
+                if byte == open {
+                    quote = None;
+                }
+            }
+            None => match byte {
+                b'(' => depth += 1,
+                b')' => depth -= 1,
+                b'"' | b'\'' => quote = Some(byte),
+                b' ' | b'\t' if depth <= 0 => return &text[..index],
+                _ => {}
+            },
+        }
+    }
+    text
+}
+
+fn parse_ps1_string_literal(text: &str) -> Option<String> {
+    let text = text.trim();
+    let bytes = text.as_bytes();
+    if bytes.len() >= 2 {
+        let quote = bytes[0];
+        if (quote == b'"' || quote == b'\'') && bytes[bytes.len() - 1] == quote {
+            return Some(text[1..text.len() - 1].replace('\\', "/"));
+        }
+    }
+    None
 }
 
 fn resolve_python_import(source: &str, token: &str, files: &[String]) -> Option<String> {
@@ -854,13 +1058,33 @@ fn resolve_module_token(token: &str, modules: &BTreeMap<String, ModuleMetrics>) 
         return Some(normalized);
     }
     let comparable = normalized.replace('_', "-");
+    // A `use <crate>::...`/`import <package>` token names the dependency's
+    // crate/package, not a specific file inside it, so try the crate-name
+    // path segment first: module keys rooted at "crates"/"packages" no
+    // longer necessarily have the crate name as their own trailing segment
+    // now that files under a crate's src/app/tests root get finer
+    // per-file/per-subdirectory buckets (issue #376) -- only files sitting
+    // directly at the crate root (a Cargo.toml, a build.rs) still bucket to
+    // the bare `crates/<name>` key, and that key alphabetically precedes
+    // every deeper one, so it wins when both exist. Every other
+    // module-naming scheme still falls back to the original trailing-leaf
+    // match.
     modules
         .keys()
         .find(|module| {
-            module
-                .rsplit('/')
-                .next()
-                .is_some_and(|leaf| leaf.replace('_', "-") == comparable)
+            let mut segments = module.splitn(3, '/');
+            matches!(segments.next(), Some("crates" | "packages"))
+                && segments
+                    .next()
+                    .is_some_and(|name| name.replace('_', "-") == comparable)
+        })
+        .or_else(|| {
+            modules.keys().find(|module| {
+                module
+                    .rsplit('/')
+                    .next()
+                    .is_some_and(|leaf| leaf.replace('_', "-") == comparable)
+            })
         })
         .cloned()
 }
@@ -1179,6 +1403,22 @@ fn module_name(relative: &str) -> String {
             format!("backend/{second}/{third}")
         }
         ["backend", second, ..] => format!("backend/{second}"),
+        // Mirrors the "backend" arm just above: a crate/package with a
+        // src/app/tests root gets one more level of granularity (module =
+        // that immediate subdirectory, or the file itself when it sits
+        // directly under src/app/tests with no subdirectory) instead of
+        // collapsing the entire crate into one module. Before this arm,
+        // `dsm_edges` structurally could never report a coupling edge for
+        // any single-crate repository -- every file in
+        // `crates/<name>/src/**` bucketed into the same
+        // `"crates/<name>"` module, and `dsm_edges` excludes same-module
+        // edges by construction (issue #376).
+        [first, second, third, fourth, ..]
+            if ["crates", "packages"].contains(first)
+                && ["app", "src", "tests"].contains(third) =>
+        {
+            format!("{first}/{second}/{third}/{fourth}")
+        }
         [first, second, ..] if ["crates", "packages"].contains(first) => {
             format!("{first}/{second}")
         }

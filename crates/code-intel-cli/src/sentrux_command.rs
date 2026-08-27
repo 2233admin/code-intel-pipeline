@@ -5,7 +5,19 @@ use serde_json::{json, Value};
 use super::sentrux_gate::Violation;
 use crate::capability::sha256_hex;
 
-pub(crate) const MAX_COMMAND_EVIDENCE_BYTES: usize = 1024 * 1024;
+// This was 1 MiB at authoring (commit b5bb8f04, PR #286/#285) and never
+// revisited since. Its purpose (per #286's own description) is to stop a
+// truncated capture being *silently* treated as a complete one -- not to
+// cap how large a genuinely successful capability's real output may be.
+// `sentrux.dsm`'s real, honest output on this repository is already ~3.8MB
+// once `dsm_edges` actually reports coupling for a repo this size (issue
+// #376/DR-0010 -- previously it was near-empty only because `dsm_edges`
+// was structurally blind to this repo's own coupling, which is the bug
+// #376 fixes); `sentrux.scan`'s is ~325KB. 1 MiB was stale relative to both
+// well before #376, and 16 MiB keeps ~4x headroom over dsm's current real
+// size (against the DAG's own 100MB total run budget) while still catching
+// a genuinely pathological/runaway command.
+pub(crate) const MAX_COMMAND_EVIDENCE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_COMMAND_PREVIEW_BYTES: usize = 8 * 1024;
 
 pub(crate) struct SentruxCommand {

@@ -191,9 +191,93 @@ fn dsm_dependency_graph_accumulates_imports_and_resolves_workspace_crates() {
         .find(|edge| edge["from"] == "a.py" && edge["to"] == "b.py")
         .expect("flat Python import edge");
     assert_eq!(python["count"], 2);
-    assert!(edges
+    // issue #376: `crates/<name>/src/<file>` now buckets one level finer
+    // than the bare `crates/<name>` crate-wide module -- here that's
+    // per-file, since each crate has exactly one flat file directly under
+    // `src/` with no further subdirectory (mirrors the pre-existing
+    // `backend/<app|src|tests>/<next>` arm's own per-file behavior for the
+    // same flat-file shape).
+    assert!(edges.iter().any(|edge| {
+        edge["from"] == "crates/foo/src/lib.rs" && edge["to"] == "crates/bar/src/lib.rs"
+    }));
+}
+
+#[test]
+fn dsm_single_crate_intra_crate_coupling_is_no_longer_structurally_empty() {
+    // Regression for issue #376/#148 E1: a single-crate repository whose
+    // Rust source lives entirely under `crates/<name>/src/**` used to
+    // collapse into one module (`crates/<name>`), so `dsm_edges` -- which
+    // excludes same-module edges by construction -- could never report a
+    // coupling/blast-radius/exec-depth signal for it at all, no matter how
+    // coupled the actual files were.
+    let fixture = Fixture::new();
+    fixture.write(
+        "crates/app/src/consumer.rs",
+        "use crate::producer::Thing;\n",
+    );
+    fixture.write("crates/app/src/producer.rs", "pub struct Thing;\n");
+    // A file directly under the crate root (not under src/app/tests) still
+    // falls back to the crate-wide bucket -- only files that actually sit
+    // under a src/app/tests root get the finer granularity.
+    fixture.write("crates/app/build.rs", "fn main() {}\n");
+
+    let snapshot = sentrux_analysis::analyze(&fixture.root).expect("native DSM analysis");
+    let edges = snapshot["edges"].as_array().expect("edge array");
+    assert!(edges.iter().any(|edge| {
+        edge["from"] == "crates/app/src/consumer.rs" && edge["to"] == "crates/app/src/producer.rs"
+    }));
+
+    let modules = snapshot["modules"].as_array().expect("module array");
+    assert!(modules
         .iter()
-        .any(|edge| edge["from"] == "crates/foo" && edge["to"] == "crates/bar"));
+        .any(|module| module["name"] == "crates/app/src/consumer.rs"
+            && module["metrics"]["outbound_edges"] == 1));
+    assert!(modules
+        .iter()
+        .any(|module| module["name"] == "crates/app/src/producer.rs"
+            && module["metrics"]["inbound_edges"] == 1));
+    assert!(modules
+        .iter()
+        .any(|module| module["name"] == "crates/app" && module["files"] == 1));
+}
+
+#[test]
+fn dsm_powershell_dot_source_and_import_module_edges_are_now_modeled() {
+    // Regression for issue #376/#148 E1's other half: before this fix
+    // `dsm_edges` never parsed `.ps1`/`.psm1` at all (line 689's extension
+    // gate was `.py`/`.rs`/`.v` only), so a PowerShell-heavy repository --
+    // like this one, where most of the orchestration layer is PowerShell --
+    // was structurally blind to its *own* dominant language's coupling, not
+    // just to intra-crate Rust coupling.
+    let fixture = Fixture::new();
+    fixture.write(
+        "run-code-intel.ps1",
+        concat!(
+            "$platformModule = Join-Path (Join-Path $PSScriptRoot \"modules\") \"platform.psm1\"\n",
+            "Import-Module $platformModule -Force\n",
+            ". (Join-Path $PSScriptRoot \"logging.ps1\")\n",
+        ),
+    );
+    fixture.write("modules/platform.psm1", "function Invoke-Platform { 1 }\n");
+    fixture.write("logging.ps1", "function Write-Log { param($msg) 1 }\n");
+
+    let snapshot = sentrux_analysis::analyze(&fixture.root).expect("native DSM analysis");
+    let edges = snapshot["edges"].as_array().expect("edge array");
+    assert!(
+        edges.iter().any(|edge| {
+            edge["from"] == "run-code-intel.ps1" && edge["to"] == "modules"
+        }),
+        "Import-Module of a variable built from nested Join-Path calls should resolve to an edge: {edges:?}"
+    );
+    assert!(
+        edges
+            .iter()
+            .any(|edge| { edge["from"] == "run-code-intel.ps1" && edge["to"] == "logging.ps1" }),
+        "dot-sourcing via Join-Path $PSScriptRoot should resolve to an edge: {edges:?}"
+    );
+
+    let script = module(&snapshot, "run-code-intel.ps1");
+    assert_eq!(script["metrics"]["outbound_edges"], 2);
 }
 
 #[test]
