@@ -270,9 +270,10 @@ fn verify_rejects_write_flag_as_a_usage_error_without_mutating_the_repo() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(64), "{output:?}");
-    assert!(String::from_utf8_lossy(&output.stderr)
-        .contains("unrecognized argument")
-        || String::from_utf8_lossy(&output.stdout).contains("unrecognized argument"));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("unrecognized argument")
+            || String::from_utf8_lossy(&output.stdout).contains("unrecognized argument")
+    );
 
     assert_eq!(fs::read(tree.0.join("lib.rs")).unwrap(), before);
 }
