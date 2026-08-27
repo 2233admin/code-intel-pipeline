@@ -46,8 +46,23 @@ struct SubCheck {
 
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
     let json_output = raw.iter().any(|argument| argument == "--json");
-    let repo_arg = raw.iter().find(|argument| !argument.starts_with('-'));
-    let repo = match repo_arg {
+    let mut positionals: Vec<&String> = Vec::new();
+    for argument in raw {
+        if argument == "--json" {
+            continue;
+        } else if argument.starts_with('-') {
+            return report_usage_error(
+                json_output,
+                &format!("verify: unrecognized argument: {argument}"),
+            );
+        } else {
+            positionals.push(argument);
+        }
+    }
+    if positionals.len() > 1 {
+        return report_usage_error(json_output, "verify accepts exactly one path argument");
+    }
+    let repo = match positionals.first() {
         Some(path) => PathBuf::from(path),
         None => return report_usage_error(json_output, "verify requires a <path> argument"),
     };
