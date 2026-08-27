@@ -7,7 +7,20 @@ use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
 
-pub(crate) const MAX_JSON_BYTES: usize = 8 * 1024 * 1024;
+// Was 8 MiB (unrevisited default) until issue #383/#386: fixing #383's
+// silent-Null bug (`capability_structured_data` reparsing the 8KB bounded
+// preview instead of the full command output, see `sentrux_command.rs`)
+// means `code-intel-sentrux-capability-artifact.v1`'s `outputs.structuredData`
+// now legitimately carries a capability's real, full output -- `sentrux.dsm`'s
+// on this repository already serializes to ~8.65 MiB (measured:
+// sentrux-capability-sentrux-dsm.json, 9,073,500 bytes), which this ceiling
+// would previously never have observed because the #383 bug always zeroed
+// that field out first. 24 MiB keeps ~1.5x headroom over
+// `sentrux_command::MAX_COMMAND_EVIDENCE_BYTES` (16 MiB, #382's own raised
+// raw-capture ceiling for the same growth) for this artifact's small JSON
+// wrapper overhead, while remaining a blanket safety net (not a per-schema
+// budget) for every other, much smaller document this scanner also guards.
+pub(crate) const MAX_JSON_BYTES: usize = 24 * 1024 * 1024;
 pub(crate) const MAX_JSON_DEPTH: usize = 128;
 
 pub(crate) fn reject_duplicate_json_keys(text: &str) -> Result<(), String> {
@@ -167,10 +180,9 @@ pub(crate) fn validate_artifact_ref_shape(value: &Value) -> Result<(), String> {
         return Err("input Artifact Ref schema is invalid".to_string());
     }
     for key in ["artifactSchema", "type", "path"] {
-        if !object
+        if object
             .get(key)
-            .and_then(Value::as_str)
-            .is_some_and(|v| !v.is_empty())
+            .and_then(Value::as_str).is_none_or(|v| v.is_empty())
         {
             return Err(format!("input Artifact Ref {key} is invalid"));
         }

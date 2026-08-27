@@ -81,6 +81,7 @@ mod sentrux_capabilities;
 mod sentrux_evolution;
 mod sentrux_gate;
 mod sentrux_hotspots;
+mod sentrux_quality_projection;
 mod session_evidence;
 mod snapshot;
 mod stable_artifact;

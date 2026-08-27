@@ -312,12 +312,23 @@ pub(super) fn build_capability_artifacts(
     Ok((artifacts, refs))
 }
 
+// Issue #383: this used to re-parse `observation["command"]["stdout"]` --
+// the same 8KB-`bounded_text` preview built for human diagnostics -- as
+// JSON. Any real output over 8KB was truncated mid-document, so
+// `serde_json::from_str` failed and this silently returned `Value::Null`
+// even though the capability's `status` correctly reported
+// `"succeeded"`/`"complete"`. `command_evidence` (`sentrux_command.rs`) now
+// carries the full, unbounded payload directly as `command.structuredData`,
+// parsed once at `SentruxCommand` construction time and never round-tripped
+// through the bounded preview text; read it verbatim here instead of
+// reparsing anything.
 fn capability_structured_data(observation: &Value) -> Value {
-    observation["command"]["stdout"]
-        .as_str()
-        .and_then(|stdout| serde_json::from_str::<Value>(stdout).ok())
-        .filter(|value| value.is_object() || value.is_array())
-        .unwrap_or(Value::Null)
+    let value = &observation["command"]["structuredData"];
+    if value.is_object() || value.is_array() {
+        value.clone()
+    } else {
+        Value::Null
+    }
 }
 
 fn sentrux_capability_provider(provider_mode: &str) -> Value {
@@ -560,6 +571,12 @@ fn observation_command(observation: &Value) -> Option<SentruxCommand> {
                     && observation["verdict"] == "unknown")
             }),
         output_summary,
+        // Issue #383: rehydrate the full structured payload from the same
+        // `command.structuredData` field `command_evidence` wrote, not by
+        // reparsing `stdout` (which is only ever the bounded preview here).
+        structured_stdout: command.get("structuredData").and_then(|value| {
+            (value.is_object() || value.is_array()).then(|| value.clone())
+        }),
     })
 }
 
@@ -683,5 +700,44 @@ mod tests {
 
         let _ = fs::remove_dir_all(&repo);
         let _ = fs::remove_dir_all(&tool_prefix);
+    }
+
+    /// Issue #383: a real capability's structured payload over the old 8KB
+    /// preview cap must survive `capability_structured_data` (used to build
+    /// the persisted `code-intel-sentrux-capability-artifact.v1`) and
+    /// `observation_command` (used to rehydrate a `SentruxCommand` back out
+    /// of a persisted observation for `sentrux.gate`/`sentrux.check`) intact
+    /// -- not silently collapsed to `Value::Null` because the real document
+    /// no longer fits in the bounded human-preview text.
+    #[test]
+    fn capability_structured_data_and_observation_command_round_trip_a_payload_over_8kb() {
+        let value = serde_json::json!({
+            "marker": "issue-383-capability-artifact-fixture",
+            "filler": "y".repeat(8 * 1024 + 4096),
+            "coupling_score": 12.5,
+        });
+        let bytes = serde_json::to_vec(&value).expect("serialize fixture");
+        assert!(bytes.len() > 8 * 1024, "fixture must exceed the 8KB preview cap");
+
+        let command = super::SentruxCommand::from_json(bytes, "scan");
+        let command_evidence = capability_command_evidence("scan", &command);
+        let observation = json!({
+            "capabilityId": "sentrux.scan",
+            "operation": "scan",
+            "providerMode": "builtin",
+            "status": "succeeded",
+            "verdict": "pass",
+            "command": command_evidence,
+        });
+
+        let structured = capability_structured_data(&observation);
+        assert_eq!(
+            structured, value,
+            "capability_structured_data must reflect the full parsed output beyond 8KB, not Value::Null"
+        );
+
+        let rehydrated =
+            observation_command(&observation).expect("observation_command rehydrates a command");
+        assert_eq!(rehydrated.structured_stdout.as_ref(), Some(&value));
     }
 }

@@ -718,6 +718,33 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
     project_routes::STATUS,
     project_routes::QUERY,
     project_routes::PRIMARY,
+    raw_route! {
+        // Issue #386: consumes already-committed, sha256-verified Sentrux
+        // capability artifacts (never dispatches a capability itself) and
+        // projects a versioned Quality Signal + finding artifact for PR
+        // Check display and an Orca-consumable lifecycle event. Same
+        // committed-evidence-only shape as `artifact query`/`change impact`.
+        command: "quality-projection",
+        subcommand: Some("build"),
+        argument_offset: 1,
+        id: CompatibilityRoute::QualityProjectionBuild,
+        contract: command_contract!(
+            Public,
+            CommittedEvidence,
+            Committed,
+            &[
+                CommandEffect::RepoRead,
+                CommandEffect::LocalWrite,
+                CommandEffect::ProcessSpawn
+            ],
+            stdout_with_optional_artifacts!(
+                ["code-intel-quality-signal-projection.v1"],
+                ["code-intel-quality-signal-projection.v1"]
+            ),
+            exits!(0, 65, 74),
+            "retire only through a versioned quality-signal projection replacement"
+        ),
+    },
 ];
 
 pub(super) fn resolve_command_route(raw: &[String]) -> Option<&'static CommandRoute> {

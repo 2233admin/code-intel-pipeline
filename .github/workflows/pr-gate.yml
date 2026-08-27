@@ -347,6 +347,15 @@ jobs:
           }
           Write-Host "Sentrux capability closure verified: $($capabilityRefs.Count) capability refs; required=$($required.Count); matrix coverage=$($matrix.coverageStatus)"
 
+          # Issue #386: the compiled Rust CLI is the only producer of the
+          # Quality Signal + finding projection. This workflow only invokes
+          # it and uploads/renders its output -- no GitHub/Orca mutation
+          # happens inside the binary itself.
+          $projectionOut = Join-Path $env:RUNNER_TEMP "quality-signal-projection.json"
+          & $binary quality-projection build --artifact-root $authority --repo $repoName --repo-path . --commit "$env:GITHUB_SHA" --base-ref "origin/${{ github.base_ref }}" --out $projectionOut --orca-run-id "$env:GITHUB_RUN_ID" --pr "${{ github.event.pull_request.number }}"
+          if ($LASTEXITCODE -ne 0) { throw "quality-projection build failed" }
+          Write-Host "Quality Signal projection written: $projectionOut"
+
       - name: Upload Sentrux closure evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -355,3 +364,91 @@ jobs:
           path: |
             ${{ runner.temp }}/code-intel-pr-sentrux-authority
           if-no-files-found: ignore
+
+      - name: Upload Quality Signal projection
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: quality-signal-projection
+          path: ${{ runner.temp }}/quality-signal-projection.json
+          if-no-files-found: ignore
+
+      - name: Render Quality Signal PR Check summary
+        shell: pwsh
+        run: |
+          $projection = Get-Content -Raw -LiteralPath (Join-Path $env:RUNNER_TEMP "quality-signal-projection.json") | ConvertFrom-Json
+          $total = $projection.qualitySignal.total
+          $bottleneck = if ($projection.qualitySignal.bottleneck) { $projection.qualitySignal.bottleneck } else { "none" }
+          $deltaText = if ($null -eq $total.delta) { "n/a" } else { [string]$total.delta }
+          $emoji = if ($null -ne $total.delta -and $total.delta -lt 0) { "[UP]" } else { "[OK]" }
+
+          $rootCauseRows = foreach ($cause in @($projection.qualitySignal.rootCauses)) {
+            $raw = $cause.raw
+            $rawDelta = if ($null -eq $raw.delta) { "n/a" } else { [math]::Round([double]$raw.delta, 2) }
+            "| $($cause.label) | $($raw.baseline) | $($raw.current) | $rawDelta |"
+          }
+
+          $findingRows = foreach ($finding in @($projection.findings) | Select-Object -First 10) {
+            "| $($finding.kind) | $($finding.severityNormalized) | ``$($finding.rule)`` | $($finding.message) |"
+          }
+
+          $summary = @(
+            "### Code Intel Quality Signal"
+            ""
+            "Completeness: **$($projection.completeness)** &middot; snapshot ``$($projection.snapshotIdentity.Substring(0, [Math]::Min(12, $projection.snapshotIdentity.Length)))`` &middot; commit ``$($projection.binding.commit.Substring(0, 12))``"
+            ""
+            "| Total | Baseline | Delta |"
+            "|---|---|---|"
+            "| $($total.current) | $($total.baseline) | $emoji $deltaText |"
+            ""
+            "Bottleneck: **$bottleneck**"
+            ""
+            "| Root cause | Baseline | Current | Delta |"
+            "|---|---|---|---|"
+            ($rootCauseRows -join "`n")
+            ""
+          )
+          if (@($projection.findings).Count -gt 0) {
+            $summary += @(
+              "**Findings** ($($projection.findings.Count) total)"
+              ""
+              "| Kind | Severity | Rule | Message |"
+              "|---|---|---|---|"
+              ($findingRows -join "`n")
+              ""
+            )
+          }
+          foreach ($diagnostic in @($projection.diagnostics)) {
+            $summary += "> $diagnostic"
+          }
+          $summaryText = ($summary -join "`n") + "`n"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $summaryText
+          $marker = "<!-- code-intel-quality-signal -->"
+          Set-Content -Path (Join-Path $env:RUNNER_TEMP "quality-comment-body.md") -Value ($marker + "`n" + $summaryText)
+
+          foreach ($finding in @($projection.findings)) {
+            if ($finding.severityNormalized -in @("high", "critical")) {
+              $targets = if (@($finding.targets).Count -gt 0) { " ($($finding.targets -join ', '))" } else { "" }
+              Write-Host "::error::Quality Signal $($finding.kind) [$($finding.rule)]: $($finding.message)$targets"
+            } else {
+              Write-Host "::warning::Quality Signal $($finding.kind) [$($finding.rule)]: $($finding.message)"
+            }
+          }
+
+      - name: Post or update Quality Signal sticky comment
+        # Fork PRs get a read-only GITHUB_TOKEN; skip the comment, keep the
+        # gate (job summary + annotations above already ran regardless).
+        if: github.event.pull_request.head.repo.fork == false
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $repo = "${{ github.repository }}"
+          $prNumber = "${{ github.event.pull_request.number }}"
+          $body = Join-Path $env:RUNNER_TEMP "quality-comment-body.md"
+          $existingId = gh api "repos/$repo/issues/$prNumber/comments" --paginate --jq '[.[] | select(.body | contains("<!-- code-intel-quality-signal -->"))][0].id // empty'
+          if ($existingId) {
+            gh api "repos/$repo/issues/comments/$existingId" -X PATCH -F "body=@$body"
+          } else {
+            gh api "repos/$repo/issues/$prNumber/comments" -X POST -F "body=@$body"
+          }

@@ -294,7 +294,13 @@ fn diagnosis_family_contract(schema: &str, artifact_type: &str) -> Option<Artifa
             Some(ArtifactContract {
                 artifact_schema: "code-intel-sentrux-capability-artifact.v1",
                 artifact_type: "provider.sentrux.capability-artifact",
-                max_bytes: 8 * 1024 * 1024,
+                // Was 8 MiB until issue #383/#386: `outputs.structuredData`
+                // now legitimately carries a capability's full output (see
+                // `content_contract::MAX_JSON_BYTES`'s comment for the
+                // measured ~8.65 MiB `sentrux.dsm` artifact this repository
+                // already produces). Kept under that 24 MiB scanner ceiling
+                // so this schema's own message is the one a caller sees.
+                max_bytes: 20 * 1024 * 1024,
                 validate_payload: validate_sentrux_capability_artifact,
             })
         }
@@ -556,7 +562,21 @@ fn validate_sentrux_command_observation(bytes: &[u8]) -> Result<(), String> {
     for command in commands {
         exact_object_keys(
             command,
-            &["id", "argv", "exitCode", "success", "stdout", "stderr"],
+            &[
+                "id",
+                "argv",
+                "exitCode",
+                "success",
+                "stdout",
+                "stderr",
+                // Issue #383: `command_evidence` (`sentrux_command.rs`) now
+                // always embeds the full, unbounded structured payload
+                // alongside the bounded `stdout` preview -- `Value::Null`
+                // for `gate`/`check` here since their output is plain text,
+                // not JSON, but the field itself is present on every
+                // command result, not just capability artifacts.
+                "structuredData",
+            ],
             "Sentrux command result",
         )?;
         let id = command["id"]
