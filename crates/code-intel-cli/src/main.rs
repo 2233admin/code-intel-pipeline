@@ -89,6 +89,7 @@ mod survival_scan;
 #[cfg(test)]
 mod test_support;
 mod tool_effectiveness_benchmark;
+mod verify;
 mod workspace_advisory_controller;
 
 #[cfg(test)]

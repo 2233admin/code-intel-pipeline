@@ -9,6 +9,7 @@ use crate::{
     edit_impact, evidence_query, friction_log, hardcoded_paths, invocation_identity, mcp_serve,
     model_channels, perf_optimize, ponytail_gate, providers, repin, repowise_hooks,
     retirement_boundary_guard, run_cli, run_commit, session_evidence, snapshot, survival_scan,
+    verify,
 };
 
 use super::legacy::{
@@ -106,6 +107,7 @@ enum CompatibilityRoute {
     PerfOptimizeDenoiseEval,
     Serve,
     Governance,
+    Verify,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -656,6 +658,7 @@ fn execute_compatibility(command: CompatibilityCommand) -> i32 {
         CompatibilityRoute::PerfOptimizeDenoiseEval => perf_optimize::run_denoise_eval_raw(raw),
         CompatibilityRoute::Serve => mcp_serve::run_raw(raw),
         CompatibilityRoute::Governance => ponytail_gate::run_raw(raw),
+        CompatibilityRoute::Verify => verify::run_raw(raw),
     }
 }
 
