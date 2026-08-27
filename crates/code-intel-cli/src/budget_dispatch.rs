@@ -279,8 +279,34 @@ where
         } else {
             RunOutcome::Failed
         };
+    } else if manifest.outcome == RunOutcome::Completed
+        && manifest
+            .nodes
+            .values()
+            .any(|state| matches!(state, NodeState::SkippedOversize { .. }))
+    {
+        // A required node was skipped as oversize (#307) rather than
+        // executed, and everything else in the DAG reached a terminal
+        // state -- but `Coordinator::manifest()`'s outcome chain has no
+        // `SkippedOversize`/`DependencyBlocked` arm, so it falls through
+        // to `Completed`. That would report success even though required
+        // evidence was never produced and its dependents were
+        // `DependencyBlocked`. Override the same way the `stopped_at`
+        // branch above does.
+        let executed = manifest.nodes.values().any(|state| {
+            matches!(
+                state,
+                NodeState::Succeeded { .. }
+                    | NodeState::DomainFailed { .. }
+                    | NodeState::ProcessFailed { .. }
+            )
+        });
+        manifest.outcome = if executed {
+            RunOutcome::BudgetStopped
+        } else {
+            RunOutcome::Failed
+        };
     }
-
     let (wall_limit, byte_limit) = budget.limits();
     let (wall_consumed, bytes_consumed) = budget.consumed();
     let oversize_skipped: Vec<(&str, u64, u64)> = manifest
@@ -365,6 +391,7 @@ mod tests {
     };
 
     use super::{run_to_completion_with_estimator, DispatchCost, BUDGET_STOPPED_EXIT_CODE};
+    use super::{run_to_completion_with_oversize_policy, OversizePolicy};
 
     struct PassExecutor;
 
@@ -479,5 +506,36 @@ mod tests {
         )
         .unwrap();
         assert_eq!(failed.manifest.outcome, RunOutcome::Failed);
+    }
+
+    #[test]
+    fn skipped_oversize_node_does_not_report_completed_when_others_execute() {
+        // Issue #123 Bug 3 follow-up: `Coordinator::manifest()`'s outcome
+        // chain has no `SkippedOversize`/`DependencyBlocked` arm, so a run
+        // where a required node is refused pre-dispatch as oversize (#307)
+        // but every other node reaches a terminal state used to fall
+        // through to `RunOutcome::Completed` -- reporting success even
+        // though required evidence was never produced.
+        let oversized = run_to_completion_with_oversize_policy(
+            coordinator(),
+            &PassExecutor,
+            Budget::new(10, 100, true),
+            |dispatch| {
+                if dispatch.node_id == "a" {
+                    DispatchCost::new(1, 1000)
+                } else {
+                    DispatchCost::new(1, 1)
+                }
+            },
+            OversizePolicy::new(50).unwrap(),
+        )
+        .unwrap();
+        assert_ne!(oversized.manifest.outcome, RunOutcome::Completed);
+        assert_eq!(oversized.manifest.outcome, RunOutcome::BudgetStopped);
+        assert_eq!(
+            oversized.manifest_json["nodes"]["a"]["status"],
+            "skipped_oversize"
+        );
+        assert_eq!(oversized.manifest_json["nodes"]["b"]["status"], "succeeded");
     }
 }
