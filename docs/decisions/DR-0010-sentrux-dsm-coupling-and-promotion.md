@@ -139,6 +139,41 @@ it closes automatically alongside `Closes #376` — #148 is kept as the
 historical dogfood-audit record its findings originated from, per #376's own
 non-goal not to re-open C2.
 
+## Addendum: evidence-completeness threshold (found landing this PR)
+
+`sentrux-capability-gate` CI (`code-intel-pr-gate.yml`) requires
+`payload.status == "succeeded"` for any `requiredForRelease` capability at
+`authoritative_automatic`. Promoting `sentrux.dsm` exposed that its real,
+honest output on this repository (~3.8MB once `dsm_edges` actually reports
+coupling for hundreds of files, verified against #382's own CI run) exceeds
+`MAX_COMMAND_EVIDENCE_BYTES` (`sentrux_command.rs`), which was `1024 * 1024`
+(1 MiB) since the one commit that ever set it (`b5bb8f04`, PR #286/#285) and
+never revisited. Per #286's own description, this threshold's purpose is to
+stop a truncated capture being *silently* treated as a complete one --
+*not* to cap how large a genuinely successful capability's real output may
+be -- so a stale 1 MiB ceiling misclassifying a fully-computed, correct 3.8MB
+`sentrux.dsm` run as `"degraded"` is exactly the failure mode that
+mechanism exists to prevent, just triggered by staleness rather than a real
+truncation. Raised to 16 MiB (comfortable headroom over both `dsm`'s ~3.8MB
+and `scan`'s ~325KB current real sizes, well inside the DAG's own 100MB
+total run budget) so evidence capture is genuinely complete for real output
+again, matching the original intent rather than loosening it.
+
+While verifying this against a real DAG run, a **separate, pre-existing**
+bug surfaced: `outputs.structuredData` in every persisted
+`code-intel-sentrux-capability-artifact.v1` is built from a *different*,
+much smaller 8KB preview cap (`MAX_COMMAND_PREVIEW_BYTES`) that truncates
+`command.stdout` before `capability_structured_data` tries to parse it as
+JSON -- so `structuredData` is `null` for any capability output over 8KB,
+**regardless** of `MAX_COMMAND_EVIDENCE_BYTES`/`status`. Verified this
+already silently affects `sentrux.scan` (`status: "succeeded"`,
+`complete: true`, `structuredData: null` in #382's own CI run, output only
+~325KB, comfortably under even the old 1MB threshold) -- not something this
+PR introduced or that raising `MAX_COMMAND_EVIDENCE_BYTES` changes either
+way. Out of scope for #376/#382 (a deeper, separate design issue in how
+`SentruxCommand` carries structured payloads, affecting an already-shipped
+capability too) -- filed as #383 rather than attempted here.
+
 ## Enforcement
 
 - `sentrux_analysis.rs::tests::dsm_single_crate_intra_crate_coupling_is_no_longer_structurally_empty`
@@ -157,3 +192,13 @@ non-goal not to re-open C2.
   output, so nothing else in this codebase protects the promotion decision
   from a silent revert — a future edit that flips it back should update or
   supersede this record rather than just the assertion.
+- `code-intel-pr-gate.yml`'s `sentrux-capability-gate` job runs the real
+  DAG (`run execute`) against this repository itself on every PR and
+  asserts every `authoritative_automatic`/`requiredForRelease` capability's
+  `status == "succeeded"` -- the actual mechanism that caught the stale
+  1 MiB `MAX_COMMAND_EVIDENCE_BYTES` threshold when this PR's own
+  promotion first ran through it. No unit test pins the 16 MiB value
+  itself (there was never a test pinning 1 MiB either); this CI job is the
+  enforcement for "the threshold stays large enough for this repository's
+  real capability output," and will fail again the same way if this
+  repository's `sentrux.dsm`/`sentrux.scan` output ever grows past it.
