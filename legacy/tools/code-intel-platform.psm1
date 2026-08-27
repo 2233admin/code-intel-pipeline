@@ -18,11 +18,11 @@ function Get-CodeIntelPlatform {
 function Get-CodeIntelHome {
     param([string]$Root = "")
 
-    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_HOME)) {
-        return (Resolve-CodeIntelPath $env:CODE_INTEL_HOME)
-    }
     if (-not [string]::IsNullOrWhiteSpace($Root)) {
         return (Resolve-CodeIntelPath $Root)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_HOME)) {
+        return (Resolve-CodeIntelPath $env:CODE_INTEL_HOME)
     }
     return (Resolve-CodeIntelPath (Get-Location).Path)
 }
