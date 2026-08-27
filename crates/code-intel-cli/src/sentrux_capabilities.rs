@@ -370,6 +370,44 @@ mod tests {
     }
 
     #[test]
+    fn scan_and_rescan_are_declared_authoritative_automatic() {
+        // #375/DR-0009: sentrux.scan and sentrux.rescan were promoted from
+        // automatic_degraded to authoritative_automatic once
+        // sentrux_gate.rs::metrics_json stopped fabricating
+        // unresolved_imports. capability_audit only ever trusts this
+        // hand-declared currentState field -- it never executes scan/rescan
+        // or re-derives the value from their actual output (DR-0009 traces
+        // this in full) -- so nothing else in this codebase protects the
+        // promotion decision from a silent revert. Pin it here: a future
+        // edit that flips currentState back must fail this test, not just
+        // change a JSON file quietly.
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let repo = manifest_dir
+            .parent()
+            .and_then(Path::parent)
+            .expect("repository root");
+        let matrix = load_capability_matrix(repo).expect("load repository matrix");
+        let audit = capability_audit(&matrix).expect("render audit");
+        let capabilities = audit["capabilities"]
+            .as_array()
+            .expect("capabilities array");
+        for id in ["sentrux.scan", "sentrux.rescan"] {
+            let entry = capabilities
+                .iter()
+                .find(|item| item["id"] == id)
+                .unwrap_or_else(|| panic!("{id} missing from capability audit"));
+            assert_eq!(
+                entry["executionMode"], "automatic",
+                "{id} executionMode must stay automatic for this test's covered-bit reasoning to hold"
+            );
+            assert_eq!(
+                entry["currentState"], "authoritative_automatic",
+                "{id} regressed off authoritative_automatic -- if this is an intentional new decision, update DR-0009 rather than just this assertion"
+            );
+        }
+    }
+
+    #[test]
     fn missing_matrix_is_an_explicit_error() {
         let repo = temp_repo("missing");
         let error = load_capability_matrix(&repo).expect_err("missing matrix must fail");
