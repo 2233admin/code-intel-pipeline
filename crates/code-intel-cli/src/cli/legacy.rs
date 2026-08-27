@@ -1152,7 +1152,7 @@ Commands:
   retirement guard --repo-root <path> [--retirements-dir <path>]
   lint hardcoded-paths [<repo-path>] [--json]
   route|routes [--action List|Plan|Validate] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--json]
-  sentrux <dsm|scan|health|check|gate|check_rules|gate_save> <path> [--no-ratchet]
+  sentrux <dsm|scan|health|check|gate|check_rules|gate_save|hotspots> <path> [--no-ratchet]
   sentrux capabilities [<path>] [--json] (read-only capability matrix audit)
     (--no-ratchet: `check` only, skip the .sentrux/baseline.json ratchet)
   capability exec <id> --request <request.json|-> --out <staging-dir> [--artifact-root <directory>] [--manifest <integrations.json>]

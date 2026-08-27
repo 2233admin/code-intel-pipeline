@@ -36,6 +36,11 @@ pub fn run(options: &Options<'_>) -> Result<()> {
             println!("{}", serde_json::to_string(&snapshot)?);
             Ok(())
         }
+        "hotspots" => {
+            let doc = crate::sentrux_hotspots::hotspots(&repo)?;
+            println!("{}", serde_json::to_string(&doc)?);
+            Ok(())
+        }
         "evolution" => {
             let doc = sentrux_evolution::evolution(&repo)?;
             println!("{}", serde_json::to_string(&doc)?);
