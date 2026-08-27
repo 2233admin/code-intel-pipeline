@@ -468,3 +468,86 @@ fn public_route_usage_registry_facade_and_schemas_are_real() {
         assert_eq!(value["additionalProperties"], false, "{schema}");
     }
 }
+
+#[test]
+fn oversized_current_graph_payload_clears_the_real_admission_path_within_contract_budget() {
+    // Issue #123 Bug 3 regression, driven through the *real* production
+    // path this time: `admissibility::validate_for_consumer` (i.e.
+    // `validate_sealed`) reading a real `payload.json` off disk via
+    // `artifact_ref::verify_artifact_ref`, exactly as
+    // `builtin_provider_evidence::graph_admission` does for the live
+    // `evidence.graph` node -- not just the in-memory `validate_payload`
+    // unit. The padded graph document here pushes the serialized
+    // `observed.evidence.payload` artifact past the shared JSON scanner's
+    // old hard-coded 8 MiB default and into the `observed.evidence.payload`
+    // contract's real 64 MiB budget; before the fix this failed admission
+    // with "JSON input exceeds 8388608 bytes" even though the contract
+    // itself allows up to 64 MiB.
+    let root = Temp::new();
+    let fixture = descriptor("internal-current");
+    let padded_graph = json!({
+        "schema":"code-intel-understand-graph.v1",
+        "summary":{"files":2,"symbols":3},
+        "nodes":[],
+        "edges":[],
+        "symbols":[],
+        "oversizeRegressionPadding":"a".repeat(9 * 1024 * 1024)
+    });
+    let payload = json!({
+        "schema":"code-intel-evidence-payload.v1",
+        "data":{
+            "architectureGraph":{
+                "schema":"code-intel-architecture-graph-evidence.v1",
+                "snapshotIdentity":CURRENT,
+                "provider":{
+                    "mode":"internal",
+                    "implementationId":"architecture-graph.internal-rust",
+                    "fallbackIdentity":Value::Null
+                },
+                "provenance":{"sourceRevision":fixture["sourceRevision"]},
+                "completeness":"complete",
+                "graph":padded_graph
+            }
+        }
+    });
+    let bytes = serde_json::to_vec(&payload).unwrap();
+    assert!(
+        bytes.len() > 8 * 1024 * 1024,
+        "fixture must actually exceed the old 8 MiB default to exercise the regression"
+    );
+    assert!(
+        bytes.len() < 64 * 1024 * 1024,
+        "fixture must stay within observed.evidence.payload's real 64 MiB contract budget"
+    );
+    fs::write(root.0.join("payload.json"), &bytes).unwrap();
+    let observed_at = 2_000;
+    let native = json!({
+        "schema":"code-intel-graph-provider-native.v1",
+        "providerMode":"internal",
+        "status":"current",
+        "implementation":{
+            "id":"architecture-graph.internal-rust",
+            "version":"1.0.0",
+            "digest":IMPLEMENTATION_DIGEST
+        },
+        "sourceRevision":fixture["sourceRevision"],
+        "expectedSnapshotIdentity":CURRENT,
+        "sourceSnapshotIdentity":CURRENT,
+        "collectedAt":observed_at - 1,
+        "observedAt":observed_at,
+        "payload":{
+            "schema":"code-intel-artifact-ref.v1",
+            "artifactSchema":"code-intel-evidence-payload.v1",
+            "type":"observed.evidence.payload",
+            "path":"payload.json",
+            "sha256":capability::sha256_hex(&bytes),
+            "consumedSnapshotIdentity":CURRENT
+        },
+        "fallback":Value::Null
+    });
+    let adapter = graph_adapter::translate(&native, observed_at + 100, 200).unwrap();
+    let admitted = admissibility::validate_for_consumer(&adapter["evidence"]["request"], &root.0)
+        .expect("a payload between 8 MiB and the real 64 MiB contract budget must be admitted");
+    assert_eq!(admitted.result()["domainVerdict"], "observed");
+    graph_adapter::validate_admitted_payload(admitted.payload(), &adapter).unwrap();
+}
