@@ -199,4 +199,26 @@ mod tests {
         assert!(hotspots["functions"].as_array().unwrap().is_empty());
         assert!(hotspots["modules"].as_array().unwrap().is_empty());
     }
+
+    #[test]
+    fn legacy_facade_calls_rust_hotspots_and_has_no_truncating_fallback() {
+        // Issue #361: the facade must call the exhaustive Rust producer and
+        // must not carry a reintroduced Select-Object -First N fallback for
+        // hotspots specifically (dsm/evolution/what_if keep their own
+        // unrelated fallbacks; only hotspots' fallback was provably lossy).
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source = std::fs::read_to_string(root.join("legacy/run-code-intel.ps1")).unwrap();
+        assert!(
+            source.contains("sentrux hotspots $sentruxTargetPath --json"),
+            "facade must call the Rust sentrux hotspots producer"
+        );
+        assert!(
+            source.contains("has no PowerShell fallback (issue #361)"),
+            "facade must fail closed instead of falling back for hotspots"
+        );
+        assert!(
+            !source.contains("hotspotsProvider = \"powershell_compatibility\""),
+            "the lossy PowerShell hotspots fallback must not be reintroduced"
+        );
+    }
 }

@@ -197,7 +197,7 @@ fn every_legacy_command_spelling_honors_trailing_help() {
 /// also actually reproduce against a live run, the same guarantee
 /// `assert_exact_process_result` gives the plain (non-delta) cases.
 const EXPECTED_INTENTIONAL_DELTAS: &[(&str, &str)] = &[
-    ("text-format:help-full.v1", "text-format:help-full.v4"),
+    ("text-format:help-full.v1", "text-format:help-full.v5"),
     ("json-format:repin-report.v1", "json-format:repin-report.v2"),
     (
         "text-format:run-namespace-usage.v1",

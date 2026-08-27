@@ -227,3 +227,92 @@ fn unsupported_trace_is_rejected_without_echoing_provider_content() {
     );
     assert!(!rendered.contains("SENTINEL_DO_NOT_ECHO"));
 }
+
+#[test]
+fn exhaustive_hotspots_producer_lets_session_adapt_match_a_file_past_the_old_top_30_cut() {
+    // Regression for issue #361: the only prior producer of
+    // sentrux-hotspots.json (legacy/run-code-intel.ps1) truncated to the
+    // top 30 files by complexity, so session-adapt's --hotspots join
+    // silently missed any target below that cut. This spawns the real
+    // `code-intel sentrux hotspots` CLI against a real 35-file repo, writes
+    // its real stdout to disk, then feeds that real artifact into a real
+    // `session-adapt` invocation touching the single lowest-complexity file
+    // -- the one an old top-30 cut would have dropped -- end to end.
+    let root = Temp::new();
+    let repo = root.0.join("repo").join("src");
+    fs::create_dir_all(&repo).unwrap();
+    let repo = repo.parent().unwrap().to_path_buf();
+    const FILE_COUNT: usize = 35;
+    for index in 0..FILE_COUNT {
+        // Descending branch count -> descending complexity: file 0 is the
+        // most complex, file 34 (rank 35th, past any top-30 cut) has none.
+        let branches = FILE_COUNT - 1 - index;
+        let mut body = String::from("fn f(n: i32) -> i32 {\n    let mut total = n;\n");
+        for branch in 0..branches {
+            body.push_str(&format!("    if total > {branch} {{ total -= 1; }}\n"));
+        }
+        body.push_str("    total\n}\n");
+        fs::write(repo.join("src").join(format!("file_{index:02}.rs")), body).unwrap();
+    }
+
+    let hotspots_output = common::cli()
+        .args(["sentrux", "hotspots", repo.to_str().unwrap(), "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        hotspots_output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&hotspots_output.stderr)
+    );
+    let hotspots_doc: Value = serde_json::from_slice(&hotspots_output.stdout).unwrap();
+    let files = hotspots_doc["files"].as_array().unwrap();
+    assert_eq!(
+        files.len(),
+        FILE_COUNT,
+        "hotspots producer must not drop files below any top-N cutoff"
+    );
+    let hotspots_path = root.0.join("real-hotspots.json");
+    fs::write(&hotspots_path, &hotspots_output.stdout).unwrap();
+
+    let lowest_complexity_file = "src/file_34.rs";
+    let trace = root.0.join("trace.json");
+    fs::write(
+        &trace,
+        serde_json::to_vec(&json!({
+            "version":1,
+            "session":{"id":"s","harness":"claude-code","cwd":repo,"eventCount":1},
+            "events":[{
+                "seq":0,
+                "tool":"Read",
+                "action":"read",
+                "targets":[{"path":lowest_complexity_file,"touch":"read"}],
+                "outside":[],
+                "resultBytes":10,
+                "isError":false,
+                "summary":"Read"
+            }],
+            "stats":{"edited":0,"observability":{"reads":"exact","errors":"exact"}}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let output = run(&repo, &trace, Some(&hotspots_path), None);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let artifact: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        artifact["summary"]["matchedTargets"], 1,
+        "the 35th-ranked file must join through the real producer's real output, not just an in-memory projection"
+    );
+    assert_eq!(artifact["summary"]["unmatchedTargets"], 0);
+    assert_eq!(
+        artifact["events"][0]["targets"][0]["structural"]["status"],
+        "matched"
+    );
+}

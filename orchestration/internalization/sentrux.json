@@ -141,7 +141,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "8075d61ff05f9501a06746b0c45721085d79a9718c4d5ddf4d4d09d56785be21"
+        "sha256": "1bdfedcdb1fcf14cee72178b7674bbfc83454c7b7e72c11dc797f6464dd8e5f4"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
@@ -160,7 +160,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "8075d61ff05f9501a06746b0c45721085d79a9718c4d5ddf4d4d09d56785be21"
+        "sha256": "1bdfedcdb1fcf14cee72178b7674bbfc83454c7b7e72c11dc797f6464dd8e5f4"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
@@ -179,7 +179,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "8075d61ff05f9501a06746b0c45721085d79a9718c4d5ddf4d4d09d56785be21"
+        "sha256": "1bdfedcdb1fcf14cee72178b7674bbfc83454c7b7e72c11dc797f6464dd8e5f4"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
