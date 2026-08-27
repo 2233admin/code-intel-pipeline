@@ -4,13 +4,19 @@
 //! `legacy/Invoke-SentruxAgentTool.ps1` so `legacy/run-code-intel.ps1` can
 //! call `code-intel sentrux evolution|what_if <path>` the same low-risk,
 //! rust-first-then-ps1-fallback way it already calls `sentrux dsm` (see
-//! `orchestration.rs`'s `structure.sentrux` participant). This is
-//! deliberately a separate, real engine from `sentrux_lite_capabilities.rs`'s
-//! `evolution_json`/`what_if_json` — those feed a different consumer (the
-//! `code-intel run execute` DAG path) and are an intentionally simplified
-//! ("lite") degraded fallback, not shape-compatible with what the PS1
-//! orchestrator's `sentrux-evolution.json`/`sentrux-what-if.json` artifacts
-//! and downstream hospital-report generation expect.
+//! `orchestration.rs`'s `structure.sentrux` participant).
+//!
+//! `what_if` (issue #374) is also nested directly into
+//! `builtin_provider_evidence.rs`'s `run_sentrux` and is what the
+//! `code-intel run execute` DAG path's `sentrux.what_if` capability now
+//! calls, replacing `sentrux_lite_capabilities.rs`'s retired
+//! `what_if_json` degraded fallback. `evolution` is not yet wired the same
+//! way: the DAG's `"evolution"` arm still calls
+//! `sentrux_lite_capabilities::evolution_json`, an intentionally
+//! simplified ("lite") fallback not shape-compatible with what the PS1
+//! orchestrator's `sentrux-evolution.json` artifact and downstream
+//! hospital-report generation expect — see DR-0008 and its follow-up
+//! tracking issue for that asymmetry.
 //!
 //! Split across two files (this one and `sentrux_what_if.rs`, included as a
 //! private submodule below) purely to stay under this repo's monolith file
@@ -23,7 +29,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
-use crate::sentrux_analysis;
+use super::sentrux_analysis;
 
 #[path = "hardened_git.rs"]
 mod hardened_git;

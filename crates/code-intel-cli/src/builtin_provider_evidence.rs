@@ -35,6 +35,15 @@ mod sentrux_analysis;
 mod sentrux_capability_artifacts;
 #[path = "sentrux_command.rs"]
 mod sentrux_command;
+// Real `what_if` (and `evolution`) engine -- issue #374 wired the DAG
+// dispatch's `"what_if"` arm to this instead of `sentrux_lite_capabilities`'s
+// simplified fallback. Nested the same way as the other local copies above:
+// its own `use crate::sentrux_analysis;` was changed to `use
+// super::sentrux_analysis;` so it binds to this module's own nested
+// `sentrux_analysis` copy here, and to the crate-root one when this file is
+// compiled directly via `main.rs`'s `mod sentrux_evolution;` instead.
+#[path = "sentrux_evolution.rs"]
+mod sentrux_evolution;
 #[path = "sentrux_gate.rs"]
 mod sentrux_gate;
 #[path = "sentrux_lite_capabilities.rs"]
@@ -508,7 +517,36 @@ fn run_sentrux(
                     )
                 }
                 "what_if" => {
-                    return json_command(sentrux_lite_capabilities::what_if_json(repo), subcommand)
+                    // Issue #374: the DAG capability path used to call
+                    // `sentrux_lite_capabilities::what_if_json`, an
+                    // intentionally simplified fallback with a different
+                    // shape. `sentrux_evolution::what_if` is the same real
+                    // engine `legacy/run-code-intel.ps1` already calls via
+                    // `code-intel sentrux what_if <path>`; its output is
+                    // additionally the one `sentrux.what_if`'s only real
+                    // structured-data consumer (`change_impact.rs`'s
+                    // `summary.failing` read) was updated to match.
+                    //
+                    // The engine mirrors the PS1 tool's own wall-clock
+                    // `generated_at` stamp
+                    // (`legacy/Invoke-SentruxAgentTool.ps1:3090`) for
+                    // CLI/PS1 consumers, but this DAG path's
+                    // `evidence.sentrux` payload is content-addressed and
+                    // must be a pure function of the snapshot
+                    // (`evidence_payload_determinism.rs`) -- so this path
+                    // nulls the timestamp out of its own copy before it
+                    // reaches `json_command`, mirroring how
+                    // `build_capability_artifacts` already nulls
+                    // `freshness.evaluatedAt` for the same reason.
+                    // `code-intel sentrux what_if <path>` (`sentrux.rs`)
+                    // still returns the real, timestamped value.
+                    return json_command(
+                        sentrux_evolution::what_if(repo).map(|mut document| {
+                            document["generated_at"] = Value::Null;
+                            document
+                        }),
+                        subcommand,
+                    );
                 }
                 "provider_discovery" => {
                     return json_command(

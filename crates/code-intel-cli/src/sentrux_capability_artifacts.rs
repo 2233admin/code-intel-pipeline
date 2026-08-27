@@ -124,11 +124,24 @@ pub(super) fn collect_sentrux_capabilities(
     let mut observations = Vec::with_capacity(SENTRUX_CAPABILITY_ROUTES.len());
     for route in SENTRUX_CAPABILITY_ROUTES {
         let provider_mode = route_provider_mode(&route, tool_path_prefix);
-        let route_tool_path_prefix = if provider_mode == "lite_fallback" {
-            None
-        } else {
-            tool_path_prefix
-        };
+        // `what_if`'s builtin engine (`sentrux_evolution::what_if`) has no
+        // parameter for an external tool prefix, structurally the same
+        // constraint the still-lite fallbacks have -- but issue #374 moved
+        // it out of `uses_lite_fallback` (it's correctly attributed
+        // `"builtin"` now, not `"lite_fallback"`), so forcing off the
+        // external branch needs its own check here rather than piggybacking
+        // on the `provider_mode == "lite_fallback"` one. Without this,
+        // `what_if` would newly start reaching `Some(prefix)` in
+        // `run_sentrux` whenever a `toolPathPrefix` is configured --
+        // resolving #374's decision 3 (the external-Sentrux branch's fate)
+        // as a side effect, which the issue explicitly scoped out ("do not
+        // resolve it, just don't break it").
+        let route_tool_path_prefix =
+            if provider_mode == "lite_fallback" || route.command == "what_if" {
+                None
+            } else {
+                tool_path_prefix
+            };
         let observation = match route.kind {
             RouteKind::NotApplicable {
                 failure_kind,
@@ -551,11 +564,21 @@ fn route_provider_mode(route: &CapabilityRoute, tool_path_prefix: Option<&Path>)
     }
 }
 
+// Issue #374: `what_if` no longer routes through
+// `sentrux_lite_capabilities.rs` -- `builtin_provider_evidence.rs::run_sentrux`
+// calls the real `sentrux_evolution::what_if` engine directly, so it must
+// not be classified `lite_fallback` here (that would misattribute its
+// capability artifact's `provider` identity/digest to
+// `sentrux_lite_capabilities.rs`, a file it no longer touches at all).
+// `evolution` stays listed: its own DAG dispatch arm is unchanged, tracked
+// separately in #377 (see DR-0008).
 fn uses_lite_fallback(command: &str) -> bool {
-    matches!(
+    let result = matches!(
         command,
-        "git_stats" | "evolution" | "test_gaps" | "what_if" | "provider_discovery"
-    )
+        "git_stats" | "evolution" | "test_gaps" | "provider_discovery"
+    );
+    eprintln!("DEBUGTRACE uses_lite_fallback({command:?}) = {result}");
+    result
 }
 
 fn adapter_error_kind(error: &AdapterError) -> &'static str {

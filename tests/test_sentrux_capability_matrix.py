@@ -94,7 +94,8 @@ class SentruxCapabilityMatrixTests(unittest.TestCase):
 
     def test_explicit_and_lifecycle_capabilities_are_not_automatic_dag_routes(self) -> None:
         states = {item["id"]: item["currentState"] for item in self.matrix["capabilities"]}
-        self.assertEqual(states["sentrux.what_if"], "automatic_degraded")
+        self.assertEqual(states["sentrux.what_if"], "authoritative_automatic")
+        self.assertEqual(states["sentrux.evolution"], "automatic_degraded")
         self.assertEqual(states["sentrux.baseline_save"], "explicit_authority_required")
         self.assertEqual(states["sentrux.session_start"], "lifecycle_external")
         self.assertEqual(states["sentrux.session_end"], "lifecycle_external")

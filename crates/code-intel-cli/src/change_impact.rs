@@ -428,7 +428,11 @@ fn sentrux_test_selection_signals(evidence: &CommittedEvidence, stale: bool) -> 
         || dsm["status"] != "unknown"
         || what_if["status"] != "unknown";
     let all_available = test_gap["status"] == "available" && dsm["status"] == "available";
-    let what_if_risk = what_if["structuredData"]["summary"]["failingScenarioCount"]
+    // `sentrux.what_if`'s structuredData is now the real
+    // `sentrux_evolution::what_if` engine's output (issue #374), whose
+    // summary object reports `failing`, not the retired lite shape's
+    // `failingScenarioCount`.
+    let what_if_risk = what_if["structuredData"]["summary"]["failing"]
         .as_u64()
         .unwrap_or(0);
     let candidate_test_impact = if !has_signal {
