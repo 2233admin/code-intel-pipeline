@@ -4279,53 +4279,6 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -Liter
             files = $fileDetails
         }
         $fileDetailsPayload | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $sentruxFileDetailsPath -Encoding UTF8
-        # Issue #361: hotspots has no safe fallback. Every prior fallback
-        # path here reimplemented Select-Object -First 20/30/50, which is
-        # the exact silent truncation bug this facade must not reintroduce.
-        # If the Rust producer cannot run, fail the pipeline rather than
-        # emit a lossy sentrux-hotspots.json.
-        if ($sentruxDsmPreference -notin @("rust")) {
-            throw "sentrux hotspots has no PowerShell fallback (issue #361); CODE_INTEL_SENTRUX_DSM_PROVIDER must be 'rust'"
-        }
-        if (-not (Test-Path -LiteralPath $sentruxDsmRustCli -PathType Leaf)) {
-            throw "Rust Sentrux hotspots binary is missing at $sentruxDsmRustCli; sentrux hotspots has no PowerShell fallback (issue #361)"
-        }
-        $hotspotsLaunchError = $null
-        $previousErrorActionPreference = $ErrorActionPreference
-        try {
-            $ErrorActionPreference = "Continue"
-            $hotspotsRaw = & $sentruxDsmRustCli sentrux hotspots $sentruxTargetPath --json 2>&1
-            $hotspotsExitCode = $LASTEXITCODE
-        }
-        catch {
-            $hotspotsLaunchError = $_.Exception.Message
-        }
-        finally {
-            $ErrorActionPreference = $previousErrorActionPreference
-        }
-        if (-not [string]::IsNullOrWhiteSpace($hotspotsLaunchError)) {
-            throw "Rust Sentrux hotspots could not be launched ($hotspotsLaunchError); sentrux hotspots has no PowerShell fallback (issue #361)"
-        }
-        if ($hotspotsExitCode -ne 0) {
-            throw "Rust Sentrux hotspots exited with code $hotspotsExitCode; sentrux hotspots has no PowerShell fallback (issue #361)"
-        }
-        $hotspotsText = ($hotspotsRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
-        try {
-            $hotspotsPayload = $hotspotsText | ConvertFrom-Json
-        }
-        catch {
-            throw "Rust Sentrux hotspots returned invalid JSON; sentrux hotspots has no PowerShell fallback (issue #361)"
-        }
-        $hotspotsProvider = "rust"
-        $hotspotsPayload.generated_from = [ordered]@{
-            dsm = $sentruxDsmPath
-            fileDetails = $sentruxFileDetailsPath
-        }
-        $moduleHotspots = @($hotspotsPayload.modules)
-        $fileHotspots = @($hotspotsPayload.files)
-        $functionHotspots = @($hotspotsPayload.functions)
-        $notes.Add("Sentrux hotspots provider: $hotspotsProvider")
-        $hotspotsPayload | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $sentruxHotspotsPath -Encoding UTF8
         $sentruxDsmSummary = [ordered]@{
             path = $sentruxDsmPath
             defaultColorMode = $dsmObject.default_color_mode
@@ -4339,13 +4292,73 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -Liter
             maxFunctionComplexity = $maxFunctionComplexity
             hotspotFile = $hotspotFile
         }
-        $topFunction = if ($functionHotspots.Count -gt 0) { "{0}:{1}" -f $functionHotspots[0]["name"], $functionHotspots[0]["complexity"] } else { "" }
-        $sentruxHotspotsSummary = [ordered]@{
-            path = $sentruxHotspotsPath
-            modules = $moduleHotspots.Count
-            files = $fileHotspots.Count
-            functions = $functionHotspots.Count
-            topFunction = $topFunction
+        # Issue #361: hotspots has no truncated PowerShell fallback -- every
+        # prior fallback here reimplemented Select-Object -First 20/30/50,
+        # the exact silent data-loss bug this facade must not reintroduce.
+        # But this whole DSM/file-details/hotspots/evolution/what-if section
+        # shares one outer try/catch (below), so an unguarded throw here
+        # would also skip evolution and what-if for this run even though
+        # both have their own complete, working fallbacks and nothing wrong
+        # with them. This inner try/catch isolates hotspots' failure to
+        # hotspots alone: sentrux-hotspots.json is left unwritten (never a
+        # lossy stand-in for it) and downstream sections still run.
+        try {
+            if ($sentruxDsmPreference -notin @("rust")) {
+                throw "sentrux hotspots has no PowerShell fallback (issue #361); CODE_INTEL_SENTRUX_DSM_PROVIDER must be 'rust'"
+            }
+            if (-not (Test-Path -LiteralPath $sentruxDsmRustCli -PathType Leaf)) {
+                throw "Rust Sentrux hotspots binary is missing at $sentruxDsmRustCli; sentrux hotspots has no PowerShell fallback (issue #361)"
+            }
+            $hotspotsLaunchError = $null
+            $previousErrorActionPreference = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = "Continue"
+                $hotspotsRaw = & $sentruxDsmRustCli sentrux hotspots $sentruxTargetPath --json 2>&1
+                $hotspotsExitCode = $LASTEXITCODE
+            }
+            catch {
+                $hotspotsLaunchError = $_.Exception.Message
+            }
+            finally {
+                $ErrorActionPreference = $previousErrorActionPreference
+            }
+            if (-not [string]::IsNullOrWhiteSpace($hotspotsLaunchError)) {
+                throw "Rust Sentrux hotspots could not be launched ($hotspotsLaunchError); sentrux hotspots has no PowerShell fallback (issue #361)"
+            }
+            if ($hotspotsExitCode -ne 0) {
+                throw "Rust Sentrux hotspots exited with code $hotspotsExitCode; sentrux hotspots has no PowerShell fallback (issue #361)"
+            }
+            $hotspotsText = ($hotspotsRaw | ForEach-Object { $_.ToString() } | Out-String).Trim()
+            try {
+                $hotspotsPayload = $hotspotsText | ConvertFrom-Json
+            }
+            catch {
+                throw "Rust Sentrux hotspots returned invalid JSON; sentrux hotspots has no PowerShell fallback (issue #361)"
+            }
+            $hotspotsProvider = "rust"
+            $hotspotsPayload.generated_from = [ordered]@{
+                dsm = $sentruxDsmPath
+                fileDetails = $sentruxFileDetailsPath
+            }
+            $moduleHotspots = @($hotspotsPayload.modules)
+            $fileHotspots = @($hotspotsPayload.files)
+            $functionHotspots = @($hotspotsPayload.functions)
+            $notes.Add("Sentrux hotspots provider: $hotspotsProvider")
+            $hotspotsPayload | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $sentruxHotspotsPath -Encoding UTF8
+            $topFunction = if ($functionHotspots.Count -gt 0) { "{0}:{1}" -f $functionHotspots[0]["name"], $functionHotspots[0]["complexity"] } else { "" }
+            $sentruxHotspotsSummary = [ordered]@{
+                path = $sentruxHotspotsPath
+                modules = $moduleHotspots.Count
+                files = $fileHotspots.Count
+                functions = $functionHotspots.Count
+                topFunction = $topFunction
+            }
+        }
+        catch {
+            $notes.Add("Sentrux hotspots were not generated (no lossy fallback exists, issue #361): $($_.Exception.Message)")
+            $moduleHotspots = @()
+            $fileHotspots = @()
+            $functionHotspots = @()
         }
 
         $evolutionObject = $null
