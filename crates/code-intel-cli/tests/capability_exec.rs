@@ -1733,7 +1733,13 @@ fn oversized_request_is_bounded_and_rejected_before_envelope() {
     let root = temp_dir("oversized-json");
     fs::create_dir_all(&root).unwrap();
     let request_path = root.join("request.json");
-    fs::write(&request_path, vec![b' '; 8 * 1024 * 1024 + 1]).unwrap();
+    // Issue #383/#386 raised `content_contract::MAX_JSON_BYTES` 8 MiB -> 24
+    // MiB (see that constant's doc comment) so a real Sentrux capability
+    // artifact's full `structuredData` -- previously always silently
+    // Value::Null, #383's own bug -- can round-trip. This fixture must stay
+    // one byte over whatever that ceiling currently is, not a value frozen
+    // at the old one.
+    fs::write(&request_path, vec![b' '; 24 * 1024 * 1024 + 1]).unwrap();
     let output = common::cli()
         .args(["capability", "exec", "inventory.rg", "--request"])
         .arg(&request_path)

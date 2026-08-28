@@ -294,7 +294,13 @@ fn diagnosis_family_contract(schema: &str, artifact_type: &str) -> Option<Artifa
             Some(ArtifactContract {
                 artifact_schema: "code-intel-sentrux-capability-artifact.v1",
                 artifact_type: "provider.sentrux.capability-artifact",
-                max_bytes: 8 * 1024 * 1024,
+                // Was 8 MiB until issue #383/#386: `outputs.structuredData`
+                // now legitimately carries a capability's full output (see
+                // `content_contract::MAX_JSON_BYTES`'s comment for the
+                // measured ~8.65 MiB `sentrux.dsm` artifact this repository
+                // already produces). Kept under that 24 MiB scanner ceiling
+                // so this schema's own message is the one a caller sees.
+                max_bytes: 20 * 1024 * 1024,
                 validate_payload: validate_sentrux_capability_artifact,
             })
         }
@@ -554,11 +560,11 @@ fn validate_sentrux_command_observation(bytes: &[u8]) -> Result<(), String> {
         .ok_or("Sentrux command observation must contain gate and check")?;
     let mut seen = BTreeSet::new();
     for command in commands {
-        exact_object_keys(
-            command,
-            &["id", "argv", "exitCode", "success", "stdout", "stderr"],
-            "Sentrux command result",
-        )?;
+        let mut expected_fields = vec!["id", "argv", "exitCode", "success", "stdout", "stderr"];
+        if command.get("structuredData").is_some() {
+            expected_fields.push("structuredData");
+        }
+        exact_object_keys(command, &expected_fields, "Sentrux command result")?;
         let id = command["id"]
             .as_str()
             .filter(|id| matches!(*id, "gate" | "check"))
@@ -577,11 +583,15 @@ fn sentrux_command_result_is_valid(command: &Value, id: &str) -> bool {
     let known_argv = command["argv"] == json!(["sentrux", id, "."])
         || command["argv"] == json!(["code-intel", "sentrux", id, "."]);
     let exit_code_ok = command["exitCode"].is_null() || command["exitCode"].as_i64().is_some();
+    let structured_data_ok = command
+        .get("structuredData")
+        .is_none_or(|value| value.is_null() || value.is_object() || value.is_array());
     known_argv
         && exit_code_ok
         && command["success"].is_boolean()
         && command["stdout"].is_string()
         && command["stderr"].is_string()
+        && structured_data_ok
 }
 
 fn validate_sentrux_capability_artifact(bytes: &[u8]) -> Result<(), String> {
@@ -4056,6 +4066,63 @@ mod tests {
                 "imports payload without string file/target passed: {imports_bad}"
             );
         }
+    }
+
+    #[test]
+    fn sentrux_command_observation_v1_preserves_optional_structured_data_contract() {
+        let reference = json!({
+            "artifactSchema":"code-intel-sentrux-command-observation.v1",
+            "type":"provider.sentrux.command-observation"
+        });
+        let contract = registered_contract(&reference).expect("Sentrux observation is registered");
+        let base = json!({
+            "schema":"code-intel-sentrux-command-observation.v1",
+            "snapshotIdentity":"a".repeat(64),
+            "commands":[
+                {
+                    "id":"gate",
+                    "argv":["code-intel", "sentrux", "gate", "."],
+                    "exitCode":0,
+                    "success":true,
+                    "stdout":"ok",
+                    "stderr":""
+                },
+                {
+                    "id":"check",
+                    "argv":["code-intel", "sentrux", "check", "."],
+                    "exitCode":0,
+                    "success":true,
+                    "stdout":"ok",
+                    "stderr":""
+                }
+            ]
+        });
+        (contract.validate_payload)(&serde_json::to_vec(&base).unwrap())
+            .expect("pre-structuredData v1 observation must remain valid");
+
+        for structured_data in [Value::Null, json!({"quality_signal": 9200}), json!([1, 2])] {
+            let mut with_structured_data = base.clone();
+            for command in with_structured_data["commands"].as_array_mut().unwrap() {
+                command["structuredData"] = structured_data.clone();
+            }
+            (contract.validate_payload)(&serde_json::to_vec(&with_structured_data).unwrap())
+                .expect("null, object, and array structuredData must be valid");
+        }
+
+        let mut scalar_structured_data = base.clone();
+        scalar_structured_data["commands"][0]["structuredData"] = json!(true);
+        assert!(
+            (contract.validate_payload)(&serde_json::to_vec(&scalar_structured_data).unwrap())
+                .is_err(),
+            "scalar structuredData must be rejected"
+        );
+
+        let mut unexpected_field = base;
+        unexpected_field["commands"][0]["unexpected"] = json!(true);
+        assert!(
+            (contract.validate_payload)(&serde_json::to_vec(&unexpected_field).unwrap()).is_err(),
+            "v1 command observations must still reject unknown fields"
+        );
     }
 
     #[test]

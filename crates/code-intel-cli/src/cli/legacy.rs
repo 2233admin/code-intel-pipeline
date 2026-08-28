@@ -1172,6 +1172,7 @@ Commands:
   audit --operation scope --repo <root> --since <git-ref>
   artifact index --artifact-root <root> [--output <index.json>] [--operation rebuild|incremental] [--existing <index.json>]
   artifact query --artifact-root <root> --repo <name> [--repo-path <path>] [--artifact-schema <schema>] [--type <artifact-type>] [--contains <text>] [--limit <1..100>]
+  quality-projection build --artifact-root <root> --repo <name> --repo-path <checkout> --commit <sha> [--base-ref <ref>] [--out <path>] [--orca-run-id <id>] [--orca-task-id <id>] [--orca-dispatch-id <id>] [--pr <number>] (versioned Quality Signal + finding projection from committed Sentrux capability artifacts; consumer only, no formula computation)
   change impact --artifact-root <root> --repo <name> --repo-path <checkout> --changed <relative-path> [--changed <relative-path>]... [--staleness current|advisory]
   change risk <revspec> [--repo <path>] [--sample <N>] [--format json|text] (git-only defect-risk score, no prior run, no index)
   change agenda <revspec> [--repo <path>] [--min-cochange <N>] [--format json|text] (git-only review units clustered by co-change, ranked worst first)
