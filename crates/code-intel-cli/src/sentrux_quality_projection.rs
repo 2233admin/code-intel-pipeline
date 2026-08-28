@@ -333,8 +333,18 @@ fn quality_signal_section(
     baseline_metrics: Option<&Value>,
     diagnostics: &mut Vec<String>,
 ) -> Value {
-    let current_total = scan_structured.and_then(|value| value["quality_signal"].as_i64());
-    let baseline_total = baseline_metrics.and_then(|value| value["quality_signal"].as_i64());
+    let current_total = quality_signal_total(
+        scan_structured,
+        "The verified sentrux.scan payload",
+        "current/delta",
+        diagnostics,
+    );
+    let baseline_total = quality_signal_total(
+        baseline_metrics,
+        BASELINE_RELATIVE_PATH,
+        "baseline/delta",
+        diagnostics,
+    );
     let delta_total = match (current_total, baseline_total) {
         (Some(current), Some(baseline)) => Some(current - baseline),
         _ => None,
@@ -353,6 +363,39 @@ fn quality_signal_section(
         "formulaVersion": formula_version,
         "rootCauses": root_causes,
     })
+}
+
+fn quality_signal_total(
+    source: Option<&Value>,
+    source_name: &str,
+    unavailable_values: &str,
+    diagnostics: &mut Vec<String>,
+) -> Option<i64> {
+    let source = source?;
+    let total = integral_numeric_total(&source["quality_signal"]);
+    if total.is_none() {
+        diagnostics.push(format!(
+            "{source_name} has no usable integral numeric `quality_signal`; {unavailable_values} total values are unavailable."
+        ));
+    }
+    total
+}
+
+fn integral_numeric_total(value: &Value) -> Option<i64> {
+    let number = value.as_number()?;
+    if let Some(integer) = number.as_i64() {
+        return Some(integer);
+    }
+    let float = number.as_f64()?;
+    if !float.is_finite()
+        || float.fract() != 0.0
+        || float < i64::MIN as f64
+        || float >= -(i64::MIN as f64)
+    {
+        return None;
+    }
+    let integer = float as i64;
+    (integer as f64 == float).then_some(integer)
 }
 
 fn normalize_bottleneck_id(raw: &str) -> Option<&'static str> {
@@ -448,7 +491,7 @@ fn violation_findings(capability: Option<(&Value, &Value)>, capability_id: &str)
     let Some((reference, payload)) = capability else {
         return Vec::new();
     };
-    let Some(violations) = payload["command"]["violations"].as_array() else {
+    let Some(violations) = payload["outputs"]["command"]["violations"].as_array() else {
         return Vec::new();
     };
     violations

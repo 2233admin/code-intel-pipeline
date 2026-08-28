@@ -279,6 +279,9 @@ jobs:
 
       - name: Run authoritative Sentrux capability pipeline
         shell: pwsh
+        env:
+          PR_BASE_REF: ${{ github.base_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           $binary = "./target/release/code-intel"
           $staging = Join-Path $env:RUNNER_TEMP "code-intel-pr-sentrux-staging"
@@ -352,7 +355,7 @@ jobs:
           # it and uploads/renders its output -- no GitHub/Orca mutation
           # happens inside the binary itself.
           $projectionOut = Join-Path $env:RUNNER_TEMP "quality-signal-projection.json"
-          & $binary quality-projection build --artifact-root $authority --repo $repoName --repo-path . --commit "$env:GITHUB_SHA" --base-ref "origin/${{ github.base_ref }}" --out $projectionOut --orca-run-id "$env:GITHUB_RUN_ID" --pr "${{ github.event.pull_request.number }}"
+          & $binary quality-projection build --artifact-root $authority --repo $repoName --repo-path . --commit "$env:GITHUB_SHA" --base-ref "origin/$env:PR_BASE_REF" --out $projectionOut --orca-run-id "$env:GITHUB_RUN_ID" --pr "$env:PR_NUMBER"
           if ($LASTEXITCODE -ne 0) { throw "quality-projection build failed" }
           Write-Host "Quality Signal projection written: $projectionOut"
 
@@ -380,7 +383,7 @@ jobs:
           $total = $projection.qualitySignal.total
           $bottleneck = if ($projection.qualitySignal.bottleneck) { $projection.qualitySignal.bottleneck } else { "none" }
           $deltaText = if ($null -eq $total.delta) { "n/a" } else { [string]$total.delta }
-          $emoji = if ($null -ne $total.delta -and $total.delta -lt 0) { "[UP]" } else { "[OK]" }
+          $emoji = if ($null -ne $total.delta -and $total.delta -lt 0) { "[DOWN]" } else { "[OK]" }
 
           $rootCauseRows = foreach ($cause in @($projection.qualitySignal.rootCauses)) {
             $raw = $cause.raw
@@ -442,9 +445,11 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          $repo = "${{ github.repository }}"
-          $prNumber = "${{ github.event.pull_request.number }}"
+          $repo = $env:REPO
+          $prNumber = $env:PR_NUMBER
           $body = Join-Path $env:RUNNER_TEMP "quality-comment-body.md"
           $existingId = gh api "repos/$repo/issues/$prNumber/comments" --paginate --jq '[.[] | select(.body | contains("<!-- code-intel-quality-signal -->"))][0].id // empty'
           if ($existingId) {

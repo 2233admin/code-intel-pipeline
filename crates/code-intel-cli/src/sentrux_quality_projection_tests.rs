@@ -85,6 +85,34 @@ fn quality_signal_section_is_honest_when_scan_or_baseline_missing() {
 }
 
 #[test]
+fn quality_signal_section_accepts_integral_float_totals_and_diagnoses_unusable_values() {
+    let mut current = scan_structured_fixture(4.0, 1, 0, 12, 0, 9200);
+    current["quality_signal"] = json!(9200.0);
+    let mut baseline = baseline_metrics_fixture(6.0, 2, 1, 14, 0, 9000);
+    baseline["quality_signal"] = json!(9000.0);
+    let mut diagnostics = Vec::new();
+    let signal = quality_signal_section(Some(&current), None, Some(&baseline), &mut diagnostics);
+    assert_eq!(signal["total"]["current"], 9200);
+    assert_eq!(signal["total"]["baseline"], 9000);
+    assert_eq!(signal["total"]["delta"], 200);
+    assert!(!diagnostics
+        .iter()
+        .any(|item| item.contains("quality_signal")));
+
+    current["quality_signal"] = json!(9200.5);
+    baseline["quality_signal"] = json!("9000");
+    let mut diagnostics = Vec::new();
+    let signal = quality_signal_section(Some(&current), None, Some(&baseline), &mut diagnostics);
+    assert!(signal["total"]["current"].is_null());
+    assert!(signal["total"]["baseline"].is_null());
+    assert!(signal["total"]["delta"].is_null());
+    assert!(diagnostics.iter().any(|item| item.contains("sentrux.scan")));
+    assert!(diagnostics
+        .iter()
+        .any(|item| item.contains(BASELINE_RELATIVE_PATH)));
+}
+
+#[test]
 fn normalize_bottleneck_id_maps_engine_ids_and_drops_none() {
     assert_eq!(normalize_bottleneck_id("god_files"), Some("godFiles"));
     assert_eq!(normalize_bottleneck_id("complexity"), Some("complexity"));
@@ -192,17 +220,17 @@ fn violation_findings_classifies_ratchet_regressions_and_rule_violations_separat
         json!({"path": "sentrux-capability-sentrux-check.json", "sha256": "a".repeat(64)});
     let check_payload = json!({
         "capabilityId": "sentrux.check",
-        "command": {"violations": [
+        "outputs": {"command": {"violations": [
             {"rule": "max_cc", "message": "max_cc exceeded: 30 > 20", "targets": ["src/big.rs"]},
-        ]},
+        ]}},
     });
     let gate_reference =
         json!({"path": "sentrux-capability-sentrux-gate.json", "sha256": "b".repeat(64)});
     let gate_payload = json!({
         "capabilityId": "sentrux.gate",
-        "command": {"violations": [
+        "outputs": {"command": {"violations": [
             {"rule": "quality_degraded", "message": "Quality: 9000 -> 8800", "targets": []},
-        ]},
+        ]}},
     });
 
     let check_findings =
