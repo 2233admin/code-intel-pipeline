@@ -458,7 +458,11 @@ pub(crate) fn import_target_candidate(line: &str) -> Option<String> {
         .split(&['.', ':', '/'][..])
         .filter(|segment| !segment.is_empty())
         .next_back()?;
-    if last_segment.chars().all(|c| c.is_alphanumeric() || c == '_') && !last_segment.is_empty() {
+    if last_segment
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_')
+        && !last_segment.is_empty()
+    {
         Some(last_segment.to_string())
     } else {
         None
@@ -860,7 +864,10 @@ mod tests {
 
     #[test]
     fn quoted_relative_import_resolves_against_known_paths() {
-        let known: BTreeSet<String> = ["src/a.ts", "src/b.ts"].iter().map(|s| s.to_string()).collect();
+        let known: BTreeSet<String> = ["src/a.ts", "src/b.ts"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let candidate = import_target_candidate("import { x } from \"./b\";").unwrap();
         assert_eq!(candidate, "./b");
         let resolved = resolve_edge("src/a.ts", &candidate, &known);

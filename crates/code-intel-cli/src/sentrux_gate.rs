@@ -890,10 +890,9 @@ fn measure_project(repo: &Path) -> Result<(ProjectMetrics, file_gate::GateReport
                 }
             }
         }
-        let normalized =
-            sentrux_quality_signal::normalize_for_duplicate_check(&strip_comments_and_strings(
-                relative, &content,
-            ));
+        let normalized = sentrux_quality_signal::normalize_for_duplicate_check(
+            &strip_comments_and_strings(relative, &content),
+        );
         normalized_content.insert(relative.clone(), normalized);
         files.push(measure_file(relative, &content));
     }
@@ -932,7 +931,10 @@ fn measure_project(repo: &Path) -> Result<(ProjectMetrics, file_gate::GateReport
         .collect();
     let mut qs_adjacency: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (from, to) in &quality_signal_edges {
-        qs_adjacency.entry(from.clone()).or_default().insert(to.clone());
+        qs_adjacency
+            .entry(from.clone())
+            .or_default()
+            .insert(to.clone());
     }
     let qs_cycles = strongly_connected_cycles(&qs_adjacency);
     let (qs_cycle_count, qs_max_depth) =
@@ -2100,7 +2102,13 @@ mod tests {
             sentrux_quality_signal::PROVIDER_VERSION
         );
         assert!(detail["bottleneck"].as_str().is_some());
-        for metric in ["modularity", "acyclicity", "depth", "equality", "redundancy"] {
+        for metric in [
+            "modularity",
+            "acyclicity",
+            "depth",
+            "equality",
+            "redundancy",
+        ] {
             let cause = &detail["root_causes"][metric];
             assert!(
                 cause["score"].as_i64().is_some(),
@@ -2113,7 +2121,10 @@ mod tests {
             );
         }
         // Redundancy honestly discloses its known gap instead of a fake 0.
-        assert_eq!(detail["root_causes"]["redundancy"]["completeness"], "partial");
+        assert_eq!(
+            detail["root_causes"]["redundancy"]["completeness"],
+            "partial"
+        );
         assert!(detail["root_causes"]["redundancy"]["note"]
             .as_str()
             .unwrap_or_default()
@@ -2131,9 +2142,18 @@ mod tests {
         let score = value["quality_signal"].as_i64().expect("integer score");
         assert!((0..=10000).contains(&score));
         let detail = &value["quality_signal_detail"];
-        for metric in ["modularity", "acyclicity", "depth", "equality", "redundancy"] {
+        for metric in [
+            "modularity",
+            "acyclicity",
+            "depth",
+            "equality",
+            "redundancy",
+        ] {
             let raw = &detail["root_causes"][metric]["raw"];
-            assert!(raw.is_number(), "{metric}.raw must be a number, not NaN/null: {raw}");
+            assert!(
+                raw.is_number(),
+                "{metric}.raw must be a number, not NaN/null: {raw}"
+            );
         }
         // No edges, no cycles, no functions: every trivial-input convention
         // upstream itself defines yields a perfect score.
@@ -2163,7 +2183,10 @@ mod tests {
         let raw_cycles = value["quality_signal_detail"]["root_causes"]["acyclicity"]["raw"]
             .as_i64()
             .expect("acyclicity raw cycle count");
-        assert!(raw_cycles >= 1, "expected at least one detected cycle, got {raw_cycles}");
+        assert!(
+            raw_cycles >= 1,
+            "expected at least one detected cycle, got {raw_cycles}"
+        );
         fs::remove_dir_all(&root).expect("remove fixture");
     }
 }
