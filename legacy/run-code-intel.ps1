@@ -4523,17 +4523,29 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -Liter
     }
 }
 
-$codeNexusLiteTool = Join-Path $PSScriptRoot "Invoke-CodeNexusLite.ps1"
-if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -LiteralPath $codeNexusLiteTool -PathType Leaf)) {
+$codeNexusRustCliCandidates = @()
+if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_RUST_CLI)) {
+    $codeNexusRustCliCandidates += [IO.Path]::GetFullPath($env:CODE_INTEL_RUST_CLI)
+}
+$codeNexusRustCliCandidates += Join-Path (Split-Path -Parent $PSScriptRoot) (Join-Path "target/release" $rustExecutableName)
+$codeNexusRustCliCandidates += $defaultRustCli
+$codeNexusRustCli = $codeNexusRustCliCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+if ($null -eq $codeNexusRustCli) {
+    $codeNexusPathCommand = Get-Command "code-intel" -ErrorAction SilentlyContinue
+    if ($null -ne $codeNexusPathCommand -and -not [string]::IsNullOrWhiteSpace([string]$codeNexusPathCommand.Source)) {
+        $codeNexusRustCli = $codeNexusPathCommand.Source
+    }
+}
+if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and $null -ne $codeNexusRustCli) {
     try {
         $global:LASTEXITCODE = 0
-        & $codeNexusLiteTool `
-            -RepoPath $repoPath `
-            -TargetPath $sentruxTargetPath `
-            -RunDir $runDir `
-            -OutputPath $codeNexusContextPath `
-            -MaxCommitsPerFile 0 `
-            -Quiet
+        $codeNexusArgs = @(
+            "codenexus", "generate",
+            "--repo", $repoPath,
+            "--target", $sentruxTargetPath,
+            "--out", $codeNexusContextPath
+        )
+        $null = & $codeNexusRustCli @codeNexusArgs 2>&1
         if ($global:LASTEXITCODE -ne 0) {
             throw "CodeNexus-lite exited with code $global:LASTEXITCODE"
         }
@@ -4552,6 +4564,9 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -Liter
     catch {
         $notes.Add("CodeNexus-lite context was not generated: $($_.Exception.Message)")
     }
+}
+elseif (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath)) {
+    $notes.Add("CodeNexus-lite context was not generated: compiled code-intel binary was unavailable.")
 }
 
 $reportPath = Join-Path $runDir "report.json"

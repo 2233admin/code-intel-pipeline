@@ -5,11 +5,11 @@ use serde_json::{json, Value};
 
 use crate::{
     admissibility, artifact_index, audit_report, change_agenda, change_impact, change_risk,
-    compatibility_retirement_ticket, decision_port, decision_record, doctor_bootstrap, edit_apply,
-    edit_impact, evidence_query, friction_log, hardcoded_paths, invocation_identity, mcp_serve,
-    model_channels, perf_optimize, ponytail_gate, providers, repin, repowise_hooks,
-    retirement_boundary_guard, run_cli, run_commit, sentrux_quality_projection, session_evidence,
-    snapshot, survival_scan, verify,
+    codenexus_generate, compatibility_retirement_ticket, decision_port, decision_record,
+    doctor_bootstrap, edit_apply, edit_impact, evidence_query, friction_log, hardcoded_paths,
+    invocation_identity, mcp_serve, model_channels, perf_optimize, ponytail_gate, providers, repin,
+    repowise_hooks, retirement_boundary_guard, run_cli, run_commit, sentrux_quality_projection,
+    session_evidence, snapshot, survival_scan, verify,
 };
 
 use super::legacy::{
@@ -75,6 +75,7 @@ enum CompatibilityRoute {
     ProviderSentruxAdapt,
     ProviderSessionAdapt,
     ProviderCodenexusAdapt,
+    CodenexusGenerate,
     ProviderFileBoundary,
     ProviderRuntimeCiEvidence,
     RepositorySurvivalScan,
@@ -625,6 +626,7 @@ fn execute_compatibility(command: CompatibilityCommand) -> i32 {
         CompatibilityRoute::ProviderSentruxAdapt => providers::run_sentrux_adapt_raw(raw),
         CompatibilityRoute::ProviderSessionAdapt => session_evidence::run_raw(raw),
         CompatibilityRoute::ProviderCodenexusAdapt => providers::run_codenexus_adapt_raw(raw),
+        CompatibilityRoute::CodenexusGenerate => codenexus_generate::run_raw(raw),
         CompatibilityRoute::ProviderFileBoundary => run_file_boundary_raw(raw),
         CompatibilityRoute::ProviderRuntimeCiEvidence => run_runtime_ci_raw(raw),
         CompatibilityRoute::RepositorySurvivalScan => survival_scan::run_raw(raw),

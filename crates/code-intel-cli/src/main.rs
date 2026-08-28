@@ -23,6 +23,8 @@ mod change_impact;
 mod change_risk;
 mod cli;
 mod codenexus_adapter;
+mod codenexus_generate;
+mod codenexus_lite;
 mod committed_evidence;
 mod committed_evidence_controller;
 mod compatibility_retirement_ticket;

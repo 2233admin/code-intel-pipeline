@@ -248,11 +248,12 @@ fn references(repo: &Path, relative: &str, limit: usize) -> Vec<String> {
     let mut command = Command::new("rg");
     command
         .env_remove("RIPGREP_CONFIG_PATH")
-        .current_dir(repo)
         .arg("-n")
         .arg("-m")
         .arg(limit.to_string())
         .arg("--hidden")
+        .arg("--sort")
+        .arg("path")
         .arg("-g")
         .arg("!**/work/**")
         .arg("-g")
@@ -279,7 +280,7 @@ fn references(repo: &Path, relative: &str, limit: usize) -> Vec<String> {
         .arg("!**/__pycache__/**")
         .arg("--fixed-strings")
         .arg(&stem)
-        .arg(".");
+        .arg(repo);
     let output = match command.output() {
         Ok(output) if output.status.success() => output,
         _ => return Vec::new(),
@@ -401,14 +402,48 @@ pub(crate) fn build_context(
     })
 }
 
+/// Build only the behavior reachable from the production compatibility
+/// facade: largest-code-file fallback ranking, no Git history, and bounded
+/// text references. DSM/hotspot inputs and history limits deliberately are
+/// not accepted by this API (issue #337).
+pub(crate) fn build_active_context(
+    repo: &Path,
+    target: &Path,
+    output: &Path,
+    generated_at: String,
+    max_files: usize,
+    max_references_per_file: usize,
+) -> Value {
+    let mut document = build_context(
+        repo,
+        target,
+        None,
+        None,
+        max_files,
+        max_references_per_file,
+        0,
+    );
+    document["generatedAt"] = Value::String(generated_at);
+    document["output"] = Value::String(output.to_string_lossy().into_owned());
+    document
+}
+
 /// UTC ISO-8601 timestamp with millisecond precision (`2026-08-17T12:34:56.789Z`).
-fn iso_now() -> String {
+pub(crate) fn iso_now() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let secs = (nanos / 1_000_000_000) as i64;
     let millis = (nanos / 1_000_000 % 1_000) as i64;
+    iso_from_unix_parts(secs, millis)
+}
+
+pub(crate) fn iso_from_unix_seconds(seconds: i64) -> String {
+    iso_from_unix_parts(seconds, 0)
+}
+
+fn iso_from_unix_parts(secs: i64, millis: i64) -> String {
     // seconds since epoch -> civil time (days-from-civil, Howard Hinnant)
     let days = secs.div_euclid(86_400);
     let secs_of_day = secs.rem_euclid(86_400);
@@ -465,7 +500,8 @@ mod tests {
         fn new() -> Self {
             let nonce = TEST_NONCE.fetch_add(1, Ordering::Relaxed);
             let base = std::env::temp_dir().join(format!(
-                "codenexus-lite-test-{}-{nonce}",
+                "codenexus-lite-test-{}-{}-{nonce}",
+                module_path!().replace("::", "-"),
                 std::process::id()
             ));
             let repo = base.join("repo");
@@ -581,6 +617,23 @@ mod tests {
         assert_eq!(context["files"][0]["reason"], "largest_code_file");
         assert!(context["nextQueries"].is_array());
         assert!(context["limitations"].is_array());
+    }
+
+    #[test]
+    fn active_context_is_fixed_time_fallback_only_and_no_history() {
+        let fixture = TempRepo::new();
+        let repo = fixture.repo().to_path_buf();
+        let output = repo.join(".code-intel/codenexus-context.json");
+        write(&repo.join("main.rs"), "fn main() {}\n");
+        let context =
+            build_active_context(&repo, &repo, &output, iso_from_unix_seconds(1_950), 8, 0);
+
+        assert_eq!(context["generatedAt"], "1970-01-01T00:32:30.000Z");
+        assert_eq!(context["output"], output.to_string_lossy().as_ref());
+        assert_eq!(context["sources"], json!({"dsm": "", "hotspots": ""}));
+        assert_eq!(context["files"][0]["reason"], "largest_code_file");
+        assert_eq!(context["files"][0]["recentCommits"], json!([]));
+        assert_eq!(context["summary"]["recentCommits"], 0);
     }
 
     #[test]

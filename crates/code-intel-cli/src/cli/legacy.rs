@@ -1146,6 +1146,7 @@ Commands:
   provider sentrux-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
   provider session-adapt --repo <repo> --trace <mindwalk-trace.json> [--hotspots <sentrux-hotspots-or-dsm.json>] [--out <session-evidence.json>] [--working-tree-policy head_only|explicit_overlay]
   provider codenexus-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
+  codenexus generate --repo <path> [--target <path>] --out <codenexus-context.json> [--observed-at <unix-seconds>] [--max-files <count>] [--max-references-per-file <count>]
   provider file-boundary --request <request.json> --out <result.json>
   provider runtime-ci-evidence --artifact-root <directory> --request <request.json> --out <summary.json>
   compatibility retirement-ticket lint --ticket <ticket.json> --evaluated-at <unix-seconds>

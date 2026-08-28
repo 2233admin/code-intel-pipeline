@@ -16,7 +16,7 @@ const AST_GREP_SECURITY_DIGEST: &str =
 const REPO_SNAPSHOT_DIGEST: &str =
     "4f42b080fd19e501a6315ee204add188d69625bedd15c566fea48bb1f3e78764";
 const CODENEXUS_TOOLCHAIN_DIGESTS: [&str; 5] = [
-    "e2fefae119c6296a96a00aee25a7f729738935ba4832a849299658e3dcebe22d",
+    "4a2c8608ed50869e6b3318f192e3ffcf0aa15fef19e70d3e401b8c67f20f3b8b",
     "645675312135932dfce365a8dfc14e214cec78ee733f248606547b3eaa56edc8",
     "52644a812174988ede91d98ddfec63c6a91f8478277d7bf74c73f106dd0f776b",
     "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26",
@@ -2181,7 +2181,7 @@ fn codenexus_builtin_compat_dispatches_through_provider_codenexus_adapt() {
     let root = temp_dir("codenexus");
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
-    fs::write(repo.join("README.md"), "fixture\n").unwrap();
+    fs::write(repo.join("main.rs"), "fn main() { helper(); }\n").unwrap();
 
     let mut snapshot_cmd = common::cli();
     snapshot_cmd
@@ -2305,10 +2305,18 @@ fn codenexus_builtin_compat_dispatches_through_provider_codenexus_adapt() {
     let admission: Value =
         serde_json::from_slice(&fs::read(codenexus_out.join("codenexus-admission.json")).unwrap())
             .unwrap();
-    assert!(
-        matches!(admission["domainVerdict"].as_str(), Some("observed" | "unknown")),
-        "codenexus admission must never fabricate a fact when the lite facade is unavailable: admission={admission}"
-    );
+    assert_eq!(admission["domainVerdict"], "observed");
+    let payload: Value =
+        serde_json::from_slice(&fs::read(codenexus_out.join("codenexus-payload.json")).unwrap())
+            .unwrap();
+    let provider_data = &payload["data"]["codenexus"]["providerData"];
+    assert_eq!(provider_data["tool"], "codenexus-lite");
+    assert_eq!(provider_data["files"][0]["path"], "main.rs");
+    assert_eq!(provider_data["files"][0]["reason"], "largest_code_file");
+    assert_eq!(provider_data["files"][0]["recentCommits"], json!([]));
+    assert_eq!(provider_data["summary"]["recentCommits"], 0);
+    assert_eq!(provider_data["sources"], json!({"dsm": "", "hotspots": ""}));
+    assert_eq!(provider_data["output"], "");
 
     let _ = fs::remove_dir_all(root);
 }

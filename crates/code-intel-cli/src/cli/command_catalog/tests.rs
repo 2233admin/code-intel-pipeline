@@ -36,6 +36,21 @@ fn parser_exposes_typed_commands_and_hides_route_slicing() {
         }) if arguments == &["impact", "--contract-probe"]
     ));
 
+    let codenexus = parse_command(&[
+        "codenexus".into(),
+        "generate".into(),
+        "--repo".into(),
+        ".".into(),
+    ])
+    .unwrap();
+    assert!(matches!(
+        codenexus,
+        Command::Compatibility(CompatibilityCommand {
+            route: CompatibilityRoute::CodenexusGenerate,
+            ref arguments,
+        }) if arguments == &["--repo", "."]
+    ));
+
     let run_alias = parse_command(&["run".into(), "--mode".into(), "lite".into()]).unwrap();
     assert!(matches!(
         run_alias,
@@ -294,7 +309,7 @@ fn unified_route_inventory_owns_version_primary_raw_and_legacy_dispatch() {
             .iter()
             .filter(|route| matches!(route, CommandRoute::Raw(_)))
             .count(),
-        43
+        44
     );
     assert_eq!(
         COMMAND_ROUTES
@@ -555,7 +570,7 @@ fn full_help_documents_every_registered_route_alias() {
 }
 
 #[test]
-fn full_help_alias_discoverability_has_a_v4_output_contract() {
+fn full_help_alias_discoverability_has_a_v8_output_contract() {
     assert!(FULL_HELP_TEXT.contains("  status [<repo>] [--json]"));
     let help = COMMAND_ROUTES
         .iter()
@@ -568,7 +583,7 @@ fn full_help_alias_discoverability_has_a_v4_output_contract() {
     assert_eq!(
         help.contract.output_contract,
         OutputContract::Stdout {
-            identities: &["text-format:help-quick.v1", "text-format:help-full.v4"]
+            identities: &["text-format:help-quick.v1", "text-format:help-full.v8"]
         }
     );
 }
