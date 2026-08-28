@@ -113,6 +113,45 @@ fn quality_signal_section_accepts_integral_float_totals_and_diagnoses_unusable_v
 }
 
 #[test]
+fn quality_signal_section_nulls_and_diagnoses_extreme_delta_overflow() {
+    let cases = [
+        (
+            9_223_372_036_854_774_784.0,
+            -9_223_372_036_854_775_808.0,
+            9_223_372_036_854_774_784_i64,
+            i64::MIN,
+        ),
+        (
+            -9_223_372_036_854_775_808.0,
+            9_223_372_036_854_774_784.0,
+            i64::MIN,
+            9_223_372_036_854_774_784_i64,
+        ),
+    ];
+
+    for (current_total, baseline_total, expected_current, expected_baseline) in cases {
+        let mut current = scan_structured_fixture(4.0, 1, 0, 12, 0, 0);
+        current["quality_signal"] = json!(current_total);
+        let mut baseline = baseline_metrics_fixture(6.0, 2, 1, 14, 0, 0);
+        baseline["quality_signal"] = json!(baseline_total);
+        let mut diagnostics = Vec::new();
+
+        let signal =
+            quality_signal_section(Some(&current), None, Some(&baseline), &mut diagnostics);
+
+        assert_eq!(signal["total"]["current"], expected_current);
+        assert_eq!(signal["total"]["baseline"], expected_baseline);
+        assert!(signal["total"]["delta"].is_null());
+        let overflow_diagnostics = diagnostics
+            .iter()
+            .filter(|item| item.contains("Quality Signal delta overflow"))
+            .collect::<Vec<_>>();
+        assert_eq!(overflow_diagnostics.len(), 1);
+        assert!(overflow_diagnostics[0].contains("delta is unavailable"));
+    }
+}
+
+#[test]
 fn normalize_bottleneck_id_maps_engine_ids_and_drops_none() {
     assert_eq!(normalize_bottleneck_id("god_files"), Some("godFiles"));
     assert_eq!(normalize_bottleneck_id("complexity"), Some("complexity"));

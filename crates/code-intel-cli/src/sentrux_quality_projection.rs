@@ -346,7 +346,15 @@ fn quality_signal_section(
         diagnostics,
     );
     let delta_total = match (current_total, baseline_total) {
-        (Some(current), Some(baseline)) => Some(current - baseline),
+        (Some(current), Some(baseline)) => match current.checked_sub(baseline) {
+            Some(delta) => Some(delta),
+            None => {
+                diagnostics.push(format!(
+                    "Quality Signal delta overflow: current total {current} minus baseline total {baseline} exceeds the supported i64 range; delta is unavailable."
+                ));
+                None
+            }
+        },
         _ => None,
     };
 
