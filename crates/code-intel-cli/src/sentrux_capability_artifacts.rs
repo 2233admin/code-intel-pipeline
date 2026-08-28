@@ -574,9 +574,9 @@ fn observation_command(observation: &Value) -> Option<SentruxCommand> {
         // Issue #383: rehydrate the full structured payload from the same
         // `command.structuredData` field `command_evidence` wrote, not by
         // reparsing `stdout` (which is only ever the bounded preview here).
-        structured_stdout: command.get("structuredData").and_then(|value| {
-            (value.is_object() || value.is_array()).then(|| value.clone())
-        }),
+        structured_stdout: command
+            .get("structuredData")
+            .and_then(|value| (value.is_object() || value.is_array()).then(|| value.clone())),
     })
 }
 
@@ -717,7 +717,10 @@ mod tests {
             "coupling_score": 12.5,
         });
         let bytes = serde_json::to_vec(&value).expect("serialize fixture");
-        assert!(bytes.len() > 8 * 1024, "fixture must exceed the 8KB preview cap");
+        assert!(
+            bytes.len() > 8 * 1024,
+            "fixture must exceed the 8KB preview cap"
+        );
 
         let command = super::SentruxCommand::from_json(bytes, "scan");
         let command_evidence = capability_command_evidence("scan", &command);

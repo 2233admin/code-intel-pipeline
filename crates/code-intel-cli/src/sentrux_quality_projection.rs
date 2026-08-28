@@ -108,8 +108,13 @@ const LEGACY_ROOT_CAUSES: [LegacyRootCause; 5] = [
     },
 ];
 
-const UPSTREAM_ROOT_CAUSE_IDS: [&str; 5] =
-    ["modularity", "acyclicity", "depth", "equality", "redundancy"];
+const UPSTREAM_ROOT_CAUSE_IDS: [&str; 5] = [
+    "modularity",
+    "acyclicity",
+    "depth",
+    "equality",
+    "redundancy",
+];
 
 pub(crate) struct OrcaCorrelation {
     pub(crate) run_id: Option<String>,
@@ -424,7 +429,8 @@ fn upstream_root_causes(scan_structured: &Value) -> Option<Vec<Value>> {
 
 fn root_cause_finding(quality_signal: &Value, health_ref: Option<Value>) -> Option<Value> {
     let bottleneck = quality_signal["bottleneck"].as_str()?;
-    let fingerprint = finding_fingerprint("root_cause_diagnostic", "sentrux.health", bottleneck, &[]);
+    let fingerprint =
+        finding_fingerprint("root_cause_diagnostic", "sentrux.health", bottleneck, &[]);
     Some(json!({
         "fingerprint": fingerprint,
         "kind": "root_cause_diagnostic",
@@ -682,8 +688,9 @@ fn execute_cli(cli: Cli) -> Result<Value, ProjectionError> {
     let value = build(&request)?;
     if let Some(path) = &cli.out {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| ProjectionError::HostIo(format!("create --out directory: {error}")))?;
+            fs::create_dir_all(parent).map_err(|error| {
+                ProjectionError::HostIo(format!("create --out directory: {error}"))
+            })?;
         }
         fs::write(
             path,

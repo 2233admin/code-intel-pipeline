@@ -1,6 +1,13 @@
 use super::*;
 
-fn scan_structured_fixture(coupling: f64, complex: i64, god_files: i64, max_complexity: i64, cycles: i64, quality: i64) -> Value {
+fn scan_structured_fixture(
+    coupling: f64,
+    complex: i64,
+    god_files: i64,
+    max_complexity: i64,
+    cycles: i64,
+    quality: i64,
+) -> Value {
     json!({
         "quality_signal": quality,
         "coupling_score": coupling,
@@ -11,8 +18,22 @@ fn scan_structured_fixture(coupling: f64, complex: i64, god_files: i64, max_comp
     })
 }
 
-fn baseline_metrics_fixture(coupling: f64, complex: i64, god_files: i64, max_complexity: i64, cycles: i64, quality: i64) -> Value {
-    scan_structured_fixture(coupling, complex, god_files, max_complexity, cycles, quality)
+fn baseline_metrics_fixture(
+    coupling: f64,
+    complex: i64,
+    god_files: i64,
+    max_complexity: i64,
+    cycles: i64,
+    quality: i64,
+) -> Value {
+    scan_structured_fixture(
+        coupling,
+        complex,
+        god_files,
+        max_complexity,
+        cycles,
+        quality,
+    )
 }
 
 #[test]
@@ -140,7 +161,10 @@ fn quality_signal_section_round_trips_a_scan_payload_over_8kb() {
     scan_structured["godFiles"] = json!(["src/huge_module.rs"]);
     scan_structured["filler"] = json!("z".repeat(12 * 1024));
     let bytes = serde_json::to_vec(&scan_structured).unwrap();
-    assert!(bytes.len() > 8 * 1024, "fixture must exceed the 8KB preview cap");
+    assert!(
+        bytes.len() > 8 * 1024,
+        "fixture must exceed the 8KB preview cap"
+    );
 
     let baseline = baseline_metrics_fixture(4.0, 2, 0, 16, 0, 9100);
     let mut diagnostics = Vec::new();
@@ -164,14 +188,16 @@ fn quality_signal_section_round_trips_a_scan_payload_over_8kb() {
 
 #[test]
 fn violation_findings_classifies_ratchet_regressions_and_rule_violations_separately() {
-    let check_reference = json!({"path": "sentrux-capability-sentrux-check.json", "sha256": "a".repeat(64)});
+    let check_reference =
+        json!({"path": "sentrux-capability-sentrux-check.json", "sha256": "a".repeat(64)});
     let check_payload = json!({
         "capabilityId": "sentrux.check",
         "command": {"violations": [
             {"rule": "max_cc", "message": "max_cc exceeded: 30 > 20", "targets": ["src/big.rs"]},
         ]},
     });
-    let gate_reference = json!({"path": "sentrux-capability-sentrux-gate.json", "sha256": "b".repeat(64)});
+    let gate_reference =
+        json!({"path": "sentrux-capability-sentrux-gate.json", "sha256": "b".repeat(64)});
     let gate_payload = json!({
         "capabilityId": "sentrux.gate",
         "command": {"violations": [
@@ -186,8 +212,7 @@ fn violation_findings_classifies_ratchet_regressions_and_rule_violations_separat
     assert_eq!(check_findings[0]["severityNormalized"], "medium");
     assert_eq!(check_findings[0]["targets"], json!(["src/big.rs"]));
 
-    let gate_findings =
-        violation_findings(Some((&gate_reference, &gate_payload)), "sentrux.gate");
+    let gate_findings = violation_findings(Some((&gate_reference, &gate_payload)), "sentrux.gate");
     assert_eq!(gate_findings.len(), 1);
     assert_eq!(gate_findings[0]["kind"], "baseline_regression");
     assert_eq!(gate_findings[0]["severityNormalized"], "high");
@@ -232,7 +257,10 @@ fn violation_kind_defaults_unknown_rules_to_rule_violation_not_dropped() {
     assert_eq!(violation_kind("cycles_increased"), "baseline_regression");
     assert_eq!(violation_kind("god_files_increased"), "baseline_regression");
     assert_eq!(violation_kind("max_cc"), "rule_violation");
-    assert_eq!(violation_kind("some_future_rule_this_table_does_not_know"), "rule_violation");
+    assert_eq!(
+        violation_kind("some_future_rule_this_table_does_not_know"),
+        "rule_violation"
+    );
 }
 
 #[test]

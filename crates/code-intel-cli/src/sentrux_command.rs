@@ -167,8 +167,7 @@ impl SentruxCommand {
     pub(crate) fn from_native(run: super::sentrux_gate::EngineRun, subcommand: &str) -> Self {
         let stdout_bytes = run.stdout.into_bytes();
         let output_summary = OutputSummary::from_bytes(&stdout_bytes, &[]);
-        let structured_stdout =
-            structured_data_from_full(&stdout_bytes, output_summary.complete());
+        let structured_stdout = structured_data_from_full(&stdout_bytes, output_summary.complete());
         Self {
             argv: vec![
                 "code-intel".into(),

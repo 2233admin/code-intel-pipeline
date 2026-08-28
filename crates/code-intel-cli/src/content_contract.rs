@@ -182,7 +182,8 @@ pub(crate) fn validate_artifact_ref_shape(value: &Value) -> Result<(), String> {
     for key in ["artifactSchema", "type", "path"] {
         if object
             .get(key)
-            .and_then(Value::as_str).is_none_or(|v| v.is_empty())
+            .and_then(Value::as_str)
+            .is_none_or(|v| v.is_empty())
         {
             return Err(format!("input Artifact Ref {key} is invalid"));
         }
