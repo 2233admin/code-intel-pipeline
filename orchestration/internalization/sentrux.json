@@ -122,7 +122,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/builtin_provider_evidence.rs",
-        "sha256": "ed66f74fea2b9d25454e92ca20527b58a28f8a105b99342da3aa43fca3748c6a"
+        "sha256": "e2fefae119c6296a96a00aee25a7f729738935ba4832a849299658e3dcebe22d"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
@@ -141,7 +141,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "1bdfedcdb1fcf14cee72178b7674bbfc83454c7b7e72c11dc797f6464dd8e5f4"
+        "sha256": "b153b5f17d22e0be35c44239a6ee3e29c337035caf0db5f44a5b8159172a0f45"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
@@ -160,7 +160,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "1bdfedcdb1fcf14cee72178b7674bbfc83454c7b7e72c11dc797f6464dd8e5f4"
+        "sha256": "b153b5f17d22e0be35c44239a6ee3e29c337035caf0db5f44a5b8159172a0f45"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
@@ -179,7 +179,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "1bdfedcdb1fcf14cee72178b7674bbfc83454c7b7e72c11dc797f6464dd8e5f4"
+        "sha256": "b153b5f17d22e0be35c44239a6ee3e29c337035caf0db5f44a5b8159172a0f45"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
@@ -255,7 +255,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux_gate.rs",
-        "sha256": "5cfb3369e6420350a7acca2866256317d9b49261085c2340fb7ea8e76d1febc9"
+        "sha256": "25759013371799d2edbfb72f557c9aaa274feb77bba72119db1fcfbbb2540ee1"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
@@ -351,7 +351,7 @@
       "path": "crates/code-intel-cli/src/sentrux_gate.rs",
       "description": "Pipeline-owned built-in structural gate engine (metrics, rules check, no-degradation gate, cycle detection)",
       "evidenceIds": [
-        "local:b03:native-gate-source-sha256:5cfb3369e6420350a7acca2866256317d9b49261085c2340fb7ea8e76d1febc9",
+        "local:b03:native-gate-source-sha256:25759013371799d2edbfb72f557c9aaa274feb77bba72119db1fcfbbb2540ee1",
         "local:b03:native-gate-conformance:198cb2ca6abaffd40445ce0e03f821356ab191ee084446fd78235dabe93ccc45"
       ]
     }

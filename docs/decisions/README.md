@@ -30,5 +30,6 @@ Enforcement: 谁在什么时机强制它（gate / 测试 / 评审规约），没
 | [DR-0008](DR-0008-evolution-degraded-classification.md) | sentrux.evolution 与 sentrux.what_if 同型病灶，evolution 分类改判 automatic_degraded | active |
 | [DR-0009](DR-0009-sentrux-scan-stub-field-honesty.md) | sentrux.scan/rescan 的伪造 stub 字段必须诚实化（null+status，非假 0），scan/rescan 提升为 authoritative_automatic | active |
 | [DR-0010](DR-0010-sentrux-dsm-coupling-and-promotion.md) | sentrux.dsm 耦合矩阵结构性为空是真引擎缺陷（细粒度分桶+PowerShell 解析修复），note 措辞诚实化，dsm 提升为 authoritative_automatic | active |
+| [DR-0011](DR-0011-sentrux-quality-signal-kernel.md) | Quality Signal 内核：跟随固定源码的 max(0.01) 下限而非文档页公式；equality 用上游自身 LOC 回退；redundancy 只做 duplicate 半边，dead 诚实缺失而非伪造 0；baseline schema v5→v6 | active |
 
 平行 session 开工前先扫本目录（一次 `ls docs/decisions/` + 读 README 表格，30 秒）。与已有决策相悖的工作，先开 issue 挑战决策本身，不要直接实现相反语义。
