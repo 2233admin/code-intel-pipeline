@@ -1,0 +1,41 @@
+{
+  "schema": "code-intel-method-card.v1",
+  "id": "refactor-small-step",
+  "version": "1.0.0",
+  "name": "Refactor in small steps",
+  "problemSignals": [
+    { "id": "code-smells", "description": "Concrete structural smells indicate a bounded refactoring opportunity." },
+    { "id": "excessive-complexity", "description": "Control flow or data flow is unnecessarily difficult to understand or verify." },
+    { "id": "boundary-erosion", "description": "Responsibilities or dependencies cross a declared boundary without a clear contract." }
+  ],
+  "requiredEvidence": [
+    { "id": "executable-behavior-baseline", "description": "A runnable baseline proving the behavior of the bounded scope before transformation." },
+    { "id": "bounded-changed-scope", "description": "Explicit file, symbol, or responsibility limits for one refactoring slice." },
+    { "id": "before-after-structural-evidence", "description": "Comparable structural observations showing what changed and what remains." }
+  ],
+  "assumptions": ["The current behavior has an executable baseline", "One transformation can be applied without combining migration or behavior changes", "Structural evidence can be collected before and after the slice"],
+  "deterministicSteps": [
+    { "id": "freeze-behavior", "action": "Run and retain the executable behavior baseline for the bounded scope before editing.", "requires": ["evidence:executable-behavior-baseline", "evidence:bounded-changed-scope"], "produces": ["behavior-proof"] },
+    { "id": "apply-one-transform", "action": "Apply exactly one structural transformation within the declared scope, with no behavior-changing migration.", "requires": ["step:freeze-behavior"], "produces": ["refactor-slice"] },
+    { "id": "inspect-delta", "action": "Compare before and after structure, rerun the behavior proof, and record remaining smells or boundary erosion.", "requires": ["evidence:before-after-structural-evidence", "step:apply-one-transform"], "produces": ["residual-smells"] }
+  ],
+  "outputs": [
+    { "id": "refactor-slice", "description": "One bounded structural transformation; no behavior-changing migration is covered." },
+    { "id": "behavior-proof", "description": "Executable evidence that the bounded behavior remains unchanged." },
+    { "id": "residual-smells", "description": "Before/after structural delta and explicitly remaining smells or boundary erosion." }
+  ],
+  "confidenceRules": [
+    { "level": "high", "whenAll": ["The baseline is executable and passes before and after", "Only one bounded transformation was applied", "Structural delta and residual smells are recorded"] },
+    { "level": "medium", "whenAll": ["Behavior proof covers the core scope", "Structural evidence is partial or residual complexity remains"] },
+    { "level": "unknown", "whenAll": ["No executable baseline exists", "The changed scope or transformation cannot be bounded", "Behavior and structure cannot be compared"] }
+  ],
+  "cost": { "relative": "low", "drivers": ["Baseline execution time", "Structural comparison effort", "Number of residual smells requiring later slices"] },
+  "contraindications": ["The baseline is not executable or does not cover the scope", "The change requires a behavior-changing migration", "Multiple coupled transformations cannot be separated safely"],
+  "implementationPorts": [
+    { "id": "structural-diff-tool", "kind": "deterministic_tool", "contract": ["Compare declared before and after structure", "Report a bounded delta without selecting or executing a migration"] }
+  ],
+  "source": { "title": "Small-step refactoring practice", "version": "catalog interpretation 1.0", "reference": "C01 engineering-method baseline" },
+  "applicabilityBoundary": { "inScope": ["Behavior-preserving refactoring", "Bounded complexity reduction", "Explicit structural delta inspection"], "outOfScope": ["Behavior-changing migration", "Automatic refactoring selection or execution", "Large rewrites without an executable baseline"] },
+  "relatedMethodIds": ["legacy-characterization-test", "contract-testing"],
+  "executionPolicy": "catalog_only_no_selection_or_execution"
+}

@@ -1,0 +1,42 @@
+{
+  "schema": "code-intel-method-card.v1",
+  "id": "legacy-seam-extraction",
+  "version": "1.0.0",
+  "name": "Legacy seam extraction",
+  "problemSignals": [
+    { "id": "hidden-dependencies", "description": "A legacy responsibility depends on callers, globals, or effects that are not explicit at its boundary." },
+    { "id": "global-state", "description": "Shared mutable state makes behavior difficult to isolate and reason about." },
+    { "id": "mixed-responsibilities", "description": "One path combines responsibilities with side effects that prevent focused testing or change." },
+    { "id": "untestable-side-effects", "description": "External effects are embedded in logic without a controllable boundary." }
+  ],
+  "requiredEvidence": [
+    { "id": "call-dependency-relation", "description": "Observed callers, dependencies, state reads and writes, and control-flow relation for the target responsibility." },
+    { "id": "side-effect-inventory", "description": "Inventory of external effects, ordering constraints, failure behavior, and ownership." },
+    { "id": "preserved-old-path-contract", "description": "Characterization evidence for the old path that must remain valid through extraction." }
+  ],
+  "assumptions": ["The target responsibility has a boundary that can be named and observed", "The old path can remain available while the extracted seam is verified", "Dependencies and side effects can be represented by explicit ports"],
+  "deterministicSteps": [
+    { "id": "locate-seam", "action": "Trace the target responsibility through callers and dependencies, then map its state and side-effect relations.", "requires": ["evidence:call-dependency-relation", "evidence:side-effect-inventory"], "produces": ["seam-map"] },
+    { "id": "choose-boundary", "action": "Choose the smallest boundary that isolates the responsibility while preserving dependency ordering and the old-path contract.", "requires": ["step:locate-seam", "evidence:preserved-old-path-contract"], "produces": ["boundary-change"] },
+    { "id": "verify-preserved-path", "action": "Replay the old-path observations and verify equivalent behavior, side effects, and rollback route after the seam change.", "requires": ["step:choose-boundary"], "produces": ["rollback-route"] }
+  ],
+  "outputs": [
+    { "id": "seam-map", "description": "Call, dependency, state, and side-effect relation around the target responsibility." },
+    { "id": "boundary-change", "description": "Smallest explicit boundary and preserved contract for the extracted seam." },
+    { "id": "rollback-route", "description": "Verified route back to the old path if the seam change cannot preserve behavior." }
+  ],
+  "confidenceRules": [
+    { "level": "high", "whenAll": ["All relevant callers and side effects are mapped", "The boundary preserves ordering and the old-path contract", "Old-path replay and rollback are verified"] },
+    { "level": "medium", "whenAll": ["The seam and primary dependencies are explicit", "Long-tail callers or effects remain partially observed"] },
+    { "level": "unknown", "whenAll": ["Dependencies or side effects cannot be isolated", "The old path has no reproducible contract or rollback route"] }
+  ],
+  "cost": { "relative": "high", "drivers": ["Dependency and caller graph breadth", "Number of embedded side effects", "Compatibility and rollback verification effort"] },
+  "contraindications": ["No stable responsibility boundary can be identified", "Extraction would require changing an unobserved contract", "Side effects cannot be isolated or safely replayed"],
+  "implementationPorts": [
+    { "id": "seam-mapper", "kind": "deterministic_tool", "contract": ["Trace declared callers, dependencies, and effects", "Emit a bounded seam map without selecting or executing a migration"] }
+  ],
+  "source": { "title": "Legacy seam extraction practice", "version": "catalog interpretation 1.0", "reference": "C01 engineering-method baseline" },
+  "applicabilityBoundary": { "inScope": ["Extracting testable responsibilities from legacy paths", "Making global state and effects explicit", "Reversible boundary changes"], "outOfScope": ["Unbounded architecture rewrites", "Automatic dependency or boundary selection", "Extraction without preserved old-path evidence"] },
+  "relatedMethodIds": ["legacy-characterization-test", "strangler-migration"],
+  "executionPolicy": "catalog_only_no_selection_or_execution"
+}

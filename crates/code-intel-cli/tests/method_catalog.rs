@@ -59,7 +59,7 @@ fn seed_documents() -> (Value, Vec<(String, Value)>) {
 }
 
 #[test]
-fn seed_catalog_loads_all_nine_methods_in_stable_order() {
+fn seed_catalog_loads_all_twelve_methods_in_stable_order() {
     let catalog = method_catalog::load_catalog(&root().join("orchestration/methods")).unwrap();
     let ids = catalog
         .cards()
@@ -73,13 +73,38 @@ fn seed_catalog_loads_all_nine_methods_in_stable_order() {
             "critical-path-pert",
             "fault-tree-analysis",
             "fmea",
+            "legacy-characterization-test",
+            "legacy-seam-extraction",
             "pdca",
+            "refactor-small-step",
             "root-cause-analysis",
             "spc",
             "strangler-migration",
             "value-stream-queue-delay",
         ]
     );
+    for id in [
+        "legacy-characterization-test",
+        "legacy-seam-extraction",
+        "refactor-small-step",
+    ] {
+        let card = catalog
+            .cards()
+            .iter()
+            .find(|card| card["id"] == id)
+            .unwrap();
+        for field in ["requiredEvidence", "deterministicSteps", "contraindications"] {
+            assert!(!card[field].as_array().unwrap().is_empty(), "{id}:{field}");
+        }
+        assert!(!card["applicabilityBoundary"]["inScope"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(!card["applicabilityBoundary"]["outOfScope"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+    }
 }
 
 #[test]
@@ -212,7 +237,7 @@ fn seed_cards_remain_distinct_and_preserve_method_specific_preconditions() {
         .iter()
         .map(|card| card["name"].as_str().unwrap())
         .collect::<BTreeSet<_>>();
-    assert_eq!(distinct_names.len(), 9);
+    assert_eq!(distinct_names.len(), 12);
     let required = catalog
         .cards()
         .iter()
