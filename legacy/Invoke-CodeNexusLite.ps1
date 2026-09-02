@@ -206,6 +206,9 @@ function Get-RecentCommits {
 
     if ($Limit -le 0) { return ,@() }
     $lines = Invoke-TextCommand { git @script:GitHardening -C $RepoPath --no-pager log --oneline --max-count=$Limit -- $RelativePath }
+    if ($global:LASTEXITCODE -ne 0) {
+        throw "CodeNexus-lite git log failed with exit code $global:LASTEXITCODE"
+    }
     return ,@($lines)
 }
 
@@ -242,6 +245,10 @@ function Get-References {
             -g "!**/__pycache__/**" `
             --fixed-strings $stem $RepoPath
     }
+    if ($global:LASTEXITCODE -notin @(0, 1)) {
+        throw "CodeNexus-lite rg failed with exit code $global:LASTEXITCODE"
+    }
+    $global:LASTEXITCODE = 0
     return ,@($lines | Select-Object -First $Limit)
 }
 

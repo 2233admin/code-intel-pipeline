@@ -4523,6 +4523,49 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -Liter
     }
 }
 
+function Invoke-CodeNexusLiteCompatibilityFallback {
+    param(
+        [string]$repoPath,
+        [string]$sentruxTargetPath,
+        [string]$runDir,
+        [string]$codeNexusContextPath,
+        [System.Collections.Generic.List[string]]$notes
+    )
+
+    $codeNexusContextSummary = $null
+$codeNexusLiteTool = Join-Path $PSScriptRoot "Invoke-CodeNexusLite.ps1"
+if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and (Test-Path -LiteralPath $codeNexusLiteTool -PathType Leaf)) {
+    try {
+        $global:LASTEXITCODE = 0
+        & $codeNexusLiteTool `
+            -RepoPath $repoPath `
+            -TargetPath $sentruxTargetPath `
+            -RunDir $runDir `
+            -OutputPath $codeNexusContextPath `
+            -MaxCommitsPerFile 0 `
+            -Quiet
+        if ($global:LASTEXITCODE -ne 0) {
+            throw "CodeNexus-lite exited with code $global:LASTEXITCODE"
+        }
+        if (-not (Test-Path -LiteralPath $codeNexusContextPath -PathType Leaf)) {
+            throw "CodeNexus-lite did not write $codeNexusContextPath"
+        }
+        $codeNexusObject = Get-Content -LiteralPath $codeNexusContextPath -Raw | ConvertFrom-Json
+        $codeNexusContextSummary = [ordered]@{
+            path = $codeNexusContextPath
+            files = $codeNexusObject.summary.files
+            references = $codeNexusObject.summary.references
+            recentCommits = $codeNexusObject.summary.recentCommits
+            topFile = if (@($codeNexusObject.files).Count -gt 0) { [string]$codeNexusObject.files[0].path } else { "" }
+        }
+    }
+    catch {
+        $notes.Add("CodeNexus-lite context was not generated: $($_.Exception.Message)")
+    }
+}
+    return $codeNexusContextSummary
+}
+
 $codeNexusRustCliCandidates = @()
 if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_RUST_CLI)) {
     $codeNexusRustCliCandidates += [IO.Path]::GetFullPath($env:CODE_INTEL_RUST_CLI)
@@ -4562,11 +4605,43 @@ if (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath) -and $null -ne $codeNe
         }
     }
     catch {
-        $notes.Add("CodeNexus-lite context was not generated: $($_.Exception.Message)")
+        $notes.Add("CodeNexus Rust generation failed; using explicit PowerShell compatibility fallback: $($_.Exception.Message)")
+        $codeNexusContextOutput = @(
+            Invoke-CodeNexusLiteCompatibilityFallback `
+                -repoPath $repoPath `
+                -sentruxTargetPath $sentruxTargetPath `
+                -runDir $runDir `
+                -codeNexusContextPath $codeNexusContextPath `
+                -notes $notes |
+                Where-Object { $_ -is [System.Collections.IDictionary] }
+        )
+        $codeNexusContextSummary = if ($codeNexusContextOutput.Count -gt 0) {
+            $codeNexusContextOutput[0]
+        }
+        else {
+            $null
+        }
     }
 }
 elseif (-not [string]::IsNullOrWhiteSpace($sentruxTargetPath)) {
-    $notes.Add("CodeNexus-lite context was not generated: compiled code-intel binary was unavailable.")
+    $codeNexusContextOutput = @(
+        Invoke-CodeNexusLiteCompatibilityFallback `
+            -repoPath $repoPath `
+            -sentruxTargetPath $sentruxTargetPath `
+            -runDir $runDir `
+            -codeNexusContextPath $codeNexusContextPath `
+            -notes $notes |
+            Where-Object { $_ -is [System.Collections.IDictionary] }
+    )
+    $codeNexusContextSummary = if ($codeNexusContextOutput.Count -gt 0) {
+        $codeNexusContextOutput[0]
+    }
+    else {
+        $null
+    }
+    if ($null -eq $codeNexusContextSummary) {
+        $notes.Add("CodeNexus-lite context was not generated: compiled code-intel binary was unavailable.")
+    }
 }
 
 $reportPath = Join-Path $runDir "report.json"

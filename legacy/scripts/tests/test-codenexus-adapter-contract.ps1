@@ -111,6 +111,21 @@ function Invoke-LiteScriptEndToEnd {
         -ObservedAt 1950 `
         -AdapterActivation "explicit_fallback" `
         -Quiet
+    $unreferencedPath = Join-Path $repoRoot "orphan.ps1"
+    [System.IO.File]::WriteAllText($unreferencedPath, "function unrelated() {}`n", [System.Text.UTF8Encoding]::new($false))
+    $hotspotsPath = Join-Path $caseRoot "hotspots.json"
+    Write-JsonNoBom $hotspotsPath @{ files = @(@{ path = "orphan.ps1"; maxComplexity = $null; functionCount = $null }) }
+    & (Join-Path $root "Invoke-CodeNexusLite.ps1") `
+        -RepoPath $repoRoot `
+        -TargetPath $repoRoot `
+        -RunDir $caseRoot `
+        -HotspotsPath $hotspotsPath `
+        -OutputPath (Join-Path $caseRoot "unreferenced-context.json") `
+        -MaxFiles 1 `
+        -MaxReferencesPerFile 3 `
+        -MaxCommitsPerFile 0 `
+        -Quiet
+    if ($LASTEXITCODE -ne 0) { throw "CodeNexus lite no-reference fallback failed with exit $LASTEXITCODE" }
     if ($LASTEXITCODE -ne 0) { throw "CodeNexus lite adapter-output mode failed" }
     $raw = & $facade `
         -CodeNexusAdapterRequest $requestPath `
@@ -226,8 +241,15 @@ function Invoke-RustGeneratorParity {
     }
 
     $facadeText = Get-Content -Raw $facade
-    if ($facadeText -notmatch '"codenexus", "generate"' -or $facadeText -match '& \$codeNexusLiteTool') {
-        throw "production compatibility facade does not forward CodeNexus generation to Rust"
+    $rustInvocationIndex = $facadeText.IndexOf('$null = & $codeNexusRustCli @codeNexusArgs', [StringComparison]::Ordinal)
+    $fallbackCallIndex = if ($rustInvocationIndex -ge 0) {
+        $facadeText.IndexOf('Invoke-CodeNexusLiteCompatibilityFallback `', $rustInvocationIndex, [StringComparison]::Ordinal)
+    }
+    else {
+        -1
+    }
+    if ($facadeText -notmatch '"codenexus", "generate"' -or $rustInvocationIndex -lt 0 -or $fallbackCallIndex -le $rustInvocationIndex) {
+        throw "production compatibility facade does not expose Rust-primary generation with an explicit lite fallback"
     }
 }
 
