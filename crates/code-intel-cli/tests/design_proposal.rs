@@ -1,4 +1,6 @@
 mod common;
+#[path = "support/sha256.rs"]
+mod sha256;
 
 use serde_json::{json, Value};
 use std::fs;
@@ -33,21 +35,21 @@ fn snapshot_for(repo: &Path) -> Value {
 }
 
 fn context_request(repo: &Path, out: &Path) -> Value {
-    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "contractVersion": 1, "mode": "context", "snapshot": snapshot_for(repo), "options": {"repoPath": repo}, "out": out, "inputs": [], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}})
+    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "contractVersion": 1, "mode": "context", "snapshot": snapshot_for(repo), "options": {"repoPath": repo, "out": out}, "inputs": [], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}})
 }
 
 fn artifact_ref(path: &Path, schema: &str, kind: &str, snapshot: &Value) -> Value {
-    json!({"path": path, "artifactSchema": schema, "type": kind, "sha256": "1111111111111111111111111111111111111111111111111111111111111111", "consumedSnapshotIdentity": snapshot["identity"], "verification": "verified"})
+    json!({"schema":"code-intel-artifact-ref.v1","artifactSchema":schema,"type":kind,"path":path.file_name().unwrap().to_string_lossy(),"sha256":sha256::sha256(path),"consumedSnapshotIdentity":snapshot["identity"]})
 }
 
 fn validate_request(repo: &Path, context: &Path, candidate: &Path, out: &Path) -> Value {
     let snapshot = snapshot_for(repo);
-    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "contractVersion": 1, "mode": "validate", "snapshot": snapshot, "options": {"repoPath": repo}, "inputs": [artifact_ref(context, "code-intel-design-context.v1", "design.context", &snapshot), artifact_ref(candidate, "code-intel-design-proposal-candidate.v1", "design.proposal-candidate", &snapshot)], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}, "out": out})
+    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "contractVersion": 1, "mode": "validate", "snapshot": snapshot, "options": {"repoPath": repo, "out": out}, "inputs": [artifact_ref(context, "code-intel-design-context.v1", "design.context", &snapshot), artifact_ref(candidate, "code-intel-design-proposal-candidate.v1", "design.proposal-candidate", &snapshot)], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}})
 }
 
 fn run_capability(request: &Value, path: &Path, out: &Path) -> Output {
     fs::write(path, serde_json::to_vec_pretty(request).expect("serialize request")).expect("write request");
-    common::cli().args(["capability", "exec", CAPABILITY, "--request"]).arg(path).args(["--out"]).arg(out).output().expect("run capability")
+    common::cli().args(["capability", "exec", CAPABILITY, "--request"]).arg(path).args(["--out"]).arg(out).args(["--artifact-root"]).arg(path.parent().unwrap()).output().expect("run capability")
 }
 
 fn fixture(name: &str) -> Value {
@@ -63,9 +65,10 @@ fn setup(name: &str) -> (TempTree, PathBuf, PathBuf, Value) {
     let tree = temp_repo(name);
     let repo = tree.0.join("repo");
     let out = tree.0.join("out");
-    fs::create_dir_all(&out).expect("create output");
     let mut candidate = fixture(name);
-    candidate["snapshot"] = snapshot_for(&repo);
+    if name != "stale-snapshot.json" {
+        candidate["snapshot"] = snapshot_for(&repo);
+    }
     let candidate_path = tree.0.join("candidate.json");
     fs::write(&candidate_path, serde_json::to_vec_pretty(&candidate).unwrap()).unwrap();
     let context_path = tree.0.join("context.json");
@@ -77,13 +80,14 @@ fn setup(name: &str) -> (TempTree, PathBuf, PathBuf, Value) {
 #[test]
 fn valid_two_option_candidate_stages_advisory_result() {
     let (tree, repo, out, paths) = setup("valid-two-option.json");
-    let request_path = tree.0.join("request.json");
-    let output = run_capability(&validate_request(&repo, &as_path(&paths["context"]), &as_path(&paths["candidate"]), &out), &request_path, &out);
+    let output = run_capability(&validate_request(&repo, &as_path(&paths["context"]), &as_path(&paths["candidate"]), &out), &tree.0.join("request.json"), &out);
     assert!(output.status.success(), "stderr={}", String::from_utf8_lossy(&output.stderr));
     let result: Value = serde_json::from_slice(&output.stdout).expect("result JSON");
     assert_eq!(result["authority"], "advisory_only");
     assert_eq!(result["schema"], "code-intel-design-proposal.v1");
+    assert_eq!(result["recommendation"]["optionId"], "option-a");
     assert_eq!(result["snapshot"]["identity"], snapshot_for(&repo)["identity"]);
+    assert!(result["artifacts"].as_array().unwrap().iter().any(|artifact| artifact["artifactSchema"] == "code-intel-design-proposal.v1" && artifact["type"] == "design.proposal"));
 }
 
 #[test]
@@ -93,6 +97,18 @@ fn valid_three_option_candidate_preserves_all_ids() {
     assert!(output.status.success(), "stderr={}", String::from_utf8_lossy(&output.stderr));
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["options"].as_array().unwrap().iter().map(|o| o["id"].as_str().unwrap()).collect::<Vec<_>>(), vec!["option-a", "option-b", "option-c"]);
+}
+
+#[test]
+fn context_mode_stages_design_context() {
+    let tree = temp_repo("context-mode");
+    let repo = tree.0.join("repo");
+    let out = tree.0.join("context-out");
+    fs::create_dir_all(&out).unwrap();
+    let output = run_capability(&context_request(&repo, &out), &tree.0.join("context-request.json"), &out);
+    assert!(output.status.success(), "stderr={}", String::from_utf8_lossy(&output.stderr));
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(result["artifacts"].as_array().unwrap().iter().any(|a| a["artifactSchema"] == "code-intel-design-context.v1" && a["type"] == "design.context"));
 }
 
 fn assert_invalid(fixture_name: &str, rule: &str) {
@@ -118,11 +134,22 @@ fn option_count_diagnostic_rejects_one_and_four_options() {
         let candidate_path = tree.0.join(format!("candidate-{count}.json"));
         let mut candidate = fixture("invalid-option-count.json");
         let options = candidate["options"].as_array().unwrap().clone();
-        candidate["snapshot"] = snapshot_for(&repo);
-        candidate["options"] = if count == 1 { json!(options) } else { json!([options[0].clone(), options[0].clone(), options[0].clone(), options[0].clone()]) };
+        let mut four = options.clone();
+        four[0]["id"] = json!("option-a");
+        four[0]["title"] = json!("A");
+        four.push(options[0].clone());
+        four[1]["id"] = json!("option-b");
+        four.push(options[0].clone());
+        four[2]["id"] = json!("option-c");
+        four.push(options[0].clone());
+        four[3]["id"] = json!("option-d");
+        candidate["options"] = if count == 1 { json!(options) } else { json!(four) };
         fs::write(&candidate_path, serde_json::to_vec(&candidate).unwrap()).unwrap();
         let output = run_capability(&validate_request(&repo, &as_path(&paths["context"]), &candidate_path, &out), &tree.0.join(format!("request-{count}.json")), &out);
         assert!(!output.status.success());
-        assert!(format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr)).contains("proposal_option_count"));
+        let text = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        assert!(text.contains("proposal_option_count"));
+        assert!(!text.contains("code-intel-design-proposal.v1"));
+        assert!(!out.join("proposal.json").exists());
     }
 }
