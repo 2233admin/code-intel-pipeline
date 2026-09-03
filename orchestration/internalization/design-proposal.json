@@ -191,7 +191,7 @@
   },
   "lifecycle": {
     "previousStatus": null,
-    "status": "approved",
+    "status": "research",
     "effectiveAt": 1788393600,
     "replacementRecordId": null,
     "evidenceIds": [

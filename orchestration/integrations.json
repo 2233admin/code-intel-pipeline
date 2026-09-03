@@ -1840,70 +1840,70 @@
       ],
       "extensionPoint": "A08 is a rebuildable materialized view and never run authority. Normal admission requires an A07 marker plus exactly one verified repository.iteration provenance Artifact Ref whose run, snapshot, repository, and publication bindings match the authority path; legacy traversal is explicit compatibility only."
     },
-  {
-    "id": "advisory.design-proposal.compat",
-    "stage": "behavior_specification",
-    "owner": "code-intel-pipeline",
-    "kind": "advisory-atom",
-    "required": false,
-    "entrypoint": "target/debug/code-intel.exe",
-    "capabilities": [
-      "snapshot_bound_design_context",
-      "evidence_bound_option_validation",
-      "advisory_proposal_publication",
-      "authority_separated_review"
-    ],
-    "commands": {
-      "capabilityExec": "code-intel capability exec advisory.design-proposal.compat --request <request.json|-> --out <staging-dir> --artifact-root <run-root>"
-    },
-    "capabilityDeclaration": {
-      "schema": "code-intel-capability-declaration.v1",
+    {
       "id": "advisory.design-proposal.compat",
-      "contractVersion": 1,
-      "implementation": {
-        "id": "design-proposal.rust.v1",
-        "version": "1.0.0",
-        "toolchainDigests": [
-          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-        ]
+      "stage": "behavior_specification",
+      "owner": "code-intel-pipeline",
+      "kind": "advisory-atom",
+      "required": false,
+      "entrypoint": "target/debug/code-intel.exe",
+      "capabilities": [
+        "snapshot_bound_design_context",
+        "evidence_bound_option_validation",
+        "advisory_proposal_publication",
+        "authority_separated_review"
+      ],
+      "commands": {
+        "capabilityExec": "code-intel capability exec advisory.design-proposal.compat --request <request.json|-> --out <staging-dir> --artifact-root <run-root>"
       },
-      "determinism": "deterministic",
-      "allowedEffects": ["repo_read", "local_write"],
-      "dependencies": ["repo.snapshot"]
-    },
-    "runtimeAdapter": "advisory.design-proposal.compat",
-    "authority": "advisory_only",
-    "operations": {
-      "context": {
-        "requestSchema": "code-intel-capability-request.v1",
-        "operationSchema": "code-intel-design-proposal-request.v1",
-        "consumes": [],
-        "emits": [{"schema": "code-intel-design-context.v1", "type": "design.context"}]
+      "capabilityDeclaration": {
+        "schema": "code-intel-capability-declaration.v1",
+        "id": "advisory.design-proposal.compat",
+        "contractVersion": 1,
+        "implementation": {
+          "id": "design-proposal.rust.v1",
+          "version": "1.0.0",
+          "toolchainDigests": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ]
+        },
+        "determinism": "deterministic",
+        "allowedEffects": ["repo_read", "local_write"],
+        "dependencies": ["repo.snapshot"]
       },
-      "validate": {
-        "requestSchema": "code-intel-capability-request.v1",
-        "operationSchema": "code-intel-design-proposal-request.v1",
-        "consumes": [
-          {"schema": "code-intel-design-context.v1", "type": "design.context"},
-          {"schema": "code-intel-design-proposal-candidate.v1", "type": "design.proposal-candidate"}
-        ],
-        "emits": [{"schema": "code-intel-design-proposal.v1", "type": "design.proposal"}]
-      }
-    },
-    "artifactIdentities": [
-      {"schema": "code-intel-design-context.v1", "type": "design.context"},
-      {"schema": "code-intel-design-proposal-candidate.v1", "type": "design.proposal-candidate"},
-      {"schema": "code-intel-design-proposal.v1", "type": "design.proposal"}
-    ],
-    "artifactContract": [
-      "orchestration/schemas/code-intel-capability-envelope.v1.schema.json",
-      "code-intel-design-proposal-request.v1",
-      "code-intel-design-context.v1 / design.context",
-      "code-intel-design-proposal-candidate.v1 / design.proposal-candidate",
-      "code-intel-design-proposal.v1 / design.proposal"
-    ],
-    "effects": ["repo_read", "local_write"],
-    "extensionPoint": "Rust owns snapshot binding, method-catalog and committed-artifact reads, candidate validation, and staged advisory publication. Agent-authored text remains advisory and never grants promotion, commit, issue, or plan approval authority; network and repository mutation are outside this capability."
-  }
+      "runtimeAdapter": "advisory.design-proposal.compat",
+      "authority": "advisory_only",
+      "operations": {
+        "context": {
+          "requestSchema": "code-intel-capability-request.v1",
+          "operationSchema": "code-intel-design-proposal-request.v1",
+          "consumes": [],
+          "emits": [{"schema": "code-intel-design-context.v1", "type": "design.context"}]
+        },
+        "validate": {
+          "requestSchema": "code-intel-capability-request.v1",
+          "operationSchema": "code-intel-design-proposal-request.v1",
+          "consumes": [
+            {"schema": "code-intel-design-context.v1", "type": "design.context"},
+            {"schema": "code-intel-design-proposal-candidate.v1", "type": "design.proposal-candidate"}
+          ],
+          "emits": [{"schema": "code-intel-design-proposal.v1", "type": "design.proposal"}]
+        }
+      },
+      "artifactIdentities": [
+        {"schema": "code-intel-design-context.v1", "type": "design.context"},
+        {"schema": "code-intel-design-proposal-candidate.v1", "type": "design.proposal-candidate"},
+        {"schema": "code-intel-design-proposal.v1", "type": "design.proposal"}
+      ],
+      "artifactContract": [
+        "orchestration/schemas/code-intel-capability-envelope.v1.schema.json",
+        "code-intel-design-proposal-request.v1",
+        "code-intel-design-context.v1 / design.context",
+        "code-intel-design-proposal-candidate.v1 / design.proposal-candidate",
+        "code-intel-design-proposal.v1 / design.proposal"
+      ],
+      "effects": ["repo_read", "local_write"],
+      "extensionPoint": "Rust owns snapshot binding, method-catalog and committed-artifact reads, candidate validation, and staged advisory publication. Agent-authored text remains advisory and never grants promotion, commit, issue, or plan approval authority; network and repository mutation are outside this capability."
+    }
   ]
 }

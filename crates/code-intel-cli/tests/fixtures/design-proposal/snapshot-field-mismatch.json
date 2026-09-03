@@ -12,7 +12,7 @@
     {"id": "option-b", "title": "Shared validator", "summary": "Reuse the artifact validation pipeline", "boundaryChanges": ["share proposal schema validator"], "tradeoffs": ["more coupling"], "assumptions": ["artifact protocol remains stable"], "evidenceRefs": ["artifact://sha256/2222222222222222222222222222222222222222222222222222222222222222"], "validationPlan": ["run contract and staging checks"], "reversibility": {"status": "medium", "basis": "isolated route"}}
   ],
   "recommendation": {"optionId": "option-a", "rationale": "minimizes authority and boundary changes"},
-  "risks": ["stale evidence could invalidate the recommendation"],
+  "risks": ["stale evidence could invalidate the recommendation", "snapshot identity must match context"],
   "validationPlan": ["verify snapshot and evidence references before publication"],
   "limitations": ["advisory output does not authorize changes"]
 }

@@ -698,7 +698,10 @@ fn design_proposal_declaration_is_registered_and_bounded() {
     }));
     assert_eq!(integration["authority"], "advisory_only");
     assert_eq!(integration["commands"]["capabilityExec"], "code-intel capability exec advisory.design-proposal.compat --request <request.json|-> --out <staging-dir> --artifact-root <run-root>");
-    assert!(integration["effects"].as_array().unwrap().iter().all(|effect| effect != "network" && effect != "repo_mutation"));
+    assert_eq!(
+        string_list(&integration["effects"], "design proposal integration effects"),
+        ["repo_read", "local_write"]
+    );
     assert_eq!(integration["artifactIdentities"], declaration["artifactIdentities"]);
     assert_eq!(integration["operations"], json!({
         "context": {
@@ -717,4 +720,8 @@ fn design_proposal_declaration_is_registered_and_bounded() {
             "emits": [{"schema":"code-intel-design-proposal.v1","type":"design.proposal"}]
         }
     }));
+
+    let internalization = read_json("orchestration/internalization/design-proposal.json");
+    assert_eq!(internalization["lifecycle"]["status"], "research");
+    assert!(internalization["lifecycle"]["authorityEvent"].is_null());
 }
