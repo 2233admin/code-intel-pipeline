@@ -5,8 +5,8 @@
   },
   "godFiles": [
     {
-      "functions": 135,
-      "loc": 4084,
+      "functions": 137,
+      "loc": 4253,
       "path": "crates/code-intel-cli/src/artifact_ref.rs",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -18,13 +18,13 @@
     },
     {
       "functions": 44,
-      "loc": 1098,
+      "loc": 1103,
       "path": "crates/code-intel-cli/src/capability_inventory.rs",
       "rule": "loc>800; functions>25&&loc>400"
     },
     {
       "functions": 74,
-      "loc": 1360,
+      "loc": 1362,
       "path": "crates/code-intel-cli/src/cli/legacy.rs",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -96,13 +96,13 @@
     },
     {
       "functions": 69,
-      "loc": 2062,
+      "loc": 2085,
       "path": "crates/code-intel-cli/src/sentrux_gate.rs",
       "rule": "loc>800; functions>25&&loc>400"
     },
     {
       "functions": 38,
-      "loc": 829,
+      "loc": 836,
       "path": "crates/code-intel-cli/src/sentrux_quality_signal.rs",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -132,7 +132,7 @@
     },
     {
       "functions": 55,
-      "loc": 2232,
+      "loc": 2246,
       "path": "crates/code-intel-cli/tests/capability_exec.rs",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -167,8 +167,8 @@
       "rule": "loc>800; functions>25&&loc>400"
     },
     {
-      "functions": 91,
-      "loc": 4746,
+      "functions": 92,
+      "loc": 4834,
       "path": "legacy/run-code-intel.ps1",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -179,8 +179,8 @@
       "rule": "loc>800"
     },
     {
-      "functions": 91,
-      "loc": 4746,
+      "functions": 92,
+      "loc": 4834,
       "path": "orchestration/retirements/e04-codenexus-direct/rollback-rehearsal/run-code-intel.ps1",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -191,8 +191,8 @@
       "rule": "loc>800; functions>25&&loc>400"
     },
     {
-      "functions": 91,
-      "loc": 4746,
+      "functions": 92,
+      "loc": 4834,
       "path": "orchestration/retirements/e07-native-code/rollback-rehearsal/run-code-intel.ps1",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -206,19 +206,19 @@
   "metrics": {
     "branch_density_per_fn": 80,
     "complex_fn_count": 7,
-    "coupling_score": 63.85,
-    "cross_module_edges": 1992,
+    "coupling_score": 63.33,
+    "cross_module_edges": 2052,
     "cycle_count": 0,
-    "files": 387,
-    "functions": 5232,
+    "files": 399,
+    "functions": 5367,
     "god_file_count": 33,
-    "import_modeled_files": 312,
+    "import_modeled_files": 324,
     "max_complexity": 80,
-    "quality_signal": 6237,
-    "total_import_edges": 1992
+    "quality_signal": 6236,
+    "total_import_edges": 2052
   },
-  "savedAt": 1787858880,
+  "savedAt": 1788471122,
   "schema": "code-intel-sentrux-baseline.v6",
   "scope": ".",
-  "sourceCommit": "a996d51445f3d68b44eb26aab10a984581906c76"
+  "sourceCommit": "5a6eb4422b90f9b12dfea36fa2e917ee01c9e064"
 }
