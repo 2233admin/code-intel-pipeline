@@ -6,6 +6,30 @@ use serde_json::{json, Map, Value};
 use super::{publish_named, AdapterArtifact, AdapterError, AdapterOutput};
 use crate::adapter_contract::AdapterDomainVerdict;
 use crate::artifact_ref::VerifiedArtifact;
+use crate::capability::reject_duplicate_json_keys;
+
+fn parse_payload(bytes: &[u8], label: &str) -> Result<Value, String> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|error| format!("{label} is not UTF-8: {error}"))?;
+    reject_duplicate_json_keys(text)?;
+    serde_json::from_str(text).map_err(|error| format!("{label} is not valid JSON: {error}"))
+}
+
+pub(crate) fn validate_context_payload(bytes: &[u8]) -> Result<(), String> {
+    let value = parse_payload(bytes, "design context")?;
+    validate_context_shape(&value).map_err(|error| error_message(&error))
+}
+
+pub(crate) fn validate_candidate_payload(bytes: &[u8]) -> Result<(), String> {
+    let value = parse_payload(bytes, "design proposal candidate")?;
+    validate_candidate_shape(&value).map_err(|error| error_message(&error))
+}
+
+pub(crate) fn validate_proposal_payload(bytes: &[u8]) -> Result<(), String> {
+    let value = parse_payload(bytes, "design proposal")?;
+    validate_proposal_shape(&value, RESULT_SCHEMA, "proposal")
+        .map_err(|error| error_message(&error))
+}
 
 const CONTEXT_SCHEMA: &str = "code-intel-design-context.v1";
 const CANDIDATE_SCHEMA: &str = "code-intel-design-proposal-candidate.v1";
@@ -209,6 +233,14 @@ fn validate_and_publish(
 }
 
 fn validate_candidate_shape(candidate: &Value) -> Result<(), AdapterError> {
+    validate_proposal_shape(candidate, CANDIDATE_SCHEMA, "design_proposal_candidate")
+}
+
+fn validate_proposal_shape(
+    candidate: &Value,
+    expected_schema: &str,
+    expected_kind: &str,
+) -> Result<(), AdapterError> {
     let object = candidate.as_object().ok_or_else(|| {
         contract("proposal_invalid_shape", "candidate must be an object")
     })?;
@@ -232,7 +264,7 @@ fn validate_candidate_shape(candidate: &Value) -> Result<(), AdapterError> {
         "proposal_invalid_shape",
         "candidate",
     )?;
-    if candidate["schema"] != CANDIDATE_SCHEMA || candidate["kind"] != "design_proposal_candidate" {
+    if candidate["schema"] != expected_schema || candidate["kind"] != expected_kind {
         return Err(contract(
             "proposal_invalid_shape",
             "candidate schema or kind is invalid",
@@ -367,7 +399,7 @@ fn validate_options(options: &[Value]) -> Result<(), AdapterError> {
 }
 
 fn validate_option_requirements(candidate: &Value) -> Result<(), AdapterError> {
-    for option in candidate["options"].as_array().unwrap_or(&[]) {
+    for option in candidate["options"].as_array().map_or(&[][..], Vec::as_slice) {
         for field in ["boundaryChanges", "validationPlan"] {
             if !nonempty_string_array(option.get(field)) {
                 return Err(contract(
@@ -399,12 +431,15 @@ fn validate_recommendation(recommendation: &Value, options: &[Value]) -> Result<
 
 fn validate_methods(candidate: &Value, context: &Value) -> Result<(), AdapterError> {
     let catalog = load_catalog().map_err(|error| {
-        contract("proposal_validation_unknown", format!("method catalog unavailable: {error}"))
+        contract(
+            "proposal_validation_unknown",
+            format!("method catalog unavailable: {}", error_message(&error)),
+        )
     })?;
-    let context_methods = context["methods"].as_array().unwrap_or(&[]);
+    let context_methods = context["methods"].as_array().map_or(&[][..], Vec::as_slice);
     let context_evidence = evidence_set(context)?;
     let mut unknown_methods = Vec::new();
-    for method in candidate["methods"].as_array().unwrap_or(&[]) {
+    for method in candidate["methods"].as_array().map_or(&[][..], Vec::as_slice) {
         let id = method["id"].as_str().unwrap();
         let card = catalog.cards().iter().find(|card| card["id"] == id);
         let refs = method["evidenceRefs"].as_array().unwrap();
@@ -482,10 +517,10 @@ fn validate_evidence_refs(candidate: &Value, context: &Value) -> Result<(), Adap
     let mut references = Vec::new();
     references.extend(section_refs(candidate, "baseline")?);
     references.extend(section_refs(candidate, "delta")?);
-    for method in candidate["methods"].as_array().unwrap_or(&[]) {
+    for method in candidate["methods"].as_array().map_or(&[][..], Vec::as_slice) {
         references.extend(value_refs(method.get("evidenceRefs"))?);
     }
-    for option in candidate["options"].as_array().unwrap_or(&[]) {
+    for option in candidate["options"].as_array().map_or(&[][..], Vec::as_slice) {
         references.extend(value_refs(option.get("evidenceRefs"))?);
     }
     if context_refs.is_empty() && !references.is_empty() {
@@ -538,7 +573,9 @@ fn validate_context_shape(context: &Value) -> Result<(), AdapterError> {
         return Err(contract("proposal_invalid_shape", "context schema or type is invalid"));
     }
     validate_snapshot_object(&context["snapshot"], "context.snapshot")?;
-    if !string_array(&context["evidenceRefs"], "context.evidenceRefs")
+    if !context["evidenceRefs"].as_array().is_some_and(|values| {
+        values.iter().all(|value| value.as_str().is_some_and(valid_evidence_ref))
+    })
         || !string_array(&context["methods"], "context.methods")
         || !string_array(&context["constraints"], "context.constraints")
         || !string_array(&context["knownUnknowns"], "context.knownUnknowns")
@@ -690,7 +727,7 @@ fn nonempty_evidence_refs(value: Option<&Value>) -> bool {
             !values.is_empty()
                 && values
                     .iter()
-                    .all(|value| value.as_str().is_some_and(|value| !value.is_empty()))
+                    .all(|value| value.as_str().is_some_and(valid_evidence_ref))
         })
     })
 }

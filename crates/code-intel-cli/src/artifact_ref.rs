@@ -6,6 +6,9 @@ use serde_json::{json, Value};
 #[path = "content_contract.rs"]
 mod content_contract;
 
+use crate::capability_inventory::design_proposal::{
+    validate_candidate_payload, validate_context_payload, validate_proposal_payload,
+};
 use crate::stable_artifact::{self, FileId, StableReadError};
 use content_contract::{
     is_digest as valid_digest, is_run_identity as valid_run_identity, reject_duplicate_json_keys,
@@ -350,6 +353,26 @@ fn advisory_family_contract(schema: &str, artifact_type: &str) -> Option<Artifac
                 validate_payload: validate_workflow_recommendation,
             })
         }
+        ("code-intel-design-context.v1", "design.context") => Some(ArtifactContract {
+            artifact_schema: "code-intel-design-context.v1",
+            artifact_type: "design.context",
+            max_bytes: 8 * 1024 * 1024,
+            validate_payload: validate_context_payload,
+        }),
+        ("code-intel-design-proposal-candidate.v1", "design.proposal-candidate") => {
+            Some(ArtifactContract {
+                artifact_schema: "code-intel-design-proposal-candidate.v1",
+                artifact_type: "design.proposal-candidate",
+                max_bytes: 8 * 1024 * 1024,
+                validate_payload: validate_candidate_payload,
+            })
+        }
+        ("code-intel-design-proposal.v1", "design.proposal") => Some(ArtifactContract {
+            artifact_schema: "code-intel-design-proposal.v1",
+            artifact_type: "design.proposal",
+            max_bytes: 8 * 1024 * 1024,
+            validate_payload: validate_proposal_payload,
+        }),
         _ => None,
     }
 }

@@ -1,4 +1,6 @@
 mod common;
+#[path = "support/sha256.rs"]
+mod sha256;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -62,6 +64,17 @@ fn artifact_ref(path: &str, bytes: &[u8], snapshot_identity: &Value) -> Value {
         "type":"inventory.files",
         "path":path,
         "sha256":sha256(bytes),
+        "consumedSnapshotIdentity":snapshot_identity
+    })
+}
+
+fn proposal_artifact_ref(path: &str, schema: &str, artifact_type: &str, bytes: &[u8], snapshot_identity: &Value) -> Value {
+    json!({
+        "schema":"code-intel-artifact-ref.v1",
+        "artifactSchema":schema,
+        "type":artifact_type,
+        "path":path,
+        "sha256":sha256::sha256_hex(bytes),
         "consumedSnapshotIdentity":snapshot_identity
     })
 }
@@ -538,4 +551,128 @@ fn artifact_ref_rejects_hardlink_aliases_and_duplicate_root_authority() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(64));
+}
+#[test]
+fn design_proposal_artifact_contracts_register_and_fail_closed() {
+    let (root, repo, snapshot, _) = fixture();
+    let artifacts = root.0.join("artifacts");
+    fs::create_dir(&artifacts).unwrap();
+    let payload_path = artifacts.join("payload.json");
+
+    let context = json!({
+        "schema":"code-intel-design-context.v1",
+        "type":"design.context",
+        "snapshot":snapshot.clone(),
+        "evidenceRefs":[],
+        "methods":[],
+        "constraints":[],
+        "knownUnknowns":[]
+    });
+    let context_bytes = serde_json::to_vec(&context).unwrap();
+    fs::write(&payload_path, &context_bytes).unwrap();
+    let context_ref = proposal_artifact_ref(
+        "payload.json",
+        "code-intel-design-context.v1",
+        "design.context",
+        &context_bytes,
+        &snapshot["identity"],
+    );
+    let context_output = run(
+        &root.0,
+        &request(&repo, context_ref),
+        Some(&artifacts),
+        &root.0.join("out-context-contract"),
+    );
+    assert_eq!(
+        context_output.status.code(),
+        Some(0),
+        "context contract was not accepted: {}",
+        String::from_utf8_lossy(&context_output.stdout)
+    );
+
+    let mut context_with_unknown = context.clone();
+    context_with_unknown["extra"] = json!(true);
+    let context_unknown_bytes = serde_json::to_vec(&context_with_unknown).unwrap();
+    fs::write(&payload_path, &context_unknown_bytes).unwrap();
+    let context_unknown_ref = proposal_artifact_ref(
+        "payload.json",
+        "code-intel-design-context.v1",
+        "design.context",
+        &context_unknown_bytes,
+        &snapshot["identity"],
+    );
+    let output = run(
+        &root.0,
+        &request(&repo, context_unknown_ref),
+        Some(&artifacts),
+        &root.0.join("out-context-unknown-key"),
+    );
+    assert_eq!(output.status.code(), Some(65));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("proposal_invalid_shape"));
+
+    fs::write(&payload_path, &context_bytes).unwrap();
+    let wrong_schema_ref = proposal_artifact_ref(
+        "payload.json",
+        "code-intel-design-context.v2",
+        "design.context",
+        &context_bytes,
+        &snapshot["identity"],
+    );
+    let output = run(
+        &root.0,
+        &request(&repo, wrong_schema_ref),
+        Some(&artifacts),
+        &root.0.join("out-context-wrong-schema"),
+    );
+    assert_eq!(output.status.code(), Some(65));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("not registered"));
+
+    for (index, (schema, artifact_type)) in [
+        (
+            "code-intel-design-proposal-candidate.v1",
+            "design.proposal-candidate",
+        ),
+        ("code-intel-design-proposal.v1", "design.proposal"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let malformed = br#"{}"#;
+        fs::write(&payload_path, malformed).unwrap();
+        let reference = proposal_artifact_ref(
+            "payload.json",
+            schema,
+            artifact_type,
+            malformed,
+            &snapshot["identity"],
+        );
+        let output = run(
+            &root.0,
+            &request(&repo, reference),
+            Some(&artifacts),
+            &root.0.join(format!("out-malformed-{index}")),
+        );
+        assert_eq!(output.status.code(), Some(65));
+        let text = String::from_utf8_lossy(&output.stdout);
+        assert!(text.contains("proposal_invalid_shape"), "{schema}/{artifact_type}: {text}");
+        assert!(!text.contains("not registered"), "{schema}/{artifact_type} was not registered: {text}");
+    }
+
+    let unknown = br#"{}"#;
+    fs::write(&payload_path, unknown).unwrap();
+    let unknown_ref = proposal_artifact_ref(
+        "payload.json",
+        "code-intel-design-unknown.v1",
+        "design.unknown",
+        unknown,
+        &snapshot["identity"],
+    );
+    let output = run(
+        &root.0,
+        &request(&repo, unknown_ref),
+        Some(&artifacts),
+        &root.0.join("out-unknown-design-contract"),
+    );
+    assert_eq!(output.status.code(), Some(65));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("not registered"));
 }
