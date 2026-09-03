@@ -207,3 +207,31 @@ fn option_count_diagnostic_rejects_one_and_four_options() {
         assert!(!out.join("design-proposal.json").exists());
     }
 }
+#[test]
+fn proposal_schemas_match_validator_array_contract() {
+    for schema_name in [
+        "code-intel-design-proposal-candidate.v1.schema.json",
+        "code-intel-design-proposal.v1.schema.json",
+    ] {
+        let schema: Value = serde_json::from_slice(
+            &fs::read(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../orchestration/schemas")
+                    .join(schema_name),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(schema["$defs"]["nonemptyStrings"]["minItems"], json!(1));
+        assert!(schema["$defs"]["nonemptyStrings"]["items"]
+            .get("minLength")
+            .is_none());
+        for field in ["boundaryChanges", "validationPlan"] {
+            assert_eq!(
+                schema["$defs"]["option"]["properties"][field]["$ref"],
+                json!("#/$defs/nonemptyStrings"),
+                "{schema_name} option.{field} must reject empty arrays",
+            );
+        }
+    }
+}

@@ -39,7 +39,7 @@
       "type": "array", "minItems": 1,
       "items": { "type": "string", "pattern": "^artifact://sha256/[0-9a-f]{64}$" }
     },
-    "nonemptyStrings": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "nonemptyStrings": { "type": "array", "minItems": 1, "items": { "type": "string" } },
     "stringArray": { "type": "array", "items": { "type": "string" } },
     "snapshot": {
       "type": "object", "additionalProperties": false,
@@ -77,11 +77,11 @@
         "id": { "type": "string", "minLength": 1 },
         "title": { "type": "string", "minLength": 1 },
         "summary": { "type": "string", "minLength": 1 },
-        "boundaryChanges": { "$ref": "#/$defs/stringArray" },
+        "boundaryChanges": { "$ref": "#/$defs/nonemptyStrings" },
         "tradeoffs": { "$ref": "#/$defs/stringArray" },
         "assumptions": { "$ref": "#/$defs/stringArray" },
         "evidenceRefs": { "$ref": "#/$defs/evidenceRefs" },
-        "validationPlan": { "$ref": "#/$defs/stringArray" },
+        "validationPlan": { "$ref": "#/$defs/nonemptyStrings" },
         "reversibility": {
           "type": "object", "additionalProperties": false, "required": ["status", "basis"],
           "properties": { "status": { "type": "string", "minLength": 1 }, "basis": { "type": "string", "minLength": 1 } }

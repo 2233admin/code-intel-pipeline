@@ -45,7 +45,7 @@
         "local:task5:design-proposal-conformance",
         "local:task5:ten-contract-tests",
         "local:task5:source-sha256:af1110b8b61257880375d8fa13c7a5524f5c84f0743eaf17e0a6b85196426a46",
-        "local:task5:conformance-sha256:73e1764f1cbcacfc8d42e00c5cb90ede8f58132feff613e6b6d44d039d670eba"
+        "local:task5:conformance-sha256:09a92d61e653f6662549b980a84d95795713515cb41fe3f692b09f9b58c7f2d4"
       ],
       "checkedAt": 1788393600,
       "expiresAt": 1790985600
@@ -67,7 +67,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/design_proposal.rs",
-        "sha256": "73e1764f1cbcacfc8d42e00c5cb90ede8f58132feff613e6b6d44d039d670eba",
+        "sha256": "09a92d61e653f6662549b980a84d95795713515cb41fe3f692b09f9b58c7f2d4",
         "testName": "valid_two_option_candidate_stages_advisory_result"
       }
     }
@@ -142,7 +142,7 @@
     {
       "path": "crates/code-intel-cli/tests/design_proposal.rs",
       "description": "Ten-case end-to-end contract conformance suite for context, valid proposals, and rejection diagnostics",
-      "sha256": "73e1764f1cbcacfc8d42e00c5cb90ede8f58132feff613e6b6d44d039d670eba"
+      "sha256": "09a92d61e653f6662549b980a84d95795713515cb41fe3f692b09f9b58c7f2d4"
     }
   ],
   "rollback": {

@@ -34,11 +34,38 @@
       ]
     },
     {
+      "methodId": "legacy-characterization-test",
+      "signalIds": ["unknown-legacy-behavior", "missing-characterization-coverage", "high-change-risk"],
+      "contraindications": [
+        { "signalId": "no-observable-behavior", "cardText": "No externally observable behavior can be captured" },
+        { "signalId": "unsafe-observation-path", "cardText": "The observation path mutates production state without safe isolation" },
+        { "signalId": "implementation-detail-only", "cardText": "Examples would encode implementation details rather than behavior" }
+      ]
+    },
+    {
+      "methodId": "legacy-seam-extraction",
+      "signalIds": ["hidden-dependencies", "global-state", "mixed-responsibilities", "untestable-side-effects"],
+      "contraindications": [
+        { "signalId": "no-stable-boundary", "cardText": "No stable responsibility boundary can be identified" },
+        { "signalId": "unobserved-contract-change", "cardText": "Extraction would require changing an unobserved contract" },
+        { "signalId": "unisolatable-side-effects", "cardText": "Side effects cannot be isolated or safely replayed" }
+      ]
+    },
+    {
       "methodId": "pdca",
       "signalIds": ["repeated-corrective-action", "uncontrolled-improvement"],
       "contraindications": [
         { "signalId": "irreversible-uncontrolled-change", "cardText": "The proposed action is irreversible without prior risk controls" },
         { "signalId": "no-measurable-trial", "cardText": "No measurable target or bounded trial can be defined" }
+      ]
+    },
+    {
+      "methodId": "refactor-small-step",
+      "signalIds": ["code-smells", "excessive-complexity", "boundary-erosion"],
+      "contraindications": [
+        { "signalId": "non-executable-baseline", "cardText": "The baseline is not executable or does not cover the scope" },
+        { "signalId": "behavior-changing-migration", "cardText": "The change requires a behavior-changing migration" },
+        { "signalId": "coupled-transformations", "cardText": "Multiple coupled transformations cannot be separated safely" }
       ]
     },
     {
