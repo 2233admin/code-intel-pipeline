@@ -7,7 +7,7 @@
     "kind": "method_implementation",
     "source": {
       "uri": "local:crates/code-intel-cli/src/design_proposal.rs",
-      "revision": "design-proposal.rust.v1; source-sha256:6deeaf0c41d56c26cf5df982ab6845e8851a33bca77d9e6b521e236c66f4974f"
+      "revision": "design-proposal.rust.v1; source-sha256:af1110b8b61257880375d8fa13c7a5524f5c84f0743eaf17e0a6b85196426a46"
     },
     "license": {
       "id": "PROJECT-LICENSE-PIPELINE-OWNED-ADVISORY",
@@ -44,7 +44,7 @@
       "evidenceIds": [
         "local:task5:design-proposal-conformance",
         "local:task5:ten-contract-tests",
-        "local:task5:source-sha256:6deeaf0c41d56c26cf5df982ab6845e8851a33bca77d9e6b521e236c66f4974f",
+        "local:task5:source-sha256:af1110b8b61257880375d8fa13c7a5524f5c84f0743eaf17e0a6b85196426a46",
         "local:task5:conformance-sha256:73e1764f1cbcacfc8d42e00c5cb90ede8f58132feff613e6b6d44d039d670eba"
       ],
       "checkedAt": 1788393600,
@@ -63,7 +63,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/design_proposal.rs",
-        "sha256": "6deeaf0c41d56c26cf5df982ab6845e8851a33bca77d9e6b521e236c66f4974f"
+        "sha256": "af1110b8b61257880375d8fa13c7a5524f5c84f0743eaf17e0a6b85196426a46"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/design_proposal.rs",
@@ -137,7 +137,7 @@
     {
       "path": "crates/code-intel-cli/src/design_proposal.rs",
       "description": "Rust context preparation, evidence validation, snapshot binding, and staged advisory publication adapter",
-      "sha256": "6deeaf0c41d56c26cf5df982ab6845e8851a33bca77d9e6b521e236c66f4974f"
+      "sha256": "af1110b8b61257880375d8fa13c7a5524f5c84f0743eaf17e0a6b85196426a46"
     },
     {
       "path": "crates/code-intel-cli/tests/design_proposal.rs",

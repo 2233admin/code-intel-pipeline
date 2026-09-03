@@ -5,8 +5,10 @@ use serde_json::{json, Value};
 
 #[path = "content_contract.rs"]
 mod content_contract;
+#[path = "design_proposal_contract.rs"]
+pub(crate) mod design_proposal_contract;
 
-use crate::capability_inventory::design_proposal::{
+use design_proposal_contract::{
     validate_candidate_payload, validate_context_payload, validate_proposal_payload,
 };
 use crate::stable_artifact::{self, FileId, StableReadError};
