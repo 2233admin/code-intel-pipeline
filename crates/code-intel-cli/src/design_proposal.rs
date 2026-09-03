@@ -4,9 +4,11 @@ use serde_json::{json, Value};
 
 use super::{publish_named, AdapterArtifact, AdapterError, AdapterOutput};
 use crate::adapter_contract::AdapterDomainVerdict;
-use crate::artifact_ref::VerifiedArtifact;
 use crate::artifact_ref::design_proposal_contract;
-pub(crate) use design_proposal_contract::{validate_candidate_payload, validate_context_payload, validate_proposal_payload};
+use crate::artifact_ref::VerifiedArtifact;
+pub(crate) use design_proposal_contract::{
+    validate_candidate_payload, validate_context_payload, validate_proposal_payload,
+};
 
 const CONTEXT_SCHEMA: &str = "code-intel-design-context.v1";
 const CANDIDATE_SCHEMA: &str = "code-intel-design-proposal-candidate.v1";
@@ -53,13 +55,22 @@ fn build_context(
     out: &Path,
 ) -> Result<AdapterOutput, AdapterError> {
     if !verified_inputs.is_empty() {
-        return Err(design_proposal_contract::contract("proposal_invalid_shape", "context mode requires zero input artifacts"));
+        return Err(design_proposal_contract::contract(
+            "proposal_invalid_shape",
+            "context mode requires zero input artifacts",
+        ));
     }
     let options = request["options"].as_object().expect("validated options");
-    let methods = design_proposal_contract::requested_strings(options.get("methodIds"), "options.methodIds")?;
-    let constraints = design_proposal_contract::optional_strings(options.get("constraints"), "options.constraints")?;
-    let mut known_unknowns =
-        design_proposal_contract::optional_strings(options.get("knownUnknowns"), "options.knownUnknowns")?;
+    let methods =
+        design_proposal_contract::requested_strings(options.get("methodIds"), "options.methodIds")?;
+    let constraints = design_proposal_contract::optional_strings(
+        options.get("constraints"),
+        "options.constraints",
+    )?;
+    let mut known_unknowns = design_proposal_contract::optional_strings(
+        options.get("knownUnknowns"),
+        "options.knownUnknowns",
+    )?;
     if !methods.is_empty() && verified_inputs.is_empty() {
         known_unknowns.extend(
             methods
@@ -81,7 +92,9 @@ fn build_context(
                 "proposal_method_not_applicable: method is not in the loaded catalog: {method}"
             )));
         }
-        known_unknowns.push(format!("required evidence for method {method} is not supplied"));
+        known_unknowns.push(format!(
+            "required evidence for method {method} is not supplied"
+        ));
     }
 
     let context = json!({
@@ -133,23 +146,20 @@ fn validate_and_publish(
             (CANDIDATE_SCHEMA, CANDIDATE_TYPE) if candidate_artifact.is_none() => {
                 candidate_artifact = Some(artifact)
             }
-            _ => {
-                return Err(design_proposal_contract::contract(
-                    "proposal_invalid_shape",
-                    "validate inputs must contain one design.context and one design.proposal-candidate",
-                ))
-            }
-        }
-    }
-    let (context_artifact, candidate_artifact) = match (context_artifact, candidate_artifact) {
-        (Some(context), Some(candidate)) => (context, candidate),
-        _ => {
-            return Err(design_proposal_contract::contract(
+            _ => return Err(design_proposal_contract::contract(
                 "proposal_invalid_shape",
                 "validate inputs must contain one design.context and one design.proposal-candidate",
-            ))
+            )),
         }
-    };
+    }
+    let (context_artifact, candidate_artifact) =
+        match (context_artifact, candidate_artifact) {
+            (Some(context), Some(candidate)) => (context, candidate),
+            _ => return Err(design_proposal_contract::contract(
+                "proposal_invalid_shape",
+                "validate inputs must contain one design.context and one design.proposal-candidate",
+            )),
+        };
     let context: Value = serde_json::from_slice(context_artifact.bytes()).map_err(|error| {
         design_proposal_contract::contract(
             "proposal_invalid_shape",
@@ -163,16 +173,24 @@ fn validate_and_publish(
         )
     })?;
 
-    if let Err(error) = design_proposal_contract::validate_snapshot_object(&request["snapshot"], "request.snapshot")
-        .and_then(|_| design_proposal_contract::validate_context_shape(&context))
-        .and_then(|_| design_proposal_contract::validate_candidate_shape(&candidate))
-        .and_then(|_| design_proposal_contract::validate_snapshot(&candidate, &context))
-        .and_then(|_| design_proposal_contract::validate_methods(&candidate, &context))
-        .and_then(|_| design_proposal_contract::validate_evidence_refs(&candidate, &context))
-        .and_then(|_| design_proposal_contract::validate_option_requirements(&candidate))
-        .and_then(|_| design_proposal_contract::validate_recommendation(&candidate["recommendation"], candidate["options"].as_array().unwrap()))
+    if let Err(error) =
+        design_proposal_contract::validate_snapshot_object(&request["snapshot"], "request.snapshot")
+            .and_then(|_| design_proposal_contract::validate_context_shape(&context))
+            .and_then(|_| design_proposal_contract::validate_candidate_shape(&candidate))
+            .and_then(|_| design_proposal_contract::validate_snapshot(&candidate, &context))
+            .and_then(|_| design_proposal_contract::validate_methods(&candidate, &context))
+            .and_then(|_| design_proposal_contract::validate_evidence_refs(&candidate, &context))
+            .and_then(|_| design_proposal_contract::validate_option_requirements(&candidate))
+            .and_then(|_| {
+                design_proposal_contract::validate_recommendation(
+                    &candidate["recommendation"],
+                    candidate["options"].as_array().unwrap(),
+                )
+            })
     {
-        return Ok(failure_output(design_proposal_contract::error_message(&error)));
+        return Ok(failure_output(design_proposal_contract::error_message(
+            &error,
+        )));
     }
 
     if request["snapshot"] != context["snapshot"] || request["snapshot"] != candidate["snapshot"] {
@@ -224,4 +242,3 @@ fn unknown_output(message: impl Into<String>) -> AdapterOutput {
         domain_failure: Some(message.into()),
     }
 }
-

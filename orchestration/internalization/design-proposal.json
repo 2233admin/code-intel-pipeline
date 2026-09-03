@@ -7,7 +7,7 @@
     "kind": "method_implementation",
     "source": {
       "uri": "local:crates/code-intel-cli/src/design_proposal.rs",
-      "revision": "design-proposal.rust.v1; source-sha256:af1110b8b61257880375d8fa13c7a5524f5c84f0743eaf17e0a6b85196426a46"
+      "revision": "design-proposal.rust.v1; source-sha256:8574e06aa20b6a89556447b9b13e5679924614a2b028c03214dbfdf0765a67ac"
     },
     "license": {
       "id": "PROJECT-LICENSE-PIPELINE-OWNED-ADVISORY",
@@ -44,8 +44,8 @@
       "evidenceIds": [
         "local:task5:design-proposal-conformance",
         "local:task5:ten-contract-tests",
-        "local:task5:source-sha256:af1110b8b61257880375d8fa13c7a5524f5c84f0743eaf17e0a6b85196426a46",
-        "local:task5:conformance-sha256:09a92d61e653f6662549b980a84d95795713515cb41fe3f692b09f9b58c7f2d4"
+        "local:task5:source-sha256:8574e06aa20b6a89556447b9b13e5679924614a2b028c03214dbfdf0765a67ac",
+        "local:task5:conformance-sha256:324fc20eb98ed81b4ece1a19c7f4393bf68eb1d92c6c094f22f1b412ac9f9dde"
       ],
       "checkedAt": 1788393600,
       "expiresAt": 1790985600
@@ -63,11 +63,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/design_proposal.rs",
-        "sha256": "af1110b8b61257880375d8fa13c7a5524f5c84f0743eaf17e0a6b85196426a46"
+        "sha256": "8574e06aa20b6a89556447b9b13e5679924614a2b028c03214dbfdf0765a67ac"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/design_proposal.rs",
-        "sha256": "09a92d61e653f6662549b980a84d95795713515cb41fe3f692b09f9b58c7f2d4",
+        "sha256": "324fc20eb98ed81b4ece1a19c7f4393bf68eb1d92c6c094f22f1b412ac9f9dde",
         "testName": "valid_two_option_candidate_stages_advisory_result"
       }
     }
@@ -137,12 +137,12 @@
     {
       "path": "crates/code-intel-cli/src/design_proposal.rs",
       "description": "Rust context preparation, evidence validation, snapshot binding, and staged advisory publication adapter",
-      "sha256": "af1110b8b61257880375d8fa13c7a5524f5c84f0743eaf17e0a6b85196426a46"
+      "sha256": "8574e06aa20b6a89556447b9b13e5679924614a2b028c03214dbfdf0765a67ac"
     },
     {
       "path": "crates/code-intel-cli/tests/design_proposal.rs",
       "description": "Ten-case end-to-end contract conformance suite for context, valid proposals, and rejection diagnostics",
-      "sha256": "09a92d61e653f6662549b980a84d95795713515cb41fe3f692b09f9b58c7f2d4"
+      "sha256": "324fc20eb98ed81b4ece1a19c7f4393bf68eb1d92c6c094f22f1b412ac9f9dde"
     }
   ],
   "rollback": {

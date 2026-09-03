@@ -68,7 +68,13 @@ fn artifact_ref(path: &str, bytes: &[u8], snapshot_identity: &Value) -> Value {
     })
 }
 
-fn proposal_artifact_ref(path: &str, schema: &str, artifact_type: &str, bytes: &[u8], snapshot_identity: &Value) -> Value {
+fn proposal_artifact_ref(
+    path: &str,
+    schema: &str,
+    artifact_type: &str,
+    bytes: &[u8],
+    snapshot_identity: &Value,
+) -> Value {
     json!({
         "schema":"code-intel-artifact-ref.v1",
         "artifactSchema":schema,
@@ -692,8 +698,14 @@ fn design_proposal_artifact_contracts_register_and_fail_closed() {
         );
         assert_eq!(output.status.code(), Some(65));
         let text = String::from_utf8_lossy(&output.stdout);
-        assert!(text.contains("proposal_invalid_shape"), "{schema}/{artifact_type}: {text}");
-        assert!(!text.contains("not registered"), "{schema}/{artifact_type} was not registered: {text}");
+        assert!(
+            text.contains("proposal_invalid_shape"),
+            "{schema}/{artifact_type}: {text}"
+        );
+        assert!(
+            !text.contains("not registered"),
+            "{schema}/{artifact_type} was not registered: {text}"
+        );
     }
 
     let unknown = br#"{}"#;

@@ -8,13 +8,13 @@ mod content_contract;
 #[path = "design_proposal_contract.rs"]
 pub(crate) mod design_proposal_contract;
 
-use design_proposal_contract::{
-    validate_candidate_payload, validate_context_payload, validate_proposal_payload,
-};
 use crate::stable_artifact::{self, FileId, StableReadError};
 use content_contract::{
     is_digest as valid_digest, is_run_identity as valid_run_identity, reject_duplicate_json_keys,
     require_exact_keys, sha256_hex, validate_artifact_ref_shape,
+};
+use design_proposal_contract::{
+    validate_candidate_payload, validate_context_payload, validate_proposal_payload,
 };
 
 const MAX_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;
@@ -4418,7 +4418,10 @@ mod tests {
         let candidate_contract = registered_contract(&candidate_ref).unwrap();
         let mut candidate_bad = candidate.clone();
         candidate_bad["options"][0]["boundaryChanges"] = json!([]);
-        assert!((candidate_contract.validate_payload)(&serde_json::to_vec(&candidate_bad).unwrap()).is_err());
+        assert!((candidate_contract.validate_payload)(
+            &serde_json::to_vec(&candidate_bad).unwrap()
+        )
+        .is_err());
 
         let proposal_ref = json!({
             "artifactSchema": "code-intel-design-proposal.v1",
@@ -4427,6 +4430,9 @@ mod tests {
         let proposal_contract = registered_contract(&proposal_ref).unwrap();
         let mut proposal_bad = proposal;
         proposal_bad["options"][0]["validationPlan"] = json!([]);
-        assert!((proposal_contract.validate_payload)(&serde_json::to_vec(&proposal_bad).unwrap()).is_err());
+        assert!(
+            (proposal_contract.validate_payload)(&serde_json::to_vec(&proposal_bad).unwrap())
+                .is_err()
+        );
     }
 }

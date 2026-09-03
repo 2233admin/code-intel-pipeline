@@ -656,7 +656,10 @@ fn design_proposal_declaration_is_registered_and_bounded() {
     let declaration = &contract["declaration"]["designProposal"];
     assert_eq!(declaration["capability"], "advisory.design-proposal.compat");
     assert_eq!(declaration["transport"], "code-intel-capability-request.v1");
-    assert_eq!(declaration["request"], "code-intel-design-proposal-request.v1");
+    assert_eq!(
+        declaration["request"],
+        "code-intel-design-proposal-request.v1"
+    );
     assert_eq!(declaration["authority"], "advisory_only");
     assert_eq!(
         string_list(&declaration["allowedEffects"], "design proposal effects"),
@@ -666,16 +669,31 @@ fn design_proposal_declaration_is_registered_and_bounded() {
         .as_array()
         .expect("design proposal artifact identities");
     assert_eq!(identities.len(), 3);
-    assert_eq!(identities[0], json!({"schema":"code-intel-design-context.v1","type":"design.context"}));
-    assert_eq!(identities[1], json!({"schema":"code-intel-design-proposal-candidate.v1","type":"design.proposal-candidate"}));
-    assert_eq!(identities[2], json!({"schema":"code-intel-design-proposal.v1","type":"design.proposal"}));
+    assert_eq!(
+        identities[0],
+        json!({"schema":"code-intel-design-context.v1","type":"design.context"})
+    );
+    assert_eq!(
+        identities[1],
+        json!({"schema":"code-intel-design-proposal-candidate.v1","type":"design.proposal-candidate"})
+    );
+    assert_eq!(
+        identities[2],
+        json!({"schema":"code-intel-design-proposal.v1","type":"design.proposal"})
+    );
     assert_eq!(declaration["operations"]["context"]["consumes"], json!([]));
-    assert_eq!(declaration["operations"]["context"]["emits"], json!(["design.context"]));
+    assert_eq!(
+        declaration["operations"]["context"]["emits"],
+        json!(["design.context"])
+    );
     assert_eq!(
         declaration["operations"]["validate"]["consumes"],
         json!(["design.context", "design.proposal-candidate"])
     );
-    assert_eq!(declaration["operations"]["validate"]["emits"], json!(["design.proposal"]));
+    assert_eq!(
+        declaration["operations"]["validate"]["emits"],
+        json!(["design.proposal"])
+    );
 
     let integration = registry["integrations"]
         .as_array()
@@ -683,43 +701,55 @@ fn design_proposal_declaration_is_registered_and_bounded() {
         .iter()
         .find(|entry| entry["id"] == "advisory.design-proposal.compat")
         .expect("design proposal integration");
-    assert_eq!(integration["capabilityDeclaration"], json!({
-        "schema": "code-intel-capability-declaration.v1",
-        "id": "advisory.design-proposal.compat",
-        "contractVersion": 1,
-        "implementation": {
-            "id": "design-proposal.rust.v1",
-            "version": "1.0.0",
-            "toolchainDigests": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]
-        },
-        "determinism": "deterministic",
-        "allowedEffects": ["repo_read", "local_write"],
-        "dependencies": ["repo.snapshot"]
-    }));
+    assert_eq!(
+        integration["capabilityDeclaration"],
+        json!({
+            "schema": "code-intel-capability-declaration.v1",
+            "id": "advisory.design-proposal.compat",
+            "contractVersion": 1,
+            "implementation": {
+                "id": "design-proposal.rust.v1",
+                "version": "1.0.0",
+                "toolchainDigests": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]
+            },
+            "determinism": "deterministic",
+            "allowedEffects": ["repo_read", "local_write"],
+            "dependencies": ["repo.snapshot"]
+        })
+    );
     assert_eq!(integration["authority"], "advisory_only");
     assert_eq!(integration["commands"]["capabilityExec"], "code-intel capability exec advisory.design-proposal.compat --request <request.json|-> --out <staging-dir> --artifact-root <run-root>");
     assert_eq!(
-        string_list(&integration["effects"], "design proposal integration effects"),
+        string_list(
+            &integration["effects"],
+            "design proposal integration effects"
+        ),
         ["repo_read", "local_write"]
     );
-    assert_eq!(integration["artifactIdentities"], declaration["artifactIdentities"]);
-    assert_eq!(integration["operations"], json!({
-        "context": {
-            "requestSchema": "code-intel-capability-request.v1",
-            "operationSchema": "code-intel-design-proposal-request.v1",
-            "consumes": [],
-            "emits": [{"schema":"code-intel-design-context.v1","type":"design.context"}]
-        },
-        "validate": {
-            "requestSchema": "code-intel-capability-request.v1",
-            "operationSchema": "code-intel-design-proposal-request.v1",
-            "consumes": [
-                {"schema":"code-intel-design-context.v1","type":"design.context"},
-                {"schema":"code-intel-design-proposal-candidate.v1","type":"design.proposal-candidate"}
-            ],
-            "emits": [{"schema":"code-intel-design-proposal.v1","type":"design.proposal"}]
-        }
-    }));
+    assert_eq!(
+        integration["artifactIdentities"],
+        declaration["artifactIdentities"]
+    );
+    assert_eq!(
+        integration["operations"],
+        json!({
+            "context": {
+                "requestSchema": "code-intel-capability-request.v1",
+                "operationSchema": "code-intel-design-proposal-request.v1",
+                "consumes": [],
+                "emits": [{"schema":"code-intel-design-context.v1","type":"design.context"}]
+            },
+            "validate": {
+                "requestSchema": "code-intel-capability-request.v1",
+                "operationSchema": "code-intel-design-proposal-request.v1",
+                "consumes": [
+                    {"schema":"code-intel-design-context.v1","type":"design.context"},
+                    {"schema":"code-intel-design-proposal-candidate.v1","type":"design.proposal-candidate"}
+                ],
+                "emits": [{"schema":"code-intel-design-proposal.v1","type":"design.proposal"}]
+            }
+        })
+    );
 
     let internalization = read_json("orchestration/internalization/design-proposal.json");
     assert_eq!(internalization["lifecycle"]["status"], "research");

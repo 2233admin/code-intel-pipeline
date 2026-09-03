@@ -93,7 +93,11 @@ fn seed_catalog_loads_all_twelve_methods_in_stable_order() {
             .iter()
             .find(|card| card["id"] == id)
             .unwrap();
-        for field in ["requiredEvidence", "deterministicSteps", "contraindications"] {
+        for field in [
+            "requiredEvidence",
+            "deterministicSteps",
+            "contraindications",
+        ] {
             assert!(!card[field].as_array().unwrap().is_empty(), "{id}:{field}");
         }
         assert!(!card["applicabilityBoundary"]["inScope"]
