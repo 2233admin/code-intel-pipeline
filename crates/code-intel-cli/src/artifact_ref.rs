@@ -4348,4 +4348,83 @@ mod tests {
         let error = validate_audit_report(&serde_json::to_vec(&value).unwrap()).unwrap_err();
         assert!(error.contains("unrecognized field"), "{error}");
     }
+    #[test]
+    fn design_proposal_contracts_bind_exact_pairs_limits_and_shared_validators() {
+        let snapshot = json!({
+            "identity": "a".repeat(64),
+            "repoIdentity": format!("content-v1:{}", "b".repeat(64)),
+            "head": "head",
+            "workingTreePolicy": "explicit_overlay",
+            "scope": ["."],
+            "inputDigest": "c".repeat(64)
+        });
+        let context = json!({
+            "schema": "code-intel-design-context.v1",
+            "type": "design.context",
+            "snapshot": snapshot.clone(),
+            "evidenceRefs": [],
+            "methods": [],
+            "constraints": [],
+            "knownUnknowns": []
+        });
+        let fixture = fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/design-proposal/valid-two-option.json"),
+        )
+        .unwrap();
+        let mut candidate: Value = serde_json::from_slice(&fixture).unwrap();
+        candidate["snapshot"] = snapshot;
+        let mut proposal = candidate.clone();
+        proposal["schema"] = json!("code-intel-design-proposal.v1");
+        proposal["kind"] = json!("proposal");
+
+        let cases = [
+            (
+                "code-intel-design-context.v1",
+                "design.context",
+                serde_json::to_vec(&context).unwrap(),
+                validate_context_payload as fn(&[u8]) -> Result<(), String>,
+            ),
+            (
+                "code-intel-design-proposal-candidate.v1",
+                "design.proposal-candidate",
+                serde_json::to_vec(&candidate).unwrap(),
+                validate_candidate_payload as fn(&[u8]) -> Result<(), String>,
+            ),
+            (
+                "code-intel-design-proposal.v1",
+                "design.proposal",
+                serde_json::to_vec(&proposal).unwrap(),
+                validate_proposal_payload as fn(&[u8]) -> Result<(), String>,
+            ),
+        ];
+
+        for (schema, artifact_type, bytes, validator) in cases {
+            let reference = json!({"artifactSchema": schema, "type": artifact_type});
+            let contract = registered_contract(&reference).unwrap();
+            assert_eq!(contract.artifact_schema, schema);
+            assert_eq!(contract.artifact_type, artifact_type);
+            assert_eq!(contract.max_bytes, 8 * 1024 * 1024);
+            assert_eq!(contract.validate_payload as usize, validator as usize);
+            validator(&bytes).unwrap();
+        }
+
+        let candidate_ref = json!({
+            "artifactSchema": "code-intel-design-proposal-candidate.v1",
+            "type": "design.proposal-candidate"
+        });
+        let candidate_contract = registered_contract(&candidate_ref).unwrap();
+        let mut candidate_bad = candidate.clone();
+        candidate_bad["options"][0]["boundaryChanges"] = json!([]);
+        assert!((candidate_contract.validate_payload)(&serde_json::to_vec(&candidate_bad).unwrap()).is_err());
+
+        let proposal_ref = json!({
+            "artifactSchema": "code-intel-design-proposal.v1",
+            "type": "design.proposal"
+        });
+        let proposal_contract = registered_contract(&proposal_ref).unwrap();
+        let mut proposal_bad = proposal;
+        proposal_bad["options"][0]["validationPlan"] = json!([]);
+        assert!((proposal_contract.validate_payload)(&serde_json::to_vec(&proposal_bad).unwrap()).is_err());
+    }
 }

@@ -627,28 +627,66 @@ fn design_proposal_artifact_contracts_register_and_fail_closed() {
     assert_eq!(output.status.code(), Some(65));
     assert!(String::from_utf8_lossy(&output.stdout).contains("not registered"));
 
-    for (index, (schema, artifact_type)) in [
+    let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/design-proposal/valid-two-option.json");
+    let mut candidate: Value = serde_json::from_slice(&fs::read(fixture_path).unwrap()).unwrap();
+    candidate["snapshot"] = snapshot.clone();
+    let mut proposal = candidate.clone();
+    proposal["schema"] = json!("code-intel-design-proposal.v1");
+    proposal["kind"] = json!("proposal");
+
+    for (index, (schema, artifact_type, payload)) in [
         (
             "code-intel-design-proposal-candidate.v1",
             "design.proposal-candidate",
+            candidate,
         ),
-        ("code-intel-design-proposal.v1", "design.proposal"),
+        ("code-intel-design-proposal.v1", "design.proposal", proposal),
     ]
     .into_iter()
     .enumerate()
     {
-        let malformed = br#"{}"#;
-        fs::write(&payload_path, malformed).unwrap();
+        let valid = serde_json::to_vec(&payload).unwrap();
+        fs::write(&payload_path, &valid).unwrap();
         let reference = proposal_artifact_ref(
             "payload.json",
             schema,
             artifact_type,
-            malformed,
+            &valid,
             &snapshot["identity"],
         );
         let output = run(
             &root.0,
             &request(&repo, reference),
+            Some(&artifacts),
+            &root.0.join(format!("out-valid-{index}")),
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{schema}/{artifact_type} valid payload rejected: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+
+        let mut malformed = payload.clone();
+        let field = if index == 0 {
+            "boundaryChanges"
+        } else {
+            "validationPlan"
+        };
+        malformed["options"][0][field] = json!([]);
+        let malformed = serde_json::to_vec(&malformed).unwrap();
+        fs::write(&payload_path, &malformed).unwrap();
+        let malformed_ref = proposal_artifact_ref(
+            "payload.json",
+            schema,
+            artifact_type,
+            &malformed,
+            &snapshot["identity"],
+        );
+        let output = run(
+            &root.0,
+            &request(&repo, malformed_ref),
             Some(&artifacts),
             &root.0.join(format!("out-malformed-{index}")),
         );

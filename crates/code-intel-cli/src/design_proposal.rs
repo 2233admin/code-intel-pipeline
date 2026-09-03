@@ -22,12 +22,13 @@ pub(crate) fn validate_context_payload(bytes: &[u8]) -> Result<(), String> {
 
 pub(crate) fn validate_candidate_payload(bytes: &[u8]) -> Result<(), String> {
     let value = parse_payload(bytes, "design proposal candidate")?;
-    validate_candidate_shape(&value).map_err(|error| error_message(&error))
+    validate_payload_contract(&value, CANDIDATE_SCHEMA, "design_proposal_candidate")
+        .map_err(|error| error_message(&error))
 }
 
 pub(crate) fn validate_proposal_payload(bytes: &[u8]) -> Result<(), String> {
     let value = parse_payload(bytes, "design proposal")?;
-    validate_proposal_shape(&value, RESULT_SCHEMA, "proposal")
+    validate_payload_contract(&value, RESULT_SCHEMA, "proposal")
         .map_err(|error| error_message(&error))
 }
 
@@ -230,6 +231,15 @@ fn validate_and_publish(
         domain_verdict: AdapterDomainVerdict::Pass,
         domain_failure: None,
     })
+}
+
+fn validate_payload_contract(
+    value: &Value,
+    expected_schema: &str,
+    expected_kind: &str,
+) -> Result<(), AdapterError> {
+    validate_proposal_shape(value, expected_schema, expected_kind)?;
+    validate_option_requirements(value)
 }
 
 fn validate_candidate_shape(candidate: &Value) -> Result<(), AdapterError> {
