@@ -10,8 +10,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+const REQUEST_SCHEMA: &str = "code-intel-capability-request.v1";
 const CAPABILITY: &str = "advisory.design-proposal.compat";
-const REQUEST_SCHEMA: &str = "code-intel-design-proposal-request.v1";
+
+fn implementation() -> Value {
+    json!({"id":"design-proposal.rust.v1","version":"1.0.0","toolchainDigests":["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]})
+}
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 struct TempTree(PathBuf);
@@ -35,7 +39,7 @@ fn snapshot_for(repo: &Path) -> Value {
 }
 
 fn context_request(repo: &Path, out: &Path) -> Value {
-    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "contractVersion": 1, "snapshot": snapshot_for(repo), "options": {"repoPath": repo, "mode": "context"}, "inputs": [], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}})
+    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "implementation": implementation(), "contractVersion": 1, "snapshot": snapshot_for(repo), "options": {"repoPath": repo, "mode": "context"}, "inputs": [], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}})
 }
 
 fn artifact_ref(path: &Path, schema: &str, kind: &str, snapshot: &Value) -> Value {
@@ -44,9 +48,8 @@ fn artifact_ref(path: &Path, schema: &str, kind: &str, snapshot: &Value) -> Valu
 
 fn validate_request(repo: &Path, context: &Path, candidate: &Path, out: &Path) -> Value {
     let snapshot = snapshot_for(repo);
-    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "contractVersion": 1, "snapshot": snapshot, "options": {"repoPath": repo, "mode": "validate"}, "inputs": [artifact_ref(context, "code-intel-design-context.v1", "design.context", &snapshot), artifact_ref(candidate, "code-intel-design-proposal-candidate.v1", "design.proposal-candidate", &snapshot)], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}})
+    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "implementation": implementation(), "contractVersion": 1, "snapshot": snapshot, "options": {"repoPath": repo, "mode": "validate"}, "inputs": [artifact_ref(context, "code-intel-design-context.v1", "design.context", &snapshot), artifact_ref(candidate, "code-intel-design-proposal-candidate.v1", "design.proposal-candidate", &snapshot)], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}})
 }
-
 fn run_capability(request: &Value, path: &Path, out: &Path) -> Output {
     fs::write(path, serde_json::to_vec_pretty(request).expect("serialize request")).expect("write request");
     common::cli().args(["capability", "exec", CAPABILITY, "--request"]).arg(path).args(["--out"]).arg(out).args(["--artifact-root"]).arg(path.parent().unwrap()).output().expect("run capability")
