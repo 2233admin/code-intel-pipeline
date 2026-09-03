@@ -30,7 +30,7 @@ const CODE_EXTENSIONS: [&str; 10] = [
 /// Paths that must never enter the CodeNexus context (build output, VCS,
 /// tool staging). Mirrors `Test-CodeNexusGeneratedPath` in the facade.
 fn is_generated_path(relative: &str) -> bool {
-    let mut normalized = relative.replace('\\', "/");
+    let mut normalized = relative.replace('\\', "/").to_ascii_lowercase();
     while normalized.starts_with("./") {
         normalized = normalized[2..].to_string();
     }
@@ -248,11 +248,12 @@ fn references(repo: &Path, relative: &str, limit: usize) -> Vec<String> {
     let mut command = Command::new("rg");
     command
         .env_remove("RIPGREP_CONFIG_PATH")
-        .current_dir(repo)
         .arg("-n")
         .arg("-m")
         .arg(limit.to_string())
         .arg("--hidden")
+        .arg("--sort")
+        .arg("path")
         .arg("-g")
         .arg("!**/work/**")
         .arg("-g")
@@ -279,7 +280,7 @@ fn references(repo: &Path, relative: &str, limit: usize) -> Vec<String> {
         .arg("!**/__pycache__/**")
         .arg("--fixed-strings")
         .arg(&stem)
-        .arg(".");
+        .arg(repo);
     let output = match command.output() {
         Ok(output) if output.status.success() => output,
         _ => return Vec::new(),
@@ -401,14 +402,48 @@ pub(crate) fn build_context(
     })
 }
 
+/// Build only the behavior reachable from the production compatibility
+/// facade: largest-code-file fallback ranking, no Git history, and bounded
+/// text references. DSM/hotspot inputs and history limits deliberately are
+/// not accepted by this API (issue #337).
+pub(crate) fn build_active_context(
+    repo: &Path,
+    target: &Path,
+    output: &Path,
+    generated_at: String,
+    max_files: usize,
+    max_references_per_file: usize,
+) -> Value {
+    let mut document = build_context(
+        repo,
+        target,
+        None,
+        None,
+        max_files,
+        max_references_per_file,
+        0,
+    );
+    document["generatedAt"] = Value::String(generated_at);
+    document["output"] = Value::String(output.to_string_lossy().into_owned());
+    document
+}
+
 /// UTC ISO-8601 timestamp with millisecond precision (`2026-08-17T12:34:56.789Z`).
-fn iso_now() -> String {
+pub(crate) fn iso_now() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let secs = (nanos / 1_000_000_000) as i64;
     let millis = (nanos / 1_000_000 % 1_000) as i64;
+    iso_from_unix_parts(secs, millis)
+}
+
+pub(crate) fn iso_from_unix_seconds(seconds: i64) -> String {
+    iso_from_unix_parts(seconds, 0)
+}
+
+fn iso_from_unix_parts(secs: i64, millis: i64) -> String {
     // seconds since epoch -> civil time (days-from-civil, Howard Hinnant)
     let days = secs.div_euclid(86_400);
     let secs_of_day = secs.rem_euclid(86_400);
@@ -451,142 +486,5 @@ pub(crate) fn implementation_digest() -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static TEST_NONCE: AtomicU64 = AtomicU64::new(0);
-
-    /// Unique temp dir per test, mirroring the crate's existing pattern
-    /// (hardened_git.rs, sentrux_gate.rs). No external tempfile dep.
-    struct TempRepo(PathBuf);
-
-    impl TempRepo {
-        fn new() -> Self {
-            let nonce = TEST_NONCE.fetch_add(1, Ordering::Relaxed);
-            let base = std::env::temp_dir().join(format!(
-                "codenexus-lite-test-{}-{nonce}",
-                std::process::id()
-            ));
-            let repo = base.join("repo");
-            fs::create_dir_all(&repo).unwrap();
-            TempRepo(base)
-        }
-
-        fn repo(&self) -> PathBuf {
-            self.0.join("repo")
-        }
-    }
-
-    impl Drop for TempRepo {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-
-    fn write(path: &Path, content: &str) {
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, content).unwrap();
-    }
-
-    #[test]
-    fn generated_path_exclusions() {
-        assert!(is_generated_path("target/debug/foo.rs"));
-        assert!(is_generated_path("crates/.code-intel/session.json"));
-        assert!(is_generated_path("node_modules/x/index.js"));
-        assert!(is_generated_path("./staging/out.json"));
-        assert!(is_generated_path("work/tmp.rs"));
-        assert!(!is_generated_path("crates/tdx-types/src/lib.rs"));
-        assert!(!is_generated_path("src/main.rs"));
-    }
-
-    #[test]
-    fn hotspots_rank_first_then_dsm_then_largest() {
-        let fixture = TempRepo::new();
-        let repo = fixture.repo().to_path_buf();
-        write(&repo.join("big.rs"), "fn main() {}\n".repeat(100).as_str());
-        write(&repo.join("small.rs"), "fn main() {}\n");
-
-        let hotspots = json!({
-            "files": [
-                { "path": "hot.rs", "maxComplexity": 12, "functionCount": 3 }
-            ]
-        });
-        let dsm = json!({
-            "modules": [
-                { "metrics": { "risk": 50 }, "files": ["mod_a.rs"] },
-                { "metrics": { "risk": 10 }, "files": ["mod_b.rs"] }
-            ]
-        });
-        let target = repo.clone();
-        let selected = select_hotspot_files(&repo, &target, Some(&hotspots), Some(&dsm), 8);
-        let paths: Vec<&str> = selected
-            .iter()
-            .map(|v| v["path"].as_str().unwrap())
-            .collect();
-        // hotspot first, then DSM by risk desc, then largest fallback
-        assert_eq!(paths[0], "hot.rs");
-        assert_eq!(paths[1], "mod_a.rs");
-        assert_eq!(paths[2], "mod_b.rs");
-        assert_eq!(paths[3], "big.rs");
-        assert_eq!(paths[4], "small.rs");
-    }
-
-    #[test]
-    fn dsm_risk_ordering_is_descending() {
-        let fixture = TempRepo::new();
-        let repo = fixture.repo().to_path_buf();
-        write(&repo.join("a.rs"), "// a");
-        write(&repo.join("b.rs"), "// b");
-        let dsm = json!({
-            "modules": [
-                { "metrics": { "risk": 10 }, "files": ["a.rs"] },
-                { "metrics": { "risk": 90 }, "files": ["b.rs"] }
-            ]
-        });
-        let selected = select_hotspot_files(&repo, &repo, None, Some(&dsm), 8);
-        let paths: Vec<&str> = selected
-            .iter()
-            .map(|v| v["path"].as_str().unwrap())
-            .collect();
-        assert_eq!(paths[0], "b.rs");
-        assert_eq!(paths[1], "a.rs");
-    }
-
-    #[test]
-    fn file_digest_reports_exists_loc_and_first_lines() {
-        let fixture = TempRepo::new();
-        let repo = fixture.repo().to_path_buf();
-        let file = repo.join("src/lib.rs");
-        write(&file, "line1\nline2\nline3\n");
-        let digest = file_digest(&repo, "src/lib.rs");
-        assert_eq!(digest["exists"], json!(true));
-        assert_eq!(digest["loc"], 3);
-        assert_eq!(digest["firstLines"].as_array().unwrap().len(), 3);
-        assert_eq!(digest["firstLines"][0], "line1");
-
-        let missing = file_digest(&repo, "nope.rs");
-        assert_eq!(missing["exists"], json!(false));
-    }
-
-    #[test]
-    fn build_context_shape_matches_contract() {
-        let fixture = TempRepo::new();
-        let repo = fixture.repo().to_path_buf();
-        write(&repo.join("main.rs"), "fn main() {}\n");
-        let context = build_context(&repo, &repo, None, None, 8, 12, 0);
-        assert_eq!(context["tool"], "codenexus-lite");
-        assert_eq!(context["summary"]["files"], 1);
-        assert_eq!(context["files"][0]["path"], "main.rs");
-        assert_eq!(context["files"][0]["reason"], "largest_code_file");
-        assert!(context["nextQueries"].is_array());
-        assert!(context["limitations"].is_array());
-    }
-
-    #[test]
-    fn recent_commits_zero_limit_returns_empty() {
-        let fixture = TempRepo::new();
-        let commits = recent_commits(&fixture.repo(), "src/lib.rs", 0);
-        assert!(commits.is_empty());
-    }
-}
+#[path = "codenexus_lite_tests.rs"]
+mod tests;

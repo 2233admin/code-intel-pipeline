@@ -25,6 +25,8 @@ mod compatibility_retirement_gate;
 mod compatibility_retirement_ticket;
 #[path = "delivery_light_speed.rs"]
 mod delivery_light_speed;
+#[path = "design_proposal.rs"]
+pub(crate) mod design_proposal;
 #[path = "doctor_adapter.rs"]
 // Crate-visible so `doctor bootstrap --require-provider-conformance` can reuse
 // the node's own provider rows instead of restating the predicate.
@@ -109,6 +111,9 @@ pub(crate) fn execute(
         }
         "delivery.light-speed-measure.compat" => {
             delivery_light_speed::execute(request, verified_inputs, out)
+        }
+        "advisory.design-proposal.compat" => {
+            design_proposal::execute(request, verified_inputs, out)
         }
         "diagnosis.hospital.compat" => hospital_diagnosis::execute(request, verified_inputs, out),
         "provider.graph-builtin.compat" => {

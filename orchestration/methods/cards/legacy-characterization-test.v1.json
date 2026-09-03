@@ -1,0 +1,40 @@
+{
+  "schema": "code-intel-method-card.v1",
+  "id": "legacy-characterization-test",
+  "version": "1.0.0",
+  "name": "Legacy characterization test",
+  "problemSignals": [
+    { "id": "unknown-legacy-behavior", "description": "The current behavior of a legacy path is not reliably known across representative inputs." },
+    { "id": "missing-characterization-coverage", "description": "No executable observations protect the behavior that a change must preserve." },
+    { "id": "high-change-risk", "description": "Unobserved side effects or failure semantics make modification likely to cause regressions." }
+  ],
+  "requiredEvidence": [
+    { "id": "observed-behavior-surface", "description": "Representative inputs, outputs, side effects, and failure semantics observed at the legacy entry point." },
+    { "id": "runnable-observation-path", "description": "A repeatable command or harness that can execute the observations and retain their evidence." }
+  ],
+  "assumptions": ["The legacy path can be invoked without changing its externally visible behavior", "Observed examples are representative enough to define a bounded characterization contract"],
+  "deterministicSteps": [
+    { "id": "select-observable-entry", "action": "Select one legacy entry point and record its observable inputs, outputs, side effects, and failure surface.", "requires": ["evidence:observed-behavior-surface"], "produces": ["observable-contract"] },
+    { "id": "capture-current-behavior", "action": "Run the declared observation path for representative cases and capture exact results, side effects, and failures.", "requires": ["evidence:runnable-observation-path", "step:select-observable-entry"], "produces": ["behavior-baseline"] },
+    { "id": "freeze-characterization-contract", "action": "Encode the captured observations as a runnable characterization test without asserting unobserved implementation details.", "requires": ["step:capture-current-behavior"], "produces": ["characterization-test"] }
+  ],
+  "outputs": [
+    { "id": "observable-contract", "description": "Bounded contract of the legacy path's externally observable behavior." },
+    { "id": "characterization-test", "description": "Runnable regression check for the captured legacy behavior." },
+    { "id": "behavior-baseline", "description": "Evidence recording current outputs, side effects, and failure semantics." }
+  ],
+  "confidenceRules": [
+    { "level": "high", "whenAll": ["Representative inputs and failure cases are covered", "Outputs and side effects are reproducibly captured", "The characterization test passes from the runnable observation path"] },
+    { "level": "medium", "whenAll": ["Core behavior is observed and runnable", "Known long-tail inputs or side effects remain uncharacterized"] },
+    { "level": "unknown", "whenAll": ["The entry point or observation path cannot be executed", "Observed behavior cannot be reproduced"] }
+  ],
+  "cost": { "relative": "medium", "drivers": ["Breadth of legacy input cases", "Side-effect capture and fixture maintenance", "Reliability of the observation harness"] },
+  "contraindications": ["No externally observable behavior can be captured", "The observation path mutates production state without safe isolation", "Examples would encode implementation details rather than behavior"],
+  "implementationPorts": [
+    { "id": "legacy-observer", "kind": "deterministic_tool", "contract": ["Invoke the bounded legacy entry point with declared fixtures", "Capture outputs, side effects, and failures without changing behavior"] }
+  ],
+  "source": { "title": "Legacy characterization testing practice", "version": "catalog interpretation 1.0", "reference": "C01 engineering-method baseline" },
+  "applicabilityBoundary": { "inScope": ["Unfamiliar legacy behavior", "Regression protection before risky changes", "Observable command, API, or library paths"], "outOfScope": ["Automatic behavior inference", "Tests of private implementation details", "Production execution without an isolated observation path"] },
+  "relatedMethodIds": ["contract-testing", "strangler-migration"],
+  "executionPolicy": "catalog_only_no_selection_or_execution"
+}

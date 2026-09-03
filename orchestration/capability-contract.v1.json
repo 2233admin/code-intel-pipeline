@@ -29,7 +29,23 @@
     "rule": "A capability declaration and request establish the allowlist before execution; the result reports both declaredEffects and observedEffects, and observed effects must be a subset of the declared allowlist."
   },
   "declaration": {
-    "dependencies": "A stable ordered set of capability ids used by the DAG planner; execution remains a later atom."
+    "dependencies": "A stable ordered set of capability ids used by the DAG planner; execution remains a later atom.",
+    "designProposal": {
+      "capability": "advisory.design-proposal.compat",
+      "transport": "code-intel-capability-request.v1",
+      "request": "code-intel-design-proposal-request.v1",
+      "authority": "advisory_only",
+      "allowedEffects": ["repo_read", "local_write"],
+      "artifactIdentities": [
+        { "schema": "code-intel-design-context.v1", "type": "design.context" },
+        { "schema": "code-intel-design-proposal-candidate.v1", "type": "design.proposal-candidate" },
+        { "schema": "code-intel-design-proposal.v1", "type": "design.proposal" }
+      ],
+      "operations": {
+        "context": { "consumes": [], "emits": ["design.context"] },
+        "validate": { "consumes": ["design.context", "design.proposal-candidate"], "emits": ["design.proposal"] }
+      }
+    }
   },
   "coherenceRules": [
     "request.capability equals declaration.id",

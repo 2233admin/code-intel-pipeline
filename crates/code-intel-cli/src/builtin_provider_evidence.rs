@@ -286,21 +286,9 @@ pub(super) fn sentrux_admission(
     Ok(output)
 }
 
-/// Builtin compatibility route for the CodeNexus lite path: shells out to the
-/// repository-owned `legacy/Invoke-CodeNexusLite.ps1` facade (the same script
-/// and invocation shape `run-code-intel.ps1` already uses), then builds and
-/// admits the evidence contract itself -- mirroring `sentrux_admission`'s
-/// "collect raw, build the contract in Rust" split rather than delegating
-/// contract construction to the script.
-///
-/// The script's exit/output state maps onto the three CodeNexus native
-/// statuses: a clean run with a parseable `codenexus-context.json` object is
-/// `current`; a clean run that produced no usable document is the defensive
-/// `partial` fallback; anything that failed to spawn or exited non-zero is
-/// `unavailable`. Every one of those still flows through the full two-phase
-/// translate/admit pipeline -- CodeNexus absence is first-class admitted
-/// evidence (domainVerdict "unknown"), not a skipped node, matching the
-/// "provider_unavailable_diagnosis" contract the registry already declares.
+/// Builtin compatibility route for the CodeNexus-lite path: generates the
+/// production-reachable fallback/no-history context in Rust, then builds and
+/// admits the evidence contract through the existing provider boundary.
 pub(super) fn codenexus_admission(
     request: &Value,
     inputs: &[VerifiedArtifact],
@@ -320,11 +308,13 @@ pub(super) fn codenexus_admission(
     let scratch_guard = ScratchDir(create_codenexus_scratch_dir()?);
     let scratch = scratch_guard.path();
     let context_path = scratch.join("codenexus-context.json");
-    let document = codenexus_lite::build_context(
-        repo, repo, None, None,
-        // Facade defaults: -MaxFiles 8, -MaxReferencesPerFile 12,
-        // -MaxCommitsPerFile 0 (as passed by this admission route).
-        8, 12, 0,
+    let document = codenexus_lite::build_active_context(
+        repo,
+        repo,
+        Path::new(""),
+        codenexus_lite::iso_from_unix_seconds(collected_at as i64),
+        8,
+        12,
     );
     let document_bytes = serde_json::to_vec(&document)
         .map_err(|error| AdapterError::Internal(format!("serialize CodeNexus context: {error}")))?;

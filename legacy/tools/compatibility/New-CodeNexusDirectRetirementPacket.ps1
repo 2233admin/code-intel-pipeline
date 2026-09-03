@@ -38,7 +38,7 @@ function New-ArtifactRef([string]$ArtifactSchema, [string]$Type, [string]$Relati
 
 $runPath = Join-Path $RepoRoot "run-code-intel.ps1"
 $runText = [IO.File]::ReadAllText($runPath).Replace("`r`n", "`n").Replace("`r", "`n")
-$directPattern = '(?s)\n\$codeNexusLiteTool = Join-Path \$PSScriptRoot "Invoke-CodeNexusLite\.ps1".*?(?=\n\$reportPath = Join-Path \$runDir "report\.json")'
+$directPattern = '(?s)\n\$codeNexusLiteTool = Join-Path \$PSScriptRoot "Invoke-CodeNexusLite\.ps1".*?(?=\n    return \$codeNexusContextSummary)'
 $directMatches = [regex]::Matches($runText, $directPattern)
 $b04FacadeCount = [regex]::Matches($runText, 'provider codenexus-adapt').Count
 $b05FacadeCount = [regex]::Matches($runText, 'repository survival-scan').Count
@@ -113,7 +113,7 @@ function Add-Evidence([string]$Name, [string]$Class, [object]$Details) {
 $replacement = Add-Evidence "replacement-atom" "replacement_atom" ([ordered]@{
     outcome = "blocked"; status = "pending_facade_route"; capability = $replacementId
     b04FacadeAvailable = $true; b05FacadeAvailable = $true; liveDirectBranchCount = $directMatches.Count
-    blocker = "normal production path still invokes Invoke-CodeNexusLite.ps1 directly instead of composing B04 and B05"
+    blocker = "explicit Invoke-CodeNexusLite.ps1 compatibility fallback remains live; retirement requires an approved B04/B05 facade route"
 })
 $golden = Add-Evidence "golden-parity" "golden_parity" ([ordered]@{
     outcome = "passed"; assertionCount = 3; command = "cargo test -q -p code-intel --test codenexus_adapter <test-name> -- --exact"
@@ -216,8 +216,8 @@ $decision = Get-Content -LiteralPath (Join-Path $gateOut "compatibility-retireme
 if ($decision.decision -ne "blocked") { throw "E04 cannot pass while the direct facade route, observation, and independent approval blockers remain" }
 
 $match = $directMatches[0]
-$deletedLines = @($match.Value -split "`n")
-$oldStart = @(($runText.Substring(0, $match.Index)) -split "`n").Count
+$deletedLines = @($match.Value.TrimStart("`n") -split "`n")
+$oldStart = @(($runText.Substring(0, $match.Index + 1)) -split "`n").Count
 $hunk = [ordered]@{
     addedLines = @(); deletedLines = $deletedLines; newLines = 0; newStart = $oldStart
     oldLines = $deletedLines.Count; oldStart = $oldStart

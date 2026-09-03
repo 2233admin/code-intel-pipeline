@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
-    "5090efd13c07531c249637d8e5857f0d13f3ecb8f0d02fb6e858747ea7d8c3d8";
+    "264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc";
 const STRUCTURED_EDIT_DIGEST: &str =
     "ec36694a8ffca7ef068982cc574e6e42499a4634eb12f86a742026558bd1867d";
 const AST_GREP_SECURITY_DIGEST: &str =
@@ -16,11 +16,11 @@ const AST_GREP_SECURITY_DIGEST: &str =
 const REPO_SNAPSHOT_DIGEST: &str =
     "4f42b080fd19e501a6315ee204add188d69625bedd15c566fea48bb1f3e78764";
 const CODENEXUS_TOOLCHAIN_DIGESTS: [&str; 5] = [
-    "e2fefae119c6296a96a00aee25a7f729738935ba4832a849299658e3dcebe22d",
+    "4a2c8608ed50869e6b3318f192e3ffcf0aa15fef19e70d3e401b8c67f20f3b8b",
     "645675312135932dfce365a8dfc14e214cec78ee733f248606547b3eaa56edc8",
     "52644a812174988ede91d98ddfec63c6a91f8478277d7bf74c73f106dd0f776b",
     "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26",
-    "cdd5c6d0fe940d2756c45a51095c275b13ebe64347914b581641693e1288ca56",
+    "a8520e3231ce06cc56aa70904b194b358870315e391d60827f7721dd08b17a95",
 ];
 static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -1649,7 +1649,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects() {
         "toolchainDigests":[
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
             "25a2185026cb61771ff2e5f4c2364687d01158cfc9a8266d00a20e5573ba1bde",
-            "5090efd13c07531c249637d8e5857f0d13f3ecb8f0d02fb6e858747ea7d8c3d8"
+            "264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc"
         ]
     });
     value["options"] = json!({"repoPath":repo,"auto":true});
@@ -2181,7 +2181,7 @@ fn codenexus_builtin_compat_dispatches_through_provider_codenexus_adapt() {
     let root = temp_dir("codenexus");
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
-    fs::write(repo.join("README.md"), "fixture\n").unwrap();
+    fs::write(repo.join("main.rs"), "fn main() { helper(); }\n").unwrap();
 
     let mut snapshot_cmd = common::cli();
     snapshot_cmd
@@ -2305,10 +2305,18 @@ fn codenexus_builtin_compat_dispatches_through_provider_codenexus_adapt() {
     let admission: Value =
         serde_json::from_slice(&fs::read(codenexus_out.join("codenexus-admission.json")).unwrap())
             .unwrap();
-    assert!(
-        matches!(admission["domainVerdict"].as_str(), Some("observed" | "unknown")),
-        "codenexus admission must never fabricate a fact when the lite facade is unavailable: admission={admission}"
-    );
+    assert_eq!(admission["domainVerdict"], "observed");
+    let payload: Value =
+        serde_json::from_slice(&fs::read(codenexus_out.join("codenexus-payload.json")).unwrap())
+            .unwrap();
+    let provider_data = &payload["data"]["codenexus"]["providerData"];
+    assert_eq!(provider_data["tool"], "codenexus-lite");
+    assert_eq!(provider_data["files"][0]["path"], "main.rs");
+    assert_eq!(provider_data["files"][0]["reason"], "largest_code_file");
+    assert_eq!(provider_data["files"][0]["recentCommits"], json!([]));
+    assert_eq!(provider_data["summary"]["recentCommits"], 0);
+    assert_eq!(provider_data["sources"], json!({"dsm": "", "hotspots": ""}));
+    assert_eq!(provider_data["output"], "");
 
     let _ = fs::remove_dir_all(root);
 }

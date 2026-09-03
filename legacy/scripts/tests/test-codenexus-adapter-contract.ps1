@@ -4,6 +4,14 @@ $ErrorActionPreference = "Stop"
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
 $repoRoot = Split-Path -Parent $root
 $facade = Join-Path $root "run-code-intel.ps1"
+$rustExecutableName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
+$cargoTargetRoot = if ([string]::IsNullOrWhiteSpace($env:CARGO_TARGET_DIR)) {
+    Join-Path $repoRoot "target"
+}
+else {
+    [System.IO.Path]::GetFullPath($env:CARGO_TARGET_DIR)
+}
+$rustCli = Join-Path (Join-Path $cargoTargetRoot "debug") $rustExecutableName
 $snapshot = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 $implementationDigest = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("code-intel-b04-ps-" + [guid]::NewGuid().ToString("N"))
@@ -103,6 +111,21 @@ function Invoke-LiteScriptEndToEnd {
         -ObservedAt 1950 `
         -AdapterActivation "explicit_fallback" `
         -Quiet
+    $unreferencedPath = Join-Path $repoRoot "orphan.ps1"
+    [System.IO.File]::WriteAllText($unreferencedPath, "function unrelated() {}`n", [System.Text.UTF8Encoding]::new($false))
+    $hotspotsPath = Join-Path $caseRoot "hotspots.json"
+    Write-JsonNoBom $hotspotsPath @{ files = @(@{ path = "orphan.ps1"; maxComplexity = $null; functionCount = $null }) }
+    & (Join-Path $root "Invoke-CodeNexusLite.ps1") `
+        -RepoPath $repoRoot `
+        -TargetPath $repoRoot `
+        -RunDir $caseRoot `
+        -HotspotsPath $hotspotsPath `
+        -OutputPath (Join-Path $caseRoot "unreferenced-context.json") `
+        -MaxFiles 1 `
+        -MaxReferencesPerFile 3 `
+        -MaxCommitsPerFile 0 `
+        -Quiet
+    if ($LASTEXITCODE -ne 0) { throw "CodeNexus lite no-reference fallback failed with exit $LASTEXITCODE" }
     if ($LASTEXITCODE -ne 0) { throw "CodeNexus lite adapter-output mode failed" }
     $raw = & $facade `
         -CodeNexusAdapterRequest $requestPath `
@@ -120,10 +143,121 @@ function Invoke-LiteScriptEndToEnd {
     if (@($result.engineeringFacts).Count -ne 0) { throw "CodeNexus lite script fabricated Engineering Facts" }
 }
 
+function ConvertTo-NormalizedCodeNexusContext {
+    param(
+        [object]$Document,
+        [string]$RepoPath
+    )
+
+    $repoPrefix = $RepoPath.Replace('\', '/').TrimEnd('/') + '/'
+
+    return [ordered]@{
+        tool = [string]$Document.tool
+        generatedAt = "<normalized>"
+        repo = [string]$Document.repo
+        target = [string]$Document.target
+        output = "<normalized>"
+        sources = [ordered]@{
+            dsm = [string]$Document.sources.dsm
+            hotspots = [string]$Document.sources.hotspots
+        }
+        summary = [ordered]@{
+            files = [int]$Document.summary.files
+            references = [int]$Document.summary.references
+            recentCommits = [int]$Document.summary.recentCommits
+        }
+        files = @($Document.files | ForEach-Object {
+            [ordered]@{
+                path = ([string]$_.path).Replace('\', '/')
+                reason = [string]$_.reason
+                maxComplexity = $_.maxComplexity
+                functionCount = $_.functionCount
+                riskScore = $_.riskScore
+                digest = [ordered]@{
+                    exists = [bool]$_.digest.exists
+                    loc = [int]$_.digest.loc
+                    firstLines = @($_.digest.firstLines | ForEach-Object { [string]$_ })
+                }
+                recentCommits = @($_.recentCommits | ForEach-Object { [string]$_ })
+                references = @($_.references | ForEach-Object {
+                    $reference = ([string]$_).Replace('\', '/')
+                    if ($reference.StartsWith($repoPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $reference = $reference.Substring($repoPrefix.Length)
+                    }
+                    while ($reference.StartsWith('./')) {
+                        $reference = $reference.Substring(2)
+                    }
+                    $reference
+                } | Sort-Object)
+            }
+        })
+        nextQueries = @($Document.nextQueries | ForEach-Object { [string]$_ })
+        limitations = @($Document.limitations | ForEach-Object { [string]$_ })
+    }
+}
+
+function Invoke-RustGeneratorParity {
+    $caseRoot = Join-Path $tempRoot "generator-parity"
+    $fixtureRepo = Join-Path $caseRoot "repo"
+    [System.IO.Directory]::CreateDirectory((Join-Path $fixtureRepo "src")) | Out-Null
+    [System.IO.Directory]::CreateDirectory((Join-Path $fixtureRepo "docs")) | Out-Null
+    [System.IO.Directory]::CreateDirectory((Join-Path $fixtureRepo "target")) | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $fixtureRepo "src/largest.rs"), "fn largest() {}`n// largest`n", [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText((Join-Path $fixtureRepo "src/small.rs"), "fn small() {}`n", [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText((Join-Path $fixtureRepo "docs/references.md"), "largest calls remain text references`n", [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText((Join-Path $fixtureRepo "target/ignored.rs"), ("ignored`n" * 100), [System.Text.UTF8Encoding]::new($false))
+    $legacyOutput = Join-Path $caseRoot "legacy-context.json"
+    $rustOutput = Join-Path $caseRoot "rust-context.json"
+
+    & (Join-Path $root "Invoke-CodeNexusLite.ps1") `
+        -RepoPath $fixtureRepo `
+        -TargetPath $fixtureRepo `
+        -RunDir $caseRoot `
+        -OutputPath $legacyOutput `
+        -MaxFiles 2 `
+        -MaxReferencesPerFile 3 `
+        -MaxCommitsPerFile 0 `
+        -Quiet
+    if ($LASTEXITCODE -ne 0) { throw "historical CodeNexus generator failed" }
+
+    $null = & $rustCli codenexus generate `
+        --repo $fixtureRepo `
+        --target $fixtureRepo `
+        --out $rustOutput `
+        --observed-at 1950 `
+        --max-files 2 `
+        --max-references-per-file 3
+    if ($LASTEXITCODE -ne 0) { throw "compiled CodeNexus generator failed" }
+
+    $legacy = ConvertTo-NormalizedCodeNexusContext (Get-Content -Raw $legacyOutput | ConvertFrom-Json) $fixtureRepo
+    $rust = ConvertTo-NormalizedCodeNexusContext (Get-Content -Raw $rustOutput | ConvertFrom-Json) $fixtureRepo
+    $legacyJson = $legacy | ConvertTo-Json -Depth 12 -Compress
+    $rustJson = $rust | ConvertTo-Json -Depth 12 -Compress
+    if ($legacyJson -ne $rustJson) {
+        throw "compiled CodeNexus active-path output drifted from the historical contract"
+    }
+    if ([int]$rust.summary.recentCommits -ne 0 -or -not [string]::IsNullOrWhiteSpace([string]$rust.sources.dsm) -or -not [string]::IsNullOrWhiteSpace([string]$rust.sources.hotspots)) {
+        throw "compiled CodeNexus route admitted an unreachable DSM/hotspot/history branch"
+    }
+
+    $facadeText = Get-Content -Raw $facade
+    $rustInvocationIndex = $facadeText.IndexOf('$null = & $codeNexusRustCli @codeNexusArgs', [StringComparison]::Ordinal)
+    $fallbackCallIndex = if ($rustInvocationIndex -ge 0) {
+        $facadeText.IndexOf('Invoke-CodeNexusLiteCompatibilityFallback `', $rustInvocationIndex, [StringComparison]::Ordinal)
+    }
+    else {
+        -1
+    }
+    if ($facadeText -notmatch '"codenexus", "generate"' -or $rustInvocationIndex -lt 0 -or $fallbackCallIndex -le $rustInvocationIndex) {
+        throw "production compatibility facade does not expose Rust-primary generation with an explicit lite fallback"
+    }
+}
+
 try {
     Push-Location $root
     cargo build -p code-intel --quiet
     if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
+    Invoke-RustGeneratorParity
     Invoke-CodeNexusCase "full" "full" "current" "observed" $true
     Invoke-CodeNexusCase "lite" "lite" "current" "observed" $true
     Invoke-CodeNexusCase "unavailable" "full" "unavailable" "unknown" $false

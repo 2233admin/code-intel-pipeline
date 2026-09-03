@@ -1,0 +1,207 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "internalization.design-proposal-record",
+  "projectId": "code-intel-pipeline",
+  "subject": {
+    "name": "Rust-owned evidence-bound design proposal capability",
+    "kind": "method_implementation",
+    "source": {
+      "uri": "local:crates/code-intel-cli/src/design_proposal.rs",
+      "revision": "design-proposal.rust.v1; source-sha256:8574e06aa20b6a89556447b9b13e5679924614a2b028c03214dbfdf0765a67ac"
+    },
+    "license": {
+      "id": "PROJECT-LICENSE-PIPELINE-OWNED-ADVISORY",
+      "obligations": [
+        "retain Rust ownership of snapshot binding, evidence validation, and staged publication",
+        "Agent-authored proposal text remains advisory and cannot grant promotion, commit, issue, or plan approval authority"
+      ]
+    }
+  },
+  "adoption": {
+    "rung": "reimplement",
+    "ownedBoundary": [
+      "Rust owns context preparation, repository snapshot binding, method-catalog and committed-artifact evidence validation, candidate validation, and staged advisory publication",
+      "The generic capability route owns request authentication, ArtifactRef verification, effect coherence, and atomic staging; this record does not add a command, model, network, or repository mutation authority",
+      "Agent-authored options and recommendation are untrusted candidate text; they have no promotion, commit, issue, or plan approval authority"
+    ],
+    "necessityEvidence": {
+      "evidenceIds": [
+        "local:task5:generic-capability-route",
+        "local:task5:design-proposal-artifact-contracts"
+      ],
+      "checkedAt": 1788393600,
+      "expiresAt": 1790985600
+    },
+    "compatibilityEvidence": {
+      "evidenceIds": [
+        "local:task5:design-proposal-rust-v1",
+        "local:task5:context-and-validate-modes"
+      ],
+      "checkedAt": 1788393600,
+      "expiresAt": 1790985600
+    },
+    "conformanceEvidence": {
+      "evidenceIds": [
+        "local:task5:design-proposal-conformance",
+        "local:task5:ten-contract-tests",
+        "local:task5:source-sha256:8574e06aa20b6a89556447b9b13e5679924614a2b028c03214dbfdf0765a67ac",
+        "local:task5:conformance-sha256:324fc20eb98ed81b4ece1a19c7f4393bf68eb1d92c6c094f22f1b412ac9f9dde"
+      ],
+      "checkedAt": 1788393600,
+      "expiresAt": 1790985600
+    }
+  },
+  "operationTrace": [
+    {
+      "integrationId": "advisory.design-proposal.compat",
+      "operation": "capabilityExec",
+      "command": "code-intel capability exec advisory.design-proposal.compat --request <request.json|-> --out <staging-dir> --artifact-root <run-root>",
+      "implementationIdentity": {
+        "providerId": "code-intel-pipeline",
+        "implementationId": "design-proposal.rust.v1",
+        "activation": "generic capability envelope; advisory-only staged publication"
+      },
+      "source": {
+        "path": "crates/code-intel-cli/src/design_proposal.rs",
+        "sha256": "8574e06aa20b6a89556447b9b13e5679924614a2b028c03214dbfdf0765a67ac"
+      },
+      "conformance": {
+        "path": "crates/code-intel-cli/tests/design_proposal.rs",
+        "sha256": "324fc20eb98ed81b4ece1a19c7f4393bf68eb1d92c6c094f22f1b412ac9f9dde",
+        "testName": "valid_two_option_candidate_stages_advisory_result"
+      }
+    }
+  ],
+  "economics": {
+    "benefit": {
+      "metric": "validated advisory design proposal operation modes",
+      "value": 2,
+      "unit": "modes"
+    },
+    "cost": {
+      "metric": "declared external authority effects",
+      "value": 0,
+      "unit": "effects"
+    },
+    "benefitEvidence": {
+      "evidenceIds": [
+        "local:task5:context-and-validate-modes",
+        "local:task5:three-artifact-identities"
+      ],
+      "checkedAt": 1788393600,
+      "expiresAt": 1790985600
+    },
+    "costEvidence": {
+      "evidenceIds": [
+        "local:task5:no-network",
+        "local:task5:no-repository-mutation",
+        "local:task5:no-agent-approval-authority"
+      ],
+      "checkedAt": 1788393600,
+      "expiresAt": 1790985600
+    }
+  },
+  "assurance": {
+    "maintenanceEvidence": {
+      "evidenceIds": [
+        "local:task5:pinned-source-and-conformance",
+        "local:task5:generic-route-preserved"
+      ],
+      "checkedAt": 1788393600,
+      "expiresAt": 1790985600
+    },
+    "securityEvidence": {
+      "evidenceIds": [
+        "local:task5:no-network",
+        "local:task5:no-repository-mutation",
+        "local:task5:artifact-ref-snapshot-binding",
+        "local:task5:advisory-only-authority"
+      ],
+      "checkedAt": 1788393600,
+      "expiresAt": 1790985600
+    }
+  },
+  "update": {
+    "policy": "Re-run the focused declaration and ten-case conformance suites after source, artifact, or generic capability contract changes; refresh both pinned source and conformance digests with code-intel repin before publication.",
+    "nextCheckAt": 1790985600,
+    "evidence": {
+      "evidenceIds": [
+        "local:task5:focused-test-commands",
+        "local:task5:repin-fixpoint"
+      ],
+      "checkedAt": 1788393600,
+      "expiresAt": 1790985600
+    }
+  },
+  "ownedModifications": [
+    {
+      "path": "crates/code-intel-cli/src/design_proposal.rs",
+      "description": "Rust context preparation, evidence validation, snapshot binding, and staged advisory publication adapter",
+      "sha256": "8574e06aa20b6a89556447b9b13e5679924614a2b028c03214dbfdf0765a67ac"
+    },
+    {
+      "path": "crates/code-intel-cli/tests/design_proposal.rs",
+      "description": "Ten-case end-to-end contract conformance suite for context, valid proposals, and rejection diagnostics",
+      "sha256": "324fc20eb98ed81b4ece1a19c7f4393bf68eb1d92c6c094f22f1b412ac9f9dde"
+    }
+  ],
+  "rollback": {
+    "strategy": "Remove the advisory.design-proposal.compat registry entry and its three ArtifactRef registrations, leaving the generic capability route and all unrelated capability contracts unchanged; no consumer receives promotion, commit, issue, or plan approval authority through this capability.",
+    "evidence": {
+      "evidenceIds": [
+        "local:task5:generic-route-preserved",
+        "local:task5:artifact-ref-contract-boundary"
+      ],
+      "checkedAt": 1788393600,
+      "expiresAt": 1790985600
+    }
+  },
+  "exit": {
+    "strategy": "Disable or remove the design proposal declaration and adapter only after the generic capability route, ArtifactRef contract, and snapshot-binding invariants remain intact.",
+    "replacementCriteria": [
+      "replacement preserves the generic capability execution route and exact ArtifactRef schema/type identities",
+      "replacement retains deterministic local-only effects and advisory_only authority",
+      "replacement keeps Agent-authored text outside promotion, commit, issue, and plan approval authority"
+    ],
+    "evidence": {
+      "evidenceIds": [
+        "local:task5:rollback-boundary",
+        "local:task5:advisory-authority-boundary"
+      ],
+      "checkedAt": 1788393600,
+      "expiresAt": 1790985600
+    }
+  },
+  "retirement": {
+    "status": "active",
+    "triggers": [
+      "source or conformance digest cannot be refreshed to the reviewed implementation",
+      "snapshot or ArtifactRef binding is weakened",
+      "network, repository mutation, or external approval authority is introduced",
+      "the generic capability route or ArtifactRef contract is replaced without parity evidence"
+    ],
+    "evidence": {
+      "evidenceIds": [
+        "local:task5:source-and-conformance-pins",
+        "local:task5:effect-boundary"
+      ],
+      "checkedAt": 1788393600,
+      "expiresAt": 1790985600
+    }
+  },
+  "lifecycle": {
+    "previousStatus": null,
+    "status": "research",
+    "effectiveAt": 1788393600,
+    "replacementRecordId": null,
+    "evidenceIds": [
+      "local:task5:declaration-reviewed",
+      "local:task5:internalization-provenance"
+    ],
+    "authorityEvent": null
+  },
+  "provenance": {
+    "recordedAt": 1788393600,
+    "recordedBy": "orchestration-worker-5"
+  }
+}

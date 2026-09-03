@@ -169,6 +169,25 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
     CommandRoute::Raw(provider_routes::SENTRUX_ADAPT),
     CommandRoute::Raw(provider_routes::SESSION_ADAPT),
     CommandRoute::Raw(provider_routes::CODENEXUS_ADAPT),
+    raw_route! {
+        command: "codenexus",
+        subcommand: Some("generate"),
+        argument_offset: 2,
+        id: CompatibilityRoute::CodenexusGenerate,
+        contract: command_contract!(
+            Public,
+            WorkspaceAdvisory,
+            Advisory,
+            &[
+                CommandEffect::RepoRead,
+                CommandEffect::LocalWrite,
+                CommandEffect::ProcessSpawn
+            ],
+            artifacts_and_stdout!(["artifact-format:codenexus-context-json.v1"], ["artifact-format:codenexus-context-json.v1"]),
+            exits!(0, 64, 65, 74),
+            "retire only after compatibility callers consume an admitted full-provider localization artifact"
+        ),
+    },
     CommandRoute::Raw(provider_routes::FILE_BOUNDARY),
     CommandRoute::Raw(provider_routes::RUNTIME_CI_EVIDENCE),
     raw_route! {
@@ -695,7 +714,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             Internal,
             Internal,
             &[],
-            stdout!("text-format:help-quick.v1", "text-format:help-full.v4"),
+            stdout!("text-format:help-quick.v1", "text-format:help-full.v8"),
             exits!(0, 1),
             "retain while this major CLI contract is supported"
         ),
