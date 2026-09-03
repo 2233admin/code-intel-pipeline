@@ -60,7 +60,16 @@ fn build_context(
     let constraints = optional_strings(options.get("constraints"), "options.constraints")?;
     let mut known_unknowns =
         optional_strings(options.get("knownUnknowns"), "options.knownUnknowns")?;
-
+    if !methods.is_empty() && verified_inputs.is_empty() {
+        known_unknowns.extend(
+            methods
+                .iter()
+                .map(|method| format!("required evidence for method {method} is not supplied")),
+        );
+        return Ok(unknown_output(
+            "proposal_validation_unknown: requested methods have no verified evidence inputs",
+        ));
+    }
     let catalog = load_catalog()?;
     for method in &methods {
         if !catalog
@@ -408,6 +417,12 @@ fn validate_methods(candidate: &Value, context: &Value) -> Result<(), AdapterErr
                     format!("method card requiredEvidence is unavailable for method {id}"),
                 ));
             }
+            if context_evidence.len() < required_evidence.unwrap().len() {
+                return Err(contract(
+                    "proposal_method_not_applicable",
+                    format!("context does not represent all required evidence for method {id}"),
+                ));
+            }
             if !context_methods.iter().any(|value| value.as_str() == Some(id))
                 || !refs_are_available
             {
@@ -510,14 +525,35 @@ fn validate_snapshot_object(value: &Value, name: &str) -> Result<(), AdapterErro
         "inputDigest",
     ];
     exact_keys(object, &expected, "proposal_invalid_shape", name)?;
-    if object
+    if !object
         .get("identity")
         .and_then(Value::as_str)
-        .is_none_or(str::is_empty)
+        .is_some_and(valid_digest)
+        || !object
+            .get("repoIdentity")
+            .and_then(Value::as_str)
+            .is_some_and(valid_digest)
+        || !object
+            .get("inputDigest")
+            .and_then(Value::as_str)
+            .is_some_and(valid_digest)
+        || object
+            .get("head")
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
+        || !matches!(
+            object.get("workingTreePolicy").and_then(Value::as_str),
+            Some("head_only" | "explicit_overlay")
+        )
+        || !object.get("scope").is_some_and(|scope| {
+            scope
+                .as_array()
+                .is_some_and(|scope| !scope.is_empty() && scope.iter().all(|item| item.as_str().is_some_and(|item| !item.is_empty())))
+        })
     {
         return Err(contract(
             "proposal_invalid_shape",
-            format!("{name}.identity must be a non-empty string"),
+            format!("{name} snapshot fields are invalid"),
         ));
     }
     Ok(())
@@ -543,6 +579,12 @@ fn value_refs(value: Option<&Value>) -> Result<Vec<String>, AdapterError> {
     Ok(values.iter().filter_map(Value::as_str).map(ToOwned::to_owned).collect())
 }
 
+fn valid_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+}
 fn valid_evidence_ref(reference: &str) -> bool {
     let Some(digest) = reference.strip_prefix("artifact://sha256/") else {
         return false;
