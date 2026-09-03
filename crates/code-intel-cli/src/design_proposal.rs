@@ -163,7 +163,8 @@ fn validate_and_publish(
         )
     })?;
 
-    if let Err(error) = validate_context_shape(&context)
+    if let Err(error) = validate_snapshot_object(&request["snapshot"], "request.snapshot")
+        .and_then(|_| validate_context_shape(&context))
         .and_then(|_| validate_candidate_shape(&candidate))
         .and_then(|_| validate_snapshot(&candidate, &context))
         .and_then(|_| validate_methods(&candidate, &context))
@@ -174,14 +175,14 @@ fn validate_and_publish(
         return Ok(failure_output(error_message(&error)));
     }
 
-    let request_identity = request["snapshot"]["identity"].as_str();
-    let candidate_identity = candidate["snapshot"]["identity"].as_str();
-    let context_identity = context["snapshot"]["identity"].as_str();
-    if request_identity != candidate_identity || request_identity != context_identity {
-        return Ok(failure_output("proposal_snapshot_mismatch: request, context, and candidate snapshots differ"));
+    if request["snapshot"] != context["snapshot"] || request["snapshot"] != candidate["snapshot"] {
+        return Ok(failure_output(
+            "proposal_snapshot_mismatch: request, context, and candidate snapshots differ",
+        ));
     }
-    if context_artifact.consumed_snapshot_identity() != context_identity.unwrap_or("")
-        || candidate_artifact.consumed_snapshot_identity() != candidate_identity.unwrap_or("")
+    let snapshot_identity = request["snapshot"]["identity"].as_str().unwrap_or("");
+    if context_artifact.consumed_snapshot_identity() != snapshot_identity
+        || candidate_artifact.consumed_snapshot_identity() != snapshot_identity
     {
         return Ok(failure_output(
             "proposal_snapshot_mismatch: verified input snapshot differs from payload snapshot",
@@ -507,8 +508,11 @@ fn validate_evidence_refs(candidate: &Value, context: &Value) -> Result<(), Adap
 fn validate_snapshot(candidate: &Value, context: &Value) -> Result<(), AdapterError> {
     validate_snapshot_object(&candidate["snapshot"], "candidate.snapshot")?;
     validate_snapshot_object(&context["snapshot"], "context.snapshot")?;
-    if candidate["snapshot"]["identity"] != context["snapshot"]["identity"] {
-        return Err(contract("proposal_snapshot_mismatch", "candidate and context snapshot identities differ"));
+    if candidate["snapshot"] != context["snapshot"] {
+        return Err(contract(
+            "proposal_snapshot_mismatch",
+            "candidate and context snapshots differ",
+        ));
     }
     Ok(())
 }

@@ -70,7 +70,10 @@ fn setup(name: &str) -> (TempTree, PathBuf, PathBuf, Value) {
     let out = tree.0.join("out");
     let mut candidate = fixture(name);
     let current_snapshot = snapshot_for(&repo);
-    if name != "stale-snapshot.json" {
+    if name == "snapshot-field-mismatch.json" {
+        candidate["snapshot"] = current_snapshot.clone();
+        candidate["snapshot"]["head"] = json!("non-matching-head");
+    } else if name != "stale-snapshot.json" {
         candidate["snapshot"] = current_snapshot.clone();
     } else {
         let mut stale_snapshot = current_snapshot.clone();
@@ -169,11 +172,12 @@ fn assert_invalid(fixture_name: &str, rule: &str) {
     let text = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
     assert!(text.contains(rule), "missing {rule}: {text}");
     assert!(!text.contains("code-intel-design-proposal.v1"));
-    assert!(!out.join("proposal.json").exists());
+    assert!(!out.join("design-proposal.json").exists());
 }
 
 #[test] fn invalid_recommendation_is_rejected() { assert_invalid("invalid-recommendation.json", "proposal_option_reference_invalid"); }
 #[test] fn stale_snapshot_is_rejected() { assert_invalid("stale-snapshot.json", "proposal_snapshot_mismatch"); }
+#[test] fn non_identity_snapshot_field_is_rejected() { assert_invalid("snapshot-field-mismatch.json", "proposal_snapshot_mismatch"); }
 #[test] fn drifted_evidence_is_rejected() { assert_invalid("drifted-evidence.json", "proposal_evidence_drifted"); }
 #[test] fn missing_method_evidence_is_rejected() { assert_invalid("missing-method-evidence.json", "proposal_method_not_applicable"); }
 #[test] fn authority_escalation_is_rejected() { assert_invalid("authority-escalation.json", "proposal_authority_escalation"); }
@@ -200,6 +204,6 @@ fn option_count_diagnostic_rejects_one_and_four_options() {
         let text = format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
         assert!(text.contains("proposal_option_count"));
         assert!(!text.contains("code-intel-design-proposal.v1"));
-        assert!(!out.join("proposal.json").exists());
+        assert!(!out.join("design-proposal.json").exists());
     }
 }
