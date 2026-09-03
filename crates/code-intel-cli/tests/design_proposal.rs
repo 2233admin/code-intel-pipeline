@@ -69,13 +69,18 @@ fn setup(name: &str) -> (TempTree, PathBuf, PathBuf, Value) {
     let repo = tree.0.join("repo");
     let out = tree.0.join("out");
     let mut candidate = fixture(name);
+    let current_snapshot = snapshot_for(&repo);
     if name != "stale-snapshot.json" {
-        candidate["snapshot"] = snapshot_for(&repo);
+        candidate["snapshot"] = current_snapshot.clone();
+    } else {
+        let mut stale_snapshot = current_snapshot.clone();
+        stale_snapshot["identity"] = json!(SNAPSHOT.replace('a', "b"));
+        candidate["snapshot"] = stale_snapshot;
     }
     let candidate_path = tree.0.join("candidate.json");
     fs::write(&candidate_path, serde_json::to_vec_pretty(&candidate).unwrap()).unwrap();
     let context_path = tree.0.join("context.json");
-    let context = json!({"schema":"code-intel-design-context.v1","type":"design.context","snapshot":candidate["snapshot"],"evidenceRefs":["artifact://sha256/1111111111111111111111111111111111111111111111111111111111111111","artifact://sha256/2222222222222222222222222222222222222222222222222222222222222222","artifact://sha256/3333333333333333333333333333333333333333333333333333333333333333"],"methods":["contract-testing"]});
+    let context = json!({"schema":"code-intel-design-context.v1","type":"design.context","snapshot":current_snapshot,"evidenceRefs":["artifact://sha256/1111111111111111111111111111111111111111111111111111111111111111","artifact://sha256/2222222222222222222222222222222222222222222222222222222222222222","artifact://sha256/3333333333333333333333333333333333333333333333333333333333333333"],"methods":["contract-testing"],"constraints":[],"knownUnknowns":[]});
     fs::write(&context_path, serde_json::to_vec_pretty(&context).unwrap()).unwrap();
     (tree, repo, out, json!({"candidate":candidate_path,"context":context_path}))
 }

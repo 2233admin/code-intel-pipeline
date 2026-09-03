@@ -108,16 +108,36 @@ fn validate_and_publish(
     verified_inputs: &[VerifiedArtifact],
     out: &Path,
 ) -> Result<AdapterOutput, AdapterError> {
-    let (context_artifact, candidate_artifact) = match verified_inputs {
-        [context, candidate]
-            if context.artifact_schema() == CONTEXT_SCHEMA
-                && context.artifact_type() == CONTEXT_TYPE
-                && candidate.artifact_schema() == CANDIDATE_SCHEMA
-                && candidate.artifact_type() == CANDIDATE_TYPE => (context, candidate),
+    if verified_inputs.len() != 2 {
+        return Err(contract(
+            "proposal_invalid_shape",
+            "validate mode requires exactly one design.context and one design.proposal-candidate",
+        ));
+    }
+    let mut context_artifact = None;
+    let mut candidate_artifact = None;
+    for artifact in verified_inputs {
+        match (artifact.artifact_schema(), artifact.artifact_type()) {
+            (CONTEXT_SCHEMA, CONTEXT_TYPE) if context_artifact.is_none() => {
+                context_artifact = Some(artifact)
+            }
+            (CANDIDATE_SCHEMA, CANDIDATE_TYPE) if candidate_artifact.is_none() => {
+                candidate_artifact = Some(artifact)
+            }
+            _ => {
+                return Err(contract(
+                    "proposal_invalid_shape",
+                    "validate inputs must contain one design.context and one design.proposal-candidate",
+                ))
+            }
+        }
+    }
+    let (context_artifact, candidate_artifact) = match (context_artifact, candidate_artifact) {
+        (Some(context), Some(candidate)) => (context, candidate),
         _ => {
             return Err(contract(
                 "proposal_invalid_shape",
-                "validate mode requires exactly one design.context and one design.proposal-candidate",
+                "validate inputs must contain one design.context and one design.proposal-candidate",
             ))
         }
     };
@@ -157,9 +177,10 @@ fn validate_and_publish(
             "proposal_snapshot_mismatch: verified input snapshot differs from payload snapshot",
         ));
     }
-
     let mut result = candidate;
     result["schema"] = Value::String(RESULT_SCHEMA.into());
+    result["kind"] = Value::String("proposal".into());
+    result["snapshot"] = request["snapshot"].clone();
     let bytes = serde_json::to_vec(&result)
         .map_err(|error| AdapterError::Internal(format!("serialize design proposal: {error}")))?;
     publish_named(out, "design-proposal.json", &bytes, |_| Ok(()))?;
@@ -301,8 +322,15 @@ fn validate_options(options: &[Value]) -> Result<(), AdapterError> {
             }
         }
         for field in ["boundaryChanges", "tradeoffs", "assumptions", "validationPlan"] {
-            if !string_array(option.get(field).unwrap_or(&Value::Null), &format!("candidate.options[].{field}")) {
-                return Err(contract("proposal_invalid_shape", format!("candidate.options[].{field} must be a string array")));
+            let valid = if matches!(field, "boundaryChanges" | "validationPlan") {
+                nonempty_string_array(option.get(field))
+            } else {
+                option
+                    .get(field)
+                    .is_some_and(|value| string_array(value, &format!("candidate.options[].{field}")))
+            };
+            if !valid {
+                return Err(contract("proposal_invalid_shape", format!("candidate.options[].{field} must be a non-empty string array")));
             }
         }
         if !nonempty_evidence_refs(option.get("evidenceRefs")) {
@@ -345,13 +373,33 @@ fn validate_methods(candidate: &Value, context: &Value) -> Result<(), AdapterErr
     let mut unknown_methods = Vec::new();
     for method in candidate["methods"].as_array().unwrap_or(&[]) {
         let id = method["id"].as_str().unwrap();
-        let known = catalog.cards().iter().any(|card| card["id"] == id);
+        let card = catalog.cards().iter().find(|card| card["id"] == id);
         let refs = method["evidenceRefs"].as_array().unwrap();
         let refs_are_available = refs.iter().all(|reference| {
             reference.as_str().is_some_and(|reference| context_evidence.contains(reference))
         });
-        if known {
-            if !context_methods.iter().any(|value| value.as_str() == Some(id)) || !refs_are_available {
+        if let Some(card) = card {
+            let required_evidence = card
+                .get("requiredEvidence")
+                .and_then(Value::as_array)
+                .filter(|items| !items.is_empty());
+            let required_ids_are_valid = required_evidence.is_some_and(|items| {
+                items.iter().all(|item| {
+                    item.as_object()
+                        .and_then(|item| item.get("id"))
+                        .and_then(Value::as_str)
+                        .is_some_and(|id| !id.is_empty())
+                })
+            });
+            if !required_ids_are_valid {
+                return Err(contract(
+                    "proposal_validation_unknown",
+                    format!("method card requiredEvidence is unavailable for method {id}"),
+                ));
+            }
+            if !context_methods.iter().any(|value| value.as_str() == Some(id))
+                || !refs_are_available
+            {
                 return Err(contract(
                     "proposal_method_not_applicable",
                     format!("required evidence or selected context is unavailable for method {id}"),
@@ -406,46 +454,32 @@ fn validate_snapshot(candidate: &Value, context: &Value) -> Result<(), AdapterEr
     }
     Ok(())
 }
-
 fn validate_context_shape(context: &Value) -> Result<(), AdapterError> {
     let object = context.as_object().ok_or_else(|| {
         contract("proposal_invalid_shape", "context must be an object")
     })?;
-    let allowed = [
-        "schema",
-        "type",
-        "snapshot",
-        "evidenceRefs",
-        "methods",
-        "constraints",
-        "knownUnknowns",
-    ];
-    if object.keys().any(|key| !allowed.contains(&key.as_str())) {
-        return Err(contract(
-            "proposal_invalid_shape",
-            "context has unknown fields",
-        ));
-    }
-    for field in ["schema", "type", "snapshot", "evidenceRefs", "methods"] {
-        if !object.contains_key(field) {
-            return Err(contract(
-                "proposal_invalid_shape",
-                format!("context.{field} is required"),
-            ));
-        }
-    }
+    exact_keys(
+        object,
+        &[
+            "schema",
+            "type",
+            "snapshot",
+            "evidenceRefs",
+            "methods",
+            "constraints",
+            "knownUnknowns",
+        ],
+        "proposal_invalid_shape",
+        "context",
+    )?;
     if context["schema"] != CONTEXT_SCHEMA || context["type"] != CONTEXT_TYPE {
         return Err(contract("proposal_invalid_shape", "context schema or type is invalid"));
     }
     validate_snapshot_object(&context["snapshot"], "context.snapshot")?;
     if !string_array(&context["evidenceRefs"], "context.evidenceRefs")
         || !string_array(&context["methods"], "context.methods")
-        || !context
-            .get("constraints")
-            .is_none_or(|value| string_array(value, "context.constraints"))
-        || !context
-            .get("knownUnknowns")
-            .is_none_or(|value| string_array(value, "context.knownUnknowns"))
+        || !string_array(&context["constraints"], "context.constraints")
+        || !string_array(&context["knownUnknowns"], "context.knownUnknowns")
     {
         return Err(contract("proposal_invalid_shape", "context arrays must contain strings"));
     }
@@ -453,16 +487,29 @@ fn validate_context_shape(context: &Value) -> Result<(), AdapterError> {
 }
 
 fn validate_snapshot_object(value: &Value, name: &str) -> Result<(), AdapterError> {
-    if value
-        .as_object()
-        .and_then(|object| object.get("identity"))
+    let object = value.as_object().ok_or_else(|| {
+        contract("proposal_invalid_shape", format!("{name} must be an object"))
+    })?;
+    let expected = [
+        "identity",
+        "repoIdentity",
+        "head",
+        "workingTreePolicy",
+        "scope",
+        "inputDigest",
+    ];
+    exact_keys(object, &expected, "proposal_invalid_shape", name)?;
+    if object
+        .get("identity")
         .and_then(Value::as_str)
-        .is_some_and(|identity| !identity.is_empty())
+        .is_none_or(str::is_empty)
     {
-        Ok(())
-    } else {
-        Err(contract("proposal_invalid_shape", format!("{name}.identity must be a non-empty string")))
+        return Err(contract(
+            "proposal_invalid_shape",
+            format!("{name}.identity must be a non-empty string"),
+        ));
     }
+    Ok(())
 }
 
 fn load_catalog() -> Result<crate::method_catalog::MethodCatalog, AdapterError> {
@@ -473,15 +520,6 @@ fn load_catalog() -> Result<crate::method_catalog::MethodCatalog, AdapterError> 
         .map_err(|error| AdapterError::Unavailable(error.to_string()))
 }
 
-fn evidence_set(context: &Value) -> Result<BTreeSet<String>, AdapterError> {
-    Ok(context["evidenceRefs"]
-        .as_array()
-        .ok_or_else(|| contract("proposal_invalid_shape", "context.evidenceRefs must be an array"))?
-        .iter()
-        .filter_map(Value::as_str)
-        .map(ToOwned::to_owned)
-        .collect())
-}
 
 fn section_refs<'a>(candidate: &'a Value, field: &str) -> Result<Vec<String>, AdapterError> {
     value_refs(candidate[field].get("evidenceRefs"))
@@ -494,22 +532,56 @@ fn value_refs(value: Option<&Value>) -> Result<Vec<String>, AdapterError> {
     Ok(values.iter().filter_map(Value::as_str).map(ToOwned::to_owned).collect())
 }
 
+fn valid_evidence_ref(reference: &str) -> bool {
+    let Some(digest) = reference.strip_prefix("artifact://sha256/") else {
+        return false;
+    };
+    digest.len() == 64
+        && digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+}
 fn requested_strings(value: Option<&Value>, name: &str) -> Result<Vec<String>, AdapterError> {
     optional_strings(value, name)
+}
+
+fn nonempty_string_array(value: Option<&Value>) -> bool {
+    value.is_some_and(|value| {
+        value
+            .as_array()
+            .is_some_and(|values| !values.is_empty() && values.iter().all(|item| item.as_str().is_some()))
+    })
 }
 
 fn optional_strings(value: Option<&Value>, name: &str) -> Result<Vec<String>, AdapterError> {
     match value {
         None => Ok(Vec::new()),
         Some(value) => {
-            let values = value.as_array().ok_or_else(|| AdapterError::InvalidOptions(format!("{name} must be a string array")))?;
-            values.iter().map(|value| value.as_str().filter(|item| !item.is_empty()).map(ToOwned::to_owned).ok_or_else(|| AdapterError::InvalidOptions(format!("{name} must contain non-empty strings")))).collect()
+            let values = value
+                .as_array()
+                .ok_or_else(|| AdapterError::InvalidOptions(format!("{name} must be a string array")))?;
+            values
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .filter(|item| !item.is_empty())
+                        .map(ToOwned::to_owned)
+                        .ok_or_else(|| {
+                            AdapterError::InvalidOptions(format!(
+                                "{name} must contain non-empty strings"
+                            ))
+                        })
+                })
+                .collect()
         }
     }
 }
 
 fn string_array(value: &Value, _name: &str) -> bool {
-    value.as_array().is_some_and(|values| values.iter().all(|value| value.as_str().is_some()))
+    value
+        .as_array()
+        .is_some_and(|values| values.iter().all(|value| value.as_str().is_some()))
 }
 
 fn nonempty_string(value: Option<&Value>) -> bool {
@@ -519,26 +591,27 @@ fn nonempty_string(value: Option<&Value>) -> bool {
 fn nonempty_evidence_refs(value: Option<&Value>) -> bool {
     value.is_some_and(|value| {
         value.as_array().is_some_and(|values| {
-            !values.is_empty() && values.iter().all(|value| value.as_str().is_some_and(|value| !value.is_empty()))
+            !values.is_empty()
+                && values
+                    .iter()
+                    .all(|value| value.as_str().is_some_and(|value| !value.is_empty()))
         })
     })
 }
 
-fn valid_evidence_ref(reference: &str) -> bool {
-    let Some(digest) = reference.strip_prefix("artifact://sha256/") else {
-        return false;
-    };
-    let digest = digest.split_once('#').map_or(digest, |(digest, _)| digest);
-    digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
-}
-
-fn exact_keys(object: &Map<String, Value>, expected: &[&str], rule: &str, name: &str) -> Result<(), AdapterError> {
-    let expected = expected.iter().copied().collect::<BTreeSet<_>>();
-    let actual = object.keys().map(String::as_str).collect::<BTreeSet<_>>();
-    if actual != expected {
-        return Err(contract(rule, format!("{name} has unknown or missing fields")));
+fn evidence_set(context: &Value) -> Result<BTreeSet<String>, AdapterError> {
+    let values = context["evidenceRefs"]
+        .as_array()
+        .ok_or_else(|| contract("proposal_invalid_shape", "context.evidenceRefs must be an array"))?;
+    let mut references = BTreeSet::new();
+    for value in values {
+        let reference = value
+            .as_str()
+            .filter(|reference| valid_evidence_ref(reference))
+            .ok_or_else(|| contract("proposal_evidence_missing", "context evidence reference is malformed"))?;
+        references.insert(reference.to_string());
     }
-    Ok(())
+    Ok(references)
 }
 
 fn contract(rule: &str, detail: impl Into<String>) -> AdapterError {
