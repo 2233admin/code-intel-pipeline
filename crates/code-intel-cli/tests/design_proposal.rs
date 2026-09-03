@@ -35,7 +35,7 @@ fn snapshot_for(repo: &Path) -> Value {
 }
 
 fn context_request(repo: &Path, out: &Path) -> Value {
-    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "contractVersion": 1, "snapshot": snapshot_for(repo), "options": {"repoPath": repo, "mode": "context", "out": out}, "inputs": [], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}})
+    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "contractVersion": 1, "snapshot": snapshot_for(repo), "options": {"repoPath": repo, "mode": "context"}, "inputs": [], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}})
 }
 
 fn artifact_ref(path: &Path, schema: &str, kind: &str, snapshot: &Value) -> Value {
@@ -44,7 +44,7 @@ fn artifact_ref(path: &Path, schema: &str, kind: &str, snapshot: &Value) -> Valu
 
 fn validate_request(repo: &Path, context: &Path, candidate: &Path, out: &Path) -> Value {
     let snapshot = snapshot_for(repo);
-    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "contractVersion": 1, "snapshot": snapshot, "options": {"repoPath": repo, "mode": "validate", "out": out}, "inputs": [artifact_ref(context, "code-intel-design-context.v1", "design.context", &snapshot), artifact_ref(candidate, "code-intel-design-proposal-candidate.v1", "design.proposal-candidate", &snapshot)], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}})
+    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "contractVersion": 1, "snapshot": snapshot, "options": {"repoPath": repo, "mode": "validate"}, "inputs": [artifact_ref(context, "code-intel-design-context.v1", "design.context", &snapshot), artifact_ref(candidate, "code-intel-design-proposal-candidate.v1", "design.proposal-candidate", &snapshot)], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}})
 }
 
 fn run_capability(request: &Value, path: &Path, out: &Path) -> Output {
@@ -85,14 +85,25 @@ fn valid_two_option_candidate_stages_advisory_result() {
     let result: Value = serde_json::from_slice(&output.stdout).expect("result JSON");
     assert_eq!(result["schema"], "code-intel-capability-result.v1");
     assert!(result["artifacts"].as_array().unwrap().iter().any(|artifact| artifact["artifactSchema"] == "code-intel-design-proposal.v1" && artifact["type"] == "design.proposal"));
-    assert!(staged_contains(&out, "code-intel-design-proposal.v1"));
+    let payload = staged_payload(&out, "code-intel-design-proposal.v1").expect("staged proposal payload");
+    assert_eq!(payload["authority"], "advisory_only");
+    assert_eq!(payload["recommendation"]["optionId"], "option-a");
+    assert_eq!(payload["snapshot"]["identity"], snapshot_for(&repo)["identity"]);
+    assert!(payload["options"].as_array().unwrap().iter().any(|option| option["id"] == "option-a"));
 }
 
-fn staged_contains(root: &Path, needle: &str) -> bool {
-    fs::read_dir(root).ok().into_iter().flatten().flatten().any(|entry| {
+fn staged_payload(root: &Path, schema: &str) -> Option<Value> {
+    for entry in fs::read_dir(root).ok()?.flatten() {
         let path = entry.path();
-        if path.is_dir() { staged_contains(&path, needle) } else { fs::read_to_string(path).map_or(false, |text| text.contains(needle)) }
-    })
+        if path.is_dir() {
+            if let Some(payload) = staged_payload(&path, schema) { return Some(payload); }
+        } else if let Ok(bytes) = fs::read(&path) {
+            if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
+                if value["schema"] == schema { return Some(value); }
+            }
+        }
+    }
+    None
 }
 
 #[test]
@@ -103,9 +114,12 @@ fn valid_three_option_candidate_preserves_all_ids() {
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["schema"], "code-intel-capability-result.v1");
     assert!(result["artifacts"].as_array().unwrap().iter().any(|a| a["artifactSchema"] == "code-intel-design-proposal.v1" && a["type"] == "design.proposal"));
-    for needle in ["option-a", "option-b", "option-c", "advisory_only", "code-intel-design-proposal.v1"] {
-        assert!(staged_contains(&out, needle), "staged proposal missing {needle}");
-    }
+    let payload = staged_payload(&out, "code-intel-design-proposal.v1").expect("staged proposal payload");
+    assert_eq!(payload["authority"], "advisory_only");
+    assert_eq!(payload["recommendation"]["optionId"], "option-b");
+    assert_eq!(payload["snapshot"]["identity"], snapshot_for(&repo)["identity"]);
+    let ids: Vec<_> = payload["options"].as_array().unwrap().iter().map(|o| o["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, vec!["option-a", "option-b", "option-c"]);
 }
 #[test]
 fn context_mode_stages_design_context() {
@@ -142,13 +156,12 @@ fn option_count_diagnostic_rejects_one_and_four_options() {
         let mut candidate = fixture("invalid-option-count.json");
         let options = candidate["options"].as_array().unwrap().clone();
         let mut four = options.clone();
-        four[0]["id"] = json!("option-a");
-        four[0]["title"] = json!("A");
         four.push(options[0].clone());
-        four[1]["id"] = json!("option-b");
         four.push(options[0].clone());
-        four[2]["id"] = json!("option-c");
         four.push(options[0].clone());
+        for (option, id) in four.iter_mut().zip(["option-a", "option-b", "option-c", "option-d"]) {
+            option["id"] = json!(id);
+        }
         candidate["snapshot"] = snapshot_for(&repo);
         candidate["options"] = if count == 1 { json!(options) } else { json!(four) };
         fs::write(&candidate_path, serde_json::to_vec(&candidate).unwrap()).unwrap();

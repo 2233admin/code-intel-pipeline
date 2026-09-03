@@ -6,7 +6,7 @@
   "request": {"mode": "validate", "capability": "advisory.design-proposal.compat", "schema": "code-intel-design-proposal-request.v1"},
   "baseline": {"summary": "existing capability boundary", "evidenceRefs": ["artifact://sha256/1111111111111111111111111111111111111111111111111111111111111111"]},
   "delta": {"summary": "add an advisory design proposal method catalog", "evidenceRefs": ["artifact://sha256/2222222222222222222222222222222222222222222222222222222222222222"]},
-  "methods": [{"id": "method-contract-testing", "evidenceRefs": ["artifact://sha256/1111111111111111111111111111111111111111111111111111111111111111"]}],
+  "methods": [{"id": "contract-testing", "evidenceRefs": ["artifact://sha256/1111111111111111111111111111111111111111111111111111111111111111"]}],
   "options": [
     {"id": "option-a", "title": "Strict adapter", "summary": "Keep validation at the CLI boundary", "boundaryChanges": ["add proposal validation route"], "tradeoffs": ["small runtime surface"], "assumptions": ["context artifacts are verified"], "evidenceRefs": ["artifact://sha256/1111111111111111111111111111111111111111111111111111111111111111"], "validationPlan": ["validate candidate against context"], "reversibility": {"status": "high", "basis": "advisory-only"}},
     {"id": "option-b", "title": "Shared validator", "summary": "Reuse the artifact validation pipeline", "boundaryChanges": ["share proposal schema validator"], "tradeoffs": ["more coupling"], "assumptions": ["artifact protocol remains stable"], "evidenceRefs": ["artifact://sha256/2222222222222222222222222222222222222222222222222222222222222222"], "validationPlan": ["run contract and staging checks"], "reversibility": {"status": "medium", "basis": "isolated route"}},
