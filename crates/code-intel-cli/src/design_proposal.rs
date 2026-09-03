@@ -159,6 +159,7 @@ fn validate_and_publish(
         .and_then(|_| validate_snapshot(&candidate, &context))
         .and_then(|_| validate_methods(&candidate, &context))
         .and_then(|_| validate_evidence_refs(&candidate, &context))
+        .and_then(|_| validate_option_requirements(&candidate))
         .and_then(|_| validate_recommendation(&candidate["recommendation"], candidate["options"].as_array().unwrap()))
     {
         return Ok(failure_output(error_message(&error)));
@@ -322,15 +323,11 @@ fn validate_options(options: &[Value]) -> Result<(), AdapterError> {
             }
         }
         for field in ["boundaryChanges", "tradeoffs", "assumptions", "validationPlan"] {
-            let valid = if matches!(field, "boundaryChanges" | "validationPlan") {
-                nonempty_string_array(option.get(field))
-            } else {
-                option
-                    .get(field)
-                    .is_some_and(|value| string_array(value, &format!("candidate.options[].{field}")))
-            };
-            if !valid {
-                return Err(contract("proposal_invalid_shape", format!("candidate.options[].{field} must be a non-empty string array")));
+            if !option
+                .get(field)
+                .is_some_and(|value| string_array(value, &format!("candidate.options[].{field}")))
+            {
+                return Err(contract("proposal_invalid_shape", format!("candidate.options[].{field} must be a string array")));
             }
         }
         if !nonempty_evidence_refs(option.get("evidenceRefs")) {
@@ -342,6 +339,20 @@ fn validate_options(options: &[Value]) -> Result<(), AdapterError> {
         exact_keys(reversibility, &["status", "basis"], "proposal_invalid_shape", "candidate.options[].reversibility")?;
         if !nonempty_string(reversibility.get("status")) || !nonempty_string(reversibility.get("basis")) {
             return Err(contract("proposal_invalid_shape", "candidate.options[].reversibility is incomplete"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_option_requirements(candidate: &Value) -> Result<(), AdapterError> {
+    for option in candidate["options"].as_array().unwrap_or(&[]) {
+        for field in ["boundaryChanges", "validationPlan"] {
+            if !nonempty_string_array(option.get(field)) {
+                return Err(contract(
+                    "proposal_invalid_shape",
+                    format!("candidate.options[].{field} must be non-empty"),
+                ));
+            }
         }
     }
     Ok(())
@@ -614,6 +625,19 @@ fn evidence_set(context: &Value) -> Result<BTreeSet<String>, AdapterError> {
     Ok(references)
 }
 
+fn exact_keys(
+    object: &Map<String, Value>,
+    expected: &[&str],
+    rule: &str,
+    name: &str,
+) -> Result<(), AdapterError> {
+    let expected = expected.iter().copied().collect::<BTreeSet<_>>();
+    let actual = object.keys().map(String::as_str).collect::<BTreeSet<_>>();
+    if actual != expected {
+        return Err(contract(rule, format!("{name} has unknown or missing fields")));
+    }
+    Ok(())
+}
 fn contract(rule: &str, detail: impl Into<String>) -> AdapterError {
     AdapterError::Contract(format!("{rule}: {}", detail.into()))
 }
