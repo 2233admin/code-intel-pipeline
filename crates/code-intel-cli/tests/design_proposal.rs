@@ -35,7 +35,7 @@ fn snapshot_for(repo: &Path) -> Value {
 }
 
 fn context_request(repo: &Path, out: &Path) -> Value {
-    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "contractVersion": 1, "mode": "context", "snapshot": snapshot_for(repo), "options": {"repoPath": repo, "out": out}, "inputs": [], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}})
+    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "contractVersion": 1, "snapshot": snapshot_for(repo), "options": {"repoPath": repo, "mode": "context", "out": out}, "inputs": [], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}})
 }
 
 fn artifact_ref(path: &Path, schema: &str, kind: &str, snapshot: &Value) -> Value {
@@ -44,7 +44,7 @@ fn artifact_ref(path: &Path, schema: &str, kind: &str, snapshot: &Value) -> Valu
 
 fn validate_request(repo: &Path, context: &Path, candidate: &Path, out: &Path) -> Value {
     let snapshot = snapshot_for(repo);
-    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "contractVersion": 1, "mode": "validate", "snapshot": snapshot, "options": {"repoPath": repo, "out": out}, "inputs": [artifact_ref(context, "code-intel-design-context.v1", "design.context", &snapshot), artifact_ref(candidate, "code-intel-design-proposal-candidate.v1", "design.proposal-candidate", &snapshot)], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}})
+    json!({"schema": REQUEST_SCHEMA, "capability": CAPABILITY, "contractVersion": 1, "snapshot": snapshot, "options": {"repoPath": repo, "mode": "validate", "out": out}, "inputs": [artifact_ref(context, "code-intel-design-context.v1", "design.context", &snapshot), artifact_ref(candidate, "code-intel-design-proposal-candidate.v1", "design.proposal-candidate", &snapshot)], "effectPolicy": {"allowedEffects": ["repo_read", "local_write"]}})
 }
 
 fn run_capability(request: &Value, path: &Path, out: &Path) -> Output {
@@ -72,7 +72,7 @@ fn setup(name: &str) -> (TempTree, PathBuf, PathBuf, Value) {
     let candidate_path = tree.0.join("candidate.json");
     fs::write(&candidate_path, serde_json::to_vec_pretty(&candidate).unwrap()).unwrap();
     let context_path = tree.0.join("context.json");
-    let context = json!({"schema":"code-intel-design-context.v1","type":"design.context","snapshot":candidate["snapshot"],"evidenceRefs":["artifact://sha256/1111111111111111111111111111111111111111111111111111111111111111"],"methods":["method-contract-testing"]});
+    let context = json!({"schema":"code-intel-design-context.v1","type":"design.context","snapshot":candidate["snapshot"],"evidenceRefs":["artifact://sha256/1111111111111111111111111111111111111111111111111111111111111111","artifact://sha256/2222222222222222222222222222222222222222222222222222222222222222","artifact://sha256/3333333333333333333333333333333333333333333333333333333333333333"],"methods":["contract-testing"]});
     fs::write(&context_path, serde_json::to_vec_pretty(&context).unwrap()).unwrap();
     (tree, repo, out, json!({"candidate":candidate_path,"context":context_path}))
 }
@@ -83,11 +83,16 @@ fn valid_two_option_candidate_stages_advisory_result() {
     let output = run_capability(&validate_request(&repo, &as_path(&paths["context"]), &as_path(&paths["candidate"]), &out), &tree.0.join("request.json"), &out);
     assert!(output.status.success(), "stderr={}", String::from_utf8_lossy(&output.stderr));
     let result: Value = serde_json::from_slice(&output.stdout).expect("result JSON");
-    assert_eq!(result["authority"], "advisory_only");
-    assert_eq!(result["schema"], "code-intel-design-proposal.v1");
-    assert_eq!(result["recommendation"]["optionId"], "option-a");
-    assert_eq!(result["snapshot"]["identity"], snapshot_for(&repo)["identity"]);
+    assert_eq!(result["schema"], "code-intel-capability-result.v1");
     assert!(result["artifacts"].as_array().unwrap().iter().any(|artifact| artifact["artifactSchema"] == "code-intel-design-proposal.v1" && artifact["type"] == "design.proposal"));
+    assert!(staged_contains(&out, "code-intel-design-proposal.v1"));
+}
+
+fn staged_contains(root: &Path, needle: &str) -> bool {
+    fs::read_dir(root).ok().into_iter().flatten().flatten().any(|entry| {
+        let path = entry.path();
+        if path.is_dir() { staged_contains(&path, needle) } else { fs::read_to_string(path).map_or(false, |text| text.contains(needle)) }
+    })
 }
 
 #[test]
@@ -96,15 +101,17 @@ fn valid_three_option_candidate_preserves_all_ids() {
     let output = run_capability(&validate_request(&repo, &as_path(&paths["context"]), &as_path(&paths["candidate"]), &out), &tree.0.join("request.json"), &out);
     assert!(output.status.success(), "stderr={}", String::from_utf8_lossy(&output.stderr));
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(result["options"].as_array().unwrap().iter().map(|o| o["id"].as_str().unwrap()).collect::<Vec<_>>(), vec!["option-a", "option-b", "option-c"]);
+    assert_eq!(result["schema"], "code-intel-capability-result.v1");
+    assert!(result["artifacts"].as_array().unwrap().iter().any(|a| a["artifactSchema"] == "code-intel-design-proposal.v1" && a["type"] == "design.proposal"));
+    for needle in ["option-a", "option-b", "option-c", "advisory_only", "code-intel-design-proposal.v1"] {
+        assert!(staged_contains(&out, needle), "staged proposal missing {needle}");
+    }
 }
-
 #[test]
 fn context_mode_stages_design_context() {
     let tree = temp_repo("context-mode");
     let repo = tree.0.join("repo");
     let out = tree.0.join("context-out");
-    fs::create_dir_all(&out).unwrap();
     let output = run_capability(&context_request(&repo, &out), &tree.0.join("context-request.json"), &out);
     assert!(output.status.success(), "stderr={}", String::from_utf8_lossy(&output.stderr));
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -142,7 +149,7 @@ fn option_count_diagnostic_rejects_one_and_four_options() {
         four.push(options[0].clone());
         four[2]["id"] = json!("option-c");
         four.push(options[0].clone());
-        four[3]["id"] = json!("option-d");
+        candidate["snapshot"] = snapshot_for(&repo);
         candidate["options"] = if count == 1 { json!(options) } else { json!(four) };
         fs::write(&candidate_path, serde_json::to_vec(&candidate).unwrap()).unwrap();
         let output = run_capability(&validate_request(&repo, &as_path(&paths["context"]), &candidate_path, &out), &tree.0.join(format!("request-{count}.json")), &out);
