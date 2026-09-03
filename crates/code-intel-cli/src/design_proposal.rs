@@ -275,9 +275,21 @@ fn validate_candidate_shape(candidate: &Value) -> Result<(), AdapterError> {
         let method = method.as_object().ok_or_else(|| {
             contract("proposal_invalid_shape", "candidate.methods entries must be objects")
         })?;
-        exact_keys(method, &["id", "evidenceRefs"], "proposal_invalid_shape", "candidate.methods[]")?;
+        let has_evidence_ids = method.contains_key("evidenceIds");
+        let expected_keys = if has_evidence_ids {
+            &["id", "evidenceRefs", "evidenceIds"][..]
+        } else {
+            &["id", "evidenceRefs"][..]
+        };
+        exact_keys(method, expected_keys, "proposal_invalid_shape", "candidate.methods[]")?;
         if !nonempty_string(method.get("id")) || !nonempty_evidence_refs(method.get("evidenceRefs")) {
             return Err(contract("proposal_invalid_shape", "candidate.methods entry is incomplete"));
+        }
+        if has_evidence_ids && !nonempty_string_array(method.get("evidenceIds")) {
+            return Err(contract(
+                "proposal_invalid_shape",
+                "candidate.methods[].evidenceIds must be a non-empty string array",
+            ));
         }
     }
     let options = candidate["options"].as_array().ok_or_else(|| {
@@ -417,7 +429,27 @@ fn validate_methods(candidate: &Value, context: &Value) -> Result<(), AdapterErr
                     format!("method card requiredEvidence is unavailable for method {id}"),
                 ));
             }
-            if context_evidence.len() < required_evidence.unwrap().len() {
+            let required_ids = required_evidence
+                .unwrap()
+                .iter()
+                .filter_map(|item| item.get("id").and_then(Value::as_str))
+                .collect::<Vec<_>>();
+            let Some(provided_ids) = method.get("evidenceIds").and_then(Value::as_array) else {
+                return Err(contract(
+                    "proposal_method_not_applicable",
+                    format!("candidate does not identify required evidence for method {id}"),
+                ));
+            };
+            let provided_ids = provided_ids.iter().filter_map(Value::as_str).collect::<Vec<_>>();
+            if provided_ids.len() != required_ids.len()
+                || required_ids.iter().any(|required| !provided_ids.contains(required))
+            {
+                return Err(contract(
+                    "proposal_method_not_applicable",
+                    format!("candidate evidence IDs do not match required evidence for method {id}"),
+                ));
+            }
+            if context_evidence.len() < required_ids.len() {
                 return Err(contract(
                     "proposal_method_not_applicable",
                     format!("context does not represent all required evidence for method {id}"),
@@ -532,7 +564,7 @@ fn validate_snapshot_object(value: &Value, name: &str) -> Result<(), AdapterErro
         || !object
             .get("repoIdentity")
             .and_then(Value::as_str)
-            .is_some_and(valid_digest)
+            .is_some_and(valid_repo_identity)
         || !object
             .get("inputDigest")
             .and_then(Value::as_str)
@@ -584,6 +616,13 @@ fn valid_digest(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+}
+
+fn valid_repo_identity(value: &str) -> bool {
+    value
+        .strip_prefix("git-lineage-v1:")
+        .or_else(|| value.strip_prefix("content-v1:"))
+        .is_some_and(valid_digest)
 }
 fn valid_evidence_ref(reference: &str) -> bool {
     let Some(digest) = reference.strip_prefix("artifact://sha256/") else {
