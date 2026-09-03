@@ -77,6 +77,40 @@ fn setup(name: &str) -> (TempTree, PathBuf, PathBuf, Value) {
     (tree, repo, out, json!({"candidate":candidate_path,"context":context_path}))
 }
 
+
+fn published_artifact_ref<'a>(result: &'a Value, schema: &str, kind: &str) -> &'a Value {
+    result["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|artifact| {
+            artifact["schema"] == "code-intel-artifact-ref.v1"
+                && artifact["artifactSchema"] == schema
+                && artifact["type"] == kind
+        })
+        .expect("published artifact ref")
+}
+
+fn staged_artifact_payload(root: &Path, artifact_ref: &Value, schema: &str, kind: &str) -> Value {
+    assert_eq!(artifact_ref["schema"], "code-intel-artifact-ref.v1");
+    assert_eq!(artifact_ref["artifactSchema"], schema);
+    assert_eq!(artifact_ref["type"], kind);
+    let relative_path = artifact_ref["path"].as_str().expect("artifact ref path");
+    assert!(
+        Path::new(relative_path).is_relative(),
+        "artifact ref path must be relative"
+    );
+    let path = root.join(relative_path);
+    let bytes = fs::read(&path).expect("staged artifact bytes");
+    assert_eq!(artifact_ref["sha256"], sha256::sha256(&path));
+    let payload: Value = serde_json::from_slice(&bytes).expect("staged proposal payload");
+    assert_eq!(
+        artifact_ref["consumedSnapshotIdentity"],
+        payload["snapshot"]["identity"]
+    );
+    payload
+}
+
 #[test]
 fn valid_two_option_candidate_stages_advisory_result() {
     let (tree, repo, out, paths) = setup("valid-two-option.json");
@@ -84,28 +118,15 @@ fn valid_two_option_candidate_stages_advisory_result() {
     assert!(output.status.success(), "stderr={}", String::from_utf8_lossy(&output.stderr));
     let result: Value = serde_json::from_slice(&output.stdout).expect("result JSON");
     assert_eq!(result["schema"], "code-intel-capability-result.v1");
-    assert!(result["artifacts"].as_array().unwrap().iter().any(|artifact| artifact["artifactSchema"] == "code-intel-design-proposal.v1" && artifact["type"] == "design.proposal"));
-    let payload = staged_payload(&out, "code-intel-design-proposal.v1").expect("staged proposal payload");
+    let artifact_ref = published_artifact_ref(&result, "code-intel-design-proposal.v1", "design.proposal");
+    let payload = staged_artifact_payload(&out, artifact_ref, "code-intel-design-proposal.v1", "design.proposal");
+    assert_eq!(payload["schema"], "code-intel-design-proposal.v1");
     assert_eq!(payload["authority"], "advisory_only");
     assert_eq!(payload["recommendation"]["optionId"], "option-a");
     assert_eq!(payload["snapshot"]["identity"], snapshot_for(&repo)["identity"]);
-    assert!(payload["options"].as_array().unwrap().iter().any(|option| option["id"] == "option-a"));
+    let ids: Vec<_> = payload["options"].as_array().unwrap().iter().map(|option| option["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, vec!["option-a", "option-b"]);
 }
-
-fn staged_payload(root: &Path, schema: &str) -> Option<Value> {
-    for entry in fs::read_dir(root).ok()?.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            if let Some(payload) = staged_payload(&path, schema) { return Some(payload); }
-        } else if let Ok(bytes) = fs::read(&path) {
-            if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
-                if value["schema"] == schema { return Some(value); }
-            }
-        }
-    }
-    None
-}
-
 #[test]
 fn valid_three_option_candidate_preserves_all_ids() {
     let (tree, repo, out, paths) = setup("valid-three-option.json");
@@ -113,8 +134,9 @@ fn valid_three_option_candidate_preserves_all_ids() {
     assert!(output.status.success(), "stderr={}", String::from_utf8_lossy(&output.stderr));
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["schema"], "code-intel-capability-result.v1");
-    assert!(result["artifacts"].as_array().unwrap().iter().any(|a| a["artifactSchema"] == "code-intel-design-proposal.v1" && a["type"] == "design.proposal"));
-    let payload = staged_payload(&out, "code-intel-design-proposal.v1").expect("staged proposal payload");
+    let artifact_ref = published_artifact_ref(&result, "code-intel-design-proposal.v1", "design.proposal");
+    let payload = staged_artifact_payload(&out, artifact_ref, "code-intel-design-proposal.v1", "design.proposal");
+    assert_eq!(payload["schema"], "code-intel-design-proposal.v1");
     assert_eq!(payload["authority"], "advisory_only");
     assert_eq!(payload["recommendation"]["optionId"], "option-b");
     assert_eq!(payload["snapshot"]["identity"], snapshot_for(&repo)["identity"]);
