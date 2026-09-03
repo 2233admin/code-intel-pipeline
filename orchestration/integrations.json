@@ -291,7 +291,7 @@
             "7db9e80857f3c65aada25041986cb5cb3b50b95fa69de794d55ad38fd4a8d8d4",
             "1ea59e6fc535572f1bf6ec93fd3ed0857c6b1dcc03db8370c060eec4741da415",
             "7c5cabf7a84fdc2fad9778d45217a66dd3e7f4730ff87012bebc85545b93bf9e",
-            "5090efd13c07531c249637d8e5857f0d13f3ecb8f0d02fb6e858747ea7d8c3d8",
+            "264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc",
             "5749c0bc4b61b078d84bba9d54753ac1be630c0ec9c574114bdddf5b8a580740"
           ]
         },
@@ -786,7 +786,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "6aed5efc531e841d620484af4cee50cac4595a41d2dca38ed5352163bedecd00",
-            "5090efd13c07531c249637d8e5857f0d13f3ecb8f0d02fb6e858747ea7d8c3d8"
+            "264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc"
           ]
         },
         "determinism": "deterministic",
@@ -877,9 +877,9 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "3ba256f4ca0bf62aca08f688f7ecf31800dd10e68371054e2f1605eff197ea81",
-            "5090efd13c07531c249637d8e5857f0d13f3ecb8f0d02fb6e858747ea7d8c3d8",
-            "09b1d3a9d2908c6981b62652dbaf7007f56408db546b152349605b23a0619e3b",
-            "b118ba78ff3ef4a189525c642184cbd320a268d2885681ab153544db554c5965",
+            "264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc",
+            "ccc36c4a166eec54642fb60e5dc99255ef720b5d6f346c969d0993b92a36b707",
+            "363155d6dd2a53204250f9dc7d34300aeebd8956a3a5b3e6daf2a61814e5b9b8",
             "e3072b6b01a4f692c2ac75c7c4995747f9a0fd1ce4f32e1ab1599f348661f570",
             "40c532ed3aa52144bdc8bb4422e04b23c54196d352ac9cb0f3e93a5a059af120"
           ]
@@ -939,8 +939,8 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "bb7afda3d56cf7d5b8a055c617bd6845f8a8795717ec094762ab3fc1eaba88f8",
-            "09b1d3a9d2908c6981b62652dbaf7007f56408db546b152349605b23a0619e3b",
-            "5090efd13c07531c249637d8e5857f0d13f3ecb8f0d02fb6e858747ea7d8c3d8"
+            "ccc36c4a166eec54642fb60e5dc99255ef720b5d6f346c969d0993b92a36b707",
+            "264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc"
           ]
         },
         "determinism": "deterministic",
@@ -990,8 +990,8 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "a6da84444e815dd94c15887190c7d6bd48c7bca5975fb5d493eb77ab39f27d80",
-            "09b1d3a9d2908c6981b62652dbaf7007f56408db546b152349605b23a0619e3b",
-            "5090efd13c07531c249637d8e5857f0d13f3ecb8f0d02fb6e858747ea7d8c3d8"
+            "ccc36c4a166eec54642fb60e5dc99255ef720b5d6f346c969d0993b92a36b707",
+            "264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc"
           ]
         },
         "determinism": "deterministic",
@@ -1067,7 +1067,7 @@
           "toolchainDigests": [
             "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
             "25a2185026cb61771ff2e5f4c2364687d01158cfc9a8266d00a20e5573ba1bde",
-            "5090efd13c07531c249637d8e5857f0d13f3ecb8f0d02fb6e858747ea7d8c3d8"
+            "264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc"
           ]
         },
         "determinism": "deterministic",
@@ -1118,7 +1118,7 @@
           "toolchainDigests": [
             "56ddff826de649523a12e706ff3d1cad10db305b799135363e91e09ffd6a203a",
             "eb77a30abb4fb9891f0328ac26a7b50c21a1ada75aff52b88c39cf4184e25ba8",
-            "5090efd13c07531c249637d8e5857f0d13f3ecb8f0d02fb6e858747ea7d8c3d8",
+            "264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc",
             "85e964c401d62917ca11bc3f1c7ad6e56832f72da71b44d1c6a15cc261298449"
           ]
         },
@@ -1291,7 +1291,7 @@
           "id": "inventory.rg.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "5090efd13c07531c249637d8e5857f0d13f3ecb8f0d02fb6e858747ea7d8c3d8"
+            "264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc"
           ]
         },
         "determinism": "deterministic",
@@ -1839,6 +1839,71 @@
         "orchestration/schemas/code-intel-artifact-index.v1.schema.json"
       ],
       "extensionPoint": "A08 is a rebuildable materialized view and never run authority. Normal admission requires an A07 marker plus exactly one verified repository.iteration provenance Artifact Ref whose run, snapshot, repository, and publication bindings match the authority path; legacy traversal is explicit compatibility only."
-    }
+    },
+  {
+    "id": "advisory.design-proposal.compat",
+    "stage": "behavior_specification",
+    "owner": "code-intel-pipeline",
+    "kind": "advisory-atom",
+    "required": false,
+    "entrypoint": "target/debug/code-intel.exe",
+    "capabilities": [
+      "snapshot_bound_design_context",
+      "evidence_bound_option_validation",
+      "advisory_proposal_publication",
+      "authority_separated_review"
+    ],
+    "commands": {
+      "capabilityExec": "code-intel capability exec advisory.design-proposal.compat --request <request.json|-> --out <staging-dir> --artifact-root <run-root>"
+    },
+    "capabilityDeclaration": {
+      "schema": "code-intel-capability-declaration.v1",
+      "id": "advisory.design-proposal.compat",
+      "contractVersion": 1,
+      "implementation": {
+        "id": "design-proposal.rust.v1",
+        "version": "1.0.0",
+        "toolchainDigests": [
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      },
+      "determinism": "deterministic",
+      "allowedEffects": ["repo_read", "local_write"],
+      "dependencies": ["repo.snapshot"]
+    },
+    "runtimeAdapter": "advisory.design-proposal.compat",
+    "authority": "advisory_only",
+    "operations": {
+      "context": {
+        "requestSchema": "code-intel-capability-request.v1",
+        "operationSchema": "code-intel-design-proposal-request.v1",
+        "consumes": [],
+        "emits": [{"schema": "code-intel-design-context.v1", "type": "design.context"}]
+      },
+      "validate": {
+        "requestSchema": "code-intel-capability-request.v1",
+        "operationSchema": "code-intel-design-proposal-request.v1",
+        "consumes": [
+          {"schema": "code-intel-design-context.v1", "type": "design.context"},
+          {"schema": "code-intel-design-proposal-candidate.v1", "type": "design.proposal-candidate"}
+        ],
+        "emits": [{"schema": "code-intel-design-proposal.v1", "type": "design.proposal"}]
+      }
+    },
+    "artifactIdentities": [
+      {"schema": "code-intel-design-context.v1", "type": "design.context"},
+      {"schema": "code-intel-design-proposal-candidate.v1", "type": "design.proposal-candidate"},
+      {"schema": "code-intel-design-proposal.v1", "type": "design.proposal"}
+    ],
+    "artifactContract": [
+      "orchestration/schemas/code-intel-capability-envelope.v1.schema.json",
+      "code-intel-design-proposal-request.v1",
+      "code-intel-design-context.v1 / design.context",
+      "code-intel-design-proposal-candidate.v1 / design.proposal-candidate",
+      "code-intel-design-proposal.v1 / design.proposal"
+    ],
+    "effects": ["repo_read", "local_write"],
+    "extensionPoint": "Rust owns snapshot binding, method-catalog and committed-artifact reads, candidate validation, and staged advisory publication. Agent-authored text remains advisory and never grants promotion, commit, issue, or plan approval authority; network and repository mutation are outside this capability."
+  }
   ]
 }
