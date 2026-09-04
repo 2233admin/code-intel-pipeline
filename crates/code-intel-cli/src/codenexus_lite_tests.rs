@@ -179,17 +179,23 @@ fn walk_code_files_ignores_unreadable_root() {
 #[cfg(unix)]
 #[test]
 fn walk_code_files_keeps_readable_siblings_when_directory_is_unreadable() {
-    use std::os::unix::fs::PermissionsExt;
-
     let fixture = TempRepo::new();
     let repo = fixture.repo();
     write(&repo.join("visible.rs"), "fn visible() {}\n");
     let blocked = repo.join("blocked");
     write(&blocked.join("hidden.rs"), "fn hidden() {}\n");
-    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+    fs::set_permissions(
+        &blocked,
+        <fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o000),
+    )
+    .unwrap();
 
     let walked = walk_code_files(&repo).unwrap();
-    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(
+        &blocked,
+        <fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o755),
+    )
+    .unwrap();
 
     assert!(walked.iter().any(|(path, _)| path.ends_with("visible.rs")));
     assert!(!walked.iter().any(|(path, _)| path.ends_with("hidden.rs")));
