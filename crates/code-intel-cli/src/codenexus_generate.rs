@@ -3,7 +3,9 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::codenexus_lite::{build_active_context, iso_from_unix_seconds, iso_now};
+use crate::codenexus_lite::{
+    build_active_context, iso_from_unix_seconds, iso_now, normalized_canonical_path,
+};
 
 const DEFAULT_MAX_FILES: usize = 8;
 const DEFAULT_MAX_REFERENCES_PER_FILE: usize = 12;
@@ -31,32 +33,49 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
             return 64;
         }
     };
-    let target = arguments
-        .target
-        .as_deref()
-        .unwrap_or(arguments.repo.as_path());
-    if !arguments.repo.is_dir() {
-        eprintln!(
-            "error: CodeNexus repository path is not a directory: {}",
-            arguments.repo.display()
-        );
-        return 65;
-    }
-    if !target.is_dir() {
-        eprintln!(
-            "error: CodeNexus target path is not a directory: {}",
-            target.display()
-        );
-        return 65;
-    }
+    let repo = match normalized_canonical_path(&arguments.repo) {
+        Ok(path) if path.is_dir() => path,
+        Ok(_) => {
+            eprintln!(
+                "error: CodeNexus repository path is not a directory: {}",
+                arguments.repo.display()
+            );
+            return 65;
+        }
+        Err(error) => {
+            eprintln!(
+                "error: resolve CodeNexus repository path {}: {error}",
+                arguments.repo.display()
+            );
+            return 65;
+        }
+    };
+    let target_input = arguments.target.as_deref().unwrap_or(&repo);
+    let target = match normalized_canonical_path(target_input) {
+        Ok(path) if path.is_dir() => path,
+        Ok(_) => {
+            eprintln!(
+                "error: CodeNexus target path is not a directory: {}",
+                target_input.display()
+            );
+            return 65;
+        }
+        Err(error) => {
+            eprintln!(
+                "error: resolve CodeNexus target path {}: {error}",
+                target_input.display()
+            );
+            return 65;
+        }
+    };
 
     let generated_at = arguments
         .observed_at
         .map(iso_from_unix_seconds)
         .unwrap_or_else(iso_now);
     let document = build_active_context(
-        &arguments.repo,
-        target,
+        &repo,
+        &target,
         &arguments.out,
         generated_at,
         arguments.max_files,

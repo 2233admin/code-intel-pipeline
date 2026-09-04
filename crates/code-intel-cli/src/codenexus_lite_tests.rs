@@ -152,7 +152,16 @@ fn active_context_is_fixed_time_fallback_only_and_no_history() {
     assert_eq!(context["files"][0]["recentCommits"], json!([]));
     assert_eq!(context["summary"]["recentCommits"], 0);
 }
+#[test]
+fn relative_path_supports_targets_outside_repo() {
+    let fixture = TempRepo::new();
+    let repo = fixture.repo();
+    let outside = fixture.0.join("external");
+    let path = outside.join("main.rs");
+    write(&path, "fn main() {}\n");
 
+    assert_eq!(relative_path(&repo, &path), "../external/main.rs");
+}
 #[test]
 fn recent_commits_zero_limit_returns_empty() {
     let fixture = TempRepo::new();

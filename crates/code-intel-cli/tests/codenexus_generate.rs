@@ -32,7 +32,11 @@ fn normalize_context(mut document: Value, repo: &Path) -> Value {
     document["repo"] = json!("@repo@");
     document["target"] = json!("@repo@");
     document["output"] = json!("@output@");
-    let repo_prefix = format!("{}/", repo.to_string_lossy().replace('\\', "/"));
+    let canonical_repo = fs::canonicalize(repo).expect("canonicalize test repo");
+    let mut repo_prefix = format!("{}/", canonical_repo.to_string_lossy().replace('\\', "/"));
+    if let Some(stripped) = repo_prefix.strip_prefix("//?/") {
+        repo_prefix = stripped.to_string();
+    }
     for file in document["files"].as_array_mut().expect("files array") {
         let references = file["references"].as_array_mut().expect("references array");
         for reference in references.iter_mut() {
@@ -78,7 +82,7 @@ fn compiled_route_matches_the_active_powershell_contract() {
         .args(["codenexus", "generate", "--repo"])
         .arg(&repo)
         .args(["--target"])
-        .arg(&repo)
+        .arg(repo.join("src/.."))
         .args(["--out"])
         .arg(&output_path)
         .args([
@@ -148,6 +152,42 @@ fn compiled_route_matches_the_active_powershell_contract() {
     );
 }
 
+#[test]
+fn compiled_route_preserves_outside_target_relative_paths() {
+    let root = TempRoot::new();
+    let repo = root.0.join("repo");
+    let outside = root.0.join("external");
+    fs::create_dir_all(&repo).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(repo.join("anchor.rs"), "fn anchor() {}\n").unwrap();
+    fs::write(
+        outside.join("largest.rs"),
+        "pub fn largest() {}\n".repeat(20),
+    )
+    .unwrap();
+    let output_path = root.0.join("out/codenexus-context.json");
+
+    let output = common::cli()
+        .args(["codenexus", "generate", "--repo"])
+        .arg(&repo)
+        .args(["--target"])
+        .arg(&outside)
+        .args(["--out"])
+        .arg(&output_path)
+        .args(["--observed-at", "0", "--max-files", "1"])
+        .output()
+        .expect("run outside-target CodeNexus generator");
+    assert!(
+        output.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let document: Value =
+        serde_json::from_slice(&fs::read(&output_path).unwrap()).expect("written context JSON");
+    assert_eq!(document["files"][0]["path"], "../external/largest.rs");
+    assert_eq!(document["files"][0]["reason"], "largest_code_file");
+}
 #[test]
 fn compiled_route_rejects_unreachable_dsm_and_history_options() {
     let root = TempRoot::new();
