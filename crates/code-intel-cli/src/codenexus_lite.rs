@@ -194,14 +194,27 @@ fn walk_code_files(root: &Path) -> std::io::Result<Vec<(PathBuf, u64)>> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        for entry in fs::read_dir(&dir)? {
-            let entry = entry?;
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
             let path = entry.path();
-            let file_type = entry.file_type()?;
+            let file_type = match entry.file_type() {
+                Ok(file_type) => file_type,
+                Err(_) => continue,
+            };
             if file_type.is_dir() {
                 stack.push(path);
             } else if file_type.is_file() {
-                let size = entry.metadata()?.len();
+                let size = match entry.metadata() {
+                    Ok(metadata) => metadata.len(),
+                    Err(_) => continue,
+                };
                 if size <= 1_048_576 {
                     out.push((path, size));
                 }

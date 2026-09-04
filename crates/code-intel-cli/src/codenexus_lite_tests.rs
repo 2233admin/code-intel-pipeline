@@ -168,3 +168,29 @@ fn recent_commits_zero_limit_returns_empty() {
     let commits = recent_commits(&fixture.repo(), "src/lib.rs", 0);
     assert!(commits.is_empty());
 }
+#[test]
+fn walk_code_files_ignores_unreadable_root() {
+    let fixture = TempRepo::new();
+    let missing = fixture.repo().join("does-not-exist");
+
+    assert!(walk_code_files(&missing).unwrap().is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn walk_code_files_keeps_readable_siblings_when_directory_is_unreadable() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = TempRepo::new();
+    let repo = fixture.repo();
+    write(&repo.join("visible.rs"), "fn visible() {}\n");
+    let blocked = repo.join("blocked");
+    write(&blocked.join("hidden.rs"), "fn hidden() {}\n");
+    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+
+    let walked = walk_code_files(&repo).unwrap();
+    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert!(walked.iter().any(|(path, _)| path.ends_with("visible.rs")));
+    assert!(!walked.iter().any(|(path, _)| path.ends_with("hidden.rs")));
+}
