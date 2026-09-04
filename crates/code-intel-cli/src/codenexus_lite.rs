@@ -11,14 +11,27 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
 use crate::capability::sha256_hex;
-
+pub(crate) fn normalized_canonical_path(path: &Path) -> std::io::Result<PathBuf> {
+    let canonical = fs::canonicalize(path)?;
+    #[cfg(windows)]
+    {
+        let text = canonical.to_string_lossy();
+        if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+            return Ok(PathBuf::from(format!(r"\\{rest}")));
+        }
+        if let Some(rest) = text.strip_prefix(r"\\?\") {
+            return Ok(PathBuf::from(rest));
+        }
+    }
+    Ok(canonical)
+}
 #[path = "hardened_git.rs"]
 mod hardened_git;
 
@@ -181,14 +194,27 @@ fn walk_code_files(root: &Path) -> std::io::Result<Vec<(PathBuf, u64)>> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        for entry in fs::read_dir(&dir)? {
-            let entry = entry?;
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
             let path = entry.path();
-            let file_type = entry.file_type()?;
+            let file_type = match entry.file_type() {
+                Ok(file_type) => file_type,
+                Err(_) => continue,
+            };
             if file_type.is_dir() {
                 stack.push(path);
             } else if file_type.is_file() {
-                let size = entry.metadata()?.len();
+                let size = match entry.metadata() {
+                    Ok(metadata) => metadata.len(),
+                    Err(_) => continue,
+                };
                 if size <= 1_048_576 {
                     out.push((path, size));
                 }
@@ -198,11 +224,32 @@ fn walk_code_files(root: &Path) -> std::io::Result<Vec<(PathBuf, u64)>> {
     Ok(out)
 }
 
-/// Relative path with `/` separators; empty when `path` is outside `base`.
+/// Relative path with / separators; preserves .. when the target is outside the repository.
 fn relative_path(base: &Path, path: &Path) -> String {
-    match path.strip_prefix(base) {
-        Ok(rel) => rel.to_string_lossy().replace('\\', "/"),
-        Err(_) => String::new(),
+    let base_components: Vec<_> = base.components().collect();
+    let path_components: Vec<_> = path.components().collect();
+    if base_components.first() != path_components.first() {
+        return path.to_string_lossy().replace('\\', "/");
+    }
+
+    let common = base_components
+        .iter()
+        .zip(&path_components)
+        .take_while(|(base, path)| base == path)
+        .count();
+    let mut relative = PathBuf::new();
+    for component in &base_components[common..] {
+        if !matches!(component, Component::CurDir) {
+            relative.push("..");
+        }
+    }
+    for component in &path_components[common..] {
+        relative.push(component.as_os_str());
+    }
+    if relative.as_os_str().is_empty() {
+        ".".to_string()
+    } else {
+        relative.to_string_lossy().replace('\\', "/")
     }
 }
 
