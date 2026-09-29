@@ -17,6 +17,11 @@
   gate in the same PR (DR-0001). 3794 checkout-topology tests missed every
   installed-topology bug that shipped with v0.7.0; only the topology gate
   catches this class.
+- This checkout's Windows host is isolation-excluded while issue #403 is open. Do not run
+  `cargo build`, `cargo test`, `cargo check`, `cargo clippy`, `cargo run`, or `cargo nextest`
+  here, and do not run `cargo clean`; the suite requirement under Verification is satisfied on
+  another host or in CI instead. Read-only source, `gh`, and `git` work is unaffected. See
+  `docs/decisions/DR-0013-affected-host-compilation-isolation.md`.
 
 ## Language direction
 
