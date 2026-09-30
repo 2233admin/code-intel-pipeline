@@ -236,7 +236,7 @@ fn builtin_provider_health_preserves_bottleneck_and_all_five_root_causes() {
 }
 
 #[test]
-fn save_baseline_records_the_v6_god_file_identity_list() {
+fn save_baseline_records_the_v7_god_file_identity_list() {
     let root = fixture_root("save-v6");
     fs::write(root.join("src/big.rs"), god_file_body(850)).expect("write god file");
     fs::write(root.join("src/small.rs"), "pub fn small() {}\n").expect("write small file");
@@ -261,11 +261,16 @@ fn save_baseline_records_the_v6_god_file_identity_list() {
         &fs::read(root.join(".sentrux/baseline.json")).expect("read baseline"),
     )
     .expect("parse baseline");
-    // v6 (#385): `quality_signal` became the upstream-compatible Quality
-    // Signal, which is why the schema itself bumped (DR-0011) -- the
-    // `godFiles` identity-ratchet contract this test exists to pin is
-    // otherwise unchanged.
-    assert_eq!(baseline["schema"], "code-intel-sentrux-baseline.v6");
+    // v7 records the coupling policy alongside the v7 god-file identity list.
+    assert_eq!(baseline["schema"], "code-intel-sentrux-baseline.v7");
+    assert_eq!(
+        baseline["couplingPolicy"]["ignore_test_dependencies"],
+        false
+    );
+    assert_eq!(
+        baseline["couplingPolicy"]["quality_graph_scope"],
+        "all_included_files"
+    );
     let gods = baseline["godFiles"].as_array().expect("godFiles list");
     assert_eq!(gods.len(), 1);
     assert_eq!(gods[0]["path"], "src/big.rs");
@@ -345,6 +350,79 @@ fn cli_check_stays_green_for_grandfathered_god_files_and_reports_slack() {
         "green run must surface reclaimable slack: {}",
         String::from_utf8_lossy(&fixed.stdout)
     );
+
+    fs::remove_dir_all(&root).expect("remove fixture");
+}
+
+#[test]
+fn cli_coupling_policy_ignores_test_dependencies_but_keeps_graph_and_size_metrics() {
+    let root = fixture_root("coupling-policy");
+    fs::write(
+        root.join("src/prod.rs"),
+        "use std::fmt;\npub fn prod() {}\n",
+    )
+    .expect("write production file");
+    write_rules(&root);
+    let root_arg = root.to_string_lossy().to_string();
+
+    let scan = |label: &str| -> serde_json::Value {
+        let output = code_intel(&["sentrux", "--operation", "scan", "--repo", &root_arg]);
+        assert!(
+            output.status.success(),
+            "{label}: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).expect("scan JSON")
+    };
+
+    let baseline = scan("production baseline");
+    assert_eq!(baseline["coupling_score"], 10.0);
+
+    fs::write(
+        root.join(".sentrux/rules.toml"),
+        "[constraints]\nignore_test_dependencies = true\nmax_cycles = 0\nno_god_files = false\n",
+    )
+    .expect("enable test dependency exclusion");
+    fs::create_dir_all(root.join("tests")).expect("create tests directory");
+    fs::write(
+        root.join("tests/test_dep.rs"),
+        "use std::io;\nuse std::path::Path;\nuse std::fmt::Debug;\npub fn test_dep() {}\n",
+    )
+    .expect("write test dependency file");
+    let ignored = scan("ignored test dependency");
+    assert_eq!(ignored["coupling_score"], 10.0);
+    assert_eq!(ignored["coupling_import_edges"], 1);
+    assert_eq!(ignored["coupling_files"], 1);
+    assert_eq!(ignored["test_files"], 1);
+    assert_eq!(ignored["coupling_policy"]["ignore_test_dependencies"], true);
+    assert_eq!(
+        ignored["quality_signal_detail"]["dependency_graph_scope"],
+        "all_included_files"
+    );
+    assert_eq!(ignored["total_import_edges"], 4);
+    assert_eq!(ignored["functions"], 2);
+
+    fs::write(
+        root.join(".sentrux/rules.toml"),
+        "[constraints]\nignore_test_dependencies = false\nmax_cycles = 0\nno_god_files = false\n",
+    )
+    .expect("disable test dependency exclusion");
+    let counted = scan("counted test dependency");
+    assert_eq!(counted["coupling_score"], 20.0);
+
+    fs::write(
+        root.join(".sentrux/rules.toml"),
+        "[constraints]\nignore_test_dependencies = true\nmax_cycles = 0\nno_god_files = false\n",
+    )
+    .expect("re-enable test dependency exclusion");
+    fs::write(
+        root.join("src/prod.rs"),
+        "use std::fmt;\nuse std::io;\npub fn prod() {}\n",
+    )
+    .expect("add production dependency");
+    let production_change = scan("production dependency");
+    assert_eq!(production_change["coupling_score"], 20.0);
 
     fs::remove_dir_all(&root).expect("remove fixture");
 }

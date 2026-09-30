@@ -1154,6 +1154,7 @@ Commands:
   lint hardcoded-paths [<repo-path>] [--json]
   route|routes [--action List|Plan|Validate] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--json]
   sentrux <dsm|scan|health|check|gate|check_rules|gate_save|hotspots> <path> [--no-ratchet]
+  sentrux <session_save|session_gate> <path> (isolated .sentrux/cache/native-session-baseline.json; never replaces canonical baseline)
   sentrux capabilities [<path>] [--json] (read-only capability matrix audit)
     (--no-ratchet: `check` only, skip the .sentrux/baseline.json ratchet)
   capability exec <id> --request <request.json|-> --out <staging-dir> [--artifact-root <directory>] [--manifest <integrations.json>]

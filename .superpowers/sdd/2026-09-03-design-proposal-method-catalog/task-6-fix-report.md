@@ -18,7 +18,7 @@ Follow-up fix commit: `aa628e1 fix(cli): complete method selection and proposal 
 - crates/code-intel-cli/src/design_proposal_contract.rs
   - Shared payload parser, shape validators, catalog binding, and error formatting. No validation rule was relaxed.
 - crates/code-intel-cli/tests/artifact_ref.rs
-  - Updates the stale implementation digest 5090efd13c07531c249637d8e5857f0d13f3ecb8f0d02fb6e858747ea7d8c3d8 to 264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc.
+  - Updates the stale implementation digest 5090efd13c07531c249637d8e5857f0d13f3ecb8f0d02fb6e858747ea7d8c3d8 to 5eb359eee6c1944c8943c5f9b5e257d43e9661314ba7c8eda24e62709e94b352.
 - orchestration/method-selection-rules.v1.json
   - Adds rules for legacy-characterization-test, legacy-seam-extraction, and refactor-small-step using each card's declared signals and contraindications.
 - orchestration/schemas/code-intel-design-proposal-candidate.v1.schema.json

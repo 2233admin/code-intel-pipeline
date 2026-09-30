@@ -705,6 +705,11 @@ jobs:
           # cannot see this topology either.
           cargo test -p code-intel --test install_smoke --locked packaged_install_deploys_legacy_pipeline_entrypoint -- --ignored --nocapture
           if ($LASTEXITCODE -ne 0) { throw "packaged legacy-pipeline-entrypoint install smoke failed with exit ${LASTEXITCODE}" }
+          # #394: prove packaged legacy sessions use the installed native
+          # metrics engine and leave canonical and lite baselines untouched.
+          cargo test -p code-intel --test install_smoke --locked packaged_install_legacy_sessions_use_native_metrics_and_preserve_baselines -- --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { throw "packaged legacy-session install smoke failed with exit ${LASTEXITCODE}" }
+
 
       - name: Packaged Sentrux capability closure smoke
         shell: pwsh

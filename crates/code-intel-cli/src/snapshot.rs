@@ -11,7 +11,7 @@ mod hardened_git;
 #[path = "tool_path.rs"]
 mod tool_path;
 
-use crate::capability::sha256_hex;
+use crate::capability::{sha256_hex, Sha256};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Policy {

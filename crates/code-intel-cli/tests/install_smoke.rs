@@ -7,12 +7,12 @@
 //! CI sets `CODE_INTEL_SMOKE_RELEASE_ROOT` / `CODE_INTEL_SMOKE_BIN` and runs
 //! that test with `--ignored`.
 
+use serde_json::Value;
 use std::env;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -200,4 +200,173 @@ fn packaged_install_runs_relocated_sentrux_shim() {
         matches_tier(&status_text),
         "installed sentrux pro status missed a Tier line:\n{status_text}"
     );
+}
+
+fn run_packaged_legacy_session(
+    release_root: &Path,
+    bin: &Path,
+    repo: &Path,
+    operation: &str,
+    session_id: &str,
+) -> (i32, String) {
+    let script = release_root
+        .join("legacy")
+        .join("Invoke-SentruxAgentTool.ps1");
+    assert!(
+        script.is_file(),
+        "packaged legacy session script missing: {}",
+        script.display()
+    );
+    let native = if cfg!(windows) {
+        bin.join("code-intel.exe")
+    } else {
+        bin.join("code-intel")
+    };
+    assert!(
+        native.is_file(),
+        "installed native CLI missing: {}",
+        native.display()
+    );
+    let output = Command::new("pwsh")
+        .args(["-NoLogo", "-NoProfile", "-File"])
+        .arg(script)
+        .arg(operation)
+        .arg(repo)
+        .args(["-SessionId", session_id])
+        .env("PATH", prepend_path(bin))
+        .env("CODE_INTEL_RUST_CLI", native)
+        .output()
+        .unwrap_or_else(|error| panic!("launch packaged legacy session: {error}"));
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+    (output.status.code().unwrap_or(-1), text.trim().to_string())
+}
+
+fn parse_session_json(code_and_text: &(i32, String), operation: &str) -> Value {
+    assert_eq!(
+        code_and_text.0, 0,
+        "packaged {operation} exited {}: {}",
+        code_and_text.0, code_and_text.1
+    );
+    serde_json::from_str(&code_and_text.1).unwrap_or_else(|error| {
+        panic!(
+            "packaged {operation} must emit JSON: {error}; output={}",
+            code_and_text.1
+        )
+    })
+}
+
+fn metric_i64(value: &Value, path: &str) -> i64 {
+    let mut current = value;
+    for key in path.split('.') {
+        current = current
+            .get(key)
+            .unwrap_or_else(|| panic!("missing session metric {path} in {value}"));
+    }
+    current
+        .as_i64()
+        .unwrap_or_else(|| panic!("session metric {path} is not an integer: {current}"))
+}
+
+#[test]
+#[ignore = "packaged installed topology gate; CI sets CODE_INTEL_SMOKE_* after package install"]
+fn packaged_install_legacy_sessions_use_native_metrics_and_preserve_baselines() {
+    let release_root = PathBuf::from(
+        env::var("CODE_INTEL_SMOKE_RELEASE_ROOT")
+            .expect("CODE_INTEL_SMOKE_RELEASE_ROOT must point at the packaged release root"),
+    );
+    let bin = PathBuf::from(
+        env::var("CODE_INTEL_SMOKE_BIN")
+            .expect("CODE_INTEL_SMOKE_BIN must point at the installed bin directory"),
+    );
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let repo = env::temp_dir().join(format!(
+        "code-intel-installed-session-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(repo.join("src")).expect("create packaged session source tree");
+    fs::create_dir_all(repo.join("tests")).expect("create packaged session test tree");
+    fs::create_dir_all(repo.join(".sentrux/cache")).expect("create baseline cache");
+    fs::write(
+        repo.join("src/lib.rs"),
+        "mod helper;\nuse helper::value;\npub fn run() -> i32 { value() }\n",
+    )
+    .expect("write production source");
+    fs::write(repo.join("src/helper.rs"), "pub fn value() -> i32 { 1 }\n")
+        .expect("write production helper");
+    fs::write(
+        repo.join("tests/session_imports.rs"),
+        "use crate::test_dependency_one;\nuse crate::test_dependency_two;\n#[test]\nfn session_contract() {}\n",
+    )
+    .expect("write test-only imports");
+    fs::write(
+        repo.join(".sentrux/rules.toml"),
+        "ignore_test_dependencies = true\n",
+    )
+    .expect("write coupling policy");
+    let canonical = b"{\n  \"schema\": \"canonical-fixture\",\n  \"owner\": \"install-smoke\"\n}\n";
+    let lite = b"{\n  \"tool\": \"sentrux-lite\",\n  \"quality_signal\": 100\n}\n";
+    let canonical_path = repo.join(".sentrux/baseline.json");
+    let lite_path = repo.join(".sentrux/cache/lite-baseline.json");
+    fs::write(&canonical_path, canonical).expect("write canonical baseline");
+    fs::write(&lite_path, lite).expect("write lite baseline");
+
+    let start = parse_session_json(
+        &run_packaged_legacy_session(
+            &release_root,
+            &bin,
+            &repo,
+            "session_start",
+            "installed-session",
+        ),
+        "session_start",
+    );
+    assert_eq!(start["tool"], "session_start");
+    assert_eq!(start["gate"]["pass"], true);
+    assert!(metric_i64(&start, "gate.metrics_observed_count") >= 4);
+    assert!(repo
+        .join(".sentrux/cache/native-session-baseline.json")
+        .is_file());
+
+    let native_baseline_path = repo.join(".sentrux/cache/native-session-baseline.json");
+    let native_baseline: Value = serde_json::from_slice(
+        &fs::read(&native_baseline_path).expect("read native session baseline"),
+    )
+    .expect("native session baseline JSON");
+    assert_eq!(native_baseline["schema"], "code-intel-sentrux-baseline.v7");
+    assert_eq!(native_baseline["engine"]["id"], "sentrux-native");
+    assert_eq!(
+        native_baseline["couplingPolicy"]["ignore_test_dependencies"],
+        true
+    );
+    assert!(metric_i64(&native_baseline, "metrics.test_files") > 0);
+    assert_eq!(metric_i64(&native_baseline, "metrics.coupling_files"), 2);
+    assert!(
+        metric_i64(&native_baseline, "metrics.coupling_import_edges")
+            < metric_i64(&native_baseline, "metrics.total_import_edges")
+    );
+
+    let end = parse_session_json(
+        &run_packaged_legacy_session(
+            &release_root,
+            &bin,
+            &repo,
+            "session_end",
+            "installed-session",
+        ),
+        "session_end",
+    );
+    assert_eq!(end["tool"], "session_end");
+    assert_eq!(end["pass"], true);
+    assert!(metric_i64(&end, "gate.metrics_observed_count") >= 4);
+    assert_eq!(end["signal_before"], end["signal_after"]);
+    assert_eq!(
+        fs::read(&canonical_path).expect("read canonical baseline"),
+        canonical
+    );
+    assert_eq!(fs::read(&lite_path).expect("read lite baseline"), lite);
+    let _ = fs::remove_dir_all(repo);
 }

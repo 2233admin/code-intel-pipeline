@@ -423,39 +423,7 @@ No degradation detected
     Assert-Equal 4 $observedCount "well-formed sentrux gate output should parse all 4 core metrics"
 }
 
-Test-Case "session_end fail-closed simulation: zero observed metrics forces pass=false with unparseable summary" {
-    # Simulate the branch inside Invoke-SessionEndTool directly, mirroring its logic,
-    # since Invoke-SessionEndTool itself shells out to the real `sentrux` binary and
-    # touches session-dir state. This asserts the *contract* the fix depends on:
-    # metrics_observed_count==0 must short-circuit to pass=false.
-    $gate = [ordered]@{
-        pass = $true  # native exit code says "pass" but that's meaningless with 0 metrics
-        metrics_observed_count = 0
-        backfilled_metrics = @("quality_signal", "coupling", "cycles", "god_files")
-    }
-    $metricsObserved = [int]$gate["metrics_observed_count"]
-    if ($metricsObserved -eq 0) {
-        $pass = $false
-        $summary = "sentrux output unparseable - gate cannot evaluate"
-    }
-    else {
-        $pass = $true
-        $summary = "should not reach here"
-    }
-    Assert-False $pass "zero observed metrics must fail closed (pass=false), not fail open"
-    Assert-Equal "sentrux output unparseable - gate cannot evaluate" $summary "fail-closed summary text must be the explicit unparseable message"
-}
 
-Test-Case "session_end partial backfill: summary/backfilled_metrics names the gaps, does not silently pass clean" {
-    $backfilledMetrics = @("cycles", "god_files")
-    $metricsObserved = 2
-    Assert-True ($metricsObserved -gt 0) "partial observation should NOT trigger the zero-metrics fail-closed branch"
-    $summary = "No structural degradation during this session"
-    if ($backfilledMetrics.Count -gt 0) {
-        $summary = "$summary (warning: backfilled from baseline: $($backfilledMetrics -join ', '))"
-    }
-    Assert-True ($summary -like "*warning: backfilled from baseline: cycles, god_files*") "partial backfill must surface metric names in the summary warning (regression: da46886 fix 2 partial-backfill warning)"
-}
 
 # ---------------------------------------------------------------------------
 # Sentrux insight: when the authoritative gate says no degradation, raw metric

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-flash-ratchet-ceiling.v1.schema.json",
+  "title": "Flash Measurement Ratchet Ceiling",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "operation", "metric", "direction", "tolerance", "p75"],
+  "properties": {
+    "schema": { "const": "code-intel-flash-ratchet-ceiling.v1" },
+    "operation": { "type": "string", "minLength": 1 },
+    "metric": { "type": "string", "minLength": 1 },
+    "direction": { "const": "lower" },
+    "tolerance": { "const": 0.05 },
+    "p75": { "type": "number" }
+  }
+}

@@ -42,7 +42,15 @@
 
 ---
 
-## 2. 遗留 PowerShell 面（1.89 MB / 103 文件）
+## 2. 遗留 PowerShell 面（tracked 106 文件 / 2.10 MB）
+
+> 修正记录（2026-09-30 复核）：本节原标题写"1.89 MB / 103 文件"，**该数字在任何口径下都复现不出来**。
+> `git ls-files '*.ps1' '*.psm1'` 实测为 **106 文件 / 2,106,179 字节**；其中
+> `orchestration/retirements/*/rollback-rehearsal/` 下 5 个副本占 702,869 字节（三个
+> `run-code-intel.ps1` 各 237,246 字节，是 `legacy/` 正本的字节级副本），扣除后
+> 生产+测试面为 **101 文件 / 1,403,310 字节**。另：`legacy/scripts/tests/` 36 个
+> 测试脚本占 371,774 字节，是回归资产不是可退役生产面。
+> 计数与字节数均以 `git ls-files` 为口径复核，`target/` 与未跟踪文件不计入。
 
 ### 2.1 生产代码已经不执行任何 .ps1 —— 好消息，也是关键事实
 
@@ -57,15 +65,33 @@ LegacySurface 泳道逐条核了引用点，结论：
 
 **结论：Rust 生产路径零子进程执行 PowerShell。** 退休的技术障碍比想象中小。
 
-### 2.2 五个退休包全部 blocked，且都没有删除授权
+### 2.2 八个退休包全部 blocked，且都没有删除授权
 
-`orchestration/retirements/{e02,e03,e04,e07,e08}/gate-out/compatibility-retirement-decision.json`
-五份全部 `decision="blocked"`，`authorityBoundary="approval_only_no_deletion_authority"`。
-共同阻塞项：`unproven_compatibility_window`、`unproven_usage_observation`、
-`unproven_independent_approval`（E02 另有 `dependency_approval_set_mismatch`，
-E04/E07/E08 另有 `unproven_replacement_atom`）。
+> 修正记录（2026-09-30 复核）：本节原写"五个退休包{E02,E03,E04,E07,E08}"。
+> **实际存在 8 个包，e05 / e09 / e10 从未进入任何普查**——#323（删除票）也只列了
+> 那五个。这不是笔误层面的差异：e05/e09/e10 各自带着**别的五个包都没有的**
+> 阻塞项，说明它们连"等同一个解"都不成立。
 
-`totalInvocations: 0` 不构成已完成的观测窗口。
+`orchestration/retirements/*/gate-out/compatibility-retirement-decision.json`（8 份）
+全部 `decision="blocked"`、`authorityBoundary="approval_only_no_deletion_authority"`。
+
+| 包 | 特有阻塞项 | `totalInvocations` | 观测窗口 |
+|---|---|---|---|
+| e02-recommender | `dependency_approval_set_mismatch`, `unproven_dependency_approval` | 0 | 0 天 |
+| e03-provider-preflight | （仅共同三项） | 0 | 0 天 |
+| e04-codenexus-direct | `unproven_replacement_atom` | 0 | 0 天 |
+| e05-publication | `dependency_approval_set_mismatch`, `unproven_contract_parity`, `unproven_effect_parity`, `unproven_dependency_approval` | 0 | 0 天 |
+| e07-native-code | `unproven_replacement_atom` | 0 | 0 天 |
+| e08-hospital | `unproven_replacement_atom` | 0 | 0 天 |
+| e09-doctor-wrapper | `unproven_replacement_atom` | 0 | 0 天 |
+| e10-index | `dependency_approval_set_mismatch`, `unproven_dependency_approval` | 0 | 0 天 |
+
+共同阻塞项（三项，8 包全带）：`unproven_compatibility_window`、
+`unproven_usage_observation`、`unproven_independent_approval`。
+
+**这 8 份的观测窗口 `startedAt == endedAt`，即 0 天。** 原清单只说
+"`totalInvocations: 0` 不构成已完成的观测窗口"，但事实更强：窗口**从未起跑**，
+不是"起了但没跑够"。#323 要求的 30 天窗口连第一天都没有。
 
 `orchestration/facade-finalize-policy.v1.json:17` 仍把 `legacy/run-code-intel.ps1`
 列为 `compatibility_facade`，`expiresAt: null`。
@@ -148,7 +174,7 @@ AGENTS.md 明确：`cargo check` 的 ~100 个 dead-code warning **不是**债务
 | snapshot 内存 | **#403** | 已有 Upstream-owned repair，含同 framed bytes 增量哈希要求 |
 | E03 SHA 不一致 | **#402**（父 #400） | 已在票里 |
 | 装机链 #395/#396/#397/#399/#401 | 已有票，共用分支 | 顺序已明确 |
-| 五个退休包 blocked | **#323** | 已有删除票 |
+| 八个退休包 blocked | **#323** | 已有删除票；但 #323 正文只列五个包，**遗漏 e05/e09/e10**，需扩票 |
 | 僵尸认领 #302 / #383 未关 / #363 错投 | **已有票，直接清理** | 不需要新票，是账目动作 |
 | 假字段诚实化（DR-0009/0010/0011 那批） | **已随 PR 合入** | 无残留 |
 
@@ -183,7 +209,8 @@ AGENTS.md 明确：`cargo check` 的 ~100 个 dead-code warning **不是**债务
   磁盘故障（四盘全 Healthy）、WHEA 硬件纠错（近 7 天 0 条）。
   未排除：0x1A/0x3F 页文件 inpage CRC 的真实来源，需要 #403 说的那份授权转储分析。
 - #363 指向的外仓 PR 最终状态未核实。
-- E02-E08 五个包的"30 天观测窗口"实际经过多久，未核。
+- 8 个退休包的"30 天观测窗口"实际经过多久 —— 已核，**全部 0 天**（见 2.2）。
+  这条从"未核"升级为"已核且为否"：窗口从未起跑，不是观察不足。
 
 ---
 
