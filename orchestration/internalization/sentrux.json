@@ -141,7 +141,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "0daaa1f34b93a1c6d108f85df038a719a3209ae16509787e4559f9b41720e0ce"
+        "sha256": "b153b5f17d22e0be35c44239a6ee3e29c337035caf0db5f44a5b8159172a0f45"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
@@ -160,7 +160,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "0daaa1f34b93a1c6d108f85df038a719a3209ae16509787e4559f9b41720e0ce"
+        "sha256": "b153b5f17d22e0be35c44239a6ee3e29c337035caf0db5f44a5b8159172a0f45"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
@@ -179,7 +179,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "0daaa1f34b93a1c6d108f85df038a719a3209ae16509787e4559f9b41720e0ce"
+        "sha256": "b153b5f17d22e0be35c44239a6ee3e29c337035caf0db5f44a5b8159172a0f45"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
@@ -198,7 +198,7 @@
       },
       "source": {
         "path": "legacy/Invoke-SentruxAgentTool.ps1",
-        "sha256": "e14b4613d91b75f3c22530f891649927cded4881d6e5943404c35a7d250b1d70"
+        "sha256": "cc2bb463fb8a66d1aee8175cd015a2fa315e172450fb46a8312cf1e8a58c663e"
       },
       "conformance": {
         "path": "legacy/scripts/tests/test-sentrux-failure-normalization.ps1",
@@ -217,7 +217,7 @@
       },
       "source": {
         "path": "legacy/Invoke-SentruxAgentTool.ps1",
-        "sha256": "e14b4613d91b75f3c22530f891649927cded4881d6e5943404c35a7d250b1d70"
+        "sha256": "cc2bb463fb8a66d1aee8175cd015a2fa315e172450fb46a8312cf1e8a58c663e"
       },
       "conformance": {
         "path": "legacy/scripts/tests/test-sentrux-failure-normalization.ps1",
@@ -236,7 +236,7 @@
       },
       "source": {
         "path": "legacy/Invoke-SentruxAgentTool.ps1",
-        "sha256": "e14b4613d91b75f3c22530f891649927cded4881d6e5943404c35a7d250b1d70"
+        "sha256": "cc2bb463fb8a66d1aee8175cd015a2fa315e172450fb46a8312cf1e8a58c663e"
       },
       "conformance": {
         "path": "legacy/scripts/tests/test-sentrux-failure-normalization.ps1",
@@ -255,7 +255,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux_gate.rs",
-        "sha256": "8782f41efe1086aac6b41f6f22701cf2637e3dfefdde683a942f437c77ff4495"
+        "sha256": "25759013371799d2edbfb72f557c9aaa274feb77bba72119db1fcfbbb2540ee1"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
@@ -351,7 +351,7 @@
       "path": "crates/code-intel-cli/src/sentrux_gate.rs",
       "description": "Pipeline-owned built-in structural gate engine (metrics, rules check, no-degradation gate, cycle detection)",
       "evidenceIds": [
-        "local:b03:native-gate-source-sha256:8782f41efe1086aac6b41f6f22701cf2637e3dfefdde683a942f437c77ff4495",
+        "local:b03:native-gate-source-sha256:25759013371799d2edbfb72f557c9aaa274feb77bba72119db1fcfbbb2540ee1",
         "local:b03:native-gate-conformance:198cb2ca6abaffd40445ce0e03f821356ab191ee084446fd78235dabe93ccc45"
       ]
     }
