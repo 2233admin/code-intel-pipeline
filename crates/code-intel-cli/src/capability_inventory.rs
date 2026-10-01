@@ -31,6 +31,8 @@ pub(crate) mod design_proposal;
 // Crate-visible so `doctor bootstrap --require-provider-conformance` can reuse
 // the node's own provider rows instead of restating the predicate.
 pub(crate) mod doctor_adapter;
+#[path = "flash_ratchet.rs"]
+mod flash_ratchet;
 #[path = "hospital_diagnosis.rs"]
 mod hospital_diagnosis;
 #[path = "native_code_evidence.rs"]
@@ -112,6 +114,7 @@ pub(crate) fn execute(
         "delivery.light-speed-measure.compat" => {
             delivery_light_speed::execute(request, verified_inputs, out)
         }
+        "measurement.flash-ratchet.compat" => flash_ratchet::execute(request, verified_inputs, out),
         "advisory.design-proposal.compat" => {
             design_proposal::execute(request, verified_inputs, out)
         }

@@ -915,6 +915,53 @@
       "extensionPoint": "D04 derives observed baseline/current/delta value-stream and predecessor-closed critical-path measurements from A07-committed local opt-in events. It cannot create schedule or staffing commitments, and mandatory verification is protected from waste attribution."
     },
     {
+      "id": "measurement.flash-ratchet",
+      "stage": "verification",
+      "owner": "code-intel-pipeline",
+      "kind": "measurement-atom",
+      "required": false,
+      "entrypoint": "target/debug/code-intel.exe",
+      "capabilities": [
+        "caller_supplied_sample_percentiles",
+        "monotonic_lower_is_better_ratchet",
+        "alternating_paired_comparison"
+      ],
+      "commands": {
+        "capabilityExec": "target/debug/code-intel.exe capability exec measurement.flash-ratchet --request <request.json|-> --out <staging-dir> --artifact-root <artifact-directory>"
+      },
+      "capabilityDeclaration": {
+        "schema": "code-intel-capability-declaration.v1",
+        "id": "measurement.flash-ratchet",
+        "contractVersion": 1,
+        "implementation": {
+          "id": "measurement.flash-ratchet.compat",
+          "version": "1.0.0",
+          "toolchainDigests": [
+            "5c866d193aac3dbbe88b5bb0ad20750dca7b7b7f124d796cd92b899a75961db0",
+            "5eb359eee6c1944c8943c5f9b5e257d43e9661314ba7c8eda24e62709e94b352",
+            "233689cbafd2b6516fc9cac85112ae0db9a77134e83cb723f58a4a8da459b0af"
+          ]
+        },
+        "determinism": "deterministic",
+        "allowedEffects": ["local_write"],
+        "dependencies": []
+      },
+      "runtimeAdapter": "measurement.flash-ratchet.compat",
+      "toolchainDigestEvidence": {
+        "algorithm": "sha256",
+        "inputs": [
+          "crates/code-intel-cli/src/flash_ratchet.rs",
+          "crates/code-intel-cli/src/capability_inventory.rs",
+          "crates/code-intel-cli/src/artifact_ref.rs"
+        ]
+      },
+      "artifactContract": [
+        "orchestration/schemas/code-intel-flash-ratchet.v1.schema.json",
+        "flash-ratchet.json"
+      ],
+      "extensionPoint": "Flash ratchet summarizes caller-supplied samples and holds a lower-is-better ceiling. It does not run the measured operation and cannot authorize publication."
+    },
+    {
       "id": "compatibility.retirement-gate",
       "stage": "verification",
       "owner": "code-intel-pipeline",

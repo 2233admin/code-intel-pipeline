@@ -213,6 +213,7 @@ pub(crate) fn registered_contract(artifact: &Value) -> Result<ArtifactContract, 
         .or_else(|| advisory_family_contract(schema, artifact_type))
         .or_else(|| retirement_family_contract(schema, artifact_type))
         .or_else(|| run_delivery_family_contract(schema, artifact_type))
+        .or_else(|| measurement_family_contract(schema, artifact_type))
         .or_else(|| method_decision_family_contract(schema, artifact_type))
         .or_else(|| {
             native_code_contract(schema, artifact_type).map(
@@ -530,6 +531,54 @@ fn run_delivery_family_contract(schema: &str, artifact_type: &str) -> Option<Art
         }
         _ => None,
     }
+}
+
+fn measurement_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {
+    match (schema, artifact_type) {
+        ("code-intel-flash-samples.v1", "measurement.flash-samples") => Some(ArtifactContract {
+            artifact_schema: "code-intel-flash-samples.v1",
+            artifact_type: "measurement.flash-samples",
+            max_bytes: 8 * 1024 * 1024,
+            validate_payload: validate_flash_samples,
+        }),
+        ("code-intel-flash-ratchet-ceiling.v1", "measurement.flash-ratchet-ceiling") => {
+            Some(ArtifactContract {
+                artifact_schema: "code-intel-flash-ratchet-ceiling.v1",
+                artifact_type: "measurement.flash-ratchet-ceiling",
+                max_bytes: 64 * 1024,
+                validate_payload: validate_flash_ceiling,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn validate_flash_samples(bytes: &[u8]) -> Result<(), String> {
+    let value = parse_contract_json(bytes, "flash samples")?;
+    if value["schema"] != "code-intel-flash-samples.v1" {
+        return Err("flash samples schema mismatch".into());
+    }
+    Ok(())
+}
+
+fn validate_flash_ceiling(bytes: &[u8]) -> Result<(), String> {
+    let value = parse_contract_json(bytes, "flash ratchet ceiling")?;
+    exact_object_keys(
+        &value,
+        &[
+            "schema",
+            "operation",
+            "metric",
+            "direction",
+            "tolerance",
+            "p75",
+        ],
+        "flash ratchet ceiling",
+    )?;
+    if value["schema"] != "code-intel-flash-ratchet-ceiling.v1" || value["direction"] != "lower" {
+        return Err("flash ratchet ceiling is not a lower-is-better record".into());
+    }
+    Ok(())
 }
 
 fn method_decision_family_contract(schema: &str, artifact_type: &str) -> Option<ArtifactContract> {

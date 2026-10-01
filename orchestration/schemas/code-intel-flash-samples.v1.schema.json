@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-flash-samples.v1.schema.json",
+  "title": "Flash Measurement Attempts",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "operation", "metric", "primary"],
+  "properties": {
+    "schema": { "const": "code-intel-flash-samples.v1" },
+    "operation": { "type": "string", "minLength": 1 },
+    "metric": { "type": "string", "minLength": 1 },
+    "primary": { "$ref": "#/$defs/attempts" },
+    "paired": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempts", "order"],
+      "properties": {
+        "attempts": { "$ref": "#/$defs/attempts" },
+        "order": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "attempt": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["ok", "value"],
+          "properties": { "ok": { "const": true }, "value": { "type": "number" } }
+        },
+        {
+          "type": "object",
+          "required": ["ok", "reason"],
+          "properties": { "ok": { "const": false }, "reason": { "type": "string", "minLength": 1 } }
+        }
+      ]
+    },
+    "attempts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/attempt" },
+      "contains": {
+        "type": "object",
+        "required": ["ok", "value"],
+        "properties": { "ok": { "const": true }, "value": { "type": "number" } }
+      },
+      "minContains": 10
+    }
+  }
+}

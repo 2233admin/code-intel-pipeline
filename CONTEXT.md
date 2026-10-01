@@ -151,6 +151,24 @@ _Avoid_: Tool type, permission prompt, implementation language
 **Domain Verdict**: Evidence judgment returned by a completed capability: pass, fail, unknown, or not applicable. It is independent of process execution status.
 _Avoid_: Exit code, exception, health score
 
+**Measured Operation**: One named, repeatable thing a caller asks to have measured. Opening a page, running a test command, timing a CLI invocation, and reading a binary size are the same kind of thing with different names.
+_Avoid_: Page, benchmark suite, delivery path
+
+**Measurement Sample**: One finite number the caller collected for a Measured Operation. The pipeline does not produce it and does not run the operation.
+_Avoid_: Timing event, trace interval, observation row
+
+**Sample Group**: The Measurement Samples from one side of a comparison, at least ten finite numbers, summarized as p50, p75, and p95. A failed attempt is recorded with its reason and is not a Measurement Sample.
+_Avoid_: Average, single timing, baseline trace
+
+**Flash Ratchet**: The monotonic ceiling for one Measured Operation and one metric, taken from huashu-flash. A new Sample Group may hold it or tighten it. A p75 worse than the ceiling by more than five percent is a Domain Verdict of fail. The ceiling never authorizes publication or deployment.
+_Avoid_: Performance budget, schedule commitment, Light-Speed Baseline
+
+**Ratchet Ceiling**: The published record of the best p75 a Flash Ratchet has accepted, together with the metric name and the tolerance used to judge it. The tolerance is five percent and is read from the submitted record. The caller submits the previous record; a check writes the next record into its own report and leaves the previous record unchanged.
+_Avoid_: In-repo JSON file, budget comment, code constant
+
+**Paired Comparison**: An optional second Sample Group plus the order in which the two groups were collected. The order must strictly alternate. When it does, the report states the fractional drop in p75 from the first group to the second. Any other order is rejected and states no drop.
+_Avoid_: Unpaired rerun, required benchmark mode, a drop computed across separate sessions
+
 **Run Commit**: Transactional publication boundary that promotes validated staged artifacts and writes `run-complete.json` last.
 _Avoid_: Git commit, timestamp directory, successful subprocess
 

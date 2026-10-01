@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-flash-ratchet.v1.schema.json",
+  "title": "Flash Measurement Ratchet",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "authority", "operation", "metric", "direction", "primary", "paired", "ratchet", "limitations"],
+  "properties": {
+    "schema": { "const": "code-intel-flash-ratchet.v1" },
+    "authority": { "const": "derived_measurement_no_publish_authority" },
+    "operation": { "type": "string", "minLength": 1 },
+    "metric": { "type": "string", "minLength": 1 },
+    "direction": { "const": "lower" },
+    "primary": { "$ref": "#/$defs/summary" },
+    "paired": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["summary", "p75Reduction"],
+          "properties": {
+            "summary": { "$ref": "#/$defs/summary" },
+            "p75Reduction": { "type": "number" }
+          }
+        }
+      ]
+    },
+    "ratchet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "tolerance", "ceiling"],
+      "properties": {
+        "state": { "enum": ["initialized", "held", "tightened", "regressed"] },
+        "tolerance": { "const": 0.05 },
+        "submitted": { "type": "number" },
+        "ceiling": { "$ref": "#/$defs/ceiling" }
+      }
+    },
+    "limitations": { "type": "array", "minItems": 2, "items": { "type": "string", "minLength": 1 } }
+  },
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["samples", "failed", "p50", "p75", "p95"],
+      "properties": {
+        "samples": { "type": "integer", "minimum": 10 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "p50": { "type": "number" },
+        "p75": { "type": "number" },
+        "p95": { "type": "number" }
+      }
+    },
+    "ceiling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "operation", "metric", "direction", "tolerance", "p75"],
+      "properties": {
+        "schema": { "const": "code-intel-flash-ratchet-ceiling.v1" },
+        "operation": { "type": "string", "minLength": 1 },
+        "metric": { "type": "string", "minLength": 1 },
+        "direction": { "const": "lower" },
+        "tolerance": { "const": 0.05 },
+        "p75": { "type": "number" }
+      }
+    }
+  }
+}
