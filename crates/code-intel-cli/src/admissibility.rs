@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use serde_json::{json, Value};
 
 use crate::artifact_ref::{self, ArtifactContract, ArtifactError};
-use crate::capability::{reject_duplicate_json_keys, reject_duplicate_json_keys_within, sha256_hex};
+use crate::capability::{
+    reject_duplicate_json_keys, reject_duplicate_json_keys_within, sha256_hex,
+};
 
 const MAX_REQUEST_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_PAYLOAD_BYTES: u64 = 64 * 1024 * 1024;
@@ -397,32 +399,33 @@ fn rejected(message: &str) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_payload, MAX_PAYLOAD_BYTES};
-
     /// Issue #123 Bug 3 regression: `verify_artifact_ref` already bounds
     /// `observed.evidence.payload` to this file's own `MAX_PAYLOAD_BYTES`
     /// (64 MiB), but `validate_payload` used to call the shared JSON
-    /// scanner's *default*, hard-coded 8 MiB ceiling underneath that --
-    /// silently reclamping any in-budget payload between 8 MiB and 64 MiB
-    /// with `"JSON input exceeds 8388608 bytes"`. This reproduces with a
-    /// real large-repository payload without any untracked junk directory
-    /// involved.
+    /// scanner's *default* `MAX_JSON_BYTES` ceiling underneath that --
+    /// silently reclamping any in-budget payload between that default and
+    /// 64 MiB with `"JSON input exceeds <MAX_JSON_BYTES> bytes"`. This
+    /// reproduces with a real large-repository payload without any
+    /// untracked junk directory involved. The fixture is sized from the
+    /// live default so the test keeps discriminating if that default moves.
     #[test]
     fn validate_payload_accepts_between_default_scanner_ceiling_and_contract_budget() {
-        let padding = "a".repeat(9 * 1024 * 1024);
-        let payload =
-            format!(r#"{{"schema":"code-intel-evidence-payload.v1","data":{{"padding":"{padding}"}}}}"#);
-        assert!(payload.len() > 8 * 1024 * 1024);
-        assert!((payload.len() as u64) < MAX_PAYLOAD_BYTES);
-        assert!(validate_payload(payload.as_bytes()).is_ok());
+        let padding = "a".repeat(crate::capability::MAX_JSON_BYTES + 1024 * 1024);
+        let payload = format!(
+            r#"{{"schema":"code-intel-evidence-payload.v1","data":{{"padding":"{padding}"}}}}"#
+        );
+        assert!(payload.len() > crate::capability::MAX_JSON_BYTES);
+        assert!((payload.len() as u64) < super::MAX_PAYLOAD_BYTES);
+        assert!(super::validate_payload(payload.as_bytes()).is_ok());
     }
 
     #[test]
     fn validate_payload_still_rejects_beyond_its_own_contract_budget() {
-        let padding = "a".repeat(MAX_PAYLOAD_BYTES as usize + 1024);
-        let payload =
-            format!(r#"{{"schema":"code-intel-evidence-payload.v1","data":{{"padding":"{padding}"}}}}"#);
-        let err = validate_payload(payload.as_bytes()).unwrap_err();
+        let padding = "a".repeat(super::MAX_PAYLOAD_BYTES as usize + 1024);
+        let payload = format!(
+            r#"{{"schema":"code-intel-evidence-payload.v1","data":{{"padding":"{padding}"}}}}"#
+        );
+        let err = super::validate_payload(payload.as_bytes()).unwrap_err();
         assert!(err.contains("exceeds"));
     }
 

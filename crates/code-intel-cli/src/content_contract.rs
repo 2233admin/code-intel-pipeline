@@ -323,13 +323,17 @@ mod tests {
         // A payload above the default MAX_JSON_BYTES but within an
         // explicit, larger ceiling must be accepted -- this is the
         // parametrization issue #123 needed: artifact contracts whose
-        // declared max_bytes exceeds the default 8 MiB must not be
-        // reclamped by this shared scanner's own fixed limit.
-        let padded = format!(r#"{{"key":"{}"}}"#, "a".repeat(9 * 1024 * 1024));
+        // declared max_bytes exceeds the default must not be reclamped by
+        // this shared scanner's own fixed limit. Sized from the live
+        // default so the test keeps discriminating if that default moves.
+        let padded = format!(
+            r#"{{"key":"{}"}}"#,
+            "a".repeat(super::MAX_JSON_BYTES + 1024 * 1024)
+        );
         assert!(padded.len() > super::MAX_JSON_BYTES);
-        assert!(reject_duplicate_json_keys_within(&padded, 16 * 1024 * 1024).is_ok());
+        assert!(reject_duplicate_json_keys_within(&padded, 2 * super::MAX_JSON_BYTES).is_ok());
         // The same payload still fails against a ceiling it exceeds.
-        let err = reject_duplicate_json_keys_within(&padded, 8 * 1024 * 1024).unwrap_err();
+        let err = reject_duplicate_json_keys_within(&padded, super::MAX_JSON_BYTES).unwrap_err();
         assert!(err.contains("exceeds"));
     }
 

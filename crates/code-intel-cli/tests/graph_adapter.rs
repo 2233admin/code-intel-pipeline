@@ -479,10 +479,11 @@ fn oversized_current_graph_payload_clears_the_real_admission_path_within_contrac
     // `evidence.graph` node -- not just the in-memory `validate_payload`
     // unit. The padded graph document here pushes the serialized
     // `observed.evidence.payload` artifact past the shared JSON scanner's
-    // old hard-coded 8 MiB default and into the `observed.evidence.payload`
-    // contract's real 64 MiB budget; before the fix this failed admission
-    // with "JSON input exceeds 8388608 bytes" even though the contract
-    // itself allows up to 64 MiB.
+    // default `MAX_JSON_BYTES` ceiling and into the
+    // `observed.evidence.payload` contract's real 64 MiB budget; before the
+    // fix this failed admission with "JSON input exceeds <MAX_JSON_BYTES>
+    // bytes" even though the contract itself allows up to 64 MiB. Sized
+    // from the live default so the test keeps discriminating if it moves.
     let root = Temp::new();
     let fixture = descriptor("internal-current");
     let padded_graph = json!({
@@ -491,7 +492,7 @@ fn oversized_current_graph_payload_clears_the_real_admission_path_within_contrac
         "nodes":[],
         "edges":[],
         "symbols":[],
-        "oversizeRegressionPadding":"a".repeat(9 * 1024 * 1024)
+        "oversizeRegressionPadding":"a".repeat(capability::MAX_JSON_BYTES + 1024 * 1024)
     });
     let payload = json!({
         "schema":"code-intel-evidence-payload.v1",
@@ -512,8 +513,8 @@ fn oversized_current_graph_payload_clears_the_real_admission_path_within_contrac
     });
     let bytes = serde_json::to_vec(&payload).unwrap();
     assert!(
-        bytes.len() > 8 * 1024 * 1024,
-        "fixture must actually exceed the old 8 MiB default to exercise the regression"
+        bytes.len() > capability::MAX_JSON_BYTES,
+        "fixture must actually exceed the scanner's default ceiling to exercise the regression"
     );
     assert!(
         bytes.len() < 64 * 1024 * 1024,
@@ -547,7 +548,7 @@ fn oversized_current_graph_payload_clears_the_real_admission_path_within_contrac
     });
     let adapter = graph_adapter::translate(&native, observed_at + 100, 200).unwrap();
     let admitted = admissibility::validate_for_consumer(&adapter["evidence"]["request"], &root.0)
-        .expect("a payload between 8 MiB and the real 64 MiB contract budget must be admitted");
+        .expect("a payload between the scanner default and the real 64 MiB contract budget must be admitted");
     assert_eq!(admitted.result()["domainVerdict"], "observed");
     graph_adapter::validate_admitted_payload(admitted.payload(), &adapter).unwrap();
 }

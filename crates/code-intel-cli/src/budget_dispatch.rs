@@ -390,8 +390,10 @@ mod tests {
         NodeExecutor, NodeOutcome, NodeSpec, RunOutcome,
     };
 
-    use super::{run_to_completion_with_estimator, DispatchCost, BUDGET_STOPPED_EXIT_CODE};
-    use super::{run_to_completion_with_oversize_policy, OversizePolicy};
+    use super::{
+        run_to_completion_with_estimator, run_to_completion_with_oversize_policy, DispatchCost,
+        OversizePolicy, BUDGET_STOPPED_EXIT_CODE,
+    };
 
     struct PassExecutor;
 

@@ -2510,7 +2510,8 @@ fn validate_session_evidence_value(value: &Value) -> Result<(), String> {
 /// `counts` claiming `dropped: 0` while an anchor entry underneath it is
 /// actually `"state":"dropped"` is rejected here, not merely well-formed.
 fn validate_anchor_verification(bytes: &[u8]) -> Result<(), String> {
-    let value = parse_contract_json_within(bytes, "anchor verification report", MAX_ARTIFACT_BYTES)?;
+    let value =
+        parse_contract_json_within(bytes, "anchor verification report", MAX_ARTIFACT_BYTES)?;
     exact_object_keys(
         &value,
         &["schema", "counts", "sources"],
