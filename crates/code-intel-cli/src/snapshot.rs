@@ -1750,7 +1750,9 @@ mod tests {
         fs::write(root.join("src/a.txt"), "alpha\n").unwrap();
         fs::write(root.join("src/gone.txt"), "deleted later\n").unwrap();
         // Large enough to cross many SHA-256 blocks with a ragged tail.
-        let large = (0..5000u32).map(|i| (i * 7 % 251) as u8).collect::<Vec<_>>();
+        let large = (0..5000u32)
+            .map(|i| (i * 7 % 251) as u8)
+            .collect::<Vec<_>>();
         fs::write(root.join("src/nested/large.bin"), large).unwrap();
     }
 
@@ -1783,7 +1785,14 @@ mod tests {
         pinned_git(&repo, &["add", "."]);
         pinned_git(
             &repo,
-            &["commit", "--quiet", "--no-verify", "--no-gpg-sign", "-m", "pin"],
+            &[
+                "commit",
+                "--quiet",
+                "--no-verify",
+                "--no-gpg-sign",
+                "-m",
+                "pin",
+            ],
         );
         fs::write(repo.join("src/a.txt"), "alpha modified\n").unwrap();
         fs::remove_file(repo.join("src/gone.txt")).unwrap();

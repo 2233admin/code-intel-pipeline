@@ -418,7 +418,9 @@ mod tests {
 
     #[test]
     fn streaming_sha256_ignores_chunk_boundaries() {
-        let message = (0..300u32).map(|i| (i * 31 % 256) as u8).collect::<Vec<_>>();
+        let message = (0..300u32)
+            .map(|i| (i * 31 % 256) as u8)
+            .collect::<Vec<_>>();
         for len in [0, 1, 55, 56, 63, 64, 65, 119, 120, 128, 300] {
             let whole = super::sha256_hex(&message[..len]);
             for split in 0..=len {
