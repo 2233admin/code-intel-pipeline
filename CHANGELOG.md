@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `verify` 和 `repin` 的 Git 测试夹具显式隔离全局忽略文件，避免 `.sentrux/` 或 `*.bin` 被开发机配置排除后导致空提交或遗漏测试文件（#393）。
+- `sentrux` 的模块归属计算借用路径切片，不再为每条边创建临时路径数组和模块字符串；模块度聚合保留原有遍历顺序与评分公式（#393）。
 - `sentrux gate` 在全新 checkout 上因缺基线硬崩溃：missing-baseline 前置检查原本查的是 native baseline 路径，实际 `sentrux gate` 读的是 lite 引擎的 `.sentrux/cache/lite-baseline.json`，现已对齐，缺失时正确落回 `manual_required`（fixes #322）。
 - 安装器在显式传入新的仓库或发布根目录时不再被陈旧的 `$env:CODE_INTEL_HOME` 覆盖，避免新二进制读取旧的 Provider manifest（fixes #363）。
 - 修复 workflow recommendation 的 Rust 侧 parity 回归（#314）。
