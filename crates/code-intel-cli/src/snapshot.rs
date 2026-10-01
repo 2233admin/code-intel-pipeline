@@ -11,7 +11,7 @@ mod hardened_git;
 #[path = "tool_path.rs"]
 mod tool_path;
 
-use crate::capability::sha256_hex;
+use crate::capability::{sha256_hex, Sha256};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Policy {
@@ -1027,7 +1027,8 @@ where
     let mut paths = index.keys().cloned().collect::<BTreeSet<_>>();
     paths.extend(untracked_paths(repo, scopes)?);
     paths.extend(ignore_controls(repo, scopes)?);
-    let mut records = vec![b"code-intel-overlay-input.v1".to_vec()];
+    let mut hasher = Sha256::new();
+    hasher.update_framed(b"code-intel-overlay-input.v1");
     for relative in paths {
         let indexed = index.get(&relative);
         let mut mode = indexed
@@ -1071,12 +1072,7 @@ where
                     )))
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    let mut record = b"tombstone".to_vec();
-                    record.push(0);
-                    record.extend_from_slice(mode.as_bytes());
-                    record.push(0);
-                    record.extend_from_slice(relative.as_bytes());
-                    records.push(record);
+                    hasher.update_framed(format!("tombstone\0{mode}\0{relative}").as_bytes());
                     continue;
                 }
                 Err(error) => {
@@ -1086,17 +1082,13 @@ where
                 }
             }
         };
-        let mut record = kind.as_bytes().to_vec();
-        record.push(0);
-        record.extend_from_slice(mode.as_bytes());
-        record.push(0);
-        record.extend_from_slice(relative.as_bytes());
-        record.push(0);
-        record.extend_from_slice(&(content.len() as u64).to_be_bytes());
-        record.extend_from_slice(&content);
-        records.push(record);
+        update_content_record(
+            &mut hasher,
+            format!("{kind}\0{mode}\0{relative}\0").as_bytes(),
+            &content,
+        );
     }
-    Ok(hash_records(&records))
+    Ok(hasher.finish())
 }
 
 fn index_entries(
@@ -1387,7 +1379,8 @@ fn inventory_unversioned(repo: &Path, scopes: &[String]) -> Result<Vec<String>, 
 
 fn digest_unversioned(repo: &Path, scopes: &[String]) -> Result<String, SnapshotError> {
     let paths = inventory_unversioned(repo, scopes)?;
-    let mut records = vec![b"code-intel-unversioned-input.v1".to_vec()];
+    let mut hasher = Sha256::new();
+    hasher.update_framed(b"code-intel-unversioned-input.v1");
     for relative in paths {
         let path = repo.join(&relative);
         let metadata = fs::symlink_metadata(&path)
@@ -1412,15 +1405,13 @@ fn digest_unversioned(repo: &Path, scopes: &[String]) -> Result<String, Snapshot
         } else {
             continue;
         };
-        let mut record = kind.as_bytes().to_vec();
-        record.push(0);
-        record.extend_from_slice(relative.as_bytes());
-        record.push(0);
-        record.extend_from_slice(&(bytes.len() as u64).to_be_bytes());
-        record.extend_from_slice(&bytes);
-        records.push(record);
+        update_content_record(
+            &mut hasher,
+            format!("{kind}\0{relative}\0").as_bytes(),
+            &bytes,
+        );
     }
-    Ok(hash_records(&records))
+    Ok(hasher.finish())
 }
 
 fn stable_unversioned_snapshot(
@@ -1607,13 +1598,24 @@ fn trim_ascii(bytes: &[u8]) -> &[u8] {
     &bytes[start..end]
 }
 
+/// SHA-256 over each record framed as its big-endian `u64` length followed by
+/// its bytes. Streamed, so the framed concatenation is never materialized.
 fn hash_records(records: &[Vec<u8>]) -> String {
-    let mut canonical = Vec::new();
+    let mut hasher = Sha256::new();
     for record in records {
-        canonical.extend_from_slice(&(record.len() as u64).to_be_bytes());
-        canonical.extend_from_slice(record);
+        hasher.update_framed(record);
     }
-    sha256_hex(&canonical)
+    hasher.finish()
+}
+
+/// Absorb the record `header ++ u64be(content.len()) ++ content` with the
+/// same framing as `hash_records`, without first copying `content` into it.
+/// A worktree digest then holds one file at a time, not the whole tree.
+fn update_content_record(hasher: &mut Sha256, header: &[u8], content: &[u8]) {
+    hasher.update(&((header.len() + 8 + content.len()) as u64).to_be_bytes());
+    hasher.update(header);
+    hasher.update(&(content.len() as u64).to_be_bytes());
+    hasher.update(content);
 }
 
 #[cfg(test)]

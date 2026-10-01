@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`snapshot identity` 的 explicit_overlay / 非 Git 路径峰值内存随整棵树内容线性放大（fixes #411，refs #403）**：`digest_worktree`/`digest_unversioned` 把每个 scoped 文件的完整字节留在 `records` 里，`hash_records` 再拼一份 `canonical`，一次性 `sha256_hex` 又 `to_vec` 一份并在 padding 时扩容。`content_contract.rs` 新增流式 `Sha256`（`update`/`update_framed`/`finish`），`sha256_hex` 改为其一次性包装；两处 digest 逐文件按同样的长度帧与顺序喂入 hasher，读完即丢。快照 identity 字节不变（新增固定 fixture 的 literal digest 钉住测试，并在本仓 b17d401 上前后二进制输出逐字节相同）。实测本仓（1070 文件，14.4 MiB）peak private 75.9→5.4 MiB；外加 256×1 MiB 未跟踪文件时 1563.3→5.4 MiB。#403 的宿主崩溃因果仍未定。
 - `sentrux gate` 在全新 checkout 上因缺基线硬崩溃：missing-baseline 前置检查原本查的是 native baseline 路径，实际 `sentrux gate` 读的是 lite 引擎的 `.sentrux/cache/lite-baseline.json`，现已对齐，缺失时正确落回 `manual_required`（fixes #322）。
 - 安装器在显式传入新的仓库或发布根目录时不再被陈旧的 `$env:CODE_INTEL_HOME` 覆盖，避免新二进制读取旧的 Provider manifest（fixes #363）。
 - 修复 workflow recommendation 的 Rust 侧 parity 回归（#314）。
