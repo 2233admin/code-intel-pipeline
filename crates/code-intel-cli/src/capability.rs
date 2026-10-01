@@ -14,7 +14,7 @@ use crate::artifact_ref::{self, VerifiedArtifact};
 mod content_contract;
 pub(crate) use content_contract::{
     is_digest, is_run_identity, reject_duplicate_json_keys, require_exact_keys, sha256_hex,
-    validate_artifact_ref_shape, MAX_JSON_BYTES,
+    validate_artifact_ref_shape, Sha256, MAX_JSON_BYTES,
 };
 
 const ZERO_DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
