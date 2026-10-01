@@ -37,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   baselines report their actual engine/schema instead of a fabricated quality
   regression. Session tests exercise the real engine and process-error boundary
   rather than copied metric implementations (#394).
+- The committed `.sentrux/baseline.json` moves from schema v6 (engine 3.0.0)
+  to v7 (engine 3.1.0) in the same change, as DR-0011 did for v5 to v6. Every
+  gated value is equal to or better than the v6 record: quality 6236 -> 6236,
+  coupling 63.33 -> 63.30, cycles 0, and the same 33 god-file identities. The
+  migration grandfathers nothing (#394).
 - `sentrux gate` 在全新 checkout 上因缺基线硬崩溃：missing-baseline 前置检查原本查的是 native baseline 路径，实际 `sentrux gate` 读的是 lite 引擎的 `.sentrux/cache/lite-baseline.json`，现已对齐，缺失时正确落回 `manual_required`（fixes #322）。
 - 安装器在显式传入新的仓库或发布根目录时不再被陈旧的 `$env:CODE_INTEL_HOME` 覆盖，避免新二进制读取旧的 Provider manifest（fixes #363）。
 - 修复 workflow recommendation 的 Rust 侧 parity 回归（#314）。

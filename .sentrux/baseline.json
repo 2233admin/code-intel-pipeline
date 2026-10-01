@@ -1,7 +1,13 @@
 {
+  "couplingPolicy": {
+    "ignore_test_dependencies": false,
+    "quality_graph_scope": "all_included_files",
+    "test_path_classifier": "repo-test-paths.v1",
+    "version": "production-coupling.v1"
+  },
   "engine": {
     "id": "sentrux-native",
-    "version": "3.0.0"
+    "version": "3.1.0"
   },
   "godFiles": [
     {
@@ -24,7 +30,7 @@
     },
     {
       "functions": 74,
-      "loc": 1362,
+      "loc": 1363,
       "path": "crates/code-intel-cli/src/cli/legacy.rs",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -95,8 +101,8 @@
       "rule": "loc>800; functions>25&&loc>400"
     },
     {
-      "functions": 69,
-      "loc": 2085,
+      "functions": 71,
+      "loc": 2137,
       "path": "crates/code-intel-cli/src/sentrux_gate.rs",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -132,7 +138,7 @@
     },
     {
       "functions": 55,
-      "loc": 2246,
+      "loc": 2251,
       "path": "crates/code-intel-cli/tests/capability_exec.rs",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -156,7 +162,7 @@
     },
     {
       "functions": 100,
-      "loc": 2873,
+      "loc": 2862,
       "path": "legacy/Invoke-SentruxAgentTool.ps1",
       "rule": "loc>800; functions>25&&loc>400"
     },
@@ -174,7 +180,7 @@
     },
     {
       "functions": 13,
-      "loc": 1298,
+      "loc": 1286,
       "path": "legacy/scripts/tests/test-regression-fixes.ps1",
       "rule": "loc>800"
     },
@@ -206,19 +212,22 @@
   "metrics": {
     "branch_density_per_fn": 80,
     "complex_fn_count": 7,
-    "coupling_score": 63.33,
-    "cross_module_edges": 2052,
+    "coupling_files": 324,
+    "coupling_import_edges": 2051,
+    "coupling_score": 63.3,
+    "cross_module_edges": 2051,
     "cycle_count": 0,
     "files": 399,
-    "functions": 5367,
+    "functions": 5368,
     "god_file_count": 33,
     "import_modeled_files": 324,
     "max_complexity": 80,
     "quality_signal": 6236,
-    "total_import_edges": 2052
+    "test_files": 161,
+    "total_import_edges": 2051
   },
-  "savedAt": 1788471122,
-  "schema": "code-intel-sentrux-baseline.v6",
+  "savedAt": 1790874806,
+  "schema": "code-intel-sentrux-baseline.v7",
   "scope": ".",
-  "sourceCommit": "5a6eb4422b90f9b12dfea36fa2e917ee01c9e064"
+  "sourceCommit": "53cdfe1e303b0af6280a7d1f41c4f32efdbf7fbf"
 }
