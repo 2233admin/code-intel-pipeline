@@ -4,8 +4,6 @@ mod content_identity;
 #[path = "primary_entry/session_gate.rs"]
 mod session_gate;
 use std::io::Write;
-#[path = "primary_entry/legacy_session.rs"]
-mod legacy_session;
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};

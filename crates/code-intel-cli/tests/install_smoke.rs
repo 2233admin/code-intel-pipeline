@@ -7,12 +7,12 @@
 //! CI sets `CODE_INTEL_SMOKE_RELEASE_ROOT` / `CODE_INTEL_SMOKE_BIN` and runs
 //! that test with `--ignored`.
 
-use serde_json::Value;
 use std::env;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -242,7 +242,7 @@ fn run_packaged_legacy_session(
     (output.status.code().unwrap_or(-1), text.trim().to_string())
 }
 
-fn parse_session_json(code_and_text: &(i32, String), operation: &str) -> Value {
+fn parse_session_json(code_and_text: &(i32, String), operation: &str) -> serde_json::Value {
     assert_eq!(
         code_and_text.0, 0,
         "packaged {operation} exited {}: {}",
@@ -256,7 +256,7 @@ fn parse_session_json(code_and_text: &(i32, String), operation: &str) -> Value {
     })
 }
 
-fn metric_i64(value: &Value, path: &str) -> i64 {
+fn metric_i64(value: &serde_json::Value, path: &str) -> i64 {
     let mut current = value;
     for key in path.split('.') {
         current = current
@@ -332,7 +332,7 @@ fn packaged_install_legacy_sessions_use_native_metrics_and_preserve_baselines() 
         .is_file());
 
     let native_baseline_path = repo.join(".sentrux/cache/native-session-baseline.json");
-    let native_baseline: Value = serde_json::from_slice(
+    let native_baseline: serde_json::Value = serde_json::from_slice(
         &fs::read(&native_baseline_path).expect("read native session baseline"),
     )
     .expect("native session baseline JSON");
