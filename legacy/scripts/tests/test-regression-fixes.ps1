@@ -935,6 +935,8 @@ Test-Case "check-code-intel-tools.ps1 fails CODE_INTEL_HOME pointing at a missin
 # ---------------------------------------------------------------------------
 . (Get-ScriptFunctionsSource -Path (Join-Path $root "tools\code-intel-platform.psm1") -Only @(
     "Get-CodeIntelPlatform",
+    "Get-CodeIntelHome",
+    "Resolve-CodeIntelPath",
     "Get-CodeIntelPosixProfileInstruction",
     "ConvertTo-CodeIntelPosixEnvLine",
     "Update-CodeIntelPosixEnvContent",
@@ -942,6 +944,25 @@ Test-Case "check-code-intel-tools.ps1 fails CODE_INTEL_HOME pointing at a missin
     "Set-CodeIntelUserEnv",
     "Add-UserPathPrefix"
 ))
+
+Test-Case "explicit installer root wins over a stale CODE_INTEL_HOME override" {
+    $dir = New-ScratchDir "explicit-home"
+    $legacy = Join-Path $dir "legacy-release"
+    $current = Join-Path $dir "current-release"
+    New-Item -ItemType Directory -Force -Path $legacy, $current | Out-Null
+    $previousHome = $env:CODE_INTEL_HOME
+    try {
+        $env:CODE_INTEL_HOME = $legacy
+        $resolved = Get-CodeIntelHome -Root $current
+        Assert-Equal (Get-Item -LiteralPath $current).FullName $resolved "installer root must not be shadowed by a stale ambient CODE_INTEL_HOME"
+        Assert-Equal (Get-Item -LiteralPath $legacy).FullName (Get-CodeIntelHome) "ambient CODE_INTEL_HOME must remain the fallback without an explicit root"
+        Assert-Equal (Get-Item -LiteralPath $legacy).FullName (Get-CodeIntelHome -Root " ") "a whitespace root must use the ambient fallback"
+    }
+    finally {
+        $env:CODE_INTEL_HOME = $previousHome
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
 
 Test-Case "posix env: profile instruction is the single copy-paste source line per platform" {
     Assert-Equal "echo 'source ~/.config/code-intel/env.sh' >> ~/.zshrc" (Get-CodeIntelPosixProfileInstruction -Platform macos) "macos instruction must target ~/.zshrc"
