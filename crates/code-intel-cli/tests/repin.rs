@@ -58,6 +58,7 @@ fn init_repo(repo: &Path) {
     // way hardened_git.rs does for every git invocation this pipeline makes.
     git(repo, &["config", "commit.gpgsign", "false"]);
     git(repo, &["config", "core.hooksPath", ""]);
+    git(repo, &["config", "core.excludesFile", ""]);
 }
 
 fn commit_all(repo: &Path, message: &str) {

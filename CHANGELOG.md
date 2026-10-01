@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `verify` 和 `repin` 的 Git 测试夹具显式隔离全局忽略文件，避免 `.sentrux/` 或 `*.bin` 被开发机配置排除后导致空提交或遗漏测试文件（#393）。
+- `sentrux` 的模块归属计算借用路径切片，不再为每条边创建临时路径数组和模块字符串；模块度聚合保留原有遍历顺序与评分公式（#393）。
 - `sentrux gate` 在全新 checkout 上因缺基线硬崩溃：missing-baseline 前置检查原本查的是 native baseline 路径，实际 `sentrux gate` 读的是 lite 引擎的 `.sentrux/cache/lite-baseline.json`，现已对齐，缺失时正确落回 `manual_required`（fixes #322）。
 - 修复 workflow recommendation 的 Rust 侧 parity 回归（#314）。
 - `sentrux_gate` 全量并行测试踩踏两处根因分开修：(1) `tool_path.rs` 的 `path_search_skips_relative_entries` 探测目录名只用 `module_path!()`，在被 `#[path]` 编入多个 `cargo test` 二进制（`run_commit`/`survival_scan` 等）时对同名父模块编译时相同，跨进程共享同一 `target/tool-path-*` 目录并互相踩踏；现补上 `std::process::id()` + 进程内 `AtomicU64` 计数器，与 #175 的 `unique_temp_dir()` 同一套 pid+nonce 写法（fixes #178）。(2) `sentrux_gate.rs`/`boundary_rules_tests.rs` 里 9 处 `run_check(...).expect(...)`/`run_gate(...).expect(...)` 把"引擎子进程没跑起来"和"仓库真的检测到规则违规"报成同一个红灯；新增仅测试用的 `expect_check_ran`/`expect_gate_ran` helper，`Err` 分支 panic 出明确区分于业务断言的文案，并配 `#[should_panic]` regression 测试直接执行 `Err` 路径验证文案本身（fixes #192）。

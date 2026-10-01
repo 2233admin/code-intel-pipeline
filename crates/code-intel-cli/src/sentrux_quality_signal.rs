@@ -217,8 +217,8 @@ pub(crate) fn compute_modularity_q(edges: &BTreeSet<(String, String)>) -> f64 {
         }
     }
 
-    let mut mod_k_out_sum: BTreeMap<String, f64> = BTreeMap::new();
-    let mut mod_k_in_sum: BTreeMap<String, f64> = BTreeMap::new();
+    let mut mod_k_out_sum: BTreeMap<&str, f64> = BTreeMap::new();
+    let mut mod_k_in_sum: BTreeMap<&str, f64> = BTreeMap::new();
     let mut nodes: BTreeSet<&str> = BTreeSet::new();
     for (from, to) in edges {
         nodes.insert(from.as_str());
@@ -228,7 +228,7 @@ pub(crate) fn compute_modularity_q(edges: &BTreeSet<(String, String)>) -> f64 {
         let module = module_of(node);
         let ko = *k_out.get(node).unwrap_or(&0) as f64;
         let ki = *k_in.get(node).unwrap_or(&0) as f64;
-        *mod_k_out_sum.entry(module.clone()).or_default() += ko;
+        *mod_k_out_sum.entry(module).or_default() += ko;
         *mod_k_in_sum.entry(module).or_default() += ki;
     }
 
@@ -256,22 +256,24 @@ pub(crate) fn compute_modularity_q(edges: &BTreeSet<(String, String)>) -> f64 {
 /// `<crate>/src|app|tests/` with no further subdirectory is its own module
 /// (top-level files are already separate concerns); a file inside a
 /// subdirectory shares that subdirectory as its module.
-pub(crate) fn module_of(path: &str) -> String {
-    let segments: Vec<&str> = path.split('/').collect();
-    if segments.len() <= 1 {
-        return String::new(); // File directly at the repository root.
-    }
-    if let [first, name, root, next, ..] = segments.as_slice() {
-        if matches!(*first, "crates" | "packages") && matches!(*root, "src" | "app" | "tests") {
-            return format!("{first}/{name}/{root}/{next}");
+pub(crate) fn module_of(path: &str) -> &str {
+    let Some((first, after_first)) = path.split_once('/') else {
+        return ""; // File directly at the repository root.
+    };
+    if matches!(first, "crates" | "packages") {
+        let Some((name, after_name)) = after_first.split_once('/') else {
+            return path;
+        };
+        if let Some((root, after_root)) = after_name.split_once('/') {
+            if matches!(root, "src" | "app" | "tests") {
+                let next_end = after_root.find('/').unwrap_or(after_root.len());
+                let prefix_end = path.len() - after_root.len() + next_end;
+                return &path[..prefix_end];
+            }
         }
+        return &path[..first.len() + 1 + name.len()];
     }
-    if let [first, name, ..] = segments.as_slice() {
-        if matches!(*first, "crates" | "packages") {
-            return format!("{first}/{name}");
-        }
-    }
-    segments[0].to_string()
+    first
 }
 
 /// Cycle count and max dependency depth over a resolved file-dependency
