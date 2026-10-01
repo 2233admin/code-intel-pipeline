@@ -304,7 +304,7 @@ fn packaged_install_legacy_sessions_use_native_metrics_and_preserve_baselines() 
     .expect("write test-only imports");
     fs::write(
         repo.join(".sentrux/rules.toml"),
-        "ignore_test_dependencies = true\n",
+        "[constraints]\nignore_test_dependencies = true\n",
     )
     .expect("write coupling policy");
     let canonical = b"{\n  \"schema\": \"canonical-fixture\",\n  \"owner\": \"install-smoke\"\n}\n";
