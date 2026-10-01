@@ -24,6 +24,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `sentrux gate`/`check` coupling now honors `[constraints] ignore_test_dependencies`
+  from `.sentrux/rules.toml`: test files stay in the quality graph and every
+  non-coupling metric, but leave the production coupling numerator and
+  denominator when the rule is set. Baselines record that coupling policy
+  (schema `code-intel-sentrux-baseline.v7`, engine `sentrux-native` 3.1.0), and
+  a baseline whose schema, engine version or policy differs fails closed with
+  the mismatching fields named instead of comparing unlike numbers (#394).
+- Legacy Sentrux session gates now forward to the compiled engine and keep their
+  baseline in `.sentrux/cache/native-session-baseline.json`; canonical and lite
+  baselines are never read as session metrics or overwritten. Incompatible
+  baselines report their actual engine/schema instead of a fabricated quality
+  regression. Session tests exercise the real engine and process-error boundary
+  rather than copied metric implementations (#394).
 - `sentrux gate` 在全新 checkout 上因缺基线硬崩溃：missing-baseline 前置检查原本查的是 native baseline 路径，实际 `sentrux gate` 读的是 lite 引擎的 `.sentrux/cache/lite-baseline.json`，现已对齐，缺失时正确落回 `manual_required`（fixes #322）。
 - 安装器在显式传入新的仓库或发布根目录时不再被陈旧的 `$env:CODE_INTEL_HOME` 覆盖，避免新二进制读取旧的 Provider manifest（fixes #363）。
 - 修复 workflow recommendation 的 Rust 侧 parity 回归（#314）。

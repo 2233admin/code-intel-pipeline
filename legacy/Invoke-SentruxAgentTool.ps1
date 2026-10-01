@@ -77,24 +77,31 @@ function Invoke-Native {
 function Invoke-SentruxCli {
     param([string[]]$Arguments)
 
-    # The session gate runs on lite semantics: the engine executed here must
-    # be the same one whose baseline layer Get-BaselineMetrics reads
-    # (.sentrux/cache/lite-baseline.json), so this calls the repository's own
-    # lite core directly instead of whatever `sentrux` resolves to on PATH —
-    # installed launchers are copies frozen at install time, and a stale lite
-    # core clobbers the native engine's .sentrux/baseline.json with the
-    # legacy flat format (issue #182). SENTRUX_CORE_EXE (the shim's existing
-    # override convention) stays the explicit escape hatch for tests and
-    # rollouts; bare `sentrux` on PATH is the last resort for layouts that
-    # ship this script without the shim directory.
-    if (-not [string]::IsNullOrWhiteSpace($env:SENTRUX_CORE_EXE) -and (Test-Path -LiteralPath $env:SENTRUX_CORE_EXE -PathType Leaf)) {
-        return (Invoke-Native $env:SENTRUX_CORE_EXE $Arguments)
+    # Compatibility forwarding only; metric definitions and baseline ownership
+    # belong to the installed Rust engine, never the retired lite core.
+    $exeName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
+    $root = Split-Path -Parent $PSScriptRoot
+    $rustCli = $null
+    if (-not [string]::IsNullOrWhiteSpace($env:CODE_INTEL_RUST_CLI)) {
+        $rustCli = [IO.Path]::GetFullPath($env:CODE_INTEL_RUST_CLI)
+        if (-not (Test-Path -LiteralPath $rustCli -PathType Leaf)) {
+            throw "Explicit CODE_INTEL_RUST_CLI is missing: $rustCli"
+        }
     }
-    $liteCore = Join-Path $PSScriptRoot (Join-Path "tools" (Join-Path "sentrux-shim" "sentrux-lite-core.ps1"))
-    if (Test-Path -LiteralPath $liteCore -PathType Leaf) {
-        return (Invoke-Native "pwsh" (@("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $liteCore) + $Arguments))
+    else {
+        $candidates = @(
+            (Join-Path $root "bin/$exeName"),
+            (Join-Path $root "target/release/$exeName"),
+            (Join-Path $root "target/debug/$exeName")
+        )
+        $rustCli = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+        if ($null -eq $rustCli) {
+            $command = Get-Command "code-intel" -CommandType Application -ErrorAction SilentlyContinue
+            if ($null -ne $command) { $rustCli = $command.Source }
+        }
     }
-    return (Invoke-Native "sentrux" $Arguments)
+    if ($null -eq $rustCli) { throw "Code Intel Rust CLI is missing; install the compiled release." }
+    return (Invoke-Native $rustCli (@("sentrux") + $Arguments))
 }
 
 function ConvertTo-NullableDouble {
@@ -241,22 +248,10 @@ function Parse-SentruxOutput {
 function Get-BaselineMetrics {
     param([string]$TargetPath)
 
-    # The lite gate keeps its baseline in .sentrux/cache/lite-baseline.json
-    # (see legacy/tools/sentrux-shim/sentrux-lite-core.ps1). `.sentrux/baseline.json`
-    # is the native engine's (nested code-intel-sentrux-baseline.v2+ schema on
-    # a different measurement scale) and is only accepted here in its
-    # pre-split flat `tool = "sentrux-lite"` form — backfilling native numbers
-    # into the lite-scale session compare would fabricate deltas.
-    $baselinePath = Join-Path (Join-Path (Join-Path $TargetPath ".sentrux") "cache") "lite-baseline.json"
-    $baseline = Read-JsonFileSafe $baselinePath
-    if ($null -eq $baseline) {
-        $legacyPath = Join-Path (Join-Path $TargetPath ".sentrux") "baseline.json"
-        $legacy = Read-JsonFileSafe $legacyPath
-        if ($null -ne $legacy -and "$(Get-JsonProperty $legacy 'tool')" -eq "sentrux-lite") {
-            $baselinePath = $legacyPath
-            $baseline = $legacy
-        }
-    }
+    $baselinePath = Join-Path (Join-Path (Join-Path $TargetPath ".sentrux") "cache") "native-session-baseline.json"
+    $document = Read-JsonFileSafe $baselinePath
+    if ($null -eq $document) { return $null }
+    $baseline = Get-JsonProperty $document "metrics"
     if ($null -eq $baseline) { return $null }
 
     return [ordered]@{
@@ -437,10 +432,8 @@ function Invoke-Gate {
         [switch]$Save
     )
 
-    $args = @("gate")
-    if ($Save) { $args += "--save" }
-    $args += $TargetPath
-    $native = Invoke-SentruxCli $args
+    $operation = if ($Save) { "session_save" } else { "session_gate" }
+    $native = Invoke-SentruxCli @($operation, $TargetPath)
     $metrics = Parse-SentruxOutput $native.output
     $baseline = Get-BaselineMetrics $TargetPath
 
@@ -598,15 +591,11 @@ function Invoke-SessionEndTool {
 
     if ($metricsObserved -eq 0) {
         $pass = $false
-        # A missing lite baseline also yields zero observed metrics (the gate
-        # exits before printing any); name that case instead of calling it
-        # unparseable so the transition from native-owned baseline.json to
-        # .sentrux/cache/lite-baseline.json reads as "run session_start".
-        $summary = if ("$($gate["raw_output"])" -match "Sentrux baseline missing") {
-            "lite baseline missing - run session_start to save one"
+        $summary = if ("$($gate["raw_output"])" -match "baseline engine mismatch|baseline policy mismatch|Sentrux baseline missing") {
+            "$($gate["raw_output"])"
         }
         else {
-            "sentrux output unparseable - gate cannot evaluate"
+            "sentrux output unparseable - gate cannot evaluate: $($gate["raw_output"])"
         }
     }
     else {
@@ -660,7 +649,7 @@ function Invoke-CheckRulesTool {
         }
     }
 
-    $native = Invoke-SentruxCli @("check", $TargetPath)
+    $native = Invoke-SentruxCli @("check_rules", $TargetPath)
     $metrics = Parse-SentruxOutput $native.output
     return [ordered]@{
         tool = "check_rules"

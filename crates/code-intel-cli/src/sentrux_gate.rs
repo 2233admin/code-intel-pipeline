@@ -41,7 +41,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 pub(crate) const ENGINE_ID: &str = "sentrux-native";
-pub(crate) const ENGINE_VERSION: &str = "3.0.0";
+pub(crate) const ENGINE_VERSION: &str = "3.1.0";
 // The schema tracks metric *definitions*, not just field names, because every
 // gate comparison is a comparison against numbers a previous engine produced.
 //   v3 (2.1.0): `coupling_score` changed denominator.
@@ -66,12 +66,21 @@ pub(crate) const ENGINE_VERSION: &str = "3.0.0";
 //               bump, not just an engine-version bump, and a v5 baseline
 //               must fail closed via `baseline_engine_mismatch` rather than
 //               produce a fabricated before/after delta. See DR-0011.
+//   v7 (3.1.0): coupling honors the constraints ignore_test_dependencies
+//               setting. Test files remain in the quality graph and all
+//               non-coupling metrics, but can be removed from the production
+//               coupling numerator and denominator. The policy and classifier
+//               version are recorded in every baseline/evidence document so a
+//               policy change fails closed rather than comparing unlike numbers.
 // These moves make an older baseline describe a tree this engine cannot
 // reproduce. Comparing anyway is worse than refusing: v2 would have reported
 // a fabricated coupling regression, and v3 would silently pocket a quality
 // gain instead of re-anchoring the ratchet. The mismatch turns either case
-// into `baseline_engine_mismatch` with the re-baseline instruction.
-pub(crate) const BASELINE_SCHEMA: &str = "code-intel-sentrux-baseline.v6";
+// into baseline_engine_mismatch with the re-baseline instruction.
+pub(crate) const BASELINE_SCHEMA: &str = "code-intel-sentrux-baseline.v7";
+const COUPLING_POLICY_VERSION: &str = "production-coupling.v1";
+const TEST_PATH_CLASSIFIER_VERSION: &str = "repo-test-paths.v1";
+const QUALITY_GRAPH_SCOPE: &str = "all_included_files";
 
 // Metric keys the gate comparisons in `run_gate` read from the baseline.
 // `number()` defaults an absent key to 0.0, so a baseline missing any of
@@ -151,14 +160,17 @@ struct FileMetrics {
     /// `is_import_line` reads. False files are excluded from both sides of
     /// the coupling ratio.
     import_modeled: bool,
+    test_file: bool,
 }
 
 struct ProjectMetrics {
     files: Vec<FileMetrics>,
     file_count: i64,
     import_modeled_file_count: i64,
+    coupling_file_count: i64,
     function_count: i64,
     total_import_edges: i64,
+    coupling_import_edges: i64,
     call_edges: i64,
     god_file_count: i64,
     complex_fn_count: i64,
@@ -170,6 +182,8 @@ struct ProjectMetrics {
     quality_signal: i64,
     quality_signal_detail: sentrux_quality_signal::QualitySignal,
     quality_signal_raw: sentrux_quality_signal::RootCauseRaw,
+    test_file_count: i64,
+    ignore_test_dependencies: bool,
     cycle_count: i64,
     cycles: Vec<Vec<String>>,
 }
@@ -242,9 +256,36 @@ pub(crate) fn expect_check_ran(repo: &Path) -> EngineRun {
     }
 }
 
+fn baseline_save_instruction(repo: &Path, baseline_path: &Path) -> String {
+    let operation = (baseline_path.file_name().and_then(|name| name.to_str())
+        == Some("native-session-baseline.json"))
+    .then_some("session_save")
+    .unwrap_or("save_baseline");
+    format!(
+        "code-intel sentrux --operation {operation} --repo {}",
+        repo.display()
+    )
+}
+
 pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
+    run_gate_at(repo, save, &repo.join(".sentrux").join("baseline.json"))
+}
+
+/// Session gates use an isolated native baseline. Legacy forwarding and the
+/// session-save operation must never overwrite the canonical project baseline.
+pub(crate) fn run_session_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
+    run_gate_at(
+        repo,
+        save,
+        &repo
+            .join(".sentrux")
+            .join("cache")
+            .join("native-session-baseline.json"),
+    )
+}
+
+fn run_gate_at(repo: &Path, save: bool, baseline_path: &Path) -> Result<EngineRun, String> {
     let (metrics, _file_gate) = measure_project(repo)?;
-    let baseline_path = repo.join(".sentrux").join("baseline.json");
     if save {
         let baseline = baseline_document(repo, &metrics)?;
         let directory = baseline_path
@@ -273,8 +314,8 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
         return Ok(EngineRun {
             success: false,
             stdout: format!(
-                "{message}\nRun code-intel sentrux --operation save_baseline --repo {}\n",
-                repo.display()
+                "{message}\nRun {}\n",
+                baseline_save_instruction(repo, baseline_path)
             ),
             violations: vec![Violation {
                 rule: "baseline_missing".into(),
@@ -290,23 +331,65 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
         .map_err(|error| format!("parse {}: {error}", baseline_path.display()))?;
     let mut out = String::new();
     resolve_header(&mut out, &metrics);
+    let coupling_policy_matches = baseline["couplingPolicy"]["version"] == COUPLING_POLICY_VERSION
+        && baseline["couplingPolicy"]["test_path_classifier"] == TEST_PATH_CLASSIFIER_VERSION
+        && baseline["couplingPolicy"]["quality_graph_scope"] == QUALITY_GRAPH_SCOPE
+        && baseline["couplingPolicy"]["ignore_test_dependencies"].as_bool()
+            == Some(metrics.ignore_test_dependencies);
     if baseline["schema"] != BASELINE_SCHEMA
         || baseline["engine"]["id"] != ENGINE_ID
+        || baseline["engine"]["version"] != ENGINE_VERSION
         || baseline["metrics"].as_object().is_none()
         || GATED_METRIC_KEYS
             .iter()
             .any(|key| baseline["metrics"][*key].as_f64().is_none())
         || baseline["godFiles"].as_array().is_none()
+        || !coupling_policy_matches
     {
+        let mut mismatch_fields = Vec::new();
+        if baseline["schema"] != BASELINE_SCHEMA {
+            mismatch_fields.push("schema");
+        }
+        if baseline["engine"]["id"] != ENGINE_ID {
+            mismatch_fields.push("engine.id");
+        }
+        if baseline["engine"]["version"] != ENGINE_VERSION {
+            mismatch_fields.push("engine.version");
+        }
+        if baseline["metrics"].as_object().is_none() {
+            mismatch_fields.push("metrics");
+        } else {
+            mismatch_fields.extend(
+                GATED_METRIC_KEYS
+                    .iter()
+                    .filter(|key| baseline["metrics"][**key].as_f64().is_none())
+                    .copied(),
+            );
+        }
+        if baseline["godFiles"].as_array().is_none() {
+            mismatch_fields.push("godFiles");
+        }
+        if !coupling_policy_matches {
+            mismatch_fields.push("couplingPolicy");
+        }
+        let mismatch_fields = mismatch_fields.join(", ");
         let message = format!(
-            "baseline engine mismatch: {} requires schema {BASELINE_SCHEMA} with engine {ENGINE_ID}, numeric {} metrics, and a godFiles identity list; found schema {} engine {}",
-            baseline_path.display(),
-            GATED_METRIC_KEYS.join("/"),
+            "baseline engine mismatch at {} (missing or invalid fields: {}): expected schema {}, engine {}@{}, coupling policy {} ignore_test_dependencies={}; observed schema {}, engine {}@{}, coupling policy {} ignore_test_dependencies={}; preserve this baseline and re-baseline with {}",
+             baseline_path.display(),
+            mismatch_fields,
+            BASELINE_SCHEMA,
+            ENGINE_ID,
+            ENGINE_VERSION,
+            COUPLING_POLICY_VERSION,
+            metrics.ignore_test_dependencies,
             baseline["schema"].as_str().unwrap_or("unknown"),
             baseline["engine"]["id"].as_str().unwrap_or("unknown"),
+            baseline["engine"]["version"].as_str().unwrap_or("unknown"),
+            baseline["couplingPolicy"]["version"].as_str().unwrap_or("missing"),
+            baseline["couplingPolicy"]["ignore_test_dependencies"].as_bool().map(|v| v.to_string()).unwrap_or_else(|| "missing".into()),
+            baseline_save_instruction(repo, baseline_path),
         );
         out.push_str(&format!("{message}\n"));
-        out.push_str("Re-baseline intentionally with: code-intel sentrux --operation save_baseline --repo <repo>\n");
         return Ok(EngineRun {
             success: false,
             stdout: out,
@@ -533,6 +616,15 @@ pub(crate) fn scan_json(repo: &Path) -> Result<Value, String> {
     Ok(value)
 }
 
+fn coupling_policy_json(metrics: &ProjectMetrics) -> Value {
+    json!({
+        "version": COUPLING_POLICY_VERSION,
+        "ignore_test_dependencies": metrics.ignore_test_dependencies,
+        "test_path_classifier": TEST_PATH_CLASSIFIER_VERSION,
+        "quality_graph_scope": QUALITY_GRAPH_SCOPE,
+    })
+}
+
 fn baseline_document(repo: &Path, metrics: &ProjectMetrics) -> Result<Value, String> {
     let saved_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -544,6 +636,7 @@ fn baseline_document(repo: &Path, metrics: &ProjectMetrics) -> Result<Value, Str
         "sourceCommit": git_head(repo),
         "savedAt": saved_at,
         "scope": ".",
+        "couplingPolicy": coupling_policy_json(metrics),
         "metrics": {
             "quality_signal": metrics.quality_signal,
             "coupling_score": metrics.coupling_score,
@@ -556,6 +649,9 @@ fn baseline_document(repo: &Path, metrics: &ProjectMetrics) -> Result<Value, Str
             "cross_module_edges": metrics.total_import_edges,
             "files": metrics.file_count,
             "import_modeled_files": metrics.import_modeled_file_count,
+            "coupling_files": metrics.coupling_file_count,
+            "coupling_import_edges": metrics.coupling_import_edges,
+            "test_files": metrics.test_file_count,
             "functions": metrics.function_count,
         },
         "godFiles": god_file_entries(metrics),
@@ -579,6 +675,7 @@ fn quality_signal_json(metrics: &ProjectMetrics) -> Value {
         "provider_version": sentrux_quality_signal::PROVIDER_VERSION,
         "score": detail.quality_signal,
         "bottleneck": detail.bottleneck,
+        "dependency_graph_scope": QUALITY_GRAPH_SCOPE,
         // Worst of the five root causes' own completeness. Only
         // `redundancy` is ever less than "full" today (see
         // `sentrux_quality_signal.rs` module doc: dead-function detection
@@ -613,6 +710,10 @@ fn metrics_json(repo: &Path, metrics: &ProjectMetrics) -> Value {
         "quality_signal_detail": quality_signal_json(metrics),
         "files": metrics.file_count,
         "import_modeled_files": metrics.import_modeled_file_count,
+        "coupling_files": metrics.coupling_file_count,
+        "coupling_import_edges": metrics.coupling_import_edges,
+        "test_files": metrics.test_file_count,
+        "coupling_policy": coupling_policy_json(metrics),
         "functions": metrics.function_count,
         "coupling_score": metrics.coupling_score,
         "cycle_count": metrics.cycle_count,
@@ -659,8 +760,11 @@ fn resolve_header(out: &mut String, metrics: &ProjectMetrics) {
     // Coupling divides by this count, not by the file count above, so print
     // the basis rather than leaving the reader to derive it from the ratio.
     out.push_str(&format!(
-        "[coupling_basis] {} of {} files in import-modelled languages\n",
-        metrics.import_modeled_file_count, metrics.file_count
+        "[coupling_basis] {} import edges over {} of {} modelled files; test dependencies ignored: {}\n",
+        metrics.coupling_import_edges,
+        metrics.coupling_file_count,
+        metrics.import_modeled_file_count,
+        metrics.ignore_test_dependencies
     ));
 }
 
@@ -848,7 +952,9 @@ fn top_import_files(metrics: &ProjectMetrics) -> Vec<String> {
     let mut files = metrics
         .files
         .iter()
-        .filter(|file| file.import_modeled)
+        .filter(|file| {
+            file.import_modeled && (!metrics.ignore_test_dependencies || !file.test_file)
+        })
         .map(|file| (file.imports, file.path.clone()))
         .collect::<Vec<_>>();
     files.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
@@ -863,10 +969,21 @@ fn cycle_targets(metrics: &ProjectMetrics) -> Vec<String> {
     targets
 }
 
+fn coupling_policy(repo: &Path) -> Result<bool, String> {
+    let rules_path = repo.join(".sentrux").join("rules.toml");
+    if !rules_path.is_file() {
+        return Ok(false);
+    }
+    let rules = fs::read_to_string(&rules_path)
+        .map_err(|error| format!("read {}: {error}", rules_path.display()))?;
+    Ok(constraint_boolean_rule(&rules, "ignore_test_dependencies"))
+}
+
 fn measure_project(repo: &Path) -> Result<(ProjectMetrics, file_gate::GateReport), String> {
     let repo = repo
         .canonicalize()
         .map_err(|error| format!("resolve repository path: {error}"))?;
+    let ignore_test_dependencies = coupling_policy(&repo)?;
     let config = file_gate::GateConfig::built_in();
     let report = file_gate::evaluate(&repo, &config)?;
     let paths = report.included.clone();
@@ -898,12 +1015,19 @@ fn measure_project(repo: &Path) -> Result<(ProjectMetrics, file_gate::GateReport
     }
     let file_count = files.len() as i64;
     let import_modeled_file_count = files.iter().filter(|file| file.import_modeled).count() as i64;
+    let test_file_count = files.iter().filter(|file| file.test_file).count() as i64;
+    let coupling_files = files
+        .iter()
+        .filter(|file| file.import_modeled && (!ignore_test_dependencies || !file.test_file))
+        .collect::<Vec<_>>();
+    let coupling_file_count = coupling_files.len() as i64;
     let function_count = files.iter().map(|file| file.functions).sum();
     let total_import_edges: i64 = files
         .iter()
         .filter(|file| file.import_modeled)
         .map(|file| file.imports)
         .sum();
+    let coupling_import_edges: i64 = coupling_files.iter().map(|file| file.imports).sum();
     let call_edges = files.iter().map(|file| file.calls).sum();
     let god_file_count = files.iter().filter(|file| file.god_file).count() as i64;
     let complex_fn_count = files.iter().filter(|file| file.complex_file).count() as i64;
@@ -912,8 +1036,8 @@ fn measure_project(repo: &Path) -> Result<(ProjectMetrics, file_gate::GateReport
         .map(|file| file.max_complexity)
         .max()
         .unwrap_or(0);
-    let coupling_score = if import_modeled_file_count > 0 {
-        round2(total_import_edges as f64 / import_modeled_file_count as f64 * 10.0)
+    let coupling_score = if coupling_file_count > 0 {
+        round2(coupling_import_edges as f64 / coupling_file_count as f64 * 10.0)
     } else {
         0.0
     };
@@ -982,8 +1106,10 @@ fn measure_project(repo: &Path) -> Result<(ProjectMetrics, file_gate::GateReport
         files,
         file_count,
         import_modeled_file_count,
+        coupling_file_count,
         function_count,
         total_import_edges,
+        coupling_import_edges,
         call_edges,
         god_file_count,
         complex_fn_count,
@@ -992,6 +1118,8 @@ fn measure_project(repo: &Path) -> Result<(ProjectMetrics, file_gate::GateReport
         quality_signal,
         quality_signal_detail,
         quality_signal_raw,
+        test_file_count,
+        ignore_test_dependencies,
     };
     Ok((metrics, report))
 }
@@ -1033,7 +1161,23 @@ fn measure_file(relative: &str, content: &str) -> FileMetrics {
             || (functions > GOD_FILE_FN_LIMIT && loc > GOD_FILE_FN_LOC_LIMIT),
         complex_file: max_complexity > 25,
         import_modeled: imports_modeled(relative),
+        test_file: is_test_file(relative),
     }
+}
+
+fn is_test_file(relative: &str) -> bool {
+    let lower = relative.to_ascii_lowercase();
+    let leaf = lower.rsplit('/').next().unwrap_or(&lower);
+    let stem = leaf.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(leaf);
+    lower
+        .split('/')
+        .any(|part| matches!(part, "test" | "tests" | "__tests__"))
+        || matches!(stem, "test" | "tests")
+        || leaf.starts_with("test_")
+        || stem.ends_with("_test")
+        || stem.ends_with("_tests")
+        || leaf.contains(".test.")
+        || leaf.contains(".spec.")
 }
 
 fn imports_modeled(relative: &str) -> bool {
@@ -1459,6 +1603,27 @@ fn boolean_rule(rules: &str, name: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn constraint_boolean_rule(rules: &str, name: &str) -> bool {
+    let mut in_constraints = false;
+    for line in rules.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_constraints = trimmed == "[constraints]";
+            continue;
+        }
+        if !in_constraints || trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix(name) {
+            let rest = rest.trim_start();
+            if let Some(value) = rest.strip_prefix('=') {
+                return value.split('#').next().unwrap_or("").trim() == "true";
+            }
+        }
+    }
+    false
+}
+
 fn string_rule(rules: &str, name: &str) -> Option<String> {
     let value = rule_value(rules, name)?;
     Some(value.trim().trim_matches('"').to_string())
@@ -1755,7 +1920,7 @@ mod tests {
         fs::write(
             root.join(".sentrux/baseline.json"),
             format!(
-                "{{\"schema\":\"{BASELINE_SCHEMA}\",\"engine\":{{\"id\":\"{ENGINE_ID}\",\"version\":\"{ENGINE_VERSION}\"}},\"metrics\":{{\"coupling_score\":0.0,\"cycle_count\":0,\"god_file_count\":0}}}}"
+                "{{\"schema\":\"{BASELINE_SCHEMA}\",\"engine\":{{\"id\":\"{ENGINE_ID}\",\"version\":\"{ENGINE_VERSION}\"}},\"couplingPolicy\":{{\"version\":\"{COUPLING_POLICY_VERSION}\",\"ignore_test_dependencies\":false,\"test_path_classifier\":\"{TEST_PATH_CLASSIFIER_VERSION}\",\"quality_graph_scope\":\"{QUALITY_GRAPH_SCOPE}\"}},\"godFiles\":[],\"metrics\":{{\"coupling_score\":0.0,\"cycle_count\":0,\"god_file_count\":0}}}}"
             ),
         )
         .expect("write baseline");
@@ -2022,16 +2187,16 @@ mod tests {
 
     #[test]
     fn gate_rejects_a_baseline_without_god_file_identities() {
-        // A v5-schema baseline that carries counts but no godFiles list can
-        // only support the count ratchet #165 retired — refusing it keeps the
-        // identity comparison from silently degrading to the leaky one.
+        // A current-schema baseline that carries counts but no godFiles list
+        // cannot support the identity comparison without silently degrading
+        // to the leaky count-only ratchet that #165 retired.
         let root = fixture_root("sentrux-native-god-identities");
         fs::create_dir_all(root.join(".sentrux")).expect("create fixture");
         fs::write(root.join("lib.rs"), "pub fn fixture() {}\n").expect("write fixture source");
         fs::write(
             root.join(".sentrux/baseline.json"),
             format!(
-                "{{\"schema\":\"{BASELINE_SCHEMA}\",\"engine\":{{\"id\":\"{ENGINE_ID}\",\"version\":\"{ENGINE_VERSION}\"}},\"metrics\":{{\"quality_signal\":1.0,\"coupling_score\":0.0,\"cycle_count\":0,\"god_file_count\":0}}}}"
+                "{{\"schema\":\"{BASELINE_SCHEMA}\",\"engine\":{{\"id\":\"{ENGINE_ID}\",\"version\":\"{ENGINE_VERSION}\"}},\"couplingPolicy\":{{\"version\":\"{COUPLING_POLICY_VERSION}\",\"ignore_test_dependencies\":false,\"test_path_classifier\":\"{TEST_PATH_CLASSIFIER_VERSION}\",\"quality_graph_scope\":\"{QUALITY_GRAPH_SCOPE}\"}},\"metrics\":{{\"quality_signal\":1.0,\"coupling_score\":0.0,\"cycle_count\":0,\"god_file_count\":0}}}}"
             ),
         )
         .expect("write baseline");

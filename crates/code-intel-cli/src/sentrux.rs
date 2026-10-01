@@ -80,6 +80,11 @@ pub fn run(options: &Options<'_>) -> Result<()> {
         "check_rules" => finish(sentrux_gate::run_check(&repo)?, "check"),
         "gate" => finish(sentrux_gate::run_gate(&repo, false)?, "gate"),
         "gate_save" | "save_baseline" => finish(sentrux_gate::run_gate(&repo, true)?, "gate"),
+        "session_save" => finish(sentrux_gate::run_session_gate(&repo, true)?, "session_save"),
+        "session_gate" => finish(
+            sentrux_gate::run_session_gate(&repo, false)?,
+            "session_gate",
+        ),
         other => Err(format!("sentrux operation not yet implemented in Rust: {other}").into()),
     }
 }
