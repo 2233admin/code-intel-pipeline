@@ -31,7 +31,6 @@ Enforcement: 谁在什么时机强制它（gate / 测试 / 评审规约），没
 | [DR-0009](DR-0009-sentrux-scan-stub-field-honesty.md) | sentrux.scan/rescan 的伪造 stub 字段必须诚实化（null+status，非假 0），scan/rescan 提升为 authoritative_automatic | active |
 | [DR-0010](DR-0010-sentrux-dsm-coupling-and-promotion.md) | sentrux.dsm 耦合矩阵结构性为空是真引擎缺陷（细粒度分桶+PowerShell 解析修复），note 措辞诚实化，dsm 提升为 authoritative_automatic | active |
 | [DR-0011](DR-0011-sentrux-quality-signal-kernel.md) | Quality Signal 内核：跟随固定源码的 max(0.01) 下限而非文档页公式；equality 用上游自身 LOC 回退；redundancy 只做 duplicate 半边，dead 诚实缺失而非伪造 0；baseline schema v5→v6 | active |
-| [DR-0012](DR-0012-huashu-flash-measurement-ratchet.md) | huashu-flash 测量棘轮：失败尝试不进分位，5% 容差写进上限记录，只收越低越好，配对必须交替 | active |
 | [DR-0013](DR-0013-affected-host-compilation-isolation.md) | 本仓库 checkout 所在 Windows 主机在 #403 未结期间禁止编译/测试，验证走别的机或 CI | active |
 | [DR-0014](DR-0014-issue-convergence-verdict-rule.md) | 收敛 = 每条 open issue 都有 do/freeze/close 判决，不等于把 backlog 做完 | active |
 
