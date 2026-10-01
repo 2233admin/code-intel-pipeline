@@ -16,7 +16,7 @@ const AST_GREP_SECURITY_DIGEST: &str =
 const REPO_SNAPSHOT_DIGEST: &str =
     "4f42b080fd19e501a6315ee204add188d69625bedd15c566fea48bb1f3e78764";
 const CODENEXUS_TOOLCHAIN_DIGESTS: [&str; 5] = [
-    "4a2c8608ed50869e6b3318f192e3ffcf0aa15fef19e70d3e401b8c67f20f3b8b",
+    "989180a362946747bd9912a9655d7f919f0a82d4de893d402d8e5ece7f93d5cc",
     "645675312135932dfce365a8dfc14e214cec78ee733f248606547b3eaa56edc8",
     "52644a812174988ede91d98ddfec63c6a91f8478277d7bf74c73f106dd0f776b",
     "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26",
@@ -2181,8 +2181,8 @@ fn codenexus_builtin_compat_dispatches_through_provider_codenexus_adapt() {
     let root = temp_dir("codenexus");
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
+    fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(repo.join("main.rs"), "fn main() { helper(); }\n").unwrap();
-
     let mut snapshot_cmd = common::cli();
     snapshot_cmd
         .args(["snapshot", "identity", "--repo"])
@@ -2249,7 +2249,7 @@ fn codenexus_builtin_compat_dispatches_through_provider_codenexus_adapt() {
             "toolchainDigests": CODENEXUS_TOOLCHAIN_DIGESTS
         },
         "snapshot": snapshot,
-        "options": {"repoPath": repo},
+        "options": {"repoPath": repo.join("src/..")},
         "inputs": [{
             "schema": "code-intel-artifact-ref.v1",
             "artifactSchema": snapshot_artifact["artifactSchema"],
@@ -2317,6 +2317,10 @@ fn codenexus_builtin_compat_dispatches_through_provider_codenexus_adapt() {
     assert_eq!(provider_data["summary"]["recentCommits"], 0);
     assert_eq!(provider_data["sources"], json!({"dsm": "", "hotspots": ""}));
     assert_eq!(provider_data["output"], "");
+    let serialized_provider_data = serde_json::to_string(provider_data).unwrap();
+    assert!(!serialized_provider_data.contains("src/../"));
+    assert!(!serialized_provider_data.contains("//?/"));
+    assert!(!serialized_provider_data.contains("\\?\\"));
 
     let _ = fs::remove_dir_all(root);
 }

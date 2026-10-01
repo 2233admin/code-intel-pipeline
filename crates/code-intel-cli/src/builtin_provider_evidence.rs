@@ -295,8 +295,10 @@ pub(super) fn codenexus_admission(
     out: &Path,
 ) -> Result<AdapterOutput, AdapterError> {
     let repo = provider_repo(request, inputs, "provider.codenexus-adapt")?;
-    let lease =
-        snapshot::begin_consumption(repo, &request["snapshot"]).map_err(AdapterError::Contract)?;
+    let normalized_repo = codenexus_lite::normalized_canonical_path(repo)
+        .map_err(|error| AdapterError::Io(format!("canonicalize CodeNexus repository: {error}")))?;
+    let lease = snapshot::begin_consumption(&normalized_repo, &request["snapshot"])
+        .map_err(AdapterError::Contract)?;
     let collected_at = now()?;
     // Issue #275: the CodeNexus-lite context is now generated in-process by
     // the Rust implementation (`codenexus_lite`), replacing the PowerShell
@@ -309,8 +311,8 @@ pub(super) fn codenexus_admission(
     let scratch = scratch_guard.path();
     let context_path = scratch.join("codenexus-context.json");
     let document = codenexus_lite::build_active_context(
-        repo,
-        repo,
+        &normalized_repo,
+        &normalized_repo,
         Path::new(""),
         codenexus_lite::iso_from_unix_seconds(collected_at as i64),
         8,
@@ -320,7 +322,9 @@ pub(super) fn codenexus_admission(
         .map_err(|error| AdapterError::Internal(format!("serialize CodeNexus context: {error}")))?;
     fs::write(&context_path, &document_bytes)
         .map_err(|error| AdapterError::Io(format!("write CodeNexus context document: {error}")))?;
-    lease.verify_after(repo).map_err(AdapterError::Contract)?;
+    lease
+        .verify_after(&normalized_repo)
+        .map_err(AdapterError::Contract)?;
     let observed_at = now()?.max(collected_at);
     let identity = snapshot_identity(request)?;
     let (status, provider_data): (&str, Value) =
