@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`snapshot identity` 的 explicit_overlay / 非 Git 路径峰值内存随整棵树内容线性放大（fixes #411，refs #403）**：`digest_worktree`/`digest_unversioned` 把每个 scoped 文件的完整字节留在 `records` 里，`hash_records` 再拼一份 `canonical`，一次性 `sha256_hex` 又 `to_vec` 一份并在 padding 时扩容。`content_contract.rs` 新增流式 `Sha256`（`update`/`update_framed`/`finish`），`sha256_hex` 改为其一次性包装；两处 digest 逐文件按同样的长度帧与顺序喂入 hasher，读完即丢。快照 identity 字节不变（新增固定 fixture 的 literal digest 钉住测试，并在本仓 b17d401 上前后二进制输出逐字节相同）。实测本仓（1070 文件，14.4 MiB）peak private 75.9→5.4 MiB；外加 256×1 MiB 未跟踪文件时 1563.3→5.4 MiB。#403 的宿主崩溃因果仍未定。
+- PR #414 合入同期有界 JSON 扫描修复时，将 `content_contract.rs` 的既有测试原样移至 `content_contract_tests.rs`，沿用外置测试模块约定，避免合并后触发 God file 棘轮；生产实现、测试名称和断言、结构阈值及 baseline 均不变（#411）。
 - `verify` 和 `repin` 的 Git 测试夹具显式隔离全局忽略文件，避免 `.sentrux/` 或 `*.bin` 被开发机配置排除后导致空提交或遗漏测试文件（#393）。
 - `sentrux` 的模块归属计算借用路径切片，不再为每条边创建临时路径数组和模块字符串；模块度聚合保留原有遍历顺序与评分公式（#393）。
 - `sentrux gate` 在全新 checkout 上因缺基线硬崩溃：missing-baseline 前置检查原本查的是 native baseline 路径，实际 `sentrux gate` 读的是 lite 引擎的 `.sentrux/cache/lite-baseline.json`，现已对齐，缺失时正确落回 `manual_required`（fixes #322）。
