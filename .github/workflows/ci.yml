@@ -38,6 +38,12 @@ jobs:
           rustup toolchain install
           rustup show active-toolchain
 
+      # #404: dependency build artifacts + cargo registry. Must follow Setup
+      # Rust: the cache key includes the active rustc. Only dependencies are
+      # cached; the workspace crate is always rebuilt.
+      - name: Cache cargo registry and dependency builds
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
       - name: Install ripgrep
         shell: pwsh
         run: choco install ripgrep --version 14.1.0 -y --no-progress
@@ -384,6 +390,12 @@ jobs:
           rustup toolchain install
           rustup show active-toolchain
 
+      # #404: see the matching step in windows-build-test-package. The cache
+      # key includes the job id and runner OS/arch, so each matrix leg keeps
+      # its own entry.
+      - name: Cache cargo registry and dependency builds
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
       - name: Install ripgrep
         shell: pwsh
         run: |
@@ -440,7 +452,13 @@ jobs:
         shell: pwsh
         run: cargo check --locked
 
+      # #404: on Windows this exact command already runs in
+      # windows-build-test-package (same runner image, same toolchain, same
+      # `-p code-intel --locked` test set), so the matrix leg skips it instead
+      # of executing the full suite a second time per trigger. The packaged
+      # install_smoke tests below still compile and run here on every OS.
       - name: Rust tests and core cross-contract gate
+        if: runner.os != 'Windows'
         shell: pwsh
         run: cargo test -p code-intel --locked
 

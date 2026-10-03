@@ -24,8 +24,21 @@ pub(crate) const MAX_JSON_BYTES: usize = 24 * 1024 * 1024;
 pub(crate) const MAX_JSON_DEPTH: usize = 128;
 
 pub(crate) fn reject_duplicate_json_keys(text: &str) -> Result<(), String> {
-    if text.len() > MAX_JSON_BYTES {
-        return Err(format!("JSON input exceeds {MAX_JSON_BYTES} bytes"));
+    reject_duplicate_json_keys_within(text, MAX_JSON_BYTES)
+}
+
+/// Same duplicate-key/size/depth scan as [`reject_duplicate_json_keys`], but
+/// bounded by an explicit `max_bytes` ceiling instead of the fixed
+/// [`MAX_JSON_BYTES`] default. Callers whose Artifact Ref contract already
+/// declares a larger `max_bytes` (enforced upstream by
+/// `stable_artifact::read_beneath`) must pass that same ceiling here so this
+/// scanner is not a smaller, silent second limit underneath it.
+pub(crate) fn reject_duplicate_json_keys_within(
+    text: &str,
+    max_bytes: usize,
+) -> Result<(), String> {
+    if text.len() > max_bytes {
+        return Err(format!("JSON input exceeds {max_bytes} bytes"));
     }
     JsonKeyScanner {
         bytes: text.as_bytes(),
@@ -363,7 +376,26 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::is_run_identity;
+    use super::{is_run_identity, reject_duplicate_json_keys_within};
+
+    #[test]
+    fn duplicate_key_scanner_within_honors_explicit_ceiling_over_default() {
+        // A payload above the default MAX_JSON_BYTES but within an
+        // explicit, larger ceiling must be accepted -- this is the
+        // parametrization issue #123 needed: artifact contracts whose
+        // declared max_bytes exceeds the default must not be reclamped by
+        // this shared scanner's own fixed limit. Sized from the live
+        // default so the test keeps discriminating if that default moves.
+        let padded = format!(
+            r#"{{"key":"{}"}}"#,
+            "a".repeat(super::MAX_JSON_BYTES + 1024 * 1024)
+        );
+        assert!(padded.len() > super::MAX_JSON_BYTES);
+        assert!(reject_duplicate_json_keys_within(&padded, 2 * super::MAX_JSON_BYTES).is_ok());
+        // The same payload still fails against a ceiling it exceeds.
+        let err = reject_duplicate_json_keys_within(&padded, super::MAX_JSON_BYTES).unwrap_err();
+        assert!(err.contains("exceeds"));
+    }
 
     #[test]
     fn is_run_identity_requires_dag_v1_prefix() {

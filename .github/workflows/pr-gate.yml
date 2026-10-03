@@ -18,11 +18,10 @@ name: code-intel-pr-gate
 # inflated percentile as a defect (see the sample-exclusion comment there);
 # a moving denominator is the same defect from another source.
 #
-# Toolchain/cache/action choices are mirrored from ci.yml on purpose: ci.yml
-# has no dependency-cache action (just `rustup toolchain install` reading
-# rust-toolchain.toml on an uncached runner), so this workflow does not add
-# one either — introducing caching here would be a new third-party action
-# ci.yml itself does not use.
+# Toolchain/action choices are mirrored from ci.yml on purpose (`rustup
+# toolchain install` reading rust-toolchain.toml). ci.yml adopted the pinned
+# Swatinem/rust-cache in #404; this workflow does not use it yet, so its jobs
+# still build on an uncached runner.
 
 on:
   pull_request:
