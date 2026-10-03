@@ -5,8 +5,8 @@
 //! "reimplement" record this one follows the shape of.
 #[path = "../src/authority.rs"]
 mod authority;
-#[path = "../src/content_contract.rs"]
-mod content_contract;
+#[path = "../src/content_contract/sha256.rs"]
+mod content_sha256;
 #[path = "../src/internalization_record.rs"]
 mod internalization_record;
 
@@ -84,7 +84,7 @@ fn every_owned_rule_file_pin_matches_its_current_bytes() {
         let bytes = fs::read(root().join(path)).unwrap_or_else(|error| {
             panic!("owned modification {path} is unreadable: {error}");
         });
-        let actual = content_contract::sha256_hex(&bytes);
+        let actual = content_sha256::sha256_hex(&bytes);
         assert_eq!(
             actual, expected,
             "{path} pin is stale; rerun `code-intel repin --write`"

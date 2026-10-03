@@ -2,8 +2,8 @@
 //! #367): the aggregating gate that composes `lint hardcoded-paths`,
 //! `sentrux gate`, and `repin`'s check-only scan into one pass/fail verdict.
 mod common;
-#[path = "../src/content_contract.rs"]
-mod content_contract;
+#[path = "../src/content_contract/sha256.rs"]
+mod content_sha256;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -61,7 +61,7 @@ fn commit_all(repo: &Path, message: &str) {
 }
 
 fn sha256_of(path: &Path) -> String {
-    content_contract::sha256_hex(&fs::read(path).unwrap())
+    content_sha256::sha256_hex(&fs::read(path).unwrap())
 }
 
 /// A minimal clean fixture: one tracked source file, nothing that trips

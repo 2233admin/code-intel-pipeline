@@ -12,10 +12,13 @@ use crate::artifact_ref::{self, VerifiedArtifact};
 
 #[path = "content_contract.rs"]
 mod content_contract;
+#[path = "content_contract/sha256.rs"]
+mod content_sha256;
 pub(crate) use content_contract::{
     is_digest, is_run_identity, reject_duplicate_json_keys, reject_duplicate_json_keys_within,
-    require_exact_keys, sha256_hex, validate_artifact_ref_shape, Sha256, MAX_JSON_BYTES,
+    require_exact_keys, validate_artifact_ref_shape, MAX_JSON_BYTES,
 };
+pub(crate) use content_sha256::{sha256_hex, Sha256};
 
 const ZERO_DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 

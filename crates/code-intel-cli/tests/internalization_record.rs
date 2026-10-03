@@ -1,7 +1,7 @@
 #[path = "../src/authority.rs"]
 mod authority;
-#[path = "../src/content_contract.rs"]
-mod content_contract;
+#[path = "../src/content_contract/sha256.rs"]
+mod content_sha256;
 #[path = "../src/hardened_git.rs"]
 mod hardened_git;
 #[path = "../src/internalization_record.rs"]
@@ -734,19 +734,19 @@ fn repository_source_digest_uses_current_worktree_after_git_clean_filters() {
 
     assert_eq!(
         verifier.sha256("text.txt").unwrap(),
-        content_contract::sha256_hex(b"alpha\nbeta\n")
+        content_sha256::sha256_hex(b"alpha\nbeta\n")
     );
     assert_eq!(
         verifier.sha256("binary.bin").unwrap(),
-        content_contract::sha256_hex(b"\0alpha\r\nbeta\r\n")
+        content_sha256::sha256_hex(b"\0alpha\r\nbeta\r\n")
     );
     assert_eq!(
         verifier.sha256("ident.txt").unwrap(),
-        content_contract::sha256_hex(b"$Id$\n")
+        content_sha256::sha256_hex(b"$Id$\n")
     );
     assert_eq!(
         verifier.sha256("encoded.txt").unwrap(),
-        content_contract::sha256_hex(b"gamma\n")
+        content_sha256::sha256_hex(b"gamma\n")
     );
 
     // Updating a source pin is normally one unstaged edit containing both the
@@ -755,12 +755,12 @@ fn repository_source_digest_uses_current_worktree_after_git_clean_filters() {
     fs::write(fixture.path().join("text.txt"), b"repinned\r\n").unwrap();
     assert_eq!(
         verifier.sha256("text.txt").unwrap(),
-        content_contract::sha256_hex(b"repinned\n")
+        content_sha256::sha256_hex(b"repinned\n")
     );
     assert_eq!(fixture.git_storage_state(), git_storage_before);
 
     assert_eq!(
-        content_contract::sha256_hex(b"alpha\r\nbeta\r\n"),
+        content_sha256::sha256_hex(b"alpha\r\nbeta\r\n"),
         "98ab4d3aeab1e120560e942e2df6a0db1147bf94bafcf1590000ffb3c2b6fc80",
         "general artifact payload digests must remain byte-exact"
     );
@@ -1148,7 +1148,7 @@ impl WorktreeSourceVerifier {
                 String::from_utf8_lossy(&canonical.stderr)
             ));
         }
-        Ok(content_contract::sha256_hex(&canonical.stdout))
+        Ok(content_sha256::sha256_hex(&canonical.stdout))
     }
 
     fn reject_custom_filter(

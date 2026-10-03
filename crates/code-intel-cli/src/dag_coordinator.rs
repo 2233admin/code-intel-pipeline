@@ -10,7 +10,10 @@ use serde_json::{json, Value};
 // #[path] modules individually -- see the test-harness-module-wiring note.
 #[path = "content_contract.rs"]
 mod content_contract;
-use content_contract::{is_digest as valid_digest, sha256_hex};
+#[path = "content_contract/sha256.rs"]
+mod content_sha256;
+use content_contract::is_digest as valid_digest;
+use content_sha256::sha256_hex;
 
 pub const DAG_SCHEMA: &str = "code-intel-run-dag.v1";
 pub const RUN_STATE_SCHEMA: &str = "code-intel-run-state.v1";

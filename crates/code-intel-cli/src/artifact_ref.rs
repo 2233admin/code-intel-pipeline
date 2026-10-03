@@ -5,14 +5,17 @@ use serde_json::{json, Value};
 
 #[path = "content_contract.rs"]
 mod content_contract;
+#[path = "content_contract/sha256.rs"]
+mod content_sha256;
 #[path = "design_proposal_contract.rs"]
 pub(crate) mod design_proposal_contract;
 
 use crate::stable_artifact::{self, FileId, StableReadError};
 use content_contract::{
     is_digest as valid_digest, is_run_identity as valid_run_identity, reject_duplicate_json_keys,
-    reject_duplicate_json_keys_within, require_exact_keys, sha256_hex, validate_artifact_ref_shape,
+    reject_duplicate_json_keys_within, require_exact_keys, validate_artifact_ref_shape,
 };
+use content_sha256::sha256_hex;
 use design_proposal_contract::{
     validate_candidate_payload, validate_context_payload, validate_proposal_payload,
 };
