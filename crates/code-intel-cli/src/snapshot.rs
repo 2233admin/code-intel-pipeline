@@ -11,7 +11,7 @@ mod hardened_git;
 #[path = "tool_path.rs"]
 mod tool_path;
 
-use crate::capability::sha256_hex;
+use crate::capability::{sha256_hex, Sha256};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Policy {
@@ -1027,7 +1027,8 @@ where
     let mut paths = index.keys().cloned().collect::<BTreeSet<_>>();
     paths.extend(untracked_paths(repo, scopes)?);
     paths.extend(ignore_controls(repo, scopes)?);
-    let mut records = vec![b"code-intel-overlay-input.v1".to_vec()];
+    let mut hasher = Sha256::new();
+    hasher.update_framed(b"code-intel-overlay-input.v1");
     for relative in paths {
         let indexed = index.get(&relative);
         let mut mode = indexed
@@ -1071,12 +1072,7 @@ where
                     )))
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    let mut record = b"tombstone".to_vec();
-                    record.push(0);
-                    record.extend_from_slice(mode.as_bytes());
-                    record.push(0);
-                    record.extend_from_slice(relative.as_bytes());
-                    records.push(record);
+                    hasher.update_framed(format!("tombstone\0{mode}\0{relative}").as_bytes());
                     continue;
                 }
                 Err(error) => {
@@ -1086,17 +1082,13 @@ where
                 }
             }
         };
-        let mut record = kind.as_bytes().to_vec();
-        record.push(0);
-        record.extend_from_slice(mode.as_bytes());
-        record.push(0);
-        record.extend_from_slice(relative.as_bytes());
-        record.push(0);
-        record.extend_from_slice(&(content.len() as u64).to_be_bytes());
-        record.extend_from_slice(&content);
-        records.push(record);
+        update_content_record(
+            &mut hasher,
+            format!("{kind}\0{mode}\0{relative}\0").as_bytes(),
+            &content,
+        );
     }
-    Ok(hash_records(&records))
+    Ok(hasher.finish())
 }
 
 fn index_entries(
@@ -1387,7 +1379,8 @@ fn inventory_unversioned(repo: &Path, scopes: &[String]) -> Result<Vec<String>, 
 
 fn digest_unversioned(repo: &Path, scopes: &[String]) -> Result<String, SnapshotError> {
     let paths = inventory_unversioned(repo, scopes)?;
-    let mut records = vec![b"code-intel-unversioned-input.v1".to_vec()];
+    let mut hasher = Sha256::new();
+    hasher.update_framed(b"code-intel-unversioned-input.v1");
     for relative in paths {
         let path = repo.join(&relative);
         let metadata = fs::symlink_metadata(&path)
@@ -1412,15 +1405,13 @@ fn digest_unversioned(repo: &Path, scopes: &[String]) -> Result<String, Snapshot
         } else {
             continue;
         };
-        let mut record = kind.as_bytes().to_vec();
-        record.push(0);
-        record.extend_from_slice(relative.as_bytes());
-        record.push(0);
-        record.extend_from_slice(&(bytes.len() as u64).to_be_bytes());
-        record.extend_from_slice(&bytes);
-        records.push(record);
+        update_content_record(
+            &mut hasher,
+            format!("{kind}\0{relative}\0").as_bytes(),
+            &bytes,
+        );
     }
-    Ok(hash_records(&records))
+    Ok(hasher.finish())
 }
 
 fn stable_unversioned_snapshot(
@@ -1607,13 +1598,24 @@ fn trim_ascii(bytes: &[u8]) -> &[u8] {
     &bytes[start..end]
 }
 
+/// SHA-256 over each record framed as its big-endian `u64` length followed by
+/// its bytes. Streamed, so the framed concatenation is never materialized.
 fn hash_records(records: &[Vec<u8>]) -> String {
-    let mut canonical = Vec::new();
+    let mut hasher = Sha256::new();
     for record in records {
-        canonical.extend_from_slice(&(record.len() as u64).to_be_bytes());
-        canonical.extend_from_slice(record);
+        hasher.update_framed(record);
     }
-    sha256_hex(&canonical)
+    hasher.finish()
+}
+
+/// Absorb the record `header ++ u64be(content.len()) ++ content` with the
+/// same framing as `hash_records`, without first copying `content` into it.
+/// A worktree digest then holds one file at a time, not the whole tree.
+fn update_content_record(hasher: &mut Sha256, header: &[u8], content: &[u8]) {
+    hasher.update(&((header.len() + 8 + content.len()) as u64).to_be_bytes());
+    hasher.update(header);
+    hasher.update(&(content.len() as u64).to_be_bytes());
+    hasher.update(content);
 }
 
 #[cfg(test)]
@@ -1709,6 +1711,144 @@ mod tests {
             "unexpected stable overlay result: {result:?}"
         );
         fs::remove_dir_all(repo).unwrap();
+    }
+
+    /// Literal digests every snapshot consumer has already recorded. Any
+    /// change to record framing, ordering, or the hasher underneath shows up
+    /// here as a changed constant rather than as a silent identity drift.
+    #[test]
+    fn hash_records_framing_is_pinned() {
+        let records = vec![
+            Vec::new(),
+            b"code-intel-overlay-input.v1".to_vec(),
+            (0..=255u8).cycle().take(1000).collect::<Vec<_>>(),
+        ];
+        assert_eq!(
+            hash_records(&records),
+            "a85acf36acf1b70c32c3f6aa1945db78464dec769935cc6a44c24c567f2ccf22"
+        );
+        // No records at all is the empty message: SHA-256("").
+        assert_eq!(
+            hash_records(&[]),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    fn pinned_fixture_root(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("code-intel-snapshot-pin-{label}-{nonce}"));
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    fn write_pinned_files(root: &Path) {
+        fs::create_dir_all(root.join("src/nested")).unwrap();
+        fs::write(root.join("README.md"), "fixture\n").unwrap();
+        fs::write(root.join("src/a.txt"), "alpha\n").unwrap();
+        fs::write(root.join("src/gone.txt"), "deleted later\n").unwrap();
+        // Large enough to cross many SHA-256 blocks with a ragged tail.
+        let large = (0..5000u32)
+            .map(|i| (i * 7 % 251) as u8)
+            .collect::<Vec<_>>();
+        fs::write(root.join("src/nested/large.bin"), large).unwrap();
+    }
+
+    fn pinned_git(repo: &Path, args: &[&str]) {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", repo.join(".git/no-global-config"))
+            .env("GIT_AUTHOR_NAME", "Snapshot Pin")
+            .env("GIT_AUTHOR_EMAIL", "pin@example.invalid")
+            .env("GIT_AUTHOR_DATE", "2026-01-01T00:00:00Z")
+            .env("GIT_COMMITTER_NAME", "Snapshot Pin")
+            .env("GIT_COMMITTER_EMAIL", "pin@example.invalid")
+            .env("GIT_COMMITTER_DATE", "2026-01-01T00:00:00Z")
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?} failed");
+    }
+
+    #[test]
+    fn git_snapshot_identity_is_pinned() {
+        let repo = pinned_fixture_root("git");
+        pinned_git(&repo, &["init", "--quiet"]);
+        // Repository-local settings beat any host-global config that would
+        // otherwise rewrite blob content or hide untracked fixture files.
+        pinned_git(&repo, &["config", "core.autocrlf", "false"]);
+        pinned_git(&repo, &["config", "core.excludesFile", "no-such-excludes"]);
+        write_pinned_files(&repo);
+        pinned_git(&repo, &["add", "."]);
+        pinned_git(
+            &repo,
+            &[
+                "commit",
+                "--quiet",
+                "--no-verify",
+                "--no-gpg-sign",
+                "-m",
+                "pin",
+            ],
+        );
+        fs::write(repo.join("src/a.txt"), "alpha modified\n").unwrap();
+        fs::remove_file(repo.join("src/gone.txt")).unwrap();
+        fs::write(repo.join("src/untracked.txt"), "new\n").unwrap();
+        let scopes = [".".to_string()];
+
+        let head = build(&repo, Policy::HeadOnly, &scopes).unwrap();
+        let overlay = build(&repo, Policy::ExplicitOverlay, &scopes).unwrap();
+        let src = build(&repo, Policy::ExplicitOverlay, &["src".to_string()]).unwrap();
+        fs::remove_dir_all(&repo).unwrap();
+
+        assert_eq!(
+            head["snapshot"]["repoIdentity"],
+            "git-lineage-v1:b0d908f30d698eae0639d3d349c8b4ea6c2d5b52e4db3c96735f3805809eaf5a"
+        );
+        assert_eq!(
+            head["snapshot"]["inputDigest"],
+            "ce2655ecb44972fa66e51b780000012d1beb9eb8122aff9a4093a49d7f694d41"
+        );
+        assert_eq!(
+            head["snapshot"]["identity"],
+            "e80b9c54876d7d1cedbfb2cacafad34690004026916c50c8743e824e70c68557"
+        );
+        assert_eq!(
+            overlay["snapshot"]["inputDigest"],
+            "e3756db6ce05425ee390ac7b656fc9c572c5f1c88d8cec5123c7fe18bb9bbe68"
+        );
+        assert_eq!(
+            overlay["snapshot"]["identity"],
+            "22c34f6ee5770c118ae177fcdebc8274096cb50d2dc171ca814c0de49f1034cb"
+        );
+        assert_eq!(
+            overlay["dirtyOverlay"]["digest"],
+            "a1191a95aaafd6c05e0d84f9645900ebeaebdc827dd3dbaeb0582bb45960758c"
+        );
+        assert_eq!(
+            src["snapshot"]["identity"],
+            "5960754bb0d27a8e09df976248210c8cd29632437be561ef2936f93c39b646f2"
+        );
+    }
+
+    #[test]
+    fn unversioned_snapshot_identity_is_pinned() {
+        let root = pinned_fixture_root("plain");
+        write_pinned_files(&root);
+        let snapshot = build(&root, Policy::ExplicitOverlay, &[".".to_string()]).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+
+        assert_eq!(
+            snapshot["snapshot"]["inputDigest"],
+            "2c5ca1c7d0aefd4ec3a1fae9ec7ff24ffbeaab09394872172ad4d63acddac7a1"
+        );
+        assert_eq!(
+            snapshot["snapshot"]["identity"],
+            "3667f664190be4169291ab3d0a168840fad6da9d4b15e24573c5f9afeab6d890"
+        );
     }
 
     #[test]

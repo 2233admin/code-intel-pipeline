@@ -1,6 +1,6 @@
 mod common;
-#[path = "../src/content_contract.rs"]
-mod content_contract;
+#[path = "../src/content_contract/sha256.rs"]
+mod content_sha256;
 #[path = "../src/evidence_outcome.rs"]
 mod evidence_outcome;
 
@@ -67,7 +67,7 @@ fn commit_all(repo: &Path, message: &str) {
 }
 
 fn sha256_of(path: &Path) -> String {
-    content_contract::sha256_hex(&fs::read(path).unwrap())
+    content_sha256::sha256_hex(&fs::read(path).unwrap())
 }
 
 fn repin(repo: &Path, extra_args: &[&str]) -> Output {
