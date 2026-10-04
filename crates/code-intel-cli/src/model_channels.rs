@@ -263,25 +263,31 @@ fn merge_cc_switch_candidates(inventory: &mut Value) -> Result<(), String> {
 
     reject_credentialed_http_endpoint(&cc_switch_endpoint, cc_switch_api_key.is_some())?;
 
-    let client = ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(5))
-        .build();
+    let client = ureq::Agent::config_builder()
+        .proxy(None)
+        // ureq 2 allowed four completed redirects (five HTTP exchanges).
+        .max_redirects(4)
+        .timeout_connect(Some(Duration::from_secs(30)))
+        .timeout_global(Some(Duration::from_secs(5)))
+        .build()
+        .new_agent();
 
-    let mut req = client.get(&url);
+    let mut req = client.get(url);
     if let Some(key) = cc_switch_api_key {
-        req = req.set("Authorization", &format!("Bearer {}", key));
+        req = req.header("Authorization", &format!("Bearer {}", key));
     }
 
     let response = req
         .call()
         .map_err(|e| format!("CC Switch request failed: {}", e))?;
 
-    if response.status() != 200 {
-        return Err(format!("CC Switch returned status {}", response.status()));
+    let status = response.status().as_u16();
+    if status != 200 {
+        return Err(format!("CC Switch returned status {}", status));
     }
 
-    let cc_data: Value = response
-        .into_json()
+    // Stream JSON without introducing ureq 3's convenience-reader body limit.
+    let cc_data: Value = serde_json::from_reader(response.into_body().into_reader())
         .map_err(|e| format!("CC Switch response parse failed: {}", e))?;
 
     let channels = cc_data

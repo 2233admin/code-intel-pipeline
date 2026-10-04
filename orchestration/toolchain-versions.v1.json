@@ -4,7 +4,7 @@
   "tools": [
     {
       "name": "rust-toolchain",
-      "version": "1.95.0",
+      "version": "1.99.0",
       "scope": "build",
       "required": true,
       "rationale": "Pinned so CI, release, and local builds share one compiler; an unpinned channel makes released binaries unreproducible.",
