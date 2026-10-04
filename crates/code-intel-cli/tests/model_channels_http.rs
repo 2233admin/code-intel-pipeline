@@ -36,7 +36,6 @@ impl Fixture {
     fn command(&self, endpoint: Option<&str>) -> Command {
         let mut command = common::cli_in(&self.0);
         command
-            .env_clear()
             .env("HOME", &self.0)
             .env("USERPROFILE", &self.0)
             .env("APPDATA", &self.0)

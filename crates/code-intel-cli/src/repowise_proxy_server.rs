@@ -327,7 +327,9 @@ fn forward_response(
             continue;
         }
         if let Ok(value) = std::str::from_utf8(value.as_bytes()) {
-            if let Ok(header) = tiny_http::Header::from_bytes(name.as_str().as_bytes(), value.as_bytes()) {
+            if let Ok(header) =
+                tiny_http::Header::from_bytes(name.as_str().as_bytes(), value.as_bytes())
+            {
                 resp = resp.with_header(header);
             }
         }

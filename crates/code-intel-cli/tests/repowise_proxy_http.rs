@@ -187,10 +187,31 @@ fn read_request(stream: &mut TcpStream) -> std::io::Result<Request> {
     let method = words.next().unwrap_or_default().to_string();
     let path = words.next().unwrap_or_default().to_string();
     let headers = read_headers(&mut reader)?;
-    let length = headers.iter().find(|(name, _)| name == "content-length")
-        .map(|(_, value)| value.parse::<usize>().unwrap()).unwrap_or(0);
-    let mut body = vec![0; length];
-    reader.read_exact(&mut body)?;
+    let mut body = Vec::new();
+    if headers.iter().any(|(name, value)| name == "transfer-encoding" && value == "chunked") {
+        assert!(!headers.iter().any(|(name, _)| name == "content-length"));
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line)?;
+            let length = usize::from_str_radix(line.split(';').next().unwrap().trim(), 16)
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+            if length == 0 {
+                assert!(read_headers(&mut reader)?.is_empty());
+                break;
+            }
+            let start = body.len();
+            body.resize(start + length, 0);
+            reader.read_exact(&mut body[start..])?;
+            let mut separator = [0; 2];
+            reader.read_exact(&mut separator)?;
+            assert_eq!(&separator, b"\r\n");
+        }
+    } else {
+        let length = headers.iter().find(|(name, _)| name == "content-length")
+            .map(|(_, value)| value.parse::<usize>().unwrap()).unwrap_or(0);
+        body.resize(length, 0);
+        reader.read_exact(&mut body)?;
+    }
     Ok(Request { method, path, headers, body })
 }
 
@@ -230,9 +251,8 @@ fn fixture_reply(request: Request) -> Option<Reply> {
             Reply::new(200, "application/json", b"{\"channels\":[]}"),
         "/fixture?branch=empty-post" | "/fixture?branch=empty-get" => {
             let method = if request.path.ends_with("empty-post") { "POST" } else { "GET" };
-            // The fixture endpoint rejects ambiguous/changed empty-request framing.
-            if request.method != method || !request.body.is_empty() || request.headers.iter()
-                .any(|(name, _)| name == "content-length" || name == "transfer-encoding") {
+            // Decode framing first; reject changed methods or nonempty application bodies.
+            if request.method != method || !request.body.is_empty() {
                 return reject(409);
             }
             Reply::new(200, "application/json", b"{\"channels\":[]}")
@@ -278,7 +298,7 @@ fn binary_post_and_get_bodies_reach_the_endpoint_without_client_credentials() {
         ("GET", "/fixture?branch=empty-get", b"".as_slice()),
     ] {
         let reply = proxy.request(method, path, body);
-        // P1/P2：端点只接受原始请求体、无凭据和旧版空请求 framing。
+        // P1/P2：端点只接受原始解码请求体与无凭据请求，不锁库生成的空请求 framing。
         assert_eq!(reply.status, 200, "{method} {path}");
         assert_eq!(reply.body, b"{\"channels\":[]}");
     }

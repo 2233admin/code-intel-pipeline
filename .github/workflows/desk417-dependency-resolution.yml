@@ -12,6 +12,7 @@ permissions:
 jobs:
   validate:
     runs-on: windows-latest
+    timeout-minutes: 10
     defaults:
       run:
         shell: bash

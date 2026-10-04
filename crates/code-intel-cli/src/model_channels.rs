@@ -274,7 +274,7 @@ fn merge_cc_switch_candidates(inventory: &mut Value) -> Result<(), String> {
 
     let mut req = client.get(url);
     if let Some(key) = cc_switch_api_key {
-        req = req.header("Authorization", &format!("Bearer {}", key));
+        req = req.header("Authorization", format!("Bearer {}", key));
     }
 
     let response = req
