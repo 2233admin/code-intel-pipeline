@@ -65,16 +65,17 @@ impl Upstream {
             while !stopped.load(Ordering::Relaxed) {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        // Windows accepted sockets inherit the listener's nonblocking mode.
+                        stream.set_nonblocking(false).unwrap();
                         stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
                         stream.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
-                        if let Ok(request) = read_request(&mut stream) {
+                        let request = read_request(&mut stream).expect("controlled HTTP request");
                             if request.path == "/api/repos" {
                                 repos.send(&mut stream);
                                 calls.fetch_add(1, Ordering::Relaxed);
                             } else if let Some(reply) = fixture_reply(request) {
                                 reply.send(&mut stream);
                             }
-                        }
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(10));

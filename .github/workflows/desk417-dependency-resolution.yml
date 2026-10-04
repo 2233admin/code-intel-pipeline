@@ -1,4 +1,4 @@
-name: Desk417 candidate HTTP validation
+name: Desk417 public HTTP validation
 
 on:
   workflow_dispatch:
