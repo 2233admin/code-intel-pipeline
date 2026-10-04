@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Rust/HTTP 依赖迁移（#417，父级 #415）**：编译工具链升至 Rust 1.99.0，直接依赖更新为 `serde_json` 1.0.151、`ureq` 3.4.2、`tiny_http` 0.12.0，完整 Cargo 锁图由隔离 CI 重新求解。保留 ring TLS provider；97 个 registry 包中，受 ring 约束的 `getrandom`、`wasi` 与 10 个 Windows target 包保留已批准的兼容版本，其余 85 个采用本轮审计的最新稳定版。三个 HTTP 调用方保留代理环境隔离、超时、四跳重定向上限、非 2xx 转发、大响应与重复 Cookie 顺序；空 POST 允许已批准的 chunked framing。`cargo test -p code-intel --locked --test http_migration -- --nocapture` 回放迁移前真实 CLI 的 34 条冻结请求/响应，并独立验证四跳成功边界；母版不由新实现重录，中文 HTML 只归一化唯一 DICT 键值对的无关顺序。可用已编译 CLI 单独执行 `python crates/code-intel-cli/tests/http_capture_replay.py --cli <code-intel> --capture crates/code-intel-cli/tests/fixtures/http-migration-ureq2/capture.json --output <new-evidence-directory>`；真实 HTTPS 凭据、DNS/connect timeout 与八次重试耗尽不在该 loopback 回放覆盖范围。
 - (a) 类 CI/release PowerShell 调用点归零：atomic-capability 与 project-management-support 契约锁改为 cargo 测试，PS1 脚本保留在磁盘上（PM 走 internalization pin，atomic 保留避免耦合棘轮）；退役 35 个孤儿 legacy PowerShell 文件（#296/#298/#319）。
 - 清理仓根两个无引用死文件 `CODE_QUALITY_REVIEW.md`（仅标题的空 stub）与 `HANDOFF-ps1-migration.md`（#275/#277 交接记录，任务早已全部完成）；其余仓根文件逐一审计确认仍被引用而保留（#347）。
 - 独立审计确认 4 个 `templates/` 文件（`understanding-report.md`、`minimax-deploy-checklist.md`、`dependency-audit.md`、`idea-file.md`）在 .md/.json/.yml/.toml/.rs/.py 全仓与 orchestration digest pin 中零引用，予以删除；`templates/sentrux-rules.example.toml` 因被 README/CHANGELOG 实际引用而保留（#357/#358）。

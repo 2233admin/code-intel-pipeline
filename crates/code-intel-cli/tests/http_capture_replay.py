@@ -207,6 +207,8 @@ def execute(case, cli, source, output, session, repo):
                     client = {'method': 'GET', 'path': '/redirect/' + str(case['redirects'])}
             raw['client_response'] = client_request(proxy_port, client, source, output)
             raw['command'] = command
+            if process.poll() is not None:
+                raise RuntimeError('Proxy exited before harness cleanup')
             process.terminate()
             stdout, stderr = process.communicate(timeout=10)
             raw.update(exit=process.returncode, stdout=stdout.decode('utf-8', 'replace'), stderr=stderr.decode('utf-8', 'replace'), termination='harness terminate after public HTTP capture')
@@ -268,6 +270,7 @@ def main():
         })
         if not matched:
             failed = True
+            emit({'id': case['id'], 'expected': expected, 'actual': observed, 'normalization': notes})
         error = raw.get('harness_error')
         failed = failed or bool(error)
         entry = {'id': case['id'], 'group': case['group'], 'command': actual['command'], 'exit': raw['exit'], 'stderr': actual['stderr'],

@@ -55,6 +55,14 @@ def compare_approved(actual, approved, case, source, output):
     # Caller persists raw evidence first; these newly decoded comparison objects are owned here.
     expected = approved
     observed = actual
+    if case['kind'] != 'model' and observed['harness_error'] is None:
+        # Recorded proxy exits are harness cleanup, not a finite CLI result.
+        # The runner rejects a proxy that exits before the intentional termination.
+        expected['exit'] = observed['exit'] = '<HARNESS_TERMINATION>'
+    for document in (expected, observed):
+        for field in ('stdout', 'stderr'):
+            document[field] = re.sub(r'<(?:CASE_ROOT|GIT_FIXTURE|CAPTURE)>[^\s"]*',
+                                     lambda match: match.group().replace('\\', '/'), document[field])
     notes = []
     if case['id'] == 'P2-empty-post':
         empty_digest = hashlib.sha256(b'').hexdigest()
