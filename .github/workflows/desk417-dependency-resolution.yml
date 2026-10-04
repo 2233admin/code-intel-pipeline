@@ -19,17 +19,18 @@ jobs:
     timeout-minutes: 30
     env:
       RUSTUP_TOOLCHAIN: "1.99.0"
-      RESOLUTION_EVIDENCE: ${{ runner.temp }}/desk417-dependency-resolution
     defaults:
       run:
         shell: bash
     steps:
       - name: Initialize evidence and restrict candidate branch
         env:
+          RESOLUTION_EVIDENCE: ${{ runner.temp }}/desk417-dependency-resolution
           DISPATCH_REF: ${{ github.ref }}
           DISPATCH_SHA: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          printf 'RESOLUTION_EVIDENCE=%s\n' "$RESOLUTION_EVIDENCE" >> "$GITHUB_ENV"
           mkdir -p "$RESOLUTION_EVIDENCE"
           printf 'ref=%s\nsha=%s\nrun=%s\n' "$DISPATCH_REF" "$DISPATCH_SHA" "$RUN_URL" > "$RESOLUTION_EVIDENCE/dispatch.txt"
           if [[ "$DISPATCH_REF" != 'refs/heads/2233admin/desk417-rust-deps' ]]; then
