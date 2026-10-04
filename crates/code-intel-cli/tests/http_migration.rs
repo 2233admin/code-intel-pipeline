@@ -1,6 +1,8 @@
 //! Public CLI regression: frozen old HTTP requests plus the four-redirect boundary.
 //! The Python driver checks every body, status, application error, and retained header.
 
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -25,7 +27,11 @@ fn public_http_contract_matches_the_pre_ureq3_mother_copy() {
         std::process::id()
     )));
     let interpreter = if cfg!(windows) { "python" } else { "python3" };
-    let result = Command::new(interpreter)
+    let mut driver = Command::new(interpreter);
+    for name in common::env_contract::PIPELINE_VARS {
+        driver.env_remove(name);
+    }
+    let result = driver
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .args([
             "tests/http_capture_replay.py",
