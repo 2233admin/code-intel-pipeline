@@ -51,6 +51,11 @@ def html_dictionary_fingerprint(root, ref):
     return {'length': len(canonical), 'sha256': hashlib.sha256(canonical).hexdigest()}
 
 
+def temporary_paths(value):
+    return re.sub(r'<(?:CASE_ROOT|GIT_FIXTURE|CAPTURE)>[^\s"]*',
+                  lambda match: match.group().replace('\\', '/'), value)
+
+
 def compare_approved(actual, approved, case, source, output):
     # Caller persists raw evidence first; these newly decoded comparison objects are owned here.
     expected = approved
@@ -60,9 +65,9 @@ def compare_approved(actual, approved, case, source, output):
         # The runner rejects a proxy that exits before the intentional termination.
         expected['exit'] = observed['exit'] = '<HARNESS_TERMINATION>'
     for document in (expected, observed):
+        document['command'] = [temporary_paths(argument) for argument in document['command']]
         for field in ('stdout', 'stderr'):
-            document[field] = re.sub(r'<(?:CASE_ROOT|GIT_FIXTURE|CAPTURE)>[^\s"]*',
-                                     lambda match: match.group().replace('\\', '/'), document[field])
+            document[field] = temporary_paths(document[field])
     notes = []
     if case['id'] == 'P2-empty-post':
         empty_digest = hashlib.sha256(b'').hexdigest()
@@ -78,6 +83,8 @@ def compare_approved(actual, approved, case, source, output):
             response['body'] = html_dictionary_fingerprint(root, response['body'])
         notes.append('Unique DICT entry order only; key/value pairs and all other body bytes retained')
     return observed == expected, expected, observed, notes
+
+
 def dump(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
