@@ -27,7 +27,7 @@ jobs:
           cargo fmt -p code-intel
           root="$RUNNER_TEMP/desk417-validation"
           mkdir -p "$root/formatted"
-          for path in crates/code-intel-cli/src/model_channels.rs crates/code-intel-cli/src/repowise_proxy_server.rs crates/code-intel-cli/src/git_remote_registry/registry.rs crates/code-intel-cli/tests/model_channels_http.rs crates/code-intel-cli/tests/repowise_proxy_http.rs; do
+          for path in crates/code-intel-cli/src/model_channels.rs crates/code-intel-cli/src/repowise_proxy_server.rs crates/code-intel-cli/src/git_remote_registry/registry.rs crates/code-intel-cli/tests/http_migration.rs; do
             mkdir -p "$root/formatted/$(dirname "$path")"
             cp "$path" "$root/formatted/$path"
           done
@@ -37,8 +37,8 @@ jobs:
         run: |
           cargo build --locked -p code-intel
           cp target/debug/code-intel.exe "$RUNNER_TEMP/desk417-validation/code-intel.exe"
-      - name: Exercise public model and proxy contracts
-        run: cargo test --locked -p code-intel --test model_channels_http --test repowise_proxy_http -- --nocapture
+      - name: Exercise all old HTTP captures and independent redirect boundary
+        run: cargo test --locked -p code-intel --test http_migration -- --nocapture
       - name: Preserve formatting and compiled CLI evidence even on test failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
