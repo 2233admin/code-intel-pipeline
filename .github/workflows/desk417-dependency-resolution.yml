@@ -1,0 +1,226 @@
+# Temporary issue #417 evidence scaffolding; remove after resolution and verification.
+# No compilation, provider calls, TLS overrides, patches, or product-file commits.
+name: desk417-dependency-resolution
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "2233admin/desk417-rust-deps"
+    paths:
+      - ".github/workflows/desk417-dependency-resolution.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-on-ubuntu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      RUSTUP_TOOLCHAIN: "1.99.0"
+      RESOLUTION_EVIDENCE: ${{ runner.temp }}/desk417-dependency-resolution
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Initialize evidence and restrict candidate branch
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          mkdir -p "$RESOLUTION_EVIDENCE"
+          printf 'ref=%s\nsha=%s\nrun=%s\n' "$DISPATCH_REF" "$DISPATCH_SHA" "$RUN_URL" > "$RESOLUTION_EVIDENCE/dispatch.txt"
+          if [[ "$DISPATCH_REF" != 'refs/heads/2233admin/desk417-rust-deps' ]]; then
+            printf '%s\n' 'Only the authorized issue #417 candidate branch may run this workflow.' >&2
+            exit 1
+          fi
+
+      - name: Checkout immutable event revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Install exact runner-only Rust toolchain
+        run: |
+          printf '%s\n' 'rustup toolchain install 1.99.0 --profile minimal --no-self-update' > "$RESOLUTION_EVIDENCE/toolchain.command"
+          set +e
+          rustup toolchain install 1.99.0 --profile minimal --no-self-update 2>&1 | tee "$RESOLUTION_EVIDENCE/toolchain.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf '%s\n' "$status" > "$RESOLUTION_EVIDENCE/toolchain.exit-code"
+          if [[ "$status" -ne 0 ]]; then exit "$status"; fi
+          rustc --version --verbose | tee "$RESOLUTION_EVIDENCE/rustc-version.txt"
+          cargo --version --verbose | tee "$RESOLUTION_EVIDENCE/cargo-version.txt"
+
+      - name: Overlay declarations only in the runner checkout
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import shutil
+          import tomllib
+
+          evidence = Path(os.environ["RESOLUTION_EVIDENCE"])
+          paths = ["Cargo.toml", "Cargo.lock", "crates/code-intel-cli/Cargo.toml", "rust-toolchain.toml"]
+          for relative in paths:
+              destination = evidence / "original" / relative
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(relative, destination)
+
+          manifest = Path("crates/code-intel-cli/Cargo.toml")
+          original = manifest.read_text()
+          dependencies = tomllib.loads(original)["dependencies"]
+          expected = {
+              "serde_json": "1",
+              "ureq": {"version": "2.9", "features": ["json"]},
+              "tiny_http": "0.12",
+          }
+          if dependencies != expected:
+              raise SystemExit("Direct dependency declarations changed; inspect before overlaying.")
+          replacements = {
+              'serde_json = "1"': 'serde_json = "1.0.151"',
+              'ureq = { version = "2.9", features = ["json"] }': 'ureq = { version = "3.4.2", features = ["json"] }',
+              'tiny_http = "0.12"': 'tiny_http = "0.12.0"',
+          }
+          updated = original
+          for before, after in replacements.items():
+              if updated.splitlines().count(before) != 1:
+                  raise SystemExit(f"Expected exactly one declaration: {before}")
+              updated = updated.replace(before, after, 1)
+          manifest.write_text(updated)
+
+          toolchain = Path("rust-toolchain.toml")
+          original_toolchain = toolchain.read_text()
+          before = 'channel = "1.95.0"'
+          if original_toolchain.splitlines().count(before) != 1:
+              raise SystemExit("Toolchain declaration changed; inspect before overlaying.")
+          toolchain.write_text(original_toolchain.replace(before, 'channel = "1.99.0"', 1))
+          for relative in ["Cargo.toml", "crates/code-intel-cli/Cargo.toml", "rust-toolchain.toml"]:
+              destination = evidence / "overlay" / relative
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(relative, destination)
+          # Version requirements remain floors (DR-0002); Cargo.lock records exact resolution.
+          # Keep ureq defaults and the existing json intent; do not select a TLS provider.
+          PY
+
+      - name: Resolve the overlaid workspace without compiling
+        id: resolve
+        run: |
+          printf '%s\n' 'cargo update --verbose' > "$RESOLUTION_EVIDENCE/resolve.command"
+          set +e
+          cargo update --verbose 2>&1 | tee "$RESOLUTION_EVIDENCE/resolve.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf '%s\n' "$status" > "$RESOLUTION_EVIDENCE/resolve.exit-code"
+          if [[ -f Cargo.lock ]]; then cp Cargo.lock "$RESOLUTION_EVIDENCE/post-update.Cargo.lock"; fi
+          if [[ "$status" -ne 0 ]]; then exit "$status"; fi
+          cp Cargo.lock "$RESOLUTION_EVIDENCE/Cargo.lock"
+
+      - name: Record locked full-platform resolved graph and constraints
+        id: metadata
+        run: |
+          printf '%s\n' 'cargo metadata --locked --format-version 1' > "$RESOLUTION_EVIDENCE/metadata.command"
+          set +e
+          cargo metadata --locked --format-version 1 > "$RESOLUTION_EVIDENCE/metadata.json" 2> "$RESOLUTION_EVIDENCE/metadata.stderr.log"
+          status=$?
+          set -e
+          cat "$RESOLUTION_EVIDENCE/metadata.stderr.log"
+          printf '%s\n' "$status" > "$RESOLUTION_EVIDENCE/metadata.exit-code"
+          if [[ "$status" -ne 0 ]]; then exit "$status"; fi
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          evidence = Path(os.environ["RESOLUTION_EVIDENCE"])
+          graph = json.loads((evidence / "metadata.json").read_text())
+          selected = {"serde_json", "ureq", "tiny_http", "getrandom", "windows-sys", "rustls", "ring", "aws-lc-rs"}
+          constraints = []
+          for package in graph["packages"]:
+              for dependency in package["dependencies"]:
+                  if dependency["name"] in selected:
+                      constraints.append({
+                          "dependent_id": package["id"],
+                          "dependency": dependency,
+                      })
+          resolved = [package for package in graph["packages"] if package["name"] in selected]
+          report = {
+              "note": "Unfiltered Cargo metadata: all platform constraints; defaults/TLS unchanged. Probe results are independent of successful base resolution.",
+              "packages": resolved,
+              "constraints": constraints,
+              "resolved_nodes": graph["resolve"]["nodes"],
+          }
+          (evidence / "graph-constraints.json").write_text(json.dumps(report, indent=2) + "\n")
+          PY
+
+      # These are independent exploratory probes, not approved dependency migrations.
+      # A rejected precise target fails its step/job; the other probe still runs.
+      - name: Probe getrandom 0.2 to precise 0.4.3 independently
+        id: probe_getrandom
+        if: ${{ !cancelled() && steps.resolve.outcome == 'success' }}
+        run: |
+          cp "$RESOLUTION_EVIDENCE/Cargo.lock" Cargo.lock
+          printf '%s\n' 'cargo update --verbose -p getrandom@0.2 --precise 0.4.3' > "$RESOLUTION_EVIDENCE/probe-getrandom.command"
+          set +e
+          cargo update --verbose -p getrandom@0.2 --precise 0.4.3 2>&1 | tee "$RESOLUTION_EVIDENCE/probe-getrandom.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf '%s\n' "$status" > "$RESOLUTION_EVIDENCE/probe-getrandom.exit-code"
+          cp Cargo.lock "$RESOLUTION_EVIDENCE/probe-getrandom.Cargo.lock"
+          cp "$RESOLUTION_EVIDENCE/Cargo.lock" Cargo.lock
+          exit "$status"
+
+      - name: Probe windows-sys 0.52 to precise 0.61.2 independently
+        id: probe_windows_sys
+        if: ${{ !cancelled() && steps.resolve.outcome == 'success' }}
+        run: |
+          cp "$RESOLUTION_EVIDENCE/Cargo.lock" Cargo.lock
+          printf '%s\n' 'cargo update --verbose -p windows-sys@0.52 --precise 0.61.2' > "$RESOLUTION_EVIDENCE/probe-windows-sys.command"
+          set +e
+          cargo update --verbose -p windows-sys@0.52 --precise 0.61.2 2>&1 | tee "$RESOLUTION_EVIDENCE/probe-windows-sys.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          printf '%s\n' "$status" > "$RESOLUTION_EVIDENCE/probe-windows-sys.exit-code"
+          cp Cargo.lock "$RESOLUTION_EVIDENCE/probe-windows-sys.Cargo.lock"
+          cp "$RESOLUTION_EVIDENCE/Cargo.lock" Cargo.lock
+          exit "$status"
+
+      - name: Summarize evidence without masking exploratory failures
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          evidence = Path(os.environ["RESOLUTION_EVIDENCE"])
+          evidence.mkdir(parents=True, exist_ok=True)
+          lines = [
+              "# Issue #417 dependency resolution (temporary runner-only overlay)",
+              "",
+              "No compilation or production migration was performed.",
+              "Each precise-target probe starts from/restores the base resolved lock.",
+              "Probe failure leaves the job failed even if base resolution succeeded.",
+              "An absent exit-code file means the command was not completed/run; not success.",
+              "",
+          ]
+          for name in ["toolchain", "resolve", "metadata", "probe-getrandom", "probe-windows-sys"]:
+              path = evidence / f"{name}.exit-code"
+              status = path.read_text().strip() if path.exists() else "not recorded"
+              lines.append(f"- `{name}` exit code: `{status}`")
+          summary = "\n".join(lines) + "\n"
+          (evidence / "summary.txt").write_text(summary)
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as output:
+              output.write(summary)
+          PY
+
+      - name: Upload lock graph and raw probe evidence on success or failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: desk417-dependency-resolution-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.RESOLUTION_EVIDENCE }}/
+          if-no-files-found: error
+          retention-days: 14
