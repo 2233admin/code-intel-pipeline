@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **CI／开发依赖刷新（#418）**：compiled `code-intel` 的 ast-grep CI 引擎更新至 0.45.3，三平台下载资产实算 SHA-256；仓内 npm merge-queue 更新至 0.7.1 的官方发布与完整性锁，Node >=18 和既有兼容下限保留。五个工作流的 Action 引用迁移到审核过的最新稳定 commit，已最新的 PyYAML 6.0.3 与 rust-cache 2.9.2 不制造版本变化。新增真实 queue 受保护 ref／空输入回放、hash 安装后的 safe YAML 检查、必需 ast-grep 公共能力检查，以及不发布 release 的三平台 artifact 下载布局／checksum 往返；历史 conformance 字节归档且旧 SHA／source revision 不变，活 legacy 行为检查保留。
 - (a) 类 CI/release PowerShell 调用点归零：atomic-capability 与 project-management-support 契约锁改为 cargo 测试，PS1 脚本保留在磁盘上（PM 走 internalization pin，atomic 保留避免耦合棘轮）；退役 35 个孤儿 legacy PowerShell 文件（#296/#298/#319）。
 - 清理仓根两个无引用死文件 `CODE_QUALITY_REVIEW.md`（仅标题的空 stub）与 `HANDOFF-ps1-migration.md`（#275/#277 交接记录，任务早已全部完成）；其余仓根文件逐一审计确认仍被引用而保留（#347）。
 - 独立审计确认 4 个 `templates/` 文件（`understanding-report.md`、`minimax-deploy-checklist.md`、`dependency-audit.md`、`idea-file.md`）在 .md/.json/.yml/.toml/.rs/.py 全仓与 orchestration digest pin 中零引用，予以删除；`templates/sentrux-rules.example.toml` 因被 README/CHANGELOG 实际引用而保留（#357/#358）。
