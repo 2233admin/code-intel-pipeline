@@ -527,8 +527,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Repowise isolated environment creation failed: $LASTEXITCODE" }
           $python = Join-Path $venv $(if ($IsWindows) { 'Scripts/python.exe' } else { 'bin/python' })
           $provider = Join-Path $venv $(if ($IsWindows) { 'Scripts/repowise.exe' } else { 'bin/repowise' })
-          & $python -m pip install --only-binary=:all: repowise==0.55.0
-          if ($LASTEXITCODE -ne 0) { throw "Repowise binary-only installation failed: $LASTEXITCODE" }
+          $packageFormats = @('--only-binary=:all:')
+          # Repowise requires watchdog<5; its macOS wheels predate Python 3.14.
+          # Only this CI host may build that upstream dependency, never the excluded Windows host.
+          if ($IsMacOS) { $packageFormats += '--no-binary=watchdog' }
+          & $python -m pip install @packageFormats repowise==0.55.0
+          if ($LASTEXITCODE -ne 0) { throw "Repowise installation failed: $LASTEXITCODE" }
           $reported = @(& $provider --version)
           if ($LASTEXITCODE -ne 0 -or $reported.Count -ne 1 -or $reported[0] -ne 'repowise, version 0.55.0') { throw "Repowise version mismatch: $reported" }
           $cli = if ($IsWindows) { 'target/release/code-intel.exe' } else { 'target/release/code-intel' }
@@ -539,8 +543,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Repowise recorded-version environment creation failed: $LASTEXITCODE" }
           $previousPython = Join-Path $previousVenv $(if ($IsWindows) { 'Scripts/python.exe' } else { 'bin/python' })
           $previousProvider = Join-Path $previousVenv $(if ($IsWindows) { 'Scripts/repowise.exe' } else { 'bin/repowise' })
-          & $previousPython -m pip install --only-binary=:all: repowise==0.38.0
-          if ($LASTEXITCODE -ne 0) { throw "Repowise recorded-version binary-only installation failed: $LASTEXITCODE" }
+          & $previousPython -m pip install @packageFormats repowise==0.38.0
+          if ($LASTEXITCODE -ne 0) { throw "Repowise recorded-version installation failed: $LASTEXITCODE" }
           $reported = @(& $previousProvider --version)
           if ($LASTEXITCODE -ne 0 -or $reported.Count -ne 1 -or $reported[0] -ne 'repowise, version 0.38.0') { throw "Repowise recorded-version mismatch: $reported" }
           & $python tests/test_runtime_repowise.py --cli $cli --provider-bin $provider --previous-provider-bin $previousProvider
