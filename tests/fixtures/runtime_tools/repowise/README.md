@@ -13,5 +13,12 @@ Smoke execution uses isolated HOME and credential-free environment plus the docu
 Public replay:
 
 ```text
+code-intel provider --action Invoke --provider repowise --operation status --repo <sandbox-repo> --json
+code-intel provider --action Invoke --provider repowise --operation index --repo <sandbox-repo> --json
+```
+
+The isolated replay driver exercises those compiled CLI requests:
+
+```text
 python tests/test_runtime_repowise.py --cli <compiled-code-intel> --provider-bin <isolated-real-repowise>
 ```
