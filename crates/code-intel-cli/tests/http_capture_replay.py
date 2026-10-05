@@ -79,6 +79,12 @@ def start_server(case, source, output, git_fixture):
                 else:
                     status, response, headers = 200, b'redirect-complete', [['Content-Type', 'text/plain']]
                 delay = 0
+            elif case.get('redirect_status'):
+                if self.path.split('?', 1)[0] == '/redirect-target':
+                    status, response, headers = 200, b'redirect-complete', [['Content-Type', 'text/plain']]
+                else:
+                    status, response, headers = case['redirect_status'], b'redirect', [['Location', case['location']], ['Content-Type', 'text/plain']]
+                delay = 0
             else:
                 spec = case['upstream']
                 status, response, headers = spec['status'], load_blob(source, spec['body']), spec['headers']
@@ -122,7 +128,7 @@ def wait_until(predicate, seconds, message):
 
 def client_request(port, spec, source, output):
     conn = http.client.HTTPConnection('127.0.0.1', port, timeout=30)
-    body = load_blob(source, spec['body']) if 'body' in spec else b''
+    body = spec['literal_body'] if 'literal_body' in spec else load_blob(source, spec['body']) if 'body' in spec else b''
     try:
         conn.putrequest(spec.get('method', 'GET'), spec.get('path', '/fixture'), skip_accept_encoding=True)
         conn.putheader('Content-Length', str(len(body)))
@@ -294,6 +300,29 @@ def main():
                                         'actual': raw['normalized']}]
         failed = failed or not matched
         emit({'id': case['id'], 'matches_expected': matched})
+        # Literal old public contracts: refuse unsafe replay, but retain allowed redirects.
+        for identifier, method, status, location, expected_status, expected_body, expected_location, expected_requests in [
+            ('N2-post-307', 'POST', 307, '/redirect-target', 307, b'redirect', '/redirect-target', [('POST', '/fixture', b'abc')]),
+            ('N3-post-308', 'POST', 308, '/redirect-target', 308, b'redirect', '/redirect-target', [('POST', '/fixture', b'abc')]),
+            ('N4-post-302', 'POST', 302, 'next/../redirect-target?fixture=ok#ignored', 200, b'redirect-complete', None, [('POST', '/fixture', b'abc'), ('GET', '/redirect-target?fixture=ok', b'')]),
+            ('N5-options-307', 'OPTIONS', 307, '/redirect-target', 200, b'redirect-complete', None, [('OPTIONS', '/fixture', b'abc'), ('OPTIONS', '/redirect-target', b'')]),
+        ]:
+            case = load_json(source / 'P2-empty-post.request.json')
+            case.update(id=identifier, group=identifier, redirect_status=status, location=location,
+                        client={'method': method, 'path': '/fixture', 'literal_body': b'abc'})
+            raw = execute(case, cli, source, output, session, repo)
+            response = raw.get('client_response')
+            requests = [(event['method'], event['path'], load_blob(output, event['body']))
+                        for event in raw['requests'] if event['path'] != '/api/repos']
+            actual_location = next((value for name, value in response['headers'] if name.lower() == 'location'), None) if response else None
+            matched = bool(response and not raw.get('harness_error') and response['status'] == expected_status
+                           and load_blob(output, response['body']) == expected_body
+                           and actual_location == expected_location and requests == expected_requests)
+            summary['new_requirements'].append({'id': identifier, 'matches_expected': matched,
+                                                'expected_status': expected_status, 'expected_body': expected_body.decode(),
+                                                'actual': raw['normalized']})
+            failed = failed or not matched
+            emit({'id': identifier, 'matches_expected': matched, 'actual_status': response['status'] if response else None})
     summary['groups'] = sorted(set(c['group'] for c in cases))
     summary['all_14_groups_exercised'] = set(summary['groups']) == set(GROUPS)
     summary['harness_errors'] = [c['id'] for c in summary['cases'] if c['harness_error']]

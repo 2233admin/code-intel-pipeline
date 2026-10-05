@@ -1,0 +1,50 @@
+name: Desk417 public HTTP validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [2233admin/desk417-rust-deps]
+    paths: [.github/workflows/desk417-dependency-resolution.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned compiler only on isolated CI runner
+        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt --no-self-update
+      - name: Format candidate and retain exact formatted source
+        run: |
+          cargo fmt -p code-intel
+          root="$RUNNER_TEMP/desk417-validation"
+          mkdir -p "$root/formatted"
+          for path in crates/code-intel-cli/src/model_channels.rs crates/code-intel-cli/src/repowise_proxy_server.rs crates/code-intel-cli/src/git_remote_registry/registry.rs crates/code-intel-cli/tests/http_migration.rs; do
+            mkdir -p "$root/formatted/$(dirname "$path")"
+            cp "$path" "$root/formatted/$path"
+          done
+      - name: Check actual locked candidate graph
+        run: cargo check --locked -p code-intel
+      - name: Build actual candidate CLI for public-surface replay
+        run: |
+          cargo build --locked -p code-intel
+          cp target/debug/code-intel.exe "$RUNNER_TEMP/desk417-validation/code-intel.exe"
+          cargo metadata --locked --format-version 1 > "$RUNNER_TEMP/desk417-validation/cargo-metadata.json"
+      - name: Exercise old HTTP captures and independent redirect requirements
+        run: cargo test --locked -p code-intel --test http_migration -- --nocapture
+      - name: Preserve formatting and compiled CLI evidence even on test failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: desk417-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/desk417-validation
+          if-no-files-found: error
+          retention-days: 14

@@ -10,3 +10,4 @@ repository = "https://github.com/2233admin/code-intel-pipeline"
 serde_json = "1.0.151"
 ureq = { version = "3.4.2", features = ["json"] }
 tiny_http = "0.12.0"
+url = "2.5.8"
