@@ -1,4 +1,4 @@
-//! Public CLI regression: frozen old HTTP requests plus the four-redirect boundary.
+//! Public CLI regression: frozen old HTTP requests plus redirect method and hop contracts.
 //! The Python driver checks every body, status, application error, and retained header.
 
 mod common;
