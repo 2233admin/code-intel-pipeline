@@ -32,7 +32,7 @@ def queue_smoke(binary):
     environment.pop("CLAUDE_CODE_MERGE_QUEUE_LANDING", None)
     version = subprocess.run(
         ["node", str(binary), "--version"], cwd=ROOT, env=environment,
-        capture_output=True, text=True, check=True, timeout=30
+        capture_output=True, text=True, encoding="utf-8", check=True, timeout=30
     ).stdout.strip()
     print(f"Actual queue version: {version}", flush=True)
     with tempfile.TemporaryDirectory(prefix="cip-queue-guard-") as directory:
@@ -59,11 +59,11 @@ def queue_smoke(binary):
             request = json.loads(request_path.read_text(encoding="utf-8"))
             approved = json.loads(
                 request_path.with_name(name + ".approved.json").read_text(encoding="utf-8")
-            )
+            )["response"]
             before = tracked_sources()
             result = subprocess.run(
                 ["node", str(binary), *request["argv"]], input=request["stdin"],
-                cwd=sandbox, env=environment, capture_output=True, text=True, timeout=30
+                cwd=sandbox, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30
             )
             actual = {
                 "exitCode": result.returncode,

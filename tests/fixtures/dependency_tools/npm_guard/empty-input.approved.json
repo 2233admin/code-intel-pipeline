@@ -1,4 +1,18 @@
 {
-  "exitCode": 0,
-  "trackedSourceUnchanged": true
+  "request": {
+    "argv": [
+      "check-push",
+      "origin",
+      "https://example.invalid/no-push"
+    ],
+    "stdin": "",
+    "clearEnvironment": [
+      "CLAUDE_CODE_MERGE_QUEUE_EMERGENCY_PUSH",
+      "CLAUDE_CODE_MERGE_QUEUE_LANDING"
+    ]
+  },
+  "response": {
+    "exitCode": 0,
+    "trackedSourceUnchanged": true
+  }
 }
