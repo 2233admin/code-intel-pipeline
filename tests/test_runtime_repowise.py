@@ -1,0 +1,66 @@
+"""Exercise an actual Repowise executable through the public Pipeline CLI."""
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+SAMPLES = Path(__file__).resolve().parent / "fixtures/runtime_tools/repowise"
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--cli", required=True)
+    parser.add_argument("--provider-bin", required=True)
+    args = parser.parse_args()
+    cli = str(Path(args.cli).resolve())
+    provider = Path(args.provider_bin).resolve()
+    if not provider.is_file():
+        raise RuntimeError(f"Required real provider executable missing: {provider}")
+    with tempfile.TemporaryDirectory(prefix="cip-runtime-provider-") as directory:
+        root = Path(directory)
+        repo = root / "repo"
+        repo.mkdir()
+        source = repo / "example.py"
+        source.write_text('def greet(name):\n    return "hello " + name\n\nprint(greet("world"))\n', encoding="utf-8")
+        before = source.read_bytes()
+        subprocess.run(["git", "init", "--quiet", str(repo)], check=True)
+        environment = {
+            key: value for key, value in os.environ.items()
+            if not key.endswith(("_KEY", "_TOKEN"))
+        }
+        environment.update({
+            "PATH": str(provider.parent) + os.pathsep + environment["PATH"],
+            "HOME": str(root / "home"),
+            "USERPROFILE": str(root / "home"),
+            "PYTHONUTF8": "1",
+            "PYTHONIOENCODING": "utf-8",
+            # Isolate the fixture's optional telemetry, not the production consumer.
+            # Upstream documents this control; it avoids a detached flusher holding cwd.
+            "DO_NOT_TRACK": "1",
+        })
+        for operation in ("status", "index", "status", "index"):
+            request = json.loads((SAMPLES / (operation + ".request.json")).read_text(encoding="utf-8"))
+            argv = [str(repo) if value == "$SANDBOX" else value for value in request["argv"]]
+            result = subprocess.run(
+                [cli, *argv],
+                cwd=repo, env=environment, capture_output=True, text=True,
+                encoding="utf-8", timeout=180,
+            )
+            if result.returncode != 0:
+                raise AssertionError(f"{operation}: exit {result.returncode}: {result.stderr}")
+            response = json.loads(result.stdout)
+            expected = json.loads((SAMPLES / (operation + ".approved.json")).read_text(encoding="utf-8"))["response"]
+            actual = {key: response.get(key) for key in expected}
+            if actual != expected:
+                raise AssertionError(f"{operation}: expected {expected}, got {actual}; raw={response}")
+            if source.read_bytes() != before:
+                raise AssertionError(f"{operation}: provider modified input source")
+            if operation == "index" and not Path(response["artifact"]).is_file():
+                raise AssertionError("Successful local indexing did not produce its declared artifact")
+            print(f"PASS real provider {operation}: {json.dumps(actual)}; sourceUnchanged=true", flush=True)
+
+
+if __name__ == "__main__":
+    main()

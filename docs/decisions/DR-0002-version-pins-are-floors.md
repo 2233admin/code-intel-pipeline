@@ -18,4 +18,4 @@ Owner 原话（2026-08-08）：「不是硬依赖，能有新的就肯定这套�
 ## Enforcement
 
 - `installer_version_gate.rs` `newer` 场景：装 0.37 pin 0.36 必须 `already_present`，installer block 被调用即 throw（防降级回归）
-- 升 pin = 升下限，一行改 `$script:RepowisePinnedVersion`，无需动语义
+- 升 pin = 升下限：同步 `$script:RepowisePinnedVersion` 与 `orchestration/toolchain-versions.v1.json` 的 Repowise 下限（`comparison: minimum`）；缺失或过旧时仍精确获取已评审版本，已安装的更新版本不降级，无需动安装器语义。

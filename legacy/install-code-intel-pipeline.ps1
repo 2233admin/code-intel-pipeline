@@ -1169,9 +1169,9 @@ if ([string]::IsNullOrWhiteSpace($Config)) {
     $Config = Join-Path $repoRoot "pipeline.config.json"
 }
 
-# repowise comes from PyPI; pin the exact version so `--upgrade` cannot pull a
-# newer, unreviewed release onto the machine (supply-chain-003).
-$script:RepowisePinnedVersion = "0.38.0"
+# Repowise comes from PyPI; acquire the reviewed release exactly when installing.
+# This pin is a compatibility floor: newer installed versions pass without downgrade (DR-0002).
+$script:RepowisePinnedVersion = "0.55.0"
 
 function Add-ToolInstallPlan {
     param(
@@ -1203,7 +1203,7 @@ switch ($script:EffectivePlatform) {
         Add-ToolInstallPlan "python" "apt/dnf/pacman install python3" "Runs provider preflight and scoped repowise docs helper." "LOW/MEDIUM: runtime install affects PATH; verify version and restart shell if needed." "Use an already managed Python 3.11+ runtime."
     }
 }
-Add-InstallPlan $installPlan "repowise" "pip" "python/python3 -m pip install --user repowise==$script:RepowisePinnedVersion" "Semantic index and wiki/docs memory." "MEDIUM: Python package supply chain; installed version is pinned to repowise==$script:RepowisePinnedVersion." "Skip repowise with -SkipRepowise for exact-search-only runs." "pip" $false
+Add-InstallPlan $installPlan "repowise" "pip" "python/python3 -m pip install --user repowise==$script:RepowisePinnedVersion" "Semantic index and wiki/docs memory." "MEDIUM: Python package supply chain; acquisition targets repowise==$script:RepowisePinnedVersion, while newer installed versions satisfy the floor (DR-0002)." "Skip repowise with -SkipRepowise for exact-search-only runs." "pip" $false
 Add-InstallPlan $installPlan "code-intel" "repo-local release binary" "copy bin/code-intel or target/release/code-intel into CODE_INTEL_BIN; build with cargo when no binary is present" "Manifest-bound DAG, evidence query, impact analysis, and atomic publication." "LOW: Pipeline-owned binary; installed digest is reported and --help is executed before success." "Use code-intel.ps1 only when the compiled command needs recovery." "repo-local" $false
 Add-InstallPlan $installPlan "integrations-manifest" "repo-local" "copy orchestration/integrations.json into CODE_INTEL_BIN/orchestration so the installed binary resolves capabilities outside a repo checkout" "Capability registry for the installed code-intel binary; overwritten on every reinstall." "LOW: repo-owned JSON manifest copied verbatim." "Set CODE_INTEL_INTEGRATIONS_MANIFEST to point at a custom manifest instead." "repo-local" $false
 Add-InstallPlan $installPlan "legacy-pipeline-entrypoint" "repo-local" "copy legacy/run-code-intel.ps1 and pipeline.config.json into CODE_INTEL_BIN so the installed binary's doctor bootstrap check finds them without a repo checkout" "Bootstrap readiness for the doctor DAG node; overwritten on every reinstall." "LOW: repo-owned PowerShell entrypoint and JSON config copied verbatim, not executed by the installer." "Compatibility surface only; the compiled code-intel binary is the production entry." "repo-local" $false

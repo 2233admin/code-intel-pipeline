@@ -75,10 +75,11 @@
     },
     {
       "name": "repowise",
-      "version": "0.38.0",
+      "version": "0.55.0",
+      "comparison": "minimum",
       "scope": "runtime",
       "required": true,
-      "rationale": "Semantic index provider. Track the latest reviewed PyPI release, but pin it exactly so --upgrade cannot pull an unreviewed release onto the machine (supply-chain-003).",
+      "rationale": "Semantic index provider. The reviewed official PyPI release is acquired exactly when installation is needed; it is a compatibility floor, so newer installed versions pass without downgrade (DR-0002).",
       "declaredIn": [
         {
           "file": "legacy/install-code-intel-pipeline.ps1",

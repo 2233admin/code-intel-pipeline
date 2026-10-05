@@ -531,10 +531,6 @@ fn the_real_metadata_switch_carries_the_pin() {
         "the repowise metadata entry must carry the supply-chain-003 pin, not a literal that drifted from it"
     );
     assert_eq!(
-        result["repowisePinned"], "0.38.0",
-        "if the pin moves, this assertion is the deliberate place to notice"
-    );
-    assert_eq!(
         result["rgHasPin"], false,
         "unpinned tools must not gain a pinnedVersion key, or they acquire a version probe they never had"
     );

@@ -46,7 +46,11 @@ jobs:
 
       - name: Install ripgrep
         shell: pwsh
-        run: choco install ripgrep --version 14.1.0 -y --no-progress
+        run: |
+          choco install ripgrep --version 15.2.0 -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "ripgrep installation failed: $LASTEXITCODE" }
+          $reported = @(rg --version)
+          if ($LASTEXITCODE -ne 0 -or $reported[0] -ne 'ripgrep 15.2.0') { throw "ripgrep version mismatch: $reported" }
 
       - name: Install ast-grep (pinned)
         shell: pwsh
@@ -84,6 +88,29 @@ jobs:
       - name: Build Rust CLI
         shell: pwsh
         run: cargo build -p code-intel --release --locked
+
+      - name: Real Repowise public CLI smoke (isolated)
+        shell: pwsh
+        run: |
+          $venv = Join-Path $env:RUNNER_TEMP '.runtime-repowise'
+          python -m venv $venv
+          if ($LASTEXITCODE -ne 0) { throw "Repowise isolated environment creation failed: $LASTEXITCODE" }
+          $python = Join-Path $venv 'Scripts/python.exe'
+          $provider = Join-Path $venv 'Scripts/repowise.exe'
+          & $python -m pip install --only-binary=:all: repowise==0.55.0
+          if ($LASTEXITCODE -ne 0) { throw "Repowise binary-only installation failed: $LASTEXITCODE" }
+          $reported = @(& $provider --version)
+          if ($LASTEXITCODE -ne 0 -or $reported.Count -ne 1 -or $reported[0] -ne 'repowise, version 0.55.0') { throw "Repowise version mismatch: $reported" }
+          & $python tests/test_runtime_repowise.py --cli target/release/code-intel.exe --provider-bin $provider
+          if ($LASTEXITCODE -ne 0) { throw "real Repowise public CLI smoke failed: $LASTEXITCODE" }
+
+      - name: Real ripgrep public capability smoke
+        shell: pwsh
+        run: |
+          $reported = @(rg --version)
+          if ($LASTEXITCODE -ne 0 -or $reported[0] -ne 'ripgrep 15.2.0') { throw "required ripgrep version mismatch: $reported" }
+          cargo test -p code-intel --locked --test capability_exec inventory_rg_exec_emits_one_result_and_stable_real_rg_artifact -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw "real ripgrep public capability smoke failed: $LASTEXITCODE" }
 
       - name: Authoritative self-scan (release gate parity)
         shell: pwsh
@@ -399,21 +426,36 @@ jobs:
       - name: Install ripgrep
         shell: pwsh
         run: |
+          $version = '15.2.0'
           if ($IsWindows) {
-            choco install ripgrep --version 14.1.0 -y --no-progress
-          }
-          elseif ($IsMacOS) {
-            brew install ripgrep
+            choco install ripgrep --version $version -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "ripgrep installation failed: $LASTEXITCODE" }
+            $binary = 'rg'
           }
           else {
-            if (Get-Command rg -ErrorAction SilentlyContinue) {
-              rg --version
+            if ($IsMacOS) {
+              $target = 'aarch64-apple-darwin'
+              $expected = '3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4'
             }
             else {
-              sudo apt-get update
-              sudo apt-get install -y ripgrep
+              $target = 'x86_64-unknown-linux-musl'
+              $expected = '33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c'
             }
+            $asset = "ripgrep-$version-$target.tar.gz"
+            $dir = Join-Path $env:RUNNER_TEMP 'ripgrep'
+            New-Item -ItemType Directory -Force $dir | Out-Null
+            $archive = Join-Path $dir $asset
+            Invoke-WebRequest -Uri "https://github.com/BurntSushi/ripgrep/releases/download/$version/$asset" -OutFile $archive
+            $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $expected) { throw "ripgrep artifact digest mismatch: $actual" }
+            tar -xzf $archive -C $dir
+            if ($LASTEXITCODE -ne 0) { throw "ripgrep extraction failed: $LASTEXITCODE" }
+            $bin = Join-Path $dir "ripgrep-$version-$target"
+            Add-Content -Path $env:GITHUB_PATH -Value $bin
+            $binary = Join-Path $bin 'rg'
           }
+          $reported = @(& $binary --version)
+          if ($LASTEXITCODE -ne 0 -or $reported[0] -ne "ripgrep $version") { throw "ripgrep version mismatch: $reported" }
 
       - name: Install ast-grep (pinned)
         shell: pwsh
@@ -465,6 +507,30 @@ jobs:
       - name: Build Rust CLI
         shell: pwsh
         run: cargo build -p code-intel --release --locked
+
+      - name: Real Repowise public CLI smoke (isolated)
+        shell: pwsh
+        run: |
+          $venv = Join-Path $env:RUNNER_TEMP '.runtime-repowise'
+          python -m venv $venv
+          if ($LASTEXITCODE -ne 0) { throw "Repowise isolated environment creation failed: $LASTEXITCODE" }
+          $python = Join-Path $venv $(if ($IsWindows) { 'Scripts/python.exe' } else { 'bin/python' })
+          $provider = Join-Path $venv $(if ($IsWindows) { 'Scripts/repowise.exe' } else { 'bin/repowise' })
+          & $python -m pip install --only-binary=:all: repowise==0.55.0
+          if ($LASTEXITCODE -ne 0) { throw "Repowise binary-only installation failed: $LASTEXITCODE" }
+          $reported = @(& $provider --version)
+          if ($LASTEXITCODE -ne 0 -or $reported.Count -ne 1 -or $reported[0] -ne 'repowise, version 0.55.0') { throw "Repowise version mismatch: $reported" }
+          $cli = if ($IsWindows) { 'target/release/code-intel.exe' } else { 'target/release/code-intel' }
+          & $python tests/test_runtime_repowise.py --cli $cli --provider-bin $provider
+          if ($LASTEXITCODE -ne 0) { throw "real Repowise public CLI smoke failed: $LASTEXITCODE" }
+
+      - name: Real ripgrep public capability smoke
+        shell: pwsh
+        run: |
+          $reported = @(rg --version)
+          if ($LASTEXITCODE -ne 0 -or $reported[0] -ne 'ripgrep 15.2.0') { throw "required ripgrep version mismatch: $reported" }
+          cargo test -p code-intel --locked --test capability_exec inventory_rg_exec_emits_one_result_and_stable_real_rg_artifact -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { throw "real ripgrep public capability smoke failed: $LASTEXITCODE" }
 
       - name: Authoritative self-scan (release gate parity)
         shell: pwsh

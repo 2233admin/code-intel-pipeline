@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Runtime provider maintenance (#419)**：Repowise 的现有 acquisition target/floor 更新为 0.55.0，toolchain 的安装版本比较遵循 minimum/no-downgrade；保留精确 acquisition 与 diagnostic/rollback、禁止 fact promotion 的调用契约。rg 原生 CI acquisition 更新为 15.2.0，并要求真实公共 CLI inventory smoke；增加真实 Repowise status/init/update 的旧请求回放、产物/源不变及 authority envelope 检查。Sentrux 固定公式源码不降级，旧历史 attestation/revision 不改；真实宿主升级与发布不在本票内。
 - (a) 类 CI/release PowerShell 调用点归零：atomic-capability 与 project-management-support 契约锁改为 cargo 测试，PS1 脚本保留在磁盘上（PM 走 internalization pin，atomic 保留避免耦合棘轮）；退役 35 个孤儿 legacy PowerShell 文件（#296/#298/#319）。
 - 清理仓根两个无引用死文件 `CODE_QUALITY_REVIEW.md`（仅标题的空 stub）与 `HANDOFF-ps1-migration.md`（#275/#277 交接记录，任务早已全部完成）；其余仓根文件逐一审计确认仍被引用而保留（#347）。
 - 独立审计确认 4 个 `templates/` 文件（`understanding-report.md`、`minimax-deploy-checklist.md`、`dependency-audit.md`、`idea-file.md`）在 .md/.json/.yml/.toml/.rs/.py 全仓与 orchestration digest pin 中零引用，予以删除；`templates/sentrux-rules.example.toml` 因被 README/CHANGELOG 实际引用而保留（#357/#358）。
