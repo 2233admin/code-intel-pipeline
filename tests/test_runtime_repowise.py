@@ -40,7 +40,18 @@ def main():
             # Upstream documents this control; it avoids a detached flusher holding cwd.
             "DO_NOT_TRACK": "1",
         })
-        for operation in ("status", "index", "status", "index"):
+        for operation in ("status", "index", "status", "index", "commit-fixture", "index", "index"):
+            if operation == "commit-fixture":
+                subprocess.run(["git", "-C", str(repo), "add", "--", "example.py"], check=True)
+                subprocess.run(
+                    ["git", "-C", str(repo), "-c", "user.name=Runtime smoke",
+                     "-c", "user.email=runtime-smoke@example.invalid",
+                     "-c", "commit.gpgsign=false",
+                     "-c", f"core.hooksPath={root / 'no-hooks'}",
+                     "commit", "--quiet", "-m", "Own smoke source"],
+                    check=True,
+                )
+                continue
             request = json.loads((SAMPLES / (operation + ".request.json")).read_text(encoding="utf-8"))
             argv = [str(repo) if value == "$SANDBOX" else value for value in request["argv"]]
             result = subprocess.run(
