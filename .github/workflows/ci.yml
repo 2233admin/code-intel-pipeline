@@ -437,9 +437,9 @@ jobs:
       - name: Install ripgrep
         shell: pwsh
         run: |
-          $version = '15.2.0'
+          $rgVersion = '15.2.0'
           if ($IsWindows) {
-            choco install ripgrep --version $version -y --no-progress
+            choco install ripgrep --version $rgVersion -y --no-progress
             if ($LASTEXITCODE -ne 0) { throw "ripgrep installation failed: $LASTEXITCODE" }
             $binary = 'rg'
           }
@@ -452,21 +452,21 @@ jobs:
               $target = 'x86_64-unknown-linux-musl'
               $expected = '33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c'
             }
-            $asset = "ripgrep-$version-$target.tar.gz"
+            $asset = "ripgrep-$rgVersion-$target.tar.gz"
             $dir = Join-Path $env:RUNNER_TEMP 'ripgrep'
             New-Item -ItemType Directory -Force $dir | Out-Null
             $archive = Join-Path $dir $asset
-            Invoke-WebRequest -Uri "https://github.com/BurntSushi/ripgrep/releases/download/$version/$asset" -OutFile $archive
+            Invoke-WebRequest -Uri "https://github.com/BurntSushi/ripgrep/releases/download/$rgVersion/$asset" -OutFile $archive
             $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($actual -ne $expected) { throw "ripgrep artifact digest mismatch: $actual" }
             tar -xzf $archive -C $dir
             if ($LASTEXITCODE -ne 0) { throw "ripgrep extraction failed: $LASTEXITCODE" }
-            $bin = Join-Path $dir "ripgrep-$version-$target"
+            $bin = Join-Path $dir "ripgrep-$rgVersion-$target"
             Add-Content -Path $env:GITHUB_PATH -Value $bin
             $binary = Join-Path $bin 'rg'
           }
           $reported = @(& $binary --version)
-          if ($LASTEXITCODE -ne 0 -or [regex]::Match($reported[0], '^ripgrep (\S+)(?:\s|$)').Groups[1].Value -ne $version) { throw "ripgrep version mismatch: $reported" }
+          if ($LASTEXITCODE -ne 0 -or [regex]::Match($reported[0], '^ripgrep (\S+)(?:\s|$)').Groups[1].Value -ne $rgVersion) { throw "ripgrep version mismatch: $reported" }
 
       - name: Install ast-grep (pinned)
         shell: pwsh

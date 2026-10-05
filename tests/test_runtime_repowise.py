@@ -47,8 +47,13 @@ def main():
             "DO_NOT_TRACK": "1",
         })
         operations = ("status", "index", "status", "index", "commit-fixture", "index")
-        operations += ("switch-provider", "status", "index") if args.previous_provider_bin else ("index",)
+        operations += ("switch-provider", "status") if args.previous_provider_bin else ()
+        operations += ("edit-fixture", "commit-fixture", "index")
         for operation in operations:
+            if operation == "edit-fixture":
+                before += b'\n\ndef farewell(name):\n    return "bye " + name\n'
+                source.write_bytes(before)
+                continue
             if operation == "switch-provider":
                 environment["PATH"] = str(provider.parent) + os.pathsep + environment["PATH"]
                 print("Switching the real provider over the same recorded-version index", flush=True)
@@ -76,6 +81,7 @@ def main():
             response = json.loads(result.stdout)
             expected = json.loads((SAMPLES / (operation + ".approved.json")).read_text(encoding="utf-8"))["response"]
             actual = {key: response.get(key) for key in expected}
+            actual["artifact"] = Path(response["artifact"]).resolve().relative_to(repo.resolve()).as_posix()
             if actual != expected:
                 raise AssertionError(f"{operation}: expected {expected}, got {actual}; raw={response}")
             if source.read_bytes() != before:

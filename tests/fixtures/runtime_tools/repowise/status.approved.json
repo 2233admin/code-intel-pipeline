@@ -7,6 +7,7 @@
     "schema": "code-intel-provider-api.v1",
     "provider": "repowise",
     "operation": "status",
+    "artifact": ".repowise/wiki.db",
     "classification": "legacy_diagnostic_or_rollback",
     "evidence": false,
     "factPromotionEligible": false,
