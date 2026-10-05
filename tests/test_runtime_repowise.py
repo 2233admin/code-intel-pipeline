@@ -13,11 +13,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cli", required=True)
     parser.add_argument("--provider-bin", required=True)
+    parser.add_argument("--previous-provider-bin")
     args = parser.parse_args()
     cli = str(Path(args.cli).resolve())
     provider = Path(args.provider_bin).resolve()
     if not provider.is_file():
         raise RuntimeError(f"Required real provider executable missing: {provider}")
+    initial_provider = provider
+    if args.previous_provider_bin:
+        initial_provider = Path(args.previous_provider_bin).resolve()
+        if not initial_provider.is_file():
+            raise RuntimeError(f"Required recorded-version provider missing: {initial_provider}")
     with tempfile.TemporaryDirectory(prefix="cip-runtime-provider-") as directory:
         root = Path(directory)
         repo = root / "repo"
@@ -31,7 +37,7 @@ def main():
             if not key.endswith(("_KEY", "_TOKEN"))
         }
         environment.update({
-            "PATH": str(provider.parent) + os.pathsep + environment["PATH"],
+            "PATH": str(initial_provider.parent) + os.pathsep + environment["PATH"],
             "HOME": str(root / "home"),
             "USERPROFILE": str(root / "home"),
             "PYTHONUTF8": "1",
@@ -40,7 +46,13 @@ def main():
             # Upstream documents this control; it avoids a detached flusher holding cwd.
             "DO_NOT_TRACK": "1",
         })
-        for operation in ("status", "index", "status", "index", "commit-fixture", "index", "index"):
+        operations = ("status", "index", "status", "index", "commit-fixture", "index")
+        operations += ("switch-provider", "status", "index") if args.previous_provider_bin else ("index",)
+        for operation in operations:
+            if operation == "switch-provider":
+                environment["PATH"] = str(provider.parent) + os.pathsep + environment["PATH"]
+                print("Switching the real provider over the same recorded-version index", flush=True)
+                continue
             if operation == "commit-fixture":
                 subprocess.run(["git", "-C", str(repo), "add", "--", "example.py"], check=True)
                 subprocess.run(

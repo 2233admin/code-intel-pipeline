@@ -103,6 +103,17 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $reported.Count -ne 1 -or $reported[0] -ne 'repowise, version 0.55.0') { throw "Repowise version mismatch: $reported" }
           & $python tests/test_runtime_repowise.py --cli target/release/code-intel.exe --provider-bin $provider
           if ($LASTEXITCODE -ne 0) { throw "real Repowise public CLI smoke failed: $LASTEXITCODE" }
+          $previousVenv = Join-Path $env:RUNNER_TEMP '.runtime-repowise-recorded'
+          python -m venv $previousVenv
+          if ($LASTEXITCODE -ne 0) { throw "Repowise recorded-version environment creation failed: $LASTEXITCODE" }
+          $previousPython = Join-Path $previousVenv 'Scripts/python.exe'
+          $previousProvider = Join-Path $previousVenv 'Scripts/repowise.exe'
+          & $previousPython -m pip install --only-binary=:all: repowise==0.38.0
+          if ($LASTEXITCODE -ne 0) { throw "Repowise recorded-version binary-only installation failed: $LASTEXITCODE" }
+          $reported = @(& $previousProvider --version)
+          if ($LASTEXITCODE -ne 0 -or $reported.Count -ne 1 -or $reported[0] -ne 'repowise, version 0.38.0') { throw "Repowise recorded-version mismatch: $reported" }
+          & $python tests/test_runtime_repowise.py --cli target/release/code-intel.exe --provider-bin $provider --previous-provider-bin $previousProvider
+          if ($LASTEXITCODE -ne 0) { throw "real Repowise old-index upgrade smoke failed: $LASTEXITCODE" }
 
       - name: Real ripgrep public capability smoke
         shell: pwsh
@@ -523,6 +534,17 @@ jobs:
           $cli = if ($IsWindows) { 'target/release/code-intel.exe' } else { 'target/release/code-intel' }
           & $python tests/test_runtime_repowise.py --cli $cli --provider-bin $provider
           if ($LASTEXITCODE -ne 0) { throw "real Repowise public CLI smoke failed: $LASTEXITCODE" }
+          $previousVenv = Join-Path $env:RUNNER_TEMP '.runtime-repowise-recorded'
+          python -m venv $previousVenv
+          if ($LASTEXITCODE -ne 0) { throw "Repowise recorded-version environment creation failed: $LASTEXITCODE" }
+          $previousPython = Join-Path $previousVenv $(if ($IsWindows) { 'Scripts/python.exe' } else { 'bin/python' })
+          $previousProvider = Join-Path $previousVenv $(if ($IsWindows) { 'Scripts/repowise.exe' } else { 'bin/repowise' })
+          & $previousPython -m pip install --only-binary=:all: repowise==0.38.0
+          if ($LASTEXITCODE -ne 0) { throw "Repowise recorded-version binary-only installation failed: $LASTEXITCODE" }
+          $reported = @(& $previousProvider --version)
+          if ($LASTEXITCODE -ne 0 -or $reported.Count -ne 1 -or $reported[0] -ne 'repowise, version 0.38.0') { throw "Repowise recorded-version mismatch: $reported" }
+          & $python tests/test_runtime_repowise.py --cli $cli --provider-bin $provider --previous-provider-bin $previousProvider
+          if ($LASTEXITCODE -ne 0) { throw "real Repowise old-index upgrade smoke failed: $LASTEXITCODE" }
 
       - name: Real ripgrep public capability smoke
         shell: pwsh

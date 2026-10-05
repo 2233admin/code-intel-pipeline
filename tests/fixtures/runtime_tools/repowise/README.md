@@ -6,6 +6,8 @@ Request JSON contains the original public provider invocation with the temporary
 
 The compared response is the Pipeline-owned diagnostic/authority envelope: schema, provider, operation, classification, evidence, factPromotionEligible, exitCode, ok, stderrTail. Successful indexing must also produce its declared artifact and leave input source bytes unchanged. Upstream `stdoutTail` is a raw provider presentation surface, not an admitted Engineering Fact: its changing console layout stays in recorded diagnostics, not in the Pipeline envelope approval. No error classification, failed exit or authority flag is scrubbed.
 
+The additional `--previous-provider-bin` replay creates the index with the actual recorded-version SDK, commits the owned source, then switches executables over that same index for status/update with the candidate SDK. It neither fabricates database contents nor imports provider storage internals. CI requires both exact acquisition versions and also runs the candidate-only fresh-index replay; the old SDK is an isolated compatibility baseline, not a live production target.
+
 Temporary absolute repository roots differ across runs. Provider version is retained as acquisition provenance rather than asserted equal across the intended upgrade. No timestamps, relative paths, source hashes, business results or error categories are removed from the compared envelope.
 
 Smoke execution uses isolated HOME and credential-free environment plus the documented `DO_NOT_TRACK=1` fixture privacy control. The first candidate smoke passed four operations but failed temporary-directory cleanup because upstream's detached telemetry flusher retained its working directory; that failure is preserved in #419. The control prevents that unrelated external telemetry process, rather than ignoring cleanup errors or changing production provider invocation. This is not an offline claim: index-only can still load remote grammar assets upstream.
@@ -21,4 +23,8 @@ The isolated replay driver exercises those compiled CLI requests:
 
 ```text
 python tests/test_runtime_repowise.py --cli <compiled-code-intel> --provider-bin <isolated-real-repowise>
+```
+
+```text
+python tests/test_runtime_repowise.py --cli <compiled-code-intel> --provider-bin <isolated-candidate-repowise> --previous-provider-bin <isolated-recorded-version-repowise>
 ```
