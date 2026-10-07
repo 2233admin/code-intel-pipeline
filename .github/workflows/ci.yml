@@ -45,6 +45,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "npm version probe failed" }
           npm ci --ignore-scripts --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { throw "Pinned npm acquisition failed" }
+          python tests/test_merge_queue_guard_regression.py -v
+          if ($LASTEXITCODE -ne 0) { throw "Npm merge queue replay regression failed" }
           python tests/test_merge_queue_guard.py
           if ($LASTEXITCODE -ne 0) { throw "Real npm merge queue smoke failed" }
 

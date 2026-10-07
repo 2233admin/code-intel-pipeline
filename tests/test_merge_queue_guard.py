@@ -23,6 +23,22 @@ def tracked_sources():
     }
 
 
+def sandbox_sources(repository):
+    sources = {}
+    for directory, directories, filenames in os.walk(repository):
+        # Fingerprint working files, including new/ignored sources, not Git's
+        # index, locks, refs, or other internal bookkeeping.
+        directories[:] = [name for name in directories if name != ".git"]
+        for name in filenames:
+            if name == ".git":
+                continue
+            path = Path(directory) / name
+            sources[path.relative_to(repository).as_posix()] = hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest()
+    return sources
+
+
 def queue_smoke(binary):
     binary = Path(binary).resolve()
     if not binary.is_file():
@@ -54,20 +70,28 @@ def queue_smoke(binary):
             f"export default {{...config, checkCommand: {json.dumps(command)}}};\n",
             encoding="utf-8"
         )
+        subprocess.run(
+            ["git", "add", "--", "acceptance.py", "claude-code-merge-queue.config.mjs"],
+            cwd=sandbox, check=True,
+        )
         for request_path in sorted(SAMPLES.glob("*.request.json")):
             name = request_path.name.removesuffix(".request.json")
             request = json.loads(request_path.read_text(encoding="utf-8"))
             approved = json.loads(
                 request_path.with_name(name + ".approved.json").read_text(encoding="utf-8")
             )["response"]
-            before = tracked_sources()
+            before = sandbox_sources(sandbox)
+            checkout_before = tracked_sources()
             result = subprocess.run(
                 ["node", str(binary), *request["argv"]], input=request["stdin"],
                 cwd=sandbox, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=30
             )
             actual = {
                 "exitCode": result.returncode,
-                "trackedSourceUnchanged": tracked_sources() == before,
+                "trackedSourceUnchanged": (
+                    sandbox_sources(sandbox) == before
+                    and tracked_sources() == checkout_before
+                ),
             }
             if actual != approved or marker.exists():
                 raise AssertionError(
