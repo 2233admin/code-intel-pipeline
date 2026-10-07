@@ -324,6 +324,34 @@ function Test-ToolVersionProbeAllowed {
     return $true
 }
 
+function Invoke-RepowiseVersionOwner {
+    # Compatibility forwarding only: the compiled CLI owns PEP 440 semantics.
+    param([string]$Reported, [string]$Minimum = "")
+
+    $exe = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
+    $candidates = @(
+        (Join-Path $repoRoot "bin/$exe"),
+        (Join-Path $repoRoot "target/release/$exe"),
+        (Join-Path $repoRoot "target/debug/$exe"),
+        (Get-Command "code-intel" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source)
+    )
+    $cli = @($candidates | Where-Object { Test-ToolVersionProbeAllowed $_ }) | Select-Object -First 1
+    if ($null -eq $cli) {
+        throw "Repowise version decisions require the packaged or installed compiled code-intel CLI."
+    }
+    $forward = @("repowise-version", "--reported", $Reported)
+    if (-not [string]::IsNullOrWhiteSpace($Minimum)) { $forward += @("--minimum", $Minimum) }
+    $raw = & $cli @forward
+    if ($LASTEXITCODE -ne 0) {
+        throw "Compiled Repowise version owner failed (exit $LASTEXITCODE); update code-intel before retrying."
+    }
+    $decision = ($raw -join [Environment]::NewLine) | ConvertFrom-Json
+    if ($decision.schema -ne "code-intel-repowise-version.v1") {
+        throw "Compiled Repowise version owner returned an incompatible contract."
+    }
+    return $decision
+}
+
 function Get-ToolVersion {
     # Reads a tool's own reported version.
     #
@@ -361,6 +389,11 @@ function Get-ToolVersion {
     }
 
     if ([string]::IsNullOrWhiteSpace($raw)) { return "" }
+    if ($ExpectedName -eq "repowise") {
+        $decision = Invoke-RepowiseVersionOwner -Reported $raw
+        return [string]$decision.version
+    }
+
 
     # Anchor to the tool's own name when we know it, so an unrelated
     # version-shaped number in a warning line cannot forge a match either way.
@@ -429,22 +462,27 @@ function Install-MissingTool {
             Add-InstallAction $Actions $CommandName "already_present" "$($existing.Source) (version not probed: source is not a rooted executable file)" "" $metadata.packageManager ([bool]$metadata.requiresElevation)
             return
         }
-        if ($actual -eq $pinned) {
-            Add-InstallAction $Actions $CommandName "already_present" "$($existing.Source) (version $actual)" "" $metadata.packageManager ([bool]$metadata.requiresElevation)
-            return
+        if ($CommandName -eq "repowise") {
+            $decision = Invoke-RepowiseVersionOwner -Reported "repowise, version $actual" -Minimum $pinned
+            if ($decision.meetsMinimum -eq $true) {
+                $detail = if ($decision.ordering -eq "greater") { "$($existing.Source) (version $actual, newer than pin $pinned)" } else { "$($existing.Source) (version $actual)" }
+                Add-InstallAction $Actions $CommandName "already_present" $detail "" $metadata.packageManager ([bool]$metadata.requiresElevation)
+                return
+            }
         }
-
-        # The pin is a floor, not an exact target: a tool the user upgraded
-        # past the pin must pass. Only older-than-pin (or unparseable) counts
-        # as drift — reinstalling at the pin would downgrade an intentional
-        # upgrade on every rerun.
-        $actualParsed = $null
-        $pinnedParsed = $null
-        if ([System.Version]::TryParse($actual, [ref]$actualParsed) -and
-            [System.Version]::TryParse($pinned, [ref]$pinnedParsed) -and
-            $actualParsed -gt $pinnedParsed) {
-            Add-InstallAction $Actions $CommandName "already_present" "$($existing.Source) (version $actual, newer than pin $pinned)" "" $metadata.packageManager ([bool]$metadata.requiresElevation)
-            return
+        else {
+            if ($actual -eq $pinned) {
+                Add-InstallAction $Actions $CommandName "already_present" "$($existing.Source) (version $actual)" "" $metadata.packageManager ([bool]$metadata.requiresElevation)
+                return
+            }
+            $actualParsed = $null
+            $pinnedParsed = $null
+            if ([System.Version]::TryParse($actual, [ref]$actualParsed) -and
+                [System.Version]::TryParse($pinned, [ref]$pinnedParsed) -and
+                $actualParsed -gt $pinnedParsed) {
+                Add-InstallAction $Actions $CommandName "already_present" "$($existing.Source) (version $actual, newer than pin $pinned)" "" $metadata.packageManager ([bool]$metadata.requiresElevation)
+                return
+            }
         }
 
         $observed = if ([string]::IsNullOrWhiteSpace($actual)) { "unknown" } else { $actual }
@@ -463,8 +501,13 @@ function Install-MissingTool {
         try {
             & $Installer
             $afterDrift = if ($CommandName -eq "python") { Get-CodeIntelPythonCommand } else { Get-Command $CommandName -ErrorAction SilentlyContinue }
-            $afterVersion = if ($afterDrift) { Get-ToolVersion $afterDrift.Source } else { "" }
-            if ($afterVersion -eq $pinned) {
+            $afterVersion = if ($afterDrift) { Get-ToolVersion $afterDrift.Source -ExpectedName $CommandName } else { "" }
+            $afterMatches = if ($CommandName -eq "repowise") {
+                (Invoke-RepowiseVersionOwner -Reported "repowise, version $afterVersion" -Minimum $pinned).meetsMinimum -eq $true
+            } else {
+                $afterVersion -eq $pinned
+            }
+            if ($afterMatches) {
                 Add-InstallAction $Actions $CommandName "upgraded" "$($afterDrift.Source) (version $afterVersion, was $observed)" "" $metadata.packageManager ([bool]$metadata.requiresElevation)
             }
             else {
