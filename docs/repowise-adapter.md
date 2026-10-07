@@ -38,3 +38,29 @@ The `legacy/run-code-intel.ps1 -RepowiseAdapterRequest ...` facade selects this 
 `legacy/run-code-intel.ps1` uses the production probe and continues index-only execution when optional
 docs health fails. Existing direct Repowise CLI/index commands remain compatibility and rollback
 surfaces; they are optional diagnostics/rollback only, and their raw output has no evidence or fact authority.
+
+## Installed-version decisions
+
+```text
+code-intel repowise-version --reported "repowise, version 0.55.0.post1" --minimum 0.55.0
+```
+
+This pure native command parses the complete named Repowise report and compares installed
+versions using PEP 440 ordering (`pep440_rs`), not SemVer or a three-component prefix. Release
+candidates and development releases precede their final release; post releases, local versions,
+epochs, and equivalent release-component spellings retain their Python version semantics.
+Unrelated warning numbers cannot supply a Repowise version.
+
+Stdout is `code-intel-repowise-version.v1` JSON with `version`, `minimum`, `ordering`,
+`meetsMinimum`, and `status`. Status is `parsed` without a floor, `accepted` or `below_minimum`
+with a floor, or `unknown` for invalid, missing, or conflicting named reports. Unknown reports
+leave `version`, `ordering`, and `meetsMinimum` null. Malformed floors and unknown or duplicate
+options exit `64` with no stdout; decisions exit `0`. The command does not spawn processes,
+install packages, access the network, or write artifacts.
+
+The retained installer compatibility surface forwards complete Repowise version probes and
+drift-repair completion decisions to this command. It selects the bundled `bin/code-intel`
+owner before checkout build outputs or PATH, so first installation does not depend on a
+previously installed CLI. A missing or incompatible owner fails clearly rather than reverting
+to the old comparison. Existing pip acquisition actions and native doctor presence checks
+remain unchanged. Installed versions at or above the floor are never downgraded.

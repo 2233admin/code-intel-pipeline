@@ -8,8 +8,8 @@ use crate::{
     codenexus_generate, compatibility_retirement_ticket, decision_port, decision_record,
     doctor_bootstrap, edit_apply, edit_impact, evidence_query, friction_log, hardcoded_paths,
     invocation_identity, mcp_serve, model_channels, perf_optimize, ponytail_gate, providers, repin,
-    repowise_hooks, retirement_boundary_guard, run_cli, run_commit, sentrux_quality_projection,
-    session_evidence, snapshot, survival_scan, verify,
+    repowise_hooks, repowise_version, retirement_boundary_guard, run_cli, run_commit,
+    sentrux_quality_projection, session_evidence, snapshot, survival_scan, verify,
 };
 
 use super::legacy::{
@@ -96,6 +96,7 @@ enum CompatibilityRoute {
     Snapshot,
     Repin,
     RepowiseHooks,
+    RepowiseVersion,
     FrictionLog,
     FrictionList,
     FrictionPublish,
@@ -648,6 +649,7 @@ fn execute_compatibility(command: CompatibilityCommand) -> i32 {
         CompatibilityRoute::Snapshot => snapshot::run_raw(raw),
         CompatibilityRoute::Repin => repin::run_raw(raw),
         CompatibilityRoute::RepowiseHooks => repowise_hooks::run_raw(raw),
+        CompatibilityRoute::RepowiseVersion => repowise_version::run_raw(raw),
         CompatibilityRoute::FrictionLog => friction_log::log_cmd::run_raw(raw),
         CompatibilityRoute::FrictionList => friction_log::list_cmd::run_raw(raw),
         CompatibilityRoute::FrictionPublish => friction_log::publish_cmd::run_raw(raw),
