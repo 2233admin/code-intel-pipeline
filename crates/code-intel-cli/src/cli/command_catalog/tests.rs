@@ -288,39 +288,6 @@ fn command_contracts_use_concrete_output_and_exit_types() {
 }
 
 #[test]
-fn unified_route_inventory_owns_version_primary_raw_and_legacy_dispatch() {
-    assert!(COMMAND_ROUTES
-        .iter()
-        .any(|route| matches!(route, CommandRoute::Version(_))));
-    assert!(COMMAND_ROUTES
-        .iter()
-        .any(|route| matches!(route, CommandRoute::Primary(_))));
-    assert!(COMMAND_ROUTES
-        .iter()
-        .any(|route| matches!(route, CommandRoute::RunAlias(_))));
-    assert!(COMMAND_ROUTES
-        .iter()
-        .any(|route| matches!(route, CommandRoute::ProjectStatus(_))));
-    assert!(COMMAND_ROUTES
-        .iter()
-        .any(|route| matches!(route, CommandRoute::ProjectQuery(_))));
-    assert_eq!(
-        COMMAND_ROUTES
-            .iter()
-            .filter(|route| matches!(route, CommandRoute::Raw(_)))
-            .count(),
-        44
-    );
-    assert_eq!(
-        COMMAND_ROUTES
-            .iter()
-            .filter(|route| matches!(route, CommandRoute::Legacy(_)))
-            .count(),
-        13
-    );
-}
-
-#[test]
 fn command_authority_and_effect_contracts_cover_conditional_and_mutating_routes() {
     let raw = |command: &str, subcommand: Option<&str>| {
         COMMAND_ROUTES

@@ -44,23 +44,6 @@ jobs:
       - name: Cache cargo registry and dependency builds
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-
-      # Temporary resolution on CI only: DR-0013 excludes the affected host.
-      - name: Resolve approved PEP 440 parser lock
-        if: github.event_name == 'workflow_dispatch'
-        shell: pwsh
-        run: |
-          cargo update -p code-intel
-          if ($LASTEXITCODE -ne 0) { throw "workspace lock resolution failed: $LASTEXITCODE" }
-          cargo update -p pep440_rs --precise 0.7.3
-          if ($LASTEXITCODE -ne 0) { throw "approved parser resolution failed: $LASTEXITCODE" }
-
-      - name: Upload resolved parser lock
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: desk419-pep440-lock
-          path: Cargo.lock
       - name: Install ripgrep
         shell: pwsh
         run: |
