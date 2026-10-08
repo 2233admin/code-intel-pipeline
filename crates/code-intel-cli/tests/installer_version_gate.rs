@@ -170,7 +170,8 @@ fn confirmed_drift_reaches_the_ok_computation_but_uncertainty_does_not() {
 fn compatibility_forwarding_preserves_python_prerelease_and_postrelease_decisions() {
     assert_eq!(scenario("pep-floor-rc")["status"], "version_drift");
     assert_eq!(scenario("pep-floor-post")["status"], "already_present");
-    assert_eq!(scenario("pep-upgrade-newer")["status"], "upgraded");
+    let upgraded = scenario("pep-upgrade-newer");
+    assert_eq!(upgraded["status"], "upgraded", "{upgraded}");
 }
 
 #[test]
