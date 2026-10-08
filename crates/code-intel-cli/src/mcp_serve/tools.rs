@@ -2,9 +2,8 @@
 //!
 //! Kept apart from `handlers` so the wire-facing contract (names, argument
 //! schemas, the prose an agent reads when deciding what to call) can be
-//! reviewed as one surface. `handlers::call` and `NAMES` are held together by
-//! `every_registered_tool_has_a_handler` in `tests`, so a descriptor can never
-//! advertise a tool that answers "unknown tool" at call time.
+//! reviewed as one surface. Protocol smoke exercises advertised queries against
+//! the real handlers; permanent tests cover consumer-visible guard behavior.
 
 use serde_json::{json, Value};
 

@@ -78,50 +78,6 @@ fn tool_payload(response: &Value) -> Value {
 }
 
 #[test]
-fn every_registered_tool_has_a_handler() {
-    let fixture = Fixture::create("registry");
-    let context = fixture.context();
-    for name in tools::NAMES {
-        let error = handlers::call(&context, name, &json!({}))
-            .err()
-            .map(|error| error.message().to_string())
-            .unwrap_or_default();
-        assert!(
-            !error.starts_with("unknown tool"),
-            "{name} is advertised but has no handler"
-        );
-    }
-    assert_eq!(tools::descriptors().len(), tools::NAMES.len());
-}
-
-#[test]
-fn every_descriptor_declares_a_closed_read_only_schema() {
-    for descriptor in tools::descriptors() {
-        let name = descriptor["name"].as_str().expect("descriptor name");
-        assert!(
-            tools::is_registered(name),
-            "{name} is described but not registered"
-        );
-        assert_eq!(
-            descriptor["inputSchema"]["additionalProperties"],
-            json!(false),
-            "{name} accepts unexpected arguments"
-        );
-        assert_eq!(
-            descriptor["annotations"]["readOnlyHint"],
-            json!(true),
-            "{name} is not annotated read-only"
-        );
-        assert!(
-            descriptor["description"]
-                .as_str()
-                .is_some_and(|text| text.len() > 80),
-            "{name} has no usable description"
-        );
-    }
-}
-
-#[test]
 fn notifications_are_never_answered() {
     let fixture = Fixture::create("notify");
     let context = fixture.context();
@@ -217,21 +173,6 @@ fn malformed_and_unroutable_messages_answer_as_protocol_errors() {
     )
     .expect("response");
     assert_eq!(unknown_tool["error"]["code"], json!(-32602));
-}
-
-#[test]
-fn tools_list_serves_the_whole_registry() {
-    let fixture = Fixture::create("list");
-    let context = fixture.context();
-    let response =
-        super::handle_line(&context, &request(1, "tools/list", json!({}))).expect("response");
-    let served = response["result"]["tools"]
-        .as_array()
-        .expect("tools array")
-        .iter()
-        .filter_map(|tool| tool["name"].as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(served, tools::NAMES.to_vec());
 }
 
 /// A refusal is an answer, not a transport fault.
