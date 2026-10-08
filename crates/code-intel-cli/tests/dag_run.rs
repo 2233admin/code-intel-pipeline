@@ -382,7 +382,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
         String::from_utf8_lossy(&query.stderr)
     );
     let query: Value = serde_json::from_slice(&query.stdout).unwrap();
-    assert_eq!(query["schema"], "code-intel-evidence-query.v1");
+    assert_eq!(query["schema"], "code-intel-evidence-query.v2");
     assert_eq!(query["run"], "run-001");
     assert_eq!(query["runOutcome"], "completed");
     assert_eq!(query["authority"]["status"], "committed");
