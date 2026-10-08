@@ -189,6 +189,45 @@ fn report(sources: Vec<Value>) -> Value {
     json!({"schema":"code-intel-anchor-verification.v1","counts":counts,"sources":sources})
 }
 
+#[test]
+fn content_beyond_preview_matches_without_exhaustive_navigation_or_behavior_claims() {
+    let marker = "src/preview_tail_counterexample.rs";
+    let mut paths = (0..40)
+        .map(|index| format!("src/preview_prefix_{index:03}.rs"))
+        .collect::<Vec<_>>();
+    paths.push(marker.to_string());
+    let paths = paths.iter().map(String::as_str).collect::<Vec<_>>();
+    let fixture = Fixture::new(vec![ranking(&paths)], |_| None);
+    let output = common::cli()
+        .args(["artifact", "query", "--artifact-root"])
+        .arg(&fixture.artifacts)
+        .args([
+            "--repo",
+            "fixture-repo",
+            "--type",
+            "code_evidence.agent_slice",
+            "--contains",
+            marker,
+            "--limit",
+            "1",
+        ])
+        .output()
+        .unwrap();
+    let query = successful_json(output);
+    let matches = query["matches"].as_array().unwrap();
+    assert_eq!(matches.len(), 1);
+    assert_eq!(query["searchCoverage"]["status"], "complete");
+    assert_eq!(
+        query["evidenceAssessment"]["behaviorVerification"],
+        "not_assessed"
+    );
+    let found = &matches[0];
+    assert_eq!(found["previewTruncated"], true);
+    assert!(!found["preview"].as_str().unwrap().contains(marker));
+    assert_eq!(found["anchorEvidence"]["itemsTruncated"], true);
+    assert_eq!(found["anchorEvidence"]["status"], "unavailable");
+}
+
 fn assert_unknown_items(navigation: &Value) {
     assert_eq!(navigation["basis"], "publication_time");
     assert_eq!(navigation["currentValidity"], "not_assessed");
