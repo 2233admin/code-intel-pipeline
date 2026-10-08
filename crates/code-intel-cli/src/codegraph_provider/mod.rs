@@ -4,6 +4,8 @@ mod parser;
 mod process;
 mod scope;
 mod storage;
+#[path = "../tool_path.rs"]
+mod tool_path;
 
 use std::fs;
 use std::path::Path;

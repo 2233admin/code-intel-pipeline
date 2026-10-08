@@ -25,7 +25,7 @@ impl Engine {
                 if !path.is_file() { return Err(Failure::unavailable(format!("CodeGraph executable unavailable: {}", path.display()))); }
                 path
             }
-            None => crate::tool_path::locate("codegraph", None).ok_or_else(|| Failure::unavailable("CodeGraph is not installed on absolute PATH; install official CodeGraph >=1.6.2"))?,
+            None => super::tool_path::locate("codegraph", None).ok_or_else(|| Failure::unavailable("CodeGraph is not installed on absolute PATH; install official CodeGraph >=1.6.2"))?,
         };
         let executable = fs::canonicalize(executable)
             .map_err(|e| Failure::io(format!("resolve CodeGraph executable: {e}")))?;
