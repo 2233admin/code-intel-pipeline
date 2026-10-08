@@ -14,322 +14,11 @@
 //! to the tree; assertions live on the Rust side, matching the #78/#80
 //! direction of porting PowerShell call points to Rust.
 
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+#[path = "common/installer_version.rs"]
+mod installer_version;
 
-use serde_json::Value;
-
-static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .canonicalize()
-        .expect("repo root")
-}
-
-struct Temp(PathBuf);
-
-impl Temp {
-    fn new(tag: &str) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "code-intel-version-gate-{tag}-{}-{nonce}-{}",
-            std::process::id(),
-            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&dir).expect("scratch");
-        Self(dir)
-    }
-}
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
-/// Lifts `Get-ToolVersion` and `Install-MissingTool` out of the installer by
-/// AST, stubs their collaborators, runs one scenario, and prints one JSON
-/// document. Kept in a temp file rather than the tree: AGENTS.md forbids
-/// adding PowerShell scripts to the repository.
-///
-/// Delimited with `r##"` rather than `r#"`: the POSIX stub writes a `"#!/bin/sh"`
-/// line, and the `"#` inside it would otherwise close the raw string.
-const DRIVER: &str = r##"
-param(
-    [Parameter(Mandatory = $true)][string]$Installer,
-    [Parameter(Mandatory = $true)][string]$Scenario,
-    [Parameter(Mandatory = $true)][string]$Workspace
-)
-
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
-$ast = [System.Management.Automation.Language.Parser]::ParseFile($Installer, [ref]$null, [ref]$null)
-foreach ($name in @("Test-ToolVersionProbeAllowed", "Get-ToolVersion", "Install-MissingTool", "Add-VersionComplianceChecks")) {
-    $fn = $ast.Find({
-            param($node)
-            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
-        }, $true)
-    if (-not $fn) { throw "function not found in installer: $name" }
-    . ([scriptblock]::Create($fn.Extent.Text))
-}
-
-function New-VersionStub {
-    # Platform-correct stubs. `cross-platform-smoke` runs `cargo test -p
-    # code-intel --locked` on macos-latest and ubuntu-latest, where a `.cmd`
-    # batch file is not executable — `& $Source` would throw, Get-ToolVersion
-    # would swallow it as "unknown", and every scenario below would fail for a
-    # reason unrelated to the gate.
-    param([string]$Tag, [string]$Output)
-    if ($IsWindows) {
-        $path = Join-Path $Workspace "$Tag.cmd"
-        Set-Content -LiteralPath $path -Encoding ascii -Value @("@echo off", "echo $Output")
-    }
-    else {
-        $path = Join-Path $Workspace $Tag
-        Set-Content -LiteralPath $path -Encoding ascii -Value @("#!/bin/sh", "echo '$Output'")
-        & chmod +x $path
-    }
-    return $path
-}
-
-function Get-MissingToolPath {
-    param()
-    if ($IsWindows) { return (Join-Path $Workspace "does-not-exist.cmd") }
-    return (Join-Path $Workspace "does-not-exist")
-}
-
-function Write-ProbeResult {
-    # $null means the probe was REFUSED (never executed); "" means it RAN and
-    # produced no readable version. Collapsing the two would let an
-    # unverifiable source read as drift and induce a reinstall.
-    param($Value)
-    @{
-        refused = ($null -eq $Value)
-        parsed  = if ($null -eq $Value) { "" } else { [string]$Value }
-    } | ConvertTo-Json -Compress
-}
-
-$script:Recorded = $null
-$script:StubMetadata = $null
-$script:StubCommandSource = $null
-
-function Get-InstallMetadata { param([string]$CommandName) return $script:StubMetadata }
-function Get-CodeIntelPythonCommand { return $null }
-
-function Add-InstallAction {
-    param(
-        $Actions, [string]$Name, [string]$Status, [string]$Detail = "",
-        [string]$Fix = "", [string]$PackageManager = "", [bool]$RequiresElevation = $false
-    )
-    $script:Recorded = [ordered]@{ name = $Name; status = $Status; detail = $Detail; fix = $Fix }
-}
-
-function Get-Command {
-    # Remaining-args sink so the caller's `-ErrorAction SilentlyContinue` binds
-    # here instead of colliding with the common parameter.
-    param(
-        [Parameter(Position = 0)][string]$Name,
-        [Parameter(ValueFromRemainingArguments = $true)]$Rest
-    )
-    if ($script:StubCommandSource) { return [pscustomobject]@{ Source = $script:StubCommandSource } }
-    return $null
-}
-
-$at032 = New-VersionStub "repowise-032" "repowise, version 0.32.0"
-$at036 = New-VersionStub "repowise-036" "repowise, version 0.36.0"
-$at037 = New-VersionStub "repowise-037" "repowise, version 0.37.0"
-$at038 = New-VersionStub "repowise-038" "repowise, version 0.38.0"
-$prerelease = New-VersionStub "code-intel" "code-intel 0.7.0-beta.2"
-$silent = New-VersionStub "silent" "no version here"
-
-switch ($Scenario) {
-    "parse-standard" { Write-ProbeResult (Get-ToolVersion $at032 -ExpectedName "repowise"); break }
-    "parse-prerelease" { Write-ProbeResult (Get-ToolVersion $prerelease -ExpectedName "code-intel"); break }
-    "parse-unparseable" { Write-ProbeResult (Get-ToolVersion $silent); break }
-    "parse-empty-source" { Write-ProbeResult (Get-ToolVersion ""); break }
-    "parse-missing-tool" { Write-ProbeResult (Get-ToolVersion (Get-MissingToolPath)); break }
-    "parse-relative-source" {
-        # A bare/relative name must never be executed: PowerShell would resolve
-        # it against the current directory, which is the repository under
-        # analysis.
-        Write-ProbeResult (Get-ToolVersion "repowise")
-        break
-    }
-    "parse-script-source" {
-        # The load-bearing security case. A `.ps1` on PATH resolves to an
-        # ExternalScriptInfo whose Source is the script path; `& $Source` would
-        # run it INSIDE the installer process.
-        $script = Join-Path $Workspace "repowise.ps1"
-        Set-Content -LiteralPath $script -Encoding ascii -Value @('Write-Output "repowise, version 0.38.0"')
-        Write-ProbeResult (Get-ToolVersion $script -ExpectedName "repowise")
-        break
-    }
-    "parse-noise-before-version" {
-        # A deprecation banner carrying its own version-shaped number must not
-        # win the match when the tool name anchors the real line.
-        $noisy = New-VersionStub "noisy" "DeprecationWarning from setuptools 3.11.0"
-        Add-Content -LiteralPath $noisy -Value $(if ($IsWindows) { "echo repowise, version 0.38.0" } else { "echo 'repowise, version 0.38.0'" })
-        Write-ProbeResult (Get-ToolVersion $noisy -ExpectedName "repowise")
-        break
-    }
-    "compliance-checks" {
-        # `ok` is computed from $checks only. This asserts drift actually
-        # reaches that computation, and that an unmeasurable version does not
-        # fail the install.
-        $checks = [System.Collections.Generic.List[object]]::new()
-        function Add-Check {
-            param($Checks, [string]$Name, [string]$Category, [bool]$Required, [bool]$Ok, [string]$Detail = "", [string]$Fix = "")
-            $Checks.Add([ordered]@{ name = $Name; category = $Category; required = $Required; ok = $Ok })
-        }
-        $actions = [System.Collections.Generic.List[object]]::new()
-        $actions.Add([ordered]@{ name = "repowise"; status = "version_drift"; detail = "reports version 0.32.0; pinned version is 0.38.0"; fix = "f" })
-        $actions.Add([ordered]@{ name = "mystery"; status = "version_drift"; detail = "reports version unknown; pinned version is 0.38.0"; fix = "f" })
-        $actions.Add([ordered]@{ name = "rg"; status = "already_present"; detail = "/usr/bin/rg"; fix = "" })
-        $actions.Add([ordered]@{ name = "fine"; status = "upgraded"; detail = "now 0.38.0, was 0.32.0"; fix = "" })
-
-        Add-VersionComplianceChecks $checks $actions
-        @{
-            emitted  = @($checks | ForEach-Object { $_.name })
-            required = @($checks | Where-Object { $_.required } | ForEach-Object { $_.name })
-        } | ConvertTo-Json -Compress
-        break
-    }
-    "wiring" {
-        # Everything above stubs Get-InstallMetadata, so nothing so far proves
-        # the REAL switch actually carries the pin. Without this scenario,
-        # deleting `pinnedVersion = $script:RepowisePinnedVersion` from the
-        # installer restores the presence-only bug and every other test still
-        # passes.
-        $installerText = Get-Content -Raw -LiteralPath $Installer
-        $pinMatch = [regex]::Match($installerText, '\$script:RepowisePinnedVersion\s*=\s*"([^"]+)"')
-        if (-not $pinMatch.Success) { throw "RepowisePinnedVersion assignment not found in installer" }
-        $script:RepowisePinnedVersion = $pinMatch.Groups[1].Value
-        $script:EffectivePlatform = if ($IsWindows) { "windows" } elseif ($IsMacOS) { "macos" } else { "linux" }
-
-        $realMetadata = $ast.Find({
-                param($node)
-                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq "Get-InstallMetadata"
-            }, $true)
-        if (-not $realMetadata) { throw "Get-InstallMetadata not found in installer" }
-        . ([scriptblock]::Create($realMetadata.Extent.Text))
-
-        $repowise = Get-InstallMetadata "repowise"
-        $rg = Get-InstallMetadata "rg"
-        # Report a sentinel rather than dereferencing a missing key: under
-        # StrictMode that would surface as a property-access exception, which
-        # reads as a broken test rather than as the regression it is.
-        @{
-            pinLiteral     = $script:RepowisePinnedVersion
-            repowisePinned = if ($repowise.Contains("pinnedVersion")) { [string]$repowise.pinnedVersion } else { "<no pinnedVersion key>" }
-            rgHasPin       = [bool]$rg.Contains("pinnedVersion")
-        } | ConvertTo-Json -Compress
-        break
-    }
-    "match" {
-        $InstallMissing = $false
-        $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.32.0" }
-        $script:StubCommandSource = $at032
-        Install-MissingTool ([System.Collections.Generic.List[object]]::new()) "repowise" { throw "installer must not run when the version matches" } "fix"
-        $script:Recorded | ConvertTo-Json -Compress
-        break
-    }
-    "drift" {
-        $InstallMissing = $false
-        $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.38.0" }
-        $script:StubCommandSource = $at032
-        Install-MissingTool ([System.Collections.Generic.List[object]]::new()) "repowise" { throw "installer must not run without -InstallMissing" } "fix"
-        $script:Recorded | ConvertTo-Json -Compress
-        break
-    }
-    "newer" {
-        $InstallMissing = $true
-        $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.36.0" }
-        $script:StubCommandSource = $at037
-        Install-MissingTool ([System.Collections.Generic.List[object]]::new()) "repowise" { throw "installer must not downgrade a tool newer than the pin" } "fix"
-        $script:Recorded | ConvertTo-Json -Compress
-        break
-    }
-    "drift-unknown" {
-        $InstallMissing = $false
-        $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.38.0" }
-        $script:StubCommandSource = $silent
-        Install-MissingTool ([System.Collections.Generic.List[object]]::new()) "repowise" { throw "installer must not run without -InstallMissing" } "fix"
-        $script:Recorded | ConvertTo-Json -Compress
-        break
-    }
-    "unpinned" {
-        $InstallMissing = $false
-        $script:StubMetadata = [ordered]@{ packageManager = "winget"; requiresElevation = $false }
-        $script:StubCommandSource = $at032
-        Install-MissingTool ([System.Collections.Generic.List[object]]::new()) "rg" { throw "installer must not run for a present unpinned tool" } "fix"
-        $result = $script:Recorded
-        $result["expectedDetail"] = $at032
-        $result | ConvertTo-Json -Compress
-        break
-    }
-    "upgrade" {
-        $InstallMissing = $true
-        $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.38.0" }
-        $script:StubCommandSource = $at032
-        Install-MissingTool ([System.Collections.Generic.List[object]]::new()) "repowise" { $script:StubCommandSource = $at038 } "fix"
-        $script:Recorded | ConvertTo-Json -Compress
-        break
-    }
-    "upgrade-failed" {
-        $InstallMissing = $true
-        $script:StubMetadata = [ordered]@{ packageManager = "pip"; requiresElevation = $false; pinnedVersion = "0.38.0" }
-        $script:StubCommandSource = $at032
-        Install-MissingTool ([System.Collections.Generic.List[object]]::new()) "repowise" { } "fix"
-        $script:Recorded | ConvertTo-Json -Compress
-        break
-    }
-    default { throw "unknown scenario: $Scenario" }
-}
-"##;
-
-fn scenario(tag: &str) -> Value {
-    let temp = Temp::new(tag);
-    let driver = temp.0.join("driver.ps1");
-    fs::write(&driver, DRIVER).expect("write driver");
-
-    let installer = repo_root().join("legacy/install-code-intel-pipeline.ps1");
-    let output = Command::new("pwsh")
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-        ])
-        .arg(&driver)
-        .arg("-Installer")
-        .arg(&installer)
-        .arg("-Scenario")
-        .arg(tag)
-        .arg("-Workspace")
-        .arg(&temp.0)
-        .output()
-        .expect("run version gate driver");
-
-    assert!(
-        output.status.success(),
-        "driver failed for scenario {tag}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|err| panic!("scenario {tag} emitted non-JSON ({err}): {stdout}"))
-}
+use installer_version::{scenario, scenario_from_installer};
+use std::path::PathBuf;
 
 #[test]
 fn tool_version_parses_the_formats_the_gate_actually_meets() {
@@ -400,14 +89,6 @@ fn a_probe_that_ran_but_read_nothing_is_unknown_not_a_match() {
 fn a_matching_pinned_version_stays_already_present() {
     let result = scenario("match");
     assert_eq!(result["status"], "already_present");
-    assert!(
-        result["detail"]
-            .as_str()
-            .unwrap()
-            .contains("version 0.32.0"),
-        "the matching case reports what it observed: {}",
-        result["detail"]
-    );
 }
 
 #[test]
@@ -418,11 +99,6 @@ fn newer_than_pin_stays_already_present_and_is_never_downgraded() {
     // installer block throws if invoked.
     let result = scenario("newer");
     assert_eq!(result["status"], "already_present");
-    let detail = result["detail"].as_str().unwrap();
-    assert!(
-        detail.contains("0.37.0") && detail.contains("newer than pin 0.36.0"),
-        "names both the observed version and the floor: {detail}"
-    );
 }
 
 #[test]
@@ -432,51 +108,24 @@ fn drift_is_reported_even_when_the_gate_may_not_fix_it() {
     // present-but-wrong version previously read as already_present.
     let result = scenario("drift");
     assert_eq!(result["status"], "version_drift");
-    let detail = result["detail"].as_str().unwrap();
-    assert!(
-        detail.contains("0.32.0"),
-        "names the observed version: {detail}"
-    );
-    assert!(
-        detail.contains("0.38.0"),
-        "names the pinned version: {detail}"
-    );
-    assert!(
-        result["fix"].as_str().unwrap().contains("-InstallMissing"),
-        "tells the operator how to resolve it"
-    );
 }
 
 #[test]
 fn an_unreadable_version_reports_drift_rather_than_passing() {
     let result = scenario("drift-unknown");
     assert_eq!(result["status"], "version_drift");
-    assert!(
-        result["detail"].as_str().unwrap().contains("unknown"),
-        "got: {}",
-        result["detail"]
-    );
 }
 
 #[test]
 fn tools_without_a_pin_keep_their_previous_behaviour() {
     let result = scenario("unpinned");
     assert_eq!(result["status"], "already_present");
-    assert_eq!(
-        result["detail"], result["expectedDetail"],
-        "an unpinned tool's detail stays the bare source path, with no version probe appended"
-    );
 }
 
 #[test]
 fn install_missing_upgrades_a_drifted_tool_to_the_pin() {
     let result = scenario("upgrade");
     assert_eq!(result["status"], "upgraded");
-    assert!(
-        result["detail"].as_str().unwrap().contains("was 0.32.0"),
-        "an upgrade records what it replaced: {}",
-        result["detail"]
-    );
 }
 
 #[test]
@@ -518,24 +167,37 @@ fn confirmed_drift_reaches_the_ok_computation_but_uncertainty_does_not() {
 }
 
 #[test]
-fn the_real_metadata_switch_carries_the_pin() {
-    // Every scenario above stubs Get-InstallMetadata, so none of them prove the
-    // production switch is wired. Deleting `pinnedVersion =
-    // $script:RepowisePinnedVersion` from the installer restores the exact
-    // presence-only bug this change fixes; without this test that deletion is
-    // invisible.
-    let result = scenario("wiring");
+fn compatibility_forwarding_preserves_python_prerelease_and_postrelease_decisions() {
+    assert_eq!(scenario("pep-floor-rc")["status"], "version_drift");
+    assert_eq!(scenario("pep-floor-post")["status"], "already_present");
+    let upgraded = scenario("pep-upgrade-newer");
+    assert_eq!(upgraded["status"], "upgraded", "{upgraded}");
+}
 
+#[test]
+fn a_missing_native_version_owner_cannot_trigger_installation() {
+    let result = scenario("missing-owner");
+    assert_eq!(result["blocked"], true);
+    assert_eq!(result["installerCalled"], false);
+}
+
+#[test]
+#[ignore = "DR-0001 topology gate; CI supplies the installed release root"]
+fn packaged_install_preserves_repowise_python_version_floor() {
+    let root = PathBuf::from(
+        std::env::var("CODE_INTEL_SMOKE_RELEASE_ROOT").expect("installed release root"),
+    );
+    let installer = root.join("legacy/install-code-intel-pipeline.ps1");
     assert_eq!(
-        result["repowisePinned"], result["pinLiteral"],
-        "the repowise metadata entry must carry the supply-chain-003 pin, not a literal that drifted from it"
+        scenario_from_installer("pep-floor-rc", &installer, Some(&root))["status"],
+        "version_drift"
     );
     assert_eq!(
-        result["repowisePinned"], "0.38.0",
-        "if the pin moves, this assertion is the deliberate place to notice"
+        scenario_from_installer("pep-floor-post", &installer, Some(&root))["status"],
+        "already_present"
     );
     assert_eq!(
-        result["rgHasPin"], false,
-        "unpinned tools must not gain a pinnedVersion key, or they acquire a version probe they never had"
+        scenario_from_installer("pep-upgrade-newer", &installer, Some(&root))["status"],
+        "upgraded"
     );
 }

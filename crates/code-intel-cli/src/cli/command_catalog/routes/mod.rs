@@ -486,6 +486,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
         ),
     },
     CommandRoute::Raw(repowise_routes::HOOKS),
+    CommandRoute::Raw(repowise_routes::VERSION),
     CommandRoute::Raw(friction_routes::LOG),
     CommandRoute::Raw(friction_routes::LIST),
     CommandRoute::Raw(friction_routes::PUBLISH),

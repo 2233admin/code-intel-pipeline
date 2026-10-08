@@ -1,0 +1,20 @@
+{
+  "argv": [
+    "C:/tmp/code-intel-417-final-37251124463/code-intel-pipeline/bin/code-intel.exe",
+    "provider",
+    "--action",
+    "Invoke",
+    "--provider",
+    "repowise",
+    "--operation",
+    "status",
+    "--repo",
+    "C:\\tmp\\desk419-real-capture\\repo",
+    "--json"
+  ],
+  "providerVersion": "0.38.0",
+  "cliHead": "c6fefea",
+  "exitCode": 0,
+  "stdout": "{\n  \"artifact\": \"C:\\\\tmp\\\\desk419-real-capture\\\\repo\\\\.repowise\\\\wiki.db\",\n  \"classification\": \"legacy_diagnostic_or_rollback\",\n  \"evidence\": false,\n  \"exitCode\": 0,\n  \"factPromotionEligible\": false,\n  \"ok\": true,\n  \"operation\": \"status\",\n  \"provider\": \"repowise\",\n  \"schema\": \"code-intel-provider-api.v1\",\n  \"stderrTail\": \"\",\n  \"stdoutTail\": \"No .repowise/ directory found. Run 'repowise init' first.\"\n}\n",
+  "stderr": ""
+}

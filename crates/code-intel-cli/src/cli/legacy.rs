@@ -1163,6 +1163,7 @@ Commands:
   repin [--repo <root>] [--write] [--json] [--exclude <path-prefix>]...
   verify <path> [--json] (aggregates lint hardcoded-paths + sentrux gate + repin check-only into one pass/fail verdict; never mutates, excludes cargo test)
   repowise-hooks [--repo <root>] [--write] (detects/installs the optional repowise post-commit and distill-rewrite hooks; no-op if repowise is not on PATH)
+  repowise-version --reported <full-stdout> [--minimum <version>] (pure PEP 440 parse/floor decision; JSON, no installation or writes)
   friction log --title <text> --summary <text> [--repo <root>] [--artifact <path>]... (records a friction-log entry under .agents/friction-log/)
   friction list [--repo <root>] [--json] (lists friction-log entries; exits 65 if any entry fails to parse)
   friction publish --slug <entry-id> [--repo <root>] [--yes] (opens the entry as a GitHub issue via gh; dry-run preview unless --yes)

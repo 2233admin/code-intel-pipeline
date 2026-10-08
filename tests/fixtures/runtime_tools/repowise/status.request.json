@@ -1,0 +1,16 @@
+{
+  "operation": "status",
+  "source": "example.py",
+  "argv": [
+    "provider",
+    "--action",
+    "Invoke",
+    "--provider",
+    "repowise",
+    "--operation",
+    "status",
+    "--repo",
+    "$SANDBOX",
+    "--json"
+  ]
+}
