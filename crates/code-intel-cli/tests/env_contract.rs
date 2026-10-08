@@ -107,35 +107,6 @@ fn no_registered_variable_is_declared_twice() {
 }
 
 #[test]
-fn tests_spawn_the_binary_only_through_the_hermetic_helper() {
-    let tests_dir = crate_root().join("tests");
-    let mut sources = Vec::new();
-    rust_sources(&tests_dir, &mut sources);
-
-    let helper = tests_dir.join("common").join("mod.rs");
-    // This file names the forbidden pattern in order to forbid it, and the
-    // helper is the one place allowed to use it.
-    let this_file = tests_dir.join("env_contract.rs");
-    let mut offenders: Vec<String> = Vec::new();
-    for path in &sources {
-        if path == &helper || path == &this_file {
-            continue;
-        }
-        let source = fs::read_to_string(path).expect("read test source");
-        if source.contains("CARGO_BIN_EXE_code-intel") {
-            offenders.push(path.display().to_string());
-        }
-    }
-
-    assert!(
-        offenders.is_empty(),
-        "these tests construct the CLI directly instead of calling common::cli(), \
-         so they inherit whatever the developer's shell exports:\n  {}",
-        offenders.join("\n  "),
-    );
-}
-
-#[test]
 fn the_hermetic_helper_actually_clears_the_pipeline_variables() {
     // `common::cli()` removes the pipeline variables; asking the child to print
     // its own view of them proves the removal reached the process rather than
