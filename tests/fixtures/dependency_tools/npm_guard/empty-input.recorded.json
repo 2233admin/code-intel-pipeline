@@ -1,0 +1,25 @@
+{
+  "request": {
+    "argv": [
+      "check-push",
+      "origin",
+      "https://example.invalid/no-push"
+    ],
+    "stdin": "",
+    "clearEnvironment": [
+      "CLAUDE_CODE_MERGE_QUEUE_EMERGENCY_PUSH",
+      "CLAUDE_CODE_MERGE_QUEUE_LANDING"
+    ]
+  },
+  "originalCapture": {
+    "version": "0.5.1",
+    "stdout": null,
+    "stderr": ""
+  },
+  "utf8RecoveryFromFrozenOldPackage": {
+    "version": "0.5.1",
+    "exitCode": 0,
+    "stdout": "claude-code-merge-queue check-push: nothing being pushed (already up to date) — skipping checks.\n",
+    "stderr": ""
+  }
+}

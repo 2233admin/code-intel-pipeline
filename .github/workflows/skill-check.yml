@@ -8,6 +8,15 @@ on:
       - "skills/**"
       - "tests/test_skill_package.py"
       - "tests/test_skill_attestation.py"
+      # #418: dependency-only PRs must exercise the real hashed YAML package.
+      - "requirements-ci.txt"
+      - ".github/workflows/**"
+      - "tests/test_merge_queue_guard.py"
+      - "tests/test_yaml_frontmatter.py"
+      - "tests/fixtures/dependency_tools/**"
+      - "orchestration/toolchain-versions.v1.json"
+      - "package.json"
+      - "package-lock.json"
       - "legacy/install-code-intel-pipeline.ps1"
   workflow_dispatch:
 
@@ -20,7 +29,7 @@ jobs:
     name: Darwin score (8-dim)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -50,6 +59,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install --require-hashes -r requirements-ci.txt
+          python tests/test_yaml_frontmatter.py
 
       - name: Run darwin-skill 8-dim scoring
         run: |
@@ -137,7 +147,7 @@ jobs:
     name: Link integrity check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check all .md files in /crates/code-nexus-lite/ have no broken links
         run: |
@@ -179,11 +189,12 @@ jobs:
     name: Frontmatter YAML validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate all SKILL.md frontmatter
         run: |
           python -m pip install --require-hashes -r requirements-ci.txt
+          python tests/test_yaml_frontmatter.py
           python <<'PYEOF'
           import sys, yaml, subprocess
           from pathlib import Path

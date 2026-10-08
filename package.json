@@ -3,6 +3,6 @@
   "version": "0.0.0",
   "private": true,
   "devDependencies": {
-    "claude-code-merge-queue": "0.5.1"
+    "claude-code-merge-queue": "0.7.1"
   }
 }

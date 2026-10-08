@@ -2304,9 +2304,11 @@ fn claude_code_merge_queue_record_traces_optional_adapter_and_keeps_promotion_hu
         "legacy/Invoke-MultiAgentMergeQueue.ps1",
         "local-adapter-sha256",
     );
+    // This record attests the pre-upgrade conformance source, not today's live test.
+    // Preserve its observed digest and audit the archived bytes without rewriting history.
     assert_recomputable_sha(
         &record,
-        "legacy/scripts/tests/test-multi-agent-merge-queue.ps1",
+        "tests/fixtures/internalization/test-multi-agent-merge-queue.ps1.snapshot",
         "local-conformance-sha256",
     );
     assert_recomputable_sha(

@@ -1,0 +1,25 @@
+{
+  "request": {
+    "argv": [
+      "check-push",
+      "origin",
+      "https://example.invalid/no-push"
+    ],
+    "stdin": "refs/heads/recording 1111111111111111111111111111111111111111 refs/heads/codex/code-intel-atomic-model 0000000000000000000000000000000000000000\n",
+    "clearEnvironment": [
+      "CLAUDE_CODE_MERGE_QUEUE_EMERGENCY_PUSH",
+      "CLAUDE_CODE_MERGE_QUEUE_LANDING"
+    ]
+  },
+  "originalCapture": {
+    "version": "0.5.1",
+    "stdout": "",
+    "stderr": null
+  },
+  "utf8RecoveryFromFrozenOldPackage": {
+    "version": "0.5.1",
+    "exitCode": 1,
+    "stdout": "",
+    "stderr": "\n✋ Direct pushes to 'codex/code-intel-atomic-model' are blocked — landing goes through the queue.\n   Land your work:  claude-code-merge-queue land\n   Genuine emergency:  CLAUDE_CODE_MERGE_QUEUE_EMERGENCY_PUSH=1 git push …\n\n"
+  }
+}
