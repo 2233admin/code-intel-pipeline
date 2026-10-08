@@ -4,6 +4,29 @@
 //! two new routes elsewhere; this cluster was the largest cohesive group to
 //! relocate without touching any route's actual contract).
 
+pub(super) const CODEGRAPH: super::RawRoute = super::RawRoute {
+    command: "provider",
+    subcommand: Some("codegraph"),
+    argument_offset: 2,
+    id: super::CompatibilityRoute::ProviderCodegraph,
+    contract: super::CommandContract {
+        stability: super::CommandStability::Public,
+        controller: super::ControllerOwnership::WorkspaceAdvisory,
+        authority: super::CommandAuthority::Advisory,
+        effects: &[
+            super::CommandEffect::RepoRead,
+            super::CommandEffect::LocalWrite,
+            super::CommandEffect::ProcessSpawn,
+        ],
+        output_contract: super::OutputContract::ArtifactFilesAndStdout {
+            artifact_identities: &["code-intel-evidence-payload.v1"],
+            stdout_identities: &["code-intel-codegraph-result.v1"],
+        },
+        exit_contract: super::ExitContract::Exact(&[0, 64, 65, 69, 70, 74]),
+        retirement_condition: "retire only after a replacement preserves snapshot-bound semantic queries and the independent native evidence baseline",
+    },
+};
+
 pub(super) const REPOWISE_ADAPT: super::RawRoute = super::RawRoute {
     command: "provider",
     subcommand: Some("repowise-adapt"),

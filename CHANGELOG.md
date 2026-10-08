@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Optional CodeGraph semantic engine** ([#429](https://github.com/2233admin/code-intel-pipeline/issues/429)): Rust-owned `code-intel provider codegraph` supports explicit index/sync, symbol/source queries, call relationships and advisory impact/test candidates; MCP adds `get_code_context`. Snapshot/provider/database binding refuses stale or out-of-scope reads. Evidence admission preserves partial/unknown semantics without changing native CodeNexus or authoritative gates. Reviewed upstream 1.6.2 remains replaceable; no parser/storage fork. [Usage and adoption evidence](docs/research/codegraph-adoption.md).
 - **Dispatch budget primitives**：新增 `Budget` 类型做二维（wall-clock、输入字节）派发成本控制，三级优先链（CLI flag > config > 内置默认），配 `estimate_ok`/`consume`/`exceeded` 查询方法（#308）。
 - **Bounded DAG dispatch**：派发前逐节点过闸，保留已完成 artifact，显式发布带 not-dispatched 原因的 budget 结果（#312，closes #305）。
 - **超大输入预派发拦截**：新增可配置 `OversizePolicy`（默认 `Budget::bytes_limit` 的 80%），在 `Budget::estimate_ok` 之前拦截，超阈值节点标记 `SkippedOversize`（#307/#311）。

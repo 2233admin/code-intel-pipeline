@@ -75,6 +75,8 @@ jobs:
         run: cargo test -p code-intel --locked --test codegraph_provider -- --ignored --nocapture
       - name: Agent query boundary contracts
         run: cargo test -p code-intel --locked --bin code-intel mcp_serve
+      - name: Existing admission and native CodeNexus contracts
+        run: cargo test -p code-intel --locked --test internalization_record --test codenexus_adapter --test codenexus_generate
       - name: Build verified CLI for local smoke without host compilation
         run: cargo build -p code-intel --locked
       - name: Check hardcoded paths

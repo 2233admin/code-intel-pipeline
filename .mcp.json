@@ -8,7 +8,7 @@
         "--repo",
         "code-intel-pipeline"
       ],
-      "description": "code-intel: agent query surface. Read-only; gates nowhere. Data source differs per tool — get_gate_verdict / get_facts / get_evidence / get_audit_status project the last committed run; get_change_impact reads the committed import graph but compares it against the live --repo-path and labels the result stale-advisory; plan_structural_edit scans the live checkout and writes nothing. --repo is pinned because a worktree directory name is not the name run commit publishes under; --repo-path defaults to the working directory."
+      "description": "code-intel: source-read-only agent query surface, never gate authority. get_gate_verdict / get_facts / get_evidence / get_audit_status project committed runs; get_change_impact compares the committed import graph against live --repo-path and labels stale-advisory; optional get_code_context queries an explicitly indexed, snapshot-bound local CodeGraph and writes evidence outside the source repo, never indexing or syncing implicitly; plan_structural_edit and scan_security_findings scan the live checkout without source mutation. --repo is the committed-run alias; --repo-path defaults to the working directory."
     },
     "repowise": {
       "command": "repowise",
