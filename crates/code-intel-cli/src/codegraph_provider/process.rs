@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::env;
 use std::fs;
 use std::io::Read;
@@ -140,7 +141,7 @@ impl Engine {
                 vec![
                     "--liftoff-only".into(),
                     "--disable-warning=ExperimentalWarning".into(),
-                    cli.to_string_lossy().into_owned(),
+                    argument_path(&cli).into_owned(),
                 ],
             )
         } else if executable
@@ -154,12 +155,7 @@ impl Engine {
                 vec![
                     "--liftoff-only".into(),
                     "--disable-warning=ExperimentalWarning".into(),
-                    entry
-                        .parent()
-                        .unwrap()
-                        .join("bin/codegraph.js")
-                        .to_string_lossy()
-                        .into_owned(),
+                    argument_path(&entry.parent().unwrap().join("bin/codegraph.js")).into_owned(),
                 ],
             )
         } else {
@@ -271,8 +267,8 @@ impl Engine {
                 SCRIPT,
                 "--",
             ])
-            .arg(entry)
-            .arg(repo)
+            .arg(argument_path(entry).as_ref())
+            .arg(argument_path(repo).as_ref())
             .output()
             .map_err(|e| Failure::new(70, format!("launch CodeGraph SDK initialization: {e}")))
     }
@@ -289,8 +285,8 @@ impl Engine {
                 SCRIPT,
                 "--",
             ])
-            .arg(entry)
-            .arg(repo)
+            .arg(argument_path(entry).as_ref())
+            .arg(argument_path(repo).as_ref())
             .output()
             .map_err(|error| {
                 Failure::new(70, format!("read CodeGraph SDK indexed inventory: {error}"))
@@ -309,6 +305,32 @@ impl Engine {
         serde_json::from_str(text).map_err(|error| {
             Failure::contract(format!("CodeGraph indexed inventory is malformed: {error}"))
         })
+    }
+}
+
+// Keep canonical/verbatim paths for Rust identity and containment checks.
+// Node's Windows main-module resolver requires conventional drive/UNC spelling.
+pub(super) fn argument_path(path: &Path) -> Cow<'_, str> {
+    let text = path.to_string_lossy();
+    if !cfg!(windows) {
+        return text;
+    }
+    match text {
+        Cow::Borrowed(text) => {
+            if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+                Cow::Owned(format!(r"\\{rest}"))
+            } else {
+                Cow::Borrowed(text.strip_prefix(r"\\?\").unwrap_or(text))
+            }
+        }
+        Cow::Owned(mut text) => {
+            if text.starts_with(r"\\?\UNC\") {
+                text.replace_range(..8, r"\\");
+            } else if text.starts_with(r"\\?\") {
+                text.drain(..4);
+            }
+            Cow::Owned(text)
+        }
     }
 }
 

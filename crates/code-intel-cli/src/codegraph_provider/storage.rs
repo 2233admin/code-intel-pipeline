@@ -179,6 +179,11 @@ pub(super) fn database_identity(cache: &Path) -> Result<Value, Failure> {
                         "CodeGraph database/sidecar must be a regular local file",
                     ));
                 }
+                // Read-only SQLite opens may create an empty WAL. It carries no
+                // database content; absence and zero bytes have the same identity.
+                if name == "codegraph.db-wal" && metadata.len() == 0 {
+                    continue;
+                }
                 identities.insert(name.into(), json!(hash_file(&path)?));
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound && name != "codegraph.db" => {}

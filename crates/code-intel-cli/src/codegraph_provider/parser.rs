@@ -139,10 +139,13 @@ impl Request {
         let mut args = vec![op.to_string()];
         if matches!(op, "index" | "sync" | "status") {
             args.push("--".into());
-            args.push(repo.to_string_lossy().into_owned());
+            args.push(super::process::argument_path(repo).into_owned());
             return args;
         }
-        args.extend(["--path".into(), repo.to_string_lossy().into_owned()]);
+        args.extend([
+            "--path".into(),
+            super::process::argument_path(repo).into_owned(),
+        ]);
         if matches!(
             op,
             "query" | "callers" | "callees" | "impact" | "affected" | "files"
