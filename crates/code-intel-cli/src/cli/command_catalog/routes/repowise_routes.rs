@@ -27,3 +27,21 @@ pub(super) const HOOKS: super::RawRoute = super::RawRoute {
         retirement_condition: "retire if repowise integration is dropped from this pipeline",
     },
 };
+
+pub(super) const VERSION: super::RawRoute = super::RawRoute {
+    command: "repowise-version",
+    subcommand: None,
+    argument_offset: 1,
+    id: super::CompatibilityRoute::RepowiseVersion,
+    contract: super::CommandContract {
+        stability: super::CommandStability::Public,
+        controller: super::ControllerOwnership::ProviderAdmin,
+        authority: super::CommandAuthority::Administrative,
+        effects: &[],
+        output_contract: super::OutputContract::Stdout {
+            identities: &["code-intel-repowise-version.v1"],
+        },
+        exit_contract: super::ExitContract::Exact(&[0, 64]),
+        retirement_condition: "retire with the last Repowise compatibility version consumer",
+    },
+};

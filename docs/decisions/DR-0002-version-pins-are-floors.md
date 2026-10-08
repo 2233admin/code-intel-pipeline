@@ -18,4 +18,5 @@ Owner 原话（2026-08-08）：「不是硬依赖，能有新的就肯定这套�
 ## Enforcement
 
 - `installer_version_gate.rs` `newer` 场景：装 0.37 pin 0.36 必须 `already_present`，installer block 被调用即 throw（防降级回归）
-- 升 pin = 升下限，一行改 `$script:RepowisePinnedVersion`，无需动语义
+- 升 pin = 升下限：同步 `$script:RepowisePinnedVersion` 与 `orchestration/toolchain-versions.v1.json` 的 Repowise 下限（`comparison: minimum`）；缺失或过旧时仍精确获取已评审版本，已安装的更新版本不降级，无需动安装器语义。
+- Repowise 的完整 PEP 440 报告与下限比较由 `code-intel repowise-version --reported "<report>" --minimum <floor>` 唯一拥有；兼容安装器只转发，不截断 rc/dev/post/local/epoch。重装后的版本也比较 `>= floor`，不恢复成字符串精确相等；打包安装拓扑下的 rc/post 与更新 post-release 复现进入 DR-0001 install-smoke CI。
