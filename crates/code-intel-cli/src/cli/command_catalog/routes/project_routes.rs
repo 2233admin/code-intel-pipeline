@@ -59,7 +59,7 @@ pub(super) const QUERY: super::CommandRoute =
         ],
         output_contract: super::OutputContract::Stdout {
             identities: &[
-                "code-intel-evidence-query.v1",
+                "code-intel-evidence-query.v2",
                 "code-intel-project-error.v1",
             ],
         },

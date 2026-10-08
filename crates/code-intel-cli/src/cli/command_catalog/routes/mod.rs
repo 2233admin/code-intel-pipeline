@@ -249,7 +249,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             CommittedEvidence,
             Committed,
             &[CommandEffect::RepoRead, CommandEffect::ProcessSpawn],
-            stdout!("code-intel-evidence-query.v1"),
+            stdout!("code-intel-evidence-query.v2"),
             exits!(0, 65, 74),
             "retire only through a versioned committed-evidence query replacement"
         ),

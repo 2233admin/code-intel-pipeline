@@ -42,7 +42,7 @@ pub(super) const MCP: super::RawRoute = super::RawRoute {
                 "code-intel-mcp-audit-status.v1",
                 "code-intel-mcp-structural-edit-plan.v1",
                 "code-intel-mcp-tool-error.v1",
-                "code-intel-evidence-query.v1",
+                "code-intel-evidence-query.v2",
                 "code-intel-change-impact.v1",
             ],
         },

@@ -554,16 +554,16 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
     );
     let project_query: serde_json::Value =
         serde_json::from_slice(&project_query.stdout).expect("project query is JSON");
-    assert_eq!(project_query["schema"], "code-intel-evidence-query.v1");
+    assert_eq!(project_query["schema"], "code-intel-evidence-query.v2");
     assert_eq!(project_query["repo"], "fixture-repo");
     assert_eq!(project_query["freshness"]["status"], "current");
-    assert!(
-        project_query["matches"]
-            .as_array()
-            .expect("project query matches")
-            .len()
-            >= 2,
-        "query={project_query}"
+    assert_eq!(
+        project_query["artifactAvailability"]["requestedEvidenceStatus"],
+        "available"
+    );
+    assert_eq!(
+        project_query["evidenceAssessment"]["behaviorVerification"],
+        "not_assessed"
     );
 
     let mcp = mcp_session(

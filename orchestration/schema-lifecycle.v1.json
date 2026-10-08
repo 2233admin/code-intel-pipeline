@@ -125,15 +125,15 @@
       }
     },
     {
-      "schemaPath": "orchestration/schemas/code-intel-evidence-query.v1.schema.json",
-      "schemaId": "code-intel-evidence-query.v1.schema.json",
-      "logicalSchemas": ["code-intel-evidence-query.v1"],
+      "schemaPath": "orchestration/schemas/code-intel-evidence-query.v2.schema.json",
+      "schemaId": "code-intel-evidence-query.v2.schema.json",
+      "logicalSchemas": ["code-intel-evidence-query.v2"],
       "shape": "closed-object",
       "status": "active",
       "compatibilityPolicy": "additive-only",
       "implementation": {
         "source": "crates/code-intel-cli/src/evidence_query.rs",
-        "symbols": ["run_raw", "code-intel-evidence-query.v1"],
+        "symbols": ["run_raw", "code-intel-evidence-query.v2"],
         "tests": ["crates/code-intel-cli/tests/dag_run.rs"]
       }
     },

@@ -5,6 +5,9 @@ use serde_json::{json, Value};
 
 use crate::committed_evidence::{self, CommittedEvidence, EvidenceError};
 
+#[path = "evidence_query_navigation.rs"]
+mod navigation;
+
 const DEFAULT_LIMIT: usize = 20;
 pub(crate) const MAX_LIMIT: usize = 100;
 const PREVIEW_CHARS: usize = 400;
@@ -200,6 +203,8 @@ pub(crate) fn execute(
         .collect::<BTreeSet<_>>();
     let mut contract_matches = 0usize;
     let mut matches = Vec::new();
+    let navigation = navigation::NavigationEvidence::new(evidence);
+    let mut search_truncated = false;
     for (artifact, verified) in evidence.refs.iter().zip(evidence.verified.iter()) {
         if cli
             .artifact_schema
@@ -220,6 +225,10 @@ pub(crate) fn execute(
         {
             continue;
         }
+        if matches.len() == cli.limit {
+            search_truncated = true;
+            break;
+        }
         let matched_by = matched_by(&cli);
         matches.push(json!({
             "artifactRef":artifact,
@@ -230,10 +239,8 @@ pub(crate) fn execute(
                 "A07-committed bytes passed registered schema, digest, and snapshot verification; matched {}.",
                 matched_by.join(", ")
             ),
+            "anchorEvidence":navigation.for_artifact(artifact, verified.bytes()),
         }));
-        if matches.len() == cli.limit {
-            break;
-        }
     }
     let contract_requested = cli.artifact_schema.is_some() || cli.artifact_type.is_some();
     let requested_evidence_status = if !contract_requested {
@@ -257,20 +264,9 @@ pub(crate) fn execute(
     } else if freshness["status"] == "unknown" {
         unknowns.push("freshness is unknown because no checkout was supplied".into());
     }
-    let coverage_status =
-        if run_outcome == "completed" && requested_evidence_status != "unavailable" {
-            "complete"
-        } else {
-            "partial"
-        };
-    let confidence = if coverage_status == "complete" && freshness["status"] == "current" {
-        "high"
-    } else {
-        "limited"
-    };
     Ok(EvidenceQueryResult {
         value: json!({
-            "schema":"code-intel-evidence-query.v1",
+            "schema":"code-intel-evidence-query.v2",
             "repo":cli.repo,
             "run":run,
             "runIdentity":entry["runIdentity"],
@@ -278,13 +274,20 @@ pub(crate) fn execute(
             "authority":{"status":"committed","indexSchema":"code-intel-artifact-index.v1"},
             "snapshotIdentity":snapshot_identity,
             "freshness":freshness,
-            "coverage":{
-                "status":coverage_status,
+            "evidenceAssessment":{
+                "artifactIntegrity":"verified",
+                "snapshotBinding":"verified",
+                "behaviorVerification":"not_assessed",
+            },
+            "artifactAvailability":{
                 "availableArtifactTypes":available_artifact_types,
                 "requestedEvidenceStatus":requested_evidence_status,
-                "unknowns":unknowns,
             },
-            "confidence":confidence,
+            "searchCoverage":{
+                "scope":"committed_artifacts",
+                "status":if search_truncated { "truncated" } else { "complete" },
+            },
+            "unknowns":unknowns,
             "query":{
                 "artifactSchema":cli.artifact_schema,
                 "type":cli.artifact_type,

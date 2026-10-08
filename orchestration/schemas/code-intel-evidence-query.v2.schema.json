@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-evidence-query.v2.schema.json",
+  "title": "Code Intel verified evidence query result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "repo", "run", "runIdentity", "runOutcome", "authority", "snapshotIdentity", "freshness", "evidenceAssessment", "artifactAvailability", "searchCoverage", "unknowns", "query", "matches"],
+  "properties": {
+    "schema": { "const": "code-intel-evidence-query.v2" },
+    "repo": { "type": "string", "minLength": 1 },
+    "run": { "type": "string", "minLength": 1 },
+    "runIdentity": { "type": "string", "pattern": "^dag-v1:([a-f0-9]{2})+$" },
+    "runOutcome": { "enum": ["completed", "domain_failed", "process_failed"] },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "indexSchema"],
+      "properties": {
+        "status": { "const": "committed" },
+        "indexSchema": { "const": "code-intel-artifact-index.v1" }
+      }
+    },
+    "snapshotIdentity": { "$ref": "#/$defs/digest" },
+    "freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "recordedIdentity", "currentIdentity", "workingTreePolicy", "scope"],
+      "properties": {
+        "status": { "enum": ["current", "stale", "unknown"] },
+        "recordedIdentity": { "$ref": "#/$defs/digest" },
+        "currentIdentity": { "oneOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] },
+        "workingTreePolicy": { "oneOf": [{ "enum": ["head_only", "explicit_overlay"] }, { "type": "null" }] },
+        "scope": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "evidenceAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactIntegrity", "snapshotBinding", "behaviorVerification"],
+      "properties": {
+        "artifactIntegrity": { "const": "verified" },
+        "snapshotBinding": { "const": "verified" },
+        "behaviorVerification": { "const": "not_assessed" }
+      }
+    },
+    "artifactAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["availableArtifactTypes", "requestedEvidenceStatus"],
+      "properties": {
+        "availableArtifactTypes": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "requestedEvidenceStatus": { "enum": ["available", "unavailable", "not_requested"] }
+      }
+    },
+    "searchCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "status"],
+      "properties": {
+        "scope": { "const": "committed_artifacts" },
+        "status": { "enum": ["complete", "truncated"] }
+      }
+    },
+    "unknowns": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactSchema", "type", "contains", "limit"],
+      "properties": {
+        "artifactSchema": { "type": ["string", "null"] },
+        "type": { "type": ["string", "null"] },
+        "contains": { "type": ["string", "null"] },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    },
+    "matches": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["artifactRef", "matchedBy", "preview", "previewTruncated", "explanation", "anchorEvidence"],
+        "properties": {
+          "artifactRef": { "$ref": "code-intel-run-manifest.v1.schema.json#/definitions/artifactRef" },
+          "matchedBy": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["all", "artifact_schema", "artifact_type", "content"] } },
+          "preview": { "type": "string" },
+          "previewTruncated": { "type": "boolean" },
+          "explanation": { "type": "string", "minLength": 1 },
+          "anchorEvidence": { "$ref": "#/$defs/anchorEvidence" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "nullableLine": { "type": ["integer", "null"], "minimum": 1 },
+    "anchorEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "basis", "currentValidity", "reportRef", "items", "itemsTruncated", "reason"],
+      "properties": {
+        "status": { "enum": ["available", "unavailable", "not_applicable"] },
+        "basis": { "const": "publication_time" },
+        "currentValidity": { "const": "not_assessed" },
+        "reportRef": { "oneOf": [{ "$ref": "code-intel-run-manifest.v1.schema.json#/definitions/artifactRef" }, { "type": "null" }] },
+        "items": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/anchorItem" } },
+        "itemsTruncated": { "type": "boolean" },
+        "reason": { "type": ["string", "null"] }
+      }
+    },
+    "anchorItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "name", "claimedLine", "state", "resolvedLine", "navigationTarget", "reason"],
+      "properties": {
+        "path": { "type": "string" },
+        "name": { "type": ["string", "null"] },
+        "claimedLine": { "$ref": "#/$defs/nullableLine" },
+        "state": { "enum": ["verified", "approximate", "dropped", "not_assessed"] },
+        "resolvedLine": { "$ref": "#/$defs/nullableLine" },
+        "navigationTarget": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "line"],
+              "properties": {
+                "path": { "type": "string" },
+                "line": { "$ref": "#/$defs/nullableLine" }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "reason": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

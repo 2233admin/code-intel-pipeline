@@ -457,6 +457,9 @@ pub(crate) fn verify_and_report(
             let path = artifact["path"]
                 .as_str()
                 .ok_or("artifact ref missing \"path\"")?;
+            let digest = artifact["sha256"]
+                .as_str()
+                .ok_or("artifact ref missing \"sha256\"")?;
             let bytes = fs::read(run_root.join(path))
                 .map_err(|error| format!("read {path} for anchor verification: {error}"))?;
             let anchors = match kind {
@@ -469,7 +472,8 @@ pub(crate) fn verify_and_report(
             }
             sources.push(json!({
                 "artifactType": kind,
-                "artifactPath": path,
+                // Publication re-addresses named refs without changing their bytes.
+                "artifactPath": format!("objects/sha256/{digest}"),
                 "anchorKind": anchor_kind,
                 "anchors": anchors,
             }));

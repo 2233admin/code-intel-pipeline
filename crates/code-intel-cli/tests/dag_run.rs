@@ -7,6 +7,8 @@ mod common;
 // autodiscovery the same way `tests/common/mod.rs` already does.
 #[path = "dag_run_support/timeout.rs"]
 mod dag_run_timeout;
+#[path = "dag_run_support/query_navigation.rs"]
+mod query_navigation;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -386,14 +388,80 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     assert_eq!(query["run"], "run-001");
     assert_eq!(query["runOutcome"], "completed");
     assert_eq!(query["authority"]["status"], "committed");
-    assert_eq!(query["coverage"]["status"], "complete");
-    assert_eq!(query["coverage"]["requestedEvidenceStatus"], "available");
-    assert_eq!(query["confidence"], "high");
+    assert_eq!(
+        query["artifactAvailability"]["requestedEvidenceStatus"],
+        "available"
+    );
+    assert_eq!(query["searchCoverage"]["status"], "complete");
+    assert_eq!(
+        query["evidenceAssessment"],
+        json!({
+            "artifactIntegrity":"verified",
+            "snapshotBinding":"verified",
+            "behaviorVerification":"not_assessed"
+        })
+    );
     assert_eq!(query["freshness"]["status"], "current");
     assert_eq!(query["matches"].as_array().unwrap().len(), 1);
     assert_eq!(
         query["matches"][0]["artifactRef"]["type"],
         "inventory.files"
+    );
+
+    // A complete search of available, admitted bytes is not behavioral
+    // acceptance, even when a content filter returns no matching artifact.
+    for (kind, contains, availability, count) in [
+        (
+            "inventory.files",
+            Some("absent-query-counterexample"),
+            "available",
+            0,
+        ),
+        ("inventory.unavailable", None, "unavailable", 0),
+        ("inventory.files", None, "available", 1),
+    ] {
+        let mut command = common::cli();
+        command
+            .args(["artifact", "query", "--artifact-root"])
+            .arg(&artifact_root)
+            .args(["--repo", "fixture-repo", "--repo-path"])
+            .arg(&repo)
+            .args(["--type", kind, "--limit", "1"]);
+        if let Some(contains) = contains {
+            command.args(["--contains", contains]);
+        }
+        let output = command.output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let filtered: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            filtered["artifactAvailability"]["requestedEvidenceStatus"],
+            availability
+        );
+        assert_eq!(filtered["matches"].as_array().unwrap().len(), count);
+        assert_eq!(filtered["searchCoverage"]["status"], "complete");
+        assert_eq!(
+            filtered["evidenceAssessment"]["behaviorVerification"],
+            "not_assessed"
+        );
+    }
+    let overflow = common::cli()
+        .args(["artifact", "query", "--artifact-root"])
+        .arg(&artifact_root)
+        .args(["--repo", "fixture-repo", "--limit", "1"])
+        .output()
+        .unwrap();
+    assert_eq!(overflow.status.code(), Some(0));
+    let overflow: Value = serde_json::from_slice(&overflow.stdout).unwrap();
+    assert_eq!(overflow["matches"].as_array().unwrap().len(), 1);
+    assert_eq!(overflow["searchCoverage"]["status"], "truncated");
+    assert_eq!(
+        overflow["evidenceAssessment"]["behaviorVerification"],
+        "not_assessed"
     );
 
     let freshness_unknown = common::cli()
@@ -405,7 +473,10 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     assert_eq!(freshness_unknown.status.code(), Some(0));
     let freshness_unknown: Value = serde_json::from_slice(&freshness_unknown.stdout).unwrap();
     assert_eq!(freshness_unknown["freshness"]["status"], "unknown");
-    assert_eq!(freshness_unknown["confidence"], "limited");
+    assert_eq!(
+        freshness_unknown["evidenceAssessment"]["behaviorVerification"],
+        "not_assessed"
+    );
 
     let impact = common::cli()
         .args(["change", "impact", "--artifact-root"])
@@ -514,7 +585,11 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     assert_eq!(stale.status.code(), Some(0));
     let stale: Value = serde_json::from_slice(&stale.stdout).unwrap();
     assert_eq!(stale["freshness"]["status"], "stale");
-    assert_eq!(stale["confidence"], "limited");
+    assert_eq!(stale["evidenceAssessment"]["artifactIntegrity"], "verified");
+    assert_eq!(
+        stale["evidenceAssessment"]["behaviorVerification"],
+        "not_assessed"
+    );
 
     let stale_impact = common::cli()
         .args(["change", "impact", "--artifact-root"])
