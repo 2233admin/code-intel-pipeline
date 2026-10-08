@@ -169,6 +169,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
     CommandRoute::Raw(provider_routes::SENTRUX_ADAPT),
     CommandRoute::Raw(provider_routes::SESSION_ADAPT),
     CommandRoute::Raw(provider_routes::CODENEXUS_ADAPT),
+    CommandRoute::Raw(provider_routes::CODEGRAPH),
     raw_route! {
         command: "codenexus",
         subcommand: Some("generate"),

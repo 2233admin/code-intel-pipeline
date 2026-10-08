@@ -1,11 +1,9 @@
-//! The six served tools.
+//! Served committed-evidence, live-provider and preview queries.
 //!
-//! Each one is a projection: it re-reads what `run commit` published, or it
-//! re-runs a registered preview capability. None of them decides anything. The
-//! request types come from the same modules the CLI parsers use
-//! (`evidence_query`, `change_impact`), so a path arriving as a JSON string
-//! over stdio meets the same traversal and inventory guards as one typed after
-//! `--changed` — there is no second, looser parser on this side.
+//! Committed projections, registered previews and optional live-provider context
+//! share the CLI's request guards. None decides a gate or grants source mutation.
+//! Live provider queries bind source and relationships to the same snapshot and
+//! preserve partial/unknown evidence instead of inheriting upstream authority.
 
 use std::env;
 use std::fs;
@@ -41,10 +39,18 @@ pub(super) fn call(
         "get_evidence" => evidence_chain(context, arguments),
         "get_audit_status" => audit_status(context, arguments),
         "get_change_impact" => blast_radius(context, arguments),
+        "get_code_context" => code_context(context, arguments),
         "plan_structural_edit" => structural_edit(context, arguments),
         "scan_security_findings" => security_findings(context, arguments),
         other => Err(ProjectError::contract(format!("unknown tool: {other}"))),
     }
+}
+
+fn code_context(context: &ServeContext, arguments: &Value) -> Result<Value, ProjectError> {
+    expect_keys(arguments, &["query"])?;
+    let query = required_text(arguments, "query")?;
+    crate::codegraph_provider::explore(&context.repo_path, &query, &context.artifact_root)
+        .map_err(ProjectError::contract)
 }
 
 fn gate_verdict(context: &ServeContext, arguments: &Value) -> Result<Value, ProjectError> {

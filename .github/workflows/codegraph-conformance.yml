@@ -1,0 +1,91 @@
+name: CodeGraph provider conformance
+
+on:
+  push:
+    paths:
+      - 'crates/code-intel-cli/**'
+      - 'orchestration/**'
+      - '.github/workflows/codegraph-conformance.yml'
+  pull_request:
+    paths:
+      - 'crates/code-intel-cli/**'
+      - 'orchestration/**'
+      - '.github/workflows/codegraph-conformance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codegraph-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codegraph-conformance:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      DO_NOT_TRACK: '1'
+      CODEGRAPH_TELEMETRY: '0'
+      CODEGRAPH_NO_UPDATE_CHECK: '1'
+      CODEGRAPH_NO_DOWNLOAD: '1'
+      CODEGRAPH_NO_DAEMON: '1'
+      CODEGRAPH_NO_WATCH: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Install reviewed precompiled CodeGraph
+        run: npm install --global @colbymchenry/codegraph@1.6.2 --ignore-scripts
+      - name: Install ripgrep on Windows without Chocolatey
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = '15.2.0'
+          $name = "ripgrep-$version-x86_64-pc-windows-msvc"
+          $dir = Join-Path $env:RUNNER_TEMP 'codegraph-ripgrep'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $zip = Join-Path $dir "$name.zip"
+          Invoke-WebRequest -Uri "https://github.com/BurntSushi/ripgrep/releases/download/$version/$name.zip" -OutFile $zip
+          $digest = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne '71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5') { throw 'ripgrep digest mismatch' }
+          Expand-Archive -LiteralPath $zip -DestinationPath $dir
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value (Join-Path $dir $name)
+      - name: Install ripgrep on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Install ripgrep on macOS
+        if: runner.os == 'macOS'
+        run: brew list ripgrep || brew install ripgrep
+      - name: Setup repository Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Format and public failure contracts
+        run: |
+          cargo fmt -p code-intel -- --check
+          cargo test -p code-intel --locked --test codegraph_provider
+      - name: Real upstream index, query and synchronization contracts
+        run: cargo test -p code-intel --locked --test codegraph_provider -- --ignored --nocapture
+      - name: Agent query boundary contracts
+        run: cargo test -p code-intel --locked --bin code-intel mcp_serve
+      - name: Existing admission and native CodeNexus contracts
+        run: cargo test -p code-intel --locked --test internalization_record --test codenexus_adapter --test codenexus_generate
+      - name: Build verified CLI for local smoke without host compilation
+        run: cargo build -p code-intel --locked
+      - name: Check hardcoded paths
+        shell: bash
+        run: ./target/debug/code-intel lint hardcoded-paths
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: codegraph-code-intel-${{ runner.os }}
+          path: |
+            target/debug/code-intel
+            target/debug/code-intel.exe
+          if-no-files-found: error

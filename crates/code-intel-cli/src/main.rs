@@ -22,6 +22,7 @@ mod change_agenda;
 mod change_impact;
 mod change_risk;
 mod cli;
+mod codegraph_provider;
 mod codenexus_adapter;
 mod codenexus_generate;
 mod codenexus_lite;

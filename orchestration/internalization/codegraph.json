@@ -1,0 +1,152 @@
+{
+  "schema": "code-intel-internalization-record.v1",
+  "id": "codegraph-semantic-adapter",
+  "projectId": "code-intel-pipeline",
+  "subject": {
+    "name": "CodeGraph",
+    "kind": "adapted_capability",
+    "source": {
+      "uri": "https://github.com/colbymchenry/codegraph",
+      "revision": "6560052a6f856855d3f71eee838fd66ccfa4285d"
+    },
+    "license": {
+      "id": "MIT",
+      "obligations": [
+        "Preserve copyright 2026 Colby Mchenry and the MIT notice when redistributing upstream packages or substantial source.",
+        "Keep upstream parser and storage implementations external; this adapter does not claim ownership of them."
+      ]
+    }
+  },
+  "adoption": {
+    "rung": "adapt",
+    "ownedBoundary": [
+      "Rust CLI and source-read-only MCP transport for an optional replaceable semantic engine",
+      "Repository snapshot, regular-source containment, provider identity and database binding",
+      "Persisted provider-neutral A04 admission with advisory/partial/unknown semantics and no engineering facts",
+      "Independent native CodeNexus baseline; no default DAG or authoritative gate takeover"
+    ],
+    "necessityEvidence": {
+      "evidenceIds": ["https://github.com/2233admin/code-intel-pipeline/issues/429", "docs/adr/0010-tool-neutral-engineering-intelligence-core.md"],
+      "checkedAt": 1791495348,
+      "expiresAt": 1794087348
+    },
+    "compatibilityEvidence": {
+      "evidenceIds": ["https://github.com/2233admin/code-intel-pipeline/actions/runs/37843240232", "docs/research/codegraph-adoption.md#observed-verification"],
+      "checkedAt": 1791495348,
+      "expiresAt": 1794087348
+    },
+    "conformanceEvidence": {
+      "evidenceIds": ["https://github.com/2233admin/code-intel-pipeline/actions/runs/37843240232", "crates/code-intel-cli/tests/codegraph_provider.rs"],
+      "checkedAt": 1791495348,
+      "expiresAt": 1794087348
+    }
+  },
+  "authorityRequirements": { "repositoryGovernedAttestation": true },
+  "operationTrace": [
+    {
+      "integrationId": "provider.codegraph",
+      "operation": "explicit index/sync and snapshot-bound semantic reads",
+      "command": "code-intel provider codegraph <index|sync|status|query|explore|node|callers|callees|impact|affected|files>",
+      "implementationIdentity": {
+        "providerId": "codegraph.cli",
+        "implementationId": "colbymchenry/codegraph",
+        "activation": "explicit optional CLI invocation; reviewed 1.6.2 with minimum stable 1.6.2; launcher/runtime/SDK/CLI/package identity, not all transitive bytes"
+      },
+      "source": {
+        "path": "crates/code-intel-cli/src/codegraph_provider/mod.rs",
+        "sha256": "d1fce47172185b213e744857209361de0b0ec25e356666af9d0b5647f360ee84"
+      },
+      "conformance": {
+        "path": "crates/code-intel-cli/tests/codegraph_provider.rs",
+        "sha256": "bbaaabe958513710750e40fa632400cfc30f4d1aed83818fe7f0830323990a53",
+        "testName": "real_upstream_edges_source_and_add_change_delete_sync_are_snapshot_bound"
+      }
+    }
+  ],
+  "economics": {
+    "benefit": { "metric": "semantic CLI operations exercised by real upstream conformance", "value": 11, "unit": "operations; not a performance or recall improvement" },
+    "cost": { "metric": "adapter-specific Rust modules maintained", "value": 5, "unit": "modules; excludes existing shared infrastructure and external engine" },
+    "benefitEvidence": {
+      "evidenceIds": ["crates/code-intel-cli/tests/codegraph_provider.rs", "https://github.com/2233admin/code-intel-pipeline/actions/runs/37843240232"],
+      "checkedAt": 1791495348,
+      "expiresAt": 1794087348
+    },
+    "costEvidence": {
+      "evidenceIds": ["crates/code-intel-cli/src/codegraph_provider", "docs/research/codegraph-adoption.md#what-is-owned-what-remains-upstream"],
+      "checkedAt": 1791495348,
+      "expiresAt": 1794087348
+    }
+  },
+  "assurance": {
+    "maintenanceEvidence": {
+      "evidenceIds": [".github/workflows/codegraph-conformance.yml", "https://github.com/colbymchenry/codegraph/releases/tag/v1.6.2"],
+      "checkedAt": 1791495348,
+      "expiresAt": 1794087348
+    },
+    "securityEvidence": {
+      "evidenceIds": ["crates/code-intel-cli/tests/codegraph_provider.rs", "docs/research/codegraph-adoption.md#snapshot-and-cache-safety", "docs/research/codegraph-adoption.md#observed-verification"],
+      "checkedAt": 1791495348,
+      "expiresAt": 1794087348
+    }
+  },
+  "update": {
+    "policy": "Re-review maintenance/license/security and run the real reviewed-version three-platform contracts before changing SDK transport, cache semantics or the version floor. Newer eligible engines are not automatically downgraded. Functional conformance is not a full dependency audit or a measured speed/recall gain.",
+    "nextCheckAt": 1794087348,
+    "evidence": {
+      "evidenceIds": [".github/workflows/codegraph-conformance.yml", "docs/research/codegraph-adoption.md#update-rollback-and-exit"],
+      "checkedAt": 1791495348,
+      "expiresAt": 1794087348
+    }
+  },
+  "ownedModifications": [
+    { "path": "crates/code-intel-cli/src/codegraph_provider/mod.rs", "description": "Optional CLI entry, shared snapshot-bound execution and A04 evidence admission", "sha256": "d1fce47172185b213e744857209361de0b0ec25e356666af9d0b5647f360ee84" },
+    { "path": "crates/code-intel-cli/src/codegraph_provider/parser.rs", "description": "Public operation/path/argument contract", "sha256": "8a8ae0fc96accf1c9a6a97ad615d693419f7e552db9d49ad36fd83e9ab7682bd" },
+    { "path": "crates/code-intel-cli/src/codegraph_provider/process.rs", "description": "Trusted version-aware cross-platform launcher and fixed official SDK transport", "sha256": "cc741e3b163416a07ceeaf045d3bbf0458a398c9dcd7047cfb95bf3b2c429237" },
+    { "path": "crates/code-intel-cli/src/codegraph_provider/storage.rs", "description": "Ignored binding, lock, database/WAL fingerprints and persisted payload", "sha256": "09cac2b77082d711330c0555e03f1997a5eba56b3393b2b4773c04165ed93ece" },
+    { "path": "crates/code-intel-cli/src/codegraph_provider/scope.rs", "description": "Actual upstream inventory and explicit file reads constrained to hashed regular sources", "sha256": "897ad45819982656ea7422494a8bc67a40ce302410d9a98fb636e747fa1fc88c" },
+    { "path": "crates/code-intel-cli/src/cli/command_catalog/routes/provider_routes.rs", "description": "Public optional-provider route alongside existing provider contracts" },
+    { "path": "crates/code-intel-cli/src/mcp_serve/handlers.rs", "description": "Repository-pinned get_code_context query handler; cannot request writes or redirect repository" },
+    { "path": "crates/code-intel-cli/src/mcp_serve/tools.rs", "description": "Closed source-read-only get_code_context descriptor with explicit local-artifact effects" },
+    { "path": "crates/code-intel-cli/tests/codegraph_provider.rs", "description": "Public failures and real upstream source/edge/staleness/scope transition conformance", "sha256": "bbaaabe958513710750e40fa632400cfc30f4d1aed83818fe7f0830323990a53" }
+  ],
+  "rollback": {
+    "strategy": "Stop explicit CodeGraph calls or omit get_code_context; native CodeNexus and committed-run gates remain independent. Keep content-addressed evidence referenced by admission. No source migration, default DAG switch or main release is part of this deployment.",
+    "evidence": {
+      "evidenceIds": ["docs/research/codegraph-adoption.md#observed-verification"],
+      "checkedAt": 1791495348,
+      "expiresAt": 1794087348
+    }
+  },
+  "exit": {
+    "strategy": "Replace the external engine behind the Rust-owned evidence boundary after equivalent real conformance; do not fork parsers/storage merely to rename the provider.",
+    "replacementCriteria": [
+      "Snapshot-bound source containment and explicit cache mutation",
+      "Preserved raw provenance, ambiguity, confidence and truncation",
+      "Provider-neutral A04 advisory/partial/unknown semantics without invented engineering facts",
+      "Three-platform actual engine contracts and independent native CodeNexus fallback"
+    ],
+    "evidence": {
+      "evidenceIds": ["docs/adr/0010-tool-neutral-engineering-intelligence-core.md", "crates/code-intel-cli/tests/codegraph_provider.rs"],
+      "checkedAt": 1791495348,
+      "expiresAt": 1794087348
+    }
+  },
+  "retirement": {
+    "status": "active",
+    "triggers": ["Upstream maintenance/license/security review fails", "Real conformance no longer passes", "An approved replacement preserves the owned boundary with lower demonstrated cost"],
+    "evidence": {
+      "evidenceIds": ["docs/research/codegraph-adoption.md#update-rollback-and-exit"],
+      "checkedAt": 1791495348,
+      "expiresAt": 1794087348
+    }
+  },
+  "lifecycle": {
+    "previousStatus": null,
+    "status": "research",
+    "effectiveAt": 1791495348,
+    "replacementRecordId": null,
+    "evidenceIds": ["https://github.com/2233admin/code-intel-pipeline/issues/429", "https://github.com/2233admin/code-intel-pipeline/actions/runs/37843240232"],
+    "authorityEvent": null
+  },
+  "provenance": { "recordedAt": 1791495348, "recordedBy": "code-intel engineering assistant; owner-approved selective adaptation and isolated CI deployment" }
+}
