@@ -315,6 +315,27 @@ fn crafted_arguments_are_refused_before_any_evidence_is_read() {
     );
 }
 
+#[test]
+fn live_context_cannot_redirect_the_server_or_smuggle_provider_flags() {
+    let fixture = Fixture::create("code-context-arguments");
+    let context = fixture.context();
+    for arguments in [
+        json!({"query": "auth", "projectPath": "../../../outside"}),
+        json!({"query": "auth", "repo": "../../../outside"}),
+        json!({"query": "auth", "operation": "index"}),
+        json!({"query": "auth", "artifactRoot": "/outside"}),
+        json!({"query": ""}),
+        json!({"query": 42}),
+        json!({}),
+    ] {
+        let response = call(&context, "get_code_context", arguments);
+        assert_eq!(response["result"]["isError"], true);
+        let payload = tool_payload(&response);
+        assert_eq!(payload["projectError"]["kind"], "usage");
+        assert_eq!(payload["projectError"]["exitCode"], 64);
+    }
+}
+
 /// The declared `1..=100` bound must hold for every tool that takes a limit,
 /// not just the one whose request type happened to check it.
 ///

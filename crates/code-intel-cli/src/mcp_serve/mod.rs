@@ -1,22 +1,18 @@
 //! `code-intel serve --mcp` — the agent-native query surface (#54, and the
 //! third proposal of the write-path audit in #58).
 //!
-//! Every other agent-facing surface in this repository answers *after* a full
-//! authoritative run and *through* artifact files. That shape is correct for
-//! auditing and useless while an agent is writing code: it cannot ask one
-//! question and get one answer. This module is that missing plane — a stdio
-//! MCP server projecting the already-committed evidence, plus the two
-//! write-assist projections #58 named.
+//! Committed evidence remains the audit plane. Optional live CodeGraph context
+//! adds snapshot-bound, partial advisory answers while an agent writes code;
+//! preview capabilities retain their separate registered effects.
 //!
 //! The boundary is structural, not a convention: this server owns no
 //! authority. It re-reads what `run commit` published, re-verifies the digests
 //! through `committed_evidence`, and re-uses the same request types the CLI
 //! parsers build — so a query that arrives over stdio traverses exactly the
-//! guards a query typed at a shell does. The single capability it can execute
-//! (`edit.ast-grep-plan`) is checked against its registry declaration before
-//! it runs and refused if that declaration ever admits `repo_mutation`. Gate
-//! verdicts stay where they were: in the CLI and CI paths. A prompt-injected
-//! query string reaching this surface can therefore read, and cannot decide.
+//! guards a query typed at a shell does. Preview capabilities are checked against
+//! their declarations before execution; CodeGraph context requires an explicitly
+//! indexed current snapshot and never indexes implicitly. It writes local
+//! evidence artifacts, not source. Gate verdicts remain in the CLI and CI paths.
 
 use std::env;
 use std::io::{self, BufRead, Write};
@@ -50,10 +46,11 @@ const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[PROTOCOL_VERSION];
 const USAGE: &str = "usage: serve --mcp [--repo-path <checkout>] [--repo <name>] [--artifact-root <root>] [--manifest <integrations.json>]";
 
 const INSTRUCTIONS: &str =
-    "Read-only projection of this repository's committed Code Intel evidence. \
+    "Committed Code Intel evidence plus optional snapshot-bound local code context. \
 Ask get_gate_verdict before trusting a green tree, get_change_impact before editing files, and \
-plan_structural_edit before a mechanical multi-file rewrite. Every answer names the run and \
-snapshot identity it came from; treat a stale-advisory freshness as advice, never as a gate.";
+plan_structural_edit before a mechanical multi-file rewrite. Use get_code_context for live \
+CodeGraph source and call navigation after explicit provider initialization/synchronization. \
+Partial/unknown and stale-advisory answers are advice, never gate authority.";
 
 /// Where a served answer came from and which checkout it is being compared
 /// against. Resolved once at startup so no per-call argument can redirect the

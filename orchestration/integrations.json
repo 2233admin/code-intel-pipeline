@@ -613,6 +613,42 @@
       "extensionPoint": "The default provider executes real sentrux gate/check commands and normalizes their command-level observations through A04. Sentrux algorithms remain external, diagnosis policy stays in Hospital, and legacy/Invoke-SentruxAgentTool.ps1 is a legacy compatibility/rollback surface rather than the authoritative normal route."
     },
     {
+      "id": "provider.codegraph",
+      "stage": "localization",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-adapter",
+      "required": false,
+      "entrypoint": "crates/code-intel-cli/src/codegraph_provider/mod.rs",
+      "capabilities": [
+        "local_semantic_index",
+        "incremental_sync",
+        "symbol_context",
+        "call_relationships",
+        "advisory_impact_and_test_candidates",
+        "snapshot_binding",
+        "provider_neutral_admissibility"
+      ],
+      "commands": {
+        "index": "code-intel provider codegraph index --repo <repo-path>",
+        "sync": "code-intel provider codegraph sync --repo <repo-path>",
+        "query": "code-intel provider codegraph explore --repo <repo-path> --query <query>",
+        "mcp": "code-intel serve --mcp --repo-path <repo-path>"
+      },
+      "artifactContract": [
+        "orchestration/schemas/code-intel-codegraph-result.v1.schema.json",
+        "orchestration/schemas/code-intel-evidence-payload.v1.schema.json",
+        "orchestration/schemas/code-intel-evidence-admissibility-result.v1.schema.json"
+      ],
+      "upstream": {
+        "repository": "https://github.com/colbymchenry/codegraph",
+        "reviewedRevision": "6560052a6f856855d3f71eee838fd66ccfa4285d",
+        "reviewedVersion": "1.6.2",
+        "minimumVersion": "1.6.2",
+        "license": "MIT"
+      },
+      "extensionPoint": "Explicit, optional CodeGraph provider for the code/Git perception layer. Rust owns scope, snapshot binding, artifacts, admission and failure semantics; CodeGraph retains parsing, resolution, storage and ranking. No shared SQLite or codenexus.full impersonation. Partial semantic coverage remains advisory/unknown and cannot replace native evidence or authoritative gates."
+    },
+    {
       "id": "provider.session-adapt",
       "stage": "verification",
       "owner": "code-intel-pipeline",

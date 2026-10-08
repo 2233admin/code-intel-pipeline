@@ -170,6 +170,25 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
     CommandRoute::Raw(provider_routes::SESSION_ADAPT),
     CommandRoute::Raw(provider_routes::CODENEXUS_ADAPT),
     raw_route! {
+        command: "provider",
+        subcommand: Some("codegraph"),
+        argument_offset: 2,
+        id: CompatibilityRoute::ProviderCodegraph,
+        contract: command_contract!(
+            Public,
+            WorkspaceAdvisory,
+            Advisory,
+            &[
+                CommandEffect::RepoRead,
+                CommandEffect::LocalWrite,
+                CommandEffect::ProcessSpawn
+            ],
+            artifacts_and_stdout!(["code-intel-evidence-payload.v1"], ["code-intel-codegraph-result.v1"]),
+            exits!(0, 64, 65, 69, 70, 74),
+            "retire only after a replacement preserves snapshot-bound semantic queries and the independent native evidence baseline"
+        ),
+    },
+    raw_route! {
         command: "codenexus",
         subcommand: Some("generate"),
         argument_offset: 2,

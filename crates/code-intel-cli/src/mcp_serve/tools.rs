@@ -8,17 +8,15 @@
 
 use serde_json::{json, Value};
 
-/// Every served tool, in the order an agent should reach for them: the four
-/// read projections #54 specified, then the write-assist projections #58 and
-/// #345 added. `plan_structural_edit` and `scan_security_findings` are last
-/// deliberately — they are the only two that spawn a child process, and an
-/// agent scanning this list top-down should find the cheap answers first.
+/// Committed evidence projections first, then optional live-provider context
+/// and preview capabilities. Live results are advisory, never gate authority.
 pub(super) const NAMES: &[&str] = &[
     "get_gate_verdict",
     "get_facts",
     "get_evidence",
     "get_audit_status",
     "get_change_impact",
+    "get_code_context",
     "plan_structural_edit",
     "scan_security_findings",
 ];
@@ -34,6 +32,7 @@ pub(super) fn descriptors() -> Vec<Value> {
         evidence(),
         audit_status(),
         change_impact(),
+        code_context(),
         structural_edit(),
         security_findings(),
     ]
@@ -142,6 +141,29 @@ fn change_impact() -> Value {
                 }
             },
             "required": ["changed"],
+            "additionalProperties": false
+        },
+        "annotations": {"readOnlyHint": true, "destructiveHint": false, "openWorldHint": false},
+    })
+}
+
+fn code_context() -> Value {
+    json!({
+        "name": "get_code_context",
+        "title": "Explore snapshot-bound code context",
+        "description": "Query the optional local CodeGraph provider for relevant source, call \
+    paths and blast radius in this server's checkout. First initialize with \
+    code-intel provider codegraph index --repo <checkout>; after source changes, explicitly \
+    run code-intel provider codegraph sync --repo <checkout>. This tool never indexes or \
+    changes source. It writes local evidence artifacts and admits them as partial/unknown: \
+    inferred relationships and test candidates are advisory, never gate verdicts. An \
+    unavailable provider or an unbound/stale graph is a visible error, not an empty graph.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "minLength": 1, "description": "A symbol, file, flow or code question within this checkout."}
+            },
+            "required": ["query"],
             "additionalProperties": false
         },
         "annotations": {"readOnlyHint": true, "destructiveHint": false, "openWorldHint": false},
