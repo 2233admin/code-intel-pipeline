@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Evidence Query v2（#433）**：`code-intel query <checkout> --kind evidence --json`、低层 `artifact query` 与 MCP `get_facts` 统一产生 `code-intel-evidence-query.v2`，显式区分产物完整性、快照绑定、新鲜度、证据可用性、搜索截断和 `behaviorVerification: not_assessed`，移除当前响应的笼统 `coverage/confidence`；历史 v1 schema 保持不变。查询直接交付同一已提交 run 的逐项 `verification.anchors`，保留来源、移动后的行号、失效原因和未知项；发布报告改为精确绑定最终 SHA-256 对象路径，旧报告关联缺失不猜测补齐。无命中、完整搜索或已验证锚点均不升级为需求验收；不增加扫描、执行内核或事实权威。
 - **Runtime provider maintenance (#419)**：Repowise 的现有 acquisition target/floor 更新为 0.55.0，toolchain 的安装版本比较遵循 minimum/no-downgrade；保留精确 acquisition 与 diagnostic/rollback、禁止 fact promotion 的调用契约。rg 原生 CI acquisition 更新为 15.2.0，并要求真实公共 CLI inventory smoke；增加真实 Repowise status/init/update 的旧请求回放、产物/源不变及 authority envelope 检查。Sentrux 固定公式源码不降级，旧历史 attestation/revision 不改；真实宿主升级与发布不在本票内。
 - (a) 类 CI/release PowerShell 调用点归零：atomic-capability 与 project-management-support 契约锁改为 cargo 测试，PS1 脚本保留在磁盘上（PM 走 internalization pin，atomic 保留避免耦合棘轮）；退役 35 个孤儿 legacy PowerShell 文件（#296/#298/#319）。
 - 清理仓根两个无引用死文件 `CODE_QUALITY_REVIEW.md`（仅标题的空 stub）与 `HANDOFF-ps1-migration.md`（#275/#277 交接记录，任务早已全部完成）；其余仓根文件逐一审计确认仍被引用而保留（#347）。
