@@ -30,8 +30,8 @@ fn temp_dir() -> PathBuf {
     ))
 }
 
-fn doctor_tool_fixture(root: &Path, conforming_sentrux: bool) -> PathBuf {
-    let bin = root.join(if conforming_sentrux {
+fn doctor_tool_fixture(root: &Path, builtin_sentrux: bool) -> std::ffi::OsString {
+    let bin = root.join(if builtin_sentrux {
         "doctor-tools-ready"
     } else {
         "doctor-tools-nonconforming"
@@ -39,38 +39,46 @@ fn doctor_tool_fixture(root: &Path, conforming_sentrux: bool) -> PathBuf {
     fs::create_dir_all(&bin).unwrap();
     #[cfg(windows)]
     {
-        for name in ["rg", "git", "python", "repowise"] {
+        for name in ["python", "repowise"] {
             fs::write(
                 bin.join(format!("{name}.cmd")),
                 "@echo off\r\nexit /b 0\r\n",
             )
             .unwrap();
         }
-        let sentrux = if conforming_sentrux {
-            "@echo off\r\necho Enforce architectural rules\r\necho Tier: pro\r\nexit /b 0\r\n"
-        } else {
-            "@echo off\r\necho fixture nonconforming\r\nexit /b 0\r\n"
-        };
-        fs::write(bin.join("sentrux.cmd"), sentrux).unwrap();
+        if !builtin_sentrux {
+            fs::write(
+                bin.join("sentrux.cmd"),
+                "@echo off\r\necho fixture nonconforming\r\nexit /b 0\r\n",
+            )
+            .unwrap();
+        }
     }
     #[cfg(not(windows))]
     {
         use std::os::unix::fs::PermissionsExt;
-        for name in ["rg", "git", "python", "repowise"] {
+        for name in ["python", "repowise"] {
             let path = bin.join(name);
             fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
             fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
         }
-        let path = bin.join("sentrux");
-        let sentrux = if conforming_sentrux {
-            "#!/bin/sh\necho 'Enforce architectural rules'\necho 'Tier: pro'\nexit 0\n"
-        } else {
-            "#!/bin/sh\necho 'fixture nonconforming'\nexit 0\n"
-        };
-        fs::write(&path, sentrux).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        if !builtin_sentrux {
+            let path = bin.join("sentrux");
+            fs::write(&path, "#!/bin/sh\necho 'fixture nonconforming'\nexit 0\n").unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
     }
-    bin
+    // Isolate doctor-only Python/Repowise availability; rg/git must remain
+    // real. toolPathPrefix would also select the external Sentrux adapter.
+    let binary_dir = PathBuf::from(env!("CARGO_BIN_EXE_code-intel"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let mut paths = vec![bin, binary_dir];
+    paths.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    std::env::join_paths(paths).expect("fixture PATH")
 }
 
 fn save_baseline(repo: &Path) {
@@ -102,8 +110,7 @@ fn production_run_route_executes_snapshot_then_inventory() {
         .arg(&repo)
         .arg("--out")
         .arg(&out)
-        .arg("--doctor-tool-path-prefix")
-        .arg(&doctor_tools)
+        .env("PATH", &doctor_tools)
         .output()
         .unwrap();
     assert_eq!(
@@ -256,8 +263,7 @@ fn production_run_budget_reports_completed_failed_and_budget_stopped() {
             .arg(&authority)
             .args(["--final-name", "budget-run", "--profile", "offline"])
             .args(["--max-concurrency", "1", "--budget-wall-clock", limit])
-            .arg("--doctor-tool-path-prefix")
-            .arg(&doctor_tools)
+            .env("PATH", &doctor_tools)
             .output()
             .unwrap();
         assert_eq!(
@@ -341,8 +347,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
         .arg("--authority-root")
         .arg(&repo_authority)
         .args(["--final-name", "run-001"])
-        .arg("--doctor-tool-path-prefix")
-        .arg(&doctor_tools)
+        .env("PATH", &doctor_tools)
         .output()
         .unwrap();
     assert_eq!(
@@ -639,8 +644,7 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
         .arg("--authority-root")
         .arg(&authority)
         .args(["--final-name", "completed-001"])
-        .arg("--doctor-tool-path-prefix")
-        .arg(&completed_doctor_tools)
+        .env("PATH", &completed_doctor_tools)
         .output()
         .unwrap();
     assert_eq!(
@@ -661,8 +665,7 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
         .arg("--authority-root")
         .arg(&authority)
         .args(["--final-name", "failed-001"])
-        .arg("--doctor-tool-path-prefix")
-        .arg(&doctor_tools)
+        .env("PATH", &doctor_tools)
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(10));
@@ -817,8 +820,7 @@ fn optional_session_evidence_is_snapshot_bound_a03_verified_and_manifested() {
         .arg(&out)
         .arg("--session-evidence")
         .arg(&session)
-        .arg("--doctor-tool-path-prefix")
-        .arg(&doctor_tools)
+        .env("PATH", &doctor_tools)
         .output()
         .unwrap();
     assert_eq!(
@@ -1005,8 +1007,7 @@ fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
         .args(["--final-name", "offline-001", "--profile", "offline"])
         .args(["--doctor-require-repowise", "true"])
         .args(["--doctor-require-understand", "true"])
-        .arg("--doctor-tool-path-prefix")
-        .arg(&doctor_tools)
+        .env("PATH", &doctor_tools)
         .output()
         .unwrap();
     assert_eq!(
@@ -1130,8 +1131,7 @@ fn strict_profile_cannot_be_weakened_and_keeps_all_provider_nodes_required() {
         .args(["--final-name", "strict-001", "--profile", "strict"])
         .args(["--doctor-require-repowise", "false"])
         .args(["--doctor-require-understand", "false"])
-        .arg("--doctor-tool-path-prefix")
-        .arg(&doctor_tools)
+        .env("PATH", &doctor_tools)
         .output()
         .unwrap();
 

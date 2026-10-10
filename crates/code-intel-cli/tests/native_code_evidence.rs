@@ -30,39 +30,38 @@ impl Drop for Temp {
     }
 }
 
-fn tool_fixture(root: &Path) -> PathBuf {
+fn tool_fixture(root: &Path) -> std::ffi::OsString {
     let bin = root.join("dag-tools");
     fs::create_dir_all(&bin).unwrap();
     #[cfg(windows)]
     {
-        for name in ["rg", "git", "python", "repowise"] {
+        for name in ["python", "repowise"] {
             fs::write(
                 bin.join(format!("{name}.cmd")),
                 "@echo off\r\nexit /b 0\r\n",
             )
             .unwrap();
         }
-        fs::write(
-            bin.join("sentrux.cmd"),
-            "@echo off\r\necho Enforce architectural rules\r\necho Tier: pro\r\nexit /b 0\r\n",
-        )
-        .unwrap();
     }
     #[cfg(not(windows))]
     {
         use std::os::unix::fs::PermissionsExt;
-        for name in ["rg", "git", "python", "repowise", "sentrux"] {
+        for name in ["python", "repowise"] {
             let path = bin.join(name);
-            let content = if name == "sentrux" {
-                "#!/bin/sh\necho 'Enforce architectural rules'\necho 'Tier: pro'\nexit 0\n"
-            } else {
-                "#!/bin/sh\nexit 0\n"
-            };
-            fs::write(&path, content).unwrap();
+            fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
             fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
         }
     }
-    bin
+    // Stub only doctor Python/Repowise; keep rg/git and Sentrux real.
+    let binary_dir = PathBuf::from(env!("CARGO_BIN_EXE_code-intel"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let mut paths = vec![bin, binary_dir];
+    paths.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    std::env::join_paths(paths).expect("fixture PATH")
 }
 
 fn run_with_expected_code(repo: &Path, out: &Path, expected_code: i32) -> Value {
@@ -72,8 +71,7 @@ fn run_with_expected_code(repo: &Path, out: &Path, expected_code: i32) -> Value 
         .arg(repo)
         .arg("--out")
         .arg(out)
-        .arg("--doctor-tool-path-prefix")
-        .arg(tools)
+        .env("PATH", tools)
         .output()
         .unwrap();
     assert_eq!(

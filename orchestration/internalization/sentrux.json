@@ -7,7 +7,7 @@
     "kind": "adapted_capability",
     "source": {
       "uri": "unverified-upstream:sentrux; local-adapter=crates/code-intel-cli/src/sentrux_adapter.rs",
-      "revision": "unverified-upstream; local-adapter-sha256:29ad124d984f6ab0756bdc7c0b523a84dfada2a655fe0d282ce681165f6bae4f; local-conformance-sha256:0669522514b6740f8246678ac98f8aac50030b7d9549fd5d028781ff2acaf54b"
+      "revision": "unverified-upstream; local-adapter-sha256:4702bbed12b8012e8f0c84c601c148e5557554449922860b19b96605538b9701; local-conformance-sha256:06e21b5f3258720eb52311a61b42f7d35df256eb4e50fe0a9ffa391c98d82f33"
     },
     "license": {
       "id": "UNKNOWN-RESEARCH-ONLY",
@@ -45,7 +45,7 @@
     },
     "conformanceEvidence": {
       "evidenceIds": [
-        "local:b03:sentrux-adapter-conformance:0669522514b6740f8246678ac98f8aac50030b7d9549fd5d028781ff2acaf54b",
+        "local:b03:sentrux-adapter-conformance:06e21b5f3258720eb52311a61b42f7d35df256eb4e50fe0a9ffa391c98d82f33",
         "local:b03:production-operation-trace",
         "gap:sentrux:upstream-exact-revision-conformance"
       ],
@@ -88,7 +88,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
-        "sha256": "8240b87055656a560c7fa3cc40d1681a4cf4afc5fe547bcb7d446ba686e3796f",
+        "sha256": "06e21b5f3258720eb52311a61b42f7d35df256eb4e50fe0a9ffa391c98d82f33",
         "testName": "public_route_complete_is_eligible_but_never_emits_facts"
       }
     },
@@ -107,7 +107,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
-        "sha256": "8240b87055656a560c7fa3cc40d1681a4cf4afc5fe547bcb7d446ba686e3796f",
+        "sha256": "06e21b5f3258720eb52311a61b42f7d35df256eb4e50fe0a9ffa391c98d82f33",
         "testName": "public_route_complete_is_eligible_but_never_emits_facts"
       }
     },
@@ -126,7 +126,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "43ddc9af7c9714ea7856551f089877805e758213f42c6f16012f5b846279d476",
+        "sha256": "54160ea190d3354e460de225d1f0efee9512c116e6bf0b5e6996e0dddd2a9b86",
         "testName": "production_dag_output_commits_and_enters_the_authoritative_index"
       }
     },
@@ -145,7 +145,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
-        "sha256": "8240b87055656a560c7fa3cc40d1681a4cf4afc5fe547bcb7d446ba686e3796f",
+        "sha256": "06e21b5f3258720eb52311a61b42f7d35df256eb4e50fe0a9ffa391c98d82f33",
         "testName": "complete_normalizes_every_authoritative_kind_and_passes_a04"
       }
     },
@@ -164,7 +164,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
-        "sha256": "8240b87055656a560c7fa3cc40d1681a4cf4afc5fe547bcb7d446ba686e3796f",
+        "sha256": "06e21b5f3258720eb52311a61b42f7d35df256eb4e50fe0a9ffa391c98d82f33",
         "testName": "complete_normalizes_every_authoritative_kind_and_passes_a04"
       }
     },
@@ -183,7 +183,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
-        "sha256": "8240b87055656a560c7fa3cc40d1681a4cf4afc5fe547bcb7d446ba686e3796f",
+        "sha256": "06e21b5f3258720eb52311a61b42f7d35df256eb4e50fe0a9ffa391c98d82f33",
         "testName": "unknown_kind_is_fail_closed_even_when_provider_labels_it_pass"
       }
     },
@@ -259,7 +259,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "43ddc9af7c9714ea7856551f089877805e758213f42c6f16012f5b846279d476",
+        "sha256": "54160ea190d3354e460de225d1f0efee9512c116e6bf0b5e6996e0dddd2a9b86",
         "testName": "production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch"
       }
     }
@@ -327,8 +327,8 @@
       "path": "crates/code-intel-cli/src/sentrux_adapter.rs",
       "description": "Pipeline-owned B03 structural-evidence adapter and normalization boundary",
       "evidenceIds": [
-        "local:b03:adapter-source-sha256:29ad124d984f6ab0756bdc7c0b523a84dfada2a655fe0d282ce681165f6bae4f",
-        "local:b03:sentrux-adapter-conformance:0669522514b6740f8246678ac98f8aac50030b7d9549fd5d028781ff2acaf54b"
+        "local:b03:adapter-source-sha256:4702bbed12b8012e8f0c84c601c148e5557554449922860b19b96605538b9701",
+        "local:b03:sentrux-adapter-conformance:06e21b5f3258720eb52311a61b42f7d35df256eb4e50fe0a9ffa391c98d82f33"
       ]
     },
     {
@@ -408,7 +408,7 @@
     "effectiveAt": 1783900800,
     "replacementRecordId": null,
     "evidenceIds": [
-      "local:b03:sentrux-adapter-conformance:0669522514b6740f8246678ac98f8aac50030b7d9549fd5d028781ff2acaf54b",
+      "local:b03:sentrux-adapter-conformance:06e21b5f3258720eb52311a61b42f7d35df256eb4e50fe0a9ffa391c98d82f33",
       "local:b03:production-operation-trace",
       "gap:sentrux:upstream-revision",
       "gap:sentrux:license",

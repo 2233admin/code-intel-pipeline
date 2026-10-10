@@ -340,9 +340,9 @@ fn stale_snapshot_and_digest_bound_payload_relabel_cannot_be_admitted() {
     let mut native = base.clone();
     native["expectedSnapshotIdentity"] = json!("f".repeat(64));
     let (code, result, stderr) = route(&root.0, &native);
-    assert_eq!(code, 0, "{stderr}");
-    assert_ne!(result["admission"]["domainVerdict"], "observed");
-    assert_eq!(result["adapter"]["port"]["diagnosisEligible"], false);
+    assert_eq!(code, 65, "{stderr}");
+    assert_eq!(result["status"], "rejected");
+    assert!(result["admission"].is_null());
     let mut native = base;
     replace_payload(&root.0, &mut native, |payload| {
         payload["data"]["structuralEvidence"]["gatePolicy"]["policyVersion"] = json!(2);
