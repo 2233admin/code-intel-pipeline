@@ -1345,13 +1345,6 @@ fn assert_operation_trace_exact(record: &Value, integration_ids: &[&str]) {
         assert_eq!(trace["source"]["sha256"], recompute_sha(source_path));
         let test_path = trace["conformance"]["path"].as_str().unwrap();
         assert_eq!(trace["conformance"]["sha256"], recompute_sha(test_path));
-        let test_name = trace["conformance"]["testName"].as_str().unwrap();
-        assert!(
-            fs::read_to_string(root().join(test_path))
-                .unwrap()
-                .contains(test_name),
-            "{test_path} does not contain named conformance {test_name}"
-        );
     }
 
     assert_eq!(

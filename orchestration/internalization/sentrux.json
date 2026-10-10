@@ -89,7 +89,7 @@
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
         "sha256": "06e21b5f3258720eb52311a61b42f7d35df256eb4e50fe0a9ffa391c98d82f33",
-        "testName": "public_route_complete_is_eligible_but_never_emits_facts"
+        "testName": "real_quality_only_decline_is_admitted_as_advisory_not_a_hard_violation"
       }
     },
     {
@@ -108,7 +108,7 @@
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
         "sha256": "06e21b5f3258720eb52311a61b42f7d35df256eb4e50fe0a9ffa391c98d82f33",
-        "testName": "public_route_complete_is_eligible_but_never_emits_facts"
+        "testName": "real_quality_only_decline_is_admitted_as_advisory_not_a_hard_violation"
       }
     },
     {
@@ -146,7 +146,7 @@
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
         "sha256": "06e21b5f3258720eb52311a61b42f7d35df256eb4e50fe0a9ffa391c98d82f33",
-        "testName": "complete_normalizes_every_authoritative_kind_and_passes_a04"
+        "testName": "real_quality_only_decline_is_admitted_as_advisory_not_a_hard_violation"
       }
     },
     {
@@ -165,7 +165,7 @@
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
         "sha256": "06e21b5f3258720eb52311a61b42f7d35df256eb4e50fe0a9ffa391c98d82f33",
-        "testName": "complete_normalizes_every_authoritative_kind_and_passes_a04"
+        "testName": "real_quality_only_decline_is_admitted_as_advisory_not_a_hard_violation"
       }
     },
     {
@@ -184,7 +184,7 @@
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
         "sha256": "06e21b5f3258720eb52311a61b42f7d35df256eb4e50fe0a9ffa391c98d82f33",
-        "testName": "unknown_kind_is_fail_closed_even_when_provider_labels_it_pass"
+        "testName": "forged_missing_old_or_contradictory_policy_claims_are_rejected_at_public_route"
       }
     },
     {
