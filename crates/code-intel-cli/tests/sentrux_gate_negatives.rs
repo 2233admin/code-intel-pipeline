@@ -73,7 +73,14 @@ fn save_baseline(root: &PathBuf) {
 /// Run `check` and assert it stays green, quoting the rationale on failure.
 fn assert_not_flagged(root: &PathBuf, why: &str) {
     let root_arg = root.to_string_lossy().to_string();
-    let check = code_intel(&["sentrux", "--operation", "check", "--repo", &root_arg]);
+    let check = code_intel(&[
+        "sentrux",
+        "--operation",
+        "check",
+        "--repo",
+        &root_arg,
+        "--json",
+    ]);
     let combined = format!(
         "{}{}",
         String::from_utf8_lossy(&check.stdout),
@@ -85,6 +92,9 @@ fn assert_not_flagged(root: &PathBuf, why: &str) {
          Why this is legitimate: {why}\n\
          Gate said:\n{combined}",
     );
+    let result: serde_json::Value = serde_json::from_slice(&check.stdout).expect("check JSON");
+    assert_eq!(result["verdict"], "pass", "{why}: {result}");
+    assert_eq!(result["blockingViolations"], serde_json::json!([]));
     fs::remove_dir_all(root).expect("remove fixture");
 }
 
@@ -200,7 +210,14 @@ fn the_negatives_above_are_not_vacuous() {
     .expect("write an unlisted god file");
 
     let root_arg = root.to_string_lossy().to_string();
-    let check = code_intel(&["sentrux", "--operation", "check", "--repo", &root_arg]);
+    let check = code_intel(&[
+        "sentrux",
+        "--operation",
+        "check",
+        "--repo",
+        &root_arg,
+        "--json",
+    ]);
     assert!(
         !check.status.success(),
         "a god file absent from the baseline must be flagged — if this passes, \
@@ -208,6 +225,13 @@ fn the_negatives_above_are_not_vacuous() {
         String::from_utf8_lossy(&check.stdout),
         String::from_utf8_lossy(&check.stderr),
     );
+    let result: serde_json::Value = serde_json::from_slice(&check.stdout).expect("check JSON");
+    assert_eq!(result["verdict"], "fail");
+    assert!(result["blockingViolations"]
+        .as_array()
+        .expect("violations")
+        .iter()
+        .any(|violation| violation["rule"] == "god_files_increased"));
 
     fs::remove_dir_all(&root).expect("remove fixture");
 }

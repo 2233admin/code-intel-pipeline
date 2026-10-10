@@ -7,7 +7,7 @@
   "properties":{
     "schema":{"const":"code-intel-sentrux-route-result.v1"},
     "status":{"enum":["completed","rejected"]},
-    "adapter":{"type":["object","null"]},
+    "adapter":{"oneOf":[{"$ref":"code-intel-sentrux-adapter-result.v2.schema.json"},{"type":"null"}]},
     "admission":{"type":["object","null"]},
     "engineeringFacts":{"type":"array","maxItems":0},
     "diagnostics":{"type":"array","items":{"type":"string"}}

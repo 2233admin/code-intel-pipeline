@@ -44,7 +44,8 @@ pub(super) fn report(repo: &Path, artifact_root: Option<&Path>, json: bool) -> R
     let sentrux_evidence = project_sentrux_evidence(&run_root, &manifest, &hospital_value);
 
     let out = serde_json::json!({
-        "schema": "code-intel-report.v1",
+        "schema": "code-intel-report.v2",
+        "gatePolicy": crate::sentrux_gate::sentrux_gate_policy::identity(),
         "repo": repo,
         "run": run_root.file_name().and_then(|name| name.to_str()),
         "hospital": hospital.to_json(),
@@ -69,6 +70,25 @@ pub(super) fn report(repo: &Path, artifact_root: Option<&Path>, json: bool) -> R
                 .as_str()
                 .unwrap_or("unknown")
         );
+        for capability in out["sentruxEvidence"]["capabilities"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            if matches!(capability["operation"].as_str(), Some("gate" | "check")) {
+                println!(
+                    "{} admission: {}",
+                    capability["capabilityId"], capability["admission"]["verdict"]
+                );
+                for advisory in capability["admission"]["advisories"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                {
+                    println!("advisory (non-blocking): {}", advisory["message"]);
+                }
+            }
+        }
         println!();
         println!("--- hospital.md ---");
         print!("{hospital_text}");
@@ -202,12 +222,22 @@ fn project_sentrux_evidence(run_root: &Path, manifest: &Value, hospital: &Value)
                 continue;
             }
         };
+        if !crate::sentrux_quality_projection::current_capability(&payload) {
+            unverified.push(serde_json::json!({
+                "reference": reference,
+                "reason": "Capability is historical, has an unknown policy/provider, or is not current; retained as diagnostic reference only, never current admission"
+            }));
+            continue;
+        }
+        let admission = crate::sentrux_quality_projection::capability_admission(&payload);
         verified.push(serde_json::json!({
             "capabilityId": payload["capabilityId"],
             "operation": payload["operation"],
             "status": payload["status"],
             "authority": payload["authority"],
             "verdict": payload.pointer("/outputs/verdict").cloned().unwrap_or(Value::String("unknown".into())),
+            "gatePolicy": payload["gatePolicy"],
+            "admission": admission,
             "provider": payload["provider"],
             "artifact": reference_descriptor(manifest_reference),
             "verification": "committed_manifest_and_payload"
@@ -224,6 +254,8 @@ fn project_sentrux_evidence(run_root: &Path, manifest: &Value, hospital: &Value)
     let has_degraded_capability = verified.iter().any(|capability| {
         !matches!(capability["status"].as_str(), Some("succeeded"))
             || matches!(capability["verdict"].as_str(), Some("fail" | "unknown"))
+            || (matches!(capability["operation"].as_str(), Some("gate" | "check"))
+                && capability["admission"]["verdict"] != "pass")
     });
     let status = if verified.is_empty() {
         "unknown"
@@ -255,10 +287,7 @@ fn manifest_capability_refs(manifest: &Value) -> Vec<&Value> {
         .into_iter()
         .flat_map(|nodes| nodes.values())
         .flat_map(|node| node["artifacts"].as_array().into_iter().flatten())
-        .filter(|reference| {
-            reference["type"] == "provider.sentrux.capability-artifact"
-                && reference["artifactSchema"] == "code-intel-sentrux-capability-artifact.v1"
-        })
+        .filter(|reference| reference["type"] == "provider.sentrux.capability-artifact")
         .collect()
 }
 
@@ -377,27 +406,34 @@ mod tests {
 
     fn capability_fixture(root: &Path) -> (String, Value) {
         let snapshot = "a".repeat(64);
+        let stream = json!({"bytes":0,"sha256":crate::capability::sha256_hex(b""),"preview":"","previewBytes":0});
+        let summary = json!({"authority":"metadata_only","complete":true,"bounded":false,
+            "limitBytes":16777216,"totalBytes":0,"stdout":stream,"stderr":stream,"note":"fixture"});
         let payload = json!({
-            "schema":"code-intel-sentrux-capability-artifact.v1",
-            "contractVersion":1,
+            "schema":"code-intel-sentrux-capability-artifact.v2",
+            "contractVersion":2,
+            "gatePolicy":crate::sentrux_gate::sentrux_gate_policy::identity(),
             "capabilityId":"sentrux.scan",
             "operation":"scan",
             "runId":"run-1",
             "snapshotIdentity":snapshot,
             "provider":{
                 "mode":"builtin",
-                "id":"sentrux.builtin",
-                "version":"1.0.0",
+                "id":crate::sentrux_gate::ENGINE_ID,
+                "version":crate::sentrux_gate::ENGINE_VERSION,
                 "digest":"b".repeat(64)
             },
             "status":"succeeded",
             "authority":"authoritative",
             "inputs":{"snapshotIdentity":snapshot},
-            "outputs":{"verdict":"pass"},
+            "outputs":{"verdict":"pass","structuredData":null,"outputSummary":summary,
+                "command":{"id":"scan","argv":["code-intel","sentrux","scan","."],
+                    "exitCode":0,"success":true,"stdout":"","stderr":"","governed":false,
+                    "violations":[],"advisories":[],"admission":null,"outputSummary":summary,"structuredData":null}},
             "failure":null,
             "freshness":{
                 "status":"current",
-                "evaluatedAt":"2026-08-19T00:00:00Z",
+                "evaluatedAt":null,
                 "consumedSnapshotIdentity":snapshot
             },
             "decisionConsumers":["diagnosis.hospital"]
@@ -410,13 +446,110 @@ mod tests {
         fs::write(path, bytes.clone()).expect("fixture artifact should be written");
         let reference = json!({
             "schema":"code-intel-artifact-ref.v1",
-            "artifactSchema":"code-intel-sentrux-capability-artifact.v1",
+            "artifactSchema":"code-intel-sentrux-capability-artifact.v2",
             "type":"provider.sentrux.capability-artifact",
             "path":relative_path,
             "sha256":crate::capability::sha256_hex(&bytes),
             "consumedSnapshotIdentity":snapshot
         });
         (snapshot, reference)
+    }
+    fn report_gate_fixture(root: &Path, hard_failure: bool) -> (String, Value) {
+        let (snapshot, mut reference) = capability_fixture(root);
+        let path = root.join(reference["path"].as_str().unwrap());
+        let mut payload: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let blocking = if hard_failure {
+            json!([{"rule":"coupling_increased","message":"Coupling: 4 -> 5","targets":[]}])
+        } else {
+            json!([])
+        };
+        let advisories =
+            json!([{"rule":"quality_degraded","message":"Quality: 9000 -> 8800","targets":[]}]);
+        let result = json!({
+            "schema":"code-intel-sentrux-gate-result.v1",
+            "policy":crate::sentrux_gate::sentrux_gate_policy::identity(),
+            "measurement":crate::sentrux_gate::sentrux_gate_policy::measurement(),
+            "baseline":{"schema":"code-intel-sentrux-baseline.v6","sha256":"b".repeat(64),"sourceCommit":"base","scope":"."},
+            "current":{"sourceCommit":"head","scope":"."},"ruleScope":"baseline_ratchet",
+            "comparisons":[
+                {"rule":"quality_degraded","before":9000,"after":8800,"disposition":"advisory","verdict":"fail"},
+                {"rule":"coupling_increased","before":4,"after":if hard_failure {5} else {4},"disposition":"blocking","verdict":if hard_failure {"fail"} else {"pass"}},
+                {"rule":"cycles_increased","before":0,"after":0,"disposition":"blocking","verdict":"pass"},
+                {"rule":"god_files_increased","before":[],"after":[],"disposition":"blocking","verdict":"pass"}
+            ],
+            "blockingViolations":blocking,"advisories":advisories,"verdict":if hard_failure {"fail"} else {"pass"}
+        });
+        payload["capabilityId"] = json!("sentrux.gate");
+        payload["operation"] = json!("gate");
+        payload["outputs"]["verdict"] = result["verdict"].clone();
+        let command = &mut payload["outputs"]["command"];
+        command["id"] = json!("gate");
+        command["argv"] = json!(["code-intel", "sentrux", "gate", "."]);
+        command["governed"] = json!(true);
+        command["success"] = json!(!hard_failure);
+        command["exitCode"] = json!(if hard_failure { 1 } else { 0 });
+        command["violations"] = blocking;
+        command["advisories"] = advisories;
+        command["admission"] = result;
+        if hard_failure {
+            payload["status"] = json!("failed");
+            payload["failure"] =
+                json!({"kind":"provider_error","message":"Coupling: 4 -> 5","retryable":false});
+        }
+        let bytes = serde_json::to_vec(&payload).unwrap();
+        fs::write(path, &bytes).unwrap();
+        reference["sha256"] = json!(crate::capability::sha256_hex(&bytes));
+        (snapshot, reference)
+    }
+
+    #[test]
+    fn report_keeps_quality_advisory_visible_without_hiding_hard_failures() {
+        for (hard, expected_status, expected_admission) in
+            [(false, "verified", "pass"), (true, "degraded", "fail")]
+        {
+            let root = crate::test_support::unique_temp_dir("advisory-report");
+            fs::create_dir_all(&root).unwrap();
+            let (snapshot, reference) = report_gate_fixture(&root, hard);
+            let manifest =
+                json!({"snapshotIdentity":snapshot,"nodes":{"sentrux":{"artifacts":[reference]}}});
+            let hospital = json!({"tools":{"sentruxCapabilities":[reference]}});
+            let evidence = project_sentrux_evidence(&root, &manifest, &hospital);
+            assert_eq!(evidence["status"], expected_status);
+            let admission = &evidence["capabilities"][0]["admission"];
+            assert_eq!(admission["verdict"], expected_admission);
+            assert_eq!(admission["advisories"][0]["rule"], "quality_degraded");
+            if hard {
+                assert_eq!(
+                    admission["blockingViolations"][0]["rule"],
+                    "coupling_increased"
+                );
+            } else {
+                assert!(admission["blockingViolations"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty());
+            }
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
+    fn report_retains_historical_reference_without_current_success_authority() {
+        let root = crate::test_support::unique_temp_dir("historical-report");
+        fs::create_dir_all(&root).unwrap();
+        let (snapshot, mut reference) = capability_fixture(&root);
+        reference["artifactSchema"] = json!("code-intel-sentrux-capability-artifact.v1");
+        let manifest =
+            json!({"snapshotIdentity":snapshot,"nodes":{"sentrux":{"artifacts":[reference]}}});
+        let hospital = json!({"tools":{"sentruxCapabilities":[reference]}});
+        let evidence = project_sentrux_evidence(&root, &manifest, &hospital);
+        assert_eq!(evidence["status"], "unknown");
+        assert!(evidence["capabilities"].as_array().unwrap().is_empty());
+        assert_eq!(
+            evidence["unverifiedReferences"][0]["reference"]["artifactSchema"],
+            "code-intel-sentrux-capability-artifact.v1"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

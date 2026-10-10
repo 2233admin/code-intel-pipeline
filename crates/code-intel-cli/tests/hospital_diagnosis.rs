@@ -263,22 +263,77 @@ fn graph(root: &Path, current: bool) -> Value {
     )
 }
 
+fn gate_policy() -> Value {
+    json!({"policyId":"evidence-quality-admission","policyVersion":1,
+        "sha256":"f97cfed77d80be09acda1331bf449bb21e09ee58d91e19255313bbc5815d11f0"})
+}
+
+fn structural_data(snapshot: &str, decline: bool, blocking: Option<Value>) -> Value {
+    let measurement: Value = serde_json::from_slice(include_bytes!(
+        "../../../orchestration/sentrux-gate-policy.v1.json"
+    ))
+    .unwrap();
+    let advisories = if decline {
+        json!([{"rule":"quality_degraded","message":"Quality: 9000 -> 8800","targets":[]}])
+    } else {
+        json!([])
+    };
+    let gate = json!({
+        "schema":"code-intel-sentrux-gate-result.v1","policy":gate_policy(),
+        "measurement":measurement["measurement"],
+        "baseline":{"schema":"code-intel-sentrux-baseline.v6","sha256":"b".repeat(64),"sourceCommit":"base","scope":"."},
+        "current":{"sourceCommit":"head","scope":"."},"ruleScope":"baseline_ratchet",
+        "comparisons":[
+            {"rule":"quality_degraded","before":9000,"after":if decline {8800} else {9000},"disposition":"advisory","verdict":if decline {"fail"} else {"pass"}},
+            {"rule":"coupling_increased","before":4,"after":4,"disposition":"blocking","verdict":"pass"},
+            {"rule":"cycles_increased","before":0,"after":0,"disposition":"blocking","verdict":"pass"},
+            {"rule":"god_files_increased","before":[],"after":[],"disposition":"blocking","verdict":"pass"}
+        ],
+        "blockingViolations":[],"advisories":advisories,"verdict":"pass"
+    });
+    let mut check = gate.clone();
+    check["ruleScope"] = json!("static_and_ratchet");
+    if let Some(violation) = blocking {
+        check["comparisons"].as_array_mut().unwrap().push(json!({
+            "rule":violation["rule"],"before":null,"after":violation,
+            "disposition":"blocking","verdict":"fail"
+        }));
+        check["blockingViolations"] = json!([violation]);
+        check["verdict"] = json!("fail");
+    }
+    json!({"structuralEvidence":{
+        "schema":"code-intel-structural-evidence-payload.v2",
+        "gatePolicy":gate_policy(),"snapshotIdentity":snapshot,"completeness":"complete",
+        "provenance":{"sourceRevision":"head"},
+        "gateResults":[{"kind":"sentrux_gate","admission":gate},{"kind":"sentrux_check","admission":check}],
+        "advisories":advisories,
+        "rules":[
+            {"kind":"sentrux_gate","status":"evaluated","verdict":"pass","failure":{"kind":"none"},"details":{"violations":[]}},
+            {"kind":"sentrux_check","status":"evaluated","verdict":check["verdict"],"failure":{"kind":"none"},"details":{"violations":check["blockingViolations"]}}
+        ]
+    }})
+}
+
 fn structural(root: &Path, name: &str, verdict: Option<&str>, trusted: bool) -> Value {
-    let rules = verdict
-        .map(|value| json!([{"kind":"boundary_dependency","status":"evaluated","verdict":value,"failure":{"kind":"none"}}]))
-        .unwrap_or_else(|| json!([]));
+    let blocking = (verdict == Some("fail")).then(|| {
+        json!({
+            "rule":"max_cycles","message":"cycles exceeded: 1 > 0","targets":[]
+        })
+    });
+    let mut data = structural_data(SNAPSHOT, false, blocking);
+    if verdict.is_none() {
+        data["structuralEvidence"]["rules"] = json!([]);
+    }
+    if !trusted {
+        data["structuralEvidence"]["completeness"] = json!("partial");
+    }
     admission(
         root,
         name,
         "structural-evidence.sentrux",
         if trusted { "observed" } else { "unknown" },
         if trusted { "none" } else { "domain_unknown" },
-        json!({"structuralEvidence":{
-            "schema":"code-intel-structural-evidence-payload.v1",
-            "snapshotIdentity":SNAPSHOT,
-            "completeness":if trusted { "complete" } else { "partial" },
-            "rules":rules
-        }}),
+        data,
     )
 }
 
@@ -405,7 +460,7 @@ fn provider_identity_spoofs_cannot_supply_any_admitted_modality() {
         (
             "structural-spoof",
             "structural-evidence.sentrux-spoof",
-            json!({"structuralEvidence":{"schema":"code-intel-structural-evidence-payload.v1","snapshotIdentity":SNAPSHOT,"completeness":"complete","rules":[{"kind":"boundary_dependency","status":"evaluated","verdict":"pass","failure":{"kind":"none"}}]}}),
+            structural_data(SNAPSHOT, false, None),
         ),
         (
             "native-spoof",
@@ -510,8 +565,8 @@ fn precedence_matrix_matches_the_legacy_stable_diagnoses_and_fails_closed() {
                 graph(&temp.0, true),
                 structural(&temp.0, "structural-empty", None, true),
             ],
-            "ungoverned structural scope",
-            "govern",
+            "authoritative structural evidence unavailable",
+            "diagnose",
         ),
         (
             "modernization",
@@ -549,29 +604,10 @@ fn precedence_matrix_matches_the_legacy_stable_diagnoses_and_fails_closed() {
 
 #[test]
 fn architecture_gate_failure_names_the_rule_targets_and_smallest_rerun_command() {
-    // Acceptance criterion from issue #14 (v0.5.1 self-dogfood slice): a
-    // Hospital failure must name the first failed rule, its evidence
-    // (message), the target file(s), and the smallest rerun command -- not
-    // a bare "architecture gate failure" string. `structural()` above only
-    // ever seeds `failure:{"kind":"none"}`, so no existing test exercises
-    // the rendered text for a real violation; seed one directly, shaped
-    // exactly like the max_cycles violation sentrux_gate.rs produces for
-    // the dag_run.rs/execution_kernel.rs cycle this PR verified is gone.
     let temp = Temp::new();
-    let cycle_rule = json!({
-        "kind": "max_cycles",
-        "status": "evaluated",
-        "verdict": "fail",
-        "details": {
-            "violations": [{
-                "rule": "max_cycles",
-                "message": "cycles exceeded: 1 > 0",
-                "targets": [
-                    "crates/code-intel-cli/src/dag_run.rs",
-                    "crates/code-intel-cli/src/execution_kernel.rs"
-                ]
-            }]
-        }
+    let violation = json!({
+        "rule":"max_cycles","message":"cycles exceeded: 1 > 0",
+        "targets":["crates/code-intel-cli/src/dag_run.rs","crates/code-intel-cli/src/execution_kernel.rs"]
     });
     let structural_fail = admission(
         &temp.0,
@@ -579,12 +615,7 @@ fn architecture_gate_failure_names_the_rule_targets_and_smallest_rerun_command()
         "structural-evidence.sentrux",
         "observed",
         "none",
-        json!({"structuralEvidence":{
-            "schema":"code-intel-structural-evidence-payload.v1",
-            "snapshotIdentity":SNAPSHOT,
-            "completeness":"complete",
-            "rules":[cycle_rule]
-        }}),
+        structural_data(SNAPSHOT, false, Some(violation)),
     );
     let (exit, _, out, stderr) = run(
         &temp.0,
@@ -859,7 +890,7 @@ fn a09_seeded_path_executes_hospital_through_a01_and_rejects_snapshot_mismatch()
             "structure",
             "structural-evidence.sentrux",
             snapshot_identity,
-            json!({"structuralEvidence":{"completeness":"complete","rules":[{"verdict":"pass"}]}}),
+            structural_data(snapshot_identity, false, None),
         ),
     ];
     let inputs_path = temp.0.join("diagnosis-inputs.json");
@@ -1014,5 +1045,121 @@ Convert-SurgeryPlanToMarkdown $surgery | Set-Content -LiteralPath (Join-Path $ou
     ] {
         assert!(legacy_out.join(file).is_file(), "legacy omitted {file}");
         assert!(rust_out.join(file).is_file(), "Rust omitted {file}");
+    }
+}
+
+#[test]
+fn quality_decline_is_visible_non_blocking_and_hard_findings_still_require_governance() {
+    let temp = Temp::new();
+    for (name, blocking, expected_exit, expected_verdict) in [
+        ("aggregate-only", None, 0, "pass"),
+        (
+            "hard-cycle",
+            Some(
+                json!({"rule":"max_cycles","message":"cycles exceeded: 1 > 0","targets":["src/cycle.rs"]}),
+            ),
+            10,
+            "fail",
+        ),
+    ] {
+        let mut data = structural_data(SNAPSHOT, true, blocking);
+        // A wrapper's missing display details cannot erase typed hard findings.
+        if expected_verdict == "fail" {
+            data["structuralEvidence"]["rules"][1]["details"] = Value::Null;
+        }
+        let structural = admission(
+            &temp.0,
+            name,
+            "structural-evidence.sentrux",
+            "observed",
+            "none",
+            data,
+        );
+        let (exit, _, out, stderr) = run(
+            &temp.0,
+            vec![graph(&temp.0, true), structural],
+            &format!("{name}-out"),
+        );
+        assert_eq!(exit, expected_exit, "{stderr}");
+        let machine: Value =
+            serde_json::from_slice(&fs::read(out.join("hospital-report.json")).unwrap()).unwrap();
+        assert_eq!(machine["domainVerdict"], expected_verdict);
+        assert_eq!(
+            machine["triage"]["advisories"][0]["rule"],
+            "quality_degraded"
+        );
+        let markdown = fs::read_to_string(out.join("hospital.md")).unwrap();
+        assert!(markdown.contains("Advisories (non-blocking)"));
+        assert!(markdown.contains("Quality: 9000 -> 8800"));
+        if expected_verdict == "pass" {
+            assert!(machine["triage"]["failing_rules"]
+                .as_array()
+                .unwrap()
+                .is_empty());
+        } else {
+            assert_eq!(machine["triage"]["next_protocol"], "govern");
+            assert!(markdown.contains("src/cycle.rs"));
+        }
+    }
+}
+
+#[test]
+fn old_missing_forged_policy_or_wrong_snapshot_cannot_discharge_hospital() {
+    let temp = Temp::new();
+    for (name, pointer, replacement) in [
+        (
+            "historic",
+            "/structuralEvidence/schema",
+            json!("code-intel-structural-evidence-payload.v1"),
+        ),
+        (
+            "missing-policy",
+            "/structuralEvidence/gatePolicy",
+            Value::Null,
+        ),
+        (
+            "forged-policy",
+            "/structuralEvidence/gatePolicy/sha256",
+            json!("f".repeat(64)),
+        ),
+        (
+            "wrong-snapshot",
+            "/structuralEvidence/snapshotIdentity",
+            json!("c".repeat(64)),
+        ),
+        (
+            "missing-handshake",
+            "/structuralEvidence/gateResults",
+            json!([]),
+        ),
+        (
+            "wrong-source",
+            "/structuralEvidence/provenance/sourceRevision",
+            json!("other-head"),
+        ),
+    ] {
+        let mut data = structural_data(SNAPSHOT, true, None);
+        *data.pointer_mut(pointer).unwrap() = replacement;
+        let structural = admission(
+            &temp.0,
+            name,
+            "structural-evidence.sentrux",
+            "observed",
+            "none",
+            data,
+        );
+        let (exit, _, out, stderr) = run(
+            &temp.0,
+            vec![graph(&temp.0, true), structural],
+            &format!("{name}-out"),
+        );
+        assert_eq!(exit, 0, "{stderr}");
+        let machine: Value =
+            serde_json::from_slice(&fs::read(out.join("hospital-report.json")).unwrap()).unwrap();
+        assert_eq!(machine["domainVerdict"], "unknown", "{name}");
+        assert_eq!(
+            machine["triage"]["primary_diagnosis"], "authoritative structural evidence unavailable",
+            "{name}"
+        );
     }
 }

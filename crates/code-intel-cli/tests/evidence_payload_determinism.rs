@@ -126,6 +126,16 @@ fn evidence_payloads_are_byte_identical_across_runs_of_one_unchanged_tree() {
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
+    let baseline = common::cli()
+        .args(["sentrux", "--operation", "save_baseline", "--repo"])
+        .arg(&repo)
+        .output()
+        .unwrap();
+    assert!(
+        baseline.status.success(),
+        "{}",
+        String::from_utf8_lossy(&baseline.stderr)
+    );
     let doctor_tools = doctor_tool_fixture(&root);
 
     let first_out = root.join("run-1");

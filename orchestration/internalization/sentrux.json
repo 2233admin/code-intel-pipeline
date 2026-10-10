@@ -84,11 +84,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux_adapter.rs",
-        "sha256": "29ad124d984f6ab0756bdc7c0b523a84dfada2a655fe0d282ce681165f6bae4f"
+        "sha256": "4702bbed12b8012e8f0c84c601c148e5557554449922860b19b96605538b9701"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
-        "sha256": "0669522514b6740f8246678ac98f8aac50030b7d9549fd5d028781ff2acaf54b",
+        "sha256": "8240b87055656a560c7fa3cc40d1681a4cf4afc5fe547bcb7d446ba686e3796f",
         "testName": "public_route_complete_is_eligible_but_never_emits_facts"
       }
     },
@@ -103,11 +103,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux_adapter.rs",
-        "sha256": "29ad124d984f6ab0756bdc7c0b523a84dfada2a655fe0d282ce681165f6bae4f"
+        "sha256": "4702bbed12b8012e8f0c84c601c148e5557554449922860b19b96605538b9701"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
-        "sha256": "0669522514b6740f8246678ac98f8aac50030b7d9549fd5d028781ff2acaf54b",
+        "sha256": "8240b87055656a560c7fa3cc40d1681a4cf4afc5fe547bcb7d446ba686e3796f",
         "testName": "public_route_complete_is_eligible_but_never_emits_facts"
       }
     },
@@ -122,11 +122,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/builtin_provider_evidence.rs",
-        "sha256": "989180a362946747bd9912a9655d7f919f0a82d4de893d402d8e5ece7f93d5cc"
+        "sha256": "161f82337d79a41b0837b9b49c83dc4d388bd4d6409b911e71551e05ddf0c826"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "6d687087ed45a124369a79f22ffa616367c2fe09488f69261880389195b08b9c",
+        "sha256": "43ddc9af7c9714ea7856551f089877805e758213f42c6f16012f5b846279d476",
         "testName": "production_dag_output_commits_and_enters_the_authoritative_index"
       }
     },
@@ -141,11 +141,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "b153b5f17d22e0be35c44239a6ee3e29c337035caf0db5f44a5b8159172a0f45"
+        "sha256": "e7b898340afd4e0a2fe199e1fde0ddd6905598203598bcda518ec736f776277a"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
-        "sha256": "0669522514b6740f8246678ac98f8aac50030b7d9549fd5d028781ff2acaf54b",
+        "sha256": "8240b87055656a560c7fa3cc40d1681a4cf4afc5fe547bcb7d446ba686e3796f",
         "testName": "complete_normalizes_every_authoritative_kind_and_passes_a04"
       }
     },
@@ -160,11 +160,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "b153b5f17d22e0be35c44239a6ee3e29c337035caf0db5f44a5b8159172a0f45"
+        "sha256": "e7b898340afd4e0a2fe199e1fde0ddd6905598203598bcda518ec736f776277a"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
-        "sha256": "0669522514b6740f8246678ac98f8aac50030b7d9549fd5d028781ff2acaf54b",
+        "sha256": "8240b87055656a560c7fa3cc40d1681a4cf4afc5fe547bcb7d446ba686e3796f",
         "testName": "complete_normalizes_every_authoritative_kind_and_passes_a04"
       }
     },
@@ -179,11 +179,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux.rs",
-        "sha256": "b153b5f17d22e0be35c44239a6ee3e29c337035caf0db5f44a5b8159172a0f45"
+        "sha256": "e7b898340afd4e0a2fe199e1fde0ddd6905598203598bcda518ec736f776277a"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
-        "sha256": "0669522514b6740f8246678ac98f8aac50030b7d9549fd5d028781ff2acaf54b",
+        "sha256": "8240b87055656a560c7fa3cc40d1681a4cf4afc5fe547bcb7d446ba686e3796f",
         "testName": "unknown_kind_is_fail_closed_even_when_provider_labels_it_pass"
       }
     },
@@ -255,11 +255,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux_gate.rs",
-        "sha256": "25759013371799d2edbfb72f557c9aaa274feb77bba72119db1fcfbbb2540ee1"
+        "sha256": "1a6dd09ff215d6b4966d57cd9ee37b0420b7aa26c52cf8577a589de7be92f293"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "6d687087ed45a124369a79f22ffa616367c2fe09488f69261880389195b08b9c",
+        "sha256": "43ddc9af7c9714ea7856551f089877805e758213f42c6f16012f5b846279d476",
         "testName": "production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch"
       }
     }

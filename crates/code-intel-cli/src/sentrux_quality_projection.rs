@@ -33,17 +33,17 @@ use crate::committed_evidence::{self, CommittedEvidence};
 use crate::snapshot;
 
 /// The versioned, snapshot-bound artifact this module produces.
-pub(crate) const PROJECTION_SCHEMA: &str = "code-intel-quality-signal-projection.v1";
-const PROJECTION_CONTRACT_VERSION: i64 = 1;
+pub(crate) const PROJECTION_SCHEMA: &str = "code-intel-quality-signal-projection.v2";
+const PROJECTION_CONTRACT_VERSION: i64 = 2;
 
 /// The small, Orca-consumable lifecycle event nested inside the projection
 /// artifact. Kept versioned independently so an Orca-side consumer can pin
 /// to just this shape without parsing the (potentially much larger) full
 /// findings list.
-pub(crate) const ORCA_EVENT_SCHEMA: &str = "code-intel-orca-quality-event.v1";
-const ORCA_EVENT_CONTRACT_VERSION: i64 = 1;
+pub(crate) const ORCA_EVENT_SCHEMA: &str = "code-intel-orca-quality-event.v2";
+const ORCA_EVENT_CONTRACT_VERSION: i64 = 2;
 
-const SENTRUX_CAPABILITY_ARTIFACT_SCHEMA: &str = "code-intel-sentrux-capability-artifact.v1";
+const SENTRUX_CAPABILITY_ARTIFACT_SCHEMA: &str = "code-intel-sentrux-capability-artifact.v2";
 const SENTRUX_CAPABILITY_ARTIFACT_TYPE: &str = "provider.sentrux.capability-artifact";
 
 const BASELINE_RELATIVE_PATH: &str = ".sentrux/baseline.json";
@@ -215,6 +215,12 @@ pub(crate) fn build(request: &ProjectionRequest<'_>) -> Result<Value, Projection
     findings.extend(violation_findings(check, "sentrux.check"));
     findings.extend(violation_findings(gate, "sentrux.gate"));
 
+    // Raw measurement and admission are separate facts. A decline is visible
+    // even when the approved policy admits it; measurements never grant entry.
+    let admission = gate
+        .map(|(_, payload)| capability_admission(payload))
+        .unwrap_or_else(|| json!({"verdict":"unknown","reason":"No current verified sentrux.gate admission is present."}));
+
     let completeness = if scan.is_none() {
         "unavailable"
     } else if health.is_none() || baseline_metrics.is_none() {
@@ -227,6 +233,7 @@ pub(crate) fn build(request: &ProjectionRequest<'_>) -> Result<Value, Projection
     let orca_event = json!({
         "schema": ORCA_EVENT_SCHEMA,
         "contractVersion": ORCA_EVENT_CONTRACT_VERSION,
+        "gatePolicy": crate::sentrux_gate::sentrux_gate_policy::identity(),
         "eventType": "quality_signal_projection",
         "status": completeness,
         "snapshotIdentity": request.evidence.snapshot_identity(),
@@ -236,7 +243,9 @@ pub(crate) fn build(request: &ProjectionRequest<'_>) -> Result<Value, Projection
         "summary": {
             "total": quality_signal["total"],
             "bottleneck": quality_signal["bottleneck"],
+            "regression": quality_signal["regression"],
             "findingCounts": finding_counts,
+            "admission": admission,
         },
         "correlate": {
             "runId": request.correlation.run_id,
@@ -261,6 +270,8 @@ pub(crate) fn build(request: &ProjectionRequest<'_>) -> Result<Value, Projection
         "completeness": completeness,
         "diagnostics": diagnostics,
         "qualitySignal": quality_signal,
+        "gatePolicy": crate::sentrux_gate::sentrux_gate_policy::identity(),
+        "admission": admission,
         "findings": findings,
         "orcaEvent": orca_event,
     }))
@@ -276,9 +287,8 @@ fn sentrux_capability_payloads(evidence: &CommittedEvidence) -> Vec<(Value, Valu
                 && reference["type"] == SENTRUX_CAPABILITY_ARTIFACT_TYPE
         })
         .filter_map(|(reference, verified)| {
-            serde_json::from_slice::<Value>(verified.bytes())
-                .ok()
-                .map(|payload| (reference.clone(), payload))
+            let payload = serde_json::from_slice::<Value>(verified.bytes()).ok()?;
+            current_capability(&payload).then(|| (reference.clone(), payload))
         })
         .collect()
 }
@@ -291,6 +301,76 @@ fn find_capability<'a>(
         .iter()
         .find(|(_, payload)| payload["capabilityId"] == capability_id)
         .map(|(reference, payload)| (reference, payload))
+}
+
+/// Current consumers must not reinterpret historical or unrecognized evidence
+/// as approved-policy authority. ArtifactRef verification still owns the hash
+/// and snapshot lease; this check owns the current envelope/policy semantics.
+pub(crate) fn current_capability(payload: &Value) -> bool {
+    payload["schema"] == SENTRUX_CAPABILITY_ARTIFACT_SCHEMA
+        && payload["contractVersion"] == 2
+        && crate::sentrux_gate::sentrux_gate_policy::validate_identity(&payload["gatePolicy"])
+            .is_ok()
+        && payload["freshness"]["status"] == "current"
+        && payload["snapshotIdentity"]
+            .as_str()
+            .is_some_and(|snapshot| {
+                !snapshot.is_empty()
+                    && payload["inputs"]["snapshotIdentity"] == snapshot
+                    && payload["freshness"]["consumedSnapshotIdentity"] == snapshot
+            })
+        && match payload["provider"]["mode"].as_str() {
+            Some("builtin") => {
+                payload["provider"]["id"] == crate::sentrux_gate::ENGINE_ID
+                    && payload["provider"]["version"] == crate::sentrux_gate::ENGINE_VERSION
+            }
+            Some("external") => {
+                payload["provider"]["id"] == "sentrux.command-adapter"
+                    && payload["provider"]["version"] == "1.0.0"
+            }
+            Some("lite_fallback") => {
+                payload["provider"]["id"] == "sentrux.lite-capabilities"
+                    && payload["provider"]["version"] == "1.0.0"
+            }
+            _ => false,
+        }
+}
+
+fn validated_admission(payload: &Value) -> Option<&Value> {
+    if !current_capability(payload) || payload["authority"] != "authoritative" {
+        return None;
+    }
+    let command = &payload["outputs"]["command"];
+    let result = command.get("admission")?;
+    crate::sentrux_gate::sentrux_gate_policy::validate_result(result).ok()?;
+    if result["policy"] != payload["gatePolicy"]
+        || command["violations"] != result["blockingViolations"]
+        || command["advisories"] != result["advisories"]
+        || payload["outputs"]["verdict"] != result["verdict"]
+        || !matches!(
+            payload["status"].as_str(),
+            Some("succeeded" | "failed" | "degraded")
+        )
+    {
+        return None;
+    }
+    Some(result)
+}
+
+pub(crate) fn capability_admission(payload: &Value) -> Value {
+    match validated_admission(payload) {
+        Some(result) => json!({
+            "verdict": result["verdict"],
+            "policy": result["policy"],
+            "ruleScope": result["ruleScope"],
+            "blockingViolations": result["blockingViolations"],
+            "advisories": result["advisories"],
+        }),
+        None => json!({
+            "verdict":"unknown",
+            "reason":"No authoritative current approved-policy typed gate result; command exit status and raw Quality are not admission.",
+        }),
+    }
 }
 
 fn read_baseline_metrics(repo_path: &Path, diagnostics: &mut Vec<String>) -> Option<Value> {
@@ -369,6 +449,15 @@ fn quality_signal_section(
         "total": {"current": current_total, "baseline": baseline_total, "delta": delta_total},
         "bottleneck": bottleneck,
         "formulaVersion": formula_version,
+        "regression": {
+            "status": match delta_total {
+                Some(delta) if delta < 0 => "declined",
+                Some(_) => "not_declined",
+                None => "unknown",
+            },
+            "disposition": "advisory",
+            "message": "Raw Quality decline is advisory under the approved aggregate-advisory policy; hard findings and evidence validity still block admission.",
+        },
         "rootCauses": root_causes,
     })
 }
@@ -491,6 +580,7 @@ fn root_cause_finding(quality_signal: &Value, health_ref: Option<Value>) -> Opti
         "targets": Value::Array(Vec::new()),
         "severityUpstream": Value::Null,
         "severityNormalized": "medium",
+        "disposition": "advisory",
         "evidenceRefs": health_ref.map(|r| vec![r]).unwrap_or_default(),
     }))
 }
@@ -499,12 +589,24 @@ fn violation_findings(capability: Option<(&Value, &Value)>, capability_id: &str)
     let Some((reference, payload)) = capability else {
         return Vec::new();
     };
-    let Some(violations) = payload["outputs"]["command"]["violations"].as_array() else {
-        return Vec::new();
-    };
+    let result = validated_admission(payload);
+    // Unrecognized policy results remain diagnostic, never an advisory pass.
+    let violations = result
+        .map(|result| &result["blockingViolations"])
+        .unwrap_or(&payload["outputs"]["command"]["violations"]);
+    let advisories = result.and_then(|result| result["advisories"].as_array());
     violations
-        .iter()
-        .map(|violation| {
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|violation| (violation, "blocking"))
+        .chain(
+            advisories
+                .into_iter()
+                .flatten()
+                .map(|violation| (violation, "advisory")),
+        )
+        .map(|(violation, disposition)| {
             let rule = violation["rule"].as_str().unwrap_or("unknown_rule");
             let message = violation["message"].as_str().unwrap_or("");
             let targets = violation["targets"]
@@ -528,6 +630,7 @@ fn violation_findings(capability: Option<(&Value, &Value)>, capability_id: &str)
                 "targets": targets,
                 "severityUpstream": Value::Null,
                 "severityNormalized": violation_severity(rule),
+                "disposition": disposition,
                 "evidenceRefs": [reference.clone()],
             })
         })
@@ -578,6 +681,8 @@ fn finding_fingerprint(kind: &str, capability_id: &str, rule: &str, targets: &[S
 fn finding_counts(findings: &[Value]) -> Value {
     let mut by_kind = std::collections::BTreeMap::<&str, i64>::new();
     let mut by_severity = std::collections::BTreeMap::<&str, i64>::new();
+    let mut blocking = 0;
+    let mut advisory = 0;
     for finding in findings {
         if let Some(kind) = finding["kind"].as_str() {
             *by_kind.entry(kind).or_insert(0) += 1;
@@ -585,11 +690,17 @@ fn finding_counts(findings: &[Value]) -> Value {
         if let Some(severity) = finding["severityNormalized"].as_str() {
             *by_severity.entry(severity).or_insert(0) += 1;
         }
+        match finding["disposition"].as_str() {
+            Some("blocking") => blocking += 1,
+            Some("advisory") => advisory += 1,
+            _ => {}
+        }
     }
     json!({
         "total": findings.len(),
         "byKind": by_kind,
         "bySeverity": by_severity,
+        "byDisposition": {"blocking":blocking,"advisory":advisory},
     })
 }
 

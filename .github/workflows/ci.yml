@@ -11,7 +11,11 @@ permissions:
   contents: read
 
 jobs:
+  admission-policy:
+    uses: ./.github/workflows/admission-policy.yml
+
   windows-build-test-package:
+    needs: admission-policy
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -391,6 +395,7 @@ jobs:
             dist/code-intel-pipeline-windows-beta.release-manifest.json
 
   cross-platform-smoke:
+    needs: admission-policy
     permissions:
       contents: read
 
@@ -877,7 +882,7 @@ jobs:
           if ($entry[0].outcome -ne "completed" -or $entry[0].snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged artifact index identity does not match completion marker" }
           $refs = @($entry[0].artifactRefs)
           if (@($refs | Where-Object { $_.type -eq "diagnosis.hospital" }).Count -ne 1) { throw "packaged run is missing its verified hospital report ref" }
-          $capabilityRefs = @($refs | Where-Object { $_.artifactSchema -eq "code-intel-sentrux-capability-artifact.v1" -and $_.type -eq "provider.sentrux.capability-artifact" })
+          $capabilityRefs = @($refs | Where-Object { $_.artifactSchema -eq "code-intel-sentrux-capability-artifact.v2" -and $_.type -eq "provider.sentrux.capability-artifact" })
           if ($capabilityRefs.Count -eq 0) { throw "packaged run has no verified Sentrux capability refs" }
           $matrix = Get-Content -Raw -LiteralPath (Join-Path $payload (Join-Path "orchestration" "sentrux-capability-matrix.v1.json")) | ConvertFrom-Json
           $matrixById = @{}
@@ -889,7 +894,7 @@ jobs:
             if (-not (Test-Path -LiteralPath $payloadPath -PathType Leaf)) { throw "packaged capability object is missing: $($ref.path)" }
             if ((Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ref.sha256) { throw "packaged capability object digest mismatch: $($ref.path)" }
             $capabilityPayload = Get-Content -Raw -LiteralPath $payloadPath | ConvertFrom-Json
-            if ($capabilityPayload.schema -ne "code-intel-sentrux-capability-artifact.v1" -or $capabilityPayload.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged capability artifact is not snapshot-bound: $($ref.path)" }
+            if ($capabilityPayload.schema -ne "code-intel-sentrux-capability-artifact.v2" -or $capabilityPayload.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged capability artifact is not snapshot-bound: $($ref.path)" }
             if (-not $matrixById.ContainsKey($capabilityPayload.capabilityId)) { throw "packaged capability is absent from the matrix: $($capabilityPayload.capabilityId)" }
             if ($matrixById[$capabilityPayload.capabilityId].operation -ne $capabilityPayload.operation) { throw "packaged capability operation disagrees with the matrix: $($capabilityPayload.capabilityId)" }
             if ($observed.ContainsKey($capabilityPayload.capabilityId)) { throw "duplicate packaged capability artifact: $($capabilityPayload.capabilityId)" }

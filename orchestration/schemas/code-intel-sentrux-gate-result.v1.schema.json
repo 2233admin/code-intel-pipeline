@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-sentrux-gate-result.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "policy", "measurement", "baseline", "current", "ruleScope", "comparisons", "blockingViolations", "advisories", "verdict"],
+  "properties": {
+    "schema": {"const": "code-intel-sentrux-gate-result.v1"},
+    "policy": {"$ref": "code-intel-sentrux-gate-policy.v1.schema.json#/$defs/identity"},
+    "measurement": {"$ref": "code-intel-sentrux-gate-policy.v1.schema.json#/$defs/measurement"},
+    "baseline": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/baseline"}]},
+    "current": {"$ref": "#/$defs/current"},
+    "ruleScope": {"enum": ["baseline_ratchet", "static_and_ratchet"]},
+    "comparisons": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/comparison"}},
+    "blockingViolations": {"type": "array", "items": {"allOf": [{"$ref": "#/$defs/violation"}, {"properties": {"rule": {"enum": ["coupling_increased", "cycles_increased", "god_files_increased", "baseline_missing", "baseline_engine_mismatch", "max_cc", "max_cycles", "max_coupling", "no_god_files", "layer_order", "boundary_dependency"]}}}]}},
+    "advisories": {"type": "array", "maxItems": 1, "items": {"allOf": [{"$ref": "#/$defs/violation"}, {"properties": {"rule": {"const": "quality_degraded"}}}]}},
+    "verdict": {"enum": ["pass", "fail", "unknown"]}
+  },
+  "allOf": [
+    {"if": {"properties": {"verdict": {"const": "pass"}}}, "then": {"properties": {"baseline": {"$ref": "#/$defs/baseline"}, "blockingViolations": {"maxItems": 0}, "comparisons": {"minItems": 4}}}},
+    {"if": {"properties": {"verdict": {"const": "fail"}}}, "then": {"properties": {"blockingViolations": {"minItems": 1}}}},
+    {"if": {"properties": {"baseline": {"type": "null"}}}, "then": {"properties": {"verdict": {"enum": ["fail", "unknown"]}, "advisories": {"maxItems": 0}, "blockingViolations": {"minItems": 1}}}}
+  ],
+  "$defs": {
+    "nonEmpty": {"type": "string", "minLength": 1},
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "current": {"type": "object", "additionalProperties": false, "required": ["sourceCommit", "scope"], "properties": {"sourceCommit": {"$ref": "#/$defs/nonEmpty"}, "scope": {"const": "."}}},
+    "baseline": {"type": "object", "additionalProperties": false, "required": ["schema", "sha256", "sourceCommit", "scope"], "properties": {"schema": {"const": "code-intel-sentrux-baseline.v6"}, "sha256": {"$ref": "#/$defs/sha256"}, "sourceCommit": {"$ref": "#/$defs/nonEmpty"}, "scope": {"const": "."}}},
+    "violation": {"type": "object", "additionalProperties": false, "required": ["rule", "message", "targets"], "properties": {"rule": {"$ref": "#/$defs/nonEmpty"}, "message": {"$ref": "#/$defs/nonEmpty"}, "targets": {"type": "array", "items": {"$ref": "#/$defs/nonEmpty"}}}},
+    "paths": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^(?![.]{1,2}(?:/|$))(?!.*[/][.]{1,2}(?:/|$))[^/\\\\:]+(?:/[^/\\\\:]+)*$"}},
+    "comparison": {
+      "type": "object", "additionalProperties": false,
+      "required": ["rule", "before", "after", "disposition", "verdict"],
+      "properties": {"rule": {"enum": ["quality_degraded", "coupling_increased", "cycles_increased", "god_files_increased", "max_cc", "max_cycles", "max_coupling", "no_god_files", "layer_order", "boundary_dependency"]}, "before": {}, "after": {}, "disposition": {"enum": ["advisory", "blocking"]}, "verdict": {"enum": ["pass", "fail"]}},
+      "allOf": [
+        {"if": {"properties": {"rule": {"const": "quality_degraded"}}}, "then": {"properties": {"disposition": {"const": "advisory"}, "before": {"type": "integer", "minimum": 0, "maximum": 10000}, "after": {"type": "integer", "minimum": 0, "maximum": 10000}}}, "else": {"properties": {"disposition": {"const": "blocking"}}}},
+        {"if": {"properties": {"rule": {"const": "coupling_increased"}}}, "then": {"properties": {"before": {"type": "number", "minimum": 0}, "after": {"type": "number", "minimum": 0}}}},
+        {"if": {"properties": {"rule": {"const": "cycles_increased"}}}, "then": {"properties": {"before": {"type": "integer", "minimum": 0}, "after": {"type": "integer", "minimum": 0}}}},
+        {"if": {"properties": {"rule": {"const": "god_files_increased"}}}, "then": {"properties": {"before": {"$ref": "#/$defs/paths"}, "after": {"$ref": "#/$defs/paths"}}}},
+        {"if": {"properties": {"rule": {"enum": ["max_cc", "max_cycles", "max_coupling", "no_god_files", "layer_order", "boundary_dependency"]}}}, "then": {"properties": {"before": {"type": "null"}, "after": {"$ref": "#/$defs/violation"}, "verdict": {"const": "fail"}}}}
+      ]
+    }
+  }
+}

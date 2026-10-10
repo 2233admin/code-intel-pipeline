@@ -67,8 +67,8 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         artifact: "code-intel-sentrux-route-result.v1",
         required: true,
         status: "active",
-        source_spec: "Pipeline-owned B03 translation over Sentrux/shim native output and A04 admissibility",
-        notes: "Canonical structural evidence route. The bundled shim and legacy/Invoke-SentruxAgentTool.ps1 remain replaceable provider implementations/rollback surfaces, never diagnosis authority.",
+        source_spec: "Pipeline-owned B03 translation over policy-bound Sentrux native v2 output and A04 admissibility",
+        notes: "Current structural admission requires the approved same-policy typed gate/check results. External command exit codes and legacy rule labels alone are diagnostic captures, never admission authority.",
     },
     ProviderOperation {
         provider: "session",
@@ -931,7 +931,7 @@ fn validate_sentrux_registry(errors: &mut Vec<String>) {
         errors.push("provider.sentrux-adapt entrypoint is invalid".to_string());
     }
     for path in [
-        "orchestration/schemas/code-intel-structural-evidence-port.v1.schema.json",
+        "orchestration/schemas/code-intel-structural-evidence-port.v2.schema.json",
         "orchestration/schemas/code-intel-sentrux-route-result.v1.schema.json",
         "docs/sentrux-provider-adapter.md",
     ] {

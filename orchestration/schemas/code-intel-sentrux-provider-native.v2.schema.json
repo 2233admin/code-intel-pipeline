@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "code-intel-sentrux-provider-native.v2",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "gatePolicy", "gateResults", "status", "implementation", "rollbackIdentity", "sourceRevision", "expectedSnapshotIdentity", "sourceSnapshotIdentity", "collectedAt", "observedAt", "declaredEffects", "observedEffects", "authoritativeRules", "nativeFailure", "payload"],
+  "properties": {
+    "schema": {"const": "code-intel-sentrux-provider-native.v2"},
+    "gatePolicy": {"$ref": "code-intel-sentrux-gate-policy.v1.schema.json#/$defs/identity"},
+    "gateResults": {"$ref": "code-intel-structural-evidence-port.v2.schema.json#/$defs/gateResults"},
+    "status": {"enum": ["complete", "partial", "crashed"]},
+    "implementation": {"type": "object", "additionalProperties": false, "required": ["id", "version", "digest"], "properties": {"id": {"enum": ["sentrux-native", "sentrux.command-adapter"]}, "version": {"enum": ["3.0.0", "1.0.0"]}, "digest": {"$ref": "code-intel-structural-evidence-port.v2.schema.json#/$defs/sha256"}}, "allOf": [{"if": {"properties": {"id": {"const": "sentrux-native"}}}, "then": {"properties": {"version": {"const": "3.0.0"}}}, "else": {"properties": {"version": {"const": "1.0.0"}}}}]},
+    "rollbackIdentity": {"type": "string", "minLength": 1}, "sourceRevision": {"type": "string", "minLength": 1},
+    "expectedSnapshotIdentity": {"$ref": "code-intel-structural-evidence-port.v2.schema.json#/$defs/sha256"}, "sourceSnapshotIdentity": {"$ref": "code-intel-structural-evidence-port.v2.schema.json#/$defs/sha256"},
+    "collectedAt": {"type": "integer", "minimum": 0}, "observedAt": {"type": "integer", "minimum": 0},
+    "declaredEffects": {"$ref": "code-intel-structural-evidence-port.v2.schema.json#/$defs/effects"}, "observedEffects": {"$ref": "code-intel-structural-evidence-port.v2.schema.json#/$defs/effects"},
+    "authoritativeRules": {"$ref": "code-intel-structural-evidence-port.v2.schema.json#/properties/rules"},
+    "nativeFailure": {"oneOf": [{"const": {"kind": "none"}}, {"type": "object", "additionalProperties": false, "required": ["kind", "message"], "properties": {"kind": {"const": "provider_unavailable"}, "message": {"type": "string", "minLength": 1}}}]},
+    "payload": {"type": "object"}
+  }
+}

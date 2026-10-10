@@ -2,6 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{json, Value};
 
+#[path = "sentrux_gate_policy.rs"]
+mod sentrux_gate_policy;
+
 pub(crate) const AUTHORITATIVE_RULE_KINDS: [&str; 6] = [
     "max_cc",
     "max_cycles",
@@ -26,7 +29,8 @@ pub(crate) fn translate(
     let consumed = native["sourceSnapshotIdentity"].as_str().unwrap();
     let observed_at = native["observedAt"].as_u64().unwrap();
     let status = native["status"].as_str().unwrap();
-    let rules = normalize_rules(&native["authoritativeRules"])?;
+    let mut rules = normalize_rules(&native["authoritativeRules"])?;
+    let (handshake_complete, advisories) = validate_gate_results(native, &mut rules)?;
     let known = rules
         .iter()
         .filter_map(|rule| rule["kind"].as_str())
@@ -36,14 +40,13 @@ pub(crate) fn translate(
     let all_known_evaluated = rules.iter().all(|rule| {
         !known_rule(rule["kind"].as_str().unwrap_or("")) || rule["status"] == "evaluated"
     });
-    let complete_legacy_rules = AUTHORITATIVE_RULE_KINDS
-        .iter()
-        .all(|kind| known.contains(kind));
+    // Legacy rule labels alone are never a current policy admission handshake.
     let complete_command_observation = COMMAND_RULE_KINDS.iter().all(|kind| known.contains(kind));
     let complete = status == "complete"
         && !has_unknown
         && all_known_evaluated
-        && (complete_legacy_rules || complete_command_observation);
+        && complete_command_observation
+        && handshake_complete;
     let completeness = if complete { "complete" } else { "partial" };
     let failure = if status == "crashed" {
         native["nativeFailure"].clone()
@@ -90,9 +93,13 @@ pub(crate) fn translate(
     });
 
     Ok(json!({
-        "schema":"code-intel-sentrux-adapter-result.v1",
+        "schema":"code-intel-sentrux-adapter-result.v2",
+        "gatePolicy":native["gatePolicy"],
         "port":{
-            "schema":"code-intel-structural-evidence-port.v1",
+            "schema":"code-intel-structural-evidence-port.v2",
+            "gatePolicy":native["gatePolicy"],
+            "gateResults":native["gateResults"],
+            "advisories":advisories,
             "status":status,
             "completeness":completeness,
             "freshness":freshness,
@@ -134,6 +141,9 @@ pub(crate) fn validate_admitted_payload(payload: &Value, adapter: &Value) -> Res
         evidence,
         &[
             "schema",
+            "gatePolicy",
+            "gateResults",
+            "advisories",
             "snapshotIdentity",
             "provider",
             "provenance",
@@ -151,7 +161,11 @@ pub(crate) fn validate_admitted_payload(payload: &Value, adapter: &Value) -> Res
         &["sourceRevision"],
         "Sentrux structural evidence provenance",
     )?;
-    if evidence["schema"] != "code-intel-structural-evidence-payload.v1"
+    sentrux_gate_policy::validate_identity(&evidence["gatePolicy"])?;
+    if evidence["schema"] != "code-intel-structural-evidence-payload.v2"
+        || evidence["gatePolicy"] != adapter["port"]["gatePolicy"]
+        || evidence["gateResults"] != adapter["port"]["gateResults"]
+        || evidence["advisories"] != adapter["port"]["advisories"]
         || evidence["snapshotIdentity"] != adapter["port"]["sourceSnapshotIdentity"]
         || evidence["provider"] != adapter["port"]["provider"]
         || evidence["provenance"]["sourceRevision"]
@@ -165,6 +179,71 @@ pub(crate) fn validate_admitted_payload(payload: &Value, adapter: &Value) -> Res
         );
     }
     Ok(())
+}
+
+fn validate_gate_results(
+    native: &Value,
+    rules: &mut [Value],
+) -> Result<(bool, Vec<Value>), String> {
+    let results = native["gateResults"]
+        .as_array()
+        .filter(|results| results.len() == 2)
+        .ok_or("Sentrux gateResults must contain gate and check admissions")?;
+    let mut seen = BTreeSet::new();
+    let mut complete = true;
+    let mut advisories = Vec::new();
+    for entry in results {
+        exact(entry, &["kind", "admission"], "Sentrux gate result binding")?;
+        let kind = entry["kind"]
+            .as_str()
+            .filter(|kind| COMMAND_RULE_KINDS.contains(kind))
+            .ok_or("Sentrux gate result kind is invalid")?;
+        if !seen.insert(kind) {
+            return Err("Sentrux gate result kinds must be unique".into());
+        }
+        let result = &entry["admission"];
+        let verdict = if result.is_null() {
+            "unknown"
+        } else {
+            sentrux_gate_policy::validate_result(result)?;
+            if result["policy"] != native["gatePolicy"]
+                || result["current"]["sourceCommit"] != native["sourceRevision"]
+                || result["current"]["scope"] != "."
+                || (kind == "sentrux_check" && result["ruleScope"] != "static_and_ratchet")
+                || (kind == "sentrux_gate" && result["ruleScope"] != "baseline_ratchet")
+            {
+                return Err(
+                    "Sentrux gate result policy/source/scope does not match the provider".into(),
+                );
+            }
+            for advisory in result["advisories"].as_array().unwrap() {
+                if !advisories.contains(advisory) {
+                    advisories.push(advisory.clone());
+                }
+            }
+            result["verdict"].as_str().unwrap()
+        };
+        let Some(rule) = rules.iter_mut().find(|rule| rule["kind"] == kind) else {
+            complete = false;
+            continue;
+        };
+        if verdict == "unknown" {
+            complete = false;
+            *rule = json!({
+                "kind":kind,"status":"not_evaluated","verdict":"unknown",
+                "failure":{"kind":"domain_unknown","message":"same-policy typed gate admission is unavailable"}
+            });
+        } else if rule["status"] == "evaluated" && rule["verdict"] != verdict {
+            return Err("Sentrux rule verdict contradicts its typed gate result".into());
+        } else if rule["status"] != "evaluated" {
+            complete = false;
+        } else if (verdict == "pass" && rule.get("details").is_some())
+            || (verdict == "fail" && rule["details"]["violations"] != result["blockingViolations"])
+        {
+            return Err("Sentrux rule violation details contradict its typed gate result".into());
+        }
+    }
+    Ok((complete, advisories))
 }
 
 fn normalize_rules(value: &Value) -> Result<Vec<Value>, String> {
@@ -244,6 +323,8 @@ fn validate_native(native: &Value) -> Result<(), String> {
         native,
         &[
             "schema",
+            "gatePolicy",
+            "gateResults",
             "status",
             "implementation",
             "rollbackIdentity",
@@ -260,7 +341,8 @@ fn validate_native(native: &Value) -> Result<(), String> {
         ],
         "Sentrux provider native result",
     )?;
-    if native["schema"] != "code-intel-sentrux-provider-native.v1"
+    sentrux_gate_policy::validate_identity(&native["gatePolicy"])?;
+    if native["schema"] != "code-intel-sentrux-provider-native.v2"
         || !matches!(
             native["status"].as_str(),
             Some("complete" | "partial" | "crashed")
@@ -278,9 +360,13 @@ fn validate_native(native: &Value) -> Result<(), String> {
         &["id", "version", "digest"],
         "Sentrux provider implementation",
     )?;
-    if !nonempty(&native["implementation"]["id"])
-        || !nonempty(&native["implementation"]["version"])
-        || !digest(&native["implementation"]["digest"])
+    if !matches!(
+        (
+            native["implementation"]["id"].as_str(),
+            native["implementation"]["version"].as_str()
+        ),
+        (Some("sentrux-native"), Some("3.0.0")) | (Some("sentrux.command-adapter"), Some("1.0.0"))
+    ) || !digest(&native["implementation"]["digest"])
         || !nonempty(&native["rollbackIdentity"])
         || !nonempty(&native["sourceRevision"])
     {

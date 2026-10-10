@@ -58,6 +58,9 @@ _Avoid_: Shared library coupling, database integration, provider fork
 **Observed Evidence**: Provenance-bearing output captured from an Evidence Provider before Pipeline validation establishes its schema, snapshot, freshness, completeness, and admissibility as an Engineering Fact.
 _Avoid_: Engineering Fact, trusted result, provider opinion
 
+**Admission Policy**: An independently approved, versioned decision about which measured comparisons block a consumer and which remain advisory. It carries its own identity and cannot change measurement meaning or promote missing evidence into a pass.
+_Avoid_: Quality formula, threshold reset, candidate-selected exemption, measurement completeness
+
 **Selective Internalization**: The policy of reusing mature Evidence Providers by default while bringing only indispensable engineering semantics, trust boundaries, and minimum survival capabilities under Pipeline ownership. Internalization is justified by authority, verifiability, portability, supply-chain, or shared-semantics needs rather than by a desire to eliminate dependencies.
 _Avoid_: Reimplement every dependency, vendor everything, dependency minimization as a goal
 

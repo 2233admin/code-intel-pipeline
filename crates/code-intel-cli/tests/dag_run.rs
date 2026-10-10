@@ -7,6 +7,8 @@ mod common;
 // autodiscovery the same way `tests/common/mod.rs` already does.
 #[path = "dag_run_support/timeout.rs"]
 mod dag_run_timeout;
+#[path = "support/sha256.rs"]
+mod sha256;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -71,6 +73,19 @@ fn doctor_tool_fixture(root: &Path, conforming_sentrux: bool) -> PathBuf {
     bin
 }
 
+fn save_baseline(repo: &Path) {
+    let output = common::cli()
+        .args(["sentrux", "--operation", "save_baseline", "--repo"])
+        .arg(repo)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn production_run_route_executes_snapshot_then_inventory() {
     let root = temp_dir();
@@ -79,6 +94,7 @@ fn production_run_route_executes_snapshot_then_inventory() {
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
+    save_baseline(&repo);
     let doctor_tools = doctor_tool_fixture(&root, true);
 
     let output = common::cli()
@@ -314,6 +330,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
         "use crate::lib;\n#[test]\nfn covers_fixture() {}\n",
     )
     .unwrap();
+    save_baseline(&repo);
     let doctor_tools = doctor_tool_fixture(&root, true);
 
     let execution = common::cli()
@@ -433,7 +450,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
         .unwrap()
         .iter()
         .all(|reference| {
-            reference["artifactSchema"] == "code-intel-sentrux-capability-artifact.v1"
+            reference["artifactSchema"] == "code-intel-sentrux-capability-artifact.v2"
                 && reference["type"] == "provider.sentrux.capability-artifact"
         }));
     assert_eq!(
@@ -612,6 +629,7 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
     fs::create_dir_all(&authority).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
+    save_baseline(&repo);
     let completed_doctor_tools = doctor_tool_fixture(&root, true);
     let completed = common::cli()
         .args(["run", "execute", "--repo"])
@@ -755,6 +773,7 @@ fn optional_session_evidence_is_snapshot_bound_a03_verified_and_manifested() {
     let session = root.join("session-evidence.json");
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
+    save_baseline(&repo);
     fs::write(
         &trace,
         serde_json::to_vec(&json!({
@@ -1098,6 +1117,7 @@ fn strict_profile_cannot_be_weakened_and_keeps_all_provider_nodes_required() {
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::create_dir_all(&authority).unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
+    save_baseline(&repo);
     let doctor_tools = doctor_tool_fixture(&root, true);
 
     let output = common::cli()
@@ -1190,20 +1210,16 @@ fn doctor_succeeded(manifest: &Value) -> bool {
     manifest["nodes"]["doctor"]["status"] == "succeeded"
 }
 
-/// A repository that never ran `save_baseline` has no prior measurement, so the
-/// built-in gate cannot detect a regression against one. That absence of
-/// governance is not a structural violation: reporting it as a failing rule made
-/// the hospital diagnose "architecture gate failure" and the whole run exit 10
-/// on any never-baselined repository, including a fixture holding one README.
+/// Missing baselines are unknown evidence, not an exemption that can authorize
+/// the current structural gate or promote a clean diagnosis.
 #[test]
-fn ungoverned_repository_completes_instead_of_failing_the_architecture_gate() {
+fn unbaselined_repository_cannot_claim_current_gate_admission() {
     let root = temp_dir();
     let repo = root.join("repo");
     let out = root.join("run");
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
-
     let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&repo)
@@ -1212,57 +1228,153 @@ fn ungoverned_repository_completes_instead_of_failing_the_architecture_gate() {
         .output()
         .unwrap();
     let manifest: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_ne!(manifest["outcome"], "completed");
+    assert_ne!(output.status.code(), Some(0));
+    assert_eq!(manifest["nodes"]["evidence.sentrux"]["verdict"], "unknown");
     assert_eq!(
-        manifest["nodes"]["diagnosis.hospital"]["status"], "succeeded",
-        "manifest={manifest}"
+        manifest["nodes"]["diagnosis.hospital"]["verdict"],
+        "unknown"
     );
-    assert_eq!(
-        manifest["nodes"]["diagnosis.hospital"]["verdict"], "pass",
-        "manifest={manifest}"
-    );
-    if doctor_succeeded(&manifest) {
-        assert_eq!(
-            output.status.code(),
-            Some(0),
-            "stdout={} stderr={}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_eq!(manifest["outcome"], "completed", "manifest={manifest}");
+    for kind in ["sentrux_gate", "sentrux_check"] {
+        let rule = sentrux_rule(&out, kind);
+        assert_eq!(rule["status"], "not_evaluated");
+        assert_eq!(rule["verdict"], "unknown");
     }
-
-    let gate = sentrux_rule(&out, "sentrux_gate");
-    assert_eq!(gate["status"], "evaluated");
-    assert_eq!(gate["verdict"], "pass");
-    assert!(
-        gate.get("details").is_none(),
-        "an ungoverned gate must not publish violation details: {gate}"
+    let gate = sentrux_command(&out, "gate");
+    assert_eq!(gate["success"], false);
+    assert_eq!(gate["admission"]["verdict"], "unknown");
+    assert_eq!(
+        gate["admission"]["blockingViolations"][0]["rule"],
+        "baseline_missing"
     );
-    assert_eq!(sentrux_rule(&out, "sentrux_check")["verdict"], "pass");
-
     let hospital: Value = serde_json::from_slice(
         &fs::read(out.join("diagnosis.hospital/hospital-report.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(hospital["triage"]["primary_diagnosis"], "clean snapshot");
-    assert_eq!(hospital["triage"]["failing_rules"], json!([]));
-
-    // The ungoverned state stays auditable: the command observation keeps the
-    // engine's real exit code and operator instruction verbatim.
-    let observed_gate = sentrux_command(&out, "gate");
-    assert_eq!(observed_gate["success"], false);
-    assert_eq!(observed_gate["exitCode"], 1);
-    assert!(observed_gate["stdout"]
-        .as_str()
-        .unwrap()
-        .contains("Sentrux baseline missing"));
-
+    assert_eq!(
+        hospital["triage"]["primary_diagnosis"],
+        "authoritative structural evidence unavailable"
+    );
     let _ = fs::remove_dir_all(root);
 }
 
-/// The counterpart of the case above: once a baseline exists, a real regression
-/// against it must still stop the run. This is the assertion that keeps the
-/// ungoverned exemption from becoming a hole in the gate.
+#[test]
+fn native_dag_admits_quality_advisory_with_snapshot_bound_v2_artifact_refs() {
+    let root = temp_dir();
+    let repo = root.join("repo");
+    let out = root.join("run");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::create_dir_all(repo.join(".sentrux")).unwrap();
+    fs::write(repo.join("src/a.rs"), "pub fn alpha() {}\n").unwrap();
+    fs::write(repo.join("src/b.rs"), "pub fn beta() {}\n").unwrap();
+    fs::write(
+        repo.join(".sentrux/rules.toml"),
+        "[constraints]\nmax_cycles = 0\nno_god_files = false\n",
+    )
+    .unwrap();
+    save_baseline(&repo);
+    let mut source = String::from("pub fn entry() {}\n");
+    for i in 0..600 {
+        source.push_str(&format!("// padding {i}\n"));
+    }
+    fs::write(repo.join("src/a.rs"), source).unwrap();
+    let tools = doctor_tool_fixture(&root, true);
+    let output = common::cli()
+        .args(["run", "dag-coordinate", "--repo"])
+        .arg(&repo)
+        .arg("--out")
+        .arg(&out)
+        .arg("--doctor-tool-path-prefix")
+        .arg(tools)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let manifest: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(manifest["outcome"], "completed");
+    assert_eq!(manifest["nodes"]["evidence.sentrux"]["verdict"], "pass");
+    let payload: Value = serde_json::from_slice(
+        &fs::read(out.join("evidence.sentrux/sentrux-payload.json")).unwrap(),
+    )
+    .unwrap();
+    let evidence = &payload["data"]["structuralEvidence"];
+    assert_eq!(
+        evidence["schema"],
+        "code-intel-structural-evidence-payload.v2"
+    );
+    assert_eq!(evidence["snapshotIdentity"], manifest["snapshotIdentity"]);
+    assert_eq!(evidence["completeness"], "complete");
+    assert_eq!(evidence["advisories"].as_array().unwrap().len(), 1);
+    assert_eq!(evidence["advisories"][0]["rule"], "quality_degraded");
+    assert_eq!(
+        evidence["gatePolicy"]["sha256"],
+        "f97cfed77d80be09acda1331bf449bb21e09ee58d91e19255313bbc5815d11f0"
+    );
+    let admission: Value = serde_json::from_slice(
+        &fs::read(out.join("evidence.sentrux/sentrux-admission.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(admission["domainVerdict"], "observed");
+    let mut gate_artifacts = Vec::new();
+    for reference in manifest["nodes"]["evidence.sentrux"]["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|reference| reference["type"] == "provider.sentrux.capability-artifact")
+    {
+        assert_eq!(
+            reference["artifactSchema"],
+            "code-intel-sentrux-capability-artifact.v2"
+        );
+        assert_eq!(
+            reference["consumedSnapshotIdentity"],
+            manifest["snapshotIdentity"]
+        );
+        let bytes = fs::read(out.join(reference["path"].as_str().unwrap())).unwrap();
+        assert_eq!(reference["sha256"], sha256::sha256_hex(&bytes));
+        let artifact: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(artifact["snapshotIdentity"], manifest["snapshotIdentity"]);
+        if matches!(
+            artifact["capabilityId"].as_str(),
+            Some("sentrux.gate" | "sentrux.check")
+        ) {
+            gate_artifacts.push(artifact["capabilityId"].as_str().unwrap().to_owned());
+            assert_eq!(artifact["status"], "succeeded");
+            assert_eq!(artifact["outputs"]["verdict"], "pass");
+            assert_eq!(
+                artifact["outputs"]["command"]["admission"]["blockingViolations"],
+                json!([])
+            );
+            assert_eq!(
+                artifact["outputs"]["command"]["advisories"][0]["rule"],
+                "quality_degraded"
+            );
+            assert_eq!(
+                artifact["outputs"]["command"]["admission"]["advisories"][0]["rule"],
+                "quality_degraded"
+            );
+        }
+    }
+    gate_artifacts.sort();
+    assert_eq!(gate_artifacts, vec!["sentrux.check", "sentrux.gate"]);
+    let hospital: Value = serde_json::from_slice(
+        &fs::read(out.join("diagnosis.hospital/hospital-report.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(hospital["triage"]["failing_rules"], json!([]));
+    assert_eq!(
+        hospital["triage"]["advisories"][0]["rule"],
+        "quality_degraded"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// A hard identity-ratchet regression still stops the diagnosis and run.
 #[test]
 fn baselined_repository_that_regresses_still_fails_the_architecture_gate() {
     let root = temp_dir();
@@ -1496,6 +1608,7 @@ fn production_run_completes_on_a_linked_worktree_checkout() {
     // Untracked content in the worktree keeps the enumeration path
     // (`ls-files --others`) load-bearing rather than trivially empty.
     fs::write(linked.join("untracked.txt"), "scratch\n").unwrap();
+    save_baseline(&linked);
     let doctor_tools = doctor_tool_fixture(&root, true);
 
     let output = common::cli()

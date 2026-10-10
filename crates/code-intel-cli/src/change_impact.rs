@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use crate::committed_evidence::{self, CommittedEvidence, EvidenceError};
 use crate::impact_graph::{impacted_files, reverse_import_graph, select_tests, test_commands};
 
-const SENTRUX_CAPABILITY_ARTIFACT_SCHEMA: &str = "code-intel-sentrux-capability-artifact.v1";
+const SENTRUX_CAPABILITY_ARTIFACT_SCHEMA: &str = "code-intel-sentrux-capability-artifact.v2";
 const SENTRUX_CAPABILITY_ARTIFACT_TYPE: &str = "provider.sentrux.capability-artifact";
 
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
@@ -493,8 +493,14 @@ fn sentrux_signal(name: &str, payload: Option<&Value>) -> Value {
         });
     };
     let capability_status = payload["status"].as_str().unwrap_or("unknown");
-    let authority = payload["authority"].as_str().unwrap_or("unknown");
-    let available = capability_status == "succeeded"
+    let current = crate::sentrux_quality_projection::current_capability(payload);
+    let authority = if current {
+        payload["authority"].as_str().unwrap_or("unknown")
+    } else {
+        "unknown"
+    };
+    let available = current
+        && capability_status == "succeeded"
         && matches!(authority, "authoritative" | "fallback")
         && payload["freshness"]["status"] == "current";
     let status = if available { "available" } else { "degraded" };
@@ -583,8 +589,14 @@ mod tests {
         let payload = json!({
             "capabilityId":"sentrux.test_gaps",
             "status":"succeeded",
+            "schema":"code-intel-sentrux-capability-artifact.v2",
+            "contractVersion":2,
+            "gatePolicy":crate::sentrux_gate::sentrux_gate_policy::identity(),
+            "snapshotIdentity":"a".repeat(64),
+            "inputs":{"snapshotIdentity":"a".repeat(64)},
+            "provider":{"mode":"builtin","id":crate::sentrux_gate::ENGINE_ID,"version":crate::sentrux_gate::ENGINE_VERSION},
             "authority":"authoritative",
-            "freshness":{"status":"current"},
+            "freshness":{"status":"current","consumedSnapshotIdentity":"a".repeat(64)},
             "outputs":{"command":{"stdout":"{\"candidateTests\":[\"tests/forged.rs\"]}"}}
         });
 
@@ -592,6 +604,21 @@ mod tests {
 
         assert_eq!(signal["status"], "available");
         assert_eq!(signal["candidateImpact"], "retains_graph_candidates");
+        for (field, replacement) in [
+            ("/gatePolicy", Value::Null),
+            ("/gatePolicy/sha256", json!("f".repeat(64))),
+            ("/provider/id", json!("unrecognized-provider")),
+            ("/freshness/status", json!("stale")),
+        ] {
+            let mut untrusted = payload.clone();
+            *untrusted.pointer_mut(field).unwrap() = replacement;
+            let signal = sentrux_signal("test_gaps", Some(&untrusted));
+            assert_eq!(signal["authority"], "unknown", "{field}");
+            assert_eq!(
+                signal["candidateImpact"], "withholds_sentrux_expansion",
+                "{field}"
+            );
+        }
         assert!(signal["limitations"][0]
             .as_str()
             .unwrap()

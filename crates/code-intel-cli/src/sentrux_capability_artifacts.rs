@@ -259,8 +259,9 @@ pub(super) fn build_capability_artifacts(
             }
         };
         let artifact = json!({
-            "schema":"code-intel-sentrux-capability-artifact.v1",
-            "contractVersion":1,
+            "schema":"code-intel-sentrux-capability-artifact.v2",
+            "contractVersion":2,
+            "gatePolicy":super::sentrux_gate::sentrux_gate_policy::identity(),
             "capabilityId":capability_id,
             "operation":operation,
             "runId":run_id,
@@ -296,14 +297,14 @@ pub(super) fn build_capability_artifacts(
         );
         refs.push(json!({
             "schema":"code-intel-artifact-ref.v1",
-            "artifactSchema":"code-intel-sentrux-capability-artifact.v1",
+            "artifactSchema":"code-intel-sentrux-capability-artifact.v2",
             "type":"provider.sentrux.capability-artifact",
             "path":relative_path,
             "sha256":sha256_hex(&bytes),
             "consumedSnapshotIdentity":snapshot_identity
         }));
         artifacts.push(AdapterArtifact {
-            artifact_schema: "code-intel-sentrux-capability-artifact.v1".into(),
+            artifact_schema: "code-intel-sentrux-capability-artifact.v2".into(),
             artifact_type: "provider.sentrux.capability-artifact".into(),
             relative_path,
             bytes,
@@ -322,13 +323,9 @@ pub(super) fn build_capability_artifacts(
 // parsed once at `SentruxCommand` construction time and never round-tripped
 // through the bounded preview text; read it verbatim here instead of
 // reparsing anything.
-fn capability_structured_data(observation: &Value) -> Value {
+fn capability_structured_data(observation: &Value) -> Option<&Value> {
     let value = &observation["command"]["structuredData"];
-    if value.is_object() || value.is_array() {
-        value.clone()
-    } else {
-        Value::Null
-    }
+    (value.is_object() || value.is_array()).then_some(value)
 }
 
 fn sentrux_capability_provider(provider_mode: &str) -> Value {
@@ -430,10 +427,24 @@ fn capability_observation(
                 )
             }),
         )
+    } else if matches!(route.command, "gate" | "check") {
+        match command.admission_verdict() {
+            Some("pass") => ("succeeded", "pass", json!({"kind":"none"})),
+            Some("fail") => (
+                "failed",
+                "fail",
+                json!({"kind":"command_failed","message":command_failure_message(command)}),
+            ),
+            _ => (
+                "degraded",
+                "unknown",
+                json!({
+                    "kind":"domain_unknown","message":"same-policy typed gate admission is unavailable"
+                }),
+            ),
+        }
     } else if command.success {
         ("succeeded", "pass", json!({"kind":"none"}))
-    } else if !command.governed {
-        ("succeeded", "unknown", json!({"kind":"none"}))
     } else {
         (
             "failed",
@@ -458,10 +469,7 @@ fn capability_observation(
 }
 
 fn capability_command_evidence(operation: &str, command: &SentruxCommand) -> Value {
-    let mut evidence = command_evidence(operation, command);
-    evidence["governed"] = json!(command.governed);
-    evidence["violations"] = command.violations_json();
-    evidence
+    command_evidence(operation, command)
 }
 
 fn not_applicable_observation(
@@ -534,18 +542,9 @@ fn observation_command(observation: &Value) -> Option<SentruxCommand> {
     let command = observation["command"].as_object()?;
     let stdout = command["stdout"].as_str().unwrap_or_default().to_owned();
     let stderr = command["stderr"].as_str().unwrap_or_default().to_owned();
-    let output_summary = command
-        .get("outputSummary")
-        .unwrap_or(&Value::Null)
-        .as_object()
-        .and_then(|summary| {
-            Some(super::sentrux_command::OutputSummary::from_metadata(
-                summary,
-            ))
-        })
-        .unwrap_or_else(|| {
-            super::sentrux_command::OutputSummary::from_bytes(stdout.as_bytes(), stderr.as_bytes())
-        });
+    let output_summary = super::sentrux_command::OutputSummary::from_metadata(
+        command.get("outputSummary")?.as_object()?,
+    );
     Some(SentruxCommand {
         argv: command["argv"]
             .as_array()?
@@ -558,18 +557,12 @@ fn observation_command(observation: &Value) -> Option<SentruxCommand> {
         stdout,
         stderr,
         violations: SentruxCommand::violations_from_json(command.get("violations")),
-        // Capability artifacts intentionally retain an ungoverned gate as a
-        // successful, unknown observation. Rehydrate that distinction here so
-        // the capability evidence cannot turn an absent baseline into a
-        // structural failure when it is fed back into the authoritative rules.
-        governed: command
-            .get("governed")
-            .and_then(Value::as_bool)
-            .unwrap_or_else(|| {
-                !(command["success"] == false
-                    && observation["status"] == "succeeded"
-                    && observation["verdict"] == "unknown")
-            }),
+        advisories: SentruxCommand::violations_from_json(command.get("advisories")),
+        admission: command
+            .get("admission")
+            .filter(|value| value.is_object())
+            .cloned(),
+        governed: command.get("governed")?.as_bool()?,
         output_summary,
         // Issue #383: rehydrate the full structured payload from the same
         // `command.structuredData` field `command_evidence` wrote, not by
@@ -697,6 +690,19 @@ mod tests {
             .find(|observation| observation["capabilityId"] == "sentrux.dsm")
             .expect("sentrux.dsm observation is present");
         assert_eq!(dsm["providerMode"], "external");
+        // The process succeeded, but an external exit code is not a policy
+        // handshake. Nongate captures remain usable diagnostic measurements.
+        for id in ["sentrux.gate", "sentrux.check"] {
+            let observation = observations
+                .iter()
+                .find(|item| item["capabilityId"] == id)
+                .unwrap();
+            assert_eq!(observation["command"]["success"], true);
+            assert_eq!(observation["status"], "degraded");
+            assert_eq!(observation["verdict"], "unknown");
+            assert!(observation["command"]["admission"].is_null());
+        }
+        assert_eq!(dsm["status"], "succeeded");
 
         let _ = fs::remove_dir_all(&repo);
         let _ = fs::remove_dir_all(&tool_prefix);
@@ -704,7 +710,7 @@ mod tests {
 
     /// Issue #383: a real capability's structured payload over the old 8KB
     /// preview cap must survive `capability_structured_data` (used to build
-    /// the persisted `code-intel-sentrux-capability-artifact.v1`) and
+    /// the persisted `code-intel-sentrux-capability-artifact.v2`) and
     /// `observation_command` (used to rehydrate a `SentruxCommand` back out
     /// of a persisted observation for `sentrux.gate`/`sentrux.check`) intact
     /// -- not silently collapsed to `Value::Null` because the real document
@@ -735,7 +741,7 @@ mod tests {
 
         let structured = capability_structured_data(&observation);
         assert_eq!(
-            structured, value,
+            structured, Some(&value),
             "capability_structured_data must reflect the full parsed output beyond 8KB, not Value::Null"
         );
 

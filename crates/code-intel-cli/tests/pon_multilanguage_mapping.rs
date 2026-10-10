@@ -70,6 +70,16 @@ fn tool_fixture(root: &Path) -> PathBuf {
 }
 
 fn run(repo: &Path, out: &Path) {
+    let baseline = common::cli()
+        .args(["sentrux", "--operation", "save_baseline", "--repo"])
+        .arg(repo)
+        .output()
+        .unwrap();
+    assert!(
+        baseline.status.success(),
+        "{}",
+        String::from_utf8_lossy(&baseline.stderr)
+    );
     let tools = tool_fixture(out.parent().unwrap());
     let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])

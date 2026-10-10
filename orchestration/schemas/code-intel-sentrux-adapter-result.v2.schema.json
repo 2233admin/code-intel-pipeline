@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "code-intel-sentrux-adapter-result.v2",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "gatePolicy", "port", "evidence", "factPromotion"],
+  "properties": {
+    "schema": {"const": "code-intel-sentrux-adapter-result.v2"},
+    "gatePolicy": {"$ref": "code-intel-sentrux-gate-policy.v1.schema.json#/$defs/identity"},
+    "port": {"$ref": "code-intel-structural-evidence-port.v2.schema.json"},
+    "evidence": {"type": "object", "additionalProperties": false, "required": ["request"], "properties": {"request": {"type": "object"}}},
+    "factPromotion": {"const": {"eligible": false, "requires": "evidence.admissibility-validate", "engineeringFacts": []}}
+  }
+}

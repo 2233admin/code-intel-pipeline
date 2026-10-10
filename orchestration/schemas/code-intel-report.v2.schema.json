@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-report.v2",
+  "description": "Committed report links with current-policy Sentrux diagnostics. Verified measurement is not inferred gate admission; historical references remain unknown/unverified.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "gatePolicy", "repo", "run", "hospital", "hospitalMarkdown", "agentCodeSliceRanking", "sentruxEvidence"],
+  "properties": {
+    "schema": {"const": "code-intel-report.v2"},
+    "gatePolicy": {"$ref": "code-intel-sentrux-gate-policy.v1.schema.json#/$defs/identity"},
+    "repo": {"type": "string"}, "run": {"type": ["string", "null"]},
+    "hospital": {"$ref": "#/$defs/artifactLink"},
+    "hospitalMarkdown": {"$ref": "#/$defs/artifactLink"},
+    "agentCodeSliceRanking": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/artifactLink"}]},
+    "sentruxEvidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "manifestCapabilityRefs", "hospitalCapabilityRefs", "capabilities", "missingReferences", "unverifiedReferences", "reason"],
+      "properties": {
+        "status": {"enum": ["verified", "degraded", "unknown"]},
+        "manifestCapabilityRefs": {"type": "integer", "minimum": 0},
+        "hospitalCapabilityRefs": {"type": "integer", "minimum": 0},
+        "capabilities": {
+          "type": "array", "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["capabilityId", "operation", "status", "authority", "verdict", "gatePolicy", "admission", "provider", "artifact", "verification"],
+            "properties": {
+              "capabilityId": {"type": "string"}, "operation": {"type": "string"}, "status": {"type": "string"}, "authority": {"type": "string"},
+              "verdict": {"enum": ["pass", "fail", "unknown"]},
+              "gatePolicy": {"$ref": "code-intel-sentrux-gate-policy.v1.schema.json#/$defs/identity"},
+              "admission": {"$ref": "code-intel-quality-signal-projection.v2.schema.json#/$defs/admission"},
+              "provider": {"type": "object"}, "artifact": {"type": "object"},
+              "verification": {"const": "committed_manifest_and_payload"}
+            }
+          }
+        },
+        "missingReferences": {"type": "array", "items": {"type": "object"}},
+        "unverifiedReferences": {"type": "array", "items": {"type": "object"}},
+        "reason": {"type": "string"}
+      }
+    }
+  },
+  "$defs": {
+    "artifactLink": {"type": "object", "additionalProperties": false, "required": ["schema", "type", "path"], "properties": {"schema": {"type": "string"}, "type": {"type": "string"}, "path": {"type": "string"}}}
+  }
+}

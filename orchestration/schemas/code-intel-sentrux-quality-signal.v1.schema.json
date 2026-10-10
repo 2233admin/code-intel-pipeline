@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "code-intel-sentrux-quality-signal.v1",
+  "description": "Unchanged five-factor measurement, including the honest partial duplicate-only redundancy and file-LOC equality fallback. Partial measurement is not an incomplete command capture.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "formula_version", "provider_version", "score", "bottleneck", "completeness", "root_causes"],
+  "properties": {
+    "schema": {"const": "code-intel-sentrux-quality-signal.v1"},
+    "formula_version": {"const": "sentrux-upstream@6f8ff3c14b0423e4b58f42d1813d4d5f7fdc1d11+max-floor-0.01"},
+    "provider_version": {"const": "code-intel-quality-signal.v1"},
+    "score": {"type": "integer", "minimum": 0, "maximum": 10000},
+    "bottleneck": {"enum": ["modularity", "acyclicity", "depth", "equality", "redundancy"]},
+    "completeness": {"const": "partial"},
+    "root_causes": {
+      "type": "object", "additionalProperties": false,
+      "required": ["modularity", "acyclicity", "depth", "equality", "redundancy"],
+      "properties": {
+        "modularity": {"$ref": "#/$defs/fullFactor"}, "acyclicity": {"$ref": "#/$defs/fullFactor"}, "depth": {"$ref": "#/$defs/fullFactor"},
+        "equality": {"type": "object", "additionalProperties": false, "required": ["score", "raw", "completeness", "basis"], "properties": {"score": {"$ref": "#/$defs/score"}, "raw": {"type": "number"}, "completeness": {"const": "full"}, "basis": {"const": "file_loc_fallback"}}},
+        "redundancy": {"type": "object", "additionalProperties": false, "required": ["score", "raw", "completeness", "note"], "properties": {"score": {"$ref": "#/$defs/score"}, "raw": {"type": "number"}, "completeness": {"const": "partial"}, "note": {"type": "string"}}}
+      }
+    }
+  },
+  "$defs": {
+    "score": {"type": "integer", "minimum": 0, "maximum": 10000},
+    "fullFactor": {"type": "object", "additionalProperties": false, "required": ["score", "raw", "completeness"], "properties": {"score": {"$ref": "#/$defs/score"}, "raw": {"type": "number"}, "completeness": {"const": "full"}}},
+    "nativeScan": {"type": "object", "required": ["engine", "quality_signal", "quality_signal_detail"], "properties": {"engine": {"const": {"id": "sentrux-native", "version": "3.0.0"}}, "quality_signal": {"$ref": "#/$defs/score"}, "quality_signal_detail": {"$ref": "#"}}}
+  }
+}

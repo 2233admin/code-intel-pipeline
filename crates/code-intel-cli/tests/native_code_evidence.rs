@@ -87,6 +87,18 @@ fn run_with_expected_code(repo: &Path, out: &Path, expected_code: i32) -> Value 
 }
 
 fn run(repo: &Path, out: &Path) -> Value {
+    // This helper expects the full authoritative DAG to complete, so its
+    // structural branch needs a real baseline for the exact source fixture.
+    let baseline = common::cli()
+        .args(["sentrux", "--operation", "save_baseline", "--repo"])
+        .arg(repo)
+        .output()
+        .unwrap();
+    assert!(
+        baseline.status.success(),
+        "{}",
+        String::from_utf8_lossy(&baseline.stderr)
+    );
     run_with_expected_code(repo, out, 0)
 }
 

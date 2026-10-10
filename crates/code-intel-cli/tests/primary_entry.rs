@@ -401,7 +401,7 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
     assert!(report_json.status.success());
     let report_json: serde_json::Value =
         serde_json::from_slice(&report_json.stdout).expect("report JSON");
-    assert_eq!(report_json["schema"], "code-intel-report.v1");
+    assert_eq!(report_json["schema"], "code-intel-report.v2");
     assert!(
         report_json["hospitalMarkdown"]["path"]
             .as_str()

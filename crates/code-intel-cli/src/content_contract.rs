@@ -10,10 +10,10 @@ use serde_json::{Map, Value};
 // Was 8 MiB (unrevisited default) until issue #383/#386: fixing #383's
 // silent-Null bug (`capability_structured_data` reparsing the 8KB bounded
 // preview instead of the full command output, see `sentrux_command.rs`)
-// means `code-intel-sentrux-capability-artifact.v1`'s `outputs.structuredData`
-// now legitimately carries a capability's real, full output -- `sentrux.dsm`'s
-// on this repository already serializes to ~8.65 MiB (measured:
-// sentrux-capability-sentrux-dsm.json, 9,073,500 bytes), which this ceiling
+// means the capability artifact's `outputs.structuredData` legitimately carries
+// the full output (current envelope v2; #383's historical measurement used v1).
+// The recorded `sentrux-capability-sentrux-dsm.json` was 9,073,500 bytes
+// (~8.65 MiB), which this ceiling
 // would previously never have observed because the #383 bug always zeroed
 // that field out first. 24 MiB keeps ~1.5x headroom over
 // `sentrux_command::MAX_COMMAND_EVIDENCE_BYTES` (16 MiB, #382's own raised

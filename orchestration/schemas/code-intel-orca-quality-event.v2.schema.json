@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-orca-quality-event.v2",
+  "description": "Measurement lifecycle event; completeness and finding severity are not policy admission. Consumers use summary.admission.verdict and byDisposition, while showing regression/advisories.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "contractVersion", "gatePolicy", "eventType", "status", "snapshotIdentity", "commit", "baseRef", "repositoryIdentity", "summary", "correlate"],
+  "properties": {
+    "schema": {"const": "code-intel-orca-quality-event.v2"},
+    "contractVersion": {"const": 2},
+    "gatePolicy": {"$ref": "code-intel-sentrux-gate-policy.v1.schema.json#/$defs/identity"},
+    "eventType": {"const": "quality_signal_projection"},
+    "status": {"enum": ["complete", "degraded", "unavailable"]},
+    "snapshotIdentity": {"$ref": "code-intel-quality-signal-projection.v2.schema.json#/$defs/snapshotIdentity"},
+    "commit": {"type": "string", "minLength": 1},
+    "baseRef": {"type": ["string", "null"]},
+    "repositoryIdentity": {"type": "string", "minLength": 1},
+    "summary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["total", "bottleneck", "regression", "findingCounts", "admission"],
+      "properties": {
+        "total": {"$ref": "code-intel-quality-signal-projection.v2.schema.json#/$defs/total"},
+        "bottleneck": {"type": ["string", "null"]},
+        "regression": {"$ref": "code-intel-quality-signal-projection.v2.schema.json#/$defs/regression"},
+        "admission": {"$ref": "code-intel-quality-signal-projection.v2.schema.json#/$defs/admission"},
+        "findingCounts": {
+          "type": "object", "additionalProperties": false, "required": ["total", "byKind", "bySeverity", "byDisposition"],
+          "properties": {
+            "total": {"type": "integer", "minimum": 0},
+            "byKind": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+            "bySeverity": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+            "byDisposition": {
+              "type": "object", "additionalProperties": false, "required": ["blocking", "advisory"],
+              "properties": {"blocking": {"type": "integer", "minimum": 0}, "advisory": {"type": "integer", "minimum": 0}}
+            }
+          }
+        }
+      }
+    },
+    "correlate": {
+      "type": "object", "additionalProperties": false, "required": ["runId", "taskId", "dispatchId", "prNumber"],
+      "properties": {"runId": {"type": ["string", "null"]}, "taskId": {"type": ["string", "null"]}, "dispatchId": {"type": ["string", "null"]}, "prNumber": {"type": ["string", "null"]}}
+    }
+  }
+}

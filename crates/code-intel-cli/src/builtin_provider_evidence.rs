@@ -150,14 +150,39 @@ pub(super) fn sentrux_admission(
     let (repo, tool_path_prefix) = sentrux_provider_options(request, inputs)?;
     let lease =
         snapshot::begin_consumption(repo, &request["snapshot"]).map_err(AdapterError::Contract)?;
+    let identity = snapshot_identity(request)?;
+    if inputs[0].consumed_snapshot_identity() != identity {
+        return Err(AdapterError::Contract(
+            "Sentrux snapshot artifact does not match the leased snapshot".into(),
+        ));
+    }
+    if !request["snapshot"]["scope"]
+        .as_array()
+        .is_some_and(|scope| scope.len() == 1 && scope[0] == ".")
+    {
+        return Err(AdapterError::Contract(
+            "Sentrux root measurement requires a leased whole-repository snapshot".into(),
+        ));
+    }
+    // Snapshot contracts call a non-Git head "unversioned"; the immutable
+    // engine measurement calls that same absence of a commit "unknown".
+    let source_revision = match source_revision(request) {
+        "unversioned" => "unknown",
+        revision => revision,
+    };
     let collected_at = now()?;
     let (gate, check, capability_observations) =
         sentrux_capability_artifacts::collect_sentrux_capabilities(repo, tool_path_prefix)?;
     lease.verify_after(repo).map_err(AdapterError::Contract)?;
     let observed_at = now()?.max(collected_at);
-    let identity = snapshot_identity(request)?;
+    let gate_policy = sentrux_gate::sentrux_gate_policy::identity();
+    let gate_results = json!([
+        {"kind":"sentrux_gate","admission":gate.admission},
+        {"kind":"sentrux_check","admission":check.admission}
+    ]);
     let command_observation = json!({
-        "schema":"code-intel-sentrux-command-observation.v1",
+        "schema":"code-intel-sentrux-command-observation.v2",
+        "gatePolicy":gate_policy,
         "snapshotIdentity":identity,
         "commands":[
             command_evidence("gate", &gate),
@@ -191,11 +216,13 @@ pub(super) fn sentrux_admission(
         &["local_write", "repo_read"]
     };
     let native = json!({
-        "schema":"code-intel-sentrux-provider-native.v1",
+        "schema":"code-intel-sentrux-provider-native.v2",
+        "gatePolicy":gate_policy,
+        "gateResults":gate_results,
         "status":"complete",
         "implementation":implementation,
         "rollbackIdentity":"sentrux gate/check",
-        "sourceRevision":source_revision(request),
+        "sourceRevision":source_revision,
         "expectedSnapshotIdentity":identity,
         "sourceSnapshotIdentity":identity,
         "collectedAt":collected_at,
@@ -226,10 +253,13 @@ pub(super) fn sentrux_admission(
         "schema":"code-intel-evidence-payload.v1",
         "data":{
             "structuralEvidence":{
-                "schema":"code-intel-structural-evidence-payload.v1",
+                "schema":"code-intel-structural-evidence-payload.v2",
+                "gatePolicy":first["port"]["gatePolicy"],
+                "gateResults":first["port"]["gateResults"],
+                "advisories":first["port"]["advisories"],
                 "snapshotIdentity":identity,
                 "provider":first["port"]["provider"],
-                "provenance":payload_provenance(request),
+                "provenance":{"sourceRevision":source_revision},
                 "effects":first["port"]["effects"],
                 "completeness":first["port"]["completeness"],
                 "rules":first["port"]["rules"]
@@ -276,7 +306,7 @@ pub(super) fn sentrux_admission(
             bytes: payload_bytes,
         },
         AdapterArtifact {
-            artifact_schema: "code-intel-sentrux-command-observation.v1".into(),
+            artifact_schema: "code-intel-sentrux-command-observation.v2".into(),
             artifact_type: "provider.sentrux.command-observation".into(),
             relative_path: "sentrux-command-observation.json".into(),
             bytes: command_observation_bytes,
@@ -479,6 +509,7 @@ fn run_sentrux(
             let output = command
                 .arg(provider_subcommand)
                 .arg(".")
+                .arg("--json")
                 .current_dir(repo)
                 .output()
                 .map_err(|error| {
@@ -620,10 +651,14 @@ fn resolve_sentrux(prefix: &Path) -> Result<PathBuf, AdapterError> {
 }
 
 fn command_rule(kind: &str, command: &SentruxCommand) -> Value {
-    let verdict = if command.success || !command.governed {
-        "pass"
-    } else {
-        "fail"
+    let Some(verdict) = command
+        .admission_verdict()
+        .filter(|verdict| *verdict != "unknown")
+    else {
+        return json!({
+            "kind":kind,"status":"not_evaluated","verdict":"unknown",
+            "failure":{"kind":"domain_unknown","message":"same-policy typed gate admission is unavailable"}
+        });
     };
     let mut rule =
         json!({"kind":kind,"status":"evaluated","verdict":verdict,"failure":{"kind":"none"}});

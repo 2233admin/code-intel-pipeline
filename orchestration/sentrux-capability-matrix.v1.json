@@ -28,7 +28,7 @@
       "currentState": "authoritative_automatic",
       "requiredForRelease": true,
       "inputs": ["repository.snapshot"],
-      "artifacts": ["code-intel-sentrux-capability-artifact.v1"],
+      "artifacts": ["code-intel-sentrux-capability-artifact.v2"],
       "decisionConsumers": ["evidence.sentrux", "diagnosis.hospital", "report", "pr_gate", "release_gate"],
       "failureSemantics": ["failed", "unavailable", "unknown"],
       "platforms": ["windows", "macos", "linux"]
@@ -44,7 +44,7 @@
       "currentState": "authoritative_automatic",
       "requiredForRelease": true,
       "inputs": ["sentrux.scan.v1"],
-      "artifacts": ["code-intel-sentrux-capability-artifact.v1"],
+      "artifacts": ["code-intel-sentrux-capability-artifact.v2"],
       "decisionConsumers": ["evidence.sentrux", "diagnosis.hospital", "report", "pr_gate", "release_gate"],
       "failureSemantics": ["failed", "unavailable", "unknown"],
       "platforms": ["windows", "macos", "linux"]
@@ -60,7 +60,7 @@
       "currentState": "authoritative_automatic",
       "requiredForRelease": true,
       "inputs": ["repository.snapshot"],
-      "artifacts": ["code-intel-sentrux-capability-artifact.v1"],
+      "artifacts": ["code-intel-sentrux-capability-artifact.v2"],
       "decisionConsumers": ["evidence.sentrux", "diagnosis.hospital", "report", "change_impact", "test_selection", "pr_gate", "release_gate"],
       "failureSemantics": ["failed", "unavailable", "unknown"],
       "platforms": ["windows", "macos", "linux"]
@@ -76,7 +76,7 @@
       "currentState": "authoritative_automatic",
       "requiredForRelease": true,
       "inputs": ["repository.snapshot", "git.history"],
-      "artifacts": ["code-intel-sentrux-capability-artifact.v1"],
+      "artifacts": ["code-intel-sentrux-capability-artifact.v2"],
       "decisionConsumers": ["doctor", "run_planner", "install_smoke", "release_gate"],
       "failureSemantics": ["failed", "unavailable", "unknown"],
       "platforms": ["windows", "macos", "linux"]
@@ -92,7 +92,7 @@
       "currentState": "automatic_degraded",
       "requiredForRelease": true,
       "inputs": ["repository.snapshot", "git.history"],
-      "artifacts": ["code-intel-sentrux-capability-artifact.v1"],
+      "artifacts": ["code-intel-sentrux-capability-artifact.v2"],
       "decisionConsumers": ["evidence.sentrux", "diagnosis.hospital", "report", "release_gate"],
       "failureSemantics": ["failed", "unavailable", "unknown"],
       "platforms": ["windows", "macos", "linux"]
@@ -108,7 +108,7 @@
       "currentState": "authoritative_automatic",
       "requiredForRelease": true,
       "inputs": ["repository.snapshot", "sentrux.dsm.v1", "test.inventory"],
-      "artifacts": ["code-intel-sentrux-capability-artifact.v1"],
+      "artifacts": ["code-intel-sentrux-capability-artifact.v2"],
       "decisionConsumers": ["evidence.sentrux", "diagnosis.hospital", "report", "change_impact", "test_selection", "pr_gate", "release_gate"],
       "failureSemantics": ["failed", "unavailable", "unknown"],
       "platforms": ["windows", "macos", "linux"]
@@ -124,7 +124,7 @@
       "currentState": "authoritative_automatic",
       "requiredForRelease": true,
       "inputs": ["repository.snapshot", "sentrux.dsm.v1"],
-      "artifacts": ["code-intel-sentrux-capability-artifact.v1"],
+      "artifacts": ["code-intel-sentrux-capability-artifact.v2"],
       "decisionConsumers": ["change_impact", "pr_gate", "release_gate"],
       "failureSemantics": ["failed", "unavailable", "unknown"],
       "platforms": ["windows", "macos", "linux"]
@@ -140,7 +140,7 @@
       "currentState": "authoritative_automatic",
       "requiredForRelease": true,
       "inputs": ["repository.snapshot", "sentrux.rules"],
-      "artifacts": ["code-intel-sentrux-capability-artifact.v1"],
+      "artifacts": ["code-intel-sentrux-capability-artifact.v2"],
       "decisionConsumers": ["evidence.sentrux", "diagnosis.hospital", "report", "pr_gate", "release_gate"],
       "failureSemantics": ["domain_fail", "failed", "unavailable", "unknown"],
       "platforms": ["windows", "macos", "linux"]
@@ -155,8 +155,8 @@
       "executionMode": "automatic",
       "currentState": "authoritative_automatic",
       "requiredForRelease": true,
-      "inputs": ["repository.snapshot", "sentrux.rules", "sentrux.baseline"],
-      "artifacts": ["code-intel-sentrux-capability-artifact.v1", "code-intel-sentrux-command-observation.v1", "code-intel-structural-evidence-payload.v1"],
+      "inputs": ["repository.snapshot", "sentrux.rules", "sentrux.baseline", "sentrux.admission-policy.v1"],
+      "artifacts": ["code-intel-sentrux-capability-artifact.v2", "code-intel-sentrux-command-observation.v2", "code-intel-structural-evidence-payload.v2"],
       "decisionConsumers": ["evidence.sentrux", "diagnosis.hospital", "pr_gate", "release_gate"],
       "failureSemantics": ["domain_fail", "failed", "unavailable", "unknown"],
       "platforms": ["windows", "macos", "linux"]
@@ -171,8 +171,8 @@
       "executionMode": "automatic",
       "currentState": "authoritative_automatic",
       "requiredForRelease": true,
-      "inputs": ["repository.snapshot", "sentrux.rules", "sentrux.baseline"],
-      "artifacts": ["code-intel-sentrux-command-observation.v1", "code-intel-structural-evidence-payload.v1"],
+      "inputs": ["repository.snapshot", "sentrux.rules", "sentrux.baseline", "sentrux.admission-policy.v1"],
+      "artifacts": ["code-intel-sentrux-command-observation.v2", "code-intel-structural-evidence-payload.v2"],
       "decisionConsumers": ["evidence.sentrux", "diagnosis.hospital", "pr_gate", "release_gate"],
       "failureSemantics": ["domain_fail", "failed", "unavailable", "unknown"],
       "platforms": ["windows", "macos", "linux"]
@@ -188,7 +188,7 @@
       "currentState": "explicit_authority_required",
       "requiredForRelease": true,
       "inputs": ["repository.snapshot", "sentrux.rules"],
-      "artifacts": ["code-intel-sentrux-capability-artifact.v1"],
+      "artifacts": ["code-intel-sentrux-capability-artifact.v2"],
       "decisionConsumers": ["sentrux.gate"],
       "failureSemantics": ["failed", "unavailable", "unknown"],
       "platforms": ["windows", "macos", "linux"]
@@ -204,7 +204,7 @@
       "currentState": "lifecycle_external",
       "requiredForRelease": true,
       "inputs": ["repository.snapshot", "session.scope"],
-      "artifacts": ["code-intel-sentrux-capability-artifact.v1"],
+      "artifacts": ["code-intel-sentrux-capability-artifact.v2"],
       "decisionConsumers": ["sentrux.session_end"],
       "failureSemantics": ["failed", "unavailable", "unknown"],
       "platforms": ["windows", "macos", "linux"]
@@ -220,7 +220,7 @@
       "currentState": "lifecycle_external",
       "requiredForRelease": true,
       "inputs": ["sentrux.session_start.v1", "repository.snapshot", "working_tree"],
-      "artifacts": ["code-intel-sentrux-capability-artifact.v1"],
+      "artifacts": ["code-intel-sentrux-capability-artifact.v2"],
       "decisionConsumers": ["pr_gate", "release_gate"],
       "failureSemantics": ["domain_fail", "failed", "unavailable", "unknown"],
       "platforms": ["windows", "macos", "linux"]
@@ -236,7 +236,7 @@
       "currentState": "authoritative_automatic",
       "requiredForRelease": true,
       "inputs": ["repository.snapshot", "sentrux.session_start.v1"],
-      "artifacts": ["code-intel-sentrux-capability-artifact.v1"],
+      "artifacts": ["code-intel-sentrux-capability-artifact.v2"],
       "decisionConsumers": ["evidence.sentrux", "diagnosis.hospital", "report", "pr_gate", "release_gate"],
       "failureSemantics": ["failed", "unavailable", "unknown"],
       "platforms": ["windows", "macos", "linux"]
@@ -252,7 +252,7 @@
       "currentState": "authoritative_automatic",
       "requiredForRelease": true,
       "inputs": ["installation.layout"],
-      "artifacts": ["code-intel-sentrux-capability-artifact.v1"],
+      "artifacts": ["code-intel-sentrux-capability-artifact.v2"],
       "decisionConsumers": ["doctor", "run_planner", "install_smoke", "release_gate"],
       "failureSemantics": ["unavailable", "failed", "unknown"],
       "platforms": ["windows", "macos", "linux"]

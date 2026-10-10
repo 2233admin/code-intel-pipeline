@@ -465,7 +465,7 @@ fn observable_contracts_pin_exact_schemas_composites_and_exit_sets() {
         (
             "sentrux-adapt",
             "code-intel-sentrux-route-result.v1",
-            "code-intel-sentrux-adapter-result.v1",
+            "code-intel-sentrux-adapter-result.v2",
         ),
         (
             "codenexus-adapt",

@@ -253,6 +253,103 @@ fn quality_signal_section_round_trips_a_scan_payload_over_8kb() {
     assert_eq!(god_files_cause["raw"]["current"], 1.0);
 }
 
+fn admission_payload(decline: bool, coupling_increase: bool) -> Value {
+    let advisory =
+        json!({"rule":"quality_degraded","message":"Quality: 9000 -> 8800","targets":[]});
+    let blocking = json!({"rule":"coupling_increased","message":"Coupling: 4 -> 5","targets":[]});
+    let result = json!({
+        "schema":"code-intel-sentrux-gate-result.v1",
+        "policy":crate::sentrux_gate::sentrux_gate_policy::identity(),
+        "measurement":crate::sentrux_gate::sentrux_gate_policy::measurement(),
+        "baseline":{"schema":"code-intel-sentrux-baseline.v6","sha256":"b".repeat(64),"sourceCommit":"base","scope":"."},
+        "current":{"sourceCommit":"head","scope":"."},
+        "ruleScope":"baseline_ratchet",
+        "comparisons":[
+            {"rule":"quality_degraded","before":9000,"after":if decline {8800} else {9000},"disposition":"advisory","verdict":if decline {"fail"} else {"pass"}},
+            {"rule":"coupling_increased","before":4,"after":if coupling_increase {5} else {4},"disposition":"blocking","verdict":if coupling_increase {"fail"} else {"pass"}},
+            {"rule":"cycles_increased","before":0,"after":0,"disposition":"blocking","verdict":"pass"},
+            {"rule":"god_files_increased","before":[],"after":[],"disposition":"blocking","verdict":"pass"}
+        ],
+        "blockingViolations":if coupling_increase {json!([blocking])} else {json!([])},
+        "advisories":if decline {json!([advisory])} else {json!([])},
+        "verdict":if coupling_increase {"fail"} else {"pass"}
+    });
+    json!({
+        "schema":"code-intel-sentrux-capability-artifact.v2","contractVersion":2,
+        "gatePolicy":crate::sentrux_gate::sentrux_gate_policy::identity(),
+        "snapshotIdentity":"a".repeat(64),"inputs":{"snapshotIdentity":"a".repeat(64)},
+        "freshness":{"status":"current","consumedSnapshotIdentity":"a".repeat(64)},
+        "provider":{"mode":"builtin","id":crate::sentrux_gate::ENGINE_ID,"version":crate::sentrux_gate::ENGINE_VERSION},
+        "capabilityId":"sentrux.gate","operation":"gate",
+        "status":if coupling_increase {"failed"} else {"succeeded"},"authority":"authoritative",
+        "outputs":{"verdict":result["verdict"],"command":{
+            "violations":result["blockingViolations"],"advisories":result["advisories"],"admission":result
+        }}
+    })
+}
+
+#[test]
+fn aggregate_decline_remains_visible_but_does_not_turn_admission_into_failure() {
+    let payload = admission_payload(true, false);
+    let admission = capability_admission(&payload);
+    assert_eq!(admission["verdict"], "pass");
+    assert!(admission["blockingViolations"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let reference = json!({"sha256":"a".repeat(64)});
+    let findings = violation_findings(Some((&reference, &payload)), "sentrux.gate");
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0]["rule"], "quality_degraded");
+    assert_eq!(findings[0]["disposition"], "advisory");
+    let current = json!({"quality_signal":8800});
+    let baseline = json!({"quality_signal":9000});
+    let signal = quality_signal_section(Some(&current), None, Some(&baseline), &mut Vec::new());
+    assert_eq!(signal["total"]["delta"], -200);
+    assert_eq!(signal["regression"]["status"], "declined");
+    assert_eq!(signal["regression"]["disposition"], "advisory");
+}
+
+#[test]
+fn quality_advisory_cannot_hide_a_blocking_coupling_regression() {
+    let payload = admission_payload(true, true);
+    assert_eq!(capability_admission(&payload)["verdict"], "fail");
+    let reference = json!({"sha256":"a".repeat(64)});
+    let findings = violation_findings(Some((&reference, &payload)), "sentrux.gate");
+    assert_eq!(findings.len(), 2);
+    assert_eq!(findings[0]["rule"], "coupling_increased");
+    assert_eq!(findings[0]["disposition"], "blocking");
+    assert_eq!(findings[1]["rule"], "quality_degraded");
+    assert_eq!(findings[1]["disposition"], "advisory");
+}
+
+#[test]
+fn historic_missing_forged_policy_and_unknown_provider_cannot_claim_admission() {
+    let original = admission_payload(true, false);
+    for (field, forged) in [
+        (
+            "/schema",
+            json!("code-intel-sentrux-capability-artifact.v1"),
+        ),
+        ("/gatePolicy", Value::Null),
+        ("/gatePolicy/sha256", json!("0".repeat(64))),
+        ("/provider/id", json!("unknown-provider")),
+        ("/freshness/status", json!("stale")),
+        ("/freshness/consumedSnapshotIdentity", json!("c".repeat(64))),
+        ("/outputs/command/admission", Value::Null),
+    ] {
+        let mut payload = original.clone();
+        *payload.pointer_mut(field).unwrap() = forged;
+        assert_eq!(
+            capability_admission(&payload)["verdict"],
+            "unknown",
+            "{field}"
+        );
+        let reference = json!({});
+        assert!(violation_findings(Some((&reference, &payload)), "sentrux.gate").is_empty());
+    }
+}
+
 #[test]
 fn violation_findings_classifies_ratchet_regressions_and_rule_violations_separately() {
     let check_reference =
@@ -265,12 +362,7 @@ fn violation_findings_classifies_ratchet_regressions_and_rule_violations_separat
     });
     let gate_reference =
         json!({"path": "sentrux-capability-sentrux-gate.json", "sha256": "b".repeat(64)});
-    let gate_payload = json!({
-        "capabilityId": "sentrux.gate",
-        "outputs": {"command": {"violations": [
-            {"rule": "quality_degraded", "message": "Quality: 9000 -> 8800", "targets": []},
-        ]}},
-    });
+    let gate_payload = admission_payload(true, false);
 
     let check_findings =
         violation_findings(Some((&check_reference, &check_payload)), "sentrux.check");
@@ -283,6 +375,7 @@ fn violation_findings_classifies_ratchet_regressions_and_rule_violations_separat
     assert_eq!(gate_findings.len(), 1);
     assert_eq!(gate_findings[0]["kind"], "baseline_regression");
     assert_eq!(gate_findings[0]["severityNormalized"], "high");
+    assert_eq!(gate_findings[0]["disposition"], "advisory");
 
     assert!(violation_findings(None, "sentrux.check").is_empty());
 }

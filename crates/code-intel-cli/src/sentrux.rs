@@ -76,16 +76,37 @@ pub fn run(options: &Options<'_>) -> Result<()> {
         "check" => finish(
             sentrux_gate::run_check_aligned(&repo, !options.no_ratchet)?,
             "check",
+            options.json,
         ),
-        "check_rules" => finish(sentrux_gate::run_check(&repo)?, "check"),
-        "gate" => finish(sentrux_gate::run_gate(&repo, false)?, "gate"),
-        "gate_save" | "save_baseline" => finish(sentrux_gate::run_gate(&repo, true)?, "gate"),
+        "check_rules" => finish(sentrux_gate::run_check(&repo)?, "check", options.json),
+        "gate" => finish(sentrux_gate::run_gate(&repo, false)?, "gate", options.json),
+        "gate_save" | "save_baseline" => {
+            finish(sentrux_gate::run_gate(&repo, true)?, "gate", options.json)
+        }
         other => Err(format!("sentrux operation not yet implemented in Rust: {other}").into()),
     }
 }
 
-fn finish(run: sentrux_gate::EngineRun, operation: &str) -> Result<()> {
-    print!("{}", run.stdout);
+fn finish(run: sentrux_gate::EngineRun, operation: &str, json: bool) -> Result<()> {
+    if json {
+        if let Some(admission) = &run.admission {
+            println!("{}", serde_json::to_string(admission)?);
+        } else {
+            // Static-only checks and baseline saves are diagnostic operations,
+            // never a substitute for the authoritative admission handshake.
+            println!(
+                "{}",
+                serde_json::to_string(&serde_json::json!({
+                    "operation": operation, "success": run.success, "governed": run.governed,
+                    "admission": null, "verdict": "unknown",
+                    "blockingViolations": run.violations.iter().map(sentrux_gate::Violation::to_json).collect::<Vec<_>>(),
+                    "advisories": run.advisories.iter().map(sentrux_gate::Violation::to_json).collect::<Vec<_>>(),
+                }))?
+            );
+        }
+    } else {
+        print!("{}", run.stdout);
+    }
     if run.success {
         Ok(())
     } else {

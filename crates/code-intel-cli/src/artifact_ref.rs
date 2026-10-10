@@ -9,6 +9,8 @@ mod content_contract;
 mod content_sha256;
 #[path = "design_proposal_contract.rs"]
 pub(crate) mod design_proposal_contract;
+#[path = "sentrux_gate_policy.rs"]
+mod sentrux_gate_policy;
 
 use crate::stable_artifact::{self, FileId, StableReadError};
 use content_contract::{
@@ -194,7 +196,25 @@ pub(crate) fn verify_artifact_ref(
             "Artifact Ref payload SHA-256 mismatch".to_string(),
         ));
     }
-    (expected_contract.validate_payload)(&bytes).map_err(ArtifactError::Contract)?;
+    match expected_contract.artifact_type {
+        "provider.sentrux.command-observation" | "provider.sentrux.capability-artifact" => {
+            let value =
+                parse_contract_json(&bytes, "Sentrux artifact").map_err(ArtifactError::Contract)?;
+            if expected_contract.artifact_type == "provider.sentrux.command-observation" {
+                validate_sentrux_command_observation_value(&value)
+                    .map_err(ArtifactError::Contract)?;
+            } else {
+                validate_sentrux_capability_artifact_value(&value)
+                    .map_err(ArtifactError::Contract)?;
+            }
+            if value["snapshotIdentity"] != consumed {
+                return Err(ArtifactError::Contract(
+                    "Sentrux artifact payload snapshot differs from its Artifact Ref".into(),
+                ));
+            }
+        }
+        _ => (expected_contract.validate_payload)(&bytes).map_err(ArtifactError::Contract)?,
+    }
     Ok(VerifiedArtifact {
         bytes,
         artifact_schema: expected_contract.artifact_schema.to_string(),
@@ -292,17 +312,17 @@ fn diagnosis_family_contract(schema: &str, artifact_type: &str) -> Option<Artifa
             max_bytes: MAX_ARTIFACT_BYTES,
             validate_payload: validate_evidence_payload,
         }),
-        ("code-intel-sentrux-command-observation.v1", "provider.sentrux.command-observation") => {
+        ("code-intel-sentrux-command-observation.v2", "provider.sentrux.command-observation") => {
             Some(ArtifactContract {
-                artifact_schema: "code-intel-sentrux-command-observation.v1",
+                artifact_schema: "code-intel-sentrux-command-observation.v2",
                 artifact_type: "provider.sentrux.command-observation",
                 max_bytes: 2 * 1024 * 1024,
                 validate_payload: validate_sentrux_command_observation,
             })
         }
-        ("code-intel-sentrux-capability-artifact.v1", "provider.sentrux.capability-artifact") => {
+        ("code-intel-sentrux-capability-artifact.v2", "provider.sentrux.capability-artifact") => {
             Some(ArtifactContract {
-                artifact_schema: "code-intel-sentrux-capability-artifact.v1",
+                artifact_schema: "code-intel-sentrux-capability-artifact.v2",
                 artifact_type: "provider.sentrux.capability-artifact",
                 // Was 8 MiB until issue #383/#386: `outputs.structuredData`
                 // now legitimately carries a capability's full output (see
@@ -574,12 +594,17 @@ fn validate_evidence_payload(bytes: &[u8]) -> Result<(), String> {
 
 fn validate_sentrux_command_observation(bytes: &[u8]) -> Result<(), String> {
     let value = parse_contract_json(bytes, "Sentrux command observation")?;
+    validate_sentrux_command_observation_value(&value)
+}
+
+fn validate_sentrux_command_observation_value(value: &Value) -> Result<(), String> {
     exact_object_keys(
-        &value,
-        &["schema", "snapshotIdentity", "commands"],
+        value,
+        &["schema", "gatePolicy", "snapshotIdentity", "commands"],
         "Sentrux command observation",
     )?;
-    if value["schema"] != "code-intel-sentrux-command-observation.v1"
+    sentrux_gate_policy::validate_identity(&value["gatePolicy"])?;
+    if value["schema"] != "code-intel-sentrux-command-observation.v2"
         || !value["snapshotIdentity"].as_str().is_some_and(valid_digest)
     {
         return Err("Sentrux command observation header is invalid".into());
@@ -590,11 +615,7 @@ fn validate_sentrux_command_observation(bytes: &[u8]) -> Result<(), String> {
         .ok_or("Sentrux command observation must contain gate and check")?;
     let mut seen = BTreeSet::new();
     for command in commands {
-        let mut expected_fields = vec!["id", "argv", "exitCode", "success", "stdout", "stderr"];
-        if command.get("structuredData").is_some() {
-            expected_fields.push("structuredData");
-        }
-        exact_object_keys(command, &expected_fields, "Sentrux command result")?;
+        validate_sentrux_command(command)?;
         let id = command["id"]
             .as_str()
             .filter(|id| matches!(*id, "gate" | "check"))
@@ -602,35 +623,178 @@ fn validate_sentrux_command_observation(bytes: &[u8]) -> Result<(), String> {
         if !seen.insert(id) {
             return Err("Sentrux command ids must be unique".into());
         }
-        if !sentrux_command_result_is_valid(command, id) {
-            return Err("Sentrux command result is invalid".into());
+        if let Some(result) = command.get("admission").filter(|result| !result.is_null()) {
+            if result["policy"] != value["gatePolicy"] {
+                return Err("Sentrux command policy differs from observation policy".into());
+            }
         }
     }
     Ok(())
 }
 
-fn sentrux_command_result_is_valid(command: &Value, id: &str) -> bool {
-    let known_argv = command["argv"] == json!(["sentrux", id, "."])
-        || command["argv"] == json!(["code-intel", "sentrux", id, "."]);
-    let exit_code_ok = command["exitCode"].is_null() || command["exitCode"].as_i64().is_some();
-    let structured_data_ok = command
-        .get("structuredData")
-        .is_none_or(|value| value.is_null() || value.is_object() || value.is_array());
-    known_argv
-        && exit_code_ok
-        && command["success"].is_boolean()
-        && command["stdout"].is_string()
-        && command["stderr"].is_string()
-        && structured_data_ok
+fn validate_sentrux_command(command: &Value) -> Result<(), String> {
+    exact_object_keys(
+        command,
+        &[
+            "id",
+            "argv",
+            "exitCode",
+            "success",
+            "stdout",
+            "stderr",
+            "governed",
+            "violations",
+            "advisories",
+            "admission",
+            "outputSummary",
+            "structuredData",
+        ],
+        "Sentrux command result",
+    )?;
+    let id = command["id"]
+        .as_str()
+        .filter(|id| !id.is_empty())
+        .ok_or("Sentrux command id is invalid")?;
+    let argv = &command["argv"];
+    let native = argv == &json!(["code-intel", "sentrux", id, "."])
+        || (id == "rescan" && argv == &json!(["code-intel", "sentrux", "scan", "."]));
+    let external = argv == &json!(["sentrux", id, ".", "--json"]);
+    if (!native && !external)
+        || !command["success"].is_boolean()
+        || !command["governed"].is_boolean()
+        || !command["stdout"].is_string()
+        || !command["stderr"].is_string()
+        || !(command["structuredData"].is_null()
+            || command["structuredData"].is_object()
+            || command["structuredData"].is_array())
+        || !(command["exitCode"].is_null()
+            || command["exitCode"]
+                .as_i64()
+                .is_some_and(|code| i32::try_from(code).is_ok()))
+        || (command["success"] == true && command["exitCode"] != 0)
+        || (command["success"] == false && command["exitCode"] == 0)
+    {
+        return Err("Sentrux command outcome/fields are invalid".into());
+    }
+    validate_sentrux_violations(&command["violations"])?;
+    validate_sentrux_violations(&command["advisories"])?;
+    validate_sentrux_output_summary(&command["outputSummary"], command)?;
+    let result = &command["admission"];
+    if !result.is_null() {
+        if !matches!(id, "gate" | "check") {
+            return Err("non-gate Sentrux command cannot claim admission".into());
+        }
+        sentrux_gate_policy::validate_result(result)?;
+        if command["violations"] != result["blockingViolations"]
+            || command["advisories"] != result["advisories"]
+            || (result["verdict"] == "pass"
+                && (command["success"] != true || command["governed"] != true))
+            || (result["verdict"] == "fail" && command["success"] != false)
+            || (result["verdict"] != "unknown" && command["outputSummary"]["complete"] != true)
+            || (id == "gate" && result["ruleScope"] != "baseline_ratchet")
+            || (id == "check" && result["ruleScope"] != "static_and_ratchet")
+        {
+            return Err("Sentrux command contradicts its typed admission".into());
+        }
+    } else if !command["advisories"].as_array().unwrap().is_empty() {
+        return Err("Sentrux command advisory requires typed admission".into());
+    }
+    Ok(())
+}
+
+fn validate_sentrux_violations(value: &Value) -> Result<(), String> {
+    for violation in value
+        .as_array()
+        .ok_or("Sentrux violations must be an array")?
+    {
+        exact_object_keys(
+            violation,
+            &["rule", "message", "targets"],
+            "Sentrux violation",
+        )?;
+        if !["rule", "message"].iter().all(|key| {
+            violation[*key]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+        }) || !violation["targets"].as_array().is_some_and(|targets| {
+            targets
+                .iter()
+                .all(|target| target.as_str().is_some_and(|value| !value.is_empty()))
+        }) {
+            return Err("Sentrux violation fields are invalid".into());
+        }
+    }
+    Ok(())
+}
+
+fn validate_sentrux_output_summary(summary: &Value, command: &Value) -> Result<(), String> {
+    exact_object_keys(
+        summary,
+        &[
+            "authority",
+            "complete",
+            "bounded",
+            "limitBytes",
+            "totalBytes",
+            "stdout",
+            "stderr",
+            "note",
+        ],
+        "Sentrux output summary",
+    )?;
+    let limit = summary["limitBytes"]
+        .as_u64()
+        .filter(|limit| *limit == 16 * 1024 * 1024)
+        .ok_or("Sentrux output summary limit is invalid")?;
+    let mut total = 0u64;
+    let mut complete = true;
+    for stream in ["stdout", "stderr"] {
+        let metadata = &summary[stream];
+        exact_object_keys(
+            metadata,
+            &["bytes", "sha256", "preview", "previewBytes"],
+            "Sentrux output stream",
+        )?;
+        let bytes = metadata["bytes"]
+            .as_u64()
+            .ok_or("Sentrux output byte count is invalid")?;
+        total = total
+            .checked_add(bytes)
+            .ok_or("Sentrux output byte count overflow")?;
+        complete &= bytes <= limit;
+        let preview = metadata["preview"]
+            .as_str()
+            .ok_or("Sentrux output preview is invalid")?;
+        if !metadata["sha256"].as_str().is_some_and(valid_digest)
+            || metadata["preview"] != command[stream]
+            || metadata["previewBytes"].as_u64() != Some(preview.len() as u64)
+        {
+            return Err("Sentrux output stream metadata is invalid".into());
+        }
+    }
+    if summary["authority"] != "metadata_only"
+        || summary["complete"] != complete
+        || summary["bounded"] != !complete
+        || summary["totalBytes"] != total
+        || !summary["note"].is_string()
+    {
+        return Err("Sentrux output summary completeness is inconsistent".into());
+    }
+    Ok(())
 }
 
 fn validate_sentrux_capability_artifact(bytes: &[u8]) -> Result<(), String> {
     let value = parse_contract_json(bytes, "Sentrux capability artifact")?;
+    validate_sentrux_capability_artifact_value(&value)
+}
+
+fn validate_sentrux_capability_artifact_value(value: &Value) -> Result<(), String> {
     exact_object_keys(
-        &value,
+        value,
         &[
             "schema",
             "contractVersion",
+            "gatePolicy",
             "capabilityId",
             "operation",
             "runId",
@@ -646,43 +810,280 @@ fn validate_sentrux_capability_artifact(bytes: &[u8]) -> Result<(), String> {
         ],
         "Sentrux capability artifact",
     )?;
-    if value["schema"] != "code-intel-sentrux-capability-artifact.v1"
-        || value["contractVersion"] != 1
-        || !value["capabilityId"]
-            .as_str()
-            .is_some_and(|id| !id.is_empty() && id.starts_with("sentrux."))
-        || !value["operation"]
-            .as_str()
-            .is_some_and(|operation| !operation.is_empty())
-        || !value["runId"]
-            .as_str()
-            .is_some_and(|run_id| !run_id.is_empty())
+    sentrux_gate_policy::validate_identity(&value["gatePolicy"])?;
+    let capability_id = value["capabilityId"]
+        .as_str()
+        .ok_or("Sentrux capability id is invalid")?;
+    let operation = value["operation"]
+        .as_str()
+        .ok_or("Sentrux operation is invalid")?;
+    let expected_operation = match capability_id {
+        "sentrux.baseline_save" => "gate_save",
+        "sentrux.gate"
+        | "sentrux.check"
+        | "sentrux.scan"
+        | "sentrux.health"
+        | "sentrux.dsm"
+        | "sentrux.check_rules"
+        | "sentrux.rescan"
+        | "sentrux.git_stats"
+        | "sentrux.evolution"
+        | "sentrux.test_gaps"
+        | "sentrux.what_if"
+        | "sentrux.session_start"
+        | "sentrux.session_end"
+        | "sentrux.provider_discovery" => &capability_id[8..],
+        _ => return Err("Sentrux capability id is unknown".into()),
+    };
+    let status = value["status"].as_str().unwrap_or("");
+    if value["schema"] != "code-intel-sentrux-capability-artifact.v2"
+        || value["contractVersion"] != 2
+        || operation != expected_operation
+        || !value["runId"].as_str().is_some_and(|id| !id.is_empty())
         || !value["snapshotIdentity"].as_str().is_some_and(valid_digest)
-        || !value["provider"].is_object()
         || !matches!(
-            value["status"].as_str(),
-            Some(
-                "succeeded" | "degraded" | "unavailable" | "skipped" | "not_applicable" | "failed"
-            )
+            status,
+            "succeeded" | "degraded" | "unavailable" | "skipped" | "not_applicable" | "failed"
         )
         || !matches!(
             value["authority"].as_str(),
             Some("authoritative" | "fallback" | "compatibility" | "declared_only")
         )
-        || !value["inputs"].is_object()
-        || !value["outputs"].is_object()
-        || if value["status"] == "succeeded" {
-            !value["failure"].is_null()
-        } else {
-            !value["failure"].is_object()
-        }
-        || !value["freshness"].is_object()
-        || !value["decisionConsumers"].is_array()
     {
-        return Err("Sentrux capability artifact header or envelope fields are invalid".into());
+        return Err("Sentrux capability artifact header is invalid".into());
     }
-    if value["status"] == "succeeded" && value["outputs"].as_object().is_none_or(|v| v.is_empty()) {
-        return Err("successful Sentrux capability artifact must contain outputs".into());
+    let provider = &value["provider"];
+    exact_object_keys(
+        provider,
+        &["mode", "id", "version", "digest"],
+        "Sentrux capability provider",
+    )?;
+    let provider_ok = match provider["mode"].as_str() {
+        Some("builtin") => provider["id"] == "sentrux-native" && provider["version"] == "3.0.0",
+        Some("external") => {
+            provider["id"] == "sentrux.command-adapter" && provider["version"] == "1.0.0"
+        }
+        Some("lite_fallback") => {
+            provider["id"] == "sentrux.lite-capabilities" && provider["version"] == "1.0.0"
+        }
+        _ => false,
+    };
+    if !provider_ok || !provider["digest"].as_str().is_some_and(valid_digest) {
+        return Err("Sentrux capability provider identity is invalid".into());
+    }
+    exact_object_keys(
+        &value["inputs"],
+        &["snapshotIdentity"],
+        "Sentrux capability inputs",
+    )?;
+    exact_object_keys(
+        &value["freshness"],
+        &["status", "evaluatedAt", "consumedSnapshotIdentity"],
+        "Sentrux capability freshness",
+    )?;
+    if value["inputs"]["snapshotIdentity"] != value["snapshotIdentity"]
+        || value["freshness"]["consumedSnapshotIdentity"] != value["snapshotIdentity"]
+        || value["freshness"]["status"] != "current"
+        || !value["freshness"]["evaluatedAt"].is_null()
+    {
+        return Err("Sentrux capability snapshot/freshness is inconsistent".into());
+    }
+    let outputs = &value["outputs"];
+    exact_object_keys(
+        outputs,
+        &["command", "verdict", "outputSummary", "structuredData"],
+        "Sentrux capability outputs",
+    )?;
+    if !matches!(
+        outputs["verdict"].as_str(),
+        Some("pass" | "fail" | "unknown")
+    ) {
+        return Err("Sentrux capability verdict is invalid".into());
+    }
+    if outputs["command"].is_null() {
+        if status == "succeeded"
+            || outputs["verdict"] != "unknown"
+            || !outputs["outputSummary"].is_null()
+            || !outputs["structuredData"].is_null()
+        {
+            return Err("Sentrux capability has no command evidence for its outcome".into());
+        }
+    } else {
+        let command = &outputs["command"];
+        validate_sentrux_command(command)?;
+        if command["id"] != operation
+            || command["outputSummary"] != outputs["outputSummary"]
+            || command["structuredData"] != outputs["structuredData"]
+            || (status == "succeeded"
+                && (command["success"] != true
+                    || outputs["verdict"] != "pass"
+                    || command["outputSummary"]["complete"] != true))
+            || (status == "degraded" && outputs["verdict"] != "unknown")
+            || (status == "failed" && command["success"] != false)
+        {
+            return Err("Sentrux capability outcome contradicts its command".into());
+        }
+        if status == "succeeded" {
+            validate_sentrux_measurement(
+                &outputs["structuredData"],
+                operation,
+                provider["mode"] == "builtin",
+            )?;
+        }
+        if matches!(operation, "gate" | "check") {
+            let result = &command["admission"];
+            if outputs["verdict"] != "unknown"
+                && (result.is_null() || result["verdict"] != outputs["verdict"])
+            {
+                return Err(
+                    "Sentrux capability gate verdict requires matching typed admission".into(),
+                );
+            }
+        }
+        if let Some(result) = command.get("admission").filter(|result| !result.is_null()) {
+            if result["policy"] != value["gatePolicy"] {
+                return Err("Sentrux capability gate policy contradicts its admission".into());
+            }
+        }
+    }
+    if status == "succeeded" {
+        if !value["failure"].is_null() {
+            return Err("successful Sentrux capability cannot carry a failure".into());
+        }
+    } else {
+        exact_object_keys(
+            &value["failure"],
+            &["kind", "message", "retryable"],
+            "Sentrux capability failure",
+        )?;
+        if !value["failure"]["message"]
+            .as_str()
+            .is_some_and(|message| !message.is_empty())
+            || !value["failure"]["retryable"].is_boolean()
+            || !matches!(
+                value["failure"]["kind"].as_str(),
+                Some(
+                    "degraded"
+                        | "not_applicable"
+                        | "provider_unavailable"
+                        | "config_error"
+                        | "local_tool_error"
+                        | "provider_error"
+                )
+            )
+            || (status == "unavailable" && value["failure"]["kind"] != "provider_unavailable")
+            || (status == "not_applicable" && value["failure"]["kind"] != "not_applicable")
+        {
+            return Err("Sentrux capability failure is invalid".into());
+        }
+    }
+    let consumers = value["decisionConsumers"]
+        .as_array()
+        .filter(|items| !items.is_empty())
+        .ok_or("Sentrux capability decision consumers are invalid")?;
+    let mut seen = BTreeSet::new();
+    if !consumers.iter().all(|item| {
+        item.as_str()
+            .is_some_and(|id| !id.is_empty() && seen.insert(id))
+    }) {
+        return Err("Sentrux capability decision consumers must be unique identifiers".into());
+    }
+    Ok(())
+}
+
+fn validate_sentrux_measurement(
+    data: &Value,
+    operation: &str,
+    builtin: bool,
+) -> Result<(), String> {
+    if data["schema"] == "code-intel-sentrux-gate-result.v1" {
+        sentrux_gate_policy::validate_result(data)?;
+    }
+    let measurement = sentrux_gate_policy::measurement();
+    if builtin && matches!(operation, "scan" | "rescan") && data.get("engine").is_none() {
+        return Err("native Sentrux scan has no measurement engine identity".into());
+    }
+    if let Some(engine) = data.get("engine") {
+        exact_object_keys(engine, &["id", "version"], "Sentrux measurement engine")?;
+        if engine["id"] != measurement["engineId"]
+            || engine["version"] != measurement["engineVersion"]
+        {
+            return Err("Sentrux measurement engine is unsupported".into());
+        }
+    }
+    let Some(detail) = data.get("quality_signal_detail") else {
+        if builtin && matches!(operation, "scan" | "rescan") {
+            return Err("native Sentrux scan has no known measurement profile".into());
+        }
+        return Ok(());
+    };
+    exact_object_keys(
+        detail,
+        &[
+            "schema",
+            "formula_version",
+            "provider_version",
+            "score",
+            "bottleneck",
+            "completeness",
+            "root_causes",
+        ],
+        "Sentrux Quality measurement",
+    )?;
+    if detail["schema"] != "code-intel-sentrux-quality-signal.v1"
+        || detail["formula_version"] != measurement["formulaVersion"]
+        || detail["provider_version"] != measurement["providerVersion"]
+        || detail["completeness"] != "partial"
+        || detail["score"] != data["quality_signal"]
+        || !detail["score"].as_u64().is_some_and(|score| score <= 10000)
+        || !matches!(
+            detail["bottleneck"].as_str(),
+            Some("modularity" | "acyclicity" | "depth" | "equality" | "redundancy")
+        )
+    {
+        return Err("Sentrux Quality measurement identity/score is invalid".into());
+    }
+    let causes = &detail["root_causes"];
+    exact_object_keys(
+        causes,
+        &[
+            "modularity",
+            "acyclicity",
+            "depth",
+            "equality",
+            "redundancy",
+        ],
+        "Sentrux Quality root causes",
+    )?;
+    for factor in [
+        "modularity",
+        "acyclicity",
+        "depth",
+        "equality",
+        "redundancy",
+    ] {
+        let cause = &causes[factor];
+        let mut fields = vec!["score", "raw", "completeness"];
+        if factor == "equality" {
+            fields.push("basis");
+        }
+        if factor == "redundancy" {
+            fields.push("note");
+        }
+        exact_object_keys(cause, &fields, "Sentrux Quality factor")?;
+        if !cause["score"].as_u64().is_some_and(|score| score <= 10000)
+            || !cause["raw"].as_f64().is_some_and(f64::is_finite)
+            || cause["completeness"]
+                != (if factor == "redundancy" {
+                    "partial"
+                } else {
+                    "full"
+                })
+            || (factor == "equality" && cause["basis"] != "file_loc_fallback")
+            || (factor == "redundancy" && !cause["note"].is_string())
+        {
+            return Err("Sentrux Quality factor/profile is invalid".into());
+        }
     }
     Ok(())
 }
@@ -3442,11 +3843,10 @@ mod tests {
     /// baseline to compare against — tracked in #210, not claimed here.
     ///
     /// Tracked by https://github.com/2233admin/code-intel-pipeline/issues/206.
-    const AWAITING_SCHEMA: [&str; 5] = [
+    const AWAITING_SCHEMA: [&str; 4] = [
         "code-intel-anchor-verification.v1",
         "code-intel-file-inventory.v1",
         "code-intel-method-catalog.v1",
-        "code-intel-sentrux-command-observation.v1",
         "code-intel-surgery-plan.v1",
     ];
 
@@ -4104,113 +4504,120 @@ mod tests {
         }
     }
 
-    #[test]
-    fn sentrux_command_observation_v1_preserves_optional_structured_data_contract() {
-        let reference = json!({
-            "artifactSchema":"code-intel-sentrux-command-observation.v1",
-            "type":"provider.sentrux.command-observation"
-        });
-        let contract = registered_contract(&reference).expect("Sentrux observation is registered");
-        let base = json!({
-            "schema":"code-intel-sentrux-command-observation.v1",
-            "snapshotIdentity":"a".repeat(64),
-            "commands":[
-                {
-                    "id":"gate",
-                    "argv":["code-intel", "sentrux", "gate", "."],
-                    "exitCode":0,
-                    "success":true,
-                    "stdout":"ok",
-                    "stderr":""
-                },
-                {
-                    "id":"check",
-                    "argv":["code-intel", "sentrux", "check", "."],
-                    "exitCode":0,
-                    "success":true,
-                    "stdout":"ok",
-                    "stderr":""
-                }
-            ]
-        });
-        (contract.validate_payload)(&serde_json::to_vec(&base).unwrap())
-            .expect("pre-structuredData v1 observation must remain valid");
-
-        for structured_data in [Value::Null, json!({"quality_signal": 9200}), json!([1, 2])] {
-            let mut with_structured_data = base.clone();
-            for command in with_structured_data["commands"].as_array_mut().unwrap() {
-                command["structuredData"] = structured_data.clone();
-            }
-            (contract.validate_payload)(&serde_json::to_vec(&with_structured_data).unwrap())
-                .expect("null, object, and array structuredData must be valid");
-        }
-
-        let mut scalar_structured_data = base.clone();
-        scalar_structured_data["commands"][0]["structuredData"] = json!(true);
-        assert!(
-            (contract.validate_payload)(&serde_json::to_vec(&scalar_structured_data).unwrap())
-                .is_err(),
-            "scalar structuredData must be rejected"
-        );
-
-        let mut unexpected_field = base;
-        unexpected_field["commands"][0]["unexpected"] = json!(true);
-        assert!(
-            (contract.validate_payload)(&serde_json::to_vec(&unexpected_field).unwrap()).is_err(),
-            "v1 command observations must still reject unknown fields"
-        );
+    fn diagnostic_command(id: &str) -> Value {
+        let stdout = "{}";
+        let stream = |text: &str| {
+            json!({
+                "bytes":text.len(),"sha256":sha256_hex(text.as_bytes()),
+                "preview":text,"previewBytes":text.len()
+            })
+        };
+        json!({
+            "id":id,"argv":["code-intel","sentrux",id,"."],"exitCode":0,"success":true,
+            "stdout":stdout,"stderr":"","governed":false,"violations":[],"advisories":[],
+            "admission":null,"structuredData":{},
+            "outputSummary":{"authority":"metadata_only","complete":true,"bounded":false,
+                "limitBytes":16777216,"totalBytes":2,"stdout":stream(stdout),"stderr":stream(""),"note":"diagnostic capture"}
+        })
     }
 
     #[test]
-    fn sentrux_capability_artifact_contract_accepts_success_and_requires_failure_details() {
+    fn current_sentrux_observation_rejects_unapproved_policy_and_old_authority_contracts() {
         let reference = json!({
-            "artifactSchema":"code-intel-sentrux-capability-artifact.v1",
+            "artifactSchema":"code-intel-sentrux-command-observation.v2",
+            "type":"provider.sentrux.command-observation"
+        });
+        let contract = registered_contract(&reference).unwrap();
+        let base = json!({
+            "schema":"code-intel-sentrux-command-observation.v2",
+            "gatePolicy":sentrux_gate_policy::identity(),"snapshotIdentity":"a".repeat(64),
+            "commands":[diagnostic_command("gate"),diagnostic_command("check")]
+        });
+        (contract.validate_payload)(&serde_json::to_vec(&base).unwrap()).unwrap();
+        let mut missing = base.clone();
+        missing.as_object_mut().unwrap().remove("gatePolicy");
+        assert!((contract.validate_payload)(&serde_json::to_vec(&missing).unwrap()).is_err());
+        let mut forged = base;
+        forged["gatePolicy"]["sha256"] = json!("f".repeat(64));
+        assert!((contract.validate_payload)(&serde_json::to_vec(&forged).unwrap()).is_err());
+        for (schema, artifact_type) in [
+            (
+                "code-intel-sentrux-command-observation.v1",
+                "provider.sentrux.command-observation",
+            ),
+            (
+                "code-intel-sentrux-capability-artifact.v1",
+                "provider.sentrux.capability-artifact",
+            ),
+        ] {
+            assert!(
+                registered_contract(&json!({"artifactSchema":schema,"type":artifact_type}))
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn capability_capture_cannot_forge_gate_pass_or_snapshot_or_command_outcome() {
+        let reference = json!({
+            "artifactSchema":"code-intel-sentrux-capability-artifact.v2",
             "type":"provider.sentrux.capability-artifact"
         });
-        let contract = registered_contract(&reference).expect("Sentrux artifact is registered");
+        let contract = registered_contract(&reference).unwrap();
+        let command = diagnostic_command("health");
         let base = json!({
-            "schema":"code-intel-sentrux-capability-artifact.v1",
-            "contractVersion":1,
-            "capabilityId":"sentrux.scan",
-            "operation":"scan",
-            "runId":"run-1",
-            "snapshotIdentity":"a".repeat(64),
-            "provider":{
-                "mode":"builtin",
-                "id":"sentrux.builtin",
-                "version":"1.0.0",
-                "digest":"b".repeat(64)
-            },
-            "status":"succeeded",
-            "authority":"authoritative",
-            "inputs":{},
-            "outputs":{"artifacts":[]},
-            "failure":null,
-            "freshness":{
-                "status":"current",
-                "evaluatedAt":"2026-08-18T00:00:00Z",
-                "consumedSnapshotIdentity":"a".repeat(64)
-            },
-            "decisionConsumers":["release_gate"]
+            "schema":"code-intel-sentrux-capability-artifact.v2","contractVersion":2,
+            "gatePolicy":sentrux_gate_policy::identity(),"capabilityId":"sentrux.health","operation":"health",
+            "runId":"run-1","snapshotIdentity":"a".repeat(64),
+            "provider":{"mode":"builtin","id":"sentrux-native","version":"3.0.0","digest":"b".repeat(64)},
+            "status":"succeeded","authority":"authoritative",
+            "inputs":{"snapshotIdentity":"a".repeat(64)},
+            "outputs":{"command":command,"verdict":"pass","outputSummary":command["outputSummary"],"structuredData":{}},
+            "failure":null,"freshness":{"status":"current","evaluatedAt":null,"consumedSnapshotIdentity":"a".repeat(64)},
+            "decisionConsumers":["report"]
         });
-        (contract.validate_payload)(&serde_json::to_vec(&base).unwrap())
-            .expect("successful Sentrux artifact with null failure must pass");
-
-        let mut failed = base.clone();
-        failed["status"] = json!("failed");
-        failed["failure"] = json!({
-            "kind":"provider_error",
-            "message":"command failed",
-            "retryable":true
+        (contract.validate_payload)(&serde_json::to_vec(&base).unwrap()).unwrap();
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "code-intel-sentrux-ref-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let mut rebound = base.clone();
+        for path in [
+            vec!["snapshotIdentity"],
+            vec!["inputs", "snapshotIdentity"],
+            vec!["freshness", "consumedSnapshotIdentity"],
+        ] {
+            let mut field = &mut rebound;
+            for key in path {
+                field = &mut field[key];
+            }
+            *field = json!("b".repeat(64));
+        }
+        let bytes = serde_json::to_vec(&rebound).unwrap();
+        std::fs::write(root.join("capability.json"), &bytes).unwrap();
+        let reference = json!({
+            "schema":"code-intel-artifact-ref.v1","artifactSchema":"code-intel-sentrux-capability-artifact.v2",
+            "type":"provider.sentrux.capability-artifact","path":"capability.json",
+            "sha256":sha256_hex(&bytes),"consumedSnapshotIdentity":"a".repeat(64)
         });
-        (contract.validate_payload)(&serde_json::to_vec(&failed).unwrap())
-            .expect("failed Sentrux artifact with failure details must pass");
-
-        failed["failure"] = Value::Null;
-        assert!(
-            (contract.validate_payload)(&serde_json::to_vec(&failed).unwrap()).is_err(),
-            "failed Sentrux artifact must not silently omit failure details"
-        );
+        assert!(verify_artifact_ref(&root, &"a".repeat(64), contract, &reference).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+        let mut gate = base.clone();
+        gate["capabilityId"] = json!("sentrux.gate");
+        gate["operation"] = json!("gate");
+        gate["outputs"]["command"] = diagnostic_command("gate");
+        assert!((contract.validate_payload)(&serde_json::to_vec(&gate).unwrap()).is_err());
+        let mut stale = base.clone();
+        stale["inputs"]["snapshotIdentity"] = json!("f".repeat(64));
+        assert!((contract.validate_payload)(&serde_json::to_vec(&stale).unwrap()).is_err());
+        let mut contradictory = base;
+        contradictory["outputs"]["command"]["success"] = json!(false);
+        assert!((contract.validate_payload)(&serde_json::to_vec(&contradictory).unwrap()).is_err());
     }
 
     fn deletion_file(path: &str, base: &str, result: &str, added: Vec<&str>) -> Value {
