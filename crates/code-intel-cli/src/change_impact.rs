@@ -5,6 +5,8 @@ use serde_json::{json, Value};
 
 use crate::committed_evidence::{self, CommittedEvidence, EvidenceError};
 use crate::impact_graph::{impacted_files, reverse_import_graph, select_tests, test_commands};
+#[path = "sentrux_gate_policy.rs"]
+mod sentrux_gate_policy;
 
 const SENTRUX_CAPABILITY_ARTIFACT_SCHEMA: &str = "code-intel-sentrux-capability-artifact.v2";
 const SENTRUX_CAPABILITY_ARTIFACT_TYPE: &str = "provider.sentrux.capability-artifact";
@@ -493,7 +495,7 @@ fn sentrux_signal(name: &str, payload: Option<&Value>) -> Value {
         });
     };
     let capability_status = payload["status"].as_str().unwrap_or("unknown");
-    let current = crate::sentrux_gate::sentrux_gate_policy::current_capability(payload);
+    let current = sentrux_gate_policy::current_capability(payload);
     let authority = if current {
         payload["authority"].as_str().unwrap_or("unknown")
     } else {
@@ -591,10 +593,10 @@ mod tests {
             "status":"succeeded",
             "schema":"code-intel-sentrux-capability-artifact.v2",
             "contractVersion":2,
-            "gatePolicy":crate::sentrux_gate::sentrux_gate_policy::identity(),
+            "gatePolicy":sentrux_gate_policy::identity(),
             "snapshotIdentity":"a".repeat(64),
             "inputs":{"snapshotIdentity":"a".repeat(64)},
-            "provider":{"mode":"builtin","id":crate::sentrux_gate::ENGINE_ID,"version":crate::sentrux_gate::ENGINE_VERSION},
+            "provider":{"mode":"builtin","id":sentrux_gate_policy::measurement()["engineId"],"version":sentrux_gate_policy::measurement()["engineVersion"]},
             "authority":"authoritative",
             "freshness":{"status":"current","consumedSnapshotIdentity":"a".repeat(64)},
             "outputs":{"command":{"stdout":"{\"candidateTests\":[\"tests/forged.rs\"]}"}}

@@ -30,10 +30,10 @@ use serde_json::{json, Value};
 
 use crate::capability::sha256_hex;
 use crate::committed_evidence::{self, CommittedEvidence};
-use crate::sentrux_gate::sentrux_gate_policy::{
-    capability_admission, current_capability, validated_admission,
-};
+#[path = "sentrux_gate_policy.rs"]
+mod sentrux_gate_policy;
 use crate::snapshot;
+use sentrux_gate_policy::{capability_admission, current_capability, validated_admission};
 
 /// The versioned, snapshot-bound artifact this module produces.
 pub(crate) const PROJECTION_SCHEMA: &str = "code-intel-quality-signal-projection.v2";
@@ -236,7 +236,7 @@ pub(crate) fn build(request: &ProjectionRequest<'_>) -> Result<Value, Projection
     let orca_event = json!({
         "schema": ORCA_EVENT_SCHEMA,
         "contractVersion": ORCA_EVENT_CONTRACT_VERSION,
-        "gatePolicy": crate::sentrux_gate::sentrux_gate_policy::identity(),
+        "gatePolicy": sentrux_gate_policy::identity(),
         "eventType": "quality_signal_projection",
         "status": completeness,
         "snapshotIdentity": request.evidence.snapshot_identity(),
@@ -273,7 +273,7 @@ pub(crate) fn build(request: &ProjectionRequest<'_>) -> Result<Value, Projection
         "completeness": completeness,
         "diagnostics": diagnostics,
         "qualitySignal": quality_signal,
-        "gatePolicy": crate::sentrux_gate::sentrux_gate_policy::identity(),
+        "gatePolicy": sentrux_gate_policy::identity(),
         "admission": admission,
         "findings": findings,
         "orcaEvent": orca_event,

@@ -284,8 +284,7 @@ pub(crate) fn current_structural_policy(structural: &Value, snapshot: &Value) ->
     if structural["schema"] != "code-intel-structural-evidence-payload.v2"
         || snapshot.as_str().is_none_or(str::is_empty)
         || structural["snapshotIdentity"] != *snapshot
-        || crate::sentrux_gate::sentrux_gate_policy::validate_identity(&structural["gatePolicy"])
-            .is_err()
+        || validate_identity(&structural["gatePolicy"]).is_err()
     {
         return false;
     }
@@ -311,7 +310,7 @@ pub(crate) fn current_structural_policy(structural: &Value, snapshot: &Value) ->
             return false;
         }
         let result = &entry["admission"];
-        if crate::sentrux_gate::sentrux_gate_policy::validate_result(result).is_err()
+        if validate_result(result).is_err()
             || result["policy"] != structural["gatePolicy"]
             || result["current"]["sourceCommit"] != structural["provenance"]["sourceRevision"]
             || (kind == "sentrux_gate" && result["ruleScope"] != "baseline_ratchet")
@@ -347,8 +346,7 @@ pub(crate) fn current_structural_policy(structural: &Value, snapshot: &Value) ->
 pub(crate) fn current_capability(payload: &Value) -> bool {
     payload["schema"] == "code-intel-sentrux-capability-artifact.v2"
         && payload["contractVersion"] == 2
-        && crate::sentrux_gate::sentrux_gate_policy::validate_identity(&payload["gatePolicy"])
-            .is_ok()
+        && validate_identity(&payload["gatePolicy"]).is_ok()
         && payload["freshness"]["status"] == "current"
         && payload["snapshotIdentity"]
             .as_str()
@@ -359,8 +357,8 @@ pub(crate) fn current_capability(payload: &Value) -> bool {
             })
         && match payload["provider"]["mode"].as_str() {
             Some("builtin") => {
-                payload["provider"]["id"] == crate::sentrux_gate::ENGINE_ID
-                    && payload["provider"]["version"] == crate::sentrux_gate::ENGINE_VERSION
+                payload["provider"]["id"] == measurement()["engineId"]
+                    && payload["provider"]["version"] == measurement()["engineVersion"]
             }
             Some("external") => {
                 payload["provider"]["id"] == "sentrux.command-adapter"
@@ -380,7 +378,7 @@ pub(crate) fn validated_admission(payload: &Value) -> Option<&Value> {
     }
     let command = &payload["outputs"]["command"];
     let result = command.get("admission")?;
-    crate::sentrux_gate::sentrux_gate_policy::validate_result(result).ok()?;
+    validate_result(result).ok()?;
     if result["policy"] != payload["gatePolicy"]
         || command["violations"] != result["blockingViolations"]
         || command["advisories"] != result["advisories"]

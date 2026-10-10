@@ -6,7 +6,9 @@ use std::path::Path;
 use crate::adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterError, AdapterOutput};
 use crate::artifact_ref::VerifiedArtifact;
 use crate::audit_report::AuditReport;
-use crate::sentrux_gate::sentrux_gate_policy::current_structural_policy;
+#[path = "sentrux_gate_policy.rs"]
+mod sentrux_gate_policy;
+use sentrux_gate_policy::current_structural_policy;
 #[cfg(test)]
 #[path = "report_quality.rs"]
 mod report_quality;

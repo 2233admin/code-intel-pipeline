@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::run_commit;
+#[path = "sentrux_gate_policy.rs"]
+mod sentrux_gate_policy;
 
 use super::{absolute_existing_dir, resolve_artifact_root, Result};
 
@@ -45,7 +47,7 @@ pub(super) fn report(repo: &Path, artifact_root: Option<&Path>, json: bool) -> R
 
     let out = serde_json::json!({
         "schema": "code-intel-report.v2",
-        "gatePolicy": crate::sentrux_gate::sentrux_gate_policy::identity(),
+        "gatePolicy": sentrux_gate_policy::identity(),
         "repo": repo,
         "run": run_root.file_name().and_then(|name| name.to_str()),
         "hospital": hospital.to_json(),
@@ -222,14 +224,14 @@ fn project_sentrux_evidence(run_root: &Path, manifest: &Value, hospital: &Value)
                 continue;
             }
         };
-        if !crate::sentrux_gate::sentrux_gate_policy::current_capability(&payload) {
+        if !sentrux_gate_policy::current_capability(&payload) {
             unverified.push(serde_json::json!({
                 "reference": reference,
                 "reason": "Capability is historical, has an unknown policy/provider, or is not current; retained as diagnostic reference only, never current admission"
             }));
             continue;
         }
-        let admission = crate::sentrux_gate::sentrux_gate_policy::capability_admission(&payload);
+        let admission = sentrux_gate_policy::capability_admission(&payload);
         verified.push(serde_json::json!({
             "capabilityId": payload["capabilityId"],
             "operation": payload["operation"],
@@ -412,15 +414,15 @@ mod tests {
         let payload = json!({
             "schema":"code-intel-sentrux-capability-artifact.v2",
             "contractVersion":2,
-            "gatePolicy":crate::sentrux_gate::sentrux_gate_policy::identity(),
+            "gatePolicy":sentrux_gate_policy::identity(),
             "capabilityId":"sentrux.scan",
             "operation":"scan",
             "runId":"run-1",
             "snapshotIdentity":snapshot,
             "provider":{
                 "mode":"builtin",
-                "id":crate::sentrux_gate::ENGINE_ID,
-                "version":crate::sentrux_gate::ENGINE_VERSION,
+                "id":sentrux_gate_policy::measurement()["engineId"],
+                "version":sentrux_gate_policy::measurement()["engineVersion"],
                 "digest":"b".repeat(64)
             },
             "status":"succeeded",
@@ -467,8 +469,8 @@ mod tests {
             json!([{"rule":"quality_degraded","message":"Quality: 9000 -> 8800","targets":[]}]);
         let result = json!({
             "schema":"code-intel-sentrux-gate-result.v1",
-            "policy":crate::sentrux_gate::sentrux_gate_policy::identity(),
-            "measurement":crate::sentrux_gate::sentrux_gate_policy::measurement(),
+            "policy":sentrux_gate_policy::identity(),
+            "measurement":sentrux_gate_policy::measurement(),
             "baseline":{"schema":"code-intel-sentrux-baseline.v6","sha256":"b".repeat(64),"sourceCommit":"base","scope":"."},
             "current":{"sourceCommit":"head","scope":"."},"ruleScope":"baseline_ratchet",
             "comparisons":[
