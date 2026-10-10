@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Repowise minimum/no-downgrade 完整版本比较（#419/#424）**：新增纯 Rust `code-intel repowise-version` 叶命令，用 `pep440_rs` 比较完整 PEP 440 报告，避免 `0.55.0rc1` 被截断后误接纳、`0.55.0.post1` 被拒绝并降级；兼容探针及重装后比较只转发给打包原生 owner，缺失或过旧 owner 明确失败，无旧比较回退。复现覆盖公共 CLI、兼容入口及打包 install-smoke；pip 获取与 doctor 的 presence 语义不变。
 - 保留 `ureq` 3 迁移前的代理重定向契约：不能自动跟随的 `307/308 POST` 原样转发状态、正文与 `Location`，不误报 `502`、不重放 POST；继续保留 `301/302/303` 方法转换、允许的安全方法、四跳上限及相对 URL/query/fragment 解析。复用已锁定的 `url 2.5.8`，真实 CLI 回放覆盖上述边界，冻结旧母版不变（#417）。
-- 当前 Sentrux operation-trace 的 conformance 指针迁至真实 native/v2 公共边界测试；移除只靠 `contains(testName)` 匹配源码拼写的断言，保留真实文件 SHA、重复／遗漏操作与注册命令的完整性检查（#427）。历史 attestation、政策和 baseline 字节不变。
+- 当前 Sentrux operation-trace 的 conformance 指针迁至真实 native/v2 公共边界测试；同步仍被合同按当前字节核验的 native gate/DAG source bindings。移除只靠 `contains(testName)` 匹配源码拼写的断言，保留真实文件 SHA、重复／遗漏操作与注册命令的完整性检查（#427）。历史 attestation、政策和 baseline 字节不变。
 
 - **`snapshot identity` 的 explicit_overlay / 非 Git 路径峰值内存随整棵树内容线性放大（fixes #411，refs #403）**：`digest_worktree`/`digest_unversioned` 把每个 scoped 文件的完整字节留在 `records` 里，`hash_records` 再拼一份 `canonical`，一次性 `sha256_hex` 又 `to_vec` 一份并在 padding 时扩容。`content_contract.rs` 新增流式 `Sha256`（`update`/`update_framed`/`finish`），`sha256_hex` 改为其一次性包装；两处 digest 逐文件按同样的长度帧与顺序喂入 hasher，读完即丢。快照 identity 字节不变（新增固定 fixture 的 literal digest 钉住测试，并在本仓 b17d401 上前后二进制输出逐字节相同）。实测本仓（1070 文件，14.4 MiB）peak private 75.9→5.4 MiB；外加 256×1 MiB 未跟踪文件时 1563.3→5.4 MiB。#403 的宿主崩溃因果仍未定。
 - PR #414 合入同期有界 JSON 扫描修复时，将 SHA-256 实现与对应测试原样移至 `content_contract/sha256.rs`，与 JSON 校验并列作为共享内容契约的叶模块；保留 `capability` 的调用接口，避免新增 God file，结构阈值及 baseline 不变（#411）。
