@@ -126,7 +126,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "54160ea190d3354e460de225d1f0efee9512c116e6bf0b5e6996e0dddd2a9b86",
+        "sha256": "40328c46fe0c955617aaf9c094953898155cb9c9802455ab03f9df132a3c8506",
         "testName": "production_dag_output_commits_and_enters_the_authoritative_index"
       }
     },
@@ -259,7 +259,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "54160ea190d3354e460de225d1f0efee9512c116e6bf0b5e6996e0dddd2a9b86",
+        "sha256": "40328c46fe0c955617aaf9c094953898155cb9c9802455ab03f9df132a3c8506",
         "testName": "production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch"
       }
     }

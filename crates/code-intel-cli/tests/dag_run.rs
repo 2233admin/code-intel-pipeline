@@ -30,7 +30,7 @@ fn temp_dir() -> PathBuf {
     ))
 }
 
-fn doctor_tool_fixture(root: &Path, builtin_sentrux: bool) -> std::ffi::OsString {
+fn doctor_tool_fixture(root: &Path, builtin_sentrux: bool) -> PathBuf {
     let bin = root.join(if builtin_sentrux {
         "doctor-tools-ready"
     } else {
@@ -68,6 +68,11 @@ fn doctor_tool_fixture(root: &Path, builtin_sentrux: bool) -> std::ffi::OsString
             fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
         }
     }
+    bin
+}
+
+fn doctor_tool_path(root: &Path, builtin_sentrux: bool) -> std::ffi::OsString {
+    let bin = doctor_tool_fixture(root, builtin_sentrux);
     // Isolate doctor-only Python/Repowise availability; rg/git must remain
     // real. toolPathPrefix would also select the external Sentrux adapter.
     let binary_dir = PathBuf::from(env!("CARGO_BIN_EXE_code-intel"))
@@ -103,7 +108,7 @@ fn production_run_route_executes_snapshot_then_inventory() {
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
     save_baseline(&repo);
-    let doctor_tools = doctor_tool_fixture(&root, true);
+    let doctor_tools = doctor_tool_path(&root, true);
 
     let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
@@ -252,7 +257,7 @@ fn production_run_budget_reports_completed_failed_and_budget_stopped() {
         fs::create_dir_all(&authority).unwrap();
         fs::write(repo.join("README.md"), "fixture\n").unwrap();
         fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
-        let doctor_tools = doctor_tool_fixture(&root, true);
+        let doctor_tools = doctor_tool_path(&root, true);
 
         let output = common::cli()
             .args(["run", "execute", "--repo"])
@@ -337,7 +342,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     )
     .unwrap();
     save_baseline(&repo);
-    let doctor_tools = doctor_tool_fixture(&root, true);
+    let doctor_tools = doctor_tool_path(&root, true);
 
     let execution = common::cli()
         .args(["run", "execute", "--repo"])
@@ -635,7 +640,7 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
     save_baseline(&repo);
-    let completed_doctor_tools = doctor_tool_fixture(&root, true);
+    let completed_doctor_tools = doctor_tool_path(&root, true);
     let completed = common::cli()
         .args(["run", "execute", "--repo"])
         .arg(&repo)
@@ -655,7 +660,7 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
         String::from_utf8_lossy(&completed.stderr)
     );
 
-    let doctor_tools = doctor_tool_fixture(&root, false);
+    let doctor_tools = doctor_tool_path(&root, false);
 
     let output = common::cli()
         .args(["run", "execute", "--repo"])
@@ -812,7 +817,7 @@ fn optional_session_evidence_is_snapshot_bound_a03_verified_and_manifested() {
         String::from_utf8_lossy(&adapted.stderr)
     );
 
-    let doctor_tools = doctor_tool_fixture(&root, true);
+    let doctor_tools = doctor_tool_path(&root, true);
     let run = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&repo)
@@ -995,7 +1000,7 @@ fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::create_dir_all(&authority).unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
-    let doctor_tools = doctor_tool_fixture(&root, true);
+    let doctor_tools = doctor_tool_path(&root, true);
 
     let output = common::cli()
         .args(["run", "execute", "--repo"])
@@ -1119,7 +1124,7 @@ fn strict_profile_cannot_be_weakened_and_keeps_all_provider_nodes_required() {
     fs::create_dir_all(&authority).unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
     save_baseline(&repo);
-    let doctor_tools = doctor_tool_fixture(&root, true);
+    let doctor_tools = doctor_tool_path(&root, true);
 
     let output = common::cli()
         .args(["run", "execute", "--repo"])
@@ -1278,14 +1283,13 @@ fn native_dag_admits_quality_advisory_with_snapshot_bound_v2_artifact_refs() {
         source.push_str(&format!("// padding {i}\n"));
     }
     fs::write(repo.join("src/a.rs"), source).unwrap();
-    let tools = doctor_tool_fixture(&root, true);
+    let tools = doctor_tool_path(&root, true);
     let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&repo)
         .arg("--out")
         .arg(&out)
-        .arg("--doctor-tool-path-prefix")
-        .arg(tools)
+        .env("PATH", tools)
         .output()
         .unwrap();
     assert_eq!(
@@ -1609,15 +1613,14 @@ fn production_run_completes_on_a_linked_worktree_checkout() {
     // (`ls-files --others`) load-bearing rather than trivially empty.
     fs::write(linked.join("untracked.txt"), "scratch\n").unwrap();
     save_baseline(&linked);
-    let doctor_tools = doctor_tool_fixture(&root, true);
+    let doctor_tools = doctor_tool_path(&root, true);
 
     let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&linked)
         .arg("--out")
         .arg(&out)
-        .arg("--doctor-tool-path-prefix")
-        .arg(&doctor_tools)
+        .env("PATH", &doctor_tools)
         .output()
         .unwrap();
     assert_eq!(
