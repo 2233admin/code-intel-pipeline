@@ -493,7 +493,7 @@ fn sentrux_signal(name: &str, payload: Option<&Value>) -> Value {
         });
     };
     let capability_status = payload["status"].as_str().unwrap_or("unknown");
-    let current = crate::sentrux_quality_projection::current_capability(payload);
+    let current = crate::sentrux_gate::sentrux_gate_policy::current_capability(payload);
     let authority = if current {
         payload["authority"].as_str().unwrap_or("unknown")
     } else {

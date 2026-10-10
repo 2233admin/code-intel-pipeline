@@ -592,7 +592,7 @@
               "1a6dd09ff215d6b4966d57cd9ee37b0420b7aa26c52cf8577a589de7be92f293",
               "4bfbebebe9e80fa6821100dbb572542a314be399ae0f929bac455c8f1531c4b2",
               "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26",
-              "bcc0856ab8e50bce6f23f1e58c46abd8b1331c1f8d83d28569d8bb01a3af05ca",
+              "0b419d0fcea92734b68c92238f9aac69c84a0ffe2b3fd8e102df0c87f91011b7",
               "f97cfed77d80be09acda1331bf449bb21e09ee58d91e19255313bbc5815d11f0"
             ]
       },
@@ -1631,7 +1631,7 @@
           "id": "diagnosis.hospital.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "c3ec723a85e392d831a6dcac53e38b97af3b61e4c17fcecbad7f0de62eb793dc"
+            "5825bd7fa956d5b40dd832e6f3d42b766e29522d802444c292e49a81386c6444"
           ]
         },
         "determinism": "deterministic",

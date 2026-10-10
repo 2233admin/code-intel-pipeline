@@ -30,6 +30,9 @@ use serde_json::{json, Value};
 
 use crate::capability::sha256_hex;
 use crate::committed_evidence::{self, CommittedEvidence};
+use crate::sentrux_gate::sentrux_gate_policy::{
+    capability_admission, current_capability, validated_admission,
+};
 use crate::snapshot;
 
 /// The versioned, snapshot-bound artifact this module produces.
@@ -301,76 +304,6 @@ fn find_capability<'a>(
         .iter()
         .find(|(_, payload)| payload["capabilityId"] == capability_id)
         .map(|(reference, payload)| (reference, payload))
-}
-
-/// Current consumers must not reinterpret historical or unrecognized evidence
-/// as approved-policy authority. ArtifactRef verification still owns the hash
-/// and snapshot lease; this check owns the current envelope/policy semantics.
-pub(crate) fn current_capability(payload: &Value) -> bool {
-    payload["schema"] == SENTRUX_CAPABILITY_ARTIFACT_SCHEMA
-        && payload["contractVersion"] == 2
-        && crate::sentrux_gate::sentrux_gate_policy::validate_identity(&payload["gatePolicy"])
-            .is_ok()
-        && payload["freshness"]["status"] == "current"
-        && payload["snapshotIdentity"]
-            .as_str()
-            .is_some_and(|snapshot| {
-                !snapshot.is_empty()
-                    && payload["inputs"]["snapshotIdentity"] == snapshot
-                    && payload["freshness"]["consumedSnapshotIdentity"] == snapshot
-            })
-        && match payload["provider"]["mode"].as_str() {
-            Some("builtin") => {
-                payload["provider"]["id"] == crate::sentrux_gate::ENGINE_ID
-                    && payload["provider"]["version"] == crate::sentrux_gate::ENGINE_VERSION
-            }
-            Some("external") => {
-                payload["provider"]["id"] == "sentrux.command-adapter"
-                    && payload["provider"]["version"] == "1.0.0"
-            }
-            Some("lite_fallback") => {
-                payload["provider"]["id"] == "sentrux.lite-capabilities"
-                    && payload["provider"]["version"] == "1.0.0"
-            }
-            _ => false,
-        }
-}
-
-fn validated_admission(payload: &Value) -> Option<&Value> {
-    if !current_capability(payload) || payload["authority"] != "authoritative" {
-        return None;
-    }
-    let command = &payload["outputs"]["command"];
-    let result = command.get("admission")?;
-    crate::sentrux_gate::sentrux_gate_policy::validate_result(result).ok()?;
-    if result["policy"] != payload["gatePolicy"]
-        || command["violations"] != result["blockingViolations"]
-        || command["advisories"] != result["advisories"]
-        || payload["outputs"]["verdict"] != result["verdict"]
-        || !matches!(
-            payload["status"].as_str(),
-            Some("succeeded" | "failed" | "degraded")
-        )
-    {
-        return None;
-    }
-    Some(result)
-}
-
-pub(crate) fn capability_admission(payload: &Value) -> Value {
-    match validated_admission(payload) {
-        Some(result) => json!({
-            "verdict": result["verdict"],
-            "policy": result["policy"],
-            "ruleScope": result["ruleScope"],
-            "blockingViolations": result["blockingViolations"],
-            "advisories": result["advisories"],
-        }),
-        None => json!({
-            "verdict":"unknown",
-            "reason":"No authoritative current approved-policy typed gate result; command exit status and raw Quality are not admission.",
-        }),
-    }
 }
 
 fn read_baseline_metrics(repo_path: &Path, diagnostics: &mut Vec<String>) -> Option<Value> {

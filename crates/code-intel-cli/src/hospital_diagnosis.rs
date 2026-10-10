@@ -6,6 +6,7 @@ use std::path::Path;
 use crate::adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterError, AdapterOutput};
 use crate::artifact_ref::VerifiedArtifact;
 use crate::audit_report::AuditReport;
+use crate::sentrux_gate::sentrux_gate_policy::current_structural_policy;
 #[cfg(test)]
 #[path = "report_quality.rs"]
 mod report_quality;
@@ -332,67 +333,6 @@ fn require_provider_modality(provider: &str, modality: &str) -> Result<(), Adapt
             "provider identity cannot supply admitted modality {modality}"
         )))
     }
-}
-
-fn current_structural_policy(structural: &Value, snapshot: &Value) -> bool {
-    if structural["schema"] != "code-intel-structural-evidence-payload.v2"
-        || snapshot.as_str().is_none_or(str::is_empty)
-        || structural["snapshotIdentity"] != *snapshot
-        || crate::sentrux_gate::sentrux_gate_policy::validate_identity(&structural["gatePolicy"])
-            .is_err()
-    {
-        return false;
-    }
-    let Some(results) = structural["gateResults"].as_array() else {
-        return false;
-    };
-    let Some(rules) = structural["rules"].as_array() else {
-        return false;
-    };
-    if results.len() != 2 {
-        return false;
-    }
-    let Some(advisories) = structural["advisories"].as_array() else {
-        return false;
-    };
-    for kind in ["sentrux_gate", "sentrux_check"] {
-        let mut matches = results.iter().filter(|result| result["kind"] == kind);
-        let mut rule_matches = rules.iter().filter(|rule| rule["kind"] == kind);
-        let (Some(entry), Some(rule)) = (matches.next(), rule_matches.next()) else {
-            return false;
-        };
-        if matches.next().is_some() || rule_matches.next().is_some() {
-            return false;
-        }
-        let result = &entry["admission"];
-        if crate::sentrux_gate::sentrux_gate_policy::validate_result(result).is_err()
-            || result["policy"] != structural["gatePolicy"]
-            || result["current"]["sourceCommit"] != structural["provenance"]["sourceRevision"]
-            || (kind == "sentrux_gate" && result["ruleScope"] != "baseline_ratchet")
-            || (kind == "sentrux_check" && result["ruleScope"] != "static_and_ratchet")
-            || !matches!(result["verdict"].as_str(), Some("pass" | "fail"))
-            || rule["verdict"] != result["verdict"]
-        {
-            return false;
-        }
-        if result["advisories"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|item| !advisories.contains(item))
-        {
-            return false;
-        }
-    }
-    advisories.iter().enumerate().all(|(index, advisory)| {
-        !advisories[..index].contains(advisory)
-            && results.iter().any(|entry| {
-                entry["admission"]["advisories"]
-                    .as_array()
-                    .unwrap()
-                    .contains(advisory)
-            })
-    })
 }
 
 fn diagnose(request: &Value, s: &Signals, audit: Option<&AuditReport>) -> Value {

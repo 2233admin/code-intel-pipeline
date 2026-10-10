@@ -222,14 +222,14 @@ fn project_sentrux_evidence(run_root: &Path, manifest: &Value, hospital: &Value)
                 continue;
             }
         };
-        if !crate::sentrux_quality_projection::current_capability(&payload) {
+        if !crate::sentrux_gate::sentrux_gate_policy::current_capability(&payload) {
             unverified.push(serde_json::json!({
                 "reference": reference,
                 "reason": "Capability is historical, has an unknown policy/provider, or is not current; retained as diagnostic reference only, never current admission"
             }));
             continue;
         }
-        let admission = crate::sentrux_quality_projection::capability_admission(&payload);
+        let admission = crate::sentrux_gate::sentrux_gate_policy::capability_admission(&payload);
         verified.push(serde_json::json!({
             "capabilityId": payload["capabilityId"],
             "operation": payload["operation"],
