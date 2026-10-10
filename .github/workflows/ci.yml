@@ -101,7 +101,7 @@ jobs:
 
       - name: Rust tests and core cross-contract gate
         shell: pwsh
-        run: cargo test -p code-intel --locked
+        run: cargo test -p code-intel --locked --no-fail-fast
 
       - name: Real ast-grep public CLI contract smokes
         shell: pwsh
@@ -562,7 +562,7 @@ jobs:
       - name: Rust tests and core cross-contract gate
         if: runner.os != 'Windows'
         shell: pwsh
-        run: cargo test -p code-intel --locked
+        run: cargo test -p code-intel --locked --no-fail-fast
 
       - name: Real ast-grep public CLI contract smokes
         shell: pwsh

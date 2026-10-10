@@ -15,13 +15,6 @@ const AST_GREP_SECURITY_DIGEST: &str =
     "d3a55f2a70f1d13581258e34344826fa26433c586907945fdc797363853d43c6";
 const REPO_SNAPSHOT_DIGEST: &str =
     "9e75addea8b423dc6ea20f6e8f45a005266f17a8e1a0528c51d2afb82c37a993";
-const CODENEXUS_TOOLCHAIN_DIGESTS: [&str; 5] = [
-    "989180a362946747bd9912a9655d7f919f0a82d4de893d402d8e5ece7f93d5cc",
-    "645675312135932dfce365a8dfc14e214cec78ee733f248606547b3eaa56edc8",
-    "4bfbebebe9e80fa6821100dbb572542a314be399ae0f929bac455c8f1531c4b2",
-    "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26",
-    "a8520e3231ce06cc56aa70904b194b358870315e391d60827f7721dd08b17a95",
-];
 static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -2243,11 +2236,7 @@ fn codenexus_builtin_compat_dispatches_through_provider_codenexus_adapt() {
         "schema": "code-intel-capability-request.v1",
         "capability": "provider.codenexus-adapt",
         "contractVersion": 1,
-        "implementation": {
-            "id": "provider.codenexus-builtin.compat",
-            "version": "1.0.0",
-            "toolchainDigests": CODENEXUS_TOOLCHAIN_DIGESTS
-        },
+        "implementation": registry_implementation("provider.codenexus-adapt"),
         "snapshot": snapshot,
         "options": {"repoPath": repo.join("src/..")},
         "inputs": [{

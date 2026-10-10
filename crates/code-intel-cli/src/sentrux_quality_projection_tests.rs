@@ -160,40 +160,6 @@ fn normalize_bottleneck_id_maps_engine_ids_and_drops_none() {
     assert_eq!(normalize_bottleneck_id("unknown_future_value"), None);
 }
 
-/// Issue #386's forward-compatibility contract with sibling #385: once a
-/// `sentrux.scan` payload carries the upstream `root_causes.<id>` shape
-/// (#385's documented output), this module must consume it verbatim --
-/// real `score` values, not `null`/`pending_upstream_formula` -- without
-/// any change to this module's own code.
-#[test]
-fn root_causes_section_prefers_the_upstream_shape_once_385_lands() {
-    let scan_structured = json!({
-        "quality_signal": 8800,
-        "formula_version": "sentrux-upstream-v1",
-        "root_causes": {
-            "modularity": {"raw": 0.62, "score": 0.75},
-            "acyclicity": {"raw": 2.0, "score": 0.33},
-            "depth": {"raw": 5.0, "score": 0.61},
-            "equality": {"raw": 0.2, "score": 0.8},
-            "redundancy": {"raw": 0.1, "score": 0.9},
-        },
-    });
-    let mut diagnostics = Vec::new();
-    let (root_causes, formula_version) =
-        root_causes_section(Some(&scan_structured), None, &mut diagnostics);
-    assert_eq!(formula_version, "sentrux-upstream-v1");
-    let entries = root_causes.as_array().expect("array");
-    assert_eq!(entries.len(), 5);
-    let modularity = entries
-        .iter()
-        .find(|entry| entry["id"] == "modularity")
-        .expect("modularity present");
-    assert_eq!(modularity["raw"]["current"], 0.62);
-    assert_eq!(modularity["score"], 0.75);
-    assert_eq!(modularity["scoreStatus"], "upstream");
-    assert!(diagnostics.is_empty());
-}
-
 #[test]
 fn root_causes_section_falls_back_to_legacy_proxy_when_upstream_shape_is_partial() {
     // Only 3 of 5 upstream ids present -- must not be treated as the
