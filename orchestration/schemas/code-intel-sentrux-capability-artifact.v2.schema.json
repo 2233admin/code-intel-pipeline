@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "code-intel-sentrux-capability-artifact.v2",
+  "description": "Snapshot-bound command capture. Only gate/check typed admissions authorize a gate; other successful captures cannot override the enclosing provider admission.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "contractVersion", "gatePolicy", "capabilityId", "operation", "runId", "snapshotIdentity", "provider", "status", "authority", "inputs", "outputs", "failure", "freshness", "decisionConsumers"],
+  "properties": {
+    "schema": {"const": "code-intel-sentrux-capability-artifact.v2"}, "contractVersion": {"const": 2},
+    "gatePolicy": {"$ref": "code-intel-sentrux-gate-policy.v1.schema.json#/$defs/identity"},
+    "capabilityId": {"enum": ["sentrux.gate", "sentrux.check", "sentrux.scan", "sentrux.health", "sentrux.dsm", "sentrux.check_rules", "sentrux.baseline_save", "sentrux.rescan", "sentrux.git_stats", "sentrux.evolution", "sentrux.test_gaps", "sentrux.what_if", "sentrux.session_start", "sentrux.session_end", "sentrux.provider_discovery"]},
+    "operation": {"type": "string", "minLength": 1}, "runId": {"type": "string", "minLength": 1},
+    "snapshotIdentity": {"$ref": "#/$defs/sha256"}, "provider": {"$ref": "#/$defs/provider"},
+    "status": {"enum": ["succeeded", "degraded", "unavailable", "skipped", "not_applicable", "failed"]},
+    "authority": {"enum": ["authoritative", "fallback", "compatibility", "declared_only"]},
+    "inputs": {"type": "object", "additionalProperties": false, "required": ["snapshotIdentity"], "properties": {"snapshotIdentity": {"$ref": "#/$defs/sha256"}}},
+    "outputs": {
+      "type": "object", "additionalProperties": false, "required": ["command", "verdict", "outputSummary", "structuredData"],
+      "properties": {
+        "command": {"oneOf": [{"type": "null"}, {"$ref": "code-intel-sentrux-command-observation.v2.schema.json#/$defs/command"}]},
+        "verdict": {"enum": ["pass", "fail", "unknown"]},
+        "outputSummary": {"oneOf": [{"type": "null"}, {"$ref": "code-intel-sentrux-command-observation.v2.schema.json#/$defs/outputSummary"}]},
+        "structuredData": {"type": ["object", "array", "null"]}
+      }
+    },
+    "failure": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/failure"}]},
+    "freshness": {"type": "object", "additionalProperties": false, "required": ["status", "evaluatedAt", "consumedSnapshotIdentity"], "properties": {"status": {"const": "current"}, "evaluatedAt": {"type": "null"}, "consumedSnapshotIdentity": {"$ref": "#/$defs/sha256"}}},
+    "decisionConsumers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+  },
+  "allOf": [
+    {"if": {"properties": {"status": {"const": "succeeded"}}}, "then": {"properties": {"failure": {"type": "null"}, "outputs": {"properties": {"verdict": {"const": "pass"}, "command": {"type": "object", "properties": {"success": {"const": true}}}, "outputSummary": {"type": "object", "properties": {"complete": {"const": true}}}}}}}, "else": {"properties": {"failure": {"$ref": "#/$defs/failure"}}}},
+    {"if": {"properties": {"status": {"const": "degraded"}}}, "then": {"properties": {"outputs": {"properties": {"verdict": {"const": "unknown"}}}}}},
+    {"if": {"properties": {"status": {"const": "unavailable"}}}, "then": {"properties": {"failure": {"properties": {"kind": {"const": "provider_unavailable"}}}}}},
+    {"if": {"properties": {"status": {"const": "not_applicable"}}}, "then": {"properties": {"failure": {"properties": {"kind": {"const": "not_applicable"}}}}}},
+    {"if": {"properties": {"capabilityId": {"enum": ["sentrux.gate", "sentrux.check"]}, "status": {"const": "succeeded"}}}, "then": {"properties": {"outputs": {"properties": {"command": {"properties": {"admission": {"type": "object", "properties": {"verdict": {"const": "pass"}}}}}}}}}},
+    {"if": {"properties": {"capabilityId": {"enum": ["sentrux.scan", "sentrux.rescan"]}, "provider": {"properties": {"mode": {"const": "builtin"}}}, "status": {"const": "succeeded"}}}, "then": {"properties": {"outputs": {"properties": {"structuredData": {"$ref": "code-intel-sentrux-quality-signal.v1.schema.json#/$defs/nativeScan"}}}}}},
+    {"if": {"properties": {"outputs": {"properties": {"command": {"type": "null"}}}}}, "then": {"properties": {"status": {"not": {"const": "succeeded"}}, "outputs": {"properties": {"verdict": {"const": "unknown"}, "outputSummary": {"type": "null"}, "structuredData": {"type": "null"}}}}}}
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "provider": {"type": "object", "additionalProperties": false, "required": ["mode", "id", "version", "digest"], "properties": {"mode": {"enum": ["external", "builtin", "lite_fallback"]}, "id": {"enum": ["sentrux.command-adapter", "sentrux-native", "sentrux.lite-capabilities"]}, "version": {"enum": ["1.0.0", "3.0.0"]}, "digest": {"$ref": "#/$defs/sha256"}}, "allOf": [{"if": {"properties": {"mode": {"const": "builtin"}}}, "then": {"properties": {"id": {"const": "sentrux-native"}, "version": {"const": "3.0.0"}}}}, {"if": {"properties": {"mode": {"const": "external"}}}, "then": {"properties": {"id": {"const": "sentrux.command-adapter"}, "version": {"const": "1.0.0"}}}}, {"if": {"properties": {"mode": {"const": "lite_fallback"}}}, "then": {"properties": {"id": {"const": "sentrux.lite-capabilities"}, "version": {"const": "1.0.0"}}}}]},
+    "failure": {"type": "object", "additionalProperties": false, "required": ["kind", "message", "retryable"], "properties": {"kind": {"enum": ["degraded", "not_applicable", "provider_unavailable", "config_error", "local_tool_error", "provider_error"]}, "message": {"type": "string", "minLength": 1}, "retryable": {"type": "boolean"}}}
+  }
+}

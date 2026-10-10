@@ -276,7 +276,7 @@ fn save_baseline_records_the_v6_god_file_identity_list() {
 }
 
 #[test]
-fn cli_check_fails_naming_a_new_god_file_and_its_rule_branch() {
+fn cli_check_blocks_a_new_god_file_by_identity() {
     let root = fixture_root("check-new-god");
     fs::write(root.join("src/small.rs"), "pub fn small() {}\n").expect("write small file");
     write_rules(&root);
@@ -293,58 +293,410 @@ fn cli_check_fails_naming_a_new_god_file_and_its_rule_branch() {
 
     fs::write(root.join("src/new_god.rs"), god_file_body(900)).expect("write new god file");
 
-    let check = code_intel(&["sentrux", "--operation", "check", "--repo", &root_arg]);
+    let check = code_intel(&[
+        "sentrux",
+        "--operation",
+        "check",
+        "--repo",
+        &root_arg,
+        "--json",
+    ]);
     assert!(
         !check.status.success(),
         "a new god file must fail the CLI check: stdout={}",
         String::from_utf8_lossy(&check.stdout)
     );
-    let combined = format!(
-        "{}{}",
-        String::from_utf8_lossy(&check.stdout),
-        String::from_utf8_lossy(&check.stderr)
-    );
-    assert!(
-        combined.contains("src/new_god.rs (loc 901, functions 1; rule: loc>800)"),
-        "violation must name the file, rule branch, and measured values: {combined}"
-    );
+    let result: serde_json::Value = serde_json::from_slice(&check.stdout).expect("check JSON");
+    assert_eq!(result["verdict"], "fail");
+    assert_eq!(result["ruleScope"], "static_and_ratchet");
+    let violation = result["blockingViolations"]
+        .as_array()
+        .expect("violations")
+        .iter()
+        .find(|violation| violation["rule"] == "god_files_increased")
+        .expect("god violation");
+    assert_eq!(violation["targets"], serde_json::json!(["src/new_god.rs"]));
 
     fs::remove_dir_all(&root).expect("remove fixture");
 }
 
+fn cli_result(root: &PathBuf, operation: &str, extra: &[&str]) -> (bool, serde_json::Value) {
+    let output = common::cli()
+        .args(["sentrux", "--operation", operation, "--repo"])
+        .arg(root)
+        .arg("--json")
+        .args(extra)
+        .output()
+        .expect("run JSON CLI");
+    let value = serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+        panic!(
+            "CLI JSON: {error}; stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
+    (output.status.success(), value)
+}
+
+fn save_fixture(root: &PathBuf) {
+    assert!(cli_result(root, "save_baseline", &[]).0);
+}
+
 #[test]
-fn cli_check_stays_green_for_grandfathered_god_files_and_reports_slack() {
-    let root = fixture_root("check-grandfather");
-    fs::write(root.join("src/big.rs"), god_file_body(850)).expect("write god file");
+fn quality_only_decline_admits_with_measured_advisory_and_immutable_policy() {
+    let root = fixture_root("quality-advisory");
+    fs::write(root.join("src/a.rs"), "pub fn alpha() {}\n").expect("first source");
+    fs::write(root.join("src/b.rs"), "pub fn beta() {}\n").expect("second source");
     write_rules(&root);
-
-    let root_arg = root.to_string_lossy().to_string();
-    let saved = code_intel(&[
-        "sentrux",
-        "--operation",
-        "save_baseline",
-        "--repo",
-        &root_arg,
-    ]);
-    assert!(saved.status.success());
-
-    // Standing debt stays tolerated: same tree, green verdict.
-    let unchanged = code_intel(&["sentrux", "--operation", "check", "--repo", &root_arg]);
-    assert!(
-        unchanged.status.success(),
-        "grandfathered god files must not fail: stdout={}",
-        String::from_utf8_lossy(&unchanged.stdout)
+    save_fixture(&root);
+    let baseline_bytes = fs::read(root.join(".sentrux/baseline.json")).expect("baseline bytes");
+    // Real size inequality lowers aggregate Quality, with no new god path,
+    // coupling edge or cycle. This is the protective loss approved in A.
+    fs::write(root.join("src/a.rs"), god_file_body(600)).expect("grow one file under threshold");
+    // A target policy file is not an authority and cannot choose the policy.
+    fs::create_dir_all(root.join("orchestration")).expect("target policy directory");
+    fs::write(
+        root.join("orchestration/sentrux-gate-policy.v1.json"),
+        r#"{"policyId":"forged","policyVersion":99,"blockingRules":[]}"#,
+    )
+    .expect("forged target policy");
+    for operation in ["gate", "check"] {
+        let (success, result) = cli_result(&root, operation, &[]);
+        assert!(success, "{result}");
+        assert_eq!(result["schema"], "code-intel-sentrux-gate-result.v1");
+        assert_eq!(
+            result["policy"],
+            serde_json::json!({
+                "policyId": "evidence-quality-admission", "policyVersion": 1,
+                "sha256": "f97cfed77d80be09acda1331bf449bb21e09ee58d91e19255313bbc5815d11f0"
+            })
+        );
+        assert_eq!(result["measurement"]["scope"], ".");
+        assert_eq!(result["measurement"]["engineVersion"], "3.0.0");
+        assert_eq!(result["verdict"], "pass");
+        assert_eq!(result["blockingViolations"], serde_json::json!([]));
+        assert_eq!(result["advisories"][0]["rule"], "quality_degraded");
+        let comparisons = result["comparisons"].as_array().expect("comparisons");
+        let quality = comparisons
+            .iter()
+            .find(|comparison| comparison["rule"] == "quality_degraded")
+            .expect("Quality comparison");
+        assert!(quality["after"].as_f64().unwrap() < quality["before"].as_f64().unwrap());
+        assert_eq!(quality["disposition"], "advisory");
+        assert_eq!(quality["verdict"], "fail");
+        assert!(comparisons
+            .iter()
+            .filter(|comparison| comparison["rule"] != "quality_degraded")
+            .all(|comparison| comparison["verdict"] == "pass"));
+    }
+    assert_eq!(
+        fs::read(root.join(".sentrux/baseline.json")).unwrap(),
+        baseline_bytes
     );
-
-    // Fixing the god file leaves reclaimable slack, and the green run says so.
-    fs::write(root.join("src/big.rs"), "pub fn entry() {}\n").expect("shrink god file");
-    let fixed = code_intel(&["sentrux", "--operation", "check", "--repo", &root_arg]);
-    assert!(fixed.status.success());
-    assert!(
-        String::from_utf8_lossy(&fixed.stdout).contains("no longer over threshold"),
-        "green run must surface reclaimable slack: {}",
-        String::from_utf8_lossy(&fixed.stdout)
-    );
-
     fs::remove_dir_all(&root).expect("remove fixture");
+}
+
+#[test]
+fn diagnostic_checks_cannot_impersonate_authoritative_admission() {
+    let root = fixture_root("diagnostic-check");
+    fs::write(root.join("src/lib.rs"), "pub fn fixture() {}\n").expect("source");
+    write_rules(&root);
+    let (gate_success, gate) = cli_result(&root, "gate", &[]);
+    assert!(!gate_success);
+    assert_eq!(gate["verdict"], "unknown");
+    assert_eq!(gate["baseline"], serde_json::Value::Null);
+    assert_eq!(gate["blockingViolations"][0]["rule"], "baseline_missing");
+    let (check_success, check) = cli_result(&root, "check", &[]);
+    assert!(check_success, "static diagnostic affordance is retained");
+    assert_eq!(check["verdict"], "unknown");
+    assert_eq!(check["blockingViolations"][0]["rule"], "baseline_missing");
+    save_fixture(&root);
+    let (success, diagnostic) = cli_result(&root, "check", &["--no-ratchet"]);
+    assert!(success);
+    assert_eq!(diagnostic["admission"], serde_json::Value::Null);
+    assert_eq!(diagnostic["verdict"], "unknown");
+    assert!(diagnostic.get("schema").is_none());
+    fs::remove_dir_all(&root).expect("remove fixture");
+}
+
+#[test]
+fn invalid_baseline_identities_and_values_never_admit() {
+    let root = fixture_root("invalid-baseline");
+    fs::write(root.join("src/lib.rs"), "pub fn fixture() {}\n").expect("source");
+    write_rules(&root);
+    save_fixture(&root);
+    let path = root.join(".sentrux/baseline.json");
+    let baseline: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let mutations = [
+        (
+            "/schema",
+            serde_json::json!("code-intel-sentrux-baseline.v5"),
+        ),
+        ("/engine/id", serde_json::Value::Null),
+        ("/engine/version", serde_json::json!("2.2.0")),
+        ("/scope", serde_json::json!("src")),
+        ("/metrics/quality_signal", serde_json::Value::Null),
+        ("/metrics/coupling_score", serde_json::json!(-1)),
+        ("/metrics/cycle_count", serde_json::json!(0.5)),
+        ("/godFiles", serde_json::json!([{"path":"../outside.rs"}])),
+    ];
+    for (pointer, replacement) in mutations {
+        let mut invalid = baseline.clone();
+        *invalid.pointer_mut(pointer).expect("baseline field") = replacement;
+        fs::write(&path, serde_json::to_vec(&invalid).unwrap()).unwrap();
+        for operation in ["gate", "check"] {
+            let (success, result) = cli_result(&root, operation, &[]);
+            assert!(!success, "{pointer}: {result}");
+            assert_eq!(result["verdict"], "fail");
+            assert!(result["baseline"].is_null());
+            assert_eq!(
+                result["blockingViolations"][0]["rule"],
+                "baseline_engine_mismatch"
+            );
+            assert_eq!(result["comparisons"], serde_json::json!([]));
+        }
+    }
+    for entries in [
+        serde_json::json!([{"path":"../outside.rs"}]),
+        serde_json::json!([{"path":"C:/outside.rs"}]),
+        serde_json::json!([{"path":false}]),
+        serde_json::json!([{"path":"src/debt.rs"},{"path":"src/debt.rs"}]),
+    ] {
+        let mut invalid = baseline.clone();
+        // Match the count so this tests malformed identities, not count mismatch.
+        invalid["metrics"]["god_file_count"] = serde_json::json!(entries.as_array().unwrap().len());
+        invalid["godFiles"] = entries;
+        fs::write(&path, serde_json::to_vec(&invalid).unwrap()).unwrap();
+        let (success, result) = cli_result(&root, "gate", &[]);
+        assert!(!success, "{result}");
+        assert_eq!(
+            result["blockingViolations"][0]["rule"],
+            "baseline_engine_mismatch"
+        );
+    }
+    fs::write(&path, "{not JSON").unwrap();
+    let (success, result) = cli_result(&root, "gate", &[]);
+    assert!(!success);
+    assert_eq!(result["verdict"], "fail");
+    fs::remove_dir_all(&root).expect("remove fixture");
+}
+
+#[test]
+fn coupling_regression_remains_blocking() {
+    let root = fixture_root("blocking-coupling");
+    fs::write(root.join("src/lib.rs"), "pub fn fixture() {}\n").expect("source");
+    write_rules(&root);
+    save_fixture(&root);
+    fs::write(
+        root.join("src/lib.rs"),
+        "use std::fs;\npub fn fixture() {}\n",
+    )
+    .expect("add import");
+    for operation in ["gate", "check"] {
+        let (success, result) = cli_result(&root, operation, &[]);
+        assert!(!success);
+        assert_eq!(result["verdict"], "fail");
+        assert!(result["blockingViolations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|violation| violation["rule"] == "coupling_increased"));
+    }
+    fs::remove_dir_all(&root).expect("remove fixture");
+}
+
+#[test]
+fn aligned_check_preserves_static_failures_even_when_ratchet_passes() {
+    let root = fixture_root("blocking-static");
+    fs::write(
+        root.join("src/lib.rs"),
+        "use std::fs;\npub fn fixture() {}\n",
+    )
+    .expect("source");
+    write_rules(&root);
+    save_fixture(&root);
+    fs::write(
+        root.join(".sentrux/rules.toml"),
+        "[constraints]\nmax_coupling = \"0\"\n",
+    )
+    .expect("strict static limit");
+    let (gate_success, gate) = cli_result(&root, "gate", &[]);
+    assert!(gate_success);
+    assert_eq!(gate["verdict"], "pass");
+    let (check_success, check) = cli_result(&root, "check", &[]);
+    assert!(!check_success);
+    assert_eq!(check["verdict"], "fail");
+    assert_eq!(check["ruleScope"], "static_and_ratchet");
+    assert_eq!(check["blockingViolations"][0]["rule"], "max_coupling");
+    assert!(check["comparisons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|comparison| comparison["rule"] == "max_coupling"
+            && comparison["disposition"] == "blocking"
+            && comparison["verdict"] == "fail"));
+    fs::remove_dir_all(&root).expect("remove fixture");
+}
+
+#[test]
+fn cycles_remain_blocking_in_gate_and_static_check() {
+    let root = fixture_root("blocking-cycles");
+    fs::write(root.join("Cargo.toml"), "[package]\n").expect("crate marker");
+    fs::write(root.join("src/lib.rs"), "mod a;\nmod b;\n").expect("modules");
+    fs::write(root.join("src/a.rs"), "pub fn a() {}\n").expect("first module");
+    fs::write(root.join("src/b.rs"), "pub fn b() {}\n").expect("second module");
+    write_rules(&root);
+    save_fixture(&root);
+    fs::write(
+        root.join("src/a.rs"),
+        "use crate::b;\npub fn a() { b::b(); }\n",
+    )
+    .expect("first edge");
+    fs::write(
+        root.join("src/b.rs"),
+        "use crate::a;\npub fn b() { a::a(); }\n",
+    )
+    .expect("cycle edge");
+    for operation in ["gate", "check"] {
+        let (success, result) = cli_result(&root, operation, &[]);
+        assert!(!success, "{result}");
+        assert_eq!(result["verdict"], "fail");
+        let violations = result["blockingViolations"].as_array().unwrap();
+        assert!(violations
+            .iter()
+            .any(|violation| violation["rule"] == "cycles_increased"));
+        if operation == "check" {
+            assert!(violations
+                .iter()
+                .any(|violation| violation["rule"] == "max_cycles"));
+        }
+    }
+    fs::remove_dir_all(&root).expect("remove fixture");
+}
+
+#[test]
+fn aligned_check_preserves_layer_and_boundary_failures() {
+    let root = fixture_root("blocking-layers");
+    fs::write(root.join("Cargo.toml"), "[package]\n").expect("crate marker");
+    fs::write(root.join("src/lib.rs"), "mod a;\nmod b;\n").expect("modules");
+    fs::write(
+        root.join("src/a.rs"),
+        "use crate::b;\npub fn a() { b::b(); }\n",
+    )
+    .expect("forbidden dependency");
+    fs::write(root.join("src/b.rs"), "pub fn b() {}\n").expect("upper module");
+    write_rules(&root);
+    save_fixture(&root);
+    fs::write(
+        root.join(".sentrux/rules.toml"),
+        concat!(
+            "[[layer]]\nmodules = [\"a\"]\n[[layer]]\nmodules = [\"b\"]\n",
+            "[[boundary]]\nfrom = [\"a\"]\nforbid = [\"b\"]\ndescription = \"isolation\"\n"
+        ),
+    )
+    .expect("layer and boundary rules");
+    assert!(cli_result(&root, "gate", &[]).0, "unchanged ratchet passes");
+    let (success, result) = cli_result(&root, "check", &[]);
+    assert!(!success, "{result}");
+    assert_eq!(result["verdict"], "fail");
+    let violations = result["blockingViolations"].as_array().unwrap();
+    for rule in ["layer_order", "boundary_dependency"] {
+        assert!(violations.iter().any(|violation| violation["rule"] == rule));
+        assert!(result["comparisons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|comparison| comparison["rule"] == rule
+                && comparison["disposition"] == "blocking"
+                && comparison["verdict"] == "fail"));
+    }
+    fs::remove_dir_all(&root).expect("remove fixture");
+}
+
+#[test]
+fn replacing_a_grandfathered_god_path_blocks_even_when_count_is_unchanged() {
+    let root = fixture_root("blocking-god-swap");
+    fs::write(root.join("src/old.rs"), god_file_body(850)).expect("standing debt");
+    write_rules(&root);
+    save_fixture(&root);
+    fs::write(root.join("src/old.rs"), "pub fn old() {}\n").expect("resolve standing debt");
+    fs::write(root.join("src/new.rs"), god_file_body(850)).expect("different god path");
+    let (success, result) = cli_result(&root, "gate", &[]);
+    assert!(!success, "{result}");
+    assert_eq!(result["verdict"], "fail");
+    let comparison = result["comparisons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|comparison| comparison["rule"] == "god_files_increased")
+        .unwrap();
+    assert_eq!(comparison["before"], serde_json::json!(["src/old.rs"]));
+    assert_eq!(comparison["after"], serde_json::json!(["src/new.rs"]));
+    assert_eq!(comparison["verdict"], "fail");
+    let violation = result["blockingViolations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|violation| violation["rule"] == "god_files_increased")
+        .unwrap();
+    assert_eq!(violation["targets"], serde_json::json!(["src/new.rs"]));
+    fs::remove_dir_all(&root).expect("remove fixture");
+}
+
+#[test]
+fn aggregate_only_python_cycle_is_advisory_without_claiming_equivalent_protection() {
+    let root = fixture_root("accepted-python-cycle-loss");
+    for (path, body) in [
+        ("a.py", "import b\n\ndef one():\n    return 11\n"),
+        ("b.py", "import c\n\ndef two():\n    return 22\n"),
+        ("c.py", "# leaf c\n\ndef three():\n    return 33\n"),
+    ] {
+        fs::write(root.join(path), body).expect("write acyclic Python fixture");
+    }
+    write_rules(&root);
+    save_fixture(&root);
+    let before = cli_result(&root, "scan", &[]).1;
+    let baseline_bytes = fs::read(root.join(".sentrux/baseline.json")).expect("baseline");
+    fs::write(root.join("b.py"), "import a\n\ndef two():\n    return 22\n")
+        .expect("introduce a real Python import cycle without more imports or LOC");
+    let after = cli_result(&root, "scan", &[]).1;
+    let factors_before = &before["quality_signal_detail"]["root_causes"];
+    let factors_after = &after["quality_signal_detail"]["root_causes"];
+    assert_eq!(factors_before["acyclicity"]["raw"], 0);
+    assert!(factors_after["acyclicity"]["raw"].as_u64().unwrap() > 0);
+    assert!(
+        factors_after["acyclicity"]["score"].as_u64().unwrap()
+            < factors_before["acyclicity"]["score"].as_u64().unwrap()
+    );
+    assert_eq!(factors_after["equality"], factors_before["equality"]);
+    assert!(after["quality_signal"].as_u64().unwrap() < before["quality_signal"].as_u64().unwrap());
+    for operation in ["gate", "check"] {
+        let (success, admission) = cli_result(&root, operation, &[]);
+        assert!(success, "{admission}");
+        assert_eq!(admission["verdict"], "pass");
+        assert_eq!(admission["blockingViolations"], serde_json::json!([]));
+        assert_eq!(admission["advisories"][0]["rule"], "quality_degraded");
+        for comparison in admission["comparisons"].as_array().unwrap() {
+            if comparison["rule"] == "quality_degraded" {
+                assert_eq!(comparison["disposition"], "advisory");
+                assert_eq!(comparison["verdict"], "fail");
+                assert_eq!(
+                    comparison["before"].as_f64(),
+                    before["quality_signal"].as_f64()
+                );
+                assert_eq!(
+                    comparison["after"].as_f64(),
+                    after["quality_signal"].as_f64()
+                );
+            } else {
+                assert_eq!(comparison["verdict"], "pass");
+                assert_eq!(comparison["before"], comparison["after"]);
+            }
+        }
+    }
+    assert_eq!(
+        fs::read(root.join(".sentrux/baseline.json")).unwrap(),
+        baseline_bytes
+    );
+    fs::remove_dir_all(root).expect("remove fixture");
 }

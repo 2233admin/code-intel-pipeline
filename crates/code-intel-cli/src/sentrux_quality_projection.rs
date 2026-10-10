@@ -30,20 +30,23 @@ use serde_json::{json, Value};
 
 use crate::capability::sha256_hex;
 use crate::committed_evidence::{self, CommittedEvidence};
+#[path = "sentrux_gate_policy.rs"]
+mod sentrux_gate_policy;
 use crate::snapshot;
+use sentrux_gate_policy::{capability_admission, current_capability, validated_admission};
 
 /// The versioned, snapshot-bound artifact this module produces.
-pub(crate) const PROJECTION_SCHEMA: &str = "code-intel-quality-signal-projection.v1";
-const PROJECTION_CONTRACT_VERSION: i64 = 1;
+pub(crate) const PROJECTION_SCHEMA: &str = "code-intel-quality-signal-projection.v2";
+const PROJECTION_CONTRACT_VERSION: i64 = 2;
 
 /// The small, Orca-consumable lifecycle event nested inside the projection
 /// artifact. Kept versioned independently so an Orca-side consumer can pin
 /// to just this shape without parsing the (potentially much larger) full
 /// findings list.
-pub(crate) const ORCA_EVENT_SCHEMA: &str = "code-intel-orca-quality-event.v1";
-const ORCA_EVENT_CONTRACT_VERSION: i64 = 1;
+pub(crate) const ORCA_EVENT_SCHEMA: &str = "code-intel-orca-quality-event.v2";
+const ORCA_EVENT_CONTRACT_VERSION: i64 = 2;
 
-const SENTRUX_CAPABILITY_ARTIFACT_SCHEMA: &str = "code-intel-sentrux-capability-artifact.v1";
+const SENTRUX_CAPABILITY_ARTIFACT_SCHEMA: &str = "code-intel-sentrux-capability-artifact.v2";
 const SENTRUX_CAPABILITY_ARTIFACT_TYPE: &str = "provider.sentrux.capability-artifact";
 
 const BASELINE_RELATIVE_PATH: &str = ".sentrux/baseline.json";
@@ -64,16 +67,8 @@ impl fmt::Display for ProjectionError {
 
 impl std::error::Error for ProjectionError {}
 
-/// The four raw metrics the *current* `sentrux_gate.rs` formula actually
-/// scores (`coupling_score * 8`, `complex_fn_count * 60`, `god_file_count *
-/// 120`, `(max_complexity - 15).max(0) * 10`), plus `cycle_count`, which the
-/// engine measures and gates (`max_cycles`/`cycles_increased`) but does not
-/// fold into the scalar total. This is a *proxy* for the upstream Quality
-/// Signal's five root causes (modularity/acyclicity/depth/equality/
-/// redundancy, #385's scope) under this engine's own honest names -- not a
-/// claim that they are the same thing. `root_causes_section` switches to
-/// consuming #385's `root_causes.<id>.{raw,score}` shape verbatim the moment
-/// a payload carries all five upstream ids.
+/// Historical proxy metrics for diagnostic payloads without the current
+/// five-factor measurement. They never substitute for typed admission.
 struct LegacyRootCause {
     id: &'static str,
     label: &'static str,
@@ -215,6 +210,12 @@ pub(crate) fn build(request: &ProjectionRequest<'_>) -> Result<Value, Projection
     findings.extend(violation_findings(check, "sentrux.check"));
     findings.extend(violation_findings(gate, "sentrux.gate"));
 
+    // Raw measurement and admission are separate facts. A decline is visible
+    // even when the approved policy admits it; measurements never grant entry.
+    let admission = gate
+        .map(|(_, payload)| capability_admission(payload))
+        .unwrap_or_else(|| json!({"verdict":"unknown","reason":"No current verified sentrux.gate admission is present."}));
+
     let completeness = if scan.is_none() {
         "unavailable"
     } else if health.is_none() || baseline_metrics.is_none() {
@@ -227,6 +228,7 @@ pub(crate) fn build(request: &ProjectionRequest<'_>) -> Result<Value, Projection
     let orca_event = json!({
         "schema": ORCA_EVENT_SCHEMA,
         "contractVersion": ORCA_EVENT_CONTRACT_VERSION,
+        "gatePolicy": sentrux_gate_policy::identity(),
         "eventType": "quality_signal_projection",
         "status": completeness,
         "snapshotIdentity": request.evidence.snapshot_identity(),
@@ -236,7 +238,9 @@ pub(crate) fn build(request: &ProjectionRequest<'_>) -> Result<Value, Projection
         "summary": {
             "total": quality_signal["total"],
             "bottleneck": quality_signal["bottleneck"],
+            "regression": quality_signal["regression"],
             "findingCounts": finding_counts,
+            "admission": admission,
         },
         "correlate": {
             "runId": request.correlation.run_id,
@@ -261,6 +265,8 @@ pub(crate) fn build(request: &ProjectionRequest<'_>) -> Result<Value, Projection
         "completeness": completeness,
         "diagnostics": diagnostics,
         "qualitySignal": quality_signal,
+        "gatePolicy": sentrux_gate_policy::identity(),
+        "admission": admission,
         "findings": findings,
         "orcaEvent": orca_event,
     }))
@@ -276,9 +282,8 @@ fn sentrux_capability_payloads(evidence: &CommittedEvidence) -> Vec<(Value, Valu
                 && reference["type"] == SENTRUX_CAPABILITY_ARTIFACT_TYPE
         })
         .filter_map(|(reference, verified)| {
-            serde_json::from_slice::<Value>(verified.bytes())
-                .ok()
-                .map(|payload| (reference.clone(), payload))
+            let payload = serde_json::from_slice::<Value>(verified.bytes()).ok()?;
+            current_capability(&payload).then(|| (reference.clone(), payload))
         })
         .collect()
 }
@@ -369,6 +374,15 @@ fn quality_signal_section(
         "total": {"current": current_total, "baseline": baseline_total, "delta": delta_total},
         "bottleneck": bottleneck,
         "formulaVersion": formula_version,
+        "regression": {
+            "status": match delta_total {
+                Some(delta) if delta < 0 => "declined",
+                Some(_) => "not_declined",
+                None => "unknown",
+            },
+            "disposition": "advisory",
+            "message": "Raw Quality decline is advisory under the approved aggregate-advisory policy; hard findings and evidence validity still block admission.",
+        },
         "rootCauses": root_causes,
     })
 }
@@ -411,25 +425,26 @@ fn normalize_bottleneck_id(raw: &str) -> Option<&'static str> {
         "god_files" => Some("godFiles"),
         "complexity" => Some("complexity"),
         "coupling" => Some("coupling"),
+        "modularity" => Some("modularity"),
+        "acyclicity" => Some("acyclicity"),
+        "depth" => Some("depth"),
+        "equality" => Some("equality"),
+        "redundancy" => Some("redundancy"),
         "none" => None,
         _ => None,
     }
 }
 
-/// Reads #385's `root_causes.<id>.{raw,score}` shape verbatim when a payload
-/// carries all five upstream ids; otherwise projects this engine's own
-/// currently-measured proxy metrics under `LEGACY_ROOT_CAUSES`'s honest
-/// names, with `score: null` (this module never invents a score by
-/// multiplying a raw metric by a weight it does not own -- that is #385's
-/// formula).
+/// Project the native `quality_signal_detail` measurement without inventing
+/// root-cause scores or changing their 0..10000 units.
 fn root_causes_section(
     scan_structured: Option<&Value>,
     baseline_metrics: Option<&Value>,
     diagnostics: &mut Vec<String>,
 ) -> (Value, Value) {
-    if let Some(scan_structured) = scan_structured {
-        if let Some(upstream) = upstream_root_causes(scan_structured) {
-            let formula_version = scan_structured["formula_version"]
+    if let Some(detail) = scan_structured.and_then(|scan| scan.get("quality_signal_detail")) {
+        if let Some(upstream) = upstream_root_causes(detail) {
+            let formula_version = detail["formula_version"]
                 .as_str()
                 .map(Value::from)
                 .unwrap_or(Value::Null);
@@ -437,7 +452,7 @@ fn root_causes_section(
         }
     }
     diagnostics.push(
-        "The verified sentrux.scan payload has no upstream `root_causes.<id>` shape yet (#385 pending); projecting this engine's own currently-measured proxy metrics instead.".to_string(),
+        "The verified sentrux.scan payload has no complete current five-factor measurement; historical proxy metrics are diagnostic only.".to_string(),
     );
     let entries = LEGACY_ROOT_CAUSES
         .iter()
@@ -491,6 +506,7 @@ fn root_cause_finding(quality_signal: &Value, health_ref: Option<Value>) -> Opti
         "targets": Value::Array(Vec::new()),
         "severityUpstream": Value::Null,
         "severityNormalized": "medium",
+        "disposition": "advisory",
         "evidenceRefs": health_ref.map(|r| vec![r]).unwrap_or_default(),
     }))
 }
@@ -499,12 +515,24 @@ fn violation_findings(capability: Option<(&Value, &Value)>, capability_id: &str)
     let Some((reference, payload)) = capability else {
         return Vec::new();
     };
-    let Some(violations) = payload["outputs"]["command"]["violations"].as_array() else {
-        return Vec::new();
-    };
+    let result = validated_admission(payload);
+    // Unrecognized policy results remain diagnostic, never an advisory pass.
+    let violations = result
+        .map(|result| &result["blockingViolations"])
+        .unwrap_or(&payload["outputs"]["command"]["violations"]);
+    let advisories = result.and_then(|result| result["advisories"].as_array());
     violations
-        .iter()
-        .map(|violation| {
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|violation| (violation, "blocking"))
+        .chain(
+            advisories
+                .into_iter()
+                .flatten()
+                .map(|violation| (violation, "advisory")),
+        )
+        .map(|(violation, disposition)| {
             let rule = violation["rule"].as_str().unwrap_or("unknown_rule");
             let message = violation["message"].as_str().unwrap_or("");
             let targets = violation["targets"]
@@ -528,6 +556,7 @@ fn violation_findings(capability: Option<(&Value, &Value)>, capability_id: &str)
                 "targets": targets,
                 "severityUpstream": Value::Null,
                 "severityNormalized": violation_severity(rule),
+                "disposition": disposition,
                 "evidenceRefs": [reference.clone()],
             })
         })
@@ -578,6 +607,8 @@ fn finding_fingerprint(kind: &str, capability_id: &str, rule: &str, targets: &[S
 fn finding_counts(findings: &[Value]) -> Value {
     let mut by_kind = std::collections::BTreeMap::<&str, i64>::new();
     let mut by_severity = std::collections::BTreeMap::<&str, i64>::new();
+    let mut blocking = 0;
+    let mut advisory = 0;
     for finding in findings {
         if let Some(kind) = finding["kind"].as_str() {
             *by_kind.entry(kind).or_insert(0) += 1;
@@ -585,11 +616,17 @@ fn finding_counts(findings: &[Value]) -> Value {
         if let Some(severity) = finding["severityNormalized"].as_str() {
             *by_severity.entry(severity).or_insert(0) += 1;
         }
+        match finding["disposition"].as_str() {
+            Some("blocking") => blocking += 1,
+            Some("advisory") => advisory += 1,
+            _ => {}
+        }
     }
     json!({
         "total": findings.len(),
         "byKind": by_kind,
         "bySeverity": by_severity,
+        "byDisposition": {"blocking":blocking,"advisory":advisory},
     })
 }
 

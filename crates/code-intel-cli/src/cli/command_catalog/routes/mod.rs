@@ -550,7 +550,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             Internal,
             Internal,
             &[CommandEffect::RepoRead],
-            stdout!("code-intel-report.v1", "text-format:report-text.v1"),
+            stdout!("code-intel-report.v2", "text-format:report-text.v1"),
             exits!(0, 1),
             "retain while committed-run report reading is the supported human-facing surface"
         ),
@@ -758,8 +758,8 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
                 CommandEffect::ProcessSpawn
             ],
             stdout_with_optional_artifacts!(
-                ["code-intel-quality-signal-projection.v1"],
-                ["code-intel-quality-signal-projection.v1"]
+                ["code-intel-quality-signal-projection.v2"],
+                ["code-intel-quality-signal-projection.v2"]
             ),
             exits!(0, 65, 74),
             "retire only through a versioned quality-signal projection replacement"

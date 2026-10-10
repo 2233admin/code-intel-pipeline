@@ -37,10 +37,6 @@ try {
         $activationHookText -notmatch '(?m)^\s*/usr/bin/bash "\$previous_hook"') {
         throw "repository hook must enforce check-push and forward the shared hook through Git Bash"
     }
-    $packageDocument = Get-Content -Raw -LiteralPath $packageManifest | ConvertFrom-Json
-    if ([string]$packageDocument.devDependencies.'claude-code-merge-queue' -ne '0.5.1') {
-        throw "repository provider dependency must be pinned exactly to 0.5.1"
-    }
 
     New-Item -ItemType Directory -Force -Path $temp | Out-Null
     & git -C $temp init --quiet

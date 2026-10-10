@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-quality-signal-projection.v2",
+  "description": "Snapshot-bound measurement display with separate approved-policy admission. Raw Quality decline remains advisory, never an inferred gate verdict.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "contractVersion", "gatePolicy", "repo", "run", "snapshotIdentity", "binding", "completeness", "diagnostics", "qualitySignal", "admission", "findings", "orcaEvent"],
+  "properties": {
+    "schema": {"const": "code-intel-quality-signal-projection.v2"},
+    "contractVersion": {"const": 2},
+    "gatePolicy": {"$ref": "code-intel-sentrux-gate-policy.v1.schema.json#/$defs/identity"},
+    "repo": {"type": "string"},
+    "run": {"type": "string"},
+    "snapshotIdentity": {"$ref": "#/$defs/snapshotIdentity"},
+    "binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["commit", "baseRef", "repositoryIdentity", "snapshotIdentity"],
+      "properties": {
+        "commit": {"type": "string", "minLength": 1},
+        "baseRef": {"type": ["string", "null"]},
+        "repositoryIdentity": {"type": "string", "minLength": 1},
+        "snapshotIdentity": {"$ref": "#/$defs/snapshotIdentity"}
+      }
+    },
+    "completeness": {"enum": ["complete", "degraded", "unavailable"]},
+    "diagnostics": {"type": "array", "items": {"type": "string"}},
+    "qualitySignal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["total", "bottleneck", "formulaVersion", "regression", "rootCauses"],
+      "properties": {
+        "total": {"$ref": "#/$defs/total"},
+        "bottleneck": {"type": ["string", "null"]},
+        "formulaVersion": {"type": ["string", "null"]},
+        "regression": {"$ref": "#/$defs/regression"},
+        "rootCauses": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "admission": {"$ref": "#/$defs/admission"},
+    "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "orcaEvent": {"$ref": "code-intel-orca-quality-event.v2.schema.json"}
+  },
+  "$defs": {
+    "snapshotIdentity": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "total": {
+      "type": "object", "additionalProperties": false, "required": ["current", "baseline", "delta"],
+      "properties": {"current": {"type": ["integer", "null"]}, "baseline": {"type": ["integer", "null"]}, "delta": {"type": ["integer", "null"]}}
+    },
+    "regression": {
+      "type": "object", "additionalProperties": false, "required": ["status", "disposition", "message"],
+      "properties": {"status": {"enum": ["declined", "not_declined", "unknown"]}, "disposition": {"const": "advisory"}, "message": {"type": "string", "minLength": 1}}
+    },
+    "admission": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["verdict", "reason"], "properties": {"verdict": {"const": "unknown"}, "reason": {"type": "string", "minLength": 1}}},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["verdict", "policy", "ruleScope", "blockingViolations", "advisories"],
+          "properties": {
+            "verdict": {"enum": ["pass", "fail", "unknown"]},
+            "policy": {"$ref": "code-intel-sentrux-gate-policy.v1.schema.json#/$defs/identity"},
+            "ruleScope": {"enum": ["baseline_ratchet", "static_and_ratchet"]},
+            "blockingViolations": {"$ref": "code-intel-sentrux-gate-result.v1.schema.json#/properties/blockingViolations"},
+            "advisories": {"$ref": "code-intel-sentrux-gate-result.v1.schema.json#/properties/advisories"}
+          },
+          "allOf": [
+            {"if": {"properties": {"verdict": {"const": "pass"}}}, "then": {"properties": {"blockingViolations": {"maxItems": 0}}}},
+            {"if": {"properties": {"verdict": {"const": "fail"}}}, "then": {"properties": {"blockingViolations": {"minItems": 1}}}}
+          ]
+        }
+      ]
+    },
+    "finding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["fingerprint", "kind", "capabilityId", "rule", "message", "targets", "severityUpstream", "severityNormalized", "disposition", "evidenceRefs"],
+      "properties": {
+        "fingerprint": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "kind": {"enum": ["root_cause_diagnostic", "baseline_regression", "rule_violation"]},
+        "capabilityId": {"type": "string"}, "rule": {"type": "string"}, "message": {"type": "string"},
+        "targets": {"type": "array", "items": {"type": "string"}},
+        "severityUpstream": {"type": "null"}, "severityNormalized": {"enum": ["low", "medium", "high"]},
+        "disposition": {"enum": ["blocking", "advisory"]},
+        "evidenceRefs": {"type": "array", "items": {"type": "object"}}
+      }
+    }
+  }
+}

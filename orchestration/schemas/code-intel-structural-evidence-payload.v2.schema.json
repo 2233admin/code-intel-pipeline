@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-structural-evidence-payload.v2",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "gatePolicy", "gateResults", "advisories", "snapshotIdentity", "provider", "provenance", "effects", "completeness", "rules"],
+  "properties": {
+    "schema": {"const": "code-intel-structural-evidence-payload.v2"},
+    "gatePolicy": {"$ref": "code-intel-sentrux-gate-policy.v1.schema.json#/$defs/identity"},
+    "gateResults": {"$ref": "code-intel-structural-evidence-port.v2.schema.json#/$defs/gateResults"},
+    "advisories": {"$ref": "code-intel-structural-evidence-port.v2.schema.json#/$defs/advisories"},
+    "snapshotIdentity": {"$ref": "code-intel-structural-evidence-port.v2.schema.json#/$defs/sha256"},
+    "provider": {"$ref": "code-intel-structural-evidence-port.v2.schema.json#/properties/provider"},
+    "provenance": {"type": "object", "additionalProperties": false, "required": ["sourceRevision"], "properties": {"sourceRevision": {"type": "string", "minLength": 1}}},
+    "effects": {"$ref": "code-intel-structural-evidence-port.v2.schema.json#/properties/effects"},
+    "completeness": {"enum": ["complete", "partial"]},
+    "rules": {"$ref": "code-intel-structural-evidence-port.v2.schema.json#/properties/rules"}
+  }
+}

@@ -60,7 +60,7 @@ pub(super) const SENTRUX_ADAPT: super::RawRoute = super::RawRoute {
         output_contract: super::OutputContract::Stdout {
             identities: &[
                 "code-intel-sentrux-route-result.v1",
-                "code-intel-sentrux-adapter-result.v1",
+                "code-intel-sentrux-adapter-result.v2",
             ],
         },
         exit_contract: super::ExitContract::Exact(&[0, 64, 65]),

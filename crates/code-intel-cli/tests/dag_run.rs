@@ -7,6 +7,8 @@ mod common;
 // autodiscovery the same way `tests/common/mod.rs` already does.
 #[path = "dag_run_support/timeout.rs"]
 mod dag_run_timeout;
+#[path = "support/sha256.rs"]
+mod sha256;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -28,8 +30,8 @@ fn temp_dir() -> PathBuf {
     ))
 }
 
-fn doctor_tool_fixture(root: &Path, conforming_sentrux: bool) -> PathBuf {
-    let bin = root.join(if conforming_sentrux {
+fn doctor_tool_fixture(root: &Path, builtin_sentrux: bool) -> PathBuf {
+    let bin = root.join(if builtin_sentrux {
         "doctor-tools-ready"
     } else {
         "doctor-tools-nonconforming"
@@ -37,38 +39,64 @@ fn doctor_tool_fixture(root: &Path, conforming_sentrux: bool) -> PathBuf {
     fs::create_dir_all(&bin).unwrap();
     #[cfg(windows)]
     {
-        for name in ["rg", "git", "python", "repowise"] {
+        for name in ["python", "repowise"] {
             fs::write(
                 bin.join(format!("{name}.cmd")),
                 "@echo off\r\nexit /b 0\r\n",
             )
             .unwrap();
         }
-        let sentrux = if conforming_sentrux {
-            "@echo off\r\necho Enforce architectural rules\r\necho Tier: pro\r\nexit /b 0\r\n"
-        } else {
-            "@echo off\r\necho fixture nonconforming\r\nexit /b 0\r\n"
-        };
-        fs::write(bin.join("sentrux.cmd"), sentrux).unwrap();
+        if !builtin_sentrux {
+            fs::write(
+                bin.join("sentrux.cmd"),
+                "@echo off\r\necho fixture nonconforming\r\nexit /b 0\r\n",
+            )
+            .unwrap();
+        }
     }
     #[cfg(not(windows))]
     {
         use std::os::unix::fs::PermissionsExt;
-        for name in ["rg", "git", "python", "repowise"] {
+        for name in ["python", "repowise"] {
             let path = bin.join(name);
             fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
             fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
         }
-        let path = bin.join("sentrux");
-        let sentrux = if conforming_sentrux {
-            "#!/bin/sh\necho 'Enforce architectural rules'\necho 'Tier: pro'\nexit 0\n"
-        } else {
-            "#!/bin/sh\necho 'fixture nonconforming'\nexit 0\n"
-        };
-        fs::write(&path, sentrux).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        if !builtin_sentrux {
+            let path = bin.join("sentrux");
+            fs::write(&path, "#!/bin/sh\necho 'fixture nonconforming'\nexit 0\n").unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
     }
     bin
+}
+
+fn doctor_tool_path(root: &Path, builtin_sentrux: bool) -> std::ffi::OsString {
+    let bin = doctor_tool_fixture(root, builtin_sentrux);
+    // Isolate doctor-only Python/Repowise availability; rg/git must remain
+    // real. toolPathPrefix would also select the external Sentrux adapter.
+    let binary_dir = PathBuf::from(env!("CARGO_BIN_EXE_code-intel"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let mut paths = vec![bin, binary_dir];
+    paths.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    std::env::join_paths(paths).expect("fixture PATH")
+}
+
+fn save_baseline(repo: &Path) {
+    let output = common::cli()
+        .args(["sentrux", "--operation", "save_baseline", "--repo"])
+        .arg(repo)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
@@ -79,15 +107,15 @@ fn production_run_route_executes_snapshot_then_inventory() {
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
-    let doctor_tools = doctor_tool_fixture(&root, true);
+    save_baseline(&repo);
+    let doctor_tools = doctor_tool_path(&root, true);
 
     let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&repo)
         .arg("--out")
         .arg(&out)
-        .arg("--doctor-tool-path-prefix")
-        .arg(&doctor_tools)
+        .env("PATH", &doctor_tools)
         .output()
         .unwrap();
     assert_eq!(
@@ -229,7 +257,7 @@ fn production_run_budget_reports_completed_failed_and_budget_stopped() {
         fs::create_dir_all(&authority).unwrap();
         fs::write(repo.join("README.md"), "fixture\n").unwrap();
         fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
-        let doctor_tools = doctor_tool_fixture(&root, true);
+        let doctor_tools = doctor_tool_path(&root, true);
 
         let output = common::cli()
             .args(["run", "execute", "--repo"])
@@ -240,8 +268,7 @@ fn production_run_budget_reports_completed_failed_and_budget_stopped() {
             .arg(&authority)
             .args(["--final-name", "budget-run", "--profile", "offline"])
             .args(["--max-concurrency", "1", "--budget-wall-clock", limit])
-            .arg("--doctor-tool-path-prefix")
-            .arg(&doctor_tools)
+            .env("PATH", &doctor_tools)
             .output()
             .unwrap();
         assert_eq!(
@@ -314,7 +341,8 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
         "use crate::lib;\n#[test]\nfn covers_fixture() {}\n",
     )
     .unwrap();
-    let doctor_tools = doctor_tool_fixture(&root, true);
+    save_baseline(&repo);
+    let doctor_tools = doctor_tool_path(&root, true);
 
     let execution = common::cli()
         .args(["run", "execute", "--repo"])
@@ -324,8 +352,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
         .arg("--authority-root")
         .arg(&repo_authority)
         .args(["--final-name", "run-001"])
-        .arg("--doctor-tool-path-prefix")
-        .arg(&doctor_tools)
+        .env("PATH", &doctor_tools)
         .output()
         .unwrap();
     assert_eq!(
@@ -433,7 +460,7 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
         .unwrap()
         .iter()
         .all(|reference| {
-            reference["artifactSchema"] == "code-intel-sentrux-capability-artifact.v1"
+            reference["artifactSchema"] == "code-intel-sentrux-capability-artifact.v2"
                 && reference["type"] == "provider.sentrux.capability-artifact"
         }));
     assert_eq!(
@@ -612,7 +639,8 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
     fs::create_dir_all(&authority).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
-    let completed_doctor_tools = doctor_tool_fixture(&root, true);
+    save_baseline(&repo);
+    let completed_doctor_tools = doctor_tool_path(&root, true);
     let completed = common::cli()
         .args(["run", "execute", "--repo"])
         .arg(&repo)
@@ -621,8 +649,7 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
         .arg("--authority-root")
         .arg(&authority)
         .args(["--final-name", "completed-001"])
-        .arg("--doctor-tool-path-prefix")
-        .arg(&completed_doctor_tools)
+        .env("PATH", &completed_doctor_tools)
         .output()
         .unwrap();
     assert_eq!(
@@ -633,7 +660,7 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
         String::from_utf8_lossy(&completed.stderr)
     );
 
-    let doctor_tools = doctor_tool_fixture(&root, false);
+    let doctor_tools = doctor_tool_path(&root, false);
 
     let output = common::cli()
         .args(["run", "execute", "--repo"])
@@ -643,8 +670,7 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
         .arg("--authority-root")
         .arg(&authority)
         .args(["--final-name", "failed-001"])
-        .arg("--doctor-tool-path-prefix")
-        .arg(&doctor_tools)
+        .env("PATH", &doctor_tools)
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(10));
@@ -755,6 +781,7 @@ fn optional_session_evidence_is_snapshot_bound_a03_verified_and_manifested() {
     let session = root.join("session-evidence.json");
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
+    save_baseline(&repo);
     fs::write(
         &trace,
         serde_json::to_vec(&json!({
@@ -790,7 +817,7 @@ fn optional_session_evidence_is_snapshot_bound_a03_verified_and_manifested() {
         String::from_utf8_lossy(&adapted.stderr)
     );
 
-    let doctor_tools = doctor_tool_fixture(&root, true);
+    let doctor_tools = doctor_tool_path(&root, true);
     let run = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&repo)
@@ -798,8 +825,7 @@ fn optional_session_evidence_is_snapshot_bound_a03_verified_and_manifested() {
         .arg(&out)
         .arg("--session-evidence")
         .arg(&session)
-        .arg("--doctor-tool-path-prefix")
-        .arg(&doctor_tools)
+        .env("PATH", &doctor_tools)
         .output()
         .unwrap();
     assert_eq!(
@@ -974,7 +1000,7 @@ fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::create_dir_all(&authority).unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
-    let doctor_tools = doctor_tool_fixture(&root, true);
+    let doctor_tools = doctor_tool_path(&root, true);
 
     let output = common::cli()
         .args(["run", "execute", "--repo"])
@@ -986,8 +1012,7 @@ fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
         .args(["--final-name", "offline-001", "--profile", "offline"])
         .args(["--doctor-require-repowise", "true"])
         .args(["--doctor-require-understand", "true"])
-        .arg("--doctor-tool-path-prefix")
-        .arg(&doctor_tools)
+        .env("PATH", &doctor_tools)
         .output()
         .unwrap();
     assert_eq!(
@@ -1098,7 +1123,8 @@ fn strict_profile_cannot_be_weakened_and_keeps_all_provider_nodes_required() {
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::create_dir_all(&authority).unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
-    let doctor_tools = doctor_tool_fixture(&root, true);
+    save_baseline(&repo);
+    let doctor_tools = doctor_tool_path(&root, true);
 
     let output = common::cli()
         .args(["run", "execute", "--repo"])
@@ -1110,8 +1136,7 @@ fn strict_profile_cannot_be_weakened_and_keeps_all_provider_nodes_required() {
         .args(["--final-name", "strict-001", "--profile", "strict"])
         .args(["--doctor-require-repowise", "false"])
         .args(["--doctor-require-understand", "false"])
-        .arg("--doctor-tool-path-prefix")
-        .arg(&doctor_tools)
+        .env("PATH", &doctor_tools)
         .output()
         .unwrap();
 
@@ -1190,20 +1215,16 @@ fn doctor_succeeded(manifest: &Value) -> bool {
     manifest["nodes"]["doctor"]["status"] == "succeeded"
 }
 
-/// A repository that never ran `save_baseline` has no prior measurement, so the
-/// built-in gate cannot detect a regression against one. That absence of
-/// governance is not a structural violation: reporting it as a failing rule made
-/// the hospital diagnose "architecture gate failure" and the whole run exit 10
-/// on any never-baselined repository, including a fixture holding one README.
+/// Missing baselines are unknown evidence, not an exemption that can authorize
+/// the current structural gate or promote a clean diagnosis.
 #[test]
-fn ungoverned_repository_completes_instead_of_failing_the_architecture_gate() {
+fn unbaselined_repository_cannot_claim_current_gate_admission() {
     let root = temp_dir();
     let repo = root.join("repo");
     let out = root.join("run");
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
-
     let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&repo)
@@ -1212,57 +1233,152 @@ fn ungoverned_repository_completes_instead_of_failing_the_architecture_gate() {
         .output()
         .unwrap();
     let manifest: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_ne!(manifest["outcome"], "completed");
+    assert_ne!(output.status.code(), Some(0));
+    assert_eq!(manifest["nodes"]["evidence.sentrux"]["verdict"], "unknown");
     assert_eq!(
-        manifest["nodes"]["diagnosis.hospital"]["status"], "succeeded",
-        "manifest={manifest}"
+        manifest["nodes"]["diagnosis.hospital"]["verdict"],
+        "unknown"
     );
-    assert_eq!(
-        manifest["nodes"]["diagnosis.hospital"]["verdict"], "pass",
-        "manifest={manifest}"
-    );
-    if doctor_succeeded(&manifest) {
-        assert_eq!(
-            output.status.code(),
-            Some(0),
-            "stdout={} stderr={}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_eq!(manifest["outcome"], "completed", "manifest={manifest}");
+    for kind in ["sentrux_gate", "sentrux_check"] {
+        let rule = sentrux_rule(&out, kind);
+        assert_eq!(rule["status"], "not_evaluated");
+        assert_eq!(rule["verdict"], "unknown");
     }
-
-    let gate = sentrux_rule(&out, "sentrux_gate");
-    assert_eq!(gate["status"], "evaluated");
-    assert_eq!(gate["verdict"], "pass");
-    assert!(
-        gate.get("details").is_none(),
-        "an ungoverned gate must not publish violation details: {gate}"
+    let gate = sentrux_command(&out, "gate");
+    assert_eq!(gate["success"], false);
+    assert_eq!(gate["admission"]["verdict"], "unknown");
+    assert_eq!(
+        gate["admission"]["blockingViolations"][0]["rule"],
+        "baseline_missing"
     );
-    assert_eq!(sentrux_rule(&out, "sentrux_check")["verdict"], "pass");
-
     let hospital: Value = serde_json::from_slice(
         &fs::read(out.join("diagnosis.hospital/hospital-report.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(hospital["triage"]["primary_diagnosis"], "clean snapshot");
-    assert_eq!(hospital["triage"]["failing_rules"], json!([]));
-
-    // The ungoverned state stays auditable: the command observation keeps the
-    // engine's real exit code and operator instruction verbatim.
-    let observed_gate = sentrux_command(&out, "gate");
-    assert_eq!(observed_gate["success"], false);
-    assert_eq!(observed_gate["exitCode"], 1);
-    assert!(observed_gate["stdout"]
-        .as_str()
-        .unwrap()
-        .contains("Sentrux baseline missing"));
-
+    assert_eq!(
+        hospital["triage"]["primary_diagnosis"],
+        "authoritative structural evidence unavailable"
+    );
     let _ = fs::remove_dir_all(root);
 }
 
-/// The counterpart of the case above: once a baseline exists, a real regression
-/// against it must still stop the run. This is the assertion that keeps the
-/// ungoverned exemption from becoming a hole in the gate.
+#[test]
+fn native_dag_admits_quality_advisory_with_snapshot_bound_v2_artifact_refs() {
+    let root = temp_dir();
+    let repo = root.join("repo");
+    let out = root.join("run");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::create_dir_all(repo.join(".sentrux")).unwrap();
+    fs::write(repo.join("src/a.rs"), "pub fn alpha() {}\n").unwrap();
+    fs::write(repo.join("src/b.rs"), "pub fn beta() {}\n").unwrap();
+    fs::write(
+        repo.join(".sentrux/rules.toml"),
+        "[constraints]\nmax_cycles = 0\nno_god_files = false\n",
+    )
+    .unwrap();
+    save_baseline(&repo);
+    let mut source = String::from("pub fn entry() {}\n");
+    for i in 0..600 {
+        source.push_str(&format!("// padding {i}\n"));
+    }
+    fs::write(repo.join("src/a.rs"), source).unwrap();
+    let tools = doctor_tool_path(&root, true);
+    let output = common::cli()
+        .args(["run", "dag-coordinate", "--repo"])
+        .arg(&repo)
+        .arg("--out")
+        .arg(&out)
+        .env("PATH", tools)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let manifest: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(manifest["outcome"], "completed");
+    assert_eq!(manifest["nodes"]["evidence.sentrux"]["verdict"], "pass");
+    let payload: Value = serde_json::from_slice(
+        &fs::read(out.join("evidence.sentrux/sentrux-payload.json")).unwrap(),
+    )
+    .unwrap();
+    let evidence = &payload["data"]["structuralEvidence"];
+    assert_eq!(
+        evidence["schema"],
+        "code-intel-structural-evidence-payload.v2"
+    );
+    assert_eq!(evidence["snapshotIdentity"], manifest["snapshotIdentity"]);
+    assert_eq!(evidence["completeness"], "complete");
+    assert_eq!(evidence["advisories"].as_array().unwrap().len(), 1);
+    assert_eq!(evidence["advisories"][0]["rule"], "quality_degraded");
+    assert_eq!(
+        evidence["gatePolicy"]["sha256"],
+        "f97cfed77d80be09acda1331bf449bb21e09ee58d91e19255313bbc5815d11f0"
+    );
+    let admission: Value = serde_json::from_slice(
+        &fs::read(out.join("evidence.sentrux/sentrux-admission.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(admission["domainVerdict"], "observed");
+    let mut gate_artifacts = Vec::new();
+    for reference in manifest["nodes"]["evidence.sentrux"]["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|reference| reference["type"] == "provider.sentrux.capability-artifact")
+    {
+        assert_eq!(
+            reference["artifactSchema"],
+            "code-intel-sentrux-capability-artifact.v2"
+        );
+        assert_eq!(
+            reference["consumedSnapshotIdentity"],
+            manifest["snapshotIdentity"]
+        );
+        let bytes = fs::read(out.join(reference["path"].as_str().unwrap())).unwrap();
+        assert_eq!(reference["sha256"], sha256::sha256_hex(&bytes));
+        let artifact: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(artifact["snapshotIdentity"], manifest["snapshotIdentity"]);
+        if matches!(
+            artifact["capabilityId"].as_str(),
+            Some("sentrux.gate" | "sentrux.check")
+        ) {
+            gate_artifacts.push(artifact["capabilityId"].as_str().unwrap().to_owned());
+            assert_eq!(artifact["status"], "succeeded");
+            assert_eq!(artifact["outputs"]["verdict"], "pass");
+            assert_eq!(
+                artifact["outputs"]["command"]["admission"]["blockingViolations"],
+                json!([])
+            );
+            assert_eq!(
+                artifact["outputs"]["command"]["advisories"][0]["rule"],
+                "quality_degraded"
+            );
+            assert_eq!(
+                artifact["outputs"]["command"]["admission"]["advisories"][0]["rule"],
+                "quality_degraded"
+            );
+        }
+    }
+    gate_artifacts.sort();
+    assert_eq!(gate_artifacts, vec!["sentrux.check", "sentrux.gate"]);
+    let hospital: Value = serde_json::from_slice(
+        &fs::read(out.join("diagnosis.hospital/hospital-report.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(hospital["triage"]["failing_rules"], json!([]));
+    assert_eq!(
+        hospital["triage"]["advisories"][0]["rule"],
+        "quality_degraded"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+/// A hard identity-ratchet regression still stops the diagnosis and run.
 #[test]
 fn baselined_repository_that_regresses_still_fails_the_architecture_gate() {
     let root = temp_dir();
@@ -1496,15 +1612,15 @@ fn production_run_completes_on_a_linked_worktree_checkout() {
     // Untracked content in the worktree keeps the enumeration path
     // (`ls-files --others`) load-bearing rather than trivially empty.
     fs::write(linked.join("untracked.txt"), "scratch\n").unwrap();
-    let doctor_tools = doctor_tool_fixture(&root, true);
+    save_baseline(&linked);
+    let doctor_tools = doctor_tool_path(&root, true);
 
     let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&linked)
         .arg("--out")
         .arg(&out)
-        .arg("--doctor-tool-path-prefix")
-        .arg(&doctor_tools)
+        .env("PATH", &doctor_tools)
         .output()
         .unwrap();
     assert_eq!(

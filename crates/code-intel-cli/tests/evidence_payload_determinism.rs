@@ -36,41 +36,38 @@ fn temp_dir() -> PathBuf {
     ))
 }
 
-fn doctor_tool_fixture(root: &Path) -> PathBuf {
+fn doctor_tool_fixture(root: &Path) -> std::ffi::OsString {
     let bin = root.join("doctor-tools");
     fs::create_dir_all(&bin).unwrap();
     #[cfg(windows)]
     {
-        for name in ["rg", "git", "python", "repowise"] {
+        for name in ["python", "repowise"] {
             fs::write(
                 bin.join(format!("{name}.cmd")),
                 "@echo off\r\nexit /b 0\r\n",
             )
             .unwrap();
         }
-        fs::write(
-            bin.join("sentrux.cmd"),
-            "@echo off\r\necho Enforce architectural rules\r\necho Tier: pro\r\nexit /b 0\r\n",
-        )
-        .unwrap();
     }
     #[cfg(not(windows))]
     {
         use std::os::unix::fs::PermissionsExt;
-        for name in ["rg", "git", "python", "repowise"] {
+        for name in ["python", "repowise"] {
             let path = bin.join(name);
             fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
             fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
         }
-        let path = bin.join("sentrux");
-        fs::write(
-            &path,
-            "#!/bin/sh\necho 'Enforce architectural rules'\necho 'Tier: pro'\nexit 0\n",
-        )
-        .unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
     }
-    bin
+    // Stub only doctor Python/Repowise; keep rg/git and Sentrux real.
+    let binary_dir = PathBuf::from(env!("CARGO_BIN_EXE_code-intel"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let mut paths = vec![bin, binary_dir];
+    paths.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    std::env::join_paths(paths).expect("fixture PATH")
 }
 
 /// Name the manifest this test means. Without it the spawned binary resolves
@@ -83,14 +80,13 @@ fn manifest_path() -> PathBuf {
         .join("integrations.json")
 }
 
-fn dag_run(repo: &Path, out: &Path, doctor_tools: &Path) -> Value {
+fn dag_run(repo: &Path, out: &Path, doctor_tools: &std::ffi::OsStr) -> Value {
     let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(repo)
         .arg("--out")
         .arg(out)
-        .arg("--doctor-tool-path-prefix")
-        .arg(doctor_tools)
+        .env("PATH", doctor_tools)
         .env("CODE_INTEL_INTEGRATIONS_MANIFEST", manifest_path())
         .output()
         .unwrap();
@@ -126,6 +122,16 @@ fn evidence_payloads_are_byte_identical_across_runs_of_one_unchanged_tree() {
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").unwrap();
+    let baseline = common::cli()
+        .args(["sentrux", "--operation", "save_baseline", "--repo"])
+        .arg(&repo)
+        .output()
+        .unwrap();
+    assert!(
+        baseline.status.success(),
+        "{}",
+        String::from_utf8_lossy(&baseline.stderr)
+    );
     let doctor_tools = doctor_tool_fixture(&root);
 
     let first_out = root.join("run-1");

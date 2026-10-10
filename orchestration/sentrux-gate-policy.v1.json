@@ -1,0 +1,23 @@
+{
+  "schema": "code-intel-sentrux-gate-policy.v1",
+  "policyId": "evidence-quality-admission",
+  "policyVersion": 1,
+  "authority": {
+    "decisionRecord": "DR-0016",
+    "approval": "https://github.com/2233admin/code-intel-pipeline/issues/427#issuecomment-6095655906"
+  },
+  "measurement": {
+    "baselineSchema": "code-intel-sentrux-baseline.v6",
+    "engineId": "sentrux-native",
+    "engineVersion": "3.0.0",
+    "formulaVersion": "sentrux-upstream@6f8ff3c14b0423e4b58f42d1813d4d5f7fdc1d11+max-floor-0.01",
+    "providerVersion": "code-intel-quality-signal.v1",
+    "scope": ".",
+    "fileGateSchema": "code-intel-file-gate.v1",
+    "evidenceProfile": "directory-communities-file-loc-duplicate-only.v1"
+  },
+  "advisoryRules": ["quality_degraded"],
+  "blockingRules": ["coupling_increased", "cycles_increased", "god_files_increased", "baseline_missing", "baseline_engine_mismatch"],
+  "staticRules": "unchanged_blocking",
+  "unknownSemantics": "blocked"
+}

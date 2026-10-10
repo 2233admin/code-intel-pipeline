@@ -65,11 +65,14 @@ env:
   RISK_SCORE_BLOCK: "80"
 
 jobs:
+  admission-policy:
+    uses: ./.github/workflows/admission-policy.yml
+
   change-risk:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -88,7 +91,7 @@ jobs:
           ./target/release/code-intel change risk "origin/${{ github.base_ref }}..HEAD" --format json | tee risk.json
 
       - name: Upload risk report
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: change-risk-report
           path: risk.json
@@ -228,13 +231,14 @@ jobs:
           echo "agent-approved label present — gate green"
 
   sentrux-capability-gate:
+    needs: admission-policy
     # The PR gate consumes only the committed Run Commit boundary.  It never
     # treats Sentrux stdout as authority: `artifact index` revalidates the
     # completion marker, content-addressed manifest, and every Artifact Ref.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -313,7 +317,7 @@ jobs:
           $refs = @($entry[0].artifactRefs)
           $hospitalRefs = @($refs | Where-Object { $_.type -eq "diagnosis.hospital" })
           if ($hospitalRefs.Count -ne 1) { throw "completed run is missing its verified final hospital report Artifact Ref" }
-          $capabilityRefs = @($refs | Where-Object { $_.artifactSchema -eq "code-intel-sentrux-capability-artifact.v1" -and $_.type -eq "provider.sentrux.capability-artifact" })
+          $capabilityRefs = @($refs | Where-Object { $_.artifactSchema -eq "code-intel-sentrux-capability-artifact.v2" -and $_.type -eq "provider.sentrux.capability-artifact" })
           if ($capabilityRefs.Count -eq 0) { throw "completed run has no verified Sentrux capability Artifact Refs" }
 
           $matrix = Get-Content -Raw -LiteralPath "orchestration/sentrux-capability-matrix.v1.json" | ConvertFrom-Json
@@ -323,7 +327,7 @@ jobs:
           foreach ($ref in $capabilityRefs) {
             $payloadPath = Join-Path $runRoot ($ref.path -replace '/', [IO.Path]::DirectorySeparatorChar)
             $payload = Get-Content -Raw -LiteralPath $payloadPath | ConvertFrom-Json
-            if ($payload.schema -ne "code-intel-sentrux-capability-artifact.v1" -or $payload.snapshotIdentity -ne $marker.snapshotIdentity) { throw "Sentrux capability artifact is not schema-valid and snapshot-bound: $($ref.path)" }
+            if ($payload.schema -ne "code-intel-sentrux-capability-artifact.v2" -or $payload.snapshotIdentity -ne $marker.snapshotIdentity) { throw "Sentrux capability artifact is not schema-valid and snapshot-bound: $($ref.path)" }
             if (-not $matrixById.ContainsKey($payload.capabilityId)) { throw "Sentrux capability is absent from the capability matrix: $($payload.capabilityId)" }
             if ($matrixById[$payload.capabilityId].operation -ne $payload.operation) { throw "Sentrux capability operation disagrees with the matrix: $($payload.capabilityId)" }
             if ($observed.ContainsKey($payload.capabilityId)) { throw "duplicate Sentrux capability artifact: $($payload.capabilityId)" }
@@ -360,7 +364,7 @@ jobs:
 
       - name: Upload Sentrux closure evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sentrux-pr-closure
           path: |
@@ -369,7 +373,7 @@ jobs:
 
       - name: Upload Quality Signal projection
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: quality-signal-projection
           path: ${{ runner.temp }}/quality-signal-projection.json
@@ -383,6 +387,8 @@ jobs:
           $bottleneck = if ($projection.qualitySignal.bottleneck) { $projection.qualitySignal.bottleneck } else { "none" }
           $deltaText = if ($null -eq $total.delta) { "n/a" } else { [string]$total.delta }
           $emoji = if ($null -ne $total.delta -and $total.delta -lt 0) { "[DOWN]" } else { "[OK]" }
+          $admissionVerdict = if ($projection.admission.verdict) { $projection.admission.verdict } else { "unknown" }
+          $policyText = if ($projection.admission.policy.policyId) { "$($projection.admission.policy.policyId) v$($projection.admission.policy.policyVersion)" } else { "unbound" }
 
           $rootCauseRows = foreach ($cause in @($projection.qualitySignal.rootCauses)) {
             $raw = $cause.raw
@@ -391,13 +397,14 @@ jobs:
           }
 
           $findingRows = foreach ($finding in @($projection.findings) | Select-Object -First 10) {
-            "| $($finding.kind) | $($finding.severityNormalized) | ``$($finding.rule)`` | $($finding.message) |"
+            "| $($finding.kind) | $($finding.severityNormalized) | $($finding.disposition) | ``$($finding.rule)`` | $($finding.message) |"
           }
 
           $summary = @(
             "### Code Intel Quality Signal"
             ""
             "Completeness: **$($projection.completeness)** &middot; snapshot ``$($projection.snapshotIdentity.Substring(0, [Math]::Min(12, $projection.snapshotIdentity.Length)))`` &middot; commit ``$($projection.binding.commit.Substring(0, 12))``"
+            "Admission: **$admissionVerdict** &middot; policy **$policyText** &middot; aggregate regression: **$($projection.qualitySignal.regression)** (advisory, not a blocking gate)"
             ""
             "| Total | Baseline | Delta |"
             "|---|---|---|"
@@ -414,8 +421,8 @@ jobs:
             $summary += @(
               "**Findings** ($($projection.findings.Count) total)"
               ""
-              "| Kind | Severity | Rule | Message |"
-              "|---|---|---|---|"
+              "| Kind | Severity | Disposition | Rule | Message |"
+              "|---|---|---|---|---|"
               ($findingRows -join "`n")
               ""
             )
@@ -429,7 +436,9 @@ jobs:
           Set-Content -Path (Join-Path $env:RUNNER_TEMP "quality-comment-body.md") -Value ($marker + "`n" + $summaryText)
 
           foreach ($finding in @($projection.findings)) {
-            if ($finding.severityNormalized -in @("high", "critical")) {
+            if ($finding.disposition -eq "advisory") {
+              Write-Host "::warning::Quality Signal advisory [$($finding.rule)]: $($finding.message)"
+            } elseif ($finding.severityNormalized -in @("high", "critical")) {
               $targets = if (@($finding.targets).Count -gt 0) { " ($($finding.targets -join ', '))" } else { "" }
               Write-Host "::error::Quality Signal $($finding.kind) [$($finding.rule)]: $($finding.message)$targets"
             } else {

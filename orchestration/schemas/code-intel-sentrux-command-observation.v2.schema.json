@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-sentrux-command-observation.v2",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "gatePolicy", "snapshotIdentity", "commands"],
+  "properties": {
+    "schema": {"const": "code-intel-sentrux-command-observation.v2"},
+    "gatePolicy": {"$ref": "code-intel-sentrux-gate-policy.v1.schema.json#/$defs/identity"},
+    "snapshotIdentity": {"$ref": "#/$defs/sha256"},
+    "commands": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"allOf": [{"$ref": "#/$defs/command"}, {"properties": {"id": {"enum": ["gate", "check"]}}}]}, "allOf": [{"contains": {"properties": {"id": {"const": "gate"}}}, "minContains": 1, "maxContains": 1}, {"contains": {"properties": {"id": {"const": "check"}}}, "minContains": 1, "maxContains": 1}]}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "command": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "argv", "exitCode", "success", "stdout", "stderr", "governed", "violations", "advisories", "admission", "outputSummary", "structuredData"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "argv": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"type": "string", "minLength": 1}},
+        "exitCode": {"type": ["integer", "null"], "minimum": -2147483648, "maximum": 2147483647}, "success": {"type": "boolean"},
+        "stdout": {"type": "string"}, "stderr": {"type": "string"}, "governed": {"type": "boolean"},
+        "violations": {"type": "array", "items": {"$ref": "code-intel-sentrux-gate-result.v1.schema.json#/$defs/violation"}},
+        "advisories": {"type": "array", "maxItems": 1, "items": {"allOf": [{"$ref": "code-intel-sentrux-gate-result.v1.schema.json#/$defs/violation"}, {"properties": {"rule": {"const": "quality_degraded"}}}]}},
+        "admission": {"oneOf": [{"type": "null"}, {"$ref": "code-intel-sentrux-gate-result.v1.schema.json"}]},
+        "outputSummary": {"$ref": "#/$defs/outputSummary"}, "structuredData": {"type": ["object", "array", "null"]}
+      },
+      "allOf": [
+        {"if": {"properties": {"success": {"const": true}}}, "then": {"properties": {"exitCode": {"const": 0}}}, "else": {"properties": {"exitCode": {"not": {"const": 0}}}}},
+        {"if": {"properties": {"admission": {"type": "object", "properties": {"verdict": {"const": "pass"}}}}}, "then": {"properties": {"success": {"const": true}, "governed": {"const": true}, "violations": {"maxItems": 0}, "outputSummary": {"properties": {"complete": {"const": true}}}}}},
+        {"if": {"properties": {"admission": {"type": "object", "properties": {"verdict": {"const": "fail"}}}}}, "then": {"properties": {"success": {"const": false}, "violations": {"minItems": 1}, "outputSummary": {"properties": {"complete": {"const": true}}}}}},
+        {"if": {"properties": {"admission": {"type": "object"}}}, "then": {"properties": {"id": {"enum": ["gate", "check"]}}}},
+        {"if": {"properties": {"id": {"const": "gate"}, "admission": {"type": "object"}}}, "then": {"properties": {"admission": {"properties": {"ruleScope": {"const": "baseline_ratchet"}}}}}},
+        {"if": {"properties": {"id": {"const": "check"}, "admission": {"type": "object"}}}, "then": {"properties": {"admission": {"properties": {"ruleScope": {"const": "static_and_ratchet"}}}}}},
+        {"if": {"properties": {"admission": {"type": "null"}}}, "then": {"properties": {"advisories": {"maxItems": 0}}}}
+      ]
+    },
+    "outputSummary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority", "complete", "bounded", "limitBytes", "totalBytes", "stdout", "stderr", "note"],
+      "properties": {"authority": {"const": "metadata_only"}, "complete": {"type": "boolean"}, "bounded": {"type": "boolean"}, "limitBytes": {"const": 16777216}, "totalBytes": {"type": "integer", "minimum": 0}, "stdout": {"$ref": "#/$defs/outputStream"}, "stderr": {"$ref": "#/$defs/outputStream"}, "note": {"type": "string"}}
+    },
+    "outputStream": {"type": "object", "additionalProperties": false, "required": ["bytes", "sha256", "preview", "previewBytes"], "properties": {"bytes": {"type": "integer", "minimum": 0}, "sha256": {"$ref": "#/$defs/sha256"}, "preview": {"type": "string"}, "previewBytes": {"type": "integer", "minimum": 0}}}
+  }
+}

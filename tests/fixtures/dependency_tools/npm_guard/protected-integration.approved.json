@@ -1,0 +1,18 @@
+{
+  "request": {
+    "argv": [
+      "check-push",
+      "origin",
+      "https://example.invalid/no-push"
+    ],
+    "stdin": "refs/heads/recording 1111111111111111111111111111111111111111 refs/heads/codex/code-intel-atomic-model 0000000000000000000000000000000000000000\n",
+    "clearEnvironment": [
+      "CLAUDE_CODE_MERGE_QUEUE_EMERGENCY_PUSH",
+      "CLAUDE_CODE_MERGE_QUEUE_LANDING"
+    ]
+  },
+  "response": {
+    "exitCode": 1,
+    "trackedSourceUnchanged": true
+  }
+}

@@ -535,7 +535,7 @@
         "id": "provider.graph-builtin.compat",
         "version": "1.0.0",
         "toolchainDigests": [
-              "989180a362946747bd9912a9655d7f919f0a82d4de893d402d8e5ece7f93d5cc",
+              "161f82337d79a41b0837b9b49c83dc4d388bd4d6409b911e71551e05ddf0c826",
               "245bd6d7eb6f774ea6f9cead43eb67f8b351fc92c930252d180d072f00524947",
               "68a4f55b76080575721cde3ee62fd746999c6df8e79303b809baecf5d2514338",
               "4bfbebebe9e80fa6821100dbb572542a314be399ae0f929bac455c8f1531c4b2",
@@ -587,11 +587,13 @@
         "id": "provider.sentrux-builtin.compat",
         "version": "1.0.0",
         "toolchainDigests": [
-              "989180a362946747bd9912a9655d7f919f0a82d4de893d402d8e5ece7f93d5cc",
-              "29ad124d984f6ab0756bdc7c0b523a84dfada2a655fe0d282ce681165f6bae4f",
-              "25759013371799d2edbfb72f557c9aaa274feb77bba72119db1fcfbbb2540ee1",
+              "161f82337d79a41b0837b9b49c83dc4d388bd4d6409b911e71551e05ddf0c826",
+              "4702bbed12b8012e8f0c84c601c148e5557554449922860b19b96605538b9701",
+              "1a6dd09ff215d6b4966d57cd9ee37b0420b7aa26c52cf8577a589de7be92f293",
               "4bfbebebe9e80fa6821100dbb572542a314be399ae0f929bac455c8f1531c4b2",
-              "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26"
+              "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26",
+              "99096721cfd61901fc78d4b836fd525c05ab0f9184b7021bfaf1cabd8faa5b2d",
+              "f97cfed77d80be09acda1331bf449bb21e09ee58d91e19255313bbc5815d11f0"
             ]
       },
       "determinism": "external_nondeterministic",
@@ -606,11 +608,13 @@
         "crates/code-intel-cli/src/sentrux_adapter.rs",
         "crates/code-intel-cli/src/sentrux_gate.rs",
         "crates/code-intel-cli/src/admissibility.rs",
-        "crates/code-intel-cli/src/adapter_contract.rs"
+        "crates/code-intel-cli/src/adapter_contract.rs",
+        "crates/code-intel-cli/src/sentrux_gate_policy.rs",
+        "orchestration/sentrux-gate-policy.v1.json"
       ]
     },
-      "artifactContract": ["orchestration/schemas/code-intel-structural-evidence-port.v1.schema.json", "orchestration/schemas/code-intel-sentrux-route-result.v1.schema.json", "orchestration/schemas/code-intel-evidence-admissibility-result.v1.schema.json"],
-      "extensionPoint": "The default provider executes real sentrux gate/check commands and normalizes their command-level observations through A04. Sentrux algorithms remain external, diagnosis policy stays in Hospital, and legacy/Invoke-SentruxAgentTool.ps1 is a legacy compatibility/rollback surface rather than the authoritative normal route."
+      "artifactContract": ["orchestration/schemas/code-intel-structural-evidence-port.v2.schema.json", "orchestration/schemas/code-intel-sentrux-route-result.v1.schema.json", "orchestration/schemas/code-intel-evidence-admissibility-result.v1.schema.json"],
+      "extensionPoint": "The default native provider executes gate/check with independently approved admission policy and typed results, preserving DR-0011 measurement and normalizing observations through A04. External providers without a valid same-policy handshake remain unknown for admission. Diagnosis policy stays in Hospital; legacy/Invoke-SentruxAgentTool.ps1 is a compatibility/rollback surface, not the authoritative normal route."
     },
     {
       "id": "provider.session-adapt",
@@ -662,7 +666,7 @@
           "id": "provider.codenexus-builtin.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-                "989180a362946747bd9912a9655d7f919f0a82d4de893d402d8e5ece7f93d5cc",
+                "161f82337d79a41b0837b9b49c83dc4d388bd4d6409b911e71551e05ddf0c826",
                 "645675312135932dfce365a8dfc14e214cec78ee733f248606547b3eaa56edc8",
                 "4bfbebebe9e80fa6821100dbb572542a314be399ae0f929bac455c8f1531c4b2",
                 "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26",
@@ -878,7 +882,7 @@
           "toolchainDigests": [
             "3ba256f4ca0bf62aca08f688f7ecf31800dd10e68371054e2f1605eff197ea81",
             "264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc",
-            "e4b85f200bf142be2d77d2bc02f0ae738d07c03f0afc059eb304dae595023fdb",
+            "13feae7a416b420b5e6571925a304c2455794a81ed2d6f9291fe07782bfa92e8",
             "363155d6dd2a53204250f9dc7d34300aeebd8956a3a5b3e6daf2a61814e5b9b8",
             "e3072b6b01a4f692c2ac75c7c4995747f9a0fd1ce4f32e1ab1599f348661f570",
             "40c532ed3aa52144bdc8bb4422e04b23c54196d352ac9cb0f3e93a5a059af120"
@@ -939,7 +943,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "bb7afda3d56cf7d5b8a055c617bd6845f8a8795717ec094762ab3fc1eaba88f8",
-            "e4b85f200bf142be2d77d2bc02f0ae738d07c03f0afc059eb304dae595023fdb",
+            "13feae7a416b420b5e6571925a304c2455794a81ed2d6f9291fe07782bfa92e8",
             "264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc"
           ]
         },
@@ -990,7 +994,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "a6da84444e815dd94c15887190c7d6bd48c7bca5975fb5d493eb77ab39f27d80",
-            "e4b85f200bf142be2d77d2bc02f0ae738d07c03f0afc059eb304dae595023fdb",
+            "13feae7a416b420b5e6571925a304c2455794a81ed2d6f9291fe07782bfa92e8",
             "264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc"
           ]
         },
@@ -1627,7 +1631,7 @@
           "id": "diagnosis.hospital.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "b5137a75205a8163a6b42fee4fe22274f9a19b4bc9b4f9dad3c44521bc723a6a"
+            "74da6e583b7ed36f581e24313bcf11890038ff6cdbc28fd0b904f7c9ad8c6b82"
           ]
         },
         "determinism": "deterministic",

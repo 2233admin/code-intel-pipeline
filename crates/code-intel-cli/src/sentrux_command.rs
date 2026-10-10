@@ -27,6 +27,8 @@ pub(crate) struct SentruxCommand {
     pub(crate) stdout: String,
     pub(crate) stderr: String,
     pub(crate) violations: Vec<Violation>,
+    pub(crate) advisories: Vec<Violation>,
+    pub(crate) admission: Option<Value>,
     pub(crate) governed: bool,
     pub(crate) output_summary: OutputSummary,
     // Issue #383: `stdout` above is always `bounded_text`-truncated to
@@ -141,6 +143,32 @@ impl SentruxCommand {
             .collect::<Vec<_>>())
     }
 
+    pub(crate) fn advisories_json(&self) -> Value {
+        json!(self
+            .advisories
+            .iter()
+            .map(Violation::to_json)
+            .collect::<Vec<_>>())
+    }
+
+    pub(crate) fn admission_verdict(&self) -> Option<&str> {
+        let result = self.admission.as_ref()?;
+        super::sentrux_gate::sentrux_gate_policy::validate_result(result).ok()?;
+        if !self.output_summary.complete()
+            || !diagnostics_match(&self.violations, &result["blockingViolations"])
+            || !diagnostics_match(&self.advisories, &result["advisories"])
+        {
+            return None;
+        }
+        let verdict = result["verdict"].as_str()?;
+        if (verdict == "pass" && (!self.success || !self.governed))
+            || (verdict == "fail" && self.success)
+        {
+            return None;
+        }
+        Some(verdict)
+    }
+
     pub(crate) fn violations_from_json(value: Option<&Value>) -> Vec<Violation> {
         value
             .and_then(Value::as_array)
@@ -180,6 +208,8 @@ impl SentruxCommand {
             stdout: bounded_text(&stdout_bytes),
             stderr: String::new(),
             violations: run.violations,
+            advisories: run.advisories,
+            admission: run.admission,
             governed: run.governed,
             output_summary,
             structured_stdout,
@@ -190,31 +220,38 @@ impl SentruxCommand {
         let output_summary = OutputSummary::from_bytes(&output.stdout, &output.stderr);
         let structured_stdout =
             structured_data_from_full(&output.stdout, output_summary.complete());
-        let stdout_full = String::from_utf8_lossy(&output.stdout).into_owned();
-        let violations = if output.status.success() {
-            Vec::new()
-        } else {
-            stdout_full
-                .lines()
-                .filter_map(|line| line.strip_prefix("- "))
-                .map(str::trim)
-                .filter(|message| !message.is_empty())
-                .take(32)
-                .map(|message| Violation {
-                    rule: format!("sentrux_{subcommand}"),
-                    message: message.chars().take(1024).collect(),
-                    targets: Vec::new(),
-                })
-                .collect()
-        };
+        let admission = structured_stdout
+            .as_ref()
+            .filter(|value| {
+                matches!(subcommand, "gate" | "check")
+                    && super::sentrux_gate::sentrux_gate_policy::validate_result(value).is_ok()
+            })
+            .cloned();
+        let violations = Self::violations_from_json(
+            admission
+                .as_ref()
+                .map(|result| &result["blockingViolations"]),
+        );
+        let advisories =
+            Self::violations_from_json(admission.as_ref().map(|result| &result["advisories"]));
+        let governed = admission
+            .as_ref()
+            .is_some_and(|result| result["baseline"].is_object());
         Self {
-            argv: vec!["sentrux".into(), subcommand.into(), ".".into()],
+            argv: vec![
+                "sentrux".into(),
+                subcommand.into(),
+                ".".into(),
+                "--json".into(),
+            ],
             exit_code: output.status.code(),
             success: output.status.success(),
             stdout: bounded_text(&output.stdout),
             stderr: bounded_text(&output.stderr),
             violations,
-            governed: true,
+            advisories,
+            admission,
+            governed,
             output_summary,
             structured_stdout,
         }
@@ -235,11 +272,31 @@ impl SentruxCommand {
             stdout: bounded_text(&stdout),
             stderr: String::new(),
             violations: Vec::new(),
+            advisories: Vec::new(),
+            admission: None,
             governed: true,
             output_summary,
             structured_stdout,
         }
     }
+}
+
+fn diagnostics_match(violations: &[Violation], value: &Value) -> bool {
+    let Some(items) = value.as_array() else {
+        return false;
+    };
+    violations.len() == items.len()
+        && violations.iter().zip(items).all(|(violation, item)| {
+            item["rule"].as_str() == Some(violation.rule.as_str())
+                && item["message"].as_str() == Some(violation.message.as_str())
+                && item["targets"].as_array().is_some_and(|targets| {
+                    targets.len() == violation.targets.len()
+                        && targets
+                            .iter()
+                            .zip(&violation.targets)
+                            .all(|(target, expected)| target.as_str() == Some(expected.as_str()))
+                })
+        })
 }
 
 pub(crate) fn command_evidence(subcommand: &str, command: &SentruxCommand) -> Value {
@@ -250,12 +307,17 @@ pub(crate) fn command_evidence(subcommand: &str, command: &SentruxCommand) -> Va
         "success":command.success,
         "stdout":command.stdout,
         "stderr":command.stderr,
+        "governed":command.governed,
+        "violations":command.violations_json(),
+        "advisories":command.advisories_json(),
+        "admission":command.admission,
+        "outputSummary":command.output_summary.to_json(&command.stdout, &command.stderr),
         // Issue #383: the full, unbounded structured payload -- never
         // re-derived by reparsing `stdout` above (that's the bounded 8KB
         // preview). `Value::Null` when the command's real output was not a
         // complete JSON object/array (bounded capture, plain-text output,
         // or a non-JSON command like `check`/`gate`).
-        "structuredData":command.structured_stdout.clone().unwrap_or(Value::Null)
+        "structuredData":command.structured_stdout
     })
 }
 
@@ -343,6 +405,8 @@ mod tests {
                 success: true,
                 stdout: text,
                 violations: Vec::new(),
+                advisories: Vec::new(),
+                admission: None,
                 governed: true,
             },
             "scan",

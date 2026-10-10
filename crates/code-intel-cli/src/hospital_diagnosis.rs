@@ -6,6 +6,9 @@ use std::path::Path;
 use crate::adapter_contract::{AdapterArtifact, AdapterDomainVerdict, AdapterError, AdapterOutput};
 use crate::artifact_ref::VerifiedArtifact;
 use crate::audit_report::AuditReport;
+#[path = "sentrux_gate_policy.rs"]
+mod sentrux_gate_policy;
+use sentrux_gate_policy::current_structural_policy;
 #[cfg(test)]
 #[path = "report_quality.rs"]
 mod report_quality;
@@ -36,6 +39,7 @@ struct Signals {
     modernization_debt: bool,
     top_target: Option<String>,
     failing_rules: Vec<Value>,
+    structural_advisories: Vec<Value>,
     sentrux_capability_refs: Vec<Value>,
     admissions: BTreeMap<String, String>,
 }
@@ -58,6 +62,7 @@ impl Default for Signals {
             modernization_debt: false,
             top_target: None,
             failing_rules: Vec::new(),
+            structural_advisories: Vec::new(),
             sentrux_capability_refs: Vec::new(),
             admissions: BTreeMap::new(),
         }
@@ -246,8 +251,13 @@ fn consume_admission(input: &VerifiedArtifact, signals: &mut Signals) -> Result<
         signals.structural_seen = true;
         let rules = structural["rules"].as_array();
         signals.structural_rules = rules.is_some_and(|items| !items.is_empty());
+        let policy_current = current_structural_policy(
+            structural,
+            &admission["verifiedPayload"]["consumedSnapshotIdentity"],
+        );
         signals.structural_trusted = verdict == "observed"
             && structural["completeness"] == "complete"
+            && policy_current
             && rules.is_some_and(|items| {
                 items
                     .iter()
@@ -260,8 +270,28 @@ fn consume_admission(input: &VerifiedArtifact, signals: &mut Signals) -> Result<
                 items
                     .iter()
                     .filter(|rule| rule["verdict"] == "fail")
-                    .cloned(),
+                    .map(|rule| {
+                        if policy_current {
+                            if let Some(result) = structural["gateResults"]
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .find(|result| result["kind"] == rule["kind"])
+                            {
+                                return json!({"kind":rule["kind"],"details":{
+                                    "violations":result["admission"]["blockingViolations"]
+                                }});
+                            }
+                        }
+                        rule.clone()
+                    }),
             );
+        }
+        if policy_current {
+            signals.structural_advisories = structural["advisories"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
         }
     }
     if let Some(refs) = data.get("capabilityArtifactRefs").and_then(Value::as_array) {
@@ -421,6 +451,7 @@ fn diagnose(request: &Value, s: &Signals, audit: Option<&AuditReport>) -> Value 
             "primary_diagnosis":diagnosis,
             "failing_rules":failing_rules,
             "overall_score":null,
+            "advisories":s.structural_advisories,
             "next_protocol":next_protocol,
             "research_status":"not_applicable",
             "research_required":false,
@@ -491,6 +522,7 @@ fn treatment(diagnosis: &str, target: Option<&str>, failing: &[Value]) -> Vec<St
             match violations {
                 Some(violations) => {
                     for violation in violations.iter().take(3) {
+                        let kind = violation["rule"].as_str().unwrap_or(kind);
                         let message = violation["message"].as_str().unwrap_or("");
                         let targets = violation["targets"]
                             .as_array()
@@ -544,6 +576,18 @@ fn render_hospital(value: &Value, audit: Option<&AuditReport>) -> String {
             .collect::<Vec<_>>()
             .join("\n")
     );
+    let advisories = value["triage"]["advisories"].as_array();
+    if let Some(advisories) = advisories.filter(|items| !items.is_empty()) {
+        report.push_str("\n## Advisories (non-blocking)\n");
+        for advisory in advisories {
+            report.push_str(&format!(
+                "- {}: {}\n",
+                advisory["rule"].as_str().unwrap_or("unknown"),
+                advisory["message"].as_str().unwrap_or("")
+            ));
+        }
+        report.push_str("\nRaw Quality decline is advisory under the approved policy; it is not a hidden gate failure. Hard findings still block admission.\n");
+    }
     let failing = value["triage"]["failing_rules"].as_array();
     if let Some(failing) = failing.filter(|rules| !rules.is_empty()) {
         report.push_str("\n## Failing rules\n");
@@ -552,6 +596,7 @@ fn render_hospital(value: &Value, audit: Option<&AuditReport>) -> String {
             match rule["details"]["violations"].as_array() {
                 Some(violations) => {
                     for violation in violations {
+                        let kind = violation["rule"].as_str().unwrap_or(kind);
                         let message = violation["message"].as_str().unwrap_or("");
                         let targets = violation["targets"]
                             .as_array()

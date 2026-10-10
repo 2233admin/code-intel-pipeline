@@ -13,7 +13,11 @@ permissions:
   contents: read
 
 jobs:
+  admission-policy:
+    uses: ./.github/workflows/admission-policy.yml
+
   release-windows:
+    needs: admission-policy
     # Authoritative full release gate. Tag/version validation, Skill and
     # Rust test suites, the authoritative self-scan, packaging, and
     # packaged-payload validation all run here; publishing happens only in
@@ -22,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -59,7 +63,7 @@ jobs:
           }
 
       - name: Setup Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
 
@@ -263,7 +267,7 @@ jobs:
           if ($entry[0].outcome -ne "completed" -or $entry[0].snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release artifact index identity does not match completion marker" }
           $refs = @($entry[0].artifactRefs)
           if (@($refs | Where-Object { $_.type -eq "diagnosis.hospital" }).Count -ne 1) { throw "packaged release run is missing its verified hospital report ref" }
-          $capabilityRefs = @($refs | Where-Object { $_.artifactSchema -eq "code-intel-sentrux-capability-artifact.v1" -and $_.type -eq "provider.sentrux.capability-artifact" })
+          $capabilityRefs = @($refs | Where-Object { $_.artifactSchema -eq "code-intel-sentrux-capability-artifact.v2" -and $_.type -eq "provider.sentrux.capability-artifact" })
           if ($capabilityRefs.Count -eq 0) { throw "packaged release run has no verified Sentrux capability refs" }
           $matrix = Get-Content -Raw -LiteralPath (Join-Path $payload (Join-Path "orchestration" "sentrux-capability-matrix.v1.json")) | ConvertFrom-Json
           $matrixById = @{}
@@ -275,7 +279,7 @@ jobs:
             if (-not (Test-Path -LiteralPath $payloadPath -PathType Leaf)) { throw "packaged release capability object is missing: $($ref.path)" }
             if ((Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ref.sha256) { throw "packaged release capability object digest mismatch: $($ref.path)" }
             $capabilityPayload = Get-Content -Raw -LiteralPath $payloadPath | ConvertFrom-Json
-            if ($capabilityPayload.schema -ne "code-intel-sentrux-capability-artifact.v1" -or $capabilityPayload.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release capability artifact is not snapshot-bound: $($ref.path)" }
+            if ($capabilityPayload.schema -ne "code-intel-sentrux-capability-artifact.v2" -or $capabilityPayload.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release capability artifact is not snapshot-bound: $($ref.path)" }
             if (-not $matrixById.ContainsKey($capabilityPayload.capabilityId)) { throw "packaged release capability is absent from the matrix: $($capabilityPayload.capabilityId)" }
             if ($matrixById[$capabilityPayload.capabilityId].operation -ne $capabilityPayload.operation) { throw "packaged release capability operation disagrees with the matrix: $($capabilityPayload.capabilityId)" }
             if ($observed.ContainsKey($capabilityPayload.capabilityId)) { throw "duplicate packaged release capability artifact: $($capabilityPayload.capabilityId)" }
@@ -318,7 +322,7 @@ jobs:
           }
 
       - name: Upload release dist artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-dist-windows
           path: |
@@ -328,6 +332,7 @@ jobs:
           if-no-files-found: error
 
   package-unix:
+    needs: admission-policy
     # Platform build + package lane. The windows job above stays the
     # authoritative full gate; this lane still refuses to hand a package to
     # publish unless the candidate passes its own self-scan and the packaged
@@ -345,12 +350,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
 
@@ -510,7 +515,7 @@ jobs:
           if ($entry[0].outcome -ne "completed" -or $entry[0].snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release artifact index identity does not match completion marker" }
           $refs = @($entry[0].artifactRefs)
           if (@($refs | Where-Object { $_.type -eq "diagnosis.hospital" }).Count -ne 1) { throw "packaged release run is missing its verified hospital report ref" }
-          $capabilityRefs = @($refs | Where-Object { $_.artifactSchema -eq "code-intel-sentrux-capability-artifact.v1" -and $_.type -eq "provider.sentrux.capability-artifact" })
+          $capabilityRefs = @($refs | Where-Object { $_.artifactSchema -eq "code-intel-sentrux-capability-artifact.v2" -and $_.type -eq "provider.sentrux.capability-artifact" })
           if ($capabilityRefs.Count -eq 0) { throw "packaged release run has no verified Sentrux capability refs" }
           $matrix = Get-Content -Raw -LiteralPath (Join-Path $payload (Join-Path "orchestration" "sentrux-capability-matrix.v1.json")) | ConvertFrom-Json
           $matrixById = @{}
@@ -522,7 +527,7 @@ jobs:
             if (-not (Test-Path -LiteralPath $payloadPath -PathType Leaf)) { throw "packaged release capability object is missing: $($ref.path)" }
             if ((Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ref.sha256) { throw "packaged release capability object digest mismatch: $($ref.path)" }
             $capabilityPayload = Get-Content -Raw -LiteralPath $payloadPath | ConvertFrom-Json
-            if ($capabilityPayload.schema -ne "code-intel-sentrux-capability-artifact.v1" -or $capabilityPayload.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release capability artifact is not snapshot-bound: $($ref.path)" }
+            if ($capabilityPayload.schema -ne "code-intel-sentrux-capability-artifact.v2" -or $capabilityPayload.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release capability artifact is not snapshot-bound: $($ref.path)" }
             if (-not $matrixById.ContainsKey($capabilityPayload.capabilityId)) { throw "packaged release capability is absent from the matrix: $($capabilityPayload.capabilityId)" }
             if ($matrixById[$capabilityPayload.capabilityId].operation -ne $capabilityPayload.operation) { throw "packaged release capability operation disagrees with the matrix: $($capabilityPayload.capabilityId)" }
             if ($observed.ContainsKey($capabilityPayload.capabilityId)) { throw "duplicate packaged release capability artifact: $($capabilityPayload.capabilityId)" }
@@ -562,7 +567,7 @@ jobs:
           }
 
       - name: Upload release dist artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-dist-${{ matrix.platform }}
           path: |
@@ -587,7 +592,7 @@ jobs:
 
     steps:
       - name: Download release dist artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: "release-dist-*"
           path: dist
@@ -613,7 +618,7 @@ jobs:
           }
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: "dist/code-intel-pipeline-*.zip"
 

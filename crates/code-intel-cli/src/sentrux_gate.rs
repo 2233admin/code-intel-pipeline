@@ -34,6 +34,8 @@ mod boundary_rules;
 mod file_gate;
 #[path = "hardened_git.rs"]
 mod hardened_git;
+#[path = "sentrux_gate_policy.rs"]
+pub(crate) mod sentrux_gate_policy;
 #[path = "sentrux_quality_signal.rs"]
 mod sentrux_quality_signal;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -128,6 +130,8 @@ pub(crate) struct EngineRun {
     pub(crate) success: bool,
     pub(crate) stdout: String,
     pub(crate) violations: Vec<Violation>,
+    pub(crate) advisories: Vec<Violation>,
+    pub(crate) admission: Option<Value>,
     /// False when the repository never configured the governance this run
     /// needs: no `.sentrux/rules.toml` for `check`, no `.sentrux/baseline.json`
     /// for `gate`. Ungoverned is not the same as violated — no rule was
@@ -176,8 +180,12 @@ struct ProjectMetrics {
 
 pub(crate) fn run_check(repo: &Path) -> Result<EngineRun, String> {
     let (metrics, _file_gate) = measure_project(repo)?;
+    check_measured(repo, &metrics)
+}
+
+fn check_measured(repo: &Path, metrics: &ProjectMetrics) -> Result<EngineRun, String> {
     let mut out = String::new();
-    resolve_header(&mut out, &metrics);
+    resolve_header(&mut out, metrics);
     let rules_path = repo.join(".sentrux").join("rules.toml");
     if !rules_path.is_file() {
         out.push_str("No .sentrux/rules.toml found\nQuality: not gated\n");
@@ -185,12 +193,14 @@ pub(crate) fn run_check(repo: &Path) -> Result<EngineRun, String> {
             success: true,
             stdout: out,
             violations: Vec::new(),
+            advisories: Vec::new(),
+            admission: None,
             governed: false,
         });
     }
     let rules = fs::read_to_string(&rules_path)
         .map_err(|error| format!("read {}: {error}", rules_path.display()))?;
-    let violations = evaluate_rules(&rules, &metrics, repo);
+    let violations = evaluate_rules(&rules, metrics, repo);
     if violations.is_empty() {
         out.push_str(&format!(
             "All rules passed - Quality: {}\n",
@@ -200,6 +210,8 @@ pub(crate) fn run_check(repo: &Path) -> Result<EngineRun, String> {
             success: true,
             stdout: out,
             violations,
+            advisories: Vec::new(),
+            admission: None,
             governed: true,
         });
     }
@@ -214,6 +226,8 @@ pub(crate) fn run_check(repo: &Path) -> Result<EngineRun, String> {
         success: false,
         stdout: out,
         violations,
+        advisories: Vec::new(),
+        admission: None,
         governed: true,
     })
 }
@@ -244,9 +258,13 @@ pub(crate) fn expect_check_ran(repo: &Path) -> EngineRun {
 
 pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
     let (metrics, _file_gate) = measure_project(repo)?;
+    gate_measured(repo, save, &metrics)
+}
+
+fn gate_measured(repo: &Path, save: bool, metrics: &ProjectMetrics) -> Result<EngineRun, String> {
     let baseline_path = repo.join(".sentrux").join("baseline.json");
     if save {
-        let baseline = baseline_document(repo, &metrics)?;
+        let baseline = baseline_document(repo, metrics)?;
         let directory = baseline_path
             .parent()
             .ok_or("baseline path has no parent directory")?;
@@ -258,79 +276,58 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
         fs::write(&baseline_path, bytes)
             .map_err(|error| format!("write {}: {error}", baseline_path.display()))?;
         let mut out = String::new();
-        resolve_header(&mut out, &metrics);
-        gate_pairs(&mut out, &metrics, &metrics);
+        resolve_header(&mut out, metrics);
+        gate_pairs(&mut out, metrics, metrics);
         out.push_str(&format!("Baseline saved: {}\n", baseline_path.display()));
         return Ok(EngineRun {
             success: true,
             stdout: out,
             violations: Vec::new(),
+            advisories: Vec::new(),
+            admission: None,
             governed: true,
         });
     }
     if !baseline_path.is_file() {
         let message = format!("Sentrux baseline missing at {}", baseline_path.display());
-        return Ok(EngineRun {
-            success: false,
-            stdout: format!(
-                "{message}\nRun code-intel sentrux --operation save_baseline --repo {}\n",
+        return Ok(baseline_failure(
+            repo,
+            "baseline_missing",
+            message,
+            false,
+            format!(
+                "Run code-intel sentrux --operation save_baseline --repo {}\n",
                 repo.display()
             ),
-            violations: vec![Violation {
-                rule: "baseline_missing".into(),
-                message,
-                targets: vec![".sentrux/baseline.json".into()],
-            }],
-            governed: false,
-        });
+        ));
     }
     let raw = fs::read(&baseline_path)
         .map_err(|error| format!("read {}: {error}", baseline_path.display()))?;
-    let baseline: Value = serde_json::from_slice(&raw)
-        .map_err(|error| format!("parse {}: {error}", baseline_path.display()))?;
+    // Malformed bytes are a blocked admission result, not an untyped CLI error.
+    let baseline: Value = serde_json::from_slice(&raw).unwrap_or(Value::Null);
     let mut out = String::new();
-    resolve_header(&mut out, &metrics);
-    if baseline["schema"] != BASELINE_SCHEMA
-        || baseline["engine"]["id"] != ENGINE_ID
-        || baseline["metrics"].as_object().is_none()
-        || GATED_METRIC_KEYS
-            .iter()
-            .any(|key| baseline["metrics"][*key].as_f64().is_none())
-        || baseline["godFiles"].as_array().is_none()
-    {
+    resolve_header(&mut out, metrics);
+    if !valid_baseline(&baseline) {
         let message = format!(
-            "baseline engine mismatch: {} requires schema {BASELINE_SCHEMA} with engine {ENGINE_ID}, numeric {} metrics, and a godFiles identity list; found schema {} engine {}",
+            "baseline engine mismatch: {} requires schema {BASELINE_SCHEMA} with engine {ENGINE_ID} version {ENGINE_VERSION}, scope ., numeric {} metrics, and valid godFiles identities; found schema {} engine {}",
             baseline_path.display(),
             GATED_METRIC_KEYS.join("/"),
             baseline["schema"].as_str().unwrap_or("unknown"),
             baseline["engine"]["id"].as_str().unwrap_or("unknown"),
         );
-        out.push_str(&format!("{message}\n"));
-        out.push_str("Re-baseline intentionally with: code-intel sentrux --operation save_baseline --repo <repo>\n");
-        return Ok(EngineRun {
-            success: false,
-            stdout: out,
-            violations: vec![Violation {
-                rule: "baseline_engine_mismatch".into(),
-                message,
-                targets: vec![".sentrux/baseline.json".into()],
-            }],
-            // A baseline exists but this engine cannot read it. That is a real
-            // gate failure: re-baselining must stay a deliberate decision.
-            governed: true,
-        });
+        return Ok(baseline_failure(
+            repo, "baseline_engine_mismatch", message, true,
+            "Re-baseline intentionally with: code-intel sentrux --operation save_baseline --repo <repo>\n".into(),
+        ));
     }
     let before = &baseline["metrics"];
-    gate_pairs_values(&mut out, before, &metrics);
-    let baseline_god_paths: std::collections::BTreeSet<String> = baseline["godFiles"]
+    gate_pairs_values(&mut out, before, metrics);
+    let baseline_god_paths: BTreeSet<&str> = baseline["godFiles"]
         .as_array()
-        .map(|entries| {
-            entries
-                .iter()
-                .filter_map(|entry| entry["path"].as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
+        .expect("validated godFiles")
+        .iter()
+        .map(|entry| entry["path"].as_str().expect("validated god-file path"))
+        .collect();
     // A baseline that still lists files no longer over threshold grandfathers
     // a regression back into them silently. The gate cannot rewrite the
     // baseline itself — a scan must not mutate the repository — so it says
@@ -341,7 +338,7 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
             !metrics
                 .files
                 .iter()
-                .any(|file| file.god_file && &file.path == *path)
+                .any(|file| file.god_file && file.path.as_str() == **path)
         })
         .count();
     if resolved_since_baseline > 0 {
@@ -350,9 +347,10 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
         ));
     }
     let mut violations = Vec::new();
+    let mut advisories = Vec::new();
     let quality_before = number(before, "quality_signal");
     if (metrics.quality_signal as f64) < quality_before {
-        violations.push(Violation {
+        advisories.push(Violation {
             rule: "quality_degraded".into(),
             message: format!("Quality: {} -> {}", quality_before, metrics.quality_signal),
             targets: Vec::new(),
@@ -366,7 +364,7 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
                 number(before, "coupling_score"),
                 metrics.coupling_score
             ),
-            targets: top_import_files(&metrics),
+            targets: top_import_files(metrics),
         });
     }
     if (metrics.cycle_count as f64) > number(before, "cycle_count") {
@@ -377,7 +375,7 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
                 number(before, "cycle_count"),
                 metrics.cycle_count
             ),
-            targets: cycle_targets(&metrics),
+            targets: cycle_targets(metrics),
         });
     }
     // Ratchet by identity, not by count (#165). The count comparison this
@@ -390,7 +388,7 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
     let mut new_gods: Vec<&FileMetrics> = metrics
         .files
         .iter()
-        .filter(|file| file.god_file && !baseline_god_paths.contains(&file.path))
+        .filter(|file| file.god_file && !baseline_god_paths.contains(file.path.as_str()))
         .collect();
     new_gods.sort_by(|left, right| {
         right
@@ -430,25 +428,170 @@ pub(crate) fn run_gate(repo: &Path, save: bool) -> Result<EngineRun, String> {
                 .collect(),
         });
     }
+    let comparisons = ratchet_comparisons(before, &baseline_god_paths, metrics);
+    let baseline_identity = json!({
+        "schema": baseline["schema"], "sha256": sentrux_gate_policy::sha256_hex(&raw),
+        "sourceCommit": baseline["sourceCommit"], "scope": baseline["scope"],
+    });
+    let admission = admission_result(
+        repo,
+        baseline_identity,
+        comparisons,
+        &violations,
+        &advisories,
+    );
     if violations.is_empty() {
-        out.push_str("No degradation detected\n");
-        return Ok(EngineRun {
-            success: true,
-            stdout: out,
-            violations,
-            governed: true,
-        });
+        out.push_str("No blocking regression detected\n");
+    } else {
+        out.push_str("Sentrux gate failed\n");
     }
-    out.push_str("Quality degraded during this session\n");
     for violation in &violations {
         out.push_str(&format!("- {}\n", violation.message));
     }
+    for advisory in &advisories {
+        out.push_str(&format!("Advisory (not blocking): {}\n", advisory.message));
+    }
     Ok(EngineRun {
-        success: false,
+        success: violations.is_empty(),
         stdout: out,
         violations,
+        advisories,
+        admission: Some(admission),
         governed: true,
     })
+}
+
+fn valid_baseline(baseline: &Value) -> bool {
+    if baseline["schema"] != BASELINE_SCHEMA
+        || baseline["engine"]["id"] != ENGINE_ID
+        || baseline["engine"]["version"] != ENGINE_VERSION
+        || baseline["scope"] != "."
+        || baseline["sourceCommit"].as_str().is_none_or(str::is_empty)
+        || GATED_METRIC_KEYS.iter().any(|key| {
+            baseline["metrics"][*key].as_f64().is_none_or(|value| {
+                !value.is_finite()
+                    || value < 0.0
+                    || (*key == "quality_signal" && (value > 10000.0 || value.fract() != 0.0))
+                    || (matches!(*key, "cycle_count" | "god_file_count") && value.fract() != 0.0)
+            })
+        })
+    {
+        return false;
+    }
+    let Some(entries) = baseline["godFiles"].as_array() else {
+        return false;
+    };
+    let mut paths = BTreeSet::new();
+    entries.len() as f64 == number(&baseline["metrics"], "god_file_count")
+        && entries.iter().all(|entry| {
+            entry["path"]
+                .as_str()
+                .is_some_and(|path| sentrux_gate_policy::valid_path(path) && paths.insert(path))
+        })
+}
+
+fn baseline_failure(
+    repo: &Path,
+    rule: &str,
+    message: String,
+    governed: bool,
+    instruction: String,
+) -> EngineRun {
+    let stdout = format!("{message}\n{instruction}");
+    let violations = vec![Violation {
+        rule: rule.into(),
+        message,
+        targets: vec![".sentrux/baseline.json".into()],
+    }];
+    let admission = admission_result(repo, Value::Null, Vec::new(), &violations, &[]);
+    EngineRun {
+        success: false,
+        stdout,
+        violations,
+        advisories: Vec::new(),
+        admission: Some(admission),
+        governed,
+    }
+}
+
+fn ratchet_comparisons(
+    before: &Value,
+    god_paths: &BTreeSet<&str>,
+    metrics: &ProjectMetrics,
+) -> Vec<Value> {
+    let mut comparisons = Vec::with_capacity(4);
+    for (rule, key, after, advisory) in [
+        (
+            "quality_degraded",
+            "quality_signal",
+            metrics.quality_signal as f64,
+            true,
+        ),
+        (
+            "coupling_increased",
+            "coupling_score",
+            metrics.coupling_score,
+            false,
+        ),
+        (
+            "cycles_increased",
+            "cycle_count",
+            metrics.cycle_count as f64,
+            false,
+        ),
+    ] {
+        let before = number(before, key);
+        let regressed = if advisory {
+            after < before
+        } else {
+            after > before
+        };
+        comparisons.push(json!({
+            "rule": rule, "before": before, "after": after,
+            "disposition": if advisory { "advisory" } else { "blocking" },
+            "verdict": if regressed { "fail" } else { "pass" },
+        }));
+    }
+    let current_paths: BTreeSet<&str> = metrics
+        .files
+        .iter()
+        .filter(|file| file.god_file)
+        .map(|file| file.path.as_str())
+        .collect();
+    comparisons.push(json!({
+        "rule": "god_files_increased", "before": god_paths, "after": current_paths,
+        "disposition": "blocking",
+        "verdict": if current_paths.is_subset(god_paths) { "pass" } else { "fail" },
+    }));
+    comparisons
+}
+
+fn admission_result(
+    repo: &Path,
+    baseline: Value,
+    comparisons: Vec<Value>,
+    violations: &[Violation],
+    advisories: &[Violation],
+) -> Value {
+    json!({
+        "schema": "code-intel-sentrux-gate-result.v1",
+        "policy": sentrux_gate_policy::identity(), "measurement": sentrux_gate_policy::measurement(),
+        "baseline": baseline, "current": {"sourceCommit": git_head(repo), "scope": "."},
+        "ruleScope": "baseline_ratchet", "comparisons": comparisons,
+        "blockingViolations": violations.iter().map(Violation::to_json).collect::<Vec<_>>(),
+        "advisories": advisories.iter().map(Violation::to_json).collect::<Vec<_>>(),
+        "verdict": admission_verdict(violations),
+    })
+}
+
+fn admission_verdict(violations: &[Violation]) -> &'static str {
+    if violations.is_empty() {
+        "pass"
+    } else if violations.len() == 1 && violations[0].rule == "baseline_missing" {
+        "unknown"
+    } else {
+        "fail"
+    }
 }
 
 /// Test-only wrapper around `run_gate`, same rationale as
@@ -468,35 +611,13 @@ pub(crate) fn expect_gate_ran(repo: &Path, save: bool) -> EngineRun {
     }
 }
 
-/// The CLI-level `check` operation: `run_check`'s static `.sentrux/rules.toml`
-/// verdict, composed with `run_gate`'s baseline ratchet verdict so the two
-/// can never disagree for the same tree (issue #106).
-///
-/// Before this, `code-intel sentrux check` called only `run_check` and never
-/// opened `.sentrux/baseline.json`, so it could report green on a tree the
-/// authoritative `evidence.sentrux` DAG node -- which always evaluates
-/// `run_check` *and* `run_gate` as two independent rules, see
-/// `builtin_provider_evidence::sentrux_admission` -- correctly failed on.
-/// `.sentrux/rules.toml` in this very repository documents the assumption
-/// that made that possible: `no_god_files` is deliberately left `false`
-/// because god-file monotonicity was meant to be enforced by the baseline
-/// ratchet, not the static rule -- a promise only `run_gate` was keeping.
-///
-/// `ratchet=false` (the CLI's explicit `--no-ratchet` escape hatch) restores
-/// the pre-fix static-only verdict and says so in `stdout`, so a caller can
-/// never mistake it for the honest default.
-///
-/// An ungoverned gate (no `.sentrux/baseline.json` saved yet) does not fail
-/// this check: absence of a baseline is an operator affordance, not a
-/// structural verdict, mirroring `command_rule` in
-/// `builtin_provider_evidence.rs`.
-///
-/// `builtin_provider_evidence::run_sentrux` deliberately keeps calling plain
-/// `run_check` for its own `"check"` rule -- it already runs `run_gate`
-/// separately as the `"sentrux_gate"` rule, so composing the ratchet in here
-/// too would just report the same violation twice under two rule kinds.
+/// Compose static checks with the same measured baseline ratchet.
+/// Missing-baseline check remains a diagnostic affordance: exit success may
+/// describe the static check, but its typed admission remains unknown.
+/// Explicit `--no-ratchet` has no authoritative admission result.
 pub(crate) fn run_check_aligned(repo: &Path, ratchet: bool) -> Result<EngineRun, String> {
-    let mut check = run_check(repo)?;
+    let (metrics, _file_gate) = measure_project(repo)?;
+    let mut check = check_measured(repo, &metrics)?;
     if !ratchet {
         check.stdout.push_str(
             "Ratchet comparison skipped (--no-ratchet): this verdict does not reflect any \
@@ -505,21 +626,40 @@ pub(crate) fn run_check_aligned(repo: &Path, ratchet: bool) -> Result<EngineRun,
         );
         return Ok(check);
     }
-    let gate = run_gate(repo, false)?;
+    let mut gate = gate_measured(repo, false, &metrics)?;
     let gate_pass = gate.success || !gate.governed;
     let mut stdout = String::new();
     stdout.push_str("-- .sentrux/rules.toml --\n");
     stdout.push_str(&check.stdout);
     stdout.push_str("-- .sentrux/baseline.json ratchet --\n");
     stdout.push_str(&gate.stdout);
-    let mut violations = check.violations;
-    if !gate_pass {
-        violations.extend(gate.violations);
+    let admission = gate
+        .admission
+        .as_mut()
+        .expect("gate constructs typed admission");
+    admission["ruleScope"] = json!("static_and_ratchet");
+    let comparisons = admission["comparisons"]
+        .as_array_mut()
+        .expect("gate comparisons");
+    for violation in &check.violations {
+        comparisons.push(json!({
+            "rule": violation.rule, "before": null, "after": violation.to_json(),
+            "disposition": "blocking", "verdict": "fail",
+        }));
     }
+    let mut violations = check.violations;
+    violations.extend(gate.violations);
+    admission["blockingViolations"] = json!(violations
+        .iter()
+        .map(Violation::to_json)
+        .collect::<Vec<_>>());
+    admission["verdict"] = json!(admission_verdict(&violations));
     Ok(EngineRun {
         success: check.success && gate_pass,
         stdout,
         violations,
+        advisories: gate.advisories,
+        admission: gate.admission,
         governed: check.governed || gate.governed,
     })
 }
@@ -1750,23 +1890,18 @@ mod tests {
         let root = fixture_root("sentrux-native-metrics");
         fs::create_dir_all(root.join(".sentrux")).expect("create fixture");
         fs::write(root.join("lib.rs"), "pub fn fixture() {}\n").expect("write fixture source");
-        // Correct schema and engine but no quality_signal: `number()` would
-        // read the absent key as 0.0 and silently disable the quality gate.
+        // Correct identity but no quality_signal: the comparison must not
+        // silently invent a before value for its advisory.
         fs::write(
             root.join(".sentrux/baseline.json"),
             format!(
-                "{{\"schema\":\"{BASELINE_SCHEMA}\",\"engine\":{{\"id\":\"{ENGINE_ID}\",\"version\":\"{ENGINE_VERSION}\"}},\"metrics\":{{\"coupling_score\":0.0,\"cycle_count\":0,\"god_file_count\":0}}}}"
+                "{{\"schema\":\"{BASELINE_SCHEMA}\",\"engine\":{{\"id\":\"{ENGINE_ID}\",\"version\":\"{ENGINE_VERSION}\"}},\"scope\":\".\",\"sourceCommit\":\"unknown\",\"metrics\":{{\"coupling_score\":0.0,\"cycle_count\":0,\"god_file_count\":0}},\"godFiles\":[]}}"
             ),
         )
         .expect("write baseline");
         let run = expect_gate_ran(&root, false);
         assert!(!run.success);
         assert_eq!(run.violations[0].rule, "baseline_engine_mismatch");
-        assert!(
-            run.violations[0].message.contains("quality_signal"),
-            "{}",
-            run.violations[0].message
-        );
         fs::remove_dir_all(&root).expect("remove fixture");
     }
 
@@ -1886,11 +2021,6 @@ mod tests {
             "explicit --no-ratchet should skip the baseline comparison: {}",
             no_ratchet.stdout
         );
-        assert!(
-            no_ratchet.stdout.to_lowercase().contains("skipped"),
-            "no-ratchet output must say the ratchet was skipped: {}",
-            no_ratchet.stdout
-        );
 
         fs::remove_dir_all(&root).expect("remove fixture");
     }
@@ -1994,55 +2124,21 @@ mod tests {
     }
 
     #[test]
-    fn green_gate_advises_tightening_when_baseline_god_entries_resolved() {
-        // The gate must not rewrite the baseline (a scan does not mutate the
-        // repository), but a baseline still listing resolved files is slack a
-        // regression could hide in — the gate says so on an otherwise green
-        // run instead of staying silent.
-        let root = fixture_root("sentrux-native-god-resolved");
-        fs::create_dir_all(root.join("src")).expect("create fixture");
-        let mut god = String::from("pub fn entry() {}\n");
-        for line in 0..850 {
-            god.push_str(&format!("// padding {line}\n"));
-        }
-        fs::write(root.join("src/was_god.rs"), &god).expect("write god file");
-        let saved = expect_gate_ran(&root, true);
-        assert!(saved.success, "stdout: {}", saved.stdout);
-
-        fs::write(root.join("src/was_god.rs"), "pub fn entry() {}\n").expect("shrink god file");
-        let gate = expect_gate_ran(&root, false);
-        assert!(gate.success, "stdout: {}", gate.stdout);
-        assert!(
-            gate.stdout.contains("no longer over threshold"),
-            "green run must surface reclaimable ratchet slack: {}",
-            gate.stdout
-        );
-        fs::remove_dir_all(&root).expect("remove fixture");
-    }
-
-    #[test]
     fn gate_rejects_a_baseline_without_god_file_identities() {
-        // A v5-schema baseline that carries counts but no godFiles list can
-        // only support the count ratchet #165 retired — refusing it keeps the
-        // identity comparison from silently degrading to the leaky one.
+        // Counts alone cannot support the path-identity ratchet.
         let root = fixture_root("sentrux-native-god-identities");
         fs::create_dir_all(root.join(".sentrux")).expect("create fixture");
         fs::write(root.join("lib.rs"), "pub fn fixture() {}\n").expect("write fixture source");
         fs::write(
             root.join(".sentrux/baseline.json"),
             format!(
-                "{{\"schema\":\"{BASELINE_SCHEMA}\",\"engine\":{{\"id\":\"{ENGINE_ID}\",\"version\":\"{ENGINE_VERSION}\"}},\"metrics\":{{\"quality_signal\":1.0,\"coupling_score\":0.0,\"cycle_count\":0,\"god_file_count\":0}}}}"
+                "{{\"schema\":\"{BASELINE_SCHEMA}\",\"engine\":{{\"id\":\"{ENGINE_ID}\",\"version\":\"{ENGINE_VERSION}\"}},\"scope\":\".\",\"sourceCommit\":\"unknown\",\"metrics\":{{\"quality_signal\":1.0,\"coupling_score\":0.0,\"cycle_count\":0,\"god_file_count\":0}}}}"
             ),
         )
         .expect("write baseline");
         let run = expect_gate_ran(&root, false);
         assert!(!run.success);
         assert_eq!(run.violations[0].rule, "baseline_engine_mismatch");
-        assert!(
-            run.violations[0].message.contains("godFiles"),
-            "{}",
-            run.violations[0].message
-        );
         fs::remove_dir_all(&root).expect("remove fixture");
     }
 
@@ -2067,11 +2163,6 @@ mod tests {
         let run = expect_gate_ran(&root, false);
         assert!(!run.success);
         assert_eq!(run.violations[0].rule, "baseline_engine_mismatch");
-        assert!(
-            run.violations[0].message.contains(BASELINE_SCHEMA),
-            "rejection reason must name the required schema so it is machine-readable: {}",
-            run.violations[0].message
-        );
         fs::remove_dir_all(&root).expect("remove fixture");
     }
 

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-structural-evidence-port.v2",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "gatePolicy", "gateResults", "advisories", "status", "completeness", "freshness", "expectedSnapshotIdentity", "sourceSnapshotIdentity", "provider", "provenance", "effects", "rules", "payload", "diagnosisEligible"],
+  "properties": {
+    "schema": {"const": "code-intel-structural-evidence-port.v2"},
+    "gatePolicy": {"$ref": "code-intel-sentrux-gate-policy.v1.schema.json#/$defs/identity"},
+    "gateResults": {"$ref": "#/$defs/gateResults"}, "advisories": {"$ref": "#/$defs/advisories"},
+    "status": {"enum": ["complete", "partial", "crashed"]}, "completeness": {"enum": ["complete", "partial"]},
+    "freshness": {"enum": ["current", "stale", "snapshot_mismatch"]},
+    "expectedSnapshotIdentity": {"$ref": "#/$defs/sha256"}, "sourceSnapshotIdentity": {"$ref": "#/$defs/sha256"},
+    "provider": {"type": "object", "additionalProperties": false, "required": ["implementationId", "rollbackIdentity"], "properties": {"implementationId": {"enum": ["sentrux-native", "sentrux.command-adapter"]}, "rollbackIdentity": {"type": "string", "minLength": 1}}},
+    "provenance": {"type": "object", "additionalProperties": false, "required": ["sourceRevision", "observedAt"], "properties": {"sourceRevision": {"type": "string", "minLength": 1}, "observedAt": {"type": "integer", "minimum": 0}}},
+    "effects": {"type": "object", "additionalProperties": false, "required": ["declared", "observed", "match"], "properties": {"declared": {"$ref": "#/$defs/effects"}, "observed": {"$ref": "#/$defs/effects"}, "match": {"const": true}}},
+    "rules": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/rule"}},
+    "payload": {"type": "object"}, "diagnosisEligible": {"type": "boolean"}
+  },
+  "allOf": [{"if": {"properties": {"diagnosisEligible": {"const": true}}}, "then": {"properties": {"completeness": {"const": "complete"}, "freshness": {"const": "current"}}}}],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "effects": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["repo_read", "local_write", "process_spawn"]}},
+    "advisories": {"type": "array", "maxItems": 2, "uniqueItems": true, "items": {"allOf": [{"$ref": "code-intel-sentrux-gate-result.v1.schema.json#/$defs/violation"}, {"properties": {"rule": {"const": "quality_degraded"}}}]}},
+    "gateResults": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "object", "additionalProperties": false, "required": ["kind", "admission"], "properties": {"kind": {"enum": ["sentrux_gate", "sentrux_check"]}, "admission": {"oneOf": [{"type": "null"}, {"$ref": "code-intel-sentrux-gate-result.v1.schema.json"}]}}}, "allOf": [{"contains": {"properties": {"kind": {"const": "sentrux_gate"}}}, "minContains": 1, "maxContains": 1}, {"contains": {"properties": {"kind": {"const": "sentrux_check"}}}, "minContains": 1, "maxContains": 1}]},
+    "rule": {"type": "object", "additionalProperties": false, "required": ["kind", "status", "verdict", "failure"], "properties": {"kind": {"type": "string", "minLength": 1}, "status": {"enum": ["evaluated", "not_evaluated", "unsupported"]}, "verdict": {"enum": ["pass", "fail", "unknown"]}, "failure": {"type": "object"}, "details": {"type": "object", "additionalProperties": false, "required": ["violations"], "properties": {"violations": {"type": "array", "minItems": 1, "items": {"$ref": "code-intel-sentrux-gate-result.v1.schema.json#/$defs/violation"}}}}}}
+  }
+}

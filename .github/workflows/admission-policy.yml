@@ -1,0 +1,60 @@
+name: approved-admission-policy
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-owner-approval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The authority is a fixed owner-authored receipt outside this tree.
+      # Recomputing a candidate's own digest is not independent approval.
+      - name: Verify policy and unchanged baseline against owner receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          url = "https://api.github.com/repos/2233admin/code-intel-pipeline/issues/comments/6095718178"
+          request = Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "code-intel-admission-policy-ci", "Authorization": "Bearer " + os.environ["GH_TOKEN"]})
+          with urlopen(request, timeout=30) as response:
+              receipt = json.load(response)
+          if receipt["user"]["login"] != "2233admin" or receipt["html_url"] != "https://github.com/2233admin/code-intel-pipeline/issues/427#issuecomment-6095718178":
+              raise SystemExit("policy receipt is not the independently recorded owner approval")
+          expected = {}
+          for line in receipt["body"].splitlines():
+              if ": " in line:
+                  key, value = line.split(": ", 1)
+                  if key in {"policy-schema", "policy-id", "policy-version", "policy-sha256", "policy-path", "approved-baseline-sha256"}:
+                      if key in expected:
+                          raise SystemExit("ambiguous policy approval receipt")
+                      expected[key] = value
+          if set(expected) != {"policy-schema", "policy-id", "policy-version", "policy-sha256", "policy-path", "approved-baseline-sha256"}:
+              raise SystemExit("policy approval receipt is incomplete")
+          if expected["policy-path"] != "orchestration/sentrux-gate-policy.v1.json":
+              raise SystemExit("unrecognized approved policy path")
+          policy_bytes = Path(expected["policy-path"]).read_bytes()
+          policy = json.loads(policy_bytes)
+          if hashlib.sha256(policy_bytes).hexdigest() != expected["policy-sha256"]:
+              raise SystemExit("candidate policy bytes have no independent owner approval")
+          if policy["schema"] != expected["policy-schema"] or policy["policyId"] != expected["policy-id"] or str(policy["policyVersion"]) != expected["policy-version"]:
+              raise SystemExit("candidate policy identity does not match owner approval")
+          baseline_bytes = Path(".sentrux/baseline.json").read_bytes()
+          if hashlib.sha256(baseline_bytes).hexdigest() != expected["approved-baseline-sha256"]:
+              raise SystemExit("candidate changed the historical baseline without approval")
+          print("approved policy", policy["policyId"], policy["policyVersion"], expected["policy-sha256"])
+          print("unchanged baseline", expected["approved-baseline-sha256"])

@@ -33,5 +33,6 @@ Enforcement: 谁在什么时机强制它（gate / 测试 / 评审规约），没
 | [DR-0011](DR-0011-sentrux-quality-signal-kernel.md) | Quality Signal 内核：跟随固定源码的 max(0.01) 下限而非文档页公式；equality 用上游自身 LOC 回退；redundancy 只做 duplicate 半边，dead 诚实缺失而非伪造 0；baseline schema v5→v6 | active |
 | [DR-0013](DR-0013-affected-host-compilation-isolation.md) | 本仓库 checkout 所在 Windows 主机在 #403 未结期间禁止编译/测试，验证走别的机或 CI | active |
 | [DR-0014](DR-0014-issue-convergence-verdict-rule.md) | 收敛 = 每条 open issue 都有 do/freeze/close 判决，不等于把 backlog 做完 | active |
+| [DR-0016](DR-0016-versioned-quality-admission.md) | 主人批准的版本化 admission：Quality 全量测量不变，aggregate 下降显式 advisory；其余硬门与证据准入不变，防护损失明确接受 | active |
 
 平行 session 开工前先扫本目录（一次 `ls docs/decisions/` + 读 README 表格，30 秒）。与已有决策相悖的工作，先开 issue 挑战决策本身，不要直接实现相反语义。
