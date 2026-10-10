@@ -11,9 +11,10 @@ archive move, a packet frozen against a working-tree overlay that never existed
 as a commit, and five stale packets all survived unnoticed. This suite is the
 gate that makes those failures loud.
 
-Every packet is expected to pass. The one exception is declared in
-$KnownBlocked with the exact message it must fail with, so that neither a new
-failure mode nor an accidental fix can pass silently.
+Historical packets remain frozen evidence, not current retirement approval.
+For the three sources changed by #427, require both a complete replay against
+their committed historical source and rejection against the current source.
+Every other packet must still pass against the current tree.
 #>
 
 [CmdletBinding()]
@@ -36,15 +37,39 @@ $packets = @(
     @{ Ticket = "E10"; Verifier = "Test-IndexRetirementPacket.ps1";             Packet = "e10-index" }
 )
 
-# Nothing is known-blocked right now. E05 was, because dag-coordinate exited 10
-# when diagnosis.hospital reported domain_failed on any repository; 805ef28
-# ("an ungoverned repository is not an architecture gate failure") fixed that,
-# so E05 regenerates and verifies again and was removed from this table.
-#
-# To park a packet here, map its ticket id to the exact error it must fail with.
-# The suite then fails if that packet passes, or fails differently — a parked
-# lane cannot rot silently, and an accidental fix cannot go unnoticed.
-$KnownBlocked = @{}
+# #427 changes the replacement sources but does not regenerate old retirement
+# attestations. Replay the unchanged packets against their actual committed
+# source, and keep their freshness guards rejecting the current tree.
+$HistoricalSourceCommit = "d131f3f04b5e7b925f200e609239de6854eb477e"
+$KnownBlocked = @{
+    E04 = "E04 packet is stale relative to its frozen source set"
+    E07 = "E07 packet is stale relative to its frozen source set"
+    E08 = "E08 snapshot drift"
+}
+
+function Test-HistoricalPacket {
+    param([string]$Verifier, [string]$PacketRoot)
+    $privateRoot = Join-Path ([IO.Path]::GetTempPath()) ("cip-retirement-historical-" + [Guid]::NewGuid().ToString("N"))
+    [void](New-Item -ItemType Directory -Path $privateRoot)
+    try {
+        $archive = Join-Path $privateRoot "source.zip"
+        & git -C $RepoRoot archive --format=zip "--output=$archive" $HistoricalSourceCommit
+        if ($LASTEXITCODE -ne 0) { throw "cannot materialize committed historical retirement source" }
+        $sourceRoot = Join-Path $privateRoot "source"
+        Expand-Archive -LiteralPath $archive -DestinationPath $sourceRoot
+        $historicalOutput = @(& pwsh -NoLogo -NoProfile -File $Verifier -PacketRoot $PacketRoot -RepoRoot (Join-Path $sourceRoot "legacy") 2>&1) -join "`n"
+        if ($LASTEXITCODE -ne 0) { throw "historical retirement replay failed: $historicalOutput" }
+        $evidence = $historicalOutput | ConvertFrom-Json
+        if ($evidence.ok -ne $true -or $evidence.decision -ne "blocked" -or
+            $evidence.deletionExecuted -ne $false -or $evidence.retired -ne $false) {
+            throw "historical replay overstated retirement authority"
+        }
+        return $evidence
+    }
+    finally {
+        Remove-Item -LiteralPath $privateRoot -Recurse -Force
+    }
+}
 
 $failures = [Collections.Generic.List[string]]::new()
 
@@ -66,13 +91,19 @@ foreach ($packet in $packets) {
     if ($KnownBlocked.ContainsKey($packet.Ticket)) {
         $expected = $KnownBlocked[$packet.Ticket]
         if ($succeeded) {
-            $failures.Add("$($packet.Ticket): is recorded as known-blocked but now passes; remove it from `$KnownBlocked and drop the follow-up")
+            $failures.Add("$($packet.Ticket): frozen evidence unexpectedly authorizes the current changed source")
         }
         elseif ($output -notlike "*$expected*") {
             $failures.Add("$($packet.Ticket): failed for a new reason. Expected '$expected'. Got: $output")
         }
         else {
-            Write-Output "KNOWN-BLOCKED $($packet.Ticket) $($packet.Packet): $expected"
+            try {
+                $historicalEvidence = Test-HistoricalPacket -Verifier $verifier -PacketRoot $packetRoot
+                Write-Output "HISTORICAL-PASS / CURRENT-STALE-REJECTED $($packet.Ticket) $($packet.Packet): source=$HistoricalSourceCommit decision=$($historicalEvidence.decision)"
+            }
+            catch {
+                $failures.Add("$($packet.Ticket): $($_.Exception.Message)")
+            }
         }
         continue
     }
