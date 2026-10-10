@@ -411,6 +411,7 @@ mod tests {
         let stream = json!({"bytes":0,"sha256":crate::capability::sha256_hex(b""),"preview":"","previewBytes":0});
         let summary = json!({"authority":"metadata_only","complete":true,"bounded":false,
             "limitBytes":16777216,"totalBytes":0,"stdout":stream,"stderr":stream,"note":"fixture"});
+        let scan = crate::sentrux_gate::scan_json(root).expect("real scan fixture should succeed");
         let payload = json!({
             "schema":"code-intel-sentrux-capability-artifact.v2",
             "contractVersion":2,
@@ -428,10 +429,10 @@ mod tests {
             "status":"succeeded",
             "authority":"authoritative",
             "inputs":{"snapshotIdentity":snapshot},
-            "outputs":{"verdict":"pass","structuredData":null,"outputSummary":summary,
+            "outputs":{"verdict":"pass","structuredData":scan,"outputSummary":summary,
                 "command":{"id":"scan","argv":["code-intel","sentrux","scan","."],
                     "exitCode":0,"success":true,"stdout":"","stderr":"","governed":false,
-                    "violations":[],"advisories":[],"admission":null,"outputSummary":summary,"structuredData":null}},
+                    "violations":[],"advisories":[],"admission":null,"outputSummary":summary,"structuredData":scan}},
             "failure":null,
             "freshness":{
                 "status":"current",
