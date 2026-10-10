@@ -134,7 +134,7 @@ fn is_forwardable_request_header(name: &str) -> bool {
     )
 }
 
-/// Response headers safe to relay verbatim from the upstream `ureq::Response`
+/// Response headers safe to relay verbatim from the upstream HTTP response
 /// back to the client via `tiny_http`. Two exclusion reasons:
 ///
 /// - The full RFC 7230 §6.1 hop-by-hop set (`Connection`, `Keep-Alive`,
@@ -214,36 +214,89 @@ fn handle_request(
     let mut request_body = Vec::new();
     let _ = request.as_reader().read_to_end(&mut request_body);
 
-    let mut req = ureq::request(&method, &upstream_uri);
-    for header in request.headers() {
-        let name = header.field.as_str().as_str();
-        if !is_forwardable_request_header(name) {
-            continue;
-        }
-        req = req.set(name, header.value.as_str());
-    }
+    let result = request_upstream(request.headers(), &method, upstream_uri, &request_body);
 
-    let result = if request_body.is_empty() {
-        req.call()
-    } else {
-        req.send_bytes(&request_body)
-    };
-
-    // ureq treats any 4xx/5xx as `Err(Error::Status(code, response))`, but
-    // that's still a real upstream response with a real body worth
-    // forwarding (an error page, a JSON error payload) -- only
-    // `Error::Transport` (connection refused, timeout, DNS failure) means
-    // there's genuinely no response to relay, which is the only case that
-    // becomes this proxy's own synthetic 502.
+    // Keep error statuses as real responses with their bodies. Only a failure
+    // without a usable upstream response becomes this proxy's synthetic 502.
     match result {
-        Ok(response) => forward_response(request, response.status(), response, proxy, lang),
-        Err(ureq::Error::Status(code, response)) => {
-            forward_response(request, code, response, proxy, lang)
+        Ok(response) => {
+            forward_response(request, response.status().as_u16(), response, proxy, lang)
         }
         Err(e) => {
             eprintln!("Upstream error for {} {}: {}", method, path, e);
             let _ = request.respond(Response::from_string("Proxy error").with_status_code(502));
         }
+    }
+}
+
+/// Follow the old redirect policy without losing unfollowable real responses.
+/// Every followed redirect drops the body; POST/PUT/DELETE 307/308 are relayed.
+fn request_upstream(
+    headers: &[tiny_http::Header],
+    mut method: &str,
+    uri: String,
+    mut body: &[u8],
+) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
+    let client = ureq::Agent::config_builder()
+        .proxy(None)
+        .max_redirects(0)
+        .max_redirects_will_error(false)
+        .timeout_connect(Some(Duration::from_secs(30)))
+        .http_status_as_error(false)
+        .allow_non_standard_methods(true)
+        .build()
+        .new_agent();
+    let mut uri =
+        ureq::http::Uri::try_from(uri).map_err(|error| ureq::Error::BadUri(error.to_string()))?;
+    let mut completed = 0;
+    loop {
+        let mut req = ureq::http::Request::builder()
+            .method(method)
+            .uri(uri.clone());
+        for header in headers {
+            let name = header.field.as_str().as_str();
+            if !is_forwardable_request_header(name) {
+                continue;
+            }
+            // ureq 2 replaced non-X headers but appended repeated X headers.
+            if !name.starts_with("X-") && !name.starts_with("x-") {
+                if let Some(headers) = req.headers_mut() {
+                    headers.remove(name);
+                }
+            }
+            req = req.header(name, header.value.as_str());
+        }
+        let response = if body.is_empty() {
+            client.run(req.body(())?)
+        } else {
+            client.run(req.body(body)?)
+        }?;
+        let status = response.status().as_u16();
+        if !(300..399).contains(&status) {
+            return Ok(response);
+        }
+        if completed == 4 {
+            return Err(ureq::Error::TooManyRedirects);
+        }
+        let Some(location) = response.headers().get("location") else {
+            return Ok(response);
+        };
+        let location = std::str::from_utf8(location.as_bytes())
+            .map_err(|error| ureq::Error::BadUri(error.to_string()))?;
+        let mut target = url::Url::parse(&uri.to_string())
+            .and_then(|base| base.join(location))
+            .map_err(|error| ureq::Error::BadUri(error.to_string()))?;
+        method = match status {
+            301 | 302 | 303 if method == "HEAD" => "HEAD",
+            301 | 302 | 303 => "GET",
+            307 | 308 if matches!(method, "GET" | "HEAD" | "OPTIONS" | "TRACE") => method,
+            _ => return Ok(response),
+        };
+        target.set_fragment(None);
+        uri = ureq::http::Uri::try_from(String::from(target))
+            .map_err(|error| ureq::Error::BadUri(error.to_string()))?;
+        body = &[];
+        completed += 1;
     }
 }
 
@@ -259,41 +312,29 @@ fn content_type_header(content_type: &str) -> tiny_http::Header {
     )
 }
 
-/// Relays one upstream `ureq::Response` back through `tiny_http`, applying
+/// Relays every real upstream HTTP response through `tiny_http`, applying
 /// the i18n/remote-link translation passes for text bodies along the way.
-/// Shared between the success path and the `Error::Status` path in
-/// `handle_request` -- both hand it a real response with a real status
-/// code, just reached via different `Result` arms.
 fn forward_response(
     request: tiny_http::Request,
     status: u16,
-    response: ureq::Response,
+    response: ureq::http::Response<ureq::Body>,
     proxy: &RepowiseI18nProxy,
     lang: &str,
 ) {
-    let content_type = response.content_type().to_string();
+    let (parts, upstream_body) = response.into_parts();
+    let content_type = parts
+        .headers
+        .get("content-type")
+        .and_then(|value| std::str::from_utf8(value.as_bytes()).ok())
+        .unwrap_or("text/plain")
+        .split(';')
+        .next()
+        .unwrap_or("text/plain");
     let is_text = content_type.contains("application/json") || content_type.contains("text/html");
 
-    // Collect the safe end-to-end headers before `response` is consumed by
-    // `.into_reader()` below. `headers_names()` can repeat a name when the
-    // upstream sent it multiple times (e.g. `Set-Cookie`), so dedup by name
-    // and pull every value for it via `.all()` rather than just the first.
-    let mut seen_header_names = std::collections::HashSet::new();
-    let mut extra_headers = Vec::new();
-    for name in response.headers_names() {
-        if !is_forwardable_response_header(&name) || !seen_header_names.insert(name.clone()) {
-            continue;
-        }
-        for value in response.all(&name) {
-            if let Ok(header) = tiny_http::Header::from_bytes(name.as_bytes(), value.as_bytes()) {
-                extra_headers.push(header);
-            }
-        }
-    }
-
-    if is_text {
+    let mut resp = if is_text {
         let mut body = String::new();
-        let _ = response.into_reader().read_to_string(&mut body);
+        let _ = upstream_body.into_reader().read_to_string(&mut body);
 
         let translated_body = if content_type.contains("application/json") {
             if let Ok(json) = serde_json::from_str::<Value>(&body) {
@@ -309,24 +350,29 @@ fn forward_response(
             )
         };
 
-        let mut resp = Response::from_string(translated_body)
-            .with_status_code(status)
-            .with_header(content_type_header(&content_type));
-        for header in extra_headers {
-            resp = resp.with_header(header);
-        }
-        let _ = request.respond(resp);
+        Response::from_string(translated_body)
     } else {
         let mut bytes = Vec::new();
-        let _ = response.into_reader().read_to_end(&mut bytes);
-        let mut resp = Response::from_data(bytes)
-            .with_status_code(status)
-            .with_header(content_type_header(&content_type));
-        for header in extra_headers {
-            resp = resp.with_header(header);
-        }
-        let _ = request.respond(resp);
+        let _ = upstream_body.into_reader().read_to_end(&mut bytes);
+        Response::from_data(bytes)
     }
+    .with_status_code(status)
+    .with_header(content_type_header(content_type));
+
+    // Relay every value directly, preserving repeated Set-Cookie entries.
+    for (name, value) in &parts.headers {
+        if !is_forwardable_response_header(name.as_str()) {
+            continue;
+        }
+        if let Ok(value) = std::str::from_utf8(value.as_bytes()) {
+            if let Ok(header) =
+                tiny_http::Header::from_bytes(name.as_str().as_bytes(), value.as_bytes())
+            {
+                resp = resp.with_header(header);
+            }
+        }
+    }
+    let _ = request.respond(resp);
 }
 
 /// Appends a script block before `</body>`, or at the end if the HTML has

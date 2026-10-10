@@ -169,8 +169,14 @@ pub fn warm_up_from_upstream(
     upstream_url: &str,
     overrides: &HashMap<String, HostOverride>,
 ) -> Vec<(String, RemoteInfo)> {
-    let repos: Value = match ureq::get(&format!("{}/api/repos", upstream_url)).call() {
-        Ok(resp) => match resp.into_json() {
+    let client = ureq::Agent::config_builder()
+        .proxy(None)
+        .max_redirects(4)
+        .timeout_connect(Some(std::time::Duration::from_secs(30)))
+        .build()
+        .new_agent();
+    let repos: Value = match client.get(format!("{}/api/repos", upstream_url)).call() {
+        Ok(resp) => match serde_json::from_reader(resp.into_body().into_reader()) {
             Ok(v) => v,
             Err(_) => return Vec::new(),
         },
