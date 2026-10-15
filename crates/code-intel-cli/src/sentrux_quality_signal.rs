@@ -477,6 +477,17 @@ pub(crate) fn import_target_candidate(line: &str) -> Option<String> {
     }
     let candidate = candidate.trim();
     let last_word = candidate.split_whitespace().last()?;
+    // A path rooted at `std`, `core` or `alloc` names the standard library,
+    // never a file in this repository. Without this check the last-segment
+    // reduction below throws the root away and leaves a bare word that
+    // `resolve_edge` happily matches against any single file with that stem:
+    // `use std::process::{Child, ...}` became a dependency on
+    // `codegraph_provider/process.rs` and, together with that file's real
+    // `use crate::node_timeout`, manufactured a two-file import cycle with no
+    // basis in the source (issue #438).
+    if last_word.starts_with("std::") || last_word.starts_with("core::") || last_word.starts_with("alloc::") {
+        return None;
+    }
     let last_segment = last_word
         .split(&['.', ':', '/'][..])
         .filter(|segment| !segment.is_empty())
@@ -947,6 +958,56 @@ mod tests {
     fn unresolvable_targets_are_dropped_not_guessed() {
         let known: BTreeSet<String> = ["src/a.rs"].iter().map(|s| s.to_string()).collect();
         assert_eq!(resolve_edge("src/b.rs", "std::fs", &known), None);
+    }
+
+    // ── Issue #438: a standard-library import must not name a repository file. ──
+
+    #[test]
+    fn stdlib_rooted_paths_yield_no_candidate_at_all() {
+        // The extractor used to reduce each of these to its last segment
+        // (`process`, `Command`, `Duration`), and `resolve_edge` then matched
+        // that bare word against any single file with the matching stem. With
+        // `codegraph_provider/process.rs` in the tree, `std::process` became a
+        // dependency edge on it.
+        assert_eq!(import_target_candidate("use std::process::{Child, Command, Output, Stdio};"), None);
+        assert_eq!(import_target_candidate("use std::process::Command;"), None);
+        assert_eq!(import_target_candidate("use core::fmt;"), None);
+        assert_eq!(import_target_candidate("use alloc::vec::Vec;"), None);
+        // A crate-local path is unaffected: its last segment is still extracted.
+        assert_eq!(
+            import_target_candidate("use crate::node_timeout::{self, NodeTimeoutError};").as_deref(),
+            Some("node_timeout")
+        );
+    }
+
+    #[test]
+    fn std_process_does_not_manufacture_a_cycle_with_the_provider_process_file() {
+        // End-to-end shape of the #438 defect: the false edge from
+        // `std::process` plus the provider's real `use crate::node_timeout`
+        // closed a two-file cycle that no source-level dependency justified.
+        let known: BTreeSet<String> = [
+            "crates/x/src/node_timeout.rs",
+            "crates/x/src/codegraph_provider/process.rs",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+        let false_target = import_target_candidate("use std::process::{Child, Command};");
+        assert_eq!(false_target, None, "stdlib import must not name a candidate");
+        // The bare stem would otherwise resolve, which is exactly the trap.
+        assert_eq!(
+            resolve_edge("crates/x/src/node_timeout.rs", "process", &known).as_deref(),
+            Some("crates/x/src/codegraph_provider/process.rs")
+        );
+
+        // The genuine direction still resolves.
+        let real = import_target_candidate("use crate::node_timeout::{self, NodeTimeoutError};");
+        assert_eq!(real.as_deref(), Some("node_timeout"));
+        assert_eq!(
+            resolve_edge("crates/x/src/codegraph_provider/process.rs", "node_timeout", &known).as_deref(),
+            Some("crates/x/src/node_timeout.rs")
+        );
     }
 
     #[test]
