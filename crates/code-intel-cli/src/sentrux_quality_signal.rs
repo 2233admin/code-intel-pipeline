@@ -485,7 +485,10 @@ pub(crate) fn import_target_candidate(line: &str) -> Option<String> {
     // `codegraph_provider/process.rs` and, together with that file's real
     // `use crate::node_timeout`, manufactured a two-file import cycle with no
     // basis in the source (issue #438).
-    if last_word.starts_with("std::") || last_word.starts_with("core::") || last_word.starts_with("alloc::") {
+    if last_word.starts_with("std::")
+        || last_word.starts_with("core::")
+        || last_word.starts_with("alloc::")
+    {
         return None;
     }
     let last_segment = last_word
@@ -969,13 +972,17 @@ mod tests {
         // that bare word against any single file with the matching stem. With
         // `codegraph_provider/process.rs` in the tree, `std::process` became a
         // dependency edge on it.
-        assert_eq!(import_target_candidate("use std::process::{Child, Command, Output, Stdio};"), None);
+        assert_eq!(
+            import_target_candidate("use std::process::{Child, Command, Output, Stdio};"),
+            None
+        );
         assert_eq!(import_target_candidate("use std::process::Command;"), None);
         assert_eq!(import_target_candidate("use core::fmt;"), None);
         assert_eq!(import_target_candidate("use alloc::vec::Vec;"), None);
         // A crate-local path is unaffected: its last segment is still extracted.
         assert_eq!(
-            import_target_candidate("use crate::node_timeout::{self, NodeTimeoutError};").as_deref(),
+            import_target_candidate("use crate::node_timeout::{self, NodeTimeoutError};")
+                .as_deref(),
             Some("node_timeout")
         );
     }
@@ -994,7 +1001,10 @@ mod tests {
         .collect();
 
         let false_target = import_target_candidate("use std::process::{Child, Command};");
-        assert_eq!(false_target, None, "stdlib import must not name a candidate");
+        assert_eq!(
+            false_target, None,
+            "stdlib import must not name a candidate"
+        );
         // The bare stem would otherwise resolve, which is exactly the trap.
         assert_eq!(
             resolve_edge("crates/x/src/node_timeout.rs", "process", &known).as_deref(),
@@ -1005,7 +1015,12 @@ mod tests {
         let real = import_target_candidate("use crate::node_timeout::{self, NodeTimeoutError};");
         assert_eq!(real.as_deref(), Some("node_timeout"));
         assert_eq!(
-            resolve_edge("crates/x/src/codegraph_provider/process.rs", "node_timeout", &known).as_deref(),
+            resolve_edge(
+                "crates/x/src/codegraph_provider/process.rs",
+                "node_timeout",
+                &known
+            )
+            .as_deref(),
             Some("crates/x/src/node_timeout.rs")
         );
     }
