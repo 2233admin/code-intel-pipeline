@@ -252,10 +252,22 @@ pub(crate) fn compute_modularity_q(edges: &BTreeSet<(String, String)>) -> f64 {
 /// granularity, because without it every file in a single-crate repository
 /// (this one included -- `crates/code-intel-cli/src/*.rs`) collapses into
 /// one module, making Q trivially ~0 for the exact repositories this
-/// engine most needs to say something useful about. A file directly under
-/// `<crate>/src|app|tests/` with no further subdirectory is its own module
-/// (top-level files are already separate concerns); a file inside a
-/// subdirectory shares that subdirectory as its module.
+/// engine most needs to say something useful about.
+///
+/// Under `<crate>/src|app|tests/`, a file inside a **subdirectory** shares
+/// that subdirectory as its module, and a file directly under the root
+/// shares `<crate>/src` with every other such file and with every
+/// subdirectory's parent. The two must be the same *kind* of thing for Q to
+/// mean anything: an earlier revision made each top-level file its own
+/// singleton module ("top-level files are already separate concerns"), but
+/// this repository refutes that premise -- 126 top-level files carry 198
+/// mutual `crate::` edges (`capability` alone is referenced by more than
+/// thirty of them). Treating each as its own community made every reuse of
+/// a shared top-level module a cross-community edge, so a subdirectory
+/// module that correctly reused the shared infrastructure scored *worse*
+/// than one that duplicated it. Issue #438 records the measurement that
+/// exposed this: internalizing a provider module dropped the aggregate
+/// quality signal 12.8% while coupling, cycles and god files all held.
 pub(crate) fn module_of(path: &str) -> &str {
     let Some((first, after_first)) = path.split_once('/') else {
         return ""; // File directly at the repository root.
@@ -266,9 +278,18 @@ pub(crate) fn module_of(path: &str) -> &str {
         };
         if let Some((root, after_root)) = after_name.split_once('/') {
             if matches!(root, "src" | "app" | "tests") {
-                let next_end = after_root.find('/').unwrap_or(after_root.len());
-                let prefix_end = path.len() - after_root.len() + next_end;
-                return &path[..prefix_end];
+                // A file inside a subdirectory keeps that subdirectory as its
+                // module. A file directly under `src|app|tests` -- one with no
+                // further slash -- shares the `src|app|tests` bucket with every
+                // other such file, and that bucket is the parent of every
+                // subdirectory module. Both are therefore siblings, which is
+                // what lets a subdirectory module reuse a shared top-level
+                // module without being scored as a cross-community breach.
+                let bucket_end = match after_root.find('/') {
+                    Some(next) => path.len() - after_root.len() + next,
+                    None => path.len() - after_root.len() - 1,
+                };
+                return &path[..bucket_end];
             }
         }
         return &path[..first.len() + 1 + name.len()];
@@ -813,10 +834,16 @@ mod tests {
 
     #[test]
     fn module_of_gives_crates_paths_one_more_level_of_granularity() {
-        // Flat top-level file: its own module, not the whole crate.
+        // A flat top-level file shares the `src` bucket with every other flat
+        // file, and that bucket is the parent of every subdirectory module --
+        // they are siblings, not strangers (issue #438).
         assert_eq!(
             module_of("crates/code-intel-cli/src/sentrux_gate.rs"),
-            "crates/code-intel-cli/src/sentrux_gate.rs"
+            "crates/code-intel-cli/src"
+        );
+        assert_eq!(
+            module_of("crates/code-intel-cli/src/capability.rs"),
+            "crates/code-intel-cli/src"
         );
         // Two files under the same subdirectory: same module.
         assert_eq!(
@@ -831,6 +858,30 @@ mod tests {
         assert_eq!(
             module_of("crates/code-intel-cli/build.rs"),
             "crates/code-intel-cli"
+        );
+    }
+
+    /// Issue #438. The whole point of the granularity rule is that reusing a
+    /// shared top-level module must not be scored as crossing a community
+    /// boundary: a subdirectory module and the flat modules it depends on are
+    /// siblings under `src`. Before this, each flat file was its own singleton
+    /// community, so a module that correctly reused six of them accumulated six
+    /// cross-community edges and dragged Q below zero.
+    #[test]
+    fn a_subdirectory_module_and_the_flat_modules_it_reuses_are_not_cross_community() {
+        let flat = module_of("crates/code-intel-cli/src/capability.rs");
+        let sub = module_of("crates/code-intel-cli/src/codegraph_provider/mod.rs");
+        assert_eq!(flat, "crates/code-intel-cli/src");
+        assert_eq!(sub, "crates/code-intel-cli/src/codegraph_provider");
+        // Different buckets (the subdirectory is genuinely a separate
+        // concern), but one is the other's parent, not an unrelated singleton.
+        assert_ne!(flat, sub);
+        assert!(sub.starts_with(&format!("{flat}/")));
+        // The relation the fix establishes: every flat file is in ONE bucket,
+        // never one bucket per file.
+        assert_eq!(
+            module_of("crates/code-intel-cli/src/snapshot.rs"),
+            module_of("crates/code-intel-cli/src/capability.rs")
         );
     }
 
