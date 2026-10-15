@@ -619,12 +619,15 @@ stdio MCP server，按需起、随 session 生灭。注册进 `.mcp.json` 后 Cl
 | `get_evidence` | 一条 finding 的证据链：哪些产物提到它、各自 sha256、记录时的 snapshot | 已提交 run |
 | `get_audit_status` | 各科室审计结论、评分、覆盖；没跑过 audit 会明说"不可用"而不是装绿 | 已提交 run |
 | `get_change_impact` | 改这些文件会波及谁、该先跑哪些测试 | **已提交 import 图 × 当前 `--repo-path`**；默认标 stale-advisory 并同时给出 recorded/current 两个 snapshot identity |
+| `get_code_context` | 语义定位、真实源码片段、符号及调用上下文 | **当前 `--repo-path` 的显式 CodeGraph 索引**；校验源码 snapshot 与 provider/database 身份，过期拒绝；partial/advisory，不能裁决门禁 |
 | `plan_structural_edit` | ast-grep 结构改写预览，只出匹配清单，不落盘 | **当前工作树**（不是已提交 run） |
 | `scan_security_findings` | 跑内置原创 ast-grep 安全规则集（csharp/go/java/javascript/python/rust/typescript），出 finding 清单 | **当前工作树**；advisory-only，findings 是复核提示不是已验证漏洞，从不影响 `get_gate_verdict` |
 
-**这个面只读，不裁决。** 门禁判定照旧只走 CLI 与 CI 路径——查询面被 prompt injection 说服也改不了结论。唯一会执行东西的两个工具是 `plan_structural_edit` 和 `scan_security_findings`，各自在跑之前拿注册表核对自己的 capability 声明，一旦声明里出现 `repo_mutation` 就直接拒绝。
+**这个面不裁决，不改源码。** 门禁判定照旧只走 CLI 与 CI 路径——查询面被 prompt injection 说服也改不了结论。`plan_structural_edit` 和 `scan_security_findings` 执行注册的 preview-only capability，声明出现 `repo_mutation` 就拒绝。可选 `get_code_context` 执行本地 CodeGraph 查询并在仓库外保存证据，不自动建索引、同步、启动 watcher 或修改 Git hooks；它的 partial 结果不会变成权威事实。
 
 `--repo` 建议显式给：worktree 的目录名不是 `run commit` 发布时用的仓名，不给就会去查错仓的 run。`--repo-path` 默认取工作目录。
+
+CodeGraph 接入使用编译后的 `code-intel provider codegraph`；先显式 `index`，源码变化后显式 `sync`。引擎缺席不影响原生 CodeNexus 基线。安装、命令、缓存边界及验证见 [CodeGraph 选择性内化记录](docs/research/codegraph-adoption.md)。
 
 全量 `code-intel <path> --mode normal` 留给深检和出证据，不是日常问答的入口。
 
