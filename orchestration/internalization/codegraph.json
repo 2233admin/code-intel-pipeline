@@ -54,7 +54,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/codegraph_provider/mod.rs",
-        "sha256": "d1fce47172185b213e744857209361de0b0ec25e356666af9d0b5647f360ee84"
+        "sha256": "221116ffacda83136fddbb848a9141d3b3ada3ed9a5c9fdc35e80622c14c7c51"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/codegraph_provider.rs",
@@ -99,10 +99,10 @@
     }
   },
   "ownedModifications": [
-    { "path": "crates/code-intel-cli/src/codegraph_provider/mod.rs", "description": "Optional CLI entry, shared snapshot-bound execution and A04 evidence admission", "sha256": "d1fce47172185b213e744857209361de0b0ec25e356666af9d0b5647f360ee84" },
+    { "path": "crates/code-intel-cli/src/codegraph_provider/mod.rs", "description": "Optional CLI entry, shared snapshot-bound execution and A04 evidence admission", "sha256": "221116ffacda83136fddbb848a9141d3b3ada3ed9a5c9fdc35e80622c14c7c51" },
     { "path": "crates/code-intel-cli/src/codegraph_provider/parser.rs", "description": "Public operation/path/argument contract", "sha256": "8a8ae0fc96accf1c9a6a97ad615d693419f7e552db9d49ad36fd83e9ab7682bd" },
-    { "path": "crates/code-intel-cli/src/codegraph_provider/process.rs", "description": "Trusted version-aware cross-platform launcher and fixed official SDK transport", "sha256": "cc741e3b163416a07ceeaf045d3bbf0458a398c9dcd7047cfb95bf3b2c429237" },
-    { "path": "crates/code-intel-cli/src/codegraph_provider/storage.rs", "description": "Ignored binding, lock, database/WAL fingerprints and persisted payload", "sha256": "09cac2b77082d711330c0555e03f1997a5eba56b3393b2b4773c04165ed93ece" },
+    { "path": "crates/code-intel-cli/src/codegraph_provider/process.rs", "description": "Trusted version-aware cross-platform launcher and fixed official SDK transport", "sha256": "1a8a9d853ac788006cbecd5c92d07d822b33e772e8dc80d44425845fe6974030" },
+    { "path": "crates/code-intel-cli/src/codegraph_provider/storage.rs", "description": "Ignored binding, lock, database/WAL fingerprints and persisted payload", "sha256": "4f27b490630bb5e7b65028a99b41179327de09df73866f2e0e889c86592a3208" },
     { "path": "crates/code-intel-cli/src/codegraph_provider/scope.rs", "description": "Actual upstream inventory and explicit file reads constrained to hashed regular sources", "sha256": "897ad45819982656ea7422494a8bc67a40ce302410d9a98fb636e747fa1fc88c" },
     { "path": "crates/code-intel-cli/src/cli/command_catalog/routes/provider_routes.rs", "description": "Public optional-provider route alongside existing provider contracts" },
     { "path": "crates/code-intel-cli/src/mcp_serve/handlers.rs", "description": "Repository-pinned get_code_context query handler; cannot request writes or redirect repository" },

@@ -4,10 +4,43 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::time::Duration;
 
 use serde_json::{json, Value};
 
+use crate::node_timeout::{self, NodeTimeoutError};
+
 use super::Failure;
+
+/// Wall-clock ceiling for one CodeGraph subprocess.
+///
+/// Without it a stalled provider holds `CacheLock` indefinitely, because the lock
+/// is released only when this process exits and this process is waiting on
+/// `Command::output()`. Indexing a large tree is the slow legitimate case, so the
+/// ceiling is generous; it exists to bound a hang, not to bound normal work.
+const PROVIDER_DEADLINE: Duration = Duration::from_secs(900);
+
+/// Run a CodeGraph command under `PROVIDER_DEADLINE`, delegating the kill and
+/// reap to the shared `node_timeout` executor so a stalled provider cannot hold
+/// the cache lock forever.
+fn run_bounded(command: Command, label: &str) -> Result<Output, Failure> {
+    node_timeout::run_with_timeout(command, PROVIDER_DEADLINE).map_err(|error| match error {
+        NodeTimeoutError::TimedOut { elapsed, limit } => Failure::new(
+            70,
+            format!(
+                "{label} exceeded its {}s deadline after {}s and was terminated; the cache lock is released without waiting further",
+                limit.as_secs(),
+                elapsed.as_secs()
+            ),
+        ),
+        // A missing launcher keeps its unavailable semantics; other launch
+        // failures stay process errors.
+        NodeTimeoutError::Io(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Failure::unavailable(format!("CodeGraph launcher unavailable: {error}"))
+        }
+        NodeTimeoutError::Io(error) => Failure::new(70, format!("{label}: {error}")),
+    })
+}
 
 pub(super) struct Engine {
     executable: PathBuf,
@@ -237,17 +270,9 @@ impl Engine {
     }
 
     pub fn invoke(&self, repo: &Path, args: &[String]) -> Result<Output, Failure> {
-        self.command(repo, &self.command)
-            .args(&self.prefix)
-            .args(args)
-            .output()
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    Failure::unavailable(format!("CodeGraph launcher unavailable: {e}"))
-                } else {
-                    Failure::new(70, format!("launch CodeGraph: {e}"))
-                }
-            })
+        let mut command = self.command(repo, &self.command);
+        command.args(&self.prefix).args(args);
+        run_bounded(command, "launch CodeGraph")
     }
 
     pub fn invocation(&self, args: &[String]) -> Value {
@@ -259,7 +284,8 @@ impl Engine {
         // Fixed transport glue only: upstream owns extraction, indexing and
         // writer locking. No query/path interpolation in JavaScript source.
         const SCRIPT: &str = "(async()=>{const entry=process.argv[1],repo=process.argv[2];const path=require('node:path');const locks=require(path.join(path.dirname(entry),'mcp/writer-lock.js'));const lock=locks.tryAcquireWriterLock(repo,'index');if(lock.kind==='taken')throw new Error(locks.writerLockHeldMessage(lock.existing,lock.pidPath));let graph;try{const CG=require(entry).default;graph=await CG.init(repo,{index:false});const result=await graph.indexAll();console.log(JSON.stringify(result));}finally{if(graph)graph.destroy();locks.releaseWriterLock(repo);}})().catch(e=>{console.error(e&&e.stack||String(e));process.exitCode=1;});";
-        self.command(repo, node)
+        let mut command = self.command(repo, node);
+        command
             .args([
                 "--liftoff-only",
                 "--disable-warning=ExperimentalWarning",
@@ -268,16 +294,15 @@ impl Engine {
                 "--",
             ])
             .arg(argument_path(entry).as_ref())
-            .arg(argument_path(repo).as_ref())
-            .output()
-            .map_err(|e| Failure::new(70, format!("launch CodeGraph SDK initialization: {e}")))
+            .arg(argument_path(repo).as_ref());
+        run_bounded(command, "launch CodeGraph SDK initialization")
     }
 
     pub fn indexed_files(&self, repo: &Path) -> Result<Value, Failure> {
         let (node, entry) = self.sdk.as_ref().ok_or_else(|| Failure::contract("snapshot binding requires the official installed SDK bundle for its indexed file inventory"))?;
         const SCRIPT: &str = "(async()=>{const CG=require(process.argv[1]).default;const graph=await CG.open(process.argv[2],{readOnly:true});try{console.log(JSON.stringify(graph.getFiles()));}finally{graph.destroy();}})().catch(e=>{console.error(e&&e.stack||String(e));process.exitCode=1;});";
-        let output = self
-            .command(repo, node)
+        let mut command = self.command(repo, node);
+        command
             .args([
                 "--liftoff-only",
                 "--disable-warning=ExperimentalWarning",
@@ -286,11 +311,8 @@ impl Engine {
                 "--",
             ])
             .arg(argument_path(entry).as_ref())
-            .arg(argument_path(repo).as_ref())
-            .output()
-            .map_err(|error| {
-                Failure::new(70, format!("read CodeGraph SDK indexed inventory: {error}"))
-            })?;
+            .arg(argument_path(repo).as_ref());
+        let output = run_bounded(command, "read CodeGraph SDK indexed inventory")?;
         if !output.status.success() {
             return Err(Failure::process(
                 "CodeGraph SDK indexed inventory failed",

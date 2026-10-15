@@ -166,10 +166,11 @@ fn execute(request: &Request, result: &mut Value) -> Result<(), Failure> {
             }
         }
     };
-    let database = if cache.join("codegraph.db").is_file() {
-        Some(storage::database_identity(&cache)?)
-    } else {
-        None
+    // Decide the database state before any writer runs: a dangling symlink at
+    // this path must be refused here, not after `initial_index` has written.
+    let database = match storage::database_state(&cache)? {
+        storage::DatabaseState::Absent => None,
+        storage::DatabaseState::Regular => Some(storage::database_identity(&cache)?),
     };
     let compatible = marker.as_ref().is_some_and(|marker| {
         marker["repository"] == json!(repo)
