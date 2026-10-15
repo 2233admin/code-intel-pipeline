@@ -168,7 +168,39 @@ impl Drop for CacheLock {
     }
 }
 
+/// Database state at the cache path, decided **before** any writer runs.
+///
+/// `Path::is_file()` follows symlinks, so a dangling `codegraph.db` link reports
+/// `false` and would be treated as "no database" — which routes `index` into the
+/// initial-index writer before `database_identity` gets to reject the link. This
+/// guard uses `symlink_metadata` so a link, directory, or other non-regular entry
+/// is refused up front instead of after the write.
+pub(super) enum DatabaseState {
+    /// No entry at the path: a writer may create the database.
+    Absent,
+    /// A regular local file: use `database_identity` for its content identity.
+    Regular,
+}
+
+pub(super) fn database_state(cache: &Path) -> Result<DatabaseState, Failure> {
+    match fs::symlink_metadata(cache.join("codegraph.db")) {
+        Ok(metadata) => {
+            if !metadata.is_file() || metadata.file_type().is_symlink() {
+                return Err(Failure::contract(
+                    "CodeGraph database must be a regular local file, not a symlink or directory",
+                ));
+            }
+            Ok(DatabaseState::Regular)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(DatabaseState::Absent),
+        Err(e) => Err(Failure::io(format!("inspect CodeGraph database: {e}"))),
+    }
+}
+
 pub(super) fn database_identity(cache: &Path) -> Result<Value, Failure> {
+    // Re-checks what `database_state` already established for `codegraph.db`, and
+    // additionally constrains `codegraph.db-wal`. Kept independent so a caller
+    // that reaches identity hashing still refuses a link or non-regular entry.
     let mut identities = serde_json::Map::new();
     for name in ["codegraph.db", "codegraph.db-wal"] {
         let path = cache.join(name);
@@ -328,4 +360,118 @@ pub(super) fn persist_payload(
     Ok(
         json!({"schema":"code-intel-artifact-ref.v1","artifactSchema":"code-intel-evidence-payload.v1","type":"observed.evidence.payload","path":format!("codegraph/payloads/{digest}.json"),"sha256":digest,"consumedSnapshotIdentity":snapshot_identity}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{database_state, DatabaseState};
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    /// Temp cache directory removed on drop.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new() -> Self {
+            let nonce = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "code-intel-database-state-{}-{nonce}-{}",
+                std::process::id(),
+                SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn symlink_file(original: &Path, link: &Path) -> std::io::Result<()> {
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(original, link)
+        }
+        #[cfg(not(windows))]
+        {
+            std::os::unix::fs::symlink(original, link)
+        }
+    }
+
+    #[test]
+    fn absent_database_reports_absent() {
+        let scratch = Scratch::new();
+        match database_state(scratch.path()) {
+            Ok(DatabaseState::Absent) => {}
+            Ok(DatabaseState::Regular) => panic!("expected Absent, got Regular"),
+            Err(_) => panic!("expected Absent, got a failure"),
+        }
+    }
+
+    #[test]
+    fn regular_database_reports_regular() {
+        let scratch = Scratch::new();
+        fs::write(scratch.path().join("codegraph.db"), b"database bytes").unwrap();
+        match database_state(scratch.path()) {
+            Ok(DatabaseState::Regular) => {}
+            Ok(DatabaseState::Absent) => panic!("expected Regular, got Absent"),
+            Err(_) => panic!("expected Regular, got a failure"),
+        }
+    }
+
+    /// The regression this guard exists for: `Path::is_file()` follows the link,
+    /// so a dangling `codegraph.db` used to look absent and route `index` into the
+    /// initial-index writer before the identity check could reject it.
+    #[test]
+    fn dangling_database_symlink_is_rejected_before_a_writer_runs() {
+        let scratch = Scratch::new();
+        let target = scratch.path().join("outside-target.db");
+        let link = scratch.path().join("codegraph.db");
+        match symlink_file(&target, &link) {
+            Ok(()) => {}
+            // Windows needs Developer Mode or elevation to create symlinks; the
+            // contract cannot be exercised here, so it is not claimed.
+            Err(error) => {
+                eprintln!("skipping dangling-link case: {error}");
+                return;
+            }
+        }
+        assert!(!target.exists(), "the link must be dangling for this case");
+        // Precondition that made the bug reachable.
+        assert!(
+            !link.is_file(),
+            "is_file() must report false for a dangling link"
+        );
+        assert!(
+            database_state(scratch.path()).is_err(),
+            "a dangling database link must be rejected before any writer runs"
+        );
+        assert!(
+            !target.exists(),
+            "the guard must not follow the link into a write"
+        );
+    }
+
+    #[test]
+    fn database_directory_entry_is_rejected() {
+        let scratch = Scratch::new();
+        fs::create_dir_all(scratch.path().join("codegraph.db")).unwrap();
+        assert!(
+            database_state(scratch.path()).is_err(),
+            "a directory at the database path must be rejected"
+        );
+    }
 }
