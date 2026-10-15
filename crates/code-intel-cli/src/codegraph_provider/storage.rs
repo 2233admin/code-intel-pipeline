@@ -175,7 +175,6 @@ impl Drop for CacheLock {
 /// initial-index writer before `database_identity` gets to reject the link. This
 /// guard uses `symlink_metadata` so a link, directory, or other non-regular entry
 /// is refused up front instead of after the write.
-#[derive(Debug)]
 pub(super) enum DatabaseState {
     /// No entry at the path: a writer may create the database.
     Absent,
@@ -417,7 +416,8 @@ mod tests {
         let scratch = Scratch::new();
         match database_state(scratch.path()) {
             Ok(DatabaseState::Absent) => {}
-            other => panic!("expected Absent, got {other:?}"),
+            Ok(DatabaseState::Regular) => panic!("expected Absent, got Regular"),
+            Err(_) => panic!("expected Absent, got a failure"),
         }
     }
 
@@ -427,7 +427,8 @@ mod tests {
         fs::write(scratch.path().join("codegraph.db"), b"database bytes").unwrap();
         match database_state(scratch.path()) {
             Ok(DatabaseState::Regular) => {}
-            other => panic!("expected Regular, got {other:?}"),
+            Ok(DatabaseState::Absent) => panic!("expected Regular, got Absent"),
+            Err(_) => panic!("expected Regular, got a failure"),
         }
     }
 
