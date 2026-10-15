@@ -493,7 +493,7 @@
         "help"
       ],
       "exitCode": 0,
-      "stdoutUtf8": "Code Intel Pipeline\n\nQuick start:\n  code-intel .\n  code-intel <path> --mode lite|normal|full\n\nCommon commands:\n  code-intel doctor --json\n  code-intel graph --repo <path> --write\n  code-intel resume --repo <path> --json\n  code-intel sentrux check <path>\n\nAdvanced commands:\n  code-intel --help --all\n",
+      "stdoutUtf8": "Code Intel Pipeline\n\nQuick start:\n  code-intel .\n  code-intel <path> --mode lite|normal|full\n\nCommon commands:\n  code-intel doctor --json\n  code-intel graph --repo <path> --write\n  code-intel resume --repo <path> --json\n  code-intel sentrux check <path>\n  code-intel provider codegraph explore --repo <path> --query <text>\n\nAdvanced commands:\n  code-intel --help --all\n",
       "stderrUtf8": ""
     },
     {
@@ -502,7 +502,7 @@
         "--help"
       ],
       "exitCode": 0,
-      "stdoutUtf8": "Code Intel Pipeline\n\nQuick start:\n  code-intel .\n  code-intel <path> --mode lite|normal|full\n\nCommon commands:\n  code-intel doctor --json\n  code-intel graph --repo <path> --write\n  code-intel resume --repo <path> --json\n  code-intel sentrux check <path>\n\nAdvanced commands:\n  code-intel --help --all\n",
+      "stdoutUtf8": "Code Intel Pipeline\n\nQuick start:\n  code-intel .\n  code-intel <path> --mode lite|normal|full\n\nCommon commands:\n  code-intel doctor --json\n  code-intel graph --repo <path> --write\n  code-intel resume --repo <path> --json\n  code-intel sentrux check <path>\n  code-intel provider codegraph explore --repo <path> --query <text>\n\nAdvanced commands:\n  code-intel --help --all\n",
       "stderrUtf8": ""
     },
     {
@@ -511,7 +511,7 @@
         "-h"
       ],
       "exitCode": 0,
-      "stdoutUtf8": "Code Intel Pipeline\n\nQuick start:\n  code-intel .\n  code-intel <path> --mode lite|normal|full\n\nCommon commands:\n  code-intel doctor --json\n  code-intel graph --repo <path> --write\n  code-intel resume --repo <path> --json\n  code-intel sentrux check <path>\n\nAdvanced commands:\n  code-intel --help --all\n",
+      "stdoutUtf8": "Code Intel Pipeline\n\nQuick start:\n  code-intel .\n  code-intel <path> --mode lite|normal|full\n\nCommon commands:\n  code-intel doctor --json\n  code-intel graph --repo <path> --write\n  code-intel resume --repo <path> --json\n  code-intel sentrux check <path>\n  code-intel provider codegraph explore --repo <path> --query <text>\n\nAdvanced commands:\n  code-intel --help --all\n",
       "stderrUtf8": ""
     },
     {
@@ -566,7 +566,7 @@
     ],
     "expected": {
       "exitCode": 0,
-      "stdoutUtf8": "Code Intel Pipeline\n\nQuick start:\n  code-intel .\n  code-intel <path> --mode lite|normal|full\n\nCommon commands:\n  code-intel doctor --json\n  code-intel graph --repo <path> --write\n  code-intel resume --repo <path> --json\n  code-intel sentrux check <path>\n\nAdvanced commands:\n  code-intel --help --all\n",
+      "stdoutUtf8": "Code Intel Pipeline\n\nQuick start:\n  code-intel .\n  code-intel <path> --mode lite|normal|full\n\nCommon commands:\n  code-intel doctor --json\n  code-intel graph --repo <path> --write\n  code-intel resume --repo <path> --json\n  code-intel sentrux check <path>\n  code-intel provider codegraph explore --repo <path> --query <text>\n\nAdvanced commands:\n  code-intel --help --all\n",
       "stderrUtf8": ""
     }
   },
@@ -631,6 +631,25 @@
         "exitCode": 64,
         "stdoutUtf8": "",
         "stderrUtf8": "Code Intel error: unknown primary entry argument: --contract-probe\n"
+      }
+    },
+    {
+      "name": "codegraph provider discoverability",
+      "argv": [
+        "help"
+      ],
+      "reason": "v9 (issue #429) adds the optional CodeGraph provider to the default help. The top-level quick list gains `code-intel provider codegraph explore --repo <path> --query <text>` between the sentrux line and the Advanced section, and the full help registers `provider codegraph <index|sync|status|query|explore|node|callers|callees|impact|affected|files>`. The default help is a frozen parity surface, so the new verb is recorded here rather than moved silently.",
+      "oldContractId": "text-format:help.v8",
+      "newContractId": "text-format:help.v9",
+      "old": {
+        "exitCode": 0,
+        "stdoutUtf8": "Code Intel Pipeline\n\nQuick start:\n  code-intel .\n  code-intel <path> --mode lite|normal|full\n\nCommon commands:\n  code-intel doctor --json\n  code-intel graph --repo <path> --write\n  code-intel resume --repo <path> --json\n  code-intel sentrux check <path>\n\nAdvanced commands:\n  code-intel --help --all\n",
+        "stderrUtf8": ""
+      },
+      "new": {
+        "exitCode": 0,
+        "stdoutUtf8": "Code Intel Pipeline\n\nQuick start:\n  code-intel .\n  code-intel <path> --mode lite|normal|full\n\nCommon commands:\n  code-intel doctor --json\n  code-intel graph --repo <path> --write\n  code-intel resume --repo <path> --json\n  code-intel sentrux check <path>\n  code-intel provider codegraph explore --repo <path> --query <text>\n\nAdvanced commands:\n  code-intel --help --all\n",
+        "stderrUtf8": ""
       }
     }
   ]
