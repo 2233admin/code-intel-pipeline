@@ -148,7 +148,7 @@ jobs:
         shell: pwsh
         run: |
           $reported = @(rg --version)
-          if ($LASTEXITCODE -ne 0 -or [regex]::Match($reported[0], '^ripgrep (\S+)(?:\s|$)').Groups[1].Value -ne '15.2.0') { throw "required ripgrep version mismatch: $reported" }
+          if ($LASTEXITCODE -ne 0 -or -not ($reported[0] -match '^ripgrep (\d+\.\d+\.\d+)') -or [version]$Matches[1] -lt [version]'15.2.0') { throw "required ripgrep below floor 15.2.0 (DR-0002): $reported" }
           cargo test -p code-intel --locked --test capability_exec inventory_rg_exec_emits_one_result_and_stable_real_rg_artifact -- --exact --nocapture
           if ($LASTEXITCODE -ne 0) { throw "real ripgrep public capability smoke failed: $LASTEXITCODE" }
 
@@ -578,7 +578,7 @@ jobs:
         shell: pwsh
         run: |
           $reported = @(rg --version)
-          if ($LASTEXITCODE -ne 0 -or [regex]::Match($reported[0], '^ripgrep (\S+)(?:\s|$)').Groups[1].Value -ne '15.2.0') { throw "required ripgrep version mismatch: $reported" }
+          if ($LASTEXITCODE -ne 0 -or -not ($reported[0] -match '^ripgrep (\d+\.\d+\.\d+)') -or [version]$Matches[1] -lt [version]'15.2.0') { throw "required ripgrep below floor 15.2.0 (DR-0002): $reported" }
           cargo test -p code-intel --locked --test capability_exec inventory_rg_exec_emits_one_result_and_stable_real_rg_artifact -- --exact --nocapture
           if ($LASTEXITCODE -ne 0) { throw "real ripgrep public capability smoke failed: $LASTEXITCODE" }
 

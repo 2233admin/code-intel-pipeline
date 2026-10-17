@@ -10,6 +10,17 @@ runs:
       shell: pwsh
       run: |
         $version = '15.2.0'
+        # DR-0002: the pin is a floor. An rg already on PATH at >= floor is
+        # accepted as-is; only a missing, older or unparseable rg is replaced.
+        $existing = Get-Command rg -ErrorAction SilentlyContinue
+        if ($existing) {
+          $reportedExisting = [regex]::Match((@(& $existing.Source --version))[0], '^ripgrep (\d+\.\d+\.\d+)').Groups[1].Value
+          if ($reportedExisting -and [version]$reportedExisting -ge [version]$version) {
+            Write-Host "ripgrep $reportedExisting already present at $($existing.Source) (floor $version)"
+            return
+          }
+          Write-Host "ripgrep at $($existing.Source) reports '$reportedExisting' (< floor $version or unparseable); installing pinned $version"
+        }
         if ($IsWindows) {
           $target = 'x86_64-pc-windows-msvc'
           $ext = 'zip'
