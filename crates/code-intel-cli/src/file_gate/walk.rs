@@ -87,11 +87,16 @@ fn normalize_path(path: &str) -> String {
 /// rather than bare name, and `git`'s program-executing config keys are
 /// disarmed -- see those modules for why.
 ///
-/// `None` means the check could not run (`rg` missing, spawn failure) --
-/// callers must treat that as "cannot evaluate", not "everything ignored":
-/// `repository_ignored` never excludes anything when this returns `None`.
-pub(crate) fn governed_visible_files(target: &Path) -> Option<BTreeSet<String>> {
-    let output = Command::new(tool_path::resolve("rg"))
+/// An `Err` means the check could not run (`rg` missing, spawn failure,
+/// abnormal exit). It is fatal for the whole gate (#410): silently skipping
+/// `repository_ignored` would reclassify every ignored file as
+/// `default_include` while the report still verified as success.
+pub(crate) fn governed_visible_files(target: &Path) -> Result<BTreeSet<String>, String> {
+    governed_visible_files_with(&tool_path::resolve("rg"), target)
+}
+
+fn governed_visible_files_with(rg: &Path, target: &Path) -> Result<BTreeSet<String>, String> {
+    let output = Command::new(rg)
         .arg("--files")
         .args([
             "--hidden",
@@ -103,9 +108,19 @@ pub(crate) fn governed_visible_files(target: &Path) -> Option<BTreeSet<String>> 
         .env_remove("RIPGREP_CONFIG_PATH")
         .current_dir(target)
         .output()
-        .ok()?;
+        .map_err(|error| {
+            format!(
+                "repository_ignored gate cannot run: ripgrep (`rg`) failed to start at {}: {error}. \
+                 Install ripgrep and ensure it is on PATH (`code-intel doctor` lists it as required)",
+                rg.display()
+            )
+        })?;
     if !output.status.success() && output.status.code() != Some(1) {
-        return None;
+        return Err(format!(
+            "repository_ignored gate cannot run: `rg --files` exited {:?}: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
     }
     let mut visible = String::from_utf8_lossy(&output.stdout)
         .lines()
@@ -124,5 +139,22 @@ pub(crate) fn governed_visible_files(target: &Path) -> Option<BTreeSet<String>> 
             }
         }
     }
-    Some(visible)
+    Ok(visible)
+}
+
+#[cfg(test)]
+mod governed_visible_tests {
+    use super::*;
+
+    #[test]
+    fn missing_ripgrep_is_a_named_error_not_an_empty_exclusion() {
+        let missing = std::env::temp_dir().join("__code_intel_rg_does_not_exist__");
+        let error = governed_visible_files_with(&missing, &std::env::temp_dir())
+            .expect_err("a missing rg must fail the gate, not silently disable repository_ignored");
+        assert!(
+            error.contains("repository_ignored gate cannot run"),
+            "{error}"
+        );
+        assert!(error.contains("ripgrep"), "{error}");
+    }
 }

@@ -147,7 +147,7 @@ pub(crate) fn evaluate(repo: &Path, config: &GateConfig) -> Result<GateReport, S
     candidates.sort();
     candidates.dedup();
 
-    let governed_visible = governed_visible_files(repo);
+    let governed_visible = governed_visible_files(repo)?;
 
     let mut decisions = Vec::with_capacity(candidates.len());
     let mut included = Vec::new();
@@ -183,11 +183,7 @@ pub(crate) fn evaluate(repo: &Path, config: &GateConfig) -> Result<GateReport, S
                     gate: GATE_OVERSIZED,
                     source: SOURCE_BUILT_IN,
                 }
-            } else if !user_included
-                && governed_visible
-                    .as_ref()
-                    .is_some_and(|visible| !visible.contains(relative))
-            {
+            } else if !user_included && !governed_visible.contains(relative) {
                 GateDecision {
                     path: relative.clone(),
                     decision: Decision::Excluded,
