@@ -2,7 +2,7 @@
 
 Status: active
 Date: 2026-10-18
-Decision: All PowerShell (`.ps1`/`.psm1`) is removed from the repository in two phases. Phase 1 deletes everything that is not on the install/release path. Phase 2 ports the installer and packaging to Rust (#401) and then deletes the rest. Compatibility facades, PowerShell contract tests, parity comparisons, rollback fixtures and retirement packets are deleted rather than kept or retired through observation windows.
+Decision: All PowerShell is removed from the repository in two phases. That covers `.ps1`/`.psm1` files and inline PowerShell in CI (`shell: pwsh` steps and explicit `pwsh`/`powershell` invocations in `.github/`). Phase 1 deletes everything that is not on the install/release path. Phase 2 ports the installer and packaging to Rust (#401) and then deletes the rest. Compatibility facades, PowerShell contract tests, parity comparisons, rollback fixtures and retirement packets are deleted rather than kept or retired through observation windows.
 
 ## Authority and scope
 
@@ -27,8 +27,9 @@ Counterfactual: keeping the process means waiting on telemetry windows and appro
 
 1. **Phase 1:** delete PowerShell outside the install/release closure. Each PR leaves CI green. Rust production code that still executes or anchors to PowerShell is changed in the same PR. Capabilities whose `productionRegistry.callSite` points into `.ps1` are re-anchored in Rust or deleted.
 2. **Phase 2:** Rust `install`/`repair` and packaging (#401) ship and pass the DR-0001 install-smoke gate. The installer, packaging scripts, sentrux shim and `legacy/` directory are then deleted in one change.
+3. **CI shell:** inline `shell: pwsh` steps move to `bash`, available on all three runners including Windows, or into `code-intel` subcommands. This runs alongside phases 1 and 2, workflow by workflow. It is done when no workflow or composite action declares or invokes PowerShell.
 
 ## Enforcement
 
 - **During phase 1:** review convention, tracked in the removal map issue.
-- **After phase 2:** `test_repository_layout.py` asserts that no tracked `*.ps1`/`*.psm1` exists.
+- **After phase 2 and the CI-shell step:** `test_repository_layout.py` asserts two things: no tracked `*.ps1`/`*.psm1` exists, and no file under `.github/` contains `shell: pwsh`, `shell: powershell`, or a `pwsh`/`powershell` command invocation.
