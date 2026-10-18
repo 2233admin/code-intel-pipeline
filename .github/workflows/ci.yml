@@ -303,6 +303,12 @@ jobs:
             throw "retirement boundary guard failed with exit code ${LASTEXITCODE}: a tracked legacy branch under orchestration/retirements/* disappeared from the tree without its packet's status.json saying retired: true"
           }
 
+      # Kept until DR-0018 phase 2; it used to run only inside the deleted
+      # project-conformance composer (#456 review).
+      - name: Language adapter acceptance
+        shell: pwsh
+        run: .\legacy/scripts/tests/test-language-adapter-acceptance.ps1
+
       - name: Pipeline smoke
         shell: pwsh
         run: .\legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -Mode normal
