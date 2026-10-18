@@ -96,6 +96,8 @@ v0.7.0 all three platforms ship prebuilt release ZIPs. Enhancement providers
 optional: when absent the run records them as skipped instead of faking
 success.
 
+The optional [CodeGraph adapter](docs/research/codegraph-adoption.md) adds snapshot-bound semantic queries, call relationships and advisory test candidates through `code-intel provider codegraph` and the MCP `get_code_context` tool. Explicit indexing/synchronization is required; partial graph results never authorize gates, and the native CodeNexus baseline remains independent.
+
 ## More
 
 - [Full manual (中文)](README.md)
