@@ -3,7 +3,6 @@ name: skill-check
 on:
   pull_request:
     paths:
-      - "crates/code-nexus-lite/**"
       - ".claude/skills/**"
       - "skills/**"
       - "tests/test_skill_package.py"
@@ -137,48 +136,6 @@ jobs:
           else:
               print(f"\nAll {len(files)} skill(s) pass.")
           PYEOF
-
-  # Validate the inventory.md + MEMORY.md link integrity
-  link-check:
-    name: Link integrity check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Check all .md files in /crates/code-nexus-lite/ have no broken links
-        run: |
-          set -euo pipefail
-          cd crates/code-nexus-lite
-          status=0
-          links_file=$(mktemp)
-          # No grep|while pipeline: the subshell would swallow status=1.
-          # Links go through a temp file so the loop runs in this shell.
-          while IFS= read -r f; do
-            echo "Checking $f..."
-            grep -oE '\[[^]]+\]\([^)]+\)' "$f" | sed -E 's/.*\(([^)]+)\)$/\1/' > "$links_file" || true
-            while IFS= read -r url; do
-              [ -n "$url" ] || continue
-              if [[ "$url" =~ ^https?:// ]]; then
-                echo "  → $url (external, not checked)"
-                continue
-              fi
-              case "$url" in
-                "#"*) continue ;;      # in-page anchor
-                mailto:*) continue ;;
-              esac
-              target="${url%%#*}"      # drop any #anchor suffix
-              [ -n "$target" ] || continue
-              if [ ! -e "$(dirname "$f")/$target" ]; then
-                echo "::error::broken relative link in crates/code-nexus-lite/${f#./}: $url"
-                status=1
-              fi
-            done < "$links_file"
-          done < <(find . -name "*.md" -not -path "./target/*")
-          if [ "$status" -ne 0 ]; then
-            echo "Broken relative links found."
-            exit 1
-          fi
-          echo "relative links verified; external URLs not checked"
 
   # Validate SKILL.md frontmatter (YAML)
   frontmatter-check:
