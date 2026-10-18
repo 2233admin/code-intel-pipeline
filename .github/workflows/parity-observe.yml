@@ -12,14 +12,10 @@ name: code-intel-parity-observe
 # non-zero harness exit (a divergence report, exit 1, is a normal outcome
 # here, not a workflow malfunction).
 
+# Manual only: observe-only (continue-on-error) and never gated a merge, so it
+# no longer spends a Windows runner on every crates/** PR. Deleted in DR-0018 phase 2.
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - legacy/run-code-intel.ps1
-      - legacy/Invoke-SentruxAgentTool.ps1
-      - legacy/scripts/tests/test-ps1-rust-parity.ps1
-      - crates/**
 
 permissions:
   contents: read

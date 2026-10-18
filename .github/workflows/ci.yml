@@ -10,6 +10,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same PR supersedes the running one; main pushes always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   admission-policy:
     uses: ./.github/workflows/admission-policy.yml
@@ -119,32 +124,6 @@ jobs:
       - name: Build Rust CLI
         shell: pwsh
         run: cargo build -p code-intel --release --locked
-
-      - name: Real Repowise public CLI smoke (isolated)
-        shell: pwsh
-        run: |
-          $venv = Join-Path $env:RUNNER_TEMP '.runtime-repowise'
-          python -m venv $venv
-          if ($LASTEXITCODE -ne 0) { throw "Repowise isolated environment creation failed: $LASTEXITCODE" }
-          $python = Join-Path $venv 'Scripts/python.exe'
-          $provider = Join-Path $venv 'Scripts/repowise.exe'
-          & $python -m pip install --only-binary=:all: repowise==0.55.0
-          if ($LASTEXITCODE -ne 0) { throw "Repowise binary-only installation failed: $LASTEXITCODE" }
-          $reported = @(& $provider --version)
-          if ($LASTEXITCODE -ne 0 -or $reported.Count -ne 1 -or $reported[0] -ne 'repowise, version 0.55.0') { throw "Repowise version mismatch: $reported" }
-          & $python tests/test_runtime_repowise.py --cli target/release/code-intel.exe --provider-bin $provider
-          if ($LASTEXITCODE -ne 0) { throw "real Repowise public CLI smoke failed: $LASTEXITCODE" }
-          $previousVenv = Join-Path $env:RUNNER_TEMP '.runtime-repowise-recorded'
-          python -m venv $previousVenv
-          if ($LASTEXITCODE -ne 0) { throw "Repowise recorded-version environment creation failed: $LASTEXITCODE" }
-          $previousPython = Join-Path $previousVenv 'Scripts/python.exe'
-          $previousProvider = Join-Path $previousVenv 'Scripts/repowise.exe'
-          & $previousPython -m pip install --only-binary=:all: repowise==0.38.0
-          if ($LASTEXITCODE -ne 0) { throw "Repowise recorded-version binary-only installation failed: $LASTEXITCODE" }
-          $reported = @(& $previousProvider --version)
-          if ($LASTEXITCODE -ne 0 -or $reported.Count -ne 1 -or $reported[0] -ne 'repowise, version 0.38.0') { throw "Repowise recorded-version mismatch: $reported" }
-          & $python tests/test_runtime_repowise.py --cli target/release/code-intel.exe --provider-bin $provider --previous-provider-bin $previousProvider
-          if ($LASTEXITCODE -ne 0) { throw "real Repowise old-index upgrade smoke failed: $LASTEXITCODE" }
 
       - name: Real ripgrep public capability smoke
         shell: pwsh
@@ -548,7 +527,9 @@ jobs:
         shell: pwsh
         run: cargo build -p code-intel --release --locked
 
+      # The optional Repowise provider is exercised once, on Linux.
       - name: Real Repowise public CLI smoke (isolated)
+        if: runner.os == 'Linux'
         shell: pwsh
         run: |
           $venv = Join-Path $env:RUNNER_TEMP '.runtime-repowise'
