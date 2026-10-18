@@ -118,8 +118,12 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
     // The structural gate engine ships inside the code-intel binary; an
     // external sentrux on PATH is an optional overlay, not a bootstrap
     // requirement.
-    let builtin_sentrux = probe::locate("code-intel", prefix).is_some()
-        || built_binaries(&options.pipeline_root).any(|path| path.is_file());
+    // This probe runs inside that binary, so a clean extracted package
+    // invoked by absolute path (bin dir not on PATH, no target/ builds)
+    // still has the engine (#396).
+    let builtin_sentrux = graph_binary.is_some()
+        || probe::locate("code-intel", prefix).is_some()
+        || std::env::current_exe().is_ok_and(|exe| exe.is_file());
 
     // #300: optional weco perf-optimize provider (WecoAI's AIDE-style
     // tree-search CLI). Never required — the built-in pipeline has no hard
@@ -132,7 +136,7 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
     let tools = vec![
         probe::probe_tool("rg", true, prefix),
         probe::probe_tool("git", true, prefix),
-        probe::probe_python(prefix),
+        probe::probe_python(options.require_repowise, prefix),
         probe::probe_tool("repowise", options.require_repowise, prefix),
         probe::probe_tool("repomix", false, prefix),
         probe::probe_tool("sentrux", !builtin_sentrux, prefix),
@@ -354,16 +358,6 @@ fn binary_candidates(pipeline_root: &Path, platform: &str) -> [PathBuf; 3] {
         pipeline_root.join("target").join("release").join(&name),
         pipeline_root.join("target").join("debug").join(&name),
     ]
-}
-
-/// Both platform spellings under both profiles: the built-in engine check must
-/// not depend on which platform's binary name this process was built for.
-fn built_binaries(pipeline_root: &Path) -> impl Iterator<Item = PathBuf> + '_ {
-    ["release", "debug"].into_iter().flat_map(move |profile| {
-        ["code-intel.exe", "code-intel"]
-            .into_iter()
-            .map(move |name| pipeline_root.join("target").join(profile).join(name))
-    })
 }
 
 /// `CODE_INTEL_HOME` compared against the default derivation — the pipeline
