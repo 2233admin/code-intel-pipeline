@@ -13,7 +13,7 @@ on:
       - ".github/workflows/**"
       - "tests/test_yaml_frontmatter.py"
       - "orchestration/toolchain-versions.v1.json"
-      - "legacy/install-code-intel-pipeline.ps1"
+      - "crates/code-intel-cli/src/setup/**"
   workflow_dispatch:
 
 permissions:

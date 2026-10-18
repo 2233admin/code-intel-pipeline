@@ -12,16 +12,21 @@ on:
 permissions:
   contents: read
 
+# DR-0018: no PowerShell. Step logic shared with ci.yml lives in
+# .github/scripts/ci.py.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   admission-policy:
     uses: ./.github/workflows/admission-policy.yml
 
-  release-windows:
+  release-gate:
     needs: admission-policy
-    # Authoritative full release gate. Tag/version validation, Skill and
-    # Rust test suites, the authoritative self-scan, packaging, and
-    # packaged-payload validation all run here; publishing happens only in
-    # the publish job after every platform's package has passed its gates.
+    # Tag and version validation plus the full test suites. Publishing
+    # happens only in the publish job, after every platform package has
+    # passed its own gates.
     runs-on: windows-latest
 
     steps:
@@ -30,320 +35,50 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validate release tag and package version
-        shell: pwsh
-        run: |
-          $tag = "${{ github.ref_name }}"
-          if ($tag -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
-            throw "Unsupported release tag: $tag"
-          }
-          $tagVersion = $Matches.version
-          $manifest = Get-Content -Raw -LiteralPath crates\code-intel-cli\Cargo.toml
-          $manifestMatch = [regex]::Match($manifest, '(?m)^version\s*=\s*"([^"]+)"')
-          if (-not $manifestMatch.Success) {
-            throw "Could not read the code-intel package version."
-          }
-          $packageVersion = $manifestMatch.Groups[1].Value
-          if ($packageVersion -ne $tagVersion) {
-            throw "Release tag $tag does not match Cargo package version $packageVersion."
-          }
-
-      - name: Verify GA tag signature
-        shell: pwsh
-        run: |
-          $tag = "${{ github.ref_name }}"
-          if ($tag -match '-(beta|rc)\.[0-9]+$') {
-            Write-Host "Pre-release tag ($tag) -- skipping signed-tag gate."
-          } else {
-            git config gpg.ssh.allowedSignersFile .github/allowed_signers
-            git verify-tag $tag
-            if ($LASTEXITCODE -ne 0) {
-              throw "GA tag $tag failed signature verification against .github/allowed_signers. See docs/RELEASE_SIGNING.md."
-            }
-          }
-
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.14"
+
+      # GA tags must be signed (docs/RELEASE_SIGNING.md); beta/rc tags skip that.
+      - name: Validate release tag, package version and signature
+        run: python .github/scripts/ci.py release-tag --tag "$GITHUB_REF_NAME"
 
       - name: Validate Skill package and bootstrap security
-        shell: pwsh
         run: |
           python tests/test_repository_layout.py -v
           python tests/test_skill_package.py -v
           python tests/test_skill_attestation.py -v
 
       - name: Setup Rust
-        shell: pwsh
         run: |
           rustup toolchain install
           rustup show active-toolchain
 
-      - name: Install ripgrep
-        uses: ./.github/actions/install-ripgrep
+      - name: Install pinned ripgrep
+        run: python .github/scripts/ci.py install-tool rg
 
       - name: Rust format
-        shell: pwsh
         run: cargo fmt -p code-intel -- --check
 
       - name: Rust check
-        shell: pwsh
         run: cargo check --locked
 
       - name: Rust tests
-        shell: pwsh
         run: cargo test -p code-intel --locked
 
-      - name: Build Rust CLI
-        shell: pwsh
-        run: cargo build -p code-intel --release --locked
-
-      - name: Authoritative self-scan (release blocking)
-        shell: pwsh
-        run: |
-          $staging = Join-Path $env:RUNNER_TEMP "code-intel-release-self-scan"
-          $authority = Join-Path $env:RUNNER_TEMP "code-intel-release-self-authority"
-          New-Item -ItemType Directory -Force $authority | Out-Null
-          ./target/release/code-intel.exe run execute --repo . --out $staging --authority-root $authority --final-name release-self-scan --manifest orchestration/integrations.json --doctor-require-repowise false
-          if ($LASTEXITCODE -ne 0) {
-            throw "release candidate failed its own scan (exit ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure, 73 = --final-name already published under the authority root). A failing self-scan must never publish."
-          }
-
-      - name: Validate any produced audit report (ai-safety-003)
-        shell: pwsh
-        run: |
-          # The audit kernel's fail-closed validator (`audit --operation
-          # validate`) previously ran on no automated path -- see issue #34
-          # ai-safety-003. Departments are agent-run, not part of `run
-          # execute`, so no audit-report.json is expected from this job
-          # today; this step is the structural guarantee that if one ever
-          # shows up here (repo root, orchestration/, or the self-scan
-          # artifact directory), a release can never publish it unvalidated.
-          $staging = Join-Path $env:RUNNER_TEMP "code-intel-release-self-scan"
-          $searchRoots = @("orchestration", $staging) | Where-Object { Test-Path $_ }
-          $reports = @()
-          if (Test-Path "audit-report.json") { $reports += (Resolve-Path "audit-report.json").Path }
-          foreach ($root in $searchRoots) {
-            $reports += Get-ChildItem -LiteralPath $root -Recurse -Filter "audit-report.json" -File -ErrorAction SilentlyContinue |
-              Select-Object -ExpandProperty FullName
-          }
-          $reports = $reports | Select-Object -Unique
-          if (-not $reports) {
-            Write-Host "No audit-report.json produced by this run; nothing to validate."
-          }
-          foreach ($report in $reports) {
-            Write-Host "Validating audit report: $report"
-            ./target/release/code-intel.exe audit --operation validate --repo . --report $report
-            if ($LASTEXITCODE -ne 0) {
-              throw "audit report failed --operation validate (exit ${LASTEXITCODE}): $report -- a release candidate must never publish an unvalidated audit report"
-            }
-          }
-
-      - name: Install portable pipeline
-        shell: pwsh
-        run: .\legacy\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -Json
-
-      - name: Add pipeline tools PATH
-        shell: pwsh
-        run: Add-Content -Path $env:GITHUB_PATH -Value "$env:LOCALAPPDATA\code-intel\bin"
-
-      - name: Doctor
-        shell: pwsh
-        # Runners don't install repowise; smoke runs on the lite fallback
-        # (same as ci.yml). The probe requires repowise by default, hence the
-        # explicit opt-out. Native since T3 (#48).
-        run: code-intel doctor bootstrap --repo-path . --no-require-repowise
-
-      - name: GitHub research contract tests
-        shell: pwsh
-        run: .\legacy/scripts/tests/test-github-solution-research.ps1 -RepoPath .
-
-      - name: Project discovery contract tests
-        shell: pwsh
-        run: .\legacy/scripts/tests/test-project-discovery.ps1 -RepoPath .
-
-      - name: Skill development benchmark contract tests
-        shell: pwsh
-        run: .\legacy/scripts/tests/test-skill-development-benchmark.ps1 -RepoPath .
-
-      - name: Pipeline smoke
-        shell: pwsh
-        run: .\legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -Mode normal
-
-      - name: Package
-        shell: pwsh
-        run: |
-          $version = "${{ github.ref_name }}"
-          # Package from `git archive HEAD`, not the working tree: earlier
-          # steps (install, smoke) must never be able to mutate what ships.
-          New-Item -ItemType Directory -Force dist\code-intel-pipeline\bin | Out-Null
-          git archive --format=zip -o dist\payload.zip HEAD
-          if ($LASTEXITCODE -ne 0) { throw "git archive failed" }
-          Expand-Archive -LiteralPath dist\payload.zip -DestinationPath dist\code-intel-pipeline -Force
-          Remove-Item dist\payload.zip
-          Copy-Item -LiteralPath target\release\code-intel.exe -Destination dist\code-intel-pipeline\bin\code-intel.exe -Force
-          $zip = "dist\code-intel-pipeline-$version-windows.zip"
-          Compress-Archive -Path dist\code-intel-pipeline -DestinationPath $zip -Force
-          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
-          "$hash *$(Split-Path -Leaf $zip)" | Set-Content -Encoding ascii "$zip.sha256"
-          $manifest = [ordered]@{
-            schema = "code-intel-release-manifest.v1"
-            tag = $version
-            commit = (git rev-parse HEAD).Trim()
-            zipSha256 = $hash
-            toolchain = (rustc --version).Trim()
-            builtAt = (Get-Date).ToUniversalTime().ToString("o")
-          }
-          $manifest | ConvertTo-Json | Set-Content -Encoding ascii "$zip.release-manifest.json"
-
-      - name: Validate packaged Skill bootstrap
-        shell: pwsh
-        run: |
-          $tag = "${{ github.ref_name }}"
-          $asset = "dist\code-intel-pipeline-$tag-windows.zip"
-          $expanded = Join-Path $env:RUNNER_TEMP "code-intel-release-layout"
-          Expand-Archive -LiteralPath $asset -DestinationPath $expanded
-          $payload = Join-Path $expanded "code-intel-pipeline"
-          $required = @(
-            (Join-Path $payload "legacy/install-code-intel-pipeline.ps1"),
-            (Join-Path $payload "legacy/code-intel.ps1"),
-            (Join-Path $payload "skills\code-intel-pipeline\SKILL.md"),
-            (Join-Path $payload "skills\code-intel-pipeline\agents\openai.yaml"),
-            (Join-Path $payload "skills\code-intel-pipeline\scripts\bootstrap.py"),
-            (Join-Path $payload "bin\code-intel.exe")
-          )
-          foreach ($path in $required) {
-            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-              throw "Release package is missing required file: $path"
-            }
-          }
-          python (Join-Path $payload "skills\code-intel-pipeline\scripts\bootstrap.py") --help
-          $installRoot = Join-Path $env:RUNNER_TEMP "code-intel-release-install-$env:GITHUB_RUN_ID"
-          $bootstrapRaw = & python (Join-Path $payload "skills\code-intel-pipeline\scripts\bootstrap.py") --local-asset $asset --version $tag --repo-path $payload --install-root $installRoot --install-missing --json
-          if ($LASTEXITCODE -ne 0) { throw "release bootstrap install failed:`n$bootstrapRaw" }
-          $bootstrap = $bootstrapRaw | ConvertFrom-Json
-          if ($bootstrap.status -notin @("installed", "repaired", "already_installed")) { throw "Unexpected release bootstrap status '$($bootstrap.status)':`n$bootstrapRaw" }
-          $installedRoot = [IO.Path]::GetFullPath([string]$bootstrap.release_root)
-          # Continue the packaged validation from the exact release root that
-          # bootstrap installed. The extracted archive is only the installer
-          # input; using it as --repo bypasses the installed topology that the
-          # release gate is required to prove.
-          $payload = $installedRoot
-          # Let doctor validate the installed topology through PATH while
-          # keeping the Rust built-in Sentrux provider authoritative. Passing
-          # this directory as the provider prefix would force the optional
-          # external shim route on Unix and make packaged Sentrux disappear.
-          $installedBin = Join-Path $installedRoot "bin"
-          $env:PATH = "$installedBin$([IO.Path]::PathSeparator)$env:PATH"
-          # The packaged binary must publish a committed, snapshot-bound
-          # Sentrux closure. The manifest and content-addressed artifacts are
-          # authoritative; command stdout is intentionally not inspected.
-          $packagedBinary = Join-Path $installedRoot "bin\code-intel.exe"
-          $staging = Join-Path $env:RUNNER_TEMP "code-intel-release-packaged-sentrux-staging-$env:GITHUB_RUN_ID"
-          $authority = Join-Path $env:RUNNER_TEMP "code-intel-release-packaged-sentrux-authority-$env:GITHUB_RUN_ID"
-          $finalName = "release-packaged-sentrux-$env:GITHUB_RUN_ID"
-          $manifestPath = Join-Path $payload (Join-Path "orchestration" "integrations.json")
-          New-Item -ItemType Directory -Force -Path $authority | Out-Null
-          & $packagedBinary run execute --repo $payload --out $staging --authority-root $authority --final-name $finalName --manifest $manifestPath --doctor-require-repowise false
-          if ($LASTEXITCODE -ne 0) { throw "packaged release run execute failed with exit ${LASTEXITCODE}" }
-
-          $repoName = (Get-Item -LiteralPath $payload).Name
-          $runRoot = Join-Path (Join-Path $authority $repoName) $finalName
-          $index = Join-Path $authority "index.json"
-          & $packagedBinary artifact index --artifact-root $authority --output $index --operation rebuild
-          if ($LASTEXITCODE -ne 0) { throw "packaged release artifact index validation failed" }
-          $marker = Get-Content -Raw -LiteralPath (Join-Path $runRoot "run-complete.json") | ConvertFrom-Json
-          if ($marker.schema -ne "code-intel-run-commit.v1") { throw "packaged release completion marker is invalid" }
-          $manifest = Get-Content -Raw -LiteralPath (Join-Path $runRoot ($marker.manifest.path -replace '/', [IO.Path]::DirectorySeparatorChar)) | ConvertFrom-Json
-          if ($manifest.schema -ne "code-intel-run-manifest.v1" -or $manifest.outcome -ne "completed") { throw "packaged release run manifest is not completed" }
-          if ($manifest.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release marker and manifest snapshots differ" }
-          if ($manifest.nodes.'evidence.sentrux'.status -ne "succeeded" -or $manifest.nodes.'evidence.sentrux'.verdict -ne "pass") { throw "packaged release Sentrux evidence node is not a passing verified result" }
-
-          $indexValue = Get-Content -Raw -LiteralPath $index | ConvertFrom-Json
-          $entry = @($indexValue.entries | Where-Object { $_.repo -eq $repoName -and $_.run -eq $finalName })
-          if ($entry.Count -ne 1) { throw "packaged release run was not admitted exactly once by artifact index" }
-          if ($entry[0].outcome -ne "completed" -or $entry[0].snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release artifact index identity does not match completion marker" }
-          $refs = @($entry[0].artifactRefs)
-          if (@($refs | Where-Object { $_.type -eq "diagnosis.hospital" }).Count -ne 1) { throw "packaged release run is missing its verified hospital report ref" }
-          $capabilityRefs = @($refs | Where-Object { $_.artifactSchema -eq "code-intel-sentrux-capability-artifact.v2" -and $_.type -eq "provider.sentrux.capability-artifact" })
-          if ($capabilityRefs.Count -eq 0) { throw "packaged release run has no verified Sentrux capability refs" }
-          $matrix = Get-Content -Raw -LiteralPath (Join-Path $payload (Join-Path "orchestration" "sentrux-capability-matrix.v1.json")) | ConvertFrom-Json
-          $matrixById = @{}
-          foreach ($capability in @($matrix.capabilities)) { $matrixById[$capability.id] = $capability }
-          $observed = @{}
-          foreach ($ref in $capabilityRefs) {
-            if ($ref.path -ne "objects/sha256/$($ref.sha256)") { throw "packaged release capability ref is not content-addressed: $($ref.path)" }
-            $payloadPath = Join-Path $runRoot ($ref.path -replace '/', [IO.Path]::DirectorySeparatorChar)
-            if (-not (Test-Path -LiteralPath $payloadPath -PathType Leaf)) { throw "packaged release capability object is missing: $($ref.path)" }
-            if ((Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ref.sha256) { throw "packaged release capability object digest mismatch: $($ref.path)" }
-            $capabilityPayload = Get-Content -Raw -LiteralPath $payloadPath | ConvertFrom-Json
-            if ($capabilityPayload.schema -ne "code-intel-sentrux-capability-artifact.v2" -or $capabilityPayload.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release capability artifact is not snapshot-bound: $($ref.path)" }
-            if (-not $matrixById.ContainsKey($capabilityPayload.capabilityId)) { throw "packaged release capability is absent from the matrix: $($capabilityPayload.capabilityId)" }
-            if ($matrixById[$capabilityPayload.capabilityId].operation -ne $capabilityPayload.operation) { throw "packaged release capability operation disagrees with the matrix: $($capabilityPayload.capabilityId)" }
-            if ($observed.ContainsKey($capabilityPayload.capabilityId)) { throw "duplicate packaged release capability artifact: $($capabilityPayload.capabilityId)" }
-            $observed[$capabilityPayload.capabilityId] = $capabilityPayload
-            if ($capabilityPayload.status -ne "succeeded" -and $null -eq $capabilityPayload.failure) { throw "packaged release non-success capability has no explicit failure: $($capabilityPayload.capabilityId)" }
-          }
-          $required = @($matrix.capabilities | Where-Object { $_.requiredForRelease })
-          if ($required.Count -eq 0) { throw "capability matrix exposes no required capabilities" }
-          foreach ($capability in $required) {
-            $id = [string]$capability.id
-            if (-not $observed.ContainsKey($id)) { throw "packaged release run is missing required Sentrux capability: $id" }
-            $payload = $observed[$id]
-            $mode = [string]$capability.executionMode
-            if ($mode -eq "automatic") {
-              if ($capability.currentState -eq "authoritative_automatic" -and $payload.status -ne "succeeded") { throw "packaged release authoritative automatic capability did not succeed: $id ($($payload.status))" }
-              if ($capability.currentState -eq "automatic_degraded" -and $payload.status -notin @("succeeded", "degraded")) { throw "packaged release degraded automatic capability did not produce an accepted result: $id ($($payload.status))" }
-              if ($capability.currentState -notin @("authoritative_automatic", "automatic_degraded")) { throw "packaged release automatic capability has an unsupported matrix state: $id ($($capability.currentState))" }
-            }
-            elseif ($mode -in @("explicit_authority", "lifecycle_external")) {
-              if ($payload.status -ne "not_applicable") { throw "packaged release explicit/lifecycle capability must be explicitly not_applicable: $id ($($payload.status))" }
-              if ($null -eq $payload.failure -or [string]::IsNullOrWhiteSpace([string]$payload.failure.kind)) { throw "packaged release explicit/lifecycle capability has no failure reason: $id" }
-            }
-            else { throw "packaged release capability has no recognized execution mode: $id ($mode)" }
-          }
-          Write-Host "Packaged release Sentrux closure verified from committed refs: $($capabilityRefs.Count) capability refs; required=$($required.Count); matrix coverage=$($matrix.coverageStatus)"
-
-          # ai-safety-003 (issue #34): if the packaged snapshot carries an
-          # audit report, it must pass the same fail-closed validate
-          # pipeline against the packaged payload, using the packaged
-          # binary -- release green, self-scan green, and published
-          # artifact green must all refer to the same snapshot, and an
-          # unvalidated audit report must never ride along as if it were
-          # authoritative.
-          $packagedReports = Get-ChildItem -LiteralPath $payload -Recurse -Filter "audit-report.json" -File -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty FullName
-          foreach ($report in $packagedReports) {
-            Write-Host "Validating packaged audit report: $report"
-            & $packagedBinary audit --operation validate --repo $payload --report $report
-            if ($LASTEXITCODE -ne 0) { throw "packaged audit report failed --operation validate: $report" }
-          }
-
-      - name: Upload release dist artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-dist-windows
-          path: |
-            dist/code-intel-pipeline-*-windows.zip
-            dist/code-intel-pipeline-*-windows.zip.sha256
-            dist/code-intel-pipeline-*-windows.zip.release-manifest.json
-          if-no-files-found: error
-
-  package-unix:
-    needs: admission-policy
-    # Platform build + package lane. The windows job above stays the
-    # authoritative full gate; this lane still refuses to hand a package to
-    # publish unless the candidate passes its own self-scan and the packaged
-    # payload passes the same structural gates as the windows package.
+  package:
+    needs: release-gate
+    # Each platform package must pass the candidate's own self-scan, then
+    # install through the Skill bootstrap and pass the same Sentrux closure
+    # from the installed release before publish may take it.
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-latest
-            platform: macos
-          - os: ubuntu-latest
-            platform: linux
+        os:
+          - windows-latest
+          - macos-latest
+          - ubuntu-latest
 
     runs-on: ${{ matrix.os }}
 
@@ -356,217 +91,55 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.14"
 
       - name: Setup Rust
-        shell: pwsh
         run: |
           rustup toolchain install
           rustup show active-toolchain
 
-      - name: Install ripgrep
-        uses: ./.github/actions/install-ripgrep
+      - name: Install pinned ripgrep
+        run: python .github/scripts/ci.py install-tool rg
 
       - name: Build Rust CLI
-        shell: pwsh
         run: cargo build -p code-intel --release --locked
 
       - name: Authoritative self-scan (release blocking)
-        shell: pwsh
-        run: |
-          $staging = Join-Path $env:RUNNER_TEMP "code-intel-release-self-scan"
-          $authority = Join-Path $env:RUNNER_TEMP "code-intel-release-self-authority"
-          New-Item -ItemType Directory -Force $authority | Out-Null
-          ./target/release/code-intel run execute --repo . --out $staging --authority-root $authority --final-name release-self-scan --manifest orchestration/integrations.json --doctor-require-repowise false
-          if ($LASTEXITCODE -ne 0) {
-            throw "release candidate failed its own scan (exit ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure, 73 = --final-name already published under the authority root). A failing self-scan must never publish."
-          }
+        run: python .github/scripts/ci.py sentrux-closure --binary target/release/code-intel --repo . --work "$RUNNER_TEMP/release-self-scan" --final-name release-self-scan --require-pass
 
+      # Packaged from `git archive HEAD`, never the working tree, so no
+      # earlier step can change what ships.
       - name: Package
-        shell: pwsh
-        run: |
-          $version = "${{ github.ref_name }}"
-          $platform = "${{ matrix.platform }}"
-          # Package from `git archive HEAD`, not the working tree: earlier
-          # steps must never be able to mutate what ships.
-          New-Item -ItemType Directory -Force dist/code-intel-pipeline/bin | Out-Null
-          git archive --format=zip -o dist/payload.zip HEAD
-          if ($LASTEXITCODE -ne 0) { throw "git archive failed" }
-          Expand-Archive -LiteralPath dist/payload.zip -DestinationPath dist/code-intel-pipeline -Force
-          Remove-Item dist/payload.zip
-          Copy-Item -LiteralPath target/release/code-intel -Destination dist/code-intel-pipeline/bin/code-intel -Force
-          chmod 755 dist/code-intel-pipeline/bin/code-intel
-          if ($LASTEXITCODE -ne 0) { throw "chmod failed with exit code ${LASTEXITCODE}" }
-          # Compress-Archive does not store POSIX file modes; the system zip
-          # binary records the executable bit in each entry's external
-          # attributes so the packaged binary stays runnable after unzip.
-          $zipLeaf = "code-intel-pipeline-$version-$platform.zip"
-          Push-Location dist
-          try {
-            zip -r $zipLeaf code-intel-pipeline
-            if ($LASTEXITCODE -ne 0) { throw "zip failed with exit code ${LASTEXITCODE}" }
-          }
-          finally {
-            Pop-Location
-          }
-          $zip = "dist/$zipLeaf"
-          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
-          "$hash *$(Split-Path -Leaf $zip)" | Set-Content -Encoding ascii "$zip.sha256"
-          $manifest = [ordered]@{
-            schema = "code-intel-release-manifest.v1"
-            tag = $version
-            commit = (git rev-parse HEAD).Trim()
-            zipSha256 = $hash
-            toolchain = (rustc --version).Trim()
-            builtAt = (Get-Date).ToUniversalTime().ToString("o")
-          }
-          $manifest | ConvertTo-Json | Set-Content -Encoding ascii "$zip.release-manifest.json"
+        id: package
+        run: python .github/scripts/ci.py package --tag "$GITHUB_REF_NAME" --out dist
 
-      - name: Validate packaged Skill bootstrap
-        shell: pwsh
-        run: |
-          $tag = "${{ github.ref_name }}"
-          $platform = "${{ matrix.platform }}"
-          $asset = "dist/code-intel-pipeline-$tag-$platform.zip"
-          $expanded = Join-Path $env:RUNNER_TEMP "code-intel-release-layout"
-          # Extract with the system unzip so POSIX modes are restored from
-          # the archive; running the packaged binary below then proves the
-          # executable bit survived the zip round trip.
-          unzip -q $asset -d $expanded
-          if ($LASTEXITCODE -ne 0) { throw "unzip failed with exit code ${LASTEXITCODE}" }
-          $payload = Join-Path $expanded "code-intel-pipeline"
-          $required = @(
-            (Join-Path $payload "legacy/install-code-intel-pipeline.ps1"),
-            (Join-Path $payload "legacy/code-intel.ps1"),
-            (Join-Path $payload "skills/code-intel-pipeline/SKILL.md"),
-            (Join-Path $payload "skills/code-intel-pipeline/agents/openai.yaml"),
-            (Join-Path $payload "skills/code-intel-pipeline/scripts/bootstrap.py"),
-            (Join-Path $payload "bin/code-intel")
-          )
-          foreach ($path in $required) {
-            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-              throw "Release package is missing required file: $path"
-            }
-          }
-          python (Join-Path $payload "skills/code-intel-pipeline/scripts/bootstrap.py") --help
-          $installRoot = Join-Path $env:RUNNER_TEMP "code-intel-release-install-$env:GITHUB_RUN_ID"
-          $bootstrapRaw = & python (Join-Path $payload "skills/code-intel-pipeline/scripts/bootstrap.py") --local-asset $asset --version $tag --repo-path $payload --install-root $installRoot --install-missing --json
-          if ($LASTEXITCODE -ne 0) { throw "release bootstrap install failed:`n$bootstrapRaw" }
-          $bootstrap = $bootstrapRaw | ConvertFrom-Json
-          if ($bootstrap.status -notin @("installed", "repaired", "already_installed")) { throw "Unexpected release bootstrap status '$($bootstrap.status)':`n$bootstrapRaw" }
-          $installedRoot = [IO.Path]::GetFullPath([string]$bootstrap.release_root)
-          # Continue the packaged validation from the exact release root that
-          # bootstrap installed. The extracted archive is only the installer
-          # input; using it as --repo bypasses the installed topology that the
-          # release gate is required to prove.
-          $payload = $installedRoot
-          # Let doctor validate the installed topology through PATH while
-          # keeping the Rust built-in Sentrux provider authoritative. Passing
-          # this directory as the provider prefix would force the optional
-          # external shim route on Unix and make packaged Sentrux disappear.
-          $installedBin = Join-Path $installedRoot "bin"
-          $env:PATH = "$installedBin$([IO.Path]::PathSeparator)$env:PATH"
-          $packagedBinary = Join-Path $installedRoot "bin/code-intel"
-          bash -c "test -x '$packagedBinary'"
-          if ($LASTEXITCODE -ne 0) { throw "packaged binary lost its executable bit in the zip round trip: $packagedBinary" }
-          # The packaged binary must publish a committed, snapshot-bound
-          # Sentrux closure. The manifest and content-addressed artifacts are
-          # authoritative; command stdout is intentionally not inspected.
-          $staging = Join-Path $env:RUNNER_TEMP "code-intel-release-packaged-sentrux-staging-$env:GITHUB_RUN_ID"
-          $authority = Join-Path $env:RUNNER_TEMP "code-intel-release-packaged-sentrux-authority-$env:GITHUB_RUN_ID"
-          $finalName = "release-packaged-sentrux-$env:GITHUB_RUN_ID"
-          $manifestPath = Join-Path $payload (Join-Path "orchestration" "integrations.json")
-          New-Item -ItemType Directory -Force -Path $authority | Out-Null
-          & $packagedBinary run execute --repo $payload --out $staging --authority-root $authority --final-name $finalName --manifest $manifestPath --doctor-require-repowise false
-          if ($LASTEXITCODE -ne 0) { throw "packaged release run execute failed with exit ${LASTEXITCODE}" }
+      - name: Install the package through the Skill bootstrap
+        id: install
+        run: python .github/scripts/ci.py install-package --zip "${{ steps.package.outputs.zip }}" --tag "$GITHUB_REF_NAME" --report "$RUNNER_TEMP/bootstrap.json"
 
-          $repoName = (Get-Item -LiteralPath $payload).Name
-          $runRoot = Join-Path (Join-Path $authority $repoName) $finalName
-          $index = Join-Path $authority "index.json"
-          & $packagedBinary artifact index --artifact-root $authority --output $index --operation rebuild
-          if ($LASTEXITCODE -ne 0) { throw "packaged release artifact index validation failed" }
-          $marker = Get-Content -Raw -LiteralPath (Join-Path $runRoot "run-complete.json") | ConvertFrom-Json
-          if ($marker.schema -ne "code-intel-run-commit.v1") { throw "packaged release completion marker is invalid" }
-          $manifest = Get-Content -Raw -LiteralPath (Join-Path $runRoot ($marker.manifest.path -replace '/', [IO.Path]::DirectorySeparatorChar)) | ConvertFrom-Json
-          if ($manifest.schema -ne "code-intel-run-manifest.v1" -or $manifest.outcome -ne "completed") { throw "packaged release run manifest is not completed" }
-          if ($manifest.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release marker and manifest snapshots differ" }
-          if ($manifest.nodes.'evidence.sentrux'.status -ne "succeeded" -or $manifest.nodes.'evidence.sentrux'.verdict -ne "pass") { throw "packaged release Sentrux evidence node is not a passing verified result" }
+      - name: Installed graph binary, PATH and CODE_INTEL_HOME
+        run: python .github/scripts/ci.py installed-checks --report "$RUNNER_TEMP/bootstrap.json"
 
-          $indexValue = Get-Content -Raw -LiteralPath $index | ConvertFrom-Json
-          $entry = @($indexValue.entries | Where-Object { $_.repo -eq $repoName -and $_.run -eq $finalName })
-          if ($entry.Count -ne 1) { throw "packaged release run was not admitted exactly once by artifact index" }
-          if ($entry[0].outcome -ne "completed" -or $entry[0].snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release artifact index identity does not match completion marker" }
-          $refs = @($entry[0].artifactRefs)
-          if (@($refs | Where-Object { $_.type -eq "diagnosis.hospital" }).Count -ne 1) { throw "packaged release run is missing its verified hospital report ref" }
-          $capabilityRefs = @($refs | Where-Object { $_.artifactSchema -eq "code-intel-sentrux-capability-artifact.v2" -and $_.type -eq "provider.sentrux.capability-artifact" })
-          if ($capabilityRefs.Count -eq 0) { throw "packaged release run has no verified Sentrux capability refs" }
-          $matrix = Get-Content -Raw -LiteralPath (Join-Path $payload (Join-Path "orchestration" "sentrux-capability-matrix.v1.json")) | ConvertFrom-Json
-          $matrixById = @{}
-          foreach ($capability in @($matrix.capabilities)) { $matrixById[$capability.id] = $capability }
-          $observed = @{}
-          foreach ($ref in $capabilityRefs) {
-            if ($ref.path -ne "objects/sha256/$($ref.sha256)") { throw "packaged release capability ref is not content-addressed: $($ref.path)" }
-            $payloadPath = Join-Path $runRoot ($ref.path -replace '/', [IO.Path]::DirectorySeparatorChar)
-            if (-not (Test-Path -LiteralPath $payloadPath -PathType Leaf)) { throw "packaged release capability object is missing: $($ref.path)" }
-            if ((Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ref.sha256) { throw "packaged release capability object digest mismatch: $($ref.path)" }
-            $capabilityPayload = Get-Content -Raw -LiteralPath $payloadPath | ConvertFrom-Json
-            if ($capabilityPayload.schema -ne "code-intel-sentrux-capability-artifact.v2" -or $capabilityPayload.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged release capability artifact is not snapshot-bound: $($ref.path)" }
-            if (-not $matrixById.ContainsKey($capabilityPayload.capabilityId)) { throw "packaged release capability is absent from the matrix: $($capabilityPayload.capabilityId)" }
-            if ($matrixById[$capabilityPayload.capabilityId].operation -ne $capabilityPayload.operation) { throw "packaged release capability operation disagrees with the matrix: $($capabilityPayload.capabilityId)" }
-            if ($observed.ContainsKey($capabilityPayload.capabilityId)) { throw "duplicate packaged release capability artifact: $($capabilityPayload.capabilityId)" }
-            $observed[$capabilityPayload.capabilityId] = $capabilityPayload
-            if ($capabilityPayload.status -ne "succeeded" -and $null -eq $capabilityPayload.failure) { throw "packaged release non-success capability has no explicit failure: $($capabilityPayload.capabilityId)" }
-          }
-          $required = @($matrix.capabilities | Where-Object { $_.requiredForRelease })
-          if ($required.Count -eq 0) { throw "capability matrix exposes no required capabilities" }
-          foreach ($capability in $required) {
-            $id = [string]$capability.id
-            if (-not $observed.ContainsKey($id)) { throw "packaged release run is missing required Sentrux capability: $id" }
-            $payload = $observed[$id]
-            $mode = [string]$capability.executionMode
-            if ($mode -eq "automatic") {
-              if ($capability.currentState -eq "authoritative_automatic" -and $payload.status -ne "succeeded") { throw "packaged release authoritative automatic capability did not succeed: $id ($($payload.status))" }
-              if ($capability.currentState -eq "automatic_degraded" -and $payload.status -notin @("succeeded", "degraded")) { throw "packaged release degraded automatic capability did not produce an accepted result: $id ($($payload.status))" }
-              if ($capability.currentState -notin @("authoritative_automatic", "automatic_degraded")) { throw "packaged release automatic capability has an unsupported matrix state: $id ($($capability.currentState))" }
-            }
-            elseif ($mode -in @("explicit_authority", "lifecycle_external")) {
-              if ($payload.status -ne "not_applicable") { throw "packaged release explicit/lifecycle capability must be explicitly not_applicable: $id ($($payload.status))" }
-              if ($null -eq $payload.failure -or [string]::IsNullOrWhiteSpace([string]$payload.failure.kind)) { throw "packaged release explicit/lifecycle capability has no failure reason: $id" }
-            }
-            else { throw "packaged release capability has no recognized execution mode: $id ($mode)" }
-          }
-          Write-Host "Packaged release Sentrux closure verified from committed refs: $($capabilityRefs.Count) capability refs; required=$($required.Count); matrix coverage=$($matrix.coverageStatus)"
-
-          # ai-safety-003 (issue #34): if the packaged snapshot carries an
-          # audit report, it must pass the same fail-closed validate
-          # pipeline against the packaged payload, using the packaged
-          # binary -- same guarantee as the windows package validation.
-          $packagedReports = Get-ChildItem -LiteralPath $payload -Recurse -Filter "audit-report.json" -File -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty FullName
-          foreach ($report in $packagedReports) {
-            Write-Host "Validating packaged audit report: $report"
-            & $packagedBinary audit --operation validate --repo $payload --report $report
-            if ($LASTEXITCODE -ne 0) { throw "packaged audit report failed --operation validate: $report" }
-          }
+      # The installed release, not the checkout, must publish a committed,
+      # snapshot-bound Sentrux closure; stdout is never authority.
+      - name: Packaged Sentrux capability closure
+        run: python .github/scripts/ci.py sentrux-closure --binary "${{ steps.install.outputs.release_bin }}/code-intel" --repo "${{ steps.install.outputs.release_root }}" --work "$RUNNER_TEMP/packaged-scan" --final-name "release-packaged-sentrux-$GITHUB_RUN_ID" --require-pass
 
       - name: Upload release dist artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-dist-${{ matrix.platform }}
+          name: release-dist-${{ steps.package.outputs.platform }}
           path: |
-            dist/code-intel-pipeline-*-${{ matrix.platform }}.zip
-            dist/code-intel-pipeline-*-${{ matrix.platform }}.zip.sha256
-            dist/code-intel-pipeline-*-${{ matrix.platform }}.zip.release-manifest.json
+            dist/code-intel-pipeline-*.zip
+            dist/code-intel-pipeline-*.zip.sha256
+            dist/code-intel-pipeline-*.zip.release-manifest.json
           if-no-files-found: error
 
   publish:
     # Single release creator: every platform package must already have
-    # passed its build, self-scan, and packaged-payload gates before this
-    # job runs, and only this job holds a write-capable token.
+    # passed its gates, and only this job holds a write-capable token.
     runs-on: ubuntu-latest
-    needs:
-      - release-windows
-      - package-unix
+    needs: package
 
     permissions:
       contents: write
@@ -574,6 +147,11 @@ jobs:
       attestations: write
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
       - name: Download release dist artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -581,24 +159,9 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # A partial or mismatched inventory must never publish.
       - name: Verify release inventory
-        shell: pwsh
-        run: |
-          $tag = "${{ github.ref_name }}"
-          foreach ($platform in @("windows", "macos", "linux")) {
-            $zip = "dist/code-intel-pipeline-$tag-$platform.zip"
-            foreach ($path in @($zip, "$zip.sha256", "$zip.release-manifest.json")) {
-              if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-                throw "Release asset is missing: $path -- a partial release must never publish."
-              }
-            }
-            $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
-            $sidecar = (Get-Content -Raw -LiteralPath "$zip.sha256").Trim()
-            $expected = "$hash *$(Split-Path -Leaf $zip)"
-            if ($sidecar -cne $expected) {
-              throw "Checksum sidecar mismatch for ${zip}: expected '$expected', found '$sidecar'."
-            }
-          }
+        run: python3 .github/scripts/ci.py verify-inventory --dir dist --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA"
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -606,40 +169,24 @@ jobs:
           subject-path: "dist/code-intel-pipeline-*.zip"
 
       - name: Create GitHub Release
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          # No checkout in this job; gh must be told the target repository.
-          GH_REPO: ${{ github.repository }}
         run: |
-          $tag = "${{ github.ref_name }}"
-          $assets = @()
-          foreach ($platform in @("windows", "macos", "linux")) {
-            $asset = "dist/code-intel-pipeline-$tag-$platform.zip"
-            $assets += @($asset, "$asset.sha256", "$asset.release-manifest.json")
-          }
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -eq 0) {
+          tag="$GITHUB_REF_NAME"
+          assets=()
+          for platform in windows macos linux; do
+            asset="dist/code-intel-pipeline-$tag-$platform.zip"
+            assets+=("$asset" "$asset.sha256" "$asset.release-manifest.json")
+          done
+          if gh release view "$tag" >/dev/null 2>&1; then
             # No --clobber: a leaked contents:write token must not be able to
-            # silently replace already-published release assets with no CI
-            # trail. If a re-run genuinely needs to replace assets for this
-            # tag, delete them deliberately (gh release delete-asset) first.
-            gh release upload $tag @assets
-          }
-          else {
-            $notes = "Code Intel Pipeline $tag."
-            if ($tag.Contains("-")) {
-              $notes += " Pre-release build for integration testing before stable promotion."
-            }
-            else {
-              $notes += " Stable release."
-            }
-            $releaseArgs = @(
-              "--title", $tag,
-              "--notes", $notes
-            )
-            if ($tag.Contains("-")) {
-              $releaseArgs += "--prerelease"
-            }
-            gh release create $tag @assets @releaseArgs
-          }
+            # silently replace published assets. Delete deliberately first
+            # (gh release delete-asset) if a re-run truly needs to.
+            gh release upload "$tag" "${assets[@]}"
+          elif [[ "$tag" == *-* ]]; then
+            gh release create "$tag" "${assets[@]}" --title "$tag" --prerelease \
+              --notes "Code Intel Pipeline $tag. Pre-release build for integration testing before stable promotion."
+          else
+            gh release create "$tag" "${assets[@]}" --title "$tag" \
+              --notes "Code Intel Pipeline $tag. Stable release."
+          fi
