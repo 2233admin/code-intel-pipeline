@@ -17,7 +17,9 @@ jobs:
   windows-build-test-package:
     needs: admission-policy
     runs-on: windows-latest
-    timeout-minutes: 30
+    # Every step passes in ~30 min (Rust tests alone ~16 min on Windows), so a
+    # 30-min ceiling cancelled green runs at the final step (#440).
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
