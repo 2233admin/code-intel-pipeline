@@ -78,12 +78,24 @@ pub(crate) const BASELINE_SCHEMA: &str = "code-intel-sentrux-baseline.v6";
 // Metric keys the gate comparisons in `run_gate` read from the baseline.
 // `number()` defaults an absent key to 0.0, so a baseline missing any of
 // these would silently disable its comparison instead of failing closed.
-const GATED_METRIC_KEYS: [&str; 4] = [
+const GATED_METRIC_KEYS: [&str; 5] = [
     "quality_signal",
     "coupling_score",
+    "total_import_edges",
     "cycle_count",
     "god_file_count",
 ];
+
+/// `coupling_score` is import edges per import-modelled file. Deleting files
+/// that import less than the average shrinks the denominator and raises the
+/// ratio with no new dependency (#456: PowerShell retirement deleted six
+/// low-import files, edges fell 2131 -> 2117, the ratio rose 63.05 -> 63.77).
+/// A higher ratio is therefore a regression only when the tree also gained
+/// import edges; growth that keeps the ratio flat still passes, as before.
+fn coupling_regressed(before: &Value, metrics: &ProjectMetrics) -> bool {
+    metrics.coupling_score > number(before, "coupling_score")
+        && (metrics.total_import_edges as f64) > number(before, "total_import_edges")
+}
 
 // Subset of `file_gate::CODE_EXTENSIONS` whose dependency declarations `is_import_line`
 // recognises. Everything measured except coupling (size, functions,
@@ -356,13 +368,15 @@ fn gate_measured(repo: &Path, save: bool, metrics: &ProjectMetrics) -> Result<En
             targets: Vec::new(),
         });
     }
-    if metrics.coupling_score > number(before, "coupling_score") {
+    if coupling_regressed(before, metrics) {
         violations.push(Violation {
             rule: "coupling_increased".into(),
             message: format!(
-                "Coupling: {} -> {}",
+                "Coupling: {} -> {} (import edges {} -> {})",
                 number(before, "coupling_score"),
-                metrics.coupling_score
+                metrics.coupling_score,
+                number(before, "total_import_edges"),
+                metrics.total_import_edges
             ),
             targets: top_import_files(metrics),
         });
@@ -528,12 +542,6 @@ fn ratchet_comparisons(
             true,
         ),
         (
-            "coupling_increased",
-            "coupling_score",
-            metrics.coupling_score,
-            false,
-        ),
-        (
             "cycles_increased",
             "cycle_count",
             metrics.cycle_count as f64,
@@ -552,6 +560,16 @@ fn ratchet_comparisons(
             "verdict": if regressed { "fail" } else { "pass" },
         }));
     }
+    comparisons.insert(
+        1,
+        json!({
+            "rule": "coupling_increased",
+            "before": number(before, "coupling_score"),
+            "after": metrics.coupling_score,
+            "disposition": "blocking",
+            "verdict": if coupling_regressed(before, metrics) { "fail" } else { "pass" },
+        }),
+    );
     let current_paths: BTreeSet<&str> = metrics
         .files
         .iter()
@@ -1882,6 +1900,62 @@ mod tests {
         let run = expect_gate_ran(&root, false);
         assert!(!run.success);
         assert_eq!(run.violations[0].rule, "baseline_engine_mismatch");
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn coupling_ratio_rising_only_from_deleted_files_is_not_a_regression() {
+        let root = fixture_root("sentrux-native-coupling-deletion");
+        fs::create_dir_all(root.join("src")).expect("create fixture");
+        fs::create_dir_all(root.join(".sentrux")).expect("sentrux dir");
+        fs::write(
+            root.join(".sentrux/rules.toml"),
+            "[constraints]\nmax_cycles = 0\nno_god_files = false\n",
+        )
+        .expect("write rules");
+        fs::write(
+            root.join("src/main.rs"),
+            "mod a;\nmod b;\nmod c;\nfn main() {}\n",
+        )
+        .expect("write main.rs");
+        fs::write(root.join("src/a.rs"), "use crate::b;\npub fn a() {}\n").expect("write a.rs");
+        fs::write(root.join("src/b.rs"), "pub fn b() {}\n").expect("write b.rs");
+        fs::write(root.join("src/c.rs"), "pub fn c() {}\n").expect("write c.rs");
+        // Import-modelled but import-free: counted in the denominator only.
+        fs::write(root.join("tool.py"), "print('tool')\n").expect("write tool.py");
+        let saved = expect_gate_ran(&root, true);
+        assert!(saved.success, "baseline save: {}", saved.stdout);
+
+        // Deleting it raises edges/file while the edge count stays put.
+        fs::remove_file(root.join("tool.py")).expect("delete tool.py");
+        let deleted = expect_gate_ran(&root, false);
+        assert!(
+            deleted.stdout.contains("Coupling: 8 -> 10"),
+            "the ratio must actually rise here: {}",
+            deleted.stdout
+        );
+        assert!(
+            deleted.success,
+            "deletion-only ratio rise must pass: {}",
+            deleted.stdout
+        );
+
+        // A new dependency that also raises the ratio is still a regression.
+        fs::write(root.join("src/c.rs"), "use crate::a;\npub fn c() {}\n").expect("rewrite c.rs");
+        let added = expect_gate_ran(&root, false);
+        assert!(
+            !added.success,
+            "new import edge must fail: {}",
+            added.stdout
+        );
+        assert!(
+            added
+                .violations
+                .iter()
+                .any(|v| v.rule == "coupling_increased"),
+            "{:?}",
+            added.violations.iter().map(|v| &v.rule).collect::<Vec<_>>()
+        );
         fs::remove_dir_all(&root).expect("remove fixture");
     }
 
