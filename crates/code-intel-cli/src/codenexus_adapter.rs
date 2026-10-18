@@ -302,8 +302,7 @@ fn validate_native(native: &Value) -> Result<(), String> {
     if mode == "full" && activation != "primary" {
         return Err("CodeNexus full provider must be primary".to_string());
     }
-    if mode == "full"
-        && (provider_id != "codenexus.full" || implementation_id == "codenexus-lite")
+    if mode == "full" && (provider_id != "codenexus.full" || implementation_id == "codenexus-lite")
     {
         return Err("CodeNexus full provider identity is invalid".to_string());
     }
@@ -311,8 +310,7 @@ fn validate_native(native: &Value) -> Result<(), String> {
         return Err("CodeNexus lite requires explicit fallback or legacy rollback".to_string());
     }
     if mode == "lite"
-        && (provider_id != "codenexus.lite-compat"
-            || implementation_id != "codenexus-lite")
+        && (provider_id != "codenexus.lite-compat" || implementation_id != "codenexus-lite")
     {
         return Err("CodeNexus lite compatibility identity is invalid".to_string());
     }

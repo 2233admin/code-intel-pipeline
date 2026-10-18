@@ -96,10 +96,7 @@ mod sentrux_contract_tests {
         let failures = normalize_sentrux_failures(&report);
         assert_eq!(failures["schema"], "code-intel-sentrux-failures.v1");
         assert_eq!(failures["status"], "failed");
-        assert_eq!(
-            failures["primary"]["target"]["symbol"],
-            "big_function"
-        );
+        assert_eq!(failures["primary"]["target"]["symbol"], "big_function");
 
         let debt = build_sentrux_debt_register(&failures, "D:/repo");
         assert_eq!(debt["schema"], "code-intel-sentrux-debt-register.v1");

@@ -30,7 +30,7 @@
         {
           "file": ".github/scripts/ci.py",
           "pattern": "AST_GREP_VERSION = \"([^\"]+)\"",
-          "note": "One constant feeds every CI job that installs ast-grep."
+          "note": "Every workflow installs ast-grep through this one constant."
         }
       ],
       "probe": {

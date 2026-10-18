@@ -1656,8 +1656,9 @@ fn ticket_r13_openspec_record_is_measured_removable_and_fail_closed() {
     assert_checked_schema(&reuse, "code-intel-reuse-record.v1.schema.json");
     assert_checked_schema(&notice, "code-intel-notice-provenance.v1.schema.json");
 
-    let atom = fs::read_to_string(root().join("crates/code-intel-cli/src/workflow_recommendation.rs"))
-        .unwrap();
+    let atom =
+        fs::read_to_string(root().join("crates/code-intel-cli/src/workflow_recommendation.rs"))
+            .unwrap();
     assert!(atom.contains("openspec-opsx"));
     assert_eq!(record["economics"]["benefit"]["value"], 5);
     let boundary = serde_json::to_string(&record["adoption"]["ownedBoundary"]).unwrap();
@@ -1672,8 +1673,9 @@ fn ticket_r13_openspec_record_is_measured_removable_and_fail_closed() {
 fn ticket_r14_spec_kit_record_requires_facts_and_has_no_auto_init_authority() {
     let record = advisory_candidate("spec-kit");
     assert_research_candidate(&record, "internalization.spec-kit-record");
-    let atom = fs::read_to_string(root().join("crates/code-intel-cli/src/workflow_recommendation.rs"))
-        .unwrap();
+    let atom =
+        fs::read_to_string(root().join("crates/code-intel-cli/src/workflow_recommendation.rs"))
+            .unwrap();
     assert!(atom.contains("spec-kit"));
     assert_eq!(record["economics"]["benefit"]["value"], 8);
     let boundary = serde_json::to_string(&record["adoption"]["ownedBoundary"]).unwrap();
@@ -1688,8 +1690,9 @@ fn ticket_r14_spec_kit_record_requires_facts_and_has_no_auto_init_authority() {
 fn ticket_r15_matt_flow_record_traces_one_owned_branch_without_external_effects() {
     let record = advisory_candidate("matt-flow");
     assert_research_candidate(&record, "internalization.matt-flow-record");
-    let atom = fs::read_to_string(root().join("crates/code-intel-cli/src/workflow_recommendation.rs"))
-        .unwrap();
+    let atom =
+        fs::read_to_string(root().join("crates/code-intel-cli/src/workflow_recommendation.rs"))
+            .unwrap();
     assert_eq!(atom.matches("\"stack\":\"matt-flow\"").count(), 1);
     assert_eq!(record["economics"]["benefit"]["value"], 1);
     let boundary = serde_json::to_string(&record["adoption"]["ownedBoundary"]).unwrap();
@@ -1701,8 +1704,9 @@ fn ticket_r15_matt_flow_record_traces_one_owned_branch_without_external_effects(
 fn ticket_r16_gstack_record_exposes_source_gap_and_no_execution_authority() {
     let record = advisory_candidate("gstack");
     assert_research_candidate(&record, "internalization.gstack-record");
-    let atom = fs::read_to_string(root().join("crates/code-intel-cli/src/workflow_recommendation.rs"))
-        .unwrap();
+    let atom =
+        fs::read_to_string(root().join("crates/code-intel-cli/src/workflow_recommendation.rs"))
+            .unwrap();
     assert_eq!(atom.matches("\"stack\":\"gstack\"").count(), 1);
     assert_eq!(record["economics"]["benefit"]["value"], 1);
     assert!(record["subject"]["source"]["uri"]
@@ -1880,12 +1884,10 @@ fn ticket_r09_rg_record_traces_every_registered_production_operation() {
         "local-conformance-sha256",
     );
     assert_operation_trace_exact(&record, &["inventory.rg"]);
-    let exact = std::collections::BTreeMap::from([
-        (
-            ("inventory.rg", "capabilityExec"),
-            "inventory_rg_exec_emits_one_result_and_stable_real_rg_artifact",
-        ),
-    ]);
+    let exact = std::collections::BTreeMap::from([(
+        ("inventory.rg", "capabilityExec"),
+        "inventory_rg_exec_emits_one_result_and_stable_real_rg_artifact",
+    )]);
     for trace in record["operationTrace"].as_array().unwrap() {
         let key = (
             trace["integrationId"].as_str().unwrap(),

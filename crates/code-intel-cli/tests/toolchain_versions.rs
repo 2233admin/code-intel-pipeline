@@ -1,15 +1,13 @@
 //! Binding tests for `orchestration/toolchain-versions.v1.json`.
 //!
 //! The manifest exists so the consistency self-check reads one format instead
-//! of five (TOML, pip, a shell variable inside a workflow, JSON, Rust source).
+//! of several (TOML, pip, a Python constant, JSON).
 //! A second source of truth that can drift from the first is worse than no
 //! second source at all, so every entry is asserted against its real
 //! declaration sites here.
 //!
 //! `declaredIn[].pattern` is checked against EVERY match in the file, not the
-//! first: `ci.yml` installs ast-grep in two independent jobs, each with its own
-//! hardcoded version, and a change that updates one and forgets the other is
-//! exactly the drift this file is meant to catch. The pipeline's own entry is
+//! first, so a second literal that drifts from the first fails. The pipeline's own entry is
 //! deliberately a minimum: Cargo.toml owns the current version, while the
 //! fixture is a historical floor rather than a second release-edit site.
 
@@ -196,10 +194,9 @@ fn every_declared_version_matches_its_real_declaration_sites() {
 }
 
 #[test]
-fn ast_grep_is_declared_once_so_ci_jobs_cannot_disagree() {
-    // Every CI job installs ast-grep through `ci.py install-tool`, which reads
-    // one `AST_GREP_VERSION` constant. A second declaration would be a silent
-    // split, so exactly one is expected.
+fn ast_grep_has_a_single_declaration_site() {
+    // Every workflow installs ast-grep through one constant in
+    // .github/scripts/ci.py. A second literal would be a silent split.
     let doc = manifest();
     let root = repo_root();
     let ast_grep = tools(&doc)
@@ -208,10 +205,13 @@ fn ast_grep_is_declared_once_so_ci_jobs_cannot_disagree() {
         .expect("ast-grep entry");
     let declaration = &ast_grep["declaredIn"][0];
     let text = fs::read_to_string(root.join(declaration["file"].as_str().unwrap()))
-        .expect("ast-grep declaration file");
-
+        .expect("declaration file");
     let found = find_all(&text, declaration["pattern"].as_str().unwrap());
-    assert_eq!(found.len(), 1, "expected a single ast-grep declaration");
+    assert_eq!(
+        found.len(),
+        1,
+        "ast-grep must be declared exactly once: {found:?}"
+    );
 }
 
 #[test]

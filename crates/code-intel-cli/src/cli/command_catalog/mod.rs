@@ -5,11 +5,10 @@ use serde_json::{json, Value};
 
 use crate::{
     admissibility, artifact_index, audit_report, change_agenda, change_impact, change_risk,
-    codenexus_generate, decision_port, decision_record,
-    doctor_bootstrap, edit_apply, edit_impact, evidence_query, friction_log, hardcoded_paths,
-    invocation_identity, mcp_serve, model_channels, perf_optimize, ponytail_gate, providers, repin,
-    repowise_hooks, repowise_version, run_cli, run_commit,
-    sentrux_quality_projection, session_evidence, snapshot, survival_scan, verify,
+    codenexus_generate, decision_port, decision_record, doctor_bootstrap, edit_apply, edit_impact,
+    evidence_query, friction_log, hardcoded_paths, invocation_identity, mcp_serve, model_channels,
+    perf_optimize, ponytail_gate, providers, repin, repowise_hooks, repowise_version, run_cli,
+    run_commit, sentrux_quality_projection, session_evidence, snapshot, survival_scan, verify,
 };
 
 use super::legacy::{

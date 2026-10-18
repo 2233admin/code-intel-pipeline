@@ -350,4 +350,3 @@ fn dsm_inventory_does_not_traverse_directory_symlinks() {
         .iter()
         .all(|detail| detail["path"] != "linked/outside.py"));
 }
-

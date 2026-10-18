@@ -32,23 +32,24 @@ EXE = ".exe" if PLATFORM == "windows" else ""
 RELEASE_DIR = "code-intel-pipeline"
 CAPABILITY_SCHEMA = "code-intel-sentrux-capability-artifact.v2"
 
-AST_GREP_VERSION = "0.45.3"  # bound by orchestration/toolchain-versions.v1.json
-
-# Pinned tool releases: (version, {platform: (asset, sha256)}).
+# Pinned tool releases. orchestration/toolchain-versions.v1.json reads the
+# ast-grep version from this line; keep each version a single literal.
+RG_VERSION = "15.2.0"
+AST_GREP_VERSION = "0.45.3"
 TOOLS: dict[str, tuple[str, dict[str, tuple[str, str]]]] = {
     "rg": (
-        "15.2.0",
+        RG_VERSION,
         {
             "windows": (
-                "ripgrep-15.2.0-x86_64-pc-windows-msvc.zip",
+                f"ripgrep-{RG_VERSION}-x86_64-pc-windows-msvc.zip",
                 "71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5",
             ),
             "macos": (
-                "ripgrep-15.2.0-aarch64-apple-darwin.tar.gz",
+                f"ripgrep-{RG_VERSION}-aarch64-apple-darwin.tar.gz",
                 "3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4",
             ),
             "linux": (
-                "ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz",
+                f"ripgrep-{RG_VERSION}-x86_64-unknown-linux-musl.tar.gz",
                 "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
             ),
         },

@@ -381,10 +381,7 @@ fn historical_clean_machine_attestation_is_closed_and_cannot_claim_current_sourc
     let schema_path = root
         .join("orchestration/schemas/code-intel-clean-machine-verifier-attestation.v1.schema.json");
     assert!(
-        schema_support::validates_against_schema(
-            &evidence_path,
-            &schema_path
-        ),
+        schema_support::validates_against_schema(&evidence_path, &schema_path),
         "attestation must validate against its schema"
     );
     let evidence: Value = serde_json::from_slice(&fs::read(&evidence_path).unwrap()).unwrap();
