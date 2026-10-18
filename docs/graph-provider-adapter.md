@@ -18,7 +18,7 @@ The PowerShell facade exposes the same route through `-GraphAdapterRequest`, `-G
 
 Internal and external producers share the same closed port fields: status, completeness, freshness, expected and source snapshot identities, provider identity, provenance, payload Artifact Ref, and `anatomyUsable`. The provider mode changes identity, not structure.
 
-An internal producer must set `fallback` to `null`. An external producer must name a fallback identity and declare activation as `explicit_fallback` or `legacy_rollback`. External execution is never an automatic primary path.
+An internal producer must set `fallback` to `null`. An external producer must name a fallback identity and declare activation as `explicit_fallback` or `legacy_rollback`. External execution is never an automatic primary path. For relations this rule is superseded by [ADR-0015](adr/0015-relation-port-and-relation-producers.md): a fresh, admitted external relation producer may be primary, with fallback always labelled; the architecture-graph port described here is unchanged.
 
 `anatomyUsable` starts false and becomes true only after all of these conditions hold:
 
