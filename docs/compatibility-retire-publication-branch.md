@@ -1,5 +1,10 @@
 # E05 publication branch retirement
 
+> **Superseded by [DR-0018](decisions/DR-0018-delete-powershell.md).** The packet generator, validator,
+> restorer and rollback-rehearsal snapshots this page names were deleted in #452. Remaining
+> PowerShell is deleted directly once a Rust test covers its live behavior; rollback is git history.
+> The packet's `status.json` stays as the historical record.
+
 E05 owns only the two bounded legacy publication hunks in `legacy/run-code-intel.ps1`: staging-directory
 allocation and final path rewrite/promotion/legacy completion-marker publication. Artifact generation
 and E10 index traversal are excluded. The stable branch id is

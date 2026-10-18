@@ -1,5 +1,10 @@
 # E09 direct doctor-wrapper retirement (historical)
 
+> **Superseded by [DR-0018](decisions/DR-0018-delete-powershell.md).** The packet generator, validator,
+> restorer and rollback-rehearsal snapshots this page names were deleted in #452. Remaining
+> PowerShell is deleted directly once a Rust test covers its live behavior; rollback is git history.
+> The packet's `status.json` stays as the historical record.
+
 E09 owned only the three direct production-doctor route segments in `invoke-code-intel.ps1`: the
 `check-code-intel-tools.ps1` binding, the preflight invocation block, and its existence guard. It
 never owned the retained fresh-machine bootstrap script, B10's Rust adapter, A09, publication,

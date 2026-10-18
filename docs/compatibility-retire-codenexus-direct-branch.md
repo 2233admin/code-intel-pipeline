@@ -1,5 +1,10 @@
 # E04 CodeNexus direct branch retirement
 
+> **Superseded by [DR-0018](decisions/DR-0018-delete-powershell.md).** The packet generator, validator,
+> restorer and rollback-rehearsal snapshots this page names were deleted in #452. Remaining
+> PowerShell is deleted directly once a Rust test covers its live behavior; rollback is git history.
+> The packet's `status.json` stays as the historical record.
+
 E04 is restricted to the one normal-run branch in `legacy/run-code-intel.ps1` that directly invokes
 `legacy/Invoke-CodeNexusLite.ps1`. It does not authorize changes to the lite implementation, B04 provider
 translation, B05 survival scanning, Hospital diagnosis, Sentrux, publication, or any other facade
