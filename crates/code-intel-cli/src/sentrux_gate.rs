@@ -564,8 +564,14 @@ fn ratchet_comparisons(
         1,
         json!({
             "rule": "coupling_increased",
-            "before": number(before, "coupling_score"),
-            "after": metrics.coupling_score,
+            "before": {
+                "couplingScore": number(before, "coupling_score"),
+                "importEdges": number(before, "total_import_edges") as u64,
+            },
+            "after": {
+                "couplingScore": metrics.coupling_score,
+                "importEdges": metrics.total_import_edges,
+            },
             "disposition": "blocking",
             "verdict": if coupling_regressed(before, metrics) { "fail" } else { "pass" },
         }),
@@ -1939,6 +1945,10 @@ mod tests {
             "deletion-only ratio rise must pass: {}",
             deleted.stdout
         );
+        // The admission artifact must agree with its own validator (#457 review):
+        // a `pass` with a higher ratio is coherent only because edges did not grow.
+        let admission = deleted.admission.clone().expect("deletion admission");
+        sentrux_gate_policy::validate_result(&admission).expect("deletion admission validates");
 
         // A new dependency that also raises the ratio is still a regression.
         fs::write(root.join("src/c.rs"), "use crate::a;\npub fn c() {}\n").expect("rewrite c.rs");
@@ -1955,6 +1965,29 @@ mod tests {
                 .any(|v| v.rule == "coupling_increased"),
             "{:?}",
             added.violations.iter().map(|v| &v.rule).collect::<Vec<_>>()
+        );
+        let mut forged = added.admission.clone().expect("regression admission");
+        sentrux_gate_policy::validate_result(&forged).expect("regression admission validates");
+        forged["comparisons"]
+            .as_array_mut()
+            .expect("comparisons")
+            .iter_mut()
+            .find(|comparison| comparison["rule"] == "coupling_increased")
+            .expect("coupling comparison")["verdict"] = json!("pass");
+        assert!(
+            sentrux_gate_policy::validate_result(&forged).is_err(),
+            "a pass verdict with both ratio and edges up must be rejected"
+        );
+        let mut legacy_shape = admission;
+        legacy_shape["comparisons"]
+            .as_array_mut()
+            .expect("comparisons")
+            .iter_mut()
+            .find(|comparison| comparison["rule"] == "coupling_increased")
+            .expect("coupling comparison")["before"] = json!(8.0);
+        assert!(
+            sentrux_gate_policy::validate_result(&legacy_shape).is_err(),
+            "a bare-number coupling comparison carries no edge count and must be rejected"
         );
         fs::remove_dir_all(&root).expect("remove fixture");
     }
