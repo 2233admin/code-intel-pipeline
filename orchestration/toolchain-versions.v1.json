@@ -28,9 +28,9 @@
       "rationale": "Structural-edit engine. CI pins the version, verifies the download's sha256, and re-checks --version after install.",
       "declaredIn": [
         {
-          "file": ".github/workflows/ci.yml",
-          "pattern": "\\$version = '([^']+)'",
-          "note": "Two jobs install ast-grep independently; every match must agree."
+          "file": ".github/scripts/ci.py",
+          "pattern": "AST_GREP_VERSION = \"([^\"]+)\"",
+          "note": "One constant feeds every CI job that installs ast-grep."
         }
       ],
       "probe": {
@@ -57,23 +57,6 @@
       }
     },
     {
-      "name": "claude-code-merge-queue",
-      "version": "0.7.1",
-      "scope": "ci",
-      "required": false,
-      "rationale": "Merge-queue tooling, pinned exactly rather than by range.",
-      "declaredIn": [
-        {
-          "file": "package.json",
-          "pattern": "\"claude-code-merge-queue\": \"([^\"]+)\""
-        }
-      ],
-      "probe": {
-        "kind": "npm-package",
-        "package": "claude-code-merge-queue"
-      }
-    },
-    {
       "name": "repowise",
       "version": "0.55.0",
       "comparison": "minimum",
@@ -83,7 +66,7 @@
       "declaredIn": [
         {
           "file": "crates/code-intel-cli/src/setup/mod.rs",
-          "pattern": "repowise>=([0-9][0-9.]*)"
+          "pattern": "repowise>=([^\"]+)"
         }
       ],
       "probe": {

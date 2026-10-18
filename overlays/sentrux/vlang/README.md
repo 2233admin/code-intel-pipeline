@@ -10,13 +10,11 @@ Sentrux 0.5.7 自带的 `vlang` 标准包不完整：`plugin.toml` 缺少 `[gram
 
 安装：
 
-```powershell
-.\legacy\Install-SentruxVlangOverlay.ps1
-```
+把本目录复制到 `~/.sentrux/plugins/vlang`。
 
 验证：
 
-```powershell
+```bash
 sentrux plugin validate ~/.sentrux/plugins/vlang
 sentrux plugin list
 sentrux check <fixture-path>
@@ -26,7 +24,7 @@ sentrux check <fixture-path>
 
 构建 DLL 的来源：
 
-```powershell
+```bash
 git clone --depth=1 https://github.com/nedpals/tree-sitter-v.git <tree-sitter-v-workdir>
 gcc -shared -O2 -I <tree-sitter-v-workdir>/src -o <tree-sitter-v-workdir>/<platform-artifact> <tree-sitter-v-workdir>/src/parser.c <tree-sitter-v-workdir>/src/scanner.c <tree-sitter-v-workdir>/sentrux_vlang_alias.c
 ```

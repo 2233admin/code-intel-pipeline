@@ -44,82 +44,19 @@
 
 ## 30 秒开始
 
-> **macOS / Linux 用户**：v0.7.0 起三平台都有 Release ZIP，`bootstrap.py` 引导在 macOS / Linux 上同样可用。安装路径见 [macOS / Linux 快速开始](#macos--linux-快速开始)；本节以下命令默认 Windows。
-
 在要分析的仓库目录中运行稳定入口；不传参数时默认分析当前目录：
 
-```powershell
+```bash
 code-intel .
 ```
 
 或显式指定仓库：
 
-```powershell
+```bash
 code-intel C:\path\to\your\repo
 ```
 
-首次安装、Skill 安装和依赖说明见[完整上手](#安装与完整上手)。
-
-## macOS / Linux 快速开始
-
-**支持等级**：**v0.7.0 起**，每个版本同时发布 windows / macos / linux 三个 Release ZIP，`bootstrap.py` 引导在三个平台上都可用（详见 [Public beta guide](docs/public-beta.md)）——macOS / Linux 不再需要源码构建。v0.6.0 及更早的版本仍然只有 Windows ZIP，装旧版本才需要走下面的源码构建路径。所有入口脚本都要求 PowerShell 7.2+（`pwsh`），README 里其余 `.ps1` 命令在 macOS / Linux 上同样用 `pwsh` 运行。
-
-### 打包版（推荐）
-
-下载对应平台的 Release ZIP（`code-intel-pipeline-<tag>-macos.zip` / `-linux.zip`），校验（见[验证发布来源](#验证发布来源)）后解压，直接运行编译好的入口，不需要装 Rust 工具链：
-
-```bash
-chmod +x ./bin/code-intel   # 部分解压工具不保留可执行位时才需要
-./bin/code-intel ~/path/to/repo
-```
-
-完整步骤见 [Public beta guide](docs/public-beta.md#install-and-verify)。下面是不依赖 Release ZIP、直接从源码构建安装的备用路径（v0.6.0 及更早版本是唯一路径）：
-
-### 源码构建（备用路径）
-
-前置依赖（macOS，Homebrew）：
-
-```bash
-brew install --cask powershell
-brew install ripgrep git rustup
-rustup-init -y
-```
-
-前置依赖（Debian / Ubuntu）：
-
-```bash
-# PowerShell：Microsoft 官方仓库（或 sudo snap install powershell --classic）
-wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
-sudo dpkg -i packages-microsoft-prod.deb
-sudo apt-get update && sudo apt-get install -y powershell ripgrep git
-# Rust toolchain（安装器不会代装 rustup/cargo）
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-注意：`-InstallMissing` 只会通过 brew/apt/dnf/pacman 补装 `rg`、`git`、`python`；`rustup`/`cargo` 必须自己先装好——**走这条源码路径**时安装器要现场 `cargo build`。装 v0.7.0 及以后的版本不需要它：三平台都有 Release ZIP，用 `bootstrap.py` 引导即可，不需要 Rust 工具链。
-
-安装：
-
-```bash
-git clone https://github.com/2233admin/code-intel-pipeline.git
-cd code-intel-pipeline
-pwsh ./legacy/install-code-intel-pipeline.ps1 -RepoPath ~/src/your-repo -InstallMissing
-```
-
-安装器把编译好的 `code-intel` 复制到平台 bin 目录：
-
-```text
-macOS: ~/Library/Application Support/code-intel/bin
-Linux: ~/.local/share/code-intel/bin   （设置了 XDG_DATA_HOME 时优先用它）
-```
-
-并写出 POSIX 环境文件 `~/.config/code-intel/env.sh`。按安装摘要末尾打印的那一行，把 `source` 追加进 shell 配置（zsh 用 `~/.zshrc`，bash 用 `~/.bashrc`），或手动把上面的 bin 目录加进 `PATH`：
-
-```bash
-echo 'source "$HOME/.config/code-intel/env.sh"' >> ~/.zshrc
-```
-
-重开 shell 后第一次运行：
+还没有 `code-intel`？见[安装](#安装)——windows / macos / linux 都有 Release ZIP，不需要 PowerShell 或 Rust 工具链。装好后第一次运行：
 
 ```bash
 code-intel status ~/src/your-repo
@@ -140,7 +77,7 @@ code-intel query ~/src/your-repo --kind evidence --json
 
 ## 语言方向与治理
 
-> **语言方向：** 停止新增 PowerShell。现有 `.ps1` 只作为兼容入口维护，不再承载新产品逻辑；生产能力默认使用 Rust。MoonBit 可用于隔离实验，只有通过 artifact 契约一致性、跨平台构建和测试后才进入正式路径。迁移不做一次性重写，按入口逐个替换和退休。Agent 规则见 [AGENTS.md](AGENTS.md)。
+> **语言方向：** PowerShell 已从产品中删除（DR-0018）：没有 `.ps1` 入口，新代码也不得新增。生产能力使用 Rust。MoonBit 可用于隔离实验，只有通过 artifact 契约一致性、跨平台构建和测试后才进入正式路径。Agent 规则见 [AGENTS.md](AGENTS.md)。
 
 Workflow-stack guidance is emitted by the read-only `advisory.workflow-recommend` atom. See [docs/advisory-workflow-recommendation.md](docs/advisory-workflow-recommendation.md); recommendations are proposals with zero effects and never authorize tool initialization or adoption.
 
@@ -150,32 +87,13 @@ Follow-up automation can proactively propose `/investigate` for actionable scan 
 
 编译后的 `code-intel` 是唯一正式入口：所有 Pipeline 语义都在它和 `crates/code-intel-cli` 里。真正的治理边界见 [Repository Layout](docs/repository-layout.md)。
 
-**`legacy/` 是什么**：PowerShell 面的统一存放目录，**不等于「已退役」**。它混着两类东西——仍是唯一活路径的安装/恢复/门禁入口，和正在按 [#55](https://github.com/2233admin/code-intel-pipeline/issues/55) 逐个退役的兼容 facade。下面逐条标注，不要按目录名推断状态。
-
-正式主入口：
-
 - `code-intel`: 人工和 Agent 的正式主入口。新文档和命令示例一律以它开头。
 - `crates/code-intel-cli`: Rust policy/artifact CLI core。
-
-`legacy/` 中**仍然活跃、目前没有替代品**的入口：
-
-- `legacy/install-code-intel-pipeline.ps1`: 安装和修复入口。源码安装（含 macOS / Linux）目前只有这一条路径。
-- `legacy/code-intel.ps1`: PowerShell 7.2+ 恢复启动器；健康安装只转发，`-Update` 才显式更新。
-- `legacy/Invoke-SentruxAgentTool.ps1`: 编码会话门禁入口（`session_start` / `session_end`），AGENTS.md 强制要求，退役前不可绕过。拆解见 [#50](https://github.com/2233admin/code-intel-pipeline/issues/50)。
-- `legacy/Find-CodeIntelProjects.ps1`: 项目发现入口。
-- `legacy/bootstrap-new-machine.ps1`: 新机器自举入口。
-
-`legacy/` 中**已被取代或正在退役**的兼容 facade，新调用一律不要用：
-
-- `legacy/check-code-intel-tools.ps1`: 已被原生 Rust doctor 取代（[#48](https://github.com/2233admin/code-intel-pipeline/issues/48) 已完成），保留仅为历史参考。请用 `code-intel doctor`。
-- `legacy/run-code-intel.ps1`: 兼容 facade；不传开关时默认走旧扫描器分支，只有显式传 `-DagCoordinate` 才调用 Rust DAG 协调。收编进 `code-intel run` 见 [#47](https://github.com/2233admin/code-intel-pipeline/issues/47)。
-- `legacy/invoke-code-intel.ps1`: v0.x 兼容转发器，不再推荐新调用。
-
-PowerShell 合同测试在 `legacy/scripts/tests/`。`legacy/` 下的兼容 facade 仍被安装器、集成清单和 Rust 合同绑定：再次移动它们必须同时更新这些契约、重新冻结受影响的退役 packet 并重算 digest pin，不能只做文件移动。
+- 常用子命令：`code-intel setup`（安装收尾）、`code-intel doctor` / `code-intel doctor bootstrap`（环境检查）、`code-intel sentrux gate`（结构门禁）、`code-intel lint hardcoded-paths`（机器路径扫描）。完整列表见 `code-intel --help --all`。
 
 ## Public beta 范围
 
-当前已发布兼容面仍是 **Windows PowerShell public beta**，但后续功能开发已经转向 Rust/MoonBit 路线，不再扩大 PowerShell surface。测试版承诺的是：稳定入口可运行、核心报告可事务化落盘、结构退化不会被伪装成成功、发布 ZIP 可在没有源码树和 Rust toolchain 的干净目录中启动。
+当前为 **public beta**：每个版本发布 windows / macos / linux 三个 Release ZIP，生产逻辑全部在 Rust `code-intel` 中。测试版承诺的是：稳定入口可运行、核心报告可事务化落盘、结构退化不会被伪装成成功、发布 ZIP 可在没有源码树和 Rust toolchain 的干净目录中启动。
 
 0.4.0 核心路径：
 
@@ -195,7 +113,7 @@ PowerShell 合同测试在 `legacy/scripts/tests/`。`legacy/` 下的兼容 faca
 
 0.5.1 beta 还提供可重放的工具效果基线评分器。它不会把工具“能运行”误当成“对 Agent 有帮助”；只有冻结任务、配对条件和外部证明完整时才记录基线：
 
-```powershell
+```bash
 code-intel benchmark tools --corpus <corpus.json> --runs <runs.json> --artifact-root <authority-root> --out <new-directory>
 ```
 
@@ -248,7 +166,11 @@ GPT 娘坐在空白处，不紧不慢。她把文件列成星图，把依赖连�
 
 这套系统的边界很清楚：它负责看清楚、量出来、拦退化、给下一步方向。真正修改代码，还是人和 Agent 一起做。
 
-## 安装与完整上手
+## 安装
+
+windows / macos / linux 三平台的安装方式相同：**不需要 PowerShell，也不需要 Rust 工具链**。
+
+### 推荐：通过 Agent Skill 安装
 
 Codex 可以先安装官方结构的 Skill 包，再由 Skill 下载并校验稳定版 Release：
 
@@ -256,12 +178,52 @@ Codex 可以先安装官方结构的 Skill 包，再由 Skill 下载并校验稳
 请使用 $skill-installer 安装：
 https://github.com/2233admin/code-intel-pipeline/tree/main/skills/code-intel-pipeline
 
-然后使用 $code-intel-pipeline 为 C:\path\to\your\repo 安装并运行稳定版。
+然后使用 $code-intel-pipeline 为 /path/to/your/repo 安装并运行稳定版。
 ```
 
-Skill 默认只解析稳定版；`gh` 2.49+ 在场时先验 [GitHub Artifact Attestation](https://cli.github.com/manual/gh_attestation_verify)（证明这份 ZIP 确实产自本仓发布流水线，不只是字节没传坏），再校验 GitHub Release 提供的 SHA-256；`gh` 缺失或过旧会显式打印降级说明而不是静默只查 SHA-256。人工验证同一份保证：`gh attestation verify <zip> --repo 2233admin/code-intel-pipeline`，命令与验证记录见 [docs/release-provenance-runbook.md](docs/release-provenance-runbook.md)。预发布版本和第三方依赖安装都需要显式选择。
+也可以在 `skills/code-intel-pipeline/` 下直接运行引导脚本：先看计划，再执行：
 
-人工用户从 GitHub Release 下载并解压安装包；Agent 用户通过 Skill 安装。v0.7.0 起 windows / macos / linux 三平台都有 Release ZIP。源码安装仍可使用（装 v0.6.0 及更早的 macOS / Linux 版本时是唯一路径）：
+```bash
+python scripts/bootstrap.py --repo-path "<repo>" --dry-run --json
+python scripts/bootstrap.py --repo-path "<repo>" --json
+```
+
+可选参数：`--version <tag>` 指定版本，`--channel prerelease` 选择预发布。它会下载当前平台的 GitHub Release ZIP，校验 SHA-256 和构建来源，解压后运行该 Release 自带的 `bin/code-intel setup`。
+
+Skill 默认只解析稳定版；`gh` 2.49+ 在场时先验 [GitHub Artifact Attestation](https://cli.github.com/manual/gh_attestation_verify)（证明这份 ZIP 确实产自本仓发布流水线，不只是字节没传坏），再校验 GitHub Release 提供的 SHA-256；`gh` 缺失或过旧会显式打印降级说明而不是静默只查 SHA-256。命令与验证记录见 [docs/release-provenance-runbook.md](docs/release-provenance-runbook.md)。预发布版本和第三方依赖安装都需要显式选择。
+
+### 手动安装
+
+1. 从 [GitHub Releases](https://github.com/2233admin/code-intel-pipeline/releases) 下载 `code-intel-pipeline-<tag>-<platform>.zip` 和对应的 `.sha256`（`<platform>` 为 `windows` / `macos` / `linux`）。
+2. 按下文[验证发布来源](#验证发布来源)校验。
+3. 解压，运行包内自带的 `setup`（Windows 上是 `code-intel.exe`）：
+
+```bash
+<解压目录>/code-intel-pipeline/bin/code-intel setup --repo-path <repo>
+```
+
+加 `--language zh|en` 可记录该仓库的报告语言。
+
+### `code-intel setup` 做了什么
+
+- 把二进制复制到数据目录的 `bin`：Windows `$env:LOCALAPPDATA\code-intel\bin`，macOS `~/Library/Application Support/code-intel/bin`，Linux `${XDG_DATA_HOME:-~/.local/share}/code-intel/bin`。
+- 持久化 `PATH` 和 `CODE_INTEL_HOME`：Windows 写用户环境变量（新开终端生效）；macOS / Linux 写 `~/.config/code-intel/env.sh`，并在 `~/.profile`（以及存在的 `~/.bashrc` / `~/.bash_profile`，装了 zsh 时还有 `.zshenv`）里加一行 `. "…/env.sh"`。`--no-modify-path` 跳过这些修改。
+- 把 Skill 安装到 `~/.agents/skills/code-intel-pipeline`，并链接进 `~/.claude/skills` 和 `~/.codex/skills`（不允许链接时改为复制；已存在且不匹配的目录会被改名为 `<name>.replaced-<hex>`，从不删除）。`--no-skills` 跳过。
+- 最后运行 doctor（`--skip-doctor` 跳过）。缺失的外部工具（`rg`、`git`、`python`、`repowise`）会连同安装命令一起报告，`setup` 自己从不安装系统工具。
+
+重复运行是幂等的。其余参数：`--release-root`、`--repo-path`、`--platform`、`--json`。Artifact 默认写到 `<数据目录>/artifacts`（各平台相同）。
+
+### 源码构建（需要 Rust 工具链）
+
+```bash
+git clone https://github.com/2233admin/code-intel-pipeline.git
+cd code-intel-pipeline
+cargo build --release -p code-intel
+mkdir -p bin && cp target/release/code-intel bin/    # Windows 为 code-intel.exe
+bin/code-intel setup --repo-path ~/src/your-repo
+```
+
+流水线需要完整 git 历史来计算 lineage identity；浅克隆请先 `git fetch --unshallow`。
 
 ### 验证发布来源
 
@@ -271,7 +233,7 @@ Skill 默认只解析稳定版；`gh` 2.49+ 在场时先验 [GitHub Artifact Att
 # 校验二进制确实产自本仓 CI（不是有人改了字节又同步改了 SHA-256）
 gh attestation verify code-intel-pipeline-v0.7.0-windows.zip --repo 2233admin/code-intel-pipeline
 
-# 校验 SHA-256 —— Windows (PowerShell)
+# 校验 SHA-256 —— Windows
 certutil -hashfile code-intel-pipeline-v0.7.0-windows.zip SHA256
 
 # 校验 SHA-256 —— macOS
@@ -287,118 +249,42 @@ sha256sum -c code-intel-pipeline-v0.7.0-linux.zip.sha256
 git verify-tag v0.7.0
 ```
 
-```powershell
-git clone https://github.com/2233admin/code-intel-pipeline.git
-cd code-intel-pipeline
-.\legacy\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo -RepairSkillLinks -InstallMissing
-code-intel C:\path\to\your\repo
-```
+### 运行
 
-PowerShell 恢复入口：
+安装后直接使用编译入口；不需要 Cargo，也不依赖仓库里的 `target/`：
 
-```powershell
-.\legacy\code-intel.ps1 C:\path\to\your\repo
-.\legacy\code-intel.ps1 -Update
-```
-
-先找候选项目：
-
-```powershell
-.\legacy\Find-CodeIntelProjects.ps1 -Root D:\projects -Json
-.\legacy\Find-CodeIntelProjects.ps1 -Root D:\projects -WizTreeExe WizTree64.exe -Json
-.\legacy\Find-CodeIntelProjects.ps1 -WizTreeCsv C:\tmp\wiztree.csv -Json
-```
-
-WizTree CLI/CSV 只是项目发现加速输入；真正选中项目后再运行 `code-intel <path>`。
-
-完整 smoke test：
-
-```powershell
-.\legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo
-```
-
-单元级回归测试（覆盖 fail-open / 假绿类修复 + fail-open lint，不依赖真实 repo，跑在临时目录里）：
-
-```powershell
-.\legacy/scripts/tests/test-regression-fixes.ps1 -VerboseOutput
-```
-
-GitHub research artifact contract 离线测试：
-
-```powershell
-.\legacy/scripts/tests/test-github-solution-research.ps1 -RepoPath C:\path\to\your\repo
-```
-
-Skill development benchmark contract 测试：
-
-```powershell
-.\legacy/scripts/tests/test-skill-development-benchmark.ps1 -RepoPath C:\path\to\your\repo
-```
-
-Project management support contract 测试：
-
-```powershell
-cargo test -p code-intel --test project_management_support
-```
-
-从 GitHub Release ZIP 运行时，安装后直接使用编译入口；不需要 Cargo，也不依赖仓库里的 `target/`：
-
-```powershell
+```bash
 code-intel C:\path\to\your\repo
 ```
 
 只使用离线核心能力：
 
-```powershell
+```bash
 code-intel C:\path\to\your\repo --mode lite
 ```
 
-Greenfield 行为规格适配器测试：
+完整 normal 模式：
 
-```powershell
-.\legacy/scripts/tests/test-greenfield-integration.ps1
-```
-
-普通用户直接运行主入口；兼容 runner 只保留给维护测试：
-
-```powershell
+```bash
 code-intel C:\path\to\your\repo --mode normal
 ```
 
 ## 新机器部署
 
-最省心：
+按[安装](#安装)装好后，用 doctor 复查环境（只检查，不会自动安装缺失工具）：
 
-```powershell
-.\legacy\bootstrap-new-machine.ps1 -RepoPath C:\path\to\your\repo
+```bash
+code-intel doctor bootstrap --repo-path C:\path\to\your\repo
 ```
 
-它会连续执行：
-
-```text
-install -> doctor -> smoke test
-```
-
-结果写到：
-
-```text
-<platform code-intel data root>/bootstrap/
-```
-
-只检查环境，不自动安装缺失工具：
-
-```powershell
-.\legacy\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo
-```
-
-安装脚本不会写 API key，不会把 secret 存进仓库。
+缺失的外部工具（`rg`、`git`、`python`、`repowise`）会连同对应的 winget / brew / apt / pip 安装命令一起报告，由你自己决定是否执行。`setup` 不会写 API key，不会把 secret 存进仓库。
 
 ## 工具角色
 
 | 工具 | 角色 | 产物 |
 | --- | --- | --- |
-| Integration orchestration | 融合注册、能力编排、扩展边界 | `target/debug/code-intel.exe orchestrate` |
-| `code-intel` Rust CLI | orchestration、artifact resume、failure classify、artifact doctor | `target/debug/code-intel.exe` |
+| Integration orchestration | 融合注册、能力编排、扩展边界 | `code-intel orchestrate` |
+| `code-intel` Rust CLI | orchestration、artifact resume、failure classify、artifact doctor | `code-intel` |
 | CodeNexus compatibility adapter | 可选热点定位、引用搜索、下一步上下文；失败不阻塞 beta core | `codenexus-context.json` |
 | `rg` | 快速文件清单、文本搜索 | `files.txt` |
 | `Repowise` | 语义索引、长期记忆、项目上下文 | `.repowise/` 或 scoped shadow |
@@ -414,10 +300,9 @@ install -> doctor -> smoke test
 
 查看当前编排：
 
-```powershell
-cargo build -p code-intel
-.\target\debug\code-intel.exe orchestrate --action Validate
-.\target\debug\code-intel.exe orchestrate --action Plan --repo C:\path\to\your\repo --mode normal
+```bash
+code-intel orchestrate --action Validate
+code-intel orchestrate --action Plan --repo C:\path\to\your\repo --mode normal
 ```
 
 ## 输出在哪里
@@ -448,7 +333,7 @@ cat "objects/sha256/$view_sha"   # 就是 hospital.md 的 markdown 正文
 
 不想手工解引用 blob，直接读最近一次已提交结果：
 
-```powershell
+```bash
 code-intel report --repo C:\path\to\your\repo --artifact-root <artifact-root>
 ```
 
@@ -457,7 +342,6 @@ code-intel report --repo C:\path\to\your\repo --artifact-root <artifact-root>
 或者跳过手工 jq，直接用上面「全链路命令」里的 `artifact query --type diagnosis.hospital-view`——两条路径读到的是同一份已验证字节，`artifact query` 只是替你做了这趟 manifest 解引用。artifact 根目录的 `index.json` 只有主入口会在提交后自动重建；单独跑 `run execute` 不会顺带写它，要索引就显式 `artifact index --operation rebuild`。
 
 `run-complete.json` 是最后写入的事务提交标记；主入口的标记绑定 manifest blob 的 sha256（即上面 `manifest.sha256` 字段），索引只接受标记存在且校验一致的运行目录。
-旧兼容 runner 的标记绑定的是 `report.json` 的 `reportSha256`。
 
 Artifact ownership and stable routing fields are defined in
 [`docs/artifact-data-contract.md`](docs/artifact-data-contract.md).
@@ -480,24 +364,6 @@ Measured minimalism impact lives in
 Project management intake, Linear, and Obsidian/LLM wiki boundaries live in
 [`docs/project-management-support.md`](docs/project-management-support.md).
 
-下列报告与结构产物目前只由旧兼容 runner（`legacy/run-code-intel.ps1` / `legacy/scripts/tests/test-code-intel-pipeline.ps1`）生成，主入口不产出：
-
-```text
-summary.md
-report.json
-understanding.md
-sentrux-dsm.json
-sentrux-file-details.json
-sentrux-hotspots.json
-sentrux-failures.json
-sentrux-debt-register.json
-sentrux-evolution.json
-sentrux-what-if.json
-codenexus-context.json
-greenfield-manifest.json
-greenfield-plan.md
-```
-
 读报告顺序（主入口 `code-intel .` / `run execute`；已提交 run 里没有这些文件名，按 `type` 查，方法见上）：
 
 1. 先看命令行汇总（或 `--json` 输出）确认整轮 outcome；失败细节看 manifest blob 里的失败节点。
@@ -505,18 +371,12 @@ greenfield-plan.md
 3. 做治理判断查 `--type diagnosis.hospital-view`（人读）或 `diagnosis.hospital`（机器读 JSON）。
 4. 要开工修结构查 `--type diagnosis.surgery-plan-view`。
 
-读报告顺序（旧兼容 runner；Repomix 打包已 R05 治理审查退役，`repomixPack.status` 恒为 `skipped`，不产出 `repomix-output.*`）：
-
-1. 先看 `summary.md`，它是整轮运行状态、失败分类、关键 artifact 的入口页。
-2. 交接给人或 Agent 前看 `understanding.md`。
-3. 治理与行动计划同主入口：`hospital.md`、`surgery-plan.md`。
-
 ## Portable Snapshot Identity
 
 仓库输入身份可以独立计算，不依赖时间戳目录或机器绝对路径：
 
-```powershell
-target/debug/code-intel.exe snapshot identity --repo <repo-root> --working-tree-policy explicit_overlay --scope .
+```bash
+code-intel snapshot identity --repo <repo-root> --working-tree-policy explicit_overlay --scope .
 ```
 
 它绑定 Git lineage、HEAD、工作树策略、规范化 scope 与实际输入字节，并逐类报告 dirty overlay。shallow、unborn、无 Git、ignored、symlink、submodule、LFS 与并发变化规则见 `docs/repository-snapshot-identity.md`。
@@ -580,7 +440,7 @@ docs/hospital-mode.md
 
 0.6.0 起，audit 维度作为 hospital 科室跑在流水线已有的 modality 证据上。`security`、`ai-safety`、`supply-chain` 三个科室默认启用，报告遵循 fail-closed 的 `code-intel-audit-report.v1` 契约：
 
-```powershell
+```bash
 code-intel audit --operation validate --repo C:\path\to\repo --report C:\path\to\audit-report.json
 code-intel audit --operation render --repo C:\path\to\repo --report C:\path\to\audit-report.json --format html
 code-intel audit --operation scope --repo C:\path\to\repo --since <git-ref>
@@ -592,7 +452,7 @@ code-intel audit --operation scope --repo C:\path\to\repo --since <git-ref>
 
 ### 先看状态，再沿下一步工作
 
-```powershell
+```bash
 code-intel status <path>
 code-intel status <path> --json
 ```
@@ -606,7 +466,7 @@ decision/research 文档与 issue 修订。
 
 Agent 平时问单点问题走 MCP，不必为一个问题跑一整轮 pipeline：
 
-```powershell
+```bash
 code-intel serve --mcp --repo <name>
 ```
 
@@ -633,23 +493,19 @@ CodeGraph 接入使用编译后的 `code-intel provider codegraph`；先显式 `
 
 ### 结构门禁
 
-Agent 开始改代码前：
+首次在某个 scope 上保存基线，之后改动前后各跑一次 `gate`：
 
-```powershell
-.\legacy\Invoke-SentruxAgentTool.ps1 session_start C:\path\to\repo\backend
+```bash
+code-intel sentrux gate_save C:\path\to\repo\backend   # 首次：保存基线
+code-intel sentrux gate C:\path\to\repo\backend        # Agent 改代码前
+code-intel sentrux gate C:\path\to\repo\backend        # Agent 改完代码后
 ```
 
-Agent 改完代码后：
-
-```powershell
-.\legacy\Invoke-SentruxAgentTool.ps1 session_end C:\path\to\repo\backend
-```
-
-如果结构质量下降，`session_end` 会失败，并返回前后分数。
+如果结构质量相对基线下降，`gate` 会失败。
 
 Agent 改代码过程中，不必等整轮 pipeline，直接问增量问题：
 
-```powershell
+```bash
 code-intel change impact --artifact-root <root> --repo <name> --repo-path C:\path\to\repo --changed src\module\file.rs --staleness advisory
 ```
 
@@ -657,7 +513,7 @@ code-intel change impact --artifact-root <root> --repo <name> --repo-path C:\pat
 
 机械化批量改写先出预览计划：
 
-```powershell
+```bash
 code-intel capability exec edit.ast-grep-plan --request <request.json> --out <staging-dir>
 ```
 
@@ -665,51 +521,37 @@ code-intel capability exec edit.ast-grep-plan --request <request.json> --out <st
 
 改一个标识符不必重写整行——按 span 下指令，工具执行：
 
-```powershell
-code-intel edit apply --repo-path C:\path\to\repo --file src/module/file.rs `
+```bash
+code-intel edit apply --repo-path C:\path\to\repo --file src/module/file.rs \
   --span 12:21-12:33 --expect-sha256 <该 span 当前字节的 sha256> --replacement retryBudget
 ```
 
 `--expect-sha256` 由调用方给出（来自索引或先前读到的字节），工具在写之前拿它跟 span 现在的字节比对：不一致就拒绝，退出码 10，并回报"期望什么 / 实际是什么"（含 `foundSha256` 与一段有界原文），文件一个字节不动。这是索引漂移时不误伤的唯一机械保证。同一次调用可带多个 `--span`（同一文件，互不重叠），全部按改动前的字节定位、整文件原子替换，要么全落要么全不落。
 
-改完 `session_end` 收门禁。
+改完再跑 `sentrux gate` 收门禁。
 
-可用工具：
+`code-intel sentrux` 支持的子命令：
 
 ```text
+dsm
 scan
 health
-session_start
-session_end
-rescan
+check
+gate
 check_rules
-evolution
-dsm
-git_stats
-test_gaps
-what_if
-```
-
-也支持 MCP/Agent 风格别名：
-
-```text
-sentrux_scan
-sentrux_health
-sentrux_dsm
-sentrux_git_stats
-sentrux_test_gaps
+gate_save
+hotspots
 ```
 
 常用命令：
 
-```powershell
-.\legacy\Invoke-SentruxAgentTool.ps1 health C:\path\to\repo\backend
-.\legacy\Invoke-SentruxAgentTool.ps1 dsm C:\path\to\repo\backend
-.\legacy\Invoke-SentruxAgentTool.ps1 evolution C:\path\to\repo\backend
-.\legacy\Invoke-SentruxAgentTool.ps1 what_if C:\path\to\repo\backend
+```bash
+code-intel sentrux health C:\path\to\repo\backend
+code-intel sentrux dsm C:\path\to\repo\backend
+code-intel sentrux hotspots C:\path\to\repo\backend
 ```
 
-别让 Agent 裸奔。没有 `session_start/session_end`，它改完代码以后自己也不知道有没有把结构弄坏。
+别让 Agent 裸奔。没有改前改后的 `gate`，它改完代码以后自己也不知道有没有把结构弄坏。
 
 ## 全链路命令
 
@@ -723,25 +565,25 @@ sentrux_test_gaps
 | `change risk` | 门禁 | 只用 git 历史给 PR 打缺陷风险分，不需要索引 / 网络 / LLM；驱动 `pr-gate.yml` |
 | `repin` | 维护 | 扫描（可选改写）全仓过期的 sha256 pin，一趟收敛到不动点 |
 
-```powershell
+```bash
 code-intel run execute --repo . --out <run-staging-dir> --authority-root <publication-root>\<repo-name> --final-name <run-id> --manifest orchestration/integrations.json --doctor-require-repowise false
 ```
 
 `.github/workflows/ci.yml` / `release.yml` 的自扫描步骤就是这行去掉 `\<repo-name>`（`--final-name ci-self-scan` / `release-self-scan`）——CI 只认退出码和 `publication.status == "committed"`，从不回查自己，所以省得了这层嵌套。要接下面的 `artifact query`，`--authority-root` 得把仓库名折进去，如上。
 
-```powershell
+```bash
 code-intel artifact query --artifact-root <publication-root> --repo <repo-name> --type diagnosis.hospital-view --limit 1
 ```
 
 字段契约见 [docs/evidence-query.md](docs/evidence-query.md)。
 
-```powershell
+```bash
 code-intel change risk HEAD~5..HEAD --format json
 ```
 
 没有 `--repo` 参数，从目标仓库内部（CWD）跑；`pr-gate.yml` 用它给 PR 打分：`code-intel change risk "origin/<base-branch>..HEAD" --format json`。
 
-```powershell
+```bash
 code-intel repin --write --json
 ```
 
@@ -749,113 +591,17 @@ code-intel repin --write --json
 
 完整参数表见 `code-intel --help --all`，不在这里重复。
 
-## Sentrux 自动 Pro
-
-`sentrux` 是 MIT/开源项目，本仓库会安装一个很薄的 shim：
-
-```text
-<platform code-intel data root>/bin/sentrux
-<platform code-intel data root>/bin/sentrux-shim.ps1
-```
-
-它做几件事：
-
-- 默认**不**自动激活 Pro（opt-in）：只有显式设置 `SENTRUX_AUTO_PRO=1`（或 `true`）时，第一次运行才会写本地 Pro license。上游没有任何 license 证据支持默认自动激活（supply-chain-009），所以默认保持 free tier。
-- `sentrux pro status / activate / deactivate` 可直接用。
-- 优先转发给真实 `sentrux.exe`。
-- 没有真实 core 时，使用仓库内置 `sentrux-lite-core.ps1` 保底，覆盖 `scan`、`health`、`check`、`gate` 和 `plugin list/validate`。
-
-`bin\` 里的 `sentrux-shim.ps1` / `sentrux-lite-core.ps1` 只是薄转发器（thin forwarder），不是脚本正文的拷贝：它们在安装时把仓库路径写死进去，运行时转发到 `tools\sentrux-shim\` 下的真身并透传参数和退出码。改仓库里的 `tools\sentrux-shim\*.ps1` 立即生效，PATH 调用不需要重跑 install。只有仓库整体挪了目录才需要重跑 `legacy/install-code-intel-pipeline.ps1`——挪了目录之后转发器会报清晰错误（`repo not found at <path>`），不会静默失败或跑到旧代码。
-
-检查：
-
-```powershell
-sentrux pro status
-```
-
-预期（默认，未 opt-in）：
-
-```text
-Tier: free
-Status: inactive
-License: <本地 license 路径>
-Features: check, gate, scan, mcp, plugin, analytics
-```
-
-开启自动 Pro（opt-in）：
-
-```powershell
-$env:SENTRUX_AUTO_PRO = "1"
-sentrux pro status
-```
-
-之后输出变为：
-
-```text
-Tier: pro
-Status: active
-Features: dsm_export, file_detail_panel, evolution_details, what_if_analysis, agent_mcp, rule_gates, nine_color_modes
-```
-
-也可以不设环境变量，手动激活：
-
-```powershell
-sentrux pro activate OSS-LOCAL-PRO
-```
-
-停用：
-
-```powershell
-sentrux pro deactivate
-```
-
-真实 core 存在时会用真实 core；lite core 只保证部署闭环不断，不替代完整产品。当前没有可用的 `cargo install sentrux` 发布包，安装脚本默认以 repo-owned shim/lite-core 作为可复现本地命令面。
-
-## Sentrux V 插件覆盖包
-
-Sentrux 0.5.7 自带的 Windows `vlang` 插件包缺 `[grammar]` 和平台 grammar artifact。安装脚本会在当前平台存在 bundled grammar 时自动把覆盖包放到：
-
-```text
-~/.sentrux/plugins/vlang
-```
-
-覆盖包位置：
-
-```text
-overlays/sentrux/vlang
-```
-
-单独安装：
-
-```powershell
-.\legacy\Install-SentruxVlangOverlay.ps1
-```
-
-验证：
-
-```powershell
-sentrux plugin validate ~/.sentrux/plugins/vlang
-sentrux plugin list
-.\legacy/scripts/tests/Test-SentruxVlangOverlay.ps1
-```
-
-不安装覆盖包：
-
-```powershell
-.\legacy\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\repo -SkipSentruxVlangOverlay
-```
-
 ## Repowise 语义记忆
 
 Repowise 是可选语义记忆层。`normal` 在可用时使用，`lite` 不依赖它，`full` 才要求所有可选 provider 就绪：
 
-```powershell
+```bash
 code-intel C:\path\to\repo --mode normal
 ```
 
 要缩小 scope，直接把目标路径指向相应子目录，避免把根目录里的外部轮子、临时文件、研究仓库一起吃进去。
 
-```powershell
+```bash
 code-intel C:\path\to\repo\backend --mode normal
 ```
 
@@ -877,29 +623,22 @@ Repowise docs 生成走 repowise 自带的 provider 注册表，通过 User 级(
 
 注意:不要设置全局(User/Machine)的 `ANTHROPIC_API_KEY` / `ANTHROPIC_BASE_URL`——那可能属于本机 Claude Code 代理链;脚本只在进程级临时注入。
 
-示例:
+示例（设置环境变量即可，三平台相同）:
 
-```powershell
+```text
 # MiniMax(Anthropic 兼容端点,现状默认,无需 CODE_INTEL_PROVIDER)
-# User env: CODE_INTEL_ANTHROPIC_API_KEY=<key>
-#           CODE_INTEL_ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic
+CODE_INTEL_ANTHROPIC_API_KEY=<key>
+CODE_INTEL_ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic
 
-# 本地 Ollama(无需 key)
-$env:CODE_INTEL_PROVIDER = "ollama"
-$env:CODE_INTEL_MODEL = "qwen3:4b"          # 默认端点 http://localhost:11434
+# 本地 Ollama(无需 key,默认端点 http://localhost:11434)
+CODE_INTEL_PROVIDER=ollama
+CODE_INTEL_MODEL=qwen3:4b
 
 # 任意 OpenAI 兼容端点
-$env:CODE_INTEL_PROVIDER = "openai"
-$env:CODE_INTEL_MODEL = "your-model"
-$env:CODE_INTEL_API_KEY = "<key>"
-$env:CODE_INTEL_BASE_URL = "https://your-endpoint/v1"
-```
-
-跑 docs 前可先做 preflight:
-
-```powershell
-.\legacy/scripts/tests/test-code-intel-provider.ps1 -Json                              # 按 env 选 provider
-.\legacy/scripts/tests/test-code-intel-provider.ps1 -Provider ollama -Model qwen3:4b   # 显式指定
+CODE_INTEL_PROVIDER=openai
+CODE_INTEL_MODEL=your-model
+CODE_INTEL_API_KEY=<key>
+CODE_INTEL_BASE_URL=https://your-endpoint/v1
 ```
 
 ## Understand Anything 图谱
@@ -912,14 +651,14 @@ graph_missing: understand graph
 
 先运行项目内 Rust 图谱 provider：
 
-```powershell
-.\target\debug\code-intel.exe graph --repo C:\path\to\repo --language zh --write --json
+```bash
+code-intel graph --repo C:\path\to\repo --language zh --write --json
 ```
 
 完整重建：
 
-```powershell
-.\target\debug\code-intel.exe graph --repo C:\path\to\repo --language zh --full --write --json
+```bash
+code-intel graph --repo C:\path\to\repo --language zh --full --write --json
 ```
 
 然后重新运行 pipeline。`/understand C:\path\to\repo --language zh` 只作为兼容兜底，或在你明确需要外部 Understand Anything 更富图谱时使用。
@@ -928,13 +667,13 @@ graph_missing: understand graph
 
 Repowise 和 Understand-compatible graph 统一走 `code-intel provider` 规范，再由 `code-intel route` 暴露入口：
 
-```powershell
-.\target\debug\code-intel.exe provider --action Validate --json
-.\target\debug\code-intel.exe provider --action Plan --provider repowise --operation index --repo C:\path\to\repo --json
-.\target\debug\code-intel.exe provider --action Plan --provider understand --operation graph --repo C:\path\to\repo --json
-.\target\debug\code-intel.exe route --action List --json
-.\target\debug\code-intel.exe route --action Plan --provider repowise --operation index --repo C:\path\to\repo --json
-.\target\debug\code-intel.exe route --action Plan --provider understand --operation graph --repo C:\path\to\repo --json
+```bash
+code-intel provider --action Validate --json
+code-intel provider --action Plan --provider repowise --operation index --repo C:\path\to\repo --json
+code-intel provider --action Plan --provider understand --operation graph --repo C:\path\to\repo --json
+code-intel route --action List --json
+code-intel route --action Plan --provider repowise --operation index --repo C:\path\to\repo --json
+code-intel route --action Plan --provider understand --operation graph --repo C:\path\to\repo --json
 ```
 
 HTTP route 使用命名空间：`/api/providers/repowise/*`、`/api/providers/understand/*`。旧的 `/scan`、`/lite`、`/doctor`、`/understand` 只能作为兼容入口。
@@ -943,9 +682,9 @@ HTTP route 使用命名空间：`/api/providers/repowise/*`、`/api/providers/un
 
 把模板复制到你的项目 scope：
 
-```powershell
-New-Item -ItemType Directory -Force C:\path\to\repo\backend\.sentrux
-Copy-Item .\templates\sentrux-rules.example.toml C:\path\to\repo\backend\.sentrux\rules.toml
+```bash
+mkdir -p /path/to/repo/backend/.sentrux
+cp templates/sentrux-rules.example.toml /path/to/repo/backend/.sentrux/rules.toml
 ```
 
 示例：
@@ -975,8 +714,8 @@ reason = "App 不应依赖 core 内部实现"
 
 保存 baseline：
 
-```powershell
-sentrux gate --save C:\path\to\repo\backend
+```bash
+code-intel sentrux gate_save C:\path\to\repo\backend
 ```
 
 不要用新 baseline 掩盖真实退化。
@@ -1000,30 +739,19 @@ tools
 
 如果你要治理核心模块，直接指定 scope：
 
-```powershell
+```bash
 code-intel C:\path\to\repo\backend --mode normal
 ```
 
 如果你要分析 `tools/` 里的某个外部轮子，把 scope 指到那个轮子，而不是让它污染主项目：
 
-```powershell
+```bash
 code-intel C:\path\to\repo\tools\some-lib --mode normal
 ```
 
 ## 真实跑通过的路径
 
-本仓库已经验证过这些路径：
-
-```text
-本项目完整链路：
-legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath $env:CODE_INTEL_HOME -Mode normal
-
-GitHub fresh clone：
-legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath <tmp>/code-intel-pipeline-online-test -Mode normal
-
-Katana 大仓库 scoped：
-legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath <k-atana-path> -SentruxPath backend -Mode normal
-```
+本仓库已经用 `code-intel <path> --mode normal` 验证过：本项目自身、GitHub fresh clone，以及 Katana 大仓库（scope 指到 `backend`）。
 
 Katana 结果示例：
 
@@ -1050,30 +778,19 @@ primaryTarget=simulate_engine
 每次 push / PR 会跑：
 
 ```text
-install -> doctor -> smoke
+install-smoke -> doctor -> tests
 ```
 
-CI 使用 Sentrux lite core 保底，所以 runner 没装真实 `sentrux` 时也不会直接断链。
+install-smoke 在 windows / macos / linux 三个 runner 上从 Release 形态的 ZIP 完整走一遍安装。
 
 ## 常见问题
-
-### `sentrux pro status` 不是 Pro
-
-这是默认行为：自动 Pro 是 opt-in（supply-chain-009），不会因为跑了安装器就激活。要开启，显式设置环境变量：
-
-```powershell
-$env:SENTRUX_AUTO_PRO = "1"
-sentrux pro status
-```
-
-或手动激活：`sentrux pro activate OSS-LOCAL-PRO`。详见上文「Sentrux 自动 Pro」一节。
 
 ### `Understand graph missing`
 
 运行：
 
-```powershell
-.\target\debug\code-intel.exe graph --repo C:\path\to\repo --language zh --write --json
+```bash
+code-intel graph --repo C:\path\to\repo --language zh --write --json
 ```
 
 再重跑 pipeline。
@@ -1082,7 +799,7 @@ sentrux pro status
 
 先 scoped：
 
-```powershell
+```bash
 code-intel C:\path\to\repo\backend --mode normal
 ```
 
@@ -1102,17 +819,17 @@ code-intel C:\path\to\repo\backend --mode normal
 可以，但建议先这样：
 
 1. 读 `surgery-plan.md`。
-2. `session_start`。
+2. `code-intel sentrux gate <scope>` 确认基线。
 3. 让 Agent 只处理第一目标。
 4. 跑测试。
-5. `session_end`。
+5. 再跑 `code-intel sentrux gate <scope>` 收门禁。
 6. 重跑 pipeline。
 
 不要一上来让 Agent 全仓库乱修。那不是工程，是把混乱交给更快的混乱。
 
 ## 给 Agent 的一句话
 
-先跑安装器，再跑 doctor，再跑 `code-intel .`。改代码前先读证据：整轮 outcome 看命令行汇总，失败看 `run-manifest.json` 里的失败节点，导航用 `evidence.native-code/code-evidence/merged/agent/index.md`，治理看 `diagnosis.hospital/hospital.md`，行动计划看 `diagnosis.hospital/surgery-plan.md`。改代码时继续问管线：`session_start` 起基线，`change impact --staleness advisory` 查波及面和该跑的测试，机械改写先 `capability exec edit.ast-grep-plan` 出预览计划，改完 `session_end` 收门禁。不要跳过 Sentrux baseline 和 rules，不然 Agent 只是换了个速度更快的方式堆债。
+先安装（见[安装](#安装)），再跑 `code-intel doctor`，再跑 `code-intel .`。改代码前先读证据：整轮 outcome 看命令行汇总，失败看 `run-manifest.json` 里的失败节点，导航用 `evidence.native-code/code-evidence/merged/agent/index.md`，治理看 `diagnosis.hospital/hospital.md`，行动计划看 `diagnosis.hospital/surgery-plan.md`。改代码时继续问管线：改前 `code-intel sentrux gate` 确认基线，`change impact --staleness advisory` 查波及面和该跑的测试，机械改写先 `capability exec edit.ast-grep-plan` 出预览计划，改完再跑 `code-intel sentrux gate` 收门禁。不要跳过 Sentrux baseline 和 rules，不然 Agent 只是换了个速度更快的方式堆债。
 
 ## License
 
@@ -1120,19 +837,16 @@ MIT
 
 ## Rust CLI resume preview
 
-```powershell
-cargo build -p code-intel
-.\target\debug\code-intel.exe orchestrate --action Validate --json
-.\target\debug\code-intel.exe orchestrate --action Plan --repo C:\path\to\your\repo --mode normal --json
-.\target\debug\code-intel.exe report --repo C:\path\to\your\repo
-.\target\debug\code-intel.exe resume --repo C:\path\to\your\repo
-.\target\debug\code-intel.exe resume --repo C:\path\to\your\repo --artifact-root C:\path\to\artifacts
-.\target\debug\code-intel.exe resume --repo C:\path\to\your\repo --json
-.\target\debug\code-intel.exe classify --report C:\path\to\artifact\report.json
+```bash
+code-intel orchestrate --action Validate --json
+code-intel orchestrate --action Plan --repo /path/to/your/repo --mode normal --json
+code-intel report --repo /path/to/your/repo
+code-intel resume --repo /path/to/your/repo
+code-intel resume --repo /path/to/your/repo --artifact-root /path/to/artifacts
+code-intel resume --repo /path/to/your/repo --json
+code-intel classify --report /path/to/artifact/report.json
 ```
 
 The Rust CLI owns the default normal production spine, integration orchestration,
 snapshot-bound evidence, atomic run publication, committed-only indexing, and
-cross-session query/impact reads. PowerShell scripts remain thin Windows
-compatibility and installation facades; legacy report generation is not an
-alternative authority path.
+cross-session query/impact reads.

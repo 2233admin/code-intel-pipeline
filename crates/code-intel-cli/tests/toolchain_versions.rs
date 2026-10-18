@@ -196,10 +196,10 @@ fn every_declared_version_matches_its_real_declaration_sites() {
 }
 
 #[test]
-fn a_file_that_declares_a_tool_twice_may_not_disagree_with_itself() {
-    // ci.yml installs ast-grep in both the windows job and the cross-platform
-    // matrix, each with its own `$version = '...'`. Updating one and forgetting
-    // the other is a silent split; this asserts the manifest sees both.
+fn ast_grep_is_declared_once_so_ci_jobs_cannot_disagree() {
+    // Every CI job installs ast-grep through `ci.py install-tool`, which reads
+    // one `AST_GREP_VERSION` constant. A second declaration would be a silent
+    // split, so exactly one is expected.
     let doc = manifest();
     let root = repo_root();
     let ast_grep = tools(&doc)
@@ -207,15 +207,11 @@ fn a_file_that_declares_a_tool_twice_may_not_disagree_with_itself() {
         .find(|t| t["name"] == "ast-grep")
         .expect("ast-grep entry");
     let declaration = &ast_grep["declaredIn"][0];
-    let text =
-        fs::read_to_string(root.join(declaration["file"].as_str().unwrap())).expect("ci.yml");
+    let text = fs::read_to_string(root.join(declaration["file"].as_str().unwrap()))
+        .expect("ast-grep declaration file");
 
     let found = find_all(&text, declaration["pattern"].as_str().unwrap());
-    assert!(
-        found.len() >= 2,
-        "expected ast-grep to be declared in more than one ci.yml job, found {} — if the duplicate was consolidated, simplify this test rather than deleting it",
-        found.len()
-    );
+    assert_eq!(found.len(), 1, "expected a single ast-grep declaration");
 }
 
 #[test]
@@ -234,10 +230,6 @@ fn every_probe_is_executable_as_described() {
             Some("python-module") => assert!(
                 probe["module"].as_str().is_some_and(|s| !s.is_empty()),
                 "{name}: python-module probe needs a module"
-            ),
-            Some("npm-package") => assert!(
-                probe["package"].as_str().is_some_and(|s| !s.is_empty()),
-                "{name}: npm-package probe needs a package"
             ),
             other => panic!("{name}: unknown probe kind {other:?}"),
         }

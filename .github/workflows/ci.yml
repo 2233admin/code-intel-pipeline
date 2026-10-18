@@ -15,15 +15,23 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# DR-0018: no PowerShell anywhere. Multi-line logic lives in
+# .github/scripts/ci.py so every OS runs the same Python.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   admission-policy:
     uses: ./.github/workflows/admission-policy.yml
 
+  # The full Rust suite on Windows. (The name is a required status check.)
+  # Install, packaging and the self-scan run in cross-platform-smoke, which
+  # covers Windows too.
   windows-build-test-package:
     needs: admission-policy
     runs-on: windows-latest
-    # Every step passes in ~30 min (Rust tests alone ~16 min on Windows), so a
-    # 30-min ceiling cancelled green runs at the final step (#440).
+    # Rust tests alone take ~16 min on Windows (#440).
     timeout-minutes: 45
 
     steps:
@@ -43,365 +51,37 @@ jobs:
           python tests/test_skill_package.py -v
           python tests/test_skill_attestation.py -v
 
-      # #418: acquire the committed package, then exercise its real guard.
-      # Explicit pwsh keeps npm/Python argument forwarding identical on all OSes.
-      - name: Acquire and smoke pinned npm merge queue
-        shell: pwsh
-        run: |
-          node --version
-          if ($LASTEXITCODE -ne 0) { throw "Node version probe failed" }
-          node -e 'if (Number(process.versions.node.split(".")[0]) < 18) { throw new Error("merge queue requires Node >=18"); }'
-          if ($LASTEXITCODE -ne 0) { throw "Unsupported Node runtime" }
-          npm --version
-          if ($LASTEXITCODE -ne 0) { throw "npm version probe failed" }
-          npm ci --ignore-scripts --no-audit --no-fund
-          if ($LASTEXITCODE -ne 0) { throw "Pinned npm acquisition failed" }
-          python tests/test_merge_queue_guard_regression.py -v
-          if ($LASTEXITCODE -ne 0) { throw "Npm merge queue replay regression failed" }
-          python tests/test_merge_queue_guard.py
-          if ($LASTEXITCODE -ne 0) { throw "Real npm merge queue smoke failed" }
-
       - name: Setup Rust
-        shell: pwsh
         run: |
           rustup toolchain install
           rustup show active-toolchain
 
-      # #404: dependency build artifacts + cargo registry. Must follow Setup
-      # Rust: the cache key includes the active rustc. Only dependencies are
-      # cached; the workspace crate is always rebuilt.
+      # #404: dependency builds and the cargo registry; the key includes the
+      # active rustc, so this follows Setup Rust.
       - name: Cache cargo registry and dependency builds
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      - name: Install ripgrep
-        uses: ./.github/actions/install-ripgrep
-
-      - name: Install ast-grep (pinned)
-        shell: pwsh
+      - name: Install pinned ripgrep and ast-grep
         run: |
-          $version = '0.45.3'
-          $asset = 'app-x86_64-pc-windows-msvc.zip'
-          $expected = '3751b7d6be7fd39a80df1180ffe7e053903dcf92d3190e5a8336ff1746af9059'
-          $dir = Join-Path $env:RUNNER_TEMP 'ast-grep'
-          New-Item -ItemType Directory -Force $dir | Out-Null
-          $zip = Join-Path $dir $asset
-          Invoke-WebRequest -Uri "https://github.com/ast-grep/ast-grep/releases/download/$version/$asset" -OutFile $zip
-          $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -ne $expected) { throw "ast-grep artifact digest mismatch: $actual" }
-          Expand-Archive -LiteralPath $zip -DestinationPath $dir -Force
-          Add-Content -Path $env:GITHUB_PATH -Value $dir
-          $reported = & (Join-Path $dir 'ast-grep.exe') --version
-          if ("$reported" -ne "ast-grep $version") { throw "ast-grep version mismatch: $reported" }
+          python .github/scripts/ci.py install-tool rg
+          python .github/scripts/ci.py install-tool ast-grep
 
       - name: Rust format
-        shell: pwsh
         run: cargo fmt -p code-intel -- --check
 
       - name: Rust check
-        shell: pwsh
         run: cargo check --locked
 
       - name: Rust tests and core cross-contract gate
-        shell: pwsh
         run: cargo test -p code-intel --locked --no-fail-fast
 
       - name: Real ast-grep public CLI contract smokes
-        shell: pwsh
         run: |
-          # These integration tests invoke capability exec and check its real
-          # artifacts/source bytes. The version gate prevents unavailable-tool skips.
-          $reported = & ast-grep --version
-          if ($LASTEXITCODE -ne 0 -or "$reported" -ne "ast-grep 0.45.3") { throw "Required ast-grep 0.45.3 is unavailable: $reported" }
           cargo test -p code-intel --locked --test capability_exec structured_edit_plan_is_scope_bound_and_preview_only -- --exact --nocapture
-          if ($LASTEXITCODE -ne 0) { throw "Public structured-edit CLI smoke failed" }
           cargo test -p code-intel --locked --test capability_exec ast_grep_security_scan_is_scope_bound_and_advisory_only -- --exact --nocapture
-          if ($LASTEXITCODE -ne 0) { throw "Public security-scan CLI smoke failed" }
 
       - name: Representative project orientation benchmark
-        shell: pwsh
         run: cargo test -p code-intel --locked --test project_orientation_benchmark -- --nocapture
-
-      - name: Build Rust CLI
-        shell: pwsh
-        run: cargo build -p code-intel --release --locked
-
-      - name: Real ripgrep public capability smoke
-        shell: pwsh
-        run: |
-          $reported = @(rg --version)
-          if ($LASTEXITCODE -ne 0 -or -not ($reported[0] -match '^ripgrep (\d+\.\d+\.\d+)') -or [version]$Matches[1] -lt [version]'15.2.0') { throw "required ripgrep below floor 15.2.0 (DR-0002): $reported" }
-          cargo test -p code-intel --locked --test capability_exec inventory_rg_exec_emits_one_result_and_stable_real_rg_artifact -- --exact --nocapture
-          if ($LASTEXITCODE -ne 0) { throw "real ripgrep public capability smoke failed: $LASTEXITCODE" }
-
-      - name: Authoritative self-scan (release gate parity)
-        shell: pwsh
-        run: |
-          $staging = Join-Path $env:RUNNER_TEMP "code-intel-self-scan"
-          $authority = Join-Path $env:RUNNER_TEMP "code-intel-self-authority"
-          New-Item -ItemType Directory -Force $authority | Out-Null
-          ./target/release/code-intel.exe run execute --repo . --out $staging --authority-root $authority --final-name ci-self-scan --manifest orchestration/integrations.json --doctor-require-repowise false
-          if ($LASTEXITCODE -ne 0) {
-            throw "self-scan failed with exit code ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure, 73 = --final-name already published under the authority root; read the run manifest failures block"
-          }
-
-      - name: Validate any produced audit report (ai-safety-003)
-        shell: pwsh
-        run: |
-          # The audit kernel's fail-closed validator (`audit --operation
-          # validate`) previously ran on no automated path — see issue #34
-          # ai-safety-003. Departments are agent-run, not part of `run
-          # execute`, so no audit-report.json is expected from this job
-          # today; this step is the structural guarantee that if one ever
-          # shows up here (repo root, orchestration/, or the self-scan
-          # artifact directory), it is validated before anything downstream
-          # can treat it as authoritative.
-          $staging = Join-Path $env:RUNNER_TEMP "code-intel-self-scan"
-          $searchRoots = @("orchestration", $staging) | Where-Object { Test-Path $_ }
-          $reports = @()
-          if (Test-Path "audit-report.json") { $reports += (Resolve-Path "audit-report.json").Path }
-          foreach ($root in $searchRoots) {
-            $reports += Get-ChildItem -LiteralPath $root -Recurse -Filter "audit-report.json" -File -ErrorAction SilentlyContinue |
-              Select-Object -ExpandProperty FullName
-          }
-          $reports = $reports | Select-Object -Unique
-          if (-not $reports) {
-            Write-Host "No audit-report.json produced by this run; nothing to validate."
-          }
-          foreach ($report in $reports) {
-            Write-Host "Validating audit report: $report"
-            ./target/release/code-intel.exe audit --operation validate --repo . --report $report
-            if ($LASTEXITCODE -ne 0) {
-              throw "audit report failed --operation validate (exit ${LASTEXITCODE}): $report -- an unvalidated audit report must never be treated as authoritative"
-            }
-          }
-
-      - name: PowerShell parser checks
-        shell: pwsh
-        run: |
-          $files = @(
-            "legacy/code-intel.ps1",
-            "legacy/invoke-code-intel.ps1",
-            "legacy/run-code-intel.ps1",
-            "legacy/Invoke-ScopedRepowise.ps1",
-            "legacy/Find-CodeIntelProjects.ps1",
-            "legacy/Invoke-GitHubSolutionResearch.ps1",
-            "legacy/Invoke-ModelChannelDelegate.ps1",
-            "legacy/Invoke-SentruxAgentTool.ps1",
-            "legacy/scripts/tests/test-code-intel-pipeline.ps1",
-            "legacy/scripts/tests/test-primary-launchers.ps1",
-            "legacy/scripts/tests/test-github-solution-research.ps1",
-            "legacy/scripts/tests/test-hospital-trust-contract.ps1",
-            "legacy/scripts/tests/test-project-discovery.ps1",
-            "legacy/scripts/tests/test-project-management-support.ps1",
-            "legacy/scripts/tests/Test-CodeIntelProjectConformance.ps1",
-            "legacy/scripts/tests/test-code-intel-project-conformance.ps1",
-            "legacy/Invoke-MultiAgentMergeQueue.ps1",
-            "legacy/scripts/tests/test-multi-agent-merge-queue.ps1",
-            "legacy/scripts/tests/Test-Python314PonCompatibility.ps1",
-            "legacy/scripts/tests/test-python314-pon-compatibility.ps1",
-            "legacy/scripts/tests/test-scoped-repowise-security.ps1",
-            "legacy/scripts/tests/test-scoped-repowise-worktree.ps1",
-            "legacy/scripts/tests/test-skill-development-benchmark.ps1",
-            "legacy/tools/New-BetaPackage.ps1",
-            "legacy/tools/Test-BetaPackage.ps1"
-          )
-          foreach ($file in $files) {
-            $tokens = $null
-            $errs = $null
-            $null = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$errs)
-            if ($errs) {
-              Write-Host $file
-              $errs | Select-Object Message,Extent | Format-List
-              exit 1
-            }
-          }
-
-      - name: Secret pattern guard
-        shell: pwsh
-        run: |
-          $patterns = @(
-            "sk-[A-Za-z0-9_-]{20,}",
-            "ghp_[A-Za-z0-9_]{20,}",
-            "github_pat_[A-Za-z0-9_]{20,}",
-            "AKIA[0-9A-Z]{16}"
-          )
-          $files = git ls-files
-          $hits = @()
-          foreach ($file in $files) {
-            if ($file -match "^(target/|artifacts/|cache/)" -or $file -match "\.(png|jpg|jpeg|gif|zip|exe)$") {
-              continue
-            }
-            $text = Get-Content -LiteralPath $file -Raw -ErrorAction SilentlyContinue
-            foreach ($pattern in $patterns) {
-              if ($text -match $pattern) {
-                $hits += "$file matches $pattern"
-              }
-            }
-          }
-          if ($hits.Count -gt 0) {
-            $hits | ForEach-Object { Write-Host $_ }
-            throw "Secret-like patterns found."
-          }
-
-      - name: Install portable pipeline
-        shell: pwsh
-        run: .\legacy\install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -RequireRepowise:$false -Json
-
-      - name: Add pipeline tools PATH
-        shell: pwsh
-        run: Add-Content -Path $env:GITHUB_PATH -Value "$env:LOCALAPPDATA\code-intel\bin"
-
-      - name: Doctor
-        shell: pwsh
-        # T3 (#48): the tool/runtime probe is native now; the PowerShell entry
-        # point is a thin forwarder onto this same subcommand.
-        #
-        # --require-provider-conformance is what makes this step cover the
-        # branch a developer machine actually takes. The authoritative
-        # self-scan above runs BEFORE the install and PATH steps, so on the
-        # runner no external provider is on PATH and the doctor node only ever
-        # evaluates `builtin && !external`. The `(core && pro)` branch — the
-        # one every installed machine hits, and the one a stale shim forwarder
-        # breaks — was unreachable from the step named "release gate parity".
-        run: code-intel doctor bootstrap --repo-path . --no-require-repowise --require-provider-conformance
-
-      - name: Installed graph binary smoke
-        shell: pwsh
-        run: |
-          $installed = (Get-Command code-intel -ErrorAction Stop).Source
-          $installBin = Split-Path -Parent $installed
-          $installRoot = Split-Path -Parent $installBin
-          $json = & $installed doctor bootstrap --pipeline-root $installRoot --repo-path (Resolve-Path .) --no-require-repowise --json
-          if ($LASTEXITCODE -notin @(0, 1)) {
-            throw "installed Doctor process failed with exit code $LASTEXITCODE"
-          }
-          $global:LASTEXITCODE = 0
-          $observation = ($json -join [Environment]::NewLine) | ConvertFrom-Json
-          $graph = $observation.checks.graphProvider
-          if (-not $graph.binaryFound) {
-            throw "installed Doctor did not find its packaged graph binary: $($graph | ConvertTo-Json -Compress)"
-          }
-          $binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
-          $expected = [IO.Path]::GetFullPath((Join-Path $installBin $binaryName))
-          $actual = [IO.Path]::GetFullPath([string]$graph.binaryPath)
-          if ($actual -ne $expected) {
-            throw "installed Doctor resolved $actual instead of the installed graph binary $expected"
-          }
-          Write-Host "Installed graph binary smoke passed: $actual"
-
-      - name: GitHub research contract tests
-        shell: pwsh
-        run: .\legacy/scripts/tests/test-github-solution-research.ps1 -RepoPath .
-
-      - name: Project discovery contract tests
-        shell: pwsh
-        run: .\legacy/scripts/tests/test-project-discovery.ps1 -RepoPath .
-
-      - name: Skill development benchmark contract tests
-        shell: pwsh
-        run: .\legacy/scripts/tests/test-skill-development-benchmark.ps1 -RepoPath .
-
-      - name: Hospital fail-closed contract tests
-        shell: pwsh
-        run: .\legacy/scripts/tests/test-hospital-trust-contract.ps1
-
-      - name: Scoped Repowise trust-boundary tests
-        shell: pwsh
-        run: |
-          .\legacy/scripts/tests/test-scoped-repowise-security.ps1
-          .\legacy/scripts/tests/test-scoped-repowise-worktree.ps1
-
-      - name: Scoped Repowise manifest validator tests
-        run: python .\test-scoped-repowise-validator.py
-
-      - name: Core PowerShell regression tests
-        shell: pwsh
-        run: .\legacy/scripts/tests/test-regression-fixes.ps1
-
-      # Both audits read the retained packet status files; they move out with
-      # the facade-finalize integration in #450 PR3.
-      - name: Retirement status audits
-        shell: pwsh
-        run: |
-          .\legacy/tools/Test-FinalCommitmentReconciliation.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          .\legacy/scripts/tests/test-compatibility-facade-finalize.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Retirement boundary guard
-        shell: pwsh
-        run: |
-          $binary = if ($IsWindows) { "./target/release/code-intel.exe" } else { "./target/release/code-intel" }
-          & $binary retirement guard --repo-root legacy
-          if ($LASTEXITCODE -ne 0) {
-            throw "retirement boundary guard failed with exit code ${LASTEXITCODE}: a tracked legacy branch under orchestration/retirements/* disappeared from the tree without its packet's status.json saying retired: true"
-          }
-
-      - name: Python 3.14 and project conformance
-        shell: pwsh
-        run: |
-          .\legacy/scripts/tests/test-python314-pon-compatibility.ps1
-          .\legacy/scripts/tests/test-parity-baseline.ps1
-          .\legacy/scripts/tests/test-code-intel-project-conformance.ps1
-
-      - name: Pipeline smoke
-        shell: pwsh
-        run: .\legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -Mode normal
-
-      - name: Model channel and automation regression suites
-        shell: pwsh
-        run: |
-          $tests = @(
-            ".\legacy/tests/test-model-channel-delegate.ps1"
-            ".\legacy/tests/test-model-channel-degraded-pipeline.ps1"
-            ".\legacy/tests/test-automatic-pull-request.ps1"
-            ".\legacy/tests/test-automatic-pull-request-flow.ps1"
-            ".\legacy/tests/test-follow-up-automation.ps1"
-          )
-          foreach ($test in $tests) {
-            & pwsh -NoProfile -File $test
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-
-      - name: Primary launcher contract tests
-        shell: pwsh
-        run: |
-          & pwsh -NoProfile -File .\legacy/scripts/tests/test-primary-launchers.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Conformance evidence suites
-        shell: pwsh
-        run: |
-          $tests = @(
-            ".\legacy/scripts/tests/test-sentrux-failure-normalization.ps1"
-            ".\legacy/scripts/tests/test-codenexus-adapter-contract.ps1"
-            ".\legacy/scripts/tests/test-transactional-publication.ps1"
-          )
-          foreach ($test in $tests) {
-            & pwsh -NoProfile -File $test
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-
-      - name: Package
-        shell: pwsh
-        run: |
-          & pwsh -NoProfile -File ./legacy/tools/New-BetaPackage.ps1 -ExecutablePath ./target/release/code-intel.exe -OutputDirectory ./dist -PackageName code-intel-pipeline-windows-beta
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Verify beta package
-        shell: pwsh
-        run: |
-          & pwsh -NoProfile -File ./legacy/tools/Test-BetaPackage.ps1 -ZipPath ./dist/code-intel-pipeline-windows-beta.zip -Json
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Upload package artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: code-intel-pipeline-windows
-          path: |
-            dist/code-intel-pipeline-windows-beta.zip
-            dist/code-intel-pipeline-windows-beta.zip.sha256
-            dist/code-intel-pipeline-windows-beta.release-manifest.json
 
   cross-platform-smoke:
     needs: admission-policy
@@ -418,6 +98,8 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      SMOKE_TAG: v0.0.0-smoketest
 
     steps:
       - name: Checkout
@@ -436,583 +118,106 @@ jobs:
           python tests/test_skill_package.py -v
           python tests/test_skill_attestation.py -v
 
-      - name: Acquire and smoke pinned npm merge queue
-        shell: pwsh
-        run: |
-          node --version
-          if ($LASTEXITCODE -ne 0) { throw "Node version probe failed" }
-          node -e 'if (Number(process.versions.node.split(".")[0]) < 18) { throw new Error("merge queue requires Node >=18"); }'
-          if ($LASTEXITCODE -ne 0) { throw "Unsupported Node runtime" }
-          npm --version
-          if ($LASTEXITCODE -ne 0) { throw "npm version probe failed" }
-          npm ci --ignore-scripts --no-audit --no-fund
-          if ($LASTEXITCODE -ne 0) { throw "Pinned npm acquisition failed" }
-          python tests/test_merge_queue_guard.py
-          if ($LASTEXITCODE -ne 0) { throw "Real npm merge queue smoke failed" }
+      - name: Secret pattern guard
+        if: runner.os == 'Linux'
+        run: python .github/scripts/ci.py secret-guard
 
       - name: Setup Rust
-        shell: pwsh
         run: |
           rustup toolchain install
           rustup show active-toolchain
 
-      # #404: see the matching step in windows-build-test-package. The cache
-      # key includes the job id and runner OS/arch, so each matrix leg keeps
-      # its own entry.
+      # #404: the key includes the job id and runner OS/arch, so each matrix
+      # leg keeps its own entry.
       - name: Cache cargo registry and dependency builds
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      - name: Install ripgrep
-        uses: ./.github/actions/install-ripgrep
-
-      - name: Install ast-grep (pinned)
-        shell: pwsh
+      - name: Install pinned ripgrep and ast-grep
         run: |
-          $version = '0.45.3'
-          if ($IsWindows) {
-            $asset = 'app-x86_64-pc-windows-msvc.zip'
-            $expected = '3751b7d6be7fd39a80df1180ffe7e053903dcf92d3190e5a8336ff1746af9059'
-          }
-          elseif ($IsMacOS) {
-            $asset = 'app-aarch64-apple-darwin.zip'
-            $expected = '6d2279dea5bea2ad79c66ea93f5fe54ba926e398a8a26de76c56db68fe59eac6'
-          }
-          else {
-            $asset = 'app-x86_64-unknown-linux-gnu.zip'
-            $expected = 'f8ac830881339d1edee6b2652f54798c0f4da5a827f2db38a08ee31117783ce8'
-          }
-          $dir = Join-Path $env:RUNNER_TEMP 'ast-grep'
-          New-Item -ItemType Directory -Force $dir | Out-Null
-          $zip = Join-Path $dir $asset
-          Invoke-WebRequest -Uri "https://github.com/ast-grep/ast-grep/releases/download/$version/$asset" -OutFile $zip
-          $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -ne $expected) { throw "ast-grep artifact digest mismatch: $actual" }
-          Expand-Archive -LiteralPath $zip -DestinationPath $dir -Force
-          $binary = if ($IsWindows) { 'ast-grep.exe' } else { 'ast-grep' }
-          if (-not $IsWindows) { chmod +x (Join-Path $dir $binary) }
-          Add-Content -Path $env:GITHUB_PATH -Value $dir
-          $reported = & (Join-Path $dir $binary) --version
-          if ("$reported" -ne "ast-grep $version") { throw "ast-grep version mismatch: $reported" }
+          python .github/scripts/ci.py install-tool rg
+          python .github/scripts/ci.py install-tool ast-grep
 
       - name: Rust format
-        shell: pwsh
         run: cargo fmt -p code-intel -- --check
 
       - name: Rust check
-        shell: pwsh
         run: cargo check --locked
 
-      # #404: on Windows this exact command already runs in
-      # windows-build-test-package (same runner image, same toolchain, same
-      # `-p code-intel --locked` test set), so the matrix leg skips it instead
-      # of executing the full suite a second time per trigger. The packaged
-      # install_smoke tests below still compile and run here on every OS.
+      # #404: windows-build-test-package already runs this exact suite on
+      # Windows, so that leg skips it.
       - name: Rust tests and core cross-contract gate
         if: runner.os != 'Windows'
-        shell: pwsh
         run: cargo test -p code-intel --locked --no-fail-fast
 
       - name: Real ast-grep public CLI contract smokes
-        shell: pwsh
         run: |
-          # Windows skips the duplicate full suite, not these real CLI smokes.
-          $reported = & ast-grep --version
-          if ($LASTEXITCODE -ne 0 -or "$reported" -ne "ast-grep 0.45.3") { throw "Required ast-grep 0.45.3 is unavailable: $reported" }
           cargo test -p code-intel --locked --test capability_exec structured_edit_plan_is_scope_bound_and_preview_only -- --exact --nocapture
-          if ($LASTEXITCODE -ne 0) { throw "Public structured-edit CLI smoke failed" }
           cargo test -p code-intel --locked --test capability_exec ast_grep_security_scan_is_scope_bound_and_advisory_only -- --exact --nocapture
-          if ($LASTEXITCODE -ne 0) { throw "Public security-scan CLI smoke failed" }
 
       - name: Build Rust CLI
-        shell: pwsh
         run: cargo build -p code-intel --release --locked
 
       # The optional Repowise provider is exercised once, on Linux.
       - name: Real Repowise public CLI smoke (isolated)
         if: runner.os == 'Linux'
-        shell: pwsh
         run: |
-          $venv = Join-Path $env:RUNNER_TEMP '.runtime-repowise'
-          python -m venv $venv
-          if ($LASTEXITCODE -ne 0) { throw "Repowise isolated environment creation failed: $LASTEXITCODE" }
-          $python = Join-Path $venv $(if ($IsWindows) { 'Scripts/python.exe' } else { 'bin/python' })
-          $provider = Join-Path $venv $(if ($IsWindows) { 'Scripts/repowise.exe' } else { 'bin/repowise' })
-          $packageFormats = @('--only-binary=:all:')
-          # Repowise requires watchdog<5; its macOS wheels predate Python 3.14.
-          # Only this CI host may build that upstream dependency, never the excluded Windows host.
-          if ($IsMacOS) { $packageFormats += '--no-binary=watchdog' }
-          & $python -m pip install @packageFormats repowise==0.55.0
-          if ($LASTEXITCODE -ne 0) { throw "Repowise installation failed: $LASTEXITCODE" }
-          $reported = @(& $provider --version)
-          if ($LASTEXITCODE -ne 0 -or $reported.Count -ne 1 -or $reported[0] -ne 'repowise, version 0.55.0') { throw "Repowise version mismatch: $reported" }
-          $cli = if ($IsWindows) { 'target/release/code-intel.exe' } else { 'target/release/code-intel' }
-          & $python tests/test_runtime_repowise.py --cli $cli --provider-bin $provider
-          if ($LASTEXITCODE -ne 0) { throw "real Repowise public CLI smoke failed: $LASTEXITCODE" }
-          $previousVenv = Join-Path $env:RUNNER_TEMP '.runtime-repowise-recorded'
-          python -m venv $previousVenv
-          if ($LASTEXITCODE -ne 0) { throw "Repowise recorded-version environment creation failed: $LASTEXITCODE" }
-          $previousPython = Join-Path $previousVenv $(if ($IsWindows) { 'Scripts/python.exe' } else { 'bin/python' })
-          $previousProvider = Join-Path $previousVenv $(if ($IsWindows) { 'Scripts/repowise.exe' } else { 'bin/repowise' })
-          & $previousPython -m pip install @packageFormats repowise==0.38.0
-          if ($LASTEXITCODE -ne 0) { throw "Repowise recorded-version installation failed: $LASTEXITCODE" }
-          $reported = @(& $previousProvider --version)
-          if ($LASTEXITCODE -ne 0 -or $reported.Count -ne 1 -or $reported[0] -ne 'repowise, version 0.38.0') { throw "Repowise recorded-version mismatch: $reported" }
-          & $python tests/test_runtime_repowise.py --cli $cli --provider-bin $provider --previous-provider-bin $previousProvider
-          if ($LASTEXITCODE -ne 0) { throw "real Repowise old-index upgrade smoke failed: $LASTEXITCODE" }
+          current="$RUNNER_TEMP/.runtime-repowise"
+          recorded="$RUNNER_TEMP/.runtime-repowise-recorded"
+          for pair in "$current:0.55.0" "$recorded:0.38.0"; do
+            venv="${pair%%:*}" version="${pair##*:}"
+            python -m venv "$venv"
+            "$venv/bin/python" -m pip install --only-binary=:all: "repowise==$version"
+            reported="$("$venv/bin/repowise" --version)"
+            if [ "$reported" != "repowise, version $version" ]; then
+              echo "::error::Repowise version mismatch: $reported"
+              exit 1
+            fi
+          done
+          "$current/bin/python" tests/test_runtime_repowise.py --cli target/release/code-intel --provider-bin "$current/bin/repowise"
+          "$current/bin/python" tests/test_runtime_repowise.py --cli target/release/code-intel --provider-bin "$current/bin/repowise" --previous-provider-bin "$recorded/bin/repowise"
 
       - name: Real ripgrep public capability smoke
-        shell: pwsh
-        run: |
-          $reported = @(rg --version)
-          if ($LASTEXITCODE -ne 0 -or -not ($reported[0] -match '^ripgrep (\d+\.\d+\.\d+)') -or [version]$Matches[1] -lt [version]'15.2.0') { throw "required ripgrep below floor 15.2.0 (DR-0002): $reported" }
-          cargo test -p code-intel --locked --test capability_exec inventory_rg_exec_emits_one_result_and_stable_real_rg_artifact -- --exact --nocapture
-          if ($LASTEXITCODE -ne 0) { throw "real ripgrep public capability smoke failed: $LASTEXITCODE" }
+        run: cargo test -p code-intel --locked --test capability_exec inventory_rg_exec_emits_one_result_and_stable_real_rg_artifact -- --exact --nocapture
 
-      - name: Authoritative self-scan (release gate parity)
-        shell: pwsh
-        run: |
-          $binary = if ($IsWindows) { "./target/release/code-intel.exe" } else { "./target/release/code-intel" }
-          $staging = Join-Path ([IO.Path]::GetTempPath()) "code-intel-self-scan"
-          $authority = Join-Path ([IO.Path]::GetTempPath()) "code-intel-self-authority"
-          if (Test-Path $staging) { Remove-Item -Recurse -Force $staging }
-          New-Item -ItemType Directory -Force $authority | Out-Null
-          & $binary run execute --repo . --out $staging --authority-root $authority --final-name ci-self-scan --manifest orchestration/integrations.json --doctor-require-repowise false
-          if ($LASTEXITCODE -ne 0) {
-            throw "self-scan failed with exit code ${LASTEXITCODE}: 10 = architecture/domain gate failure, 70 = process failure, 73 = --final-name already published under the authority root; read the run manifest failures block"
-          }
+      # Release gate parity: the checkout must pass its own scan, accepted
+      # only through the committed run artifacts.
+      - name: Authoritative self-scan
+        run: python .github/scripts/ci.py sentrux-closure --binary target/release/code-intel --repo . --work "$RUNNER_TEMP/self-scan" --final-name ci-self-scan --require-pass
 
-      - name: Validate any produced audit report (ai-safety-003)
-        shell: pwsh
-        run: |
-          # See the matching step in the windows-build-test-package job:
-          # departments are agent-run, not part of `run execute`, so this is
-          # a structural guarantee for whenever an audit-report.json does
-          # show up, not an expectation that one exists today.
-          $binary = if ($IsWindows) { "./target/release/code-intel.exe" } else { "./target/release/code-intel" }
-          $staging = Join-Path ([IO.Path]::GetTempPath()) "code-intel-self-scan"
-          $searchRoots = @("orchestration", $staging) | Where-Object { Test-Path $_ }
-          $reports = @()
-          if (Test-Path "audit-report.json") { $reports += (Resolve-Path "audit-report.json").Path }
-          foreach ($root in $searchRoots) {
-            $reports += Get-ChildItem -LiteralPath $root -Recurse -Filter "audit-report.json" -File -ErrorAction SilentlyContinue |
-              Select-Object -ExpandProperty FullName
-          }
-          $reports = $reports | Select-Object -Unique
-          if (-not $reports) {
-            Write-Host "No audit-report.json produced by this run; nothing to validate."
-          }
-          foreach ($report in $reports) {
-            Write-Host "Validating audit report: $report"
-            & $binary audit --operation validate --repo . --report $report
-            if ($LASTEXITCODE -ne 0) {
-              throw "audit report failed --operation validate (exit ${LASTEXITCODE}): $report -- an unvalidated audit report must never be treated as authoritative"
-            }
-          }
+      - name: Hardcoded path scan
+        run: target/release/code-intel lint hardcoded-paths
 
-      - name: PowerShell parser checks
-        shell: pwsh
-        run: |
-          $files = @(
-            "legacy/code-intel.ps1",
-            "legacy/invoke-code-intel.ps1",
-            "legacy/run-code-intel.ps1",
-            "legacy/Invoke-ScopedRepowise.ps1",
-            "legacy/Find-CodeIntelProjects.ps1",
-            "legacy/Invoke-GitHubSolutionResearch.ps1",
-            "legacy/Invoke-ModelChannelDelegate.ps1",
-            "legacy/Invoke-SentruxAgentTool.ps1",
-            "legacy/scripts/tests/test-code-intel-pipeline.ps1",
-            "legacy/scripts/tests/test-primary-launchers.ps1",
-            "legacy/scripts/tests/test-github-solution-research.ps1",
-            "legacy/scripts/tests/test-hospital-trust-contract.ps1",
-            "legacy/scripts/tests/test-project-discovery.ps1",
-            "legacy/scripts/tests/test-project-management-support.ps1",
-            "legacy/scripts/tests/Test-CodeIntelProjectConformance.ps1",
-            "legacy/scripts/tests/test-code-intel-project-conformance.ps1",
-            "legacy/Invoke-MultiAgentMergeQueue.ps1",
-            "legacy/scripts/tests/test-multi-agent-merge-queue.ps1",
-            "legacy/scripts/tests/Test-Python314PonCompatibility.ps1",
-            "legacy/scripts/tests/test-python314-pon-compatibility.ps1",
-            "legacy/scripts/tests/test-scoped-repowise-security.ps1",
-            "legacy/scripts/tests/test-scoped-repowise-worktree.ps1",
-            "legacy/scripts/tests/test-skill-development-benchmark.ps1",
-            "legacy/tools/New-BetaPackage.ps1",
-            "legacy/tools/Test-BetaPackage.ps1"
-          )
-          foreach ($file in $files) {
-            $tokens = $null
-            $errs = $null
-            $null = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file), [ref]$tokens, [ref]$errs)
-            if ($errs) {
-              Write-Host $file
-              $errs | Select-Object Message,Extent | Format-List
-              exit 1
-            }
-          }
-
-      - name: Secret pattern guard
-        shell: pwsh
-        run: |
-          $patterns = @(
-            "sk-[A-Za-z0-9_-]{20,}",
-            "ghp_[A-Za-z0-9_]{20,}",
-            "github_pat_[A-Za-z0-9_]{20,}",
-            "AKIA[0-9A-Z]{16}"
-          )
-          $files = git ls-files
-          $hits = @()
-          foreach ($file in $files) {
-            if ($file -match "^(target/|artifacts/|cache/)" -or $file -match "\.(png|jpg|jpeg|gif|zip|exe)$") {
-              continue
-            }
-            $text = Get-Content -LiteralPath $file -Raw -ErrorAction SilentlyContinue
-            foreach ($pattern in $patterns) {
-              if ($text -match $pattern) {
-                $hits += "$file matches $pattern"
-              }
-            }
-          }
-          if ($hits.Count -gt 0) {
-            $hits | ForEach-Object { Write-Host $_ }
-            throw "Secret-like patterns found."
-          }
-
-      - name: Install portable pipeline
-        shell: pwsh
-        run: |
-          $result = ./legacy/install-code-intel-pipeline.ps1 -RepoPath . -RepairSkillLinks -RequireRepowise:$false -Json | ConvertFrom-Json
-          Add-Content -Path $env:GITHUB_PATH -Value $result.paths.bin
-
-      - name: Doctor
-        shell: pwsh
-        # T3 (#48): native probe; the PowerShell entry point now forwards here.
-        # --require-provider-conformance: see the windows job's Doctor step —
-        # the self-scan runs before the install, so this is the only place the
-        # installed-overlay branch is reachable.
-        run: code-intel doctor bootstrap --repo-path . --no-require-repowise --require-provider-conformance --json
-
-      - name: Installed graph binary smoke
-        shell: pwsh
-        run: |
-          $installed = (Get-Command code-intel -ErrorAction Stop).Source
-          $installBin = Split-Path -Parent $installed
-          $installRoot = Split-Path -Parent $installBin
-          $json = & $installed doctor bootstrap --pipeline-root $installRoot --repo-path (Resolve-Path .) --no-require-repowise --json
-          if ($LASTEXITCODE -notin @(0, 1)) {
-            throw "installed Doctor process failed with exit code $LASTEXITCODE"
-          }
-          $global:LASTEXITCODE = 0
-          $observation = ($json -join [Environment]::NewLine) | ConvertFrom-Json
-          $graph = $observation.checks.graphProvider
-          if (-not $graph.binaryFound) {
-            throw "installed Doctor did not find its packaged graph binary: $($graph | ConvertTo-Json -Compress)"
-          }
-          $binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
-          $expected = [IO.Path]::GetFullPath((Join-Path $installBin $binaryName))
-          $actual = [IO.Path]::GetFullPath([string]$graph.binaryPath)
-          if ($actual -ne $expected) {
-            throw "installed Doctor resolved $actual instead of the installed graph binary $expected"
-          }
-          Write-Host "Installed graph binary smoke passed: $actual"
-
-      # The steps above install from the local checkout, never exercising the
-      # actual release artifact a real user downloads (#59 proposal 6: this
-      # job was green without ever touching bootstrap.py, a packaged zip, or
-      # CODE_INTEL_HOME). The steps below package HEAD the same way
-      # release.yml does and drive the real bootstrap.py download-verify-
-      # install code path against that package, then prove PATH/CODE_INTEL_HOME
-      # actually persist -- not just that $env:GITHUB_PATH was appended.
-      - name: Reset persisted install state before packaged-install check
-        shell: pwsh
-        run: |
-          # "Install portable pipeline" above already persisted PATH/CODE_INTEL_HOME
-          # from a from-source install. Clear that state first so the assertion
-          # steps below can only pass because bootstrap.py's packaged-release
-          # install path persisted them -- not because they were already sitting
-          # there from the earlier, unrelated install. This does not affect
-          # `code-intel` resolving in later steps: that goes through the
-          # job-level $env:GITHUB_PATH entry added earlier, not this User-scope
-          # state.
-          Import-Module ./legacy/tools/code-intel-platform.psm1 -Force
-          if ($IsWindows) {
-            [Environment]::SetEnvironmentVariable("CODE_INTEL_HOME", $null, "User")
-            $binDir = (Get-CodeIntelBinDir -Platform windows).TrimEnd('\')
-            $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-            $keptParts = @($userPath -split [System.IO.Path]::PathSeparator | Where-Object {
-              -not [string]::IsNullOrWhiteSpace($_) -and $_.TrimEnd('\') -ne $binDir
-            })
-            [Environment]::SetEnvironmentVariable("Path", ($keptParts -join [System.IO.Path]::PathSeparator), "User")
-          }
-          else {
-            $configDir = Join-Path (Join-Path $HOME ".config") "code-intel"
-            Remove-Item -LiteralPath (Join-Path $configDir "env.sh") -Force -ErrorAction SilentlyContinue
-            Remove-Item -LiteralPath (Join-Path $configDir "env.ps1") -Force -ErrorAction SilentlyContinue
-          }
-
+      # DR-0001: the steps below package HEAD exactly as release.yml does and
+      # install it through the Skill bootstrap a user runs, so the installed
+      # topology (not the checkout) is what gets tested.
       - name: Package release artifact (mirrors release.yml)
         id: package
-        shell: pwsh
-        run: |
-          $platform = if ($IsWindows) { "windows" } elseif ($IsMacOS) { "macos" } else { "linux" }
-          $binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
-          $version = "v0.0.0-smoketest"
-          "platform=$platform" | Add-Content -Path $env:GITHUB_OUTPUT
-          New-Item -ItemType Directory -Force dist/code-intel-pipeline/bin | Out-Null
-          git archive --format=zip -o dist/payload.zip HEAD
-          if ($LASTEXITCODE -ne 0) { throw "git archive failed" }
-          Expand-Archive -LiteralPath dist/payload.zip -DestinationPath dist/code-intel-pipeline -Force
-          Remove-Item dist/payload.zip
-          Copy-Item -LiteralPath "target/release/$binaryName" -Destination "dist/code-intel-pipeline/bin/$binaryName" -Force
-          if (-not $IsWindows) {
-            chmod 755 "dist/code-intel-pipeline/bin/$binaryName"
-            if ($LASTEXITCODE -ne 0) { throw "chmod failed with exit code ${LASTEXITCODE}" }
-          }
-          $zipLeaf = "code-intel-pipeline-$version-$platform.zip"
-          if ($IsWindows) {
-            Compress-Archive -Path dist/code-intel-pipeline -DestinationPath "dist/$zipLeaf" -Force
-          }
-          else {
-            # Compress-Archive does not store POSIX file modes; the system zip
-            # binary records the executable bit so it survives the unzip that
-            # bootstrap.py performs below -- same reason release.yml uses it.
-            Push-Location dist
-            try {
-              zip -r $zipLeaf code-intel-pipeline
-              if ($LASTEXITCODE -ne 0) { throw "zip failed with exit code ${LASTEXITCODE}" }
-            }
-            finally {
-              Pop-Location
-            }
-          }
-          # Match the release inventory's three flat files per platform;
-          # no tag, attestation, or release is published by this workflow.
-          $zip = "dist/$zipLeaf"
-          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
-          "$hash *$(Split-Path -Leaf $zip)" | Set-Content -Encoding ascii "$zip.sha256"
-          $manifest = [ordered]@{
-            schema = "code-intel-release-manifest.v1"
-            tag = $version
-            commit = (git rev-parse HEAD).Trim()
-            zipSha256 = $hash
-            toolchain = (rustc --version).Trim()
-            builtAt = (Get-Date).ToUniversalTime().ToString("o")
-          }
-          $manifest | ConvertTo-Json | Set-Content -Encoding ascii "$zip.release-manifest.json"
+        run: python .github/scripts/ci.py package --tag "$SMOKE_TAG" --out dist
 
-      - name: Install packaged release via bootstrap.py
-        shell: pwsh
-        run: |
-          $platform = if ($IsWindows) { "windows" } elseif ($IsMacOS) { "macos" } else { "linux" }
-          $version = "v0.0.0-smoketest"
-          $zip = "dist/code-intel-pipeline-$version-$platform.zip"
-          $python = if (Get-Command python3 -ErrorAction SilentlyContinue) { "python3" } else { "python" }
-          $installRoot = Join-Path $env:RUNNER_TEMP "code-intel-smoketest-install"
-          $raw = & $python skills/code-intel-pipeline/scripts/bootstrap.py --local-asset $zip --version $version --repo-path . --install-root $installRoot --install-missing --json
-          if ($LASTEXITCODE -ne 0) { throw "bootstrap.py failed:`n$raw" }
-          $result = $raw | ConvertFrom-Json
-          if ($result.status -notin @("installed", "repaired", "already_installed")) {
-            throw "Unexpected bootstrap status '$($result.status)':`n$raw"
-          }
-          $result | ConvertTo-Json -Depth 20 | Set-Content -Encoding utf8 (Join-Path $env:RUNNER_TEMP "code-intel-smoketest-bootstrap.json")
-          Write-Host "bootstrap.py installed $($result.tag) -> $($result.release_root)"
+      - name: Install packaged release via the Skill bootstrap
+        id: install
+        run: python .github/scripts/ci.py install-package --zip "${{ steps.package.outputs.zip }}" --tag "$SMOKE_TAG" --report "$RUNNER_TEMP/bootstrap.json"
 
-      - name: Packaged sentrux-shim and legacy-entrypoint install smoke
-        shell: pwsh
-        run: |
-          # #216 / #274 / DR-0001: after a packaged install the relocated
-          # legacy/tools/sentrux-shim payload must still be present, and the
-          # installed sentrux launcher must actually run. Checkout cargo tests
-          # cannot see this topology.
-          $bootstrap = Get-Content -Raw -LiteralPath (Join-Path $env:RUNNER_TEMP "code-intel-smoketest-bootstrap.json") | ConvertFrom-Json
-          Import-Module ./legacy/tools/code-intel-platform.psm1 -Force
-          $platform = if ($IsWindows) { "windows" } elseif ($IsMacOS) { "macos" } else { "linux" }
-          $env:CODE_INTEL_SMOKE_RELEASE_ROOT = [IO.Path]::GetFullPath([string]$bootstrap.release_root)
-          $env:CODE_INTEL_SMOKE_BIN = Get-CodeIntelBinDir -Platform $platform
-          cargo test -p code-intel --test install_smoke --locked packaged_install_runs_relocated_sentrux_shim -- --ignored --nocapture
-          if ($LASTEXITCODE -ne 0) { throw "packaged sentrux-shim install smoke failed with exit ${LASTEXITCODE}" }
+      # --require-provider-conformance fails on a present but broken provider
+      # overlay; the installed topology is the only place one could appear.
+      - name: Doctor
+        run: code-intel doctor bootstrap --repo-path . --no-require-repowise --require-provider-conformance --json
 
-          # #232 / DR-0001: the doctor bootstrap node reads
-          # <bin>/legacy/run-code-intel.ps1 and <bin>/pipeline.config.json
-          # unconditionally; a from-release install that skips deploying them
-          # (as this installer did before Install-LegacyPipelineEntrypoint)
-          # fails the doctor node on every platform. Checkout cargo tests
-          # cannot see this topology either.
-          cargo test -p code-intel --test install_smoke --locked packaged_install_deploys_legacy_pipeline_entrypoint -- --ignored --nocapture
-          if ($LASTEXITCODE -ne 0) { throw "packaged legacy-pipeline-entrypoint install smoke failed with exit ${LASTEXITCODE}" }
+      - name: Installed graph binary, PATH and CODE_INTEL_HOME
+        run: python .github/scripts/ci.py installed-checks --report "$RUNNER_TEMP/bootstrap.json"
 
-          # #396 / DR-0001: an extracted package invoked by absolute path, with
-          # only git + rg on PATH (no Python, no PowerShell, bin dir not on
-          # PATH), must pass doctor bootstrap. Checkout topology always has
-          # target/ builds and Python, so only this gate sees the regression.
-          cargo test -p code-intel --test install_smoke --locked packaged_doctor_is_ready_without_python_pwsh_or_bin_on_path -- --ignored --nocapture
-          if ($LASTEXITCODE -ne 0) { throw "packaged python-free doctor smoke failed with exit ${LASTEXITCODE}" }
+      # #396: the extracted release, invoked by absolute path with only git
+      # and rg on PATH, must pass doctor.
+      - name: Packaged doctor without Python or bin on PATH
+        env:
+          CODE_INTEL_SMOKE_BIN: ${{ steps.install.outputs.release_bin }}
+        run: cargo test -p code-intel --locked --test install_smoke -- --ignored --nocapture
 
-          # #419 / DR-0001: the packaged native owner must classify rc/post
-          # reports before the compatibility installer can decide to acquire.
-          cargo test -p code-intel --test installer_version_gate --locked packaged_install_preserves_repowise_python_version_floor -- --ignored --nocapture
-          if ($LASTEXITCODE -ne 0) { throw "packaged Repowise version-floor smoke failed with exit ${LASTEXITCODE}" }
-
-      - name: Packaged installer stale-home smoke
-        shell: pwsh
-        run: |
-          # DR-0001: invoke the packaged installer with an existing stale
-          # `$env:CODE_INTEL_HOME` and prove the explicit release root wins.
-          $bootstrap = Get-Content -Raw -LiteralPath (Join-Path $env:RUNNER_TEMP "code-intel-smoketest-bootstrap.json") | ConvertFrom-Json
-          $releaseRoot = [IO.Path]::GetFullPath([string]$bootstrap.release_root)
-          $staleHome = Join-Path $env:RUNNER_TEMP "code-intel-stale-home"
-          New-Item -ItemType Directory -Force -Path $staleHome | Out-Null
-          $env:CODE_INTEL_HOME = $staleHome
-          $installer = Join-Path $releaseRoot "legacy/install-code-intel-pipeline.ps1"
-          $raw = & pwsh -NoProfile -File $installer -RepoPath $releaseRoot -SkipSentruxVlangOverlay -RequireRepowise:$false -Json
-          if ($LASTEXITCODE -ne 0) {
-            throw "packaged installer stale-home smoke failed with exit code ${LASTEXITCODE}:`n$($raw -join [Environment]::NewLine)"
-          }
-          $result = ($raw -join [Environment]::NewLine) | ConvertFrom-Json
-          $actualHome = [IO.Path]::GetFullPath([string]$result.paths.codeIntelHome)
-          if ($actualHome -ne $releaseRoot) {
-            throw "packaged installer kept stale $env:CODE_INTEL_HOME '$actualHome' instead of release root '$releaseRoot'"
-          }
-          Write-Host "Packaged installer explicit-root smoke passed: $actualHome"
-
-      - name: Packaged Sentrux capability closure smoke
-        shell: pwsh
-        run: |
-          $bootstrap = Get-Content -Raw -LiteralPath (Join-Path $env:RUNNER_TEMP "code-intel-smoketest-bootstrap.json") | ConvertFrom-Json
-          $payload = [IO.Path]::GetFullPath([string]$bootstrap.release_root)
-          $binaryName = if ($IsWindows) { "code-intel.exe" } else { "code-intel" }
-          $binary = Join-Path $payload (Join-Path "bin" $binaryName)
-          $staging = Join-Path $env:RUNNER_TEMP "code-intel-packaged-sentrux-staging"
-          $authority = Join-Path $env:RUNNER_TEMP "code-intel-packaged-sentrux-authority"
-          $finalName = "packaged-sentrux-$env:GITHUB_RUN_ID"
-          $manifestPath = Join-Path $payload (Join-Path "orchestration" "integrations.json")
-          New-Item -ItemType Directory -Force -Path $authority | Out-Null
-          & $binary run execute --repo $payload --out $staging --authority-root $authority --final-name $finalName --manifest $manifestPath --doctor-require-repowise false
-          if ($LASTEXITCODE -ne 0) { throw "packaged install run execute failed with exit ${LASTEXITCODE}" }
-
-          $repoName = (Get-Item -LiteralPath $payload).Name
-          $runRoot = Join-Path (Join-Path $authority $repoName) $finalName
-          $index = Join-Path $authority "index.json"
-          & $binary artifact index --artifact-root $authority --output $index --operation rebuild
-          if ($LASTEXITCODE -ne 0) { throw "packaged Sentrux artifact index validation failed" }
-          $marker = Get-Content -Raw -LiteralPath (Join-Path $runRoot "run-complete.json") | ConvertFrom-Json
-          if ($marker.schema -ne "code-intel-run-commit.v1") { throw "packaged run completion marker is invalid" }
-          $manifest = Get-Content -Raw -LiteralPath (Join-Path $runRoot ($marker.manifest.path -replace '/', [IO.Path]::DirectorySeparatorChar)) | ConvertFrom-Json
-          if ($manifest.schema -ne "code-intel-run-manifest.v1" -or $manifest.outcome -ne "completed") { throw "packaged run manifest is not completed" }
-          if ($manifest.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged marker and manifest snapshots differ" }
-          if ($manifest.nodes.'evidence.sentrux'.status -ne "succeeded" -or $manifest.nodes.'evidence.sentrux'.verdict -ne "pass") { throw "packaged Sentrux evidence node is not a passing verified result" }
-
-          $indexValue = Get-Content -Raw -LiteralPath $index | ConvertFrom-Json
-          $entry = @($indexValue.entries | Where-Object { $_.repo -eq $repoName -and $_.run -eq $finalName })
-          if ($entry.Count -ne 1) { throw "packaged run was not admitted exactly once by artifact index" }
-          if ($entry[0].outcome -ne "completed" -or $entry[0].snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged artifact index identity does not match completion marker" }
-          $refs = @($entry[0].artifactRefs)
-          if (@($refs | Where-Object { $_.type -eq "diagnosis.hospital" }).Count -ne 1) { throw "packaged run is missing its verified hospital report ref" }
-          $capabilityRefs = @($refs | Where-Object { $_.artifactSchema -eq "code-intel-sentrux-capability-artifact.v2" -and $_.type -eq "provider.sentrux.capability-artifact" })
-          if ($capabilityRefs.Count -eq 0) { throw "packaged run has no verified Sentrux capability refs" }
-          $matrix = Get-Content -Raw -LiteralPath (Join-Path $payload (Join-Path "orchestration" "sentrux-capability-matrix.v1.json")) | ConvertFrom-Json
-          $matrixById = @{}
-          foreach ($capability in @($matrix.capabilities)) { $matrixById[$capability.id] = $capability }
-          $observed = @{}
-          foreach ($ref in $capabilityRefs) {
-            if ($ref.path -ne "objects/sha256/$($ref.sha256)") { throw "packaged capability ref is not content-addressed: $($ref.path)" }
-            $payloadPath = Join-Path $runRoot ($ref.path -replace '/', [IO.Path]::DirectorySeparatorChar)
-            if (-not (Test-Path -LiteralPath $payloadPath -PathType Leaf)) { throw "packaged capability object is missing: $($ref.path)" }
-            if ((Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ref.sha256) { throw "packaged capability object digest mismatch: $($ref.path)" }
-            $capabilityPayload = Get-Content -Raw -LiteralPath $payloadPath | ConvertFrom-Json
-            if ($capabilityPayload.schema -ne "code-intel-sentrux-capability-artifact.v2" -or $capabilityPayload.snapshotIdentity -ne $marker.snapshotIdentity) { throw "packaged capability artifact is not snapshot-bound: $($ref.path)" }
-            if (-not $matrixById.ContainsKey($capabilityPayload.capabilityId)) { throw "packaged capability is absent from the matrix: $($capabilityPayload.capabilityId)" }
-            if ($matrixById[$capabilityPayload.capabilityId].operation -ne $capabilityPayload.operation) { throw "packaged capability operation disagrees with the matrix: $($capabilityPayload.capabilityId)" }
-            if ($observed.ContainsKey($capabilityPayload.capabilityId)) { throw "duplicate packaged capability artifact: $($capabilityPayload.capabilityId)" }
-            $observed[$capabilityPayload.capabilityId] = $capabilityPayload
-            if ($capabilityPayload.status -ne "succeeded" -and $null -eq $capabilityPayload.failure) { throw "packaged non-success capability has no explicit failure: $($capabilityPayload.capabilityId)" }
-          }
-          $required = @($matrix.capabilities | Where-Object { $_.requiredForRelease })
-          if ($required.Count -eq 0) { throw "capability matrix exposes no required capabilities" }
-          foreach ($capability in $required) {
-            $id = [string]$capability.id
-            if (-not $observed.ContainsKey($id)) { throw "packaged run is missing required Sentrux capability: $id" }
-            $payload = $observed[$id]
-            $mode = [string]$capability.executionMode
-            if ($mode -eq "automatic") {
-              if ($capability.currentState -eq "authoritative_automatic" -and $payload.status -ne "succeeded") { throw "packaged authoritative automatic capability did not succeed: $id ($($payload.status))" }
-              if ($capability.currentState -eq "automatic_degraded" -and $payload.status -notin @("succeeded", "degraded")) { throw "packaged degraded automatic capability did not produce an accepted result: $id ($($payload.status))" }
-              if ($capability.currentState -notin @("authoritative_automatic", "automatic_degraded")) { throw "packaged automatic capability has an unsupported matrix state: $id ($($capability.currentState))" }
-            }
-            elseif ($mode -in @("explicit_authority", "lifecycle_external")) {
-              if ($payload.status -ne "not_applicable") { throw "packaged explicit/lifecycle capability must be explicitly not_applicable: $id ($($payload.status))" }
-              if ($null -eq $payload.failure -or [string]::IsNullOrWhiteSpace([string]$payload.failure.kind)) { throw "packaged explicit/lifecycle capability has no failure reason: $id" }
-            }
-            else { throw "packaged capability has no recognized execution mode: $id ($mode)" }
-          }
-          Write-Host "Packaged Sentrux closure verified from committed refs: $($capabilityRefs.Count) capability refs; required=$($required.Count); matrix coverage=$($matrix.coverageStatus)"
-
-      - name: Assert PATH and CODE_INTEL_HOME persisted (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Import-Module ./legacy/tools/code-intel-platform.psm1 -Force
-          $binDir = (Get-CodeIntelBinDir -Platform windows).TrimEnd('\')
-          $codeIntelHome = [Environment]::GetEnvironmentVariable("CODE_INTEL_HOME", "User")
-          $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-          if ([string]::IsNullOrWhiteSpace($codeIntelHome)) {
-            throw "CODE_INTEL_HOME was not persisted to the Windows User environment scope after install."
-          }
-          $userPathParts = @($userPath -split [System.IO.Path]::PathSeparator | ForEach-Object { $_.TrimEnd('\') })
-          if ($userPathParts -notcontains $binDir) {
-            throw "User PATH does not contain the installed bin dir ($binDir). User PATH: $userPath"
-          }
-          Write-Host "OK: CODE_INTEL_HOME=$codeIntelHome persisted; $binDir on User PATH."
-
-      - name: Assert PATH and CODE_INTEL_HOME persisted (POSIX)
-        if: runner.os != 'Windows'
-        shell: pwsh
-        run: |
-          Import-Module ./legacy/tools/code-intel-platform.psm1 -Force
-          $platform = if ($IsMacOS) { "macos" } else { "linux" }
-          $shell = if ($IsMacOS) { "zsh" } else { "bash" }
-          $profileFile = if ($IsMacOS) { "$HOME/.zshrc" } else { "$HOME/.bashrc" }
-          # This is exactly the one-time manual step README/public-beta.md
-          # instruct a real user to run -- the installer deliberately does not
-          # auto-edit dotfiles. What we're proving here is that once a user
-          # does that documented step, a genuinely fresh interactive shell
-          # (not this job's own $env: block) actually picks up both vars.
-          Add-Content -Path $profileFile -Value 'source "$HOME/.config/code-intel/env.sh"'
-          $binDir = Get-CodeIntelBinDir -Platform $platform
-          $probe = 'echo "PATH=$PATH"; echo "CODE_INTEL_HOME=$CODE_INTEL_HOME"'
-          $output = & $shell -ic $probe 2>&1 | Out-String
-          Write-Host $output
-          if ($output -notmatch [regex]::Escape($binDir)) {
-            throw "A fresh interactive shell (after the documented profile edit) does not have the installed bin dir on PATH:`n$output"
-          }
-          if ($output -notmatch "CODE_INTEL_HOME=\S+") {
-            throw "A fresh interactive shell does not have CODE_INTEL_HOME set:`n$output"
-          }
-          Write-Host "OK: fresh $shell shell has both PATH and CODE_INTEL_HOME from the persisted profile."
-
-      - name: Hospital fail-closed contract tests
-        shell: pwsh
-        run: ./legacy/scripts/tests/test-hospital-trust-contract.ps1
+      - name: Packaged Sentrux capability closure
+        run: python .github/scripts/ci.py sentrux-closure --binary "${{ steps.install.outputs.release_bin }}/code-intel" --repo "${{ steps.install.outputs.release_root }}" --work "$RUNNER_TEMP/packaged-scan" --final-name "packaged-sentrux-$GITHUB_RUN_ID" --require-pass
 
       - name: Scoped Repowise manifest validator tests
         run: python ./test-scoped-repowise-validator.py
-
-      - name: Python 3.14 compatibility lane
-        shell: pwsh
-        run: ./legacy/scripts/tests/test-python314-pon-compatibility.ps1
-
-      - name: Multi-agent merge queue contract
-        shell: pwsh
-        run: ./legacy/scripts/tests/test-multi-agent-merge-queue.ps1
-
-      - name: Pipeline smoke
-        shell: pwsh
-        run: ./legacy/scripts/tests/test-code-intel-pipeline.ps1 -RepoPath . -SkipRepowise -AllowGraphMissing -Mode normal
-
-      - name: Hardcoded path scan
-        shell: pwsh
-        run: |
-          $binary = if ($IsWindows) { "./target/release/code-intel.exe" } else { "./target/release/code-intel" }
-          & $binary lint hardcoded-paths
 
       - name: Upload non-publishing release dist artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -1035,6 +240,11 @@ jobs:
       contents: read
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
       - name: Download non-publishing release dist artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -1043,30 +253,4 @@ jobs:
           merge-multiple: true
 
       - name: Verify flat release inventory and real checksums
-        shell: pwsh
-        run: |
-          $tag = "v0.0.0-smoketest"
-          $entries = @(Get-ChildItem -LiteralPath dist -Force)
-          if ($entries.Count -ne 9 -or @($entries | Where-Object { $_.PSIsContainer }).Count -ne 0) {
-            throw "Downloaded release inventory must be exactly nine flat ZIP/checksum/manifest files."
-          }
-          foreach ($platform in @("windows", "macos", "linux")) {
-            $zip = "dist/code-intel-pipeline-$tag-$platform.zip"
-            foreach ($path in @($zip, "$zip.sha256", "$zip.release-manifest.json")) {
-              if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-                throw "Roundtrip release asset is missing: $path"
-              }
-            }
-            # Reuse the release publish gate's byte-derived sidecar check.
-            $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
-            $sidecar = (Get-Content -Raw -LiteralPath "$zip.sha256").Trim()
-            $expected = "$hash *$(Split-Path -Leaf $zip)"
-            if ($sidecar -cne $expected) {
-              throw "Checksum sidecar mismatch for ${zip}: expected '$expected', found '$sidecar'."
-            }
-            $manifest = Get-Content -Raw -LiteralPath "$zip.release-manifest.json" | ConvertFrom-Json
-            if ($manifest.schema -cne "code-intel-release-manifest.v1" -or $manifest.tag -cne $tag -or $manifest.commit -cne $env:GITHUB_SHA -or $manifest.zipSha256 -cne $hash) {
-              throw "Roundtrip release manifest identity/digest mismatch for ${zip}."
-            }
-            Write-Host "Verified flat roundtrip asset: $zip sha256=$hash commit=$($manifest.commit)"
-          }
+        run: python3 .github/scripts/ci.py verify-inventory --dir dist --tag v0.0.0-smoketest --commit "$GITHUB_SHA"

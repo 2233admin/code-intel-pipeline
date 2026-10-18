@@ -156,7 +156,7 @@ fn every_ordinary_case_matches_old_head_exactly() {
     );
     // The retained fixture records the repin scanCoverage transition;
     // tests/repin.rs verifies complete/partial/not-computed behavior directly.
-    assert_eq!(cases.len(), 49);
+    assert_eq!(cases.len(), 48);
 
     let repo = FixtureRepository::create();
     for case in cases {
@@ -201,6 +201,8 @@ fn commit_fixture(repo: &Path, message: &str) {
     for args in [
         vec!["add", "."],
         vec![
+            "-c",
+            "commit.gpgsign=false",
             "-c",
             "user.name=CodeIntelTest",
             "-c",

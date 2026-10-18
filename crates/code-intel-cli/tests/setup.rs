@@ -169,14 +169,17 @@ fn installs_binary_and_skill_then_a_second_run_changes_nothing() {
 fn shell_profiles_source_env_once_and_existing_content_survives() {
     let fixture = Fixture::new("profiles");
     fs::write(fixture.home().join(".bashrc"), "alias ll='ls -l'").unwrap();
+    let mut bin = String::new();
     for _ in 0..2 {
         let (output, value) = fixture.setup(&["--skip-doctor"]);
         assert_eq!(output.status.code(), Some(0), "{value:#}");
+        bin = value["paths"]["bin"].as_str().unwrap().to_string();
     }
+    // The data root differs per OS (macOS: Library/Application Support).
     let env_sh = fixture.home().join(".config/code-intel/env.sh");
     let body = fs::read_to_string(&env_sh).unwrap();
     assert!(body.contains("export CODE_INTEL_HOME="), "{body}");
-    assert!(body.contains(".local/share/code-intel/bin"), "{body}");
+    assert!(body.contains(&bin), "{body}");
     let line = format!(". \"{}\"", env_sh.display());
     let profile = fs::read_to_string(fixture.home().join(".profile")).unwrap();
     assert_eq!(profile.matches(&line).count(), 1, "{profile}");
@@ -198,11 +201,7 @@ fn shell_profiles_source_env_once_and_existing_content_survives() {
         .output()
         .unwrap();
     let path = String::from_utf8(shell.stdout).unwrap();
-    assert_eq!(
-        path.matches(".local/share/code-intel/bin").count(),
-        1,
-        "{path}"
-    );
+    assert_eq!(path.matches(bin.as_str()).count(), 1, "{path}");
 }
 
 #[cfg(unix)]
@@ -288,4 +287,26 @@ fn usage_errors_exit_65_without_touching_the_home() {
     }
     let leftovers: Vec<_> = fs::read_dir(fixture.home()).unwrap().collect();
     assert!(leftovers.is_empty(), "{leftovers:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_canonical_skill_is_replaced_by_a_real_copy() {
+    let fixture = Fixture::new("canonical-link");
+    let skills = fixture.home().join(".agents/skills");
+    fs::create_dir_all(&skills).unwrap();
+    let canonical = skills.join("code-intel-pipeline");
+    std::os::unix::fs::symlink(
+        fixture.root.join("release/skills/code-intel-pipeline"),
+        &canonical,
+    )
+    .unwrap();
+    let (output, value) = fixture.setup(&["--skip-doctor", "--no-modify-path"]);
+    assert_eq!(output.status.code(), Some(0), "{value:#}");
+    assert_eq!(
+        status(&Fixture::statuses(&value), "skill:source"),
+        "installed"
+    );
+    let metadata = fs::symlink_metadata(&canonical).unwrap();
+    assert!(metadata.is_dir() && !metadata.file_type().is_symlink());
 }

@@ -36,10 +36,6 @@ Use this benchmark before promoting a local skill into a shared or published pac
 
 ## Local Check
 
-Run the lightweight benchmark contract check before changing or publishing `skills/code-intel-pipeline/SKILL.md`:
-
-```powershell
-.\legacy/scripts/tests/test-skill-development-benchmark.ps1 -RepoPath .
-```
+Before changing or publishing `skills/code-intel-pipeline/SKILL.md`, run `cargo test -p code-intel --test internalization_record`; it checks this benchmark's criteria.
 
 This check does not run `yao-meta-skill`. It verifies that Code Intel has internalized the benchmark boundaries and required quality surfaces.

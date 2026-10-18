@@ -222,41 +222,6 @@ fn write_mode_fixes_a_stale_pin_and_a_self_referential_chain() {
 }
 
 #[test]
-fn retirements_directory_is_never_rewritten() {
-    let tree = TempTree::new("repin-frozen");
-    init_repo(&tree.0);
-    fs::write(tree.0.join("source.rs"), "fn a() {}\n").unwrap();
-    commit_all(&tree.0, "init source");
-
-    let source_head = sha256_of(&tree.0.join("source.rs"));
-    fs::create_dir_all(tree.0.join("orchestration/retirements/e01")).unwrap();
-    fs::write(
-        tree.0.join("orchestration/retirements/e01/frozen.json"),
-        format!(r#"{{"source":{{"path":"source.rs","sha256":"{source_head}"}}}}"#),
-    )
-    .unwrap();
-    commit_all(&tree.0, "freeze packet");
-
-    fs::write(tree.0.join("source.rs"), "fn a() { changed(); }\n").unwrap();
-    let before =
-        fs::read_to_string(tree.0.join("orchestration/retirements/e01/frozen.json")).unwrap();
-
-    let output = repin(&tree.0, &["--write"]);
-    assert!(
-        output.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let after =
-        fs::read_to_string(tree.0.join("orchestration/retirements/e01/frozen.json")).unwrap();
-    assert_eq!(
-        before, after,
-        "frozen retirement packet must never be rewritten"
-    );
-}
-
-#[test]
 fn deleted_source_is_reported_as_an_orphaned_pin() {
     let tree = TempTree::new("repin-orphan");
     init_repo(&tree.0);

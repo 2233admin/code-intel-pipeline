@@ -15,13 +15,9 @@ output before publication. Presence, readiness, conformance, and admissibility
 are separate fields. Doctor never emits engineering facts and never claims
 provider admissibility.
 
-`legacy/check-code-intel-tools.ps1` is a thin forwarder onto that subcommand,
-retained for the installer and rollback paths (T3, issue #48). It no longer
-computes anything: a missing binary is reported as a `code-intel binary` entry
-in `missing` rather than as a crash, so installers can keep reporting their own
-checks. Because there is now one probe implementation instead of a script plus
-an in-process fallback, the kernel path needs no `pwsh` and answers identically
-on every platform.
+There is one probe implementation, in-process in the compiled CLI: a missing binary
+is reported as a `code-intel binary` entry in `missing` rather than as a crash, and the
+answer is identical on every platform.
 
 Missing or forged Artifact Refs, invalid bootstrap JSON, or an unreadable
 manifest fail as contract/runtime errors. Missing tools, nonconforming present

@@ -120,7 +120,7 @@ forwarding block, `test-ps1-rust-parity.ps1`, `test-transactional-publication.ps
 `test-runtime-ci-hospital-pet.ps1`, `test-code-evidence-layer.ps1`,
 `Invoke-NativeRetrievalBenchmark.ps1`, `Invoke-CccSliceBenchmark.ps1`,
 `Invoke-CodeEvidenceABTest.ps1`, `ci.yml` (both self-scan jobs),
-`release.yml`, and `orchestration/code-intel-project-conformance-policy.v1.json`
+`release.yml`, and `orchestration/code-intel-project-conformance-policy.v1.json` (since deleted, #450)
 — had the argument dropped too. `legacy/scripts/tests/test-github-solution-research.ps1`
 was **not** touched: it exercises `Invoke-GitHubSolutionResearch.ps1`'s own,
 unrelated `-SkipGitHubResearch` switch, a same-name flag on a different

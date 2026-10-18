@@ -24,15 +24,12 @@ content="".join(
 ),
 ```
 
-**Self-healing:** `legacy/install-code-intel-pipeline.ps1` applies this patch
-idempotently on every run (`Repair-RepowiseThinkingBlockPatch`, reported as
-`repowise-thinking-patch` in the INSTALL output). After any
-`uv tool upgrade repowise`, just re-run the installer. Symptom of the patch
-being lost: docs runs exit 0 with `total_pages=0` and
+**Check after upgrades:** after any `uv tool upgrade repowise`, re-run the
+verification below. Symptom of the patch being lost: docs runs exit 0 with `total_pages=0` and
 `page_generation_failed error='ThinkingBlock' object has no attribute 'text'`
 in the log. Verify with:
 
-```powershell
+```bash
 rg "ThinkingBlock|getattr\(block|for block in response" "$env:APPDATA\uv\tools\repowise\Lib\site-packages\repowise\core\providers\llm\anthropic.py"
 ```
 
