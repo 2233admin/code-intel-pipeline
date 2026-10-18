@@ -53,7 +53,7 @@ non-repository-iteration publications never enter the catalog.
 | View | Content | Used by |
 |---|---|---|
 | `artifact-catalog` v1 | `(artifactSchema, type)` per ref | contract filter, `availableArtifactTypes` |
-| `lexical-content` v1 | lowercased UTF-8 (lossy) content per ref | `contains` matching |
+| `lexical-content` v1 | lowercased UTF-8 (lossy) content per ref, derived lazily for refs a query reaches | `contains` matching |
 
 `ViewKey = sha256(view name, view version, snapshot identity, then for each ref in order:
 artifactSchema, type, path, sha256, consumedSnapshotIdentity)`. Checkout freshness is not part of

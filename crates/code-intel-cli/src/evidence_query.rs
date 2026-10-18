@@ -197,14 +197,9 @@ pub(crate) fn execute(
     // Views are re-derived only when the verified refs change; verification
     // itself already ran in `committed_evidence::load` on this call.
     let catalog = index.artifact_catalog(snapshot_identity, &evidence.refs);
-    let lexical = needle.as_ref().map(|_| {
-        let contents = evidence
-            .verified
-            .iter()
-            .map(|verified| verified.bytes())
-            .collect::<Vec<_>>();
-        index.lexical_content(snapshot_identity, &evidence.refs, &contents)
-    });
+    let lexical = needle
+        .as_ref()
+        .map(|_| index.lexical_content(snapshot_identity, &evidence.refs));
     let available_artifact_types = catalog
         .contracts
         .iter()
@@ -232,7 +227,10 @@ pub(crate) fn execute(
         }
         contract_matches += 1;
         if let (Some(needle), Some(lexical)) = (needle.as_ref(), lexical.as_ref()) {
-            if !lexical.lowered[position].contains(needle.as_str()) {
+            if !lexical
+                .lowered(position, verified.bytes())
+                .contains(needle.as_str())
+            {
                 continue;
             }
         }

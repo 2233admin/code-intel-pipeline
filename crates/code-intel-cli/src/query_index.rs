@@ -8,7 +8,7 @@
 //! Current-checkout freshness is deliberately not part of the key.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use serde_json::Value;
 
@@ -18,7 +18,8 @@ use crate::capability::sha256_hex;
 pub(crate) enum ViewKind {
     /// `(artifactSchema, type)` per ref, in ref order.
     ArtifactCatalog,
-    /// Lowercased UTF-8 (lossy) content per ref, in ref order.
+    /// Lowercased UTF-8 (lossy) content per ref, in ref order, derived lazily
+    /// for the refs a query actually reaches.
     LexicalContent,
 }
 
@@ -75,7 +76,16 @@ pub(crate) struct ArtifactCatalogView {
 
 #[derive(Debug)]
 pub(crate) struct LexicalContentView {
-    pub(crate) lowered: Vec<String>,
+    lowered: Vec<OnceLock<String>>,
+}
+
+impl LexicalContentView {
+    /// The lowercased text of the ref at `position`. `bytes` must be that
+    /// ref's verified content; the view key binds its digest, so every
+    /// caller holding the same key passes identical bytes.
+    pub(crate) fn lowered(&self, position: usize, bytes: &[u8]) -> &str {
+        self.lowered[position].get_or_init(|| String::from_utf8_lossy(bytes).to_lowercase())
+    }
 }
 
 #[derive(Debug)]
@@ -124,17 +134,13 @@ impl QueryIndex {
         &self,
         snapshot_identity: &str,
         refs: &[Value],
-        contents: &[&[u8]],
     ) -> Arc<LexicalContentView> {
         let key = ViewKey::new(ViewKind::LexicalContent, snapshot_identity, refs);
         if let Some(View::LexicalContent(view)) = self.cached(ViewKind::LexicalContent, &key) {
             return view;
         }
         let view = Arc::new(LexicalContentView {
-            lowered: contents
-                .iter()
-                .map(|bytes| String::from_utf8_lossy(bytes).to_lowercase())
-                .collect(),
+            lowered: refs.iter().map(|_| OnceLock::new()).collect(),
         });
         self.store(key, View::LexicalContent(view.clone()));
         view
@@ -234,20 +240,25 @@ mod tests {
     #[test]
     fn an_unchanged_key_reuses_the_view_and_a_changed_one_rebuilds() {
         let index = QueryIndex::default();
-        let contents: [&[u8]; 2] = [b"Alpha", b"BETA"];
-        let first = index.lexical_content(SNAPSHOT, &refs(), &contents);
-        assert_eq!(first.lowered, ["alpha", "beta"]);
-        let again = index.lexical_content(SNAPSHOT, &refs(), &contents);
+        let first = index.lexical_content(SNAPSHOT, &refs());
+        assert_eq!(first.lowered(1, b"BETA"), "beta");
+        assert!(
+            first.lowered[0].get().is_none(),
+            "only refs a query reaches are derived"
+        );
+        let again = index.lexical_content(SNAPSHOT, &refs());
         assert!(
             Arc::ptr_eq(&first, &again),
             "identical key must reuse the view"
         );
+        assert_eq!(again.lowered[1].get().map(String::as_str), Some("beta"));
 
         let mut changed = refs();
         changed[0]["sha256"] = json!("4".repeat(64));
-        let rebuilt = index.lexical_content(SNAPSHOT, &changed, &[b"Gamma", b"BETA"]);
+        let rebuilt = index.lexical_content(SNAPSHOT, &changed);
         assert!(!Arc::ptr_eq(&first, &rebuilt));
-        assert_eq!(rebuilt.lowered, ["gamma", "beta"]);
+        assert!(rebuilt.lowered[1].get().is_none());
+        assert_eq!(rebuilt.lowered(0, b"Gamma"), "gamma");
     }
 
     #[test]
