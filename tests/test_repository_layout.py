@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import unittest
@@ -62,6 +63,21 @@ class RepositoryLayoutTests(unittest.TestCase):
                 checkout_count = text.count("uses: actions/checkout@")
                 self.assertGreater(checkout_count, 0)
                 self.assertEqual(text.count("fetch-depth: 0"), checkout_count)
+
+    def test_shared_mcp_config_has_no_machine_specific_paths(self) -> None:
+        # Hosts (Claude Code, OMP, Codex) import the root `.mcp.json` as-is,
+        # so a drive-letter or home-directory argument breaks every server on
+        # any machine but the author's (#446). Server arguments must be
+        # repository-relative or come from the host's working directory.
+        config = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
+        absolute = re.compile(r"^(?:[A-Za-z]:[\\/]|/|~)")
+        offenders = [
+            f"{name}: {arg}"
+            for name, server in config["mcpServers"].items()
+            for arg in [server.get("command", ""), *server.get("args", [])]
+            if isinstance(arg, str) and absolute.match(arg)
+        ]
+        self.assertEqual(offenders, [], "machine-specific paths in .mcp.json")
 
     def test_no_committed_merge_conflict_markers(self) -> None:
         # A merge/rebase conflict resolved by committing the raw markers
