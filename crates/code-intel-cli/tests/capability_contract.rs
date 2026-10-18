@@ -4,7 +4,8 @@
 //! registry digest pairing, envelope fixtures, and cross-envelope coherence.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+use std::sync::OnceLock;
 
 use serde_json::{json, Value};
 
@@ -58,197 +59,18 @@ fn string_list<'a>(value: &'a Value, label: &str) -> Vec<&'a str> {
         .collect()
 }
 
-fn is_sha256(value: &Value) -> bool {
-    value
-        .as_str()
-        .is_some_and(|text| text.len() == 64 && text.bytes().all(|byte| byte.is_ascii_hexdigit()))
-}
-
-fn closed_object(value: &Value, required: &[&str]) -> bool {
-    let Some(object) = value.as_object() else {
-        return false;
-    };
-    required.iter().all(|key| object.contains_key(*key))
-        && object.keys().all(|key| required.contains(&key.as_str()))
-}
-
-fn valid_effect_set(value: &Value) -> bool {
-    let Some(items) = value.as_array() else {
-        return false;
-    };
-    let mut seen = Vec::new();
-    items.iter().all(|item| {
-        let Some(effect) = item.as_str() else {
-            return false;
-        };
-        let known = EXPECTED_EFFECTS.contains(&effect);
-        let unique = !seen.contains(&effect);
-        seen.push(effect);
-        known && unique
-    })
-}
-
-fn valid_implementation(value: &Value) -> bool {
-    closed_object(value, &["id", "version", "toolchainDigests"])
-        && value["id"].as_str().is_some_and(|id| !id.is_empty())
-        && value["version"]
-            .as_str()
-            .is_some_and(|version| !version.is_empty())
-        && value["toolchainDigests"]
-            .as_array()
-            .is_some_and(|digests| digests.iter().all(is_sha256))
-}
-
-fn valid_artifact_ref(value: &Value) -> bool {
-    closed_object(
-        value,
-        &[
-            "schema",
-            "artifactSchema",
-            "type",
-            "path",
-            "sha256",
-            "consumedSnapshotIdentity",
-        ],
-    ) && value["schema"] == "code-intel-artifact-ref.v1"
-        && value["artifactSchema"]
-            .as_str()
-            .is_some_and(|schema| !schema.is_empty())
-        && value["type"].as_str().is_some_and(|kind| !kind.is_empty())
-        && value["path"].as_str().is_some_and(|path| !path.is_empty())
-        && is_sha256(&value["sha256"])
-        && (value["consumedSnapshotIdentity"].is_null()
-            || is_sha256(&value["consumedSnapshotIdentity"]))
-}
-
-fn valid_snapshot(value: &Value) -> bool {
-    closed_object(
-        value,
-        &[
-            "identity",
-            "repoIdentity",
-            "head",
-            "workingTreePolicy",
-            "scope",
-            "inputDigest",
-        ],
-    ) && is_sha256(&value["identity"])
-        && value["repoIdentity"]
-            .as_str()
-            .is_some_and(|identity| !identity.is_empty())
-        && value["head"].as_str().is_some_and(|head| !head.is_empty())
-        && matches!(
-            value["workingTreePolicy"].as_str(),
-            Some("head_only") | Some("explicit_overlay")
-        )
-        && value["scope"].as_array().is_some_and(|scope| {
-            scope
-                .iter()
-                .all(|item| item.as_str().is_some_and(|path| !path.is_empty()))
-        })
-        && is_sha256(&value["inputDigest"])
-}
-
+/// Validates against the canonical envelope schema itself, so a drifting
+/// schema cannot leave these tests green (#453 review).
 fn schema_accepts(value: &Value) -> bool {
-    match value["schema"].as_str() {
-        Some("code-intel-artifact-ref.v1") => valid_artifact_ref(value),
-        Some("code-intel-capability-declaration.v1") => {
-            closed_object(
-                value,
-                &[
-                    "schema",
-                    "id",
-                    "contractVersion",
-                    "implementation",
-                    "determinism",
-                    "allowedEffects",
-                    "dependencies",
-                ],
-            ) && valid_implementation(&value["implementation"])
-                && matches!(
-                    value["determinism"].as_str(),
-                    Some("deterministic") | Some("external_nondeterministic")
-                )
-                && valid_effect_set(&value["allowedEffects"])
-                && value["dependencies"].is_array()
-        }
-        Some("code-intel-capability-request.v1") => {
-            closed_object(
-                value,
-                &[
-                    "schema",
-                    "capability",
-                    "contractVersion",
-                    "implementation",
-                    "snapshot",
-                    "options",
-                    "inputs",
-                    "effectPolicy",
-                ],
-            ) && valid_implementation(&value["implementation"])
-                && valid_snapshot(&value["snapshot"])
-                && value["options"].is_object()
-                && value["inputs"]
-                    .as_array()
-                    .is_some_and(|inputs| inputs.iter().all(valid_artifact_ref))
-                && closed_object(&value["effectPolicy"], &["allowedEffects"])
-                && valid_effect_set(&value["effectPolicy"]["allowedEffects"])
-        }
-        Some("code-intel-capability-result.v1") => {
-            closed_object(
-                value,
-                &[
-                    "schema",
-                    "capability",
-                    "implementation",
-                    "snapshotIdentity",
-                    "status",
-                    "verdict",
-                    "domainVerdict",
-                    "exitCode",
-                    "determinism",
-                    "declaredEffects",
-                    "observedEffects",
-                    "cache",
-                    "artifacts",
-                    "diagnostics",
-                    "provenance",
-                ],
-            ) && valid_implementation(&value["implementation"])
-                && is_sha256(&value["snapshotIdentity"])
-                && valid_effect_set(&value["declaredEffects"])
-                && valid_effect_set(&value["observedEffects"])
-                && value["artifacts"]
-                    .as_array()
-                    .is_some_and(|artifacts| artifacts.iter().all(valid_artifact_ref))
-                && value["diagnostics"].is_array()
-                && result_outcome_allowed_by_schema(value)
-        }
-        _ => false,
-    }
-}
-
-fn result_outcome_allowed_by_schema(value: &Value) -> bool {
-    let status = value["status"].as_str();
-    let verdict = value["verdict"].as_str();
-    let domain = value["domainVerdict"].as_str();
-    let exit = value["exitCode"].as_u64();
-    matches!(
-        (status, verdict, domain, exit),
-        (
-            Some("completed"),
-            Some("pass") | Some("not_applicable"),
-            Some("pass") | Some("unknown") | Some("not_applicable"),
-            Some(0)
-        ) | (Some("completed"), Some("fail"), Some("fail"), Some(10))
-            | (Some("blocked"), Some("unknown"), Some("unknown"), Some(20))
-            | (
-                Some("failed"),
-                Some("unknown"),
-                Some("unknown"),
-                Some(64 | 65 | 69 | 70 | 74)
-            )
-    )
+    static VALIDATOR: OnceLock<jsonschema::Validator> = OnceLock::new();
+    VALIDATOR
+        .get_or_init(|| {
+            jsonschema::draft7::new(&read_json(
+                "orchestration/schemas/code-intel-capability-envelope.v1.schema.json",
+            ))
+            .expect("capability envelope schema compiles")
+        })
+        .is_valid(value)
 }
 
 fn fixture_set() -> (Value, Value, Value, Value) {
@@ -485,6 +307,12 @@ fn registry_toolchain_digest_evidence_pairs_and_matches_bytes() {
             assert!(
                 !Path::new(relative).is_absolute(),
                 "{id} toolchain evidence input must be repository-relative: {relative}"
+            );
+            assert!(
+                Path::new(relative)
+                    .components()
+                    .all(|part| matches!(part, Component::Normal(_) | Component::CurDir)),
+                "{id} toolchain evidence escapes the repository: {relative}"
             );
             let source = root.join(relative);
             assert!(
