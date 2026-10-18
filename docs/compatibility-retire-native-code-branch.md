@@ -1,5 +1,10 @@
 # E07 embedded Native Code Evidence retirement
 
+> **Superseded by [DR-0018](decisions/DR-0018-delete-powershell.md).** The packet generator, validator,
+> restorer and rollback-rehearsal snapshots this page names were deleted in #452. Remaining
+> PowerShell is deleted directly once a Rust test covers its live behavior; rollback is git history.
+> The packet's `status.json` stays as the historical record.
+
 E07 is restricted to the embedded Native Code Evidence function family and its direct
 `New-CodeEvidenceLayer` call in `legacy/run-code-intel.ps1`. It does not own the B08 algorithm, A09 DAG,
 publication, committed-run indexing, Hospital diagnosis, provider adapters, or other facade branches.

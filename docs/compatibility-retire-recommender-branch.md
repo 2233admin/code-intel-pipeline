@@ -1,5 +1,10 @@
 # E02 recommender branch retirement
 
+> **Superseded by [DR-0018](decisions/DR-0018-delete-powershell.md).** The packet generator, validator,
+> restorer and rollback-rehearsal snapshots this page names were deleted in #452. Remaining
+> PowerShell is deleted directly once a Rust test covers its live behavior; rollback is git history.
+> The packet's `status.json` stays as the historical record.
+
 E02 is limited to the duplicated inline workflow recommender in `legacy/run-code-intel.ps1` and its one
 legacy invocation path. The replacement is `advisory.workflow-recommend`; provider preflight,
 publication, CodeNexus, and every other facade branch are outside this ticket.

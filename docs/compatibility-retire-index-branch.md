@@ -1,5 +1,10 @@
 # E10 index branch retirement
 
+> **Superseded by [DR-0018](decisions/DR-0018-delete-powershell.md).** The packet generator, validator,
+> restorer and rollback-rehearsal snapshots this page names were deleted in #452. Remaining
+> PowerShell is deleted directly once a Rust test covers its live behavior; rollback is git history.
+> The packet's `status.json` stays as the historical record.
+
 E10 owns only the explicit legacy traversal below `function Read-JsonFile` in
 `legacy/update-code-intel-index.ps1`. Its stable branch id is
 `update-code-intel-index.legacy-compatibility-traversal`. A08 index semantics and E05 publication

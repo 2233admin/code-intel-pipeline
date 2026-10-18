@@ -225,7 +225,6 @@ jobs:
             "legacy/scripts/tests/test-scoped-repowise-security.ps1",
             "legacy/scripts/tests/test-scoped-repowise-worktree.ps1",
             "legacy/scripts/tests/test-skill-development-benchmark.ps1",
-            "legacy/scripts/tests/test-retirement-packets.ps1",
             "legacy/tools/New-BetaPackage.ps1",
             "legacy/tools/Test-BetaPackage.ps1"
           )
@@ -342,9 +341,15 @@ jobs:
         shell: pwsh
         run: .\legacy/scripts/tests/test-regression-fixes.ps1
 
-      - name: Compatibility retirement packets
+      # Both audits read the retained packet status files; they move out with
+      # the facade-finalize integration in #450 PR3.
+      - name: Retirement status audits
         shell: pwsh
-        run: .\legacy/scripts/tests/test-retirement-packets.ps1
+        run: |
+          .\legacy/tools/Test-FinalCommitmentReconciliation.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\legacy/scripts/tests/test-compatibility-facade-finalize.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Retirement boundary guard
         shell: pwsh
@@ -654,7 +659,6 @@ jobs:
             "legacy/scripts/tests/test-scoped-repowise-security.ps1",
             "legacy/scripts/tests/test-scoped-repowise-worktree.ps1",
             "legacy/scripts/tests/test-skill-development-benchmark.ps1",
-            "legacy/scripts/tests/test-retirement-packets.ps1",
             "legacy/tools/New-BetaPackage.ps1",
             "legacy/tools/Test-BetaPackage.ps1"
           )
