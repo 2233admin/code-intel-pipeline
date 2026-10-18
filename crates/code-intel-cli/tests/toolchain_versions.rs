@@ -1,15 +1,13 @@
 //! Binding tests for `orchestration/toolchain-versions.v1.json`.
 //!
 //! The manifest exists so the consistency self-check reads one format instead
-//! of five (TOML, pip, a shell variable inside a workflow, JSON, PowerShell).
+//! of several (TOML, pip, a Python constant, JSON).
 //! A second source of truth that can drift from the first is worse than no
 //! second source at all, so every entry is asserted against its real
 //! declaration sites here.
 //!
 //! `declaredIn[].pattern` is checked against EVERY match in the file, not the
-//! first: `ci.yml` installs ast-grep in two independent jobs, each with its own
-//! hardcoded version, and a change that updates one and forgets the other is
-//! exactly the drift this file is meant to catch. The pipeline's own entry is
+//! first, so a second literal that drifts from the first fails. The pipeline's own entry is
 //! deliberately a minimum: Cargo.toml owns the current version, while the
 //! fixture is a historical floor rather than a second release-edit site.
 
@@ -196,10 +194,9 @@ fn every_declared_version_matches_its_real_declaration_sites() {
 }
 
 #[test]
-fn a_file_that_declares_a_tool_twice_may_not_disagree_with_itself() {
-    // ci.yml installs ast-grep in both the windows job and the cross-platform
-    // matrix, each with its own `$version = '...'`. Updating one and forgetting
-    // the other is a silent split; this asserts the manifest sees both.
+fn ast_grep_has_a_single_declaration_site() {
+    // Every workflow installs ast-grep through one constant in
+    // .github/scripts/ci.py. A second literal would be a silent split.
     let doc = manifest();
     let root = repo_root();
     let ast_grep = tools(&doc)
@@ -207,15 +204,10 @@ fn a_file_that_declares_a_tool_twice_may_not_disagree_with_itself() {
         .find(|t| t["name"] == "ast-grep")
         .expect("ast-grep entry");
     let declaration = &ast_grep["declaredIn"][0];
-    let text =
-        fs::read_to_string(root.join(declaration["file"].as_str().unwrap())).expect("ci.yml");
-
+    let text = fs::read_to_string(root.join(declaration["file"].as_str().unwrap()))
+        .expect("declaration file");
     let found = find_all(&text, declaration["pattern"].as_str().unwrap());
-    assert!(
-        found.len() >= 2,
-        "expected ast-grep to be declared in more than one ci.yml job, found {} — if the duplicate was consolidated, simplify this test rather than deleting it",
-        found.len()
-    );
+    assert_eq!(found.len(), 1, "ast-grep must be declared exactly once: {found:?}");
 }
 
 #[test]

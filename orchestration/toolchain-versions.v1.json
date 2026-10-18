@@ -28,9 +28,9 @@
       "rationale": "Structural-edit engine. CI pins the version, verifies the download's sha256, and re-checks --version after install.",
       "declaredIn": [
         {
-          "file": ".github/workflows/ci.yml",
-          "pattern": "\\$version = '([^']+)'",
-          "note": "Two jobs install ast-grep independently; every match must agree."
+          "file": ".github/scripts/ci.py",
+          "pattern": "AST_GREP_VERSION = \"([^\"]+)\"",
+          "note": "Every workflow installs ast-grep through this one constant."
         }
       ],
       "probe": {
