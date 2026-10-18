@@ -73,7 +73,14 @@ jobs:
         run: cargo check --locked
 
       - name: Rust tests and core cross-contract gate
-        run: cargo test -p code-intel --locked --no-fail-fast
+        # Failing test names and panic lines become annotations, so the
+        # failure is readable from the checks API without the raw log.
+        run: |
+          if ! cargo test -p code-intel --locked --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/rust-tests.log"; then
+            failures=$(grep -E -A3 '^test .* FAILED$|panicked at' "$RUNNER_TEMP/rust-tests.log" | grep -v '^\s*at \|^--$' | head -80 | awk 'BEGIN{ORS="%0A"}{gsub(/%/,"%25");gsub(/\r/,"");print}')
+            echo "::error title=Rust test failures::${failures}"
+            exit 1
+          fi
 
       - name: Real ast-grep public CLI contract smokes
         run: |
@@ -147,7 +154,14 @@ jobs:
       # Windows, so that leg skips it.
       - name: Rust tests and core cross-contract gate
         if: runner.os != 'Windows'
-        run: cargo test -p code-intel --locked --no-fail-fast
+        # Failing test names and panic lines become annotations, so the
+        # failure is readable from the checks API without the raw log.
+        run: |
+          if ! cargo test -p code-intel --locked --no-fail-fast 2>&1 | tee "$RUNNER_TEMP/rust-tests.log"; then
+            failures=$(grep -E -A3 '^test .* FAILED$|panicked at' "$RUNNER_TEMP/rust-tests.log" | grep -v '^\s*at \|^--$' | head -80 | awk 'BEGIN{ORS="%0A"}{gsub(/%/,"%25");gsub(/\r/,"");print}')
+            echo "::error title=Rust test failures::${failures}"
+            exit 1
+          fi
 
       - name: Real ast-grep public CLI contract smokes
         run: |
