@@ -1260,7 +1260,7 @@ fn cwd_manifest_path() -> Option<PathBuf> {
         // unrelated repository that merely happens to have a file at
         // orchestration/integrations.json is not ambiguity — the operator
         // named a checkout and nothing here rivals it, which is exactly what
-        // test-integration-orchestration.ps1:243 has always asserted. Only a
+        // the deleted test-integration-orchestration.ps1 asserted. Only a
         // real code-intel registry is a rival, and that is the worktree case
         // this guard exists for.
         .find(|candidate| candidate.is_file() && is_safe_cwd_manifest(candidate))
@@ -1773,7 +1773,7 @@ mod tests {
 
     #[test]
     fn an_unrelated_cwd_manifest_never_rivals_code_intel_home() {
-        // Regression guard for test-integration-orchestration.ps1:243. A
+        // Regression guard ported from the deleted test-integration-orchestration.ps1. A
         // directory holding {"policy":{"name":"unrelated"},"integrations":[]}
         // is not a code-intel registry, so CODE_INTEL_HOME still wins and
         // nothing is ambiguous.

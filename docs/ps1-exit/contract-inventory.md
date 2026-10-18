@@ -148,7 +148,7 @@ has no equivalent split; every failure surfaces as exit `1`. This is a real,
 already-observable contract divergence, not a hypothetical one. Note this
 is distinct from — and not contradicted by — the fact that codes `10`/`70`
 (and the fuller `0,10,20,64,65,69,70,74` outcome matrix) **are** tested
-elsewhere: `legacy/scripts/tests/test-atomic-capability-contract.ps1` validates
+elsewhere: `crates/code-intel-cli/tests/capability_contract.rs` validates
 that vocabulary at the schema/contract level against
 `docs/adr/0009-atomic-capability-execution-model.md`, for the Rust side's
 own atomic-capability model. No test anywhere asserts a **live**

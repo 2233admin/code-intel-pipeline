@@ -1,7 +1,6 @@
-//! Port of `legacy/scripts/tests/test-atomic-capability-contract.ps1`.
+//! Port of the deleted `test-atomic-capability-contract.ps1` (DR-0018).
 //!
-//! The PowerShell host stays on disk so deleting it cannot trip the coupling
-//! ratchet. These tests are the authoritative lock for the contract document,
+//! These tests are the authoritative lock for the contract document,
 //! registry digest pairing, envelope fixtures, and cross-envelope coherence.
 
 use std::fs;
