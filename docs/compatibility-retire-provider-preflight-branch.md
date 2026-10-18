@@ -1,5 +1,10 @@
 # E03 provider-preflight branch retirement
 
+> **Superseded by [DR-0018](decisions/DR-0018-delete-powershell.md).** The packet generator, validator,
+> restorer and rollback-rehearsal snapshots this page names were deleted in #452. Remaining
+> PowerShell is deleted directly once a Rust test covers its live behavior; rollback is git history.
+> The packet's `status.json` stays as the historical record.
+
 E03 is restricted to the historical direct production call from `legacy/run-code-intel.ps1` to
 `test-code-intel-provider.ps1`. The current production route calls
 `legacy/Invoke-RepowiseProviderProbe.ps1`; the test-named script is a test-only compatibility wrapper.

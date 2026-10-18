@@ -341,6 +341,16 @@ jobs:
         shell: pwsh
         run: .\legacy/scripts/tests/test-regression-fixes.ps1
 
+      # Both audits read the retained packet status files; they move out with
+      # the facade-finalize integration in #450 PR3.
+      - name: Retirement status audits
+        shell: pwsh
+        run: |
+          .\legacy/tools/Test-FinalCommitmentReconciliation.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\legacy/scripts/tests/test-compatibility-facade-finalize.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Retirement boundary guard
         shell: pwsh
         run: |

@@ -1,5 +1,10 @@
 # E08 Hospital branch retirement
 
+> **Superseded by [DR-0018](decisions/DR-0018-delete-powershell.md).** The packet generator, validator,
+> restorer and rollback-rehearsal snapshots this page names were deleted in #452. Remaining
+> PowerShell is deleted directly once a Rust test covers its live behavior; rollback is git history.
+> The packet's `status.json` stays as the historical record.
+
 E08 owns only the embedded Hospital diagnosis/rendering function block and its invocation block in
 `legacy/run-code-intel.ps1`. Its stable branch id is
 `run-code-intel.hospital.embedded-diagnosis-render`; physical line numbers are not authoritative.
