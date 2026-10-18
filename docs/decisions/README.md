@@ -25,7 +25,7 @@ Enforcement: 谁在什么时机强制它（gate / 测试 / 评审规约），没
 | [DR-0003](DR-0003-manifest-discovery-precedence.md) | manifest 发现优先级与 probe 语义 | active |
 | [DR-0004](DR-0004-issue-claim-protocol.md) | issue 认领协议：开工先打 claimed label | active |
 | [DR-0005](DR-0005-integration-debt-ceiling.md) | 整合债上限：修复 PR 积压时停产新 feature | active |
-| [DR-0006](DR-0006-solo-operator-retirement-gate.md) | 已证死代码分支（E02/E03）可用静态不可达证明替代 30 天遥测窗口 | active |
+| [DR-0006](DR-0006-solo-operator-retirement-gate.md) | 已证死代码分支（E02/E03）可用静态不可达证明替代 30 天遥测窗口 | superseded by DR-0018 |
 | [DR-0007](DR-0007-github-issues-delivery-ssot.md) | GitHub Issues 是本仓库自身工作的交付任务状态权威 | active |
 | [DR-0008](DR-0008-evolution-degraded-classification.md) | sentrux.evolution 与 sentrux.what_if 同型病灶，evolution 分类改判 automatic_degraded | active |
 | [DR-0009](DR-0009-sentrux-scan-stub-field-honesty.md) | sentrux.scan/rescan 的伪造 stub 字段必须诚实化（null+status，非假 0），scan/rescan 提升为 authoritative_automatic | active |
@@ -35,5 +35,6 @@ Enforcement: 谁在什么时机强制它（gate / 测试 / 评审规约），没
 | [DR-0014](DR-0014-issue-convergence-verdict-rule.md) | 收敛 = 每条 open issue 都有 do/freeze/close 判决，不等于把 backlog 做完 | active |
 | [DR-0016](DR-0016-versioned-quality-admission.md) | 主人批准的版本化 admission：Quality 全量测量不变，aggregate 下降显式 advisory；其余硬门与证据准入不变，防护损失明确接受 | active |
 | [DR-0017](DR-0017-relation-port-gate-and-routing.md) | Relation Port：外部关系（CodeNexus/CodeGraph、LSP）不进入门禁判定；producer 按边合并，不全局择一；默认切换需实测胜出（ADR-0015） | active |
+| [DR-0018](DR-0018-delete-powershell.md) | 删除全部 PowerShell：分两步（先删非安装/发布路径，再 Rust 安装器后删余下）；不再走退役观察窗/审批，取代 PS 相关的退役闸流程与 DR-0006 | active |
 
 平行 session 开工前先扫本目录（一次 `ls docs/decisions/` + 读 README 表格，30 秒）。与已有决策相悖的工作，先开 issue 挑战决策本身，不要直接实现相反语义。

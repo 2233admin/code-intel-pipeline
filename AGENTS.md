@@ -26,15 +26,15 @@
 ## Language direction
 
 - Do not add new PowerShell scripts or new product behavior to existing `.ps1` files.
-- Treat `.ps1` files as retired compatibility surfaces. New production paths must not invoke
-  PowerShell; migrate the capability to Rust and keep only a tested forwarding shim when external
-  compatibility still requires it.
+- PowerShell is being deleted, not retired (DR-0018). Do not keep compatibility facades, forwarding
+  shims, parity harnesses or rollback fixtures for `.ps1` code; delete them. New production paths must
+  not invoke PowerShell.
 - Implement production CLI, orchestration, artifact, policy, and provider-boundary work in Rust.
 - MoonBit is an approved experimental language for small, isolated components. Keep experiments
   outside the production path until they prove artifact-contract parity, cross-platform builds,
   tests, and a measured advantage over the Rust implementation.
-- Retire a compatibility entry point only after its Rust replacement passes the existing contract
-  tests and release packaging checks; do not delete historical rollback fixtures in the same change.
+- Before deleting a `.ps1` file, move any still-live behavior it alone tests into a Rust test.
+  Installer and packaging scripts stay until the Rust installer passes install-smoke (DR-0018 phase 2).
 
 ## Reading the crate's warning count
 
@@ -66,6 +66,13 @@ Consequences:
   user-directory variables bare — in **prose or a comment**, not just in code —
   fails the scan, while the `$env:`-prefixed form passes. Always write the
   `$env:` form, including in comments and documentation.
+  On a host that cannot build the checkout (DR-0013 / #403) and whose installed
+  release predates the command (0.7.1 lacks it), do not substitute the retired
+  PowerShell script: CI runs the same scan on every PR in all three
+  `cross-platform-smoke` lanes ("Hardcoded path scan"). The first release that
+  ships the command is the prerelease `v0.7.2-beta.6`; installing it is not
+  compiling, but per the Skill's install rules it needs the owner's explicit
+  request (`--version v0.7.2-beta.6`), never an implicit prerelease (#405).
 - Editing a file pinned by `orchestration/**/*.json` (`toolchainDigests`, or a
   `{path, sha256}` pair) makes its contract test fail with a stale-digest
   assertion. Re-sync those pins **once, after every other edit**, by literal

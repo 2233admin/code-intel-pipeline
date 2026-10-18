@@ -14,7 +14,6 @@
       "command": "repowise",
       "args": [
         "mcp",
-        "D:/projects/code-intel-pipeline",
         "--transport",
         "stdio"
       ],
