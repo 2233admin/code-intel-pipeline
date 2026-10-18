@@ -3,7 +3,9 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 
-use crate::project_context::{EvidenceQuery, ProjectContext, ProjectError, ProjectSelector, Query};
+use crate::project_context::{
+    EvidenceQuery, ProjectContext, ProjectError, ProjectSelector, QueryIntent,
+};
 
 const USAGE: &str = "usage: query [<repo>] --kind evidence [--artifact-schema <schema>] [--type <artifact-type>] [--contains <text>] [--limit <1..100>] --json";
 const STATUS_USAGE: &str = "usage: status [<repo>] [--json]";
@@ -11,7 +13,7 @@ const STATUS_USAGE: &str = "usage: status [<repo>] [--json]";
 #[derive(Debug)]
 pub(super) struct ProjectQueryArgs {
     repo: PathBuf,
-    query: Query,
+    query: QueryIntent,
 }
 
 #[derive(Debug)]
@@ -84,7 +86,7 @@ pub(super) fn parse_project_query_args(raw: &[String]) -> Result<ProjectQueryArg
         .map_err(|error| error.message().to_string())?;
     Ok(ProjectQueryArgs {
         repo,
-        query: Query::Evidence(query),
+        query: QueryIntent::Evidence(query),
     })
 }
 

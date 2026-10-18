@@ -4,7 +4,6 @@ use serde_json::Value;
 
 use crate::change_impact::{self, ChangeImpactRequest, ChangeImpactResult, ImpactError};
 use crate::committed_evidence::{self, CommittedEvidence, EvidenceError};
-use crate::evidence_query::{self, EvidenceQueryRequest, EvidenceQueryResult, QueryError};
 
 /// Identity receipt for an admitted A08 repository iteration. There is no
 /// boolean authority switch: callers receive this only after the completed
@@ -69,21 +68,6 @@ impl CommittedAuthority {
         match self {
             Self::Receipt(receipt) => receipt,
         }
-    }
-}
-
-pub(crate) struct CommittedQueryResult {
-    result: EvidenceQueryResult,
-    authority: CommittedAuthority,
-}
-
-impl CommittedQueryResult {
-    pub(crate) fn value(&self) -> &Value {
-        self.result.value()
-    }
-
-    pub(crate) fn authority(&self) -> &CommittedAuthority {
-        &self.authority
     }
 }
 
@@ -164,21 +148,6 @@ impl ResumeInspection {
 pub(crate) struct CommittedEvidenceController;
 
 impl CommittedEvidenceController {
-    pub(crate) fn query(request: EvidenceQueryRequest) -> Result<CommittedQueryResult, QueryError> {
-        let (evidence, authority) = Self::open(&request.artifact_root, &request.repo)
-            .map_err(evidence_query::map_evidence_error)?;
-        Self::query_opened(request, evidence, authority)
-    }
-
-    pub(crate) fn query_opened(
-        request: EvidenceQueryRequest,
-        evidence: CommittedEvidence,
-        authority: CommittedAuthority,
-    ) -> Result<CommittedQueryResult, QueryError> {
-        let result = evidence_query::execute(request, &evidence)?;
-        Ok(CommittedQueryResult { result, authority })
-    }
-
     pub(crate) fn change_impact(
         request: ChangeImpactRequest,
     ) -> Result<CommittedImpactResult, ImpactError> {

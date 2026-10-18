@@ -63,6 +63,7 @@ mod ponytail_gate;
 mod project_context;
 mod project_orientation_benchmark;
 mod providers;
+mod query_index;
 mod repin;
 mod repowise_hooks;
 mod repowise_i18n_proxy;

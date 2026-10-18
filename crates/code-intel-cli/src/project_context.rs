@@ -6,7 +6,8 @@ use serde_json::{json, Value};
 
 use crate::committed_evidence::CommittedEvidence;
 use crate::committed_evidence_controller::{CommittedAuthority, CommittedEvidenceController};
-use crate::evidence_query::{EvidenceQueryRequest, MAX_LIMIT};
+use crate::evidence_query::{self, EvidenceQueryRequest, MAX_LIMIT};
+use crate::query_index::QueryIndex;
 use crate::{artifacts, authoritative_run, execution_policy};
 
 mod error;
@@ -98,6 +99,9 @@ pub(crate) struct ProjectContext {
     repo_path: PathBuf,
     repo: String,
     artifact_root: PathBuf,
+    /// Views derived from verified committed evidence; reused across queries
+    /// for as long as this context lives (the MCP server keeps one).
+    index: QueryIndex,
 }
 
 impl ProjectContext {
@@ -107,6 +111,7 @@ impl ProjectContext {
             repo_path,
             repo,
             artifact_root,
+            index: QueryIndex::default(),
         }
     }
 
@@ -139,6 +144,7 @@ impl ProjectContext {
             repo_path,
             repo,
             artifact_root,
+            index: QueryIndex::default(),
         })
     }
 
@@ -203,9 +209,9 @@ impl ProjectContext {
         })
     }
 
-    pub(crate) fn query(&self, query: Query) -> Result<QueryAnswer, ProjectError> {
+    pub(crate) fn query(&self, query: QueryIntent) -> Result<QueryAnswer, ProjectError> {
         match query {
-            Query::Evidence(query) => {
+            QueryIntent::Evidence(query) => {
                 let request = EvidenceQueryRequest::new(
                     self.artifact_root.clone(),
                     self.repo.clone(),
@@ -220,12 +226,11 @@ impl ProjectContext {
                     CommittedEvidenceController::open(&self.artifact_root, &self.repo)
                         .map_err(ProjectError::from)?;
                 self.verify_evidence(&evidence)?.require_verified()?;
-                let result =
-                    CommittedEvidenceController::query_opened(request, evidence, authority)
-                        .map_err(ProjectError::from)?;
+                let result = evidence_query::execute(request, &evidence, &self.index)
+                    .map_err(ProjectError::from)?;
                 Ok(QueryAnswer {
                     value: result.value().clone(),
-                    authority: result.authority().clone(),
+                    authority,
                 })
             }
         }
@@ -293,7 +298,7 @@ impl RunAnswer {
 }
 
 #[derive(Debug)]
-pub(crate) enum Query {
+pub(crate) enum QueryIntent {
     Evidence(EvidenceQuery),
 }
 
