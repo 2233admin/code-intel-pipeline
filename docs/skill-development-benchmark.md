@@ -36,6 +36,6 @@ Use this benchmark before promoting a local skill into a shared or published pac
 
 ## Local Check
 
-Before changing or publishing `skills/code-intel-pipeline/SKILL.md`, run `python3 -m unittest discover -s tests`, which includes the benchmark contract checks.
+Before changing or publishing `skills/code-intel-pipeline/SKILL.md`, run `cargo test -p code-intel --test internalization_record`; it checks this benchmark's criteria.
 
-These checks do not run `yao-meta-skill`. It verifies that Code Intel has internalized the benchmark boundaries and required quality surfaces.
+This check does not run `yao-meta-skill`. It verifies that Code Intel has internalized the benchmark boundaries and required quality surfaces.
