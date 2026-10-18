@@ -2,9 +2,9 @@
 
 Every language adapter is evaluated through one policy and one evidence report. A local test, upstream project, or implementation language cannot define weaker rules for itself.
 
-This is a component-level adapter gate. Project acceptance is owned by
-`docs/code-intel-project-conformance.md`, which composes this gate with corpus, parity-floor, and
-other executable conformance suites.
+This is a component-level adapter gate. Project acceptance is the CI workflow
+(`.github/workflows/ci.yml`); the PowerShell project-conformance composer that used to wrap this gate
+was deleted under DR-0018 (#450).
 
 ## Two independent axes
 

@@ -67,14 +67,13 @@
       "additionalProperties": false,
       "required": ["kind"],
       "properties": {
-        "kind": { "enum": ["command", "python-module", "npm-package"] },
+        "kind": { "enum": ["command", "python-module"] },
         "command": { "type": "string", "minLength": 1 },
         "expectedName": {
           "type": "string",
           "description": "Token the tool prints before its version, used to anchor the match so a banner's own version number cannot win."
         },
-        "module": { "type": "string", "minLength": 1 },
-        "package": { "type": "string", "minLength": 1 }
+        "module": { "type": "string", "minLength": 1 }
       },
       "allOf": [
         {
@@ -84,10 +83,6 @@
         {
           "if": { "properties": { "kind": { "const": "python-module" } } },
           "then": { "required": ["module"] }
-        },
-        {
-          "if": { "properties": { "kind": { "const": "npm-package" } } },
-          "then": { "required": ["package"] }
         }
       ]
     }

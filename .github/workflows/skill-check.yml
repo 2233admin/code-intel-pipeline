@@ -11,12 +11,8 @@ on:
       # #418: dependency-only PRs must exercise the real hashed YAML package.
       - "requirements-ci.txt"
       - ".github/workflows/**"
-      - "tests/test_merge_queue_guard.py"
       - "tests/test_yaml_frontmatter.py"
-      - "tests/fixtures/dependency_tools/**"
       - "orchestration/toolchain-versions.v1.json"
-      - "package.json"
-      - "package-lock.json"
       - "legacy/install-code-intel-pipeline.ps1"
   workflow_dispatch:
 

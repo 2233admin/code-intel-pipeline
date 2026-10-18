@@ -8,7 +8,6 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-POWERSHELL_TESTS = ROOT / "legacy" / "scripts" / "tests"
 
 # A line-start git conflict marker: `<<<<<<< [label]`, a bare `=======`
 # divider, `>>>>>>> [label]`, or the diff3 `||||||| [label]` ancestor marker.
@@ -42,8 +41,6 @@ class RepositoryLayoutTests(unittest.TestCase):
             if path.name.lower().startswith("test-")
         )
         self.assertEqual(root_tests, [])
-        self.assertTrue(POWERSHELL_TESTS.is_dir())
-        self.assertGreater(len(list(POWERSHELL_TESTS.glob("*.ps1"))), 20)
 
     def test_completed_planning_records_are_archived(self) -> None:
         archive = ROOT / "docs" / "archive" / "2026-07"

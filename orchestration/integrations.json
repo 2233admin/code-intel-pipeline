@@ -450,29 +450,6 @@
       "extensionPoint": "VCS providers may replace discovery only by preserving the versioned portable identity and overlay contract."
     },
     {
-      "id": "development.multi-agent-workspace-preflight",
-      "stage": "preflight",
-      "owner": "code-intel-pipeline",
-      "kind": "internal-policy-adapter",
-      "required": false,
-      "entrypoint": "legacy/Invoke-MultiAgentWorkspacePreflight.ps1",
-      "capabilities": [
-        "dirty_workspace_inventory",
-        "stable_inventory_digest",
-        "mutation_fail_closed",
-        "explicit_observation_only"
-      ],
-      "commands": {
-        "observe": "pwsh -NoProfile -File legacy/Invoke-MultiAgentWorkspacePreflight.ps1 -RepoPath '<repo-path>' -Intent observation -Json",
-        "admitMutation": "pwsh -NoProfile -File legacy/Invoke-MultiAgentWorkspacePreflight.ps1 -RepoPath '<repo-path>' -Intent mutation -Json"
-      },
-      "artifactContract": [
-        "orchestration/multi-agent-workspace-policy.v1.json"
-      ],
-      "effects": ["repo_read", "process_execute"],
-      "extensionPoint": "Multi-agent mutation must call admitMutation from the repository root. Ordinary code-intel analysis may use observation and never receives mutation authority from a dirty-root inventory."
-    },
-    {
       "id": "evidence.admissibility-validate",
       "stage": "preflight",
       "owner": "code-intel-pipeline",
@@ -1053,30 +1030,6 @@
         "compatibility-retirement-ticket.json"
       ],
       "extensionPoint": "E01 generates and validates one draft deletion ticket for one E00-approved legacy branch/call path. It cannot approve the subject, delete code, reroute calls, or execute rollback."
-    },
-    {
-      "id": "compatibility.facade-finalize",
-      "stage": "verification",
-      "owner": "code-intel-pipeline",
-      "kind": "verification-audit",
-      "required": false,
-      "entrypoint": "legacy/Invoke-CompatibilityFacadeFinalize.ps1",
-      "capabilities": [
-        "frozen_retirement_dependency_audit",
-        "retained_powershell_registry_owner_expiry_audit",
-        "public_mode_node_contract_audit",
-        "blocked_without_independent_approval"
-      ],
-      "commands": {
-        "audit": "pwsh -NoProfile -File legacy/Invoke-CompatibilityFacadeFinalize.ps1 -EvaluatedAt <unix-seconds> -OutFile <final-manifest.json> -Json"
-      },
-      "artifactContract": [
-        "orchestration/facade-finalize-policy.v1.json",
-        "orchestration/schemas/code-intel-compatibility-facade-finalize.v1.schema.json",
-        "compatibility-facade-finalize.json"
-      ],
-      "effects": ["local_write"],
-      "extensionPoint": "E06 audits the frozen E02-E10 retirement packets, every retained PowerShell surface, A00 parity and doctor/lite/normal/full node contracts. It cannot approve, delete, reroute, or sign independent verification."
     },
     {
       "id": "advisory.workflow-recommend",
@@ -1695,27 +1648,6 @@
       "extensionPoint": "B09 consumes only A04 admission Artifact Refs. Legacy PowerShell remains a bounded compatibility adapter until E08; Markdown and surgery-plan Markdown are rebuildable views and never diagnosis authority."
     },
     {
-      "id": "provider.runtime-inventory",
-      "stage": "preflight",
-      "owner": "code-intel-pipeline",
-      "kind": "internal-observer",
-      "required": false,
-      "entrypoint": "legacy/Invoke-ProviderRuntimeInventory.ps1",
-      "capabilities": [
-        "secret_free_channel_discovery",
-        "bounded_executable_verification",
-        "configuration_broker_presence"
-      ],
-      "commands": {
-        "inventory": "pwsh -NoProfile -File legacy/Invoke-ProviderRuntimeInventory.ps1 -Json > <inventory.json>"
-      },
-      "artifactContract": [
-        "orchestration/schemas/code-intel-model-channel-inventory-request.v1.schema.json",
-        "orchestration/schemas/code-intel-model-channel-inventory-result.v1.schema.json"
-      ],
-      "extensionPoint": "Inventory records only non-secret observations. Authentication values, endpoint URLs, prompts, tokens, and credential-store contents are outside this integration contract."
-    },
-    {
       "id": "provider.route-model-work",
       "stage": "semantic_memory",
       "owner": "code-intel-pipeline",
@@ -1776,82 +1708,6 @@
         "orchestration/schemas/code-intel-runtime-ci-summary.v1.schema.json"
       ],
       "extensionPoint": "Explicit local JSON only. Missing, partial, stale, snapshot-mismatched, or unobserved evidence remains unknown and cannot become green."
-    },
-    {
-      "id": "verification.code-intel-acceptance",
-      "stage": "verification",
-      "owner": "code-intel-pipeline",
-      "kind": "internal-policy-adapter",
-      "required": false,
-      "entrypoint": "legacy/Invoke-CodeIntelAcceptance.ps1",
-      "capabilities": [
-        "agent_targeted_plus_fast_acceptance",
-        "land_fast_acceptance",
-        "promote_full_acceptance",
-        "language_neutral_result_status"
-      ],
-      "commands": {
-        "agent": "pwsh -NoProfile -File legacy/Invoke-CodeIntelAcceptance.ps1 -Stage agent -TargetCheckJson '<target-check-json>' -Json",
-        "land": "pwsh -NoProfile -File legacy/Invoke-CodeIntelAcceptance.ps1 -Stage land -Json",
-        "promote": "pwsh -NoProfile -File legacy/Invoke-CodeIntelAcceptance.ps1 -Stage promote -Json"
-      },
-      "artifactContract": [
-        "orchestration/code-intel-acceptance-policy.v1.json",
-        "orchestration/schemas/code-intel-acceptance-result.v1.schema.json"
-      ],
-      "effects": ["repo_read", "process_execute"],
-      "extensionPoint": "Language adapters supply argv-only targeted checks at agent stage. Queue landing consumes land; production promotion remains a human decision and consumes full acceptance without granting promotion authority."
-    },
-    {
-      "id": "intelligence.compete-project-score",
-      "stage": "orientation",
-      "owner": "code-intel-pipeline",
-      "kind": "optional-external-provider-adapter",
-      "required": false,
-      "entrypoint": "legacy/Invoke-CompeteProjectScore.ps1",
-      "capabilities": [
-        "competitive_intelligence_task_preparation",
-        "upstream_compete_score_normalization",
-        "orca_agent_handoff"
-      ],
-      "commands": {
-        "prepare": "pwsh -NoProfile -File legacy/Invoke-CompeteProjectScore.ps1 -Action prepare -RepoPath '<repo-path>' -ArtifactRoot '<artifact-directory>' -CompeteRoot '<compete-root>'",
-        "score": "pwsh -NoProfile -File legacy/Invoke-CompeteProjectScore.ps1 -Action score -RepoPath '<repo-path>' -ArtifactRoot '<artifact-directory>' -CompeteRoot '<compete-root>' -CompeteDataPath '<compete-data-directory>'"
-      },
-      "artifactContract": [
-        "competitive-intelligence-request.json",
-        "competitive-intelligence-prompt.md",
-        "competitive-score.json"
-      ],
-      "effects": ["repo_read", "process_execute", "local_write"],
-      "extensionPoint": "Optional market/product intelligence only. Reuse upstream compete scoring, keep network Agent execution explicit, and never feed this advisory score into structural gates or hospital discharge decisions."
-    },
-    {
-      "id": "delivery.multi-agent-merge-queue",
-      "stage": "landing_coordination",
-      "owner": "code-intel-pipeline",
-      "kind": "optional-external-provider-adapter",
-      "required": false,
-      "entrypoint": "legacy/Invoke-MultiAgentMergeQueue.ps1",
-      "capabilities": [
-        "repository_local_queue_discovery",
-        "acceptance_bound_fifo_landing",
-        "direct_push_protection_observation",
-        "human_production_promotion_boundary"
-      ],
-      "commands": {
-        "status": "pwsh -NoProfile -File legacy/Invoke-MultiAgentMergeQueue.ps1 -Action status -RepoPath '<repo-path>' -Json",
-        "validate": "pwsh -NoProfile -File legacy/Invoke-MultiAgentMergeQueue.ps1 -Action validate -RepoPath '<repo-path>' -Json",
-        "land": "pwsh -NoProfile -File legacy/Invoke-MultiAgentMergeQueue.ps1 -Action land -RepoPath '<repo-path>' -AllowRepositoryMutation -AllowNetworkPush",
-        "reconcile": "pwsh -NoProfile -File legacy/Invoke-MultiAgentMergeQueue.ps1 -Action reconcile -RepoPath '<repo-path>'",
-        "history": "pwsh -NoProfile -File legacy/Invoke-MultiAgentMergeQueue.ps1 -Action history -RepoPath '<repo-path>'"
-      },
-      "artifactContract": [
-        "orchestration/multi-agent-merge-queue-policy.v1.json",
-        "orchestration/schemas/code-intel-multi-agent-merge-queue-status.v1.schema.json"
-      ],
-      "effects": ["repo_read", "process_execute", "repo_mutation", "network"],
-      "extensionPoint": "Optional one-machine landing provider only. Project acceptance remains authoritative; the adapter never installs, initializes, promotes, prunes, previews, deletes worktrees, or enables emergency push."
     },
     {
       "id": "artifact.index-committed-only",

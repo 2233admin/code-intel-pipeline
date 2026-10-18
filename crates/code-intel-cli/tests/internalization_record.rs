@@ -2283,51 +2283,6 @@ fn checked_schemas_accept_complete_record_and_both_projections() {
     );
 }
 
-#[test]
-fn claude_code_merge_queue_record_traces_optional_adapter_and_keeps_promotion_human_only() {
-    let record = advisory_candidate("claude-code-merge-queue");
-    assert_research_record_projects(&record, "internalization.claude-code-merge-queue-record");
-    assert_eq!(record["subject"]["license"]["id"], "MIT");
-    assert!(record["subject"]["source"]["revision"]
-        .as_str()
-        .unwrap()
-        .contains("e7a76958dbd3953b84f12abbc2e6bd755aafce53"));
-    assert_recomputable_sha(
-        &record,
-        "legacy/Invoke-MultiAgentMergeQueue.ps1",
-        "local-adapter-sha256",
-    );
-    // This record attests the pre-upgrade conformance source, not today's live test.
-    // Preserve its observed digest and audit the archived bytes without rewriting history.
-    assert_recomputable_sha(
-        &record,
-        "tests/fixtures/internalization/test-multi-agent-merge-queue.ps1.snapshot",
-        "local-conformance-sha256",
-    );
-    assert_recomputable_sha(
-        &record,
-        "orchestration/multi-agent-merge-queue-policy.v1.json",
-        "local-policy-sha256",
-    );
-    assert_recomputable_sha(
-        &record,
-        "docs/multi-agent-merge-queue.md",
-        "local-doc-sha256",
-    );
-    assert_operation_trace_exact(&record, &["delivery.multi-agent-merge-queue"]);
-    let integration = integration("delivery.multi-agent-merge-queue");
-    assert_eq!(integration["required"], false);
-    assert_eq!(integration["stage"], "landing_coordination");
-    assert!(integration["commands"].get("promote").is_none());
-    assert!(integration["commands"]["land"]
-        .as_str()
-        .unwrap()
-        .contains("-AllowNetworkPush"));
-    let evidence = serde_json::to_string(&record).unwrap();
-    assert!(evidence.contains("production promotion remains human-only"));
-    assert!(evidence.contains("gap:merge-queue:representative-cluster-throughput"));
-}
-
 fn assert_checked_schema(value: &Value, schema: &str) {
     // PowerShell's Test-Json schema engine is not reliable under concurrent
     // invocations from this parallel test binary. Keep the external validator
