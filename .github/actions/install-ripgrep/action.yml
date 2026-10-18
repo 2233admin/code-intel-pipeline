@@ -1,0 +1,55 @@
+name: Install ripgrep (pinned)
+description: >-
+  Installs the pinned ripgrep release from the official GitHub release,
+  verifies its SHA256 and reported version, and adds it to PATH. Single source
+  for every workflow (#440); do not reintroduce package-manager installs.
+runs:
+  using: composite
+  steps:
+    - name: Install ripgrep
+      shell: pwsh
+      run: |
+        $version = '15.2.0'
+        # DR-0002: the pin is a floor. An rg already on PATH at >= floor is
+        # accepted as-is; only a missing, older or unparseable rg is replaced.
+        $existing = Get-Command rg -ErrorAction SilentlyContinue
+        if ($existing) {
+          $reportedExisting = [regex]::Match((@(& $existing.Source --version))[0], '^ripgrep (\d+\.\d+\.\d+)').Groups[1].Value
+          if ($reportedExisting -and [version]$reportedExisting -ge [version]$version) {
+            Write-Host "ripgrep $reportedExisting already present at $($existing.Source) (floor $version)"
+            return
+          }
+          Write-Host "ripgrep at $($existing.Source) reports '$reportedExisting' (< floor $version or unparseable); installing pinned $version"
+        }
+        if ($IsWindows) {
+          $target = 'x86_64-pc-windows-msvc'
+          $ext = 'zip'
+          $expected = '71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5'
+        }
+        elseif ($IsMacOS) {
+          if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64') { throw 'install-ripgrep: only Apple Silicon macOS runners are pinned' }
+          $target = 'aarch64-apple-darwin'
+          $ext = 'tar.gz'
+          $expected = '3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4'
+        }
+        else {
+          $target = 'x86_64-unknown-linux-musl'
+          $ext = 'tar.gz'
+          $expected = '33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c'
+        }
+        $asset = "ripgrep-$version-$target.$ext"
+        $dir = Join-Path $env:RUNNER_TEMP 'ripgrep'
+        New-Item -ItemType Directory -Force $dir | Out-Null
+        $archive = Join-Path $dir $asset
+        Invoke-WebRequest -Uri "https://github.com/BurntSushi/ripgrep/releases/download/$version/$asset" -OutFile $archive -MaximumRetryCount 3 -RetryIntervalSec 5
+        $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -ne $expected) { throw "ripgrep artifact digest mismatch: $actual" }
+        if ($ext -eq 'zip') { Expand-Archive -LiteralPath $archive -DestinationPath $dir -Force }
+        else {
+          tar -xzf $archive -C $dir
+          if ($LASTEXITCODE -ne 0) { throw "ripgrep extraction failed: $LASTEXITCODE" }
+        }
+        $bin = Join-Path $dir "ripgrep-$version-$target"
+        Add-Content -Path $env:GITHUB_PATH -Value $bin
+        $reported = @(& (Join-Path $bin 'rg') --version)
+        if ($LASTEXITCODE -ne 0 -or [regex]::Match($reported[0], '^ripgrep (\S+)(?:\s|$)').Groups[1].Value -ne $version) { throw "ripgrep version mismatch: $reported" }
