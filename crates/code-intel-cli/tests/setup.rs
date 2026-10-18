@@ -170,17 +170,21 @@ fn shell_profiles_source_env_once_and_existing_content_survives() {
     let fixture = Fixture::new("profiles");
     fs::write(fixture.home().join(".bashrc"), "alias ll='ls -l'").unwrap();
     let mut bin = String::new();
+    let mut line = String::new();
     for _ in 0..2 {
         let (output, value) = fixture.setup(&["--skip-doctor"]);
         assert_eq!(output.status.code(), Some(0), "{value:#}");
         bin = value["paths"]["bin"].as_str().unwrap().to_string();
+        line = value["pathRefresh"].as_str().unwrap().to_string();
     }
     // The data root differs per OS (macOS: Library/Application Support).
     let env_sh = fixture.home().join(".config/code-intel/env.sh");
     let body = fs::read_to_string(&env_sh).unwrap();
     assert!(body.contains("export CODE_INTEL_HOME="), "{body}");
     assert!(body.contains(&bin), "{body}");
-    let line = format!(". \"{}\"", env_sh.display());
+    // Setup reports the exact line it writes; on macOS that path is the
+    // resolved /private/var form of the temp directory.
+    assert!(line.ends_with("/.config/code-intel/env.sh\""), "{line}");
     let profile = fs::read_to_string(fixture.home().join(".profile")).unwrap();
     assert_eq!(profile.matches(&line).count(), 1, "{profile}");
     let bashrc = fs::read_to_string(fixture.home().join(".bashrc")).unwrap();
