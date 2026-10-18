@@ -893,6 +893,13 @@ jobs:
           cargo test -p code-intel --test install_smoke --locked packaged_install_deploys_legacy_pipeline_entrypoint -- --ignored --nocapture
           if ($LASTEXITCODE -ne 0) { throw "packaged legacy-pipeline-entrypoint install smoke failed with exit ${LASTEXITCODE}" }
 
+          # #396 / DR-0001: an extracted package invoked by absolute path, with
+          # only git + rg on PATH (no Python, no PowerShell, bin dir not on
+          # PATH), must pass doctor bootstrap. Checkout topology always has
+          # target/ builds and Python, so only this gate sees the regression.
+          cargo test -p code-intel --test install_smoke --locked packaged_doctor_is_ready_without_python_pwsh_or_bin_on_path -- --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { throw "packaged python-free doctor smoke failed with exit ${LASTEXITCODE}" }
+
           # #419 / DR-0001: the packaged native owner must classify rc/post
           # reports before the compatibility installer can decide to acquire.
           cargo test -p code-intel --test installer_version_gate --locked packaged_install_preserves_repowise_python_version_floor -- --ignored --nocapture

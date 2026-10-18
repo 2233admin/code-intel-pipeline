@@ -41,9 +41,12 @@ pub(super) fn probe_tool(name: &str, required: bool, prefix: Option<&Path>) -> V
 pub(super) fn probe_python(prefix: Option<&Path>) -> Value {
     let found =
         tool_path::locate("python", prefix).or_else(|| tool_path::locate("python3", prefix));
+    // Observed, not required: the native core path executes no Python
+    // (#396). Repowise and other Python-based providers carry their own
+    // requiredness.
     json!({
         "name": "python",
-        "required": true,
+        "required": false,
         "found": found.is_some(),
         "source": found.as_deref().map(display).unwrap_or_default()
     })

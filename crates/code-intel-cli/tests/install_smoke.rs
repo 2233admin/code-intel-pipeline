@@ -201,3 +201,107 @@ fn packaged_install_runs_relocated_sentrux_shim() {
         "installed sentrux pro status missed a Tier line:\n{status_text}"
     );
 }
+
+/// PATH holding only the directories of `git` and `rg`: the minimal host the
+/// native core path claims to need (#396). Fails loudly if either directory
+/// also exposes Python or PowerShell, since the test would then prove nothing.
+fn git_and_rg_only_path() -> OsString {
+    let locate = |name: &str| -> Option<PathBuf> {
+        let exe = if cfg!(windows) {
+            format!("{name}.exe")
+        } else {
+            name.to_string()
+        };
+        env::split_paths(&env::var_os("PATH")?).find_map(|dir| {
+            let candidate = dir.join(&exe);
+            candidate.is_file().then_some(dir)
+        })
+    };
+    let dirs: Vec<PathBuf> = ["git", "rg"]
+        .iter()
+        .map(|tool| locate(tool).unwrap_or_else(|| panic!("{tool} must be on PATH for this smoke")))
+        .collect();
+    for dir in &dirs {
+        for forbidden in ["python", "python3", "pwsh"] {
+            let exe = if cfg!(windows) {
+                format!("{forbidden}.exe")
+            } else {
+                forbidden.to_string()
+            };
+            assert!(
+                !dir.join(&exe).is_file(),
+                "{} also provides {forbidden}; cannot build a python/pwsh-free PATH",
+                dir.display()
+            );
+        }
+    }
+    env::join_paths(dirs).expect("join git/rg PATH")
+}
+
+#[test]
+#[ignore = "DR-0001 topology gate; CI sets CODE_INTEL_SMOKE_* after packaged install"]
+fn packaged_doctor_is_ready_without_python_pwsh_or_bin_on_path() {
+    let bin = PathBuf::from(
+        env::var("CODE_INTEL_SMOKE_BIN")
+            .expect("CODE_INTEL_SMOKE_BIN must point at the installed bin directory"),
+    );
+    let binary = bin.join(if cfg!(windows) {
+        "code-intel.exe"
+    } else {
+        "code-intel"
+    });
+    assert!(
+        binary.is_file(),
+        "installed binary missing: {}",
+        binary.display()
+    );
+
+    let fixture = env::temp_dir().join(format!("code-intel-396-fixture-{}", std::process::id()));
+    fs::create_dir_all(&fixture).expect("create fixture repo");
+    fs::write(fixture.join("main.py"), "print('hi')\n").expect("write fixture source");
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(&fixture)
+            .status()
+            .expect("run git");
+        assert!(status.success(), "git {args:?} failed");
+    };
+    git(&["init", "-q"]);
+    git(&["add", "."]);
+    git(&[
+        "-c",
+        "user.name=smoke",
+        "-c",
+        "user.email=smoke@example.invalid",
+        "commit",
+        "-qm",
+        "fixture",
+    ]);
+
+    // Absolute-path invocation, bin directory NOT on PATH, no Python or
+    // PowerShell anywhere on PATH: the clean-package topology from #396.
+    let output = Command::new(&binary)
+        .args(["doctor", "bootstrap", "--repo-path"])
+        .arg(&fixture)
+        .args(["--no-require-repowise", "--json"])
+        .current_dir(&fixture)
+        .env("PATH", git_and_rg_only_path())
+        .env_remove("CODE_INTEL_HOME")
+        .output()
+        .unwrap_or_else(|error| panic!("launch {}: {error}", binary.display()));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|error| {
+        panic!(
+            "doctor did not emit JSON ({error}):\n{stdout}\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
+    let missing = report["missing"].as_array().cloned().unwrap_or_default();
+    assert!(
+        report["ok"] == true && missing.is_empty() && output.status.success(),
+        "packaged doctor must be ready with only git + rg (#396); exit {:?}, missing {missing:?}:\n{stdout}",
+        output.status.code()
+    );
+    let _ = fs::remove_dir_all(&fixture);
+}
