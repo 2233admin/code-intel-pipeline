@@ -7,16 +7,16 @@ The integration orchestration layer is the boundary for that change:
 ```text
 orchestration/integrations.json
 crates/code-intel-cli
-target/debug/code-intel.exe orchestrate
-target/debug/code-intel.exe provider
-target/debug/code-intel.exe route
+code-intel orchestrate
+code-intel provider
+code-intel route
 ```
 
 ## Greenfield Direction
 
 `spec.greenfield` is an optional `behavior_specification` provider-contract integration. The pipeline-owned adapter writes `greenfield-manifest.json` and `greenfield-plan.md`, then points Greenfield at a dedicated workspace whose useful handoff lives under `greenfield-workspace/output/` and `greenfield-workspace/provenance/`.
 
-Greenfield is currently a Claude Code plugin, so default Code Intel runs must not block on an interactive Claude session. Use `legacy/Invoke-GreenfieldSpecExtraction.ps1 -Analyze` only when the local machine has `claude` plus the Greenfield plugin installed and the operator intentionally wants the spec extraction pass.
+Greenfield is currently a Claude Code plugin, so default Code Intel runs must not block on an interactive Claude session. Run the spec extraction pass only when the local machine has `claude` plus the Greenfield plugin installed and the operator intentionally wants it.
 
 ## Rule
 
@@ -40,15 +40,15 @@ Do not call a new scanner, memory system, graph generator, or governance tool di
 
 Provider routing is separate from provider implementation.
 
-Use `target\debug\code-intel.exe provider` as the source of truth for provider operations, then expose route views through `target\debug\code-intel.exe route`:
+Use `code-intel provider` as the source of truth for provider operations, then expose route views through `code-intel route`:
 
-```powershell
-.\target\debug\code-intel.exe provider --action Validate --json
-.\target\debug\code-intel.exe provider --action List --json
-.\target\debug\code-intel.exe provider --action Plan --provider understand --operation graph --repo <repo-path> --json
-.\target\debug\code-intel.exe provider --action Plan --provider repowise --operation index --repo <repo-path> --json
-.\target\debug\code-intel.exe route --action Validate --json
-.\target\debug\code-intel.exe route --action List --json
+```bash
+.\code-intel provider --action Validate --json
+.\code-intel provider --action List --json
+.\code-intel provider --action Plan --provider understand --operation graph --repo <repo-path> --json
+.\code-intel provider --action Plan --provider repowise --operation index --repo <repo-path> --json
+.\code-intel route --action Validate --json
+.\code-intel route --action List --json
 ```
 
 Repowise and Understand-compatible graph operations share the `code-intel-provider-api.v1` schema: provider, operation, protocol, route, command template, artifact contract, requirement, status, source spec, and notes. Repowise routes live under `/api/providers/repowise/*`. Understand-compatible graph routes live under `/api/providers/understand/*`. Compatibility aliases such as `/scan`, `/lite`, `/doctor`, and `/understand` are allowed only as fallback surfaces. Future route-needing projects must add provider operations to this global provider layer first, then wire their implementation behind the route.
@@ -61,16 +61,15 @@ Repowise and Understand-compatible graph operations share the `code-intel-provid
 4. Put all CLI or provider quirks behind one adapter entrypoint.
 5. Run:
 
-```powershell
-cargo build -p code-intel
-.\target\debug\code-intel.exe orchestrate --action Validate
-.\target\debug\code-intel.exe provider --action Validate
-.\target\debug\code-intel.exe route --action Validate
-.\target\debug\code-intel.exe orchestrate --action Plan --json
+```bash
+.\code-intel orchestrate --action Validate
+.\code-intel provider --action Validate
+.\code-intel route --action Validate
+.\code-intel orchestrate --action Plan --json
 cargo test -p code-intel --bin code-intel -- orchestration providers
 ```
 
-6. Only then wire the adapter into the Rust runtime or a compatibility script such as `legacy/run-code-intel.ps1`, `legacy/check-code-intel-tools.ps1`, or `legacy/install-code-intel-pipeline.ps1`.
+6. Only then wire the adapter into the Rust runtime.
 
 ## Current Stages
 
@@ -98,22 +97,22 @@ Provider quota can disable model-backed docs. It must not disable index/status.
 
 `runtime.code-intel` and `runtime.code-nexus-lite` are real execution targets.
 
-`code-intel.exe orchestrate` is the preferred registry validator and plan reader. PowerShell scripts are allowed as stable Windows compatibility entrypoints, but they should not be treated as the source of truth when an equivalent Rust target owns the contract. The orchestration manifest must show the Rust crate first and any `.ps1` wrapper as compatibility.
+`code-intel orchestrate` is the registry validator and plan reader. The orchestration manifest must show the Rust crate as the source of truth.
 
 ## Sentrux Direction
 
 `structure.sentrux` is internal-first.
 
-The repo-owned lite core is the normal-operation fallback. A real `sentrux.exe` can accelerate or enrich output, but agent workflows should depend on `legacy/Invoke-SentruxAgentTool.ps1` and the artifact contract, not on a global Sentrux install.
+Agent workflows should depend on `code-intel sentrux` and the artifact contract, not on a global Sentrux install.
 
-Rust is the replacement target. The planned stable surface is `target\debug\code-intel.exe sentrux <scan|health|session_start|session_end|check_rules|test_gaps|what_if> <repo-path>`. Until that command is complete, the PS1 file is compatibility glue and known debt.
+The stable surface is `code-intel sentrux <dsm|scan|health|check|gate|check_rules|gate_save|hotspots> <repo-path>`.
 
 ## Graph Direction
 
 `graph.code-intel-understand` is the internal provider contract.
 
-It emits `.understand-anything/knowledge-graph.json` through `target\debug\code-intel.exe graph --repo <repo-path> --language zh --write --json`. External `/understand` is now `graph.understand-external`, a compatibility fallback for richer Claude-side passes or internal provider failure. Future graph providers should preserve the same `architecture_graph` stage and artifact contract.
+It emits `.understand-anything/knowledge-graph.json` through `code-intel graph --repo <repo-path> --language zh --write --json`. External `/understand` is now `graph.understand-external`, a compatibility fallback for richer Claude-side passes or internal provider failure. Future graph providers should preserve the same `architecture_graph` stage and artifact contract.
 
 ## Runner Direction
 
-`legacy/run-code-intel.ps1` is also compatibility glue. The replacement target is `target\debug\code-intel.exe run --repo <repo-path> --mode <mode>`, with report writing, hospital diagnosis, graph generation, Repowise, and Sentrux orchestration moved behind Rust modules registered in this manifest.
+The runner is `code-intel run <repo-path> --mode <mode>`, with report writing, hospital diagnosis, graph generation, Repowise, and Sentrux orchestration moved behind Rust modules registered in this manifest.

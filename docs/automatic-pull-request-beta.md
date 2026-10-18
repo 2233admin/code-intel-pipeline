@@ -1,6 +1,8 @@
 # Automatic pull request beta atom
 
-`legacy/Invoke-CodeIntelAutomaticPullRequest.ps1` is an optional execution atom. Ordinary Code Intel
+The automatic pull request executor is an optional execution atom with no `code-intel` command yet
+(the PowerShell executor was deleted, DR-0018). This document records the consent contract it must
+satisfy. Ordinary Code Intel
 scans, GitHub solution research, Hospital diagnosis, and workflow recommendations never invoke it.
 Finding a repairable problem is a proposal, not permission to edit a repository or create a pull
 request.
@@ -14,7 +16,7 @@ The atom is disabled unless every execution supplies all of the following:
    replay still returns `status=replay`, `questionRequired=false`;
 3. a one-time `code-intel-auto-pr-authorization.v1` document bound to that Decision Record;
 4. the expected Git HEAD and snapshot identity as separate command arguments;
-5. `-AllowRepositoryMutation` and `-AllowNetworkPrCreate`.
+5. explicit repository-mutation and network-PR-create permissions.
 
 The authorization is valid for exactly one current repository snapshot, one `owner/name`, one base
 branch, and one head branch. It expires, permits draft PRs only, and is consumed after successful
@@ -31,27 +33,6 @@ repository's pull requests instead of retrying the same authorization and riskin
 The snapshot identity is SHA-256 over UTF-8 text containing the v1 domain marker, lowercase HEAD,
 and the sorted output lines of `git status --porcelain=v1 --untracked-files=all`. This binds consent
 to tracked and untracked working-tree state without relying on a machine-specific path.
-
-## Example
-
-For the full proposal → decision → C07 record → executor sequence, prefer
-`legacy/Invoke-CodeIntelAutomaticPullRequestFlow.ps1`. The lower-level executor example below remains useful
-for hosts that already own the decision artifacts.
-
-```powershell
-./legacy/Invoke-CodeIntelAutomaticPullRequest.ps1 `
-  -RepoPath C:\src\project `
-  -AuthorizationPath C:\secure\auto-pr-authorization.json `
-  -ProposalPath C:\secure\auto-pr-proposal.json `
-  -DecisionStore C:\secure\decision-store `
-  -DecisionReplayQueryPath C:\secure\auto-pr-replay-query.json `
-  -CodeIntelCommand C:\tools\code-intel.exe `
-  -ExpectedHead <40-lowercase-hex> `
-  -ExpectedSnapshotIdentity <64-lowercase-hex> `
-  -AllowRepositoryMutation `
-  -AllowNetworkPrCreate `
-  -Json
-```
 
 The Pipeline's initial question only asks whether to enter the automatic-PR proposal flow. It never
 authorizes a concrete PR. After a fix branch and exact proposal exist, the caller must hash the

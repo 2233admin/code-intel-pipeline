@@ -26,17 +26,17 @@ copied.
 Generate the raw trace with Mindwalk when available, keeping it outside the repository and normal
 artifact publication directory:
 
-```powershell
+```bash
 mindwalk trace <codex-or-claude-session.jsonl> -o <private-trace.json>
 ```
 
 Then normalize and enrich it with Code Intel:
 
-```powershell
-target/debug/code-intel.exe provider session-adapt `
-  --repo <repo-path> `
-  --trace <private-trace.json> `
-  --hotspots <sentrux-hotspots.json> `
+```bash
+code-intel provider session-adapt \
+  --repo <repo-path> \
+  --trace <private-trace.json> \
+  --hotspots <sentrux-hotspots.json> \
   --out <session-evidence.json>
 ```
 
@@ -50,10 +50,10 @@ intentionally about committed state.
 
 To carry the normalized report into an authoritative run, opt in explicitly:
 
-```powershell
-target/debug/code-intel.exe run dag-coordinate `
-  --repo <repo-path> `
-  --out <run-staging-directory> `
+```bash
+code-intel run dag-coordinate \
+  --repo <repo-path> \
+  --out <run-staging-directory> \
   --session-evidence <session-evidence.json>
 ```
 

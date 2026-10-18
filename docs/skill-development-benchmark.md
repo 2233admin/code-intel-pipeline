@@ -36,10 +36,6 @@ Use this benchmark before promoting a local skill into a shared or published pac
 
 ## Local Check
 
-Run the lightweight benchmark contract check before changing or publishing `skills/code-intel-pipeline/SKILL.md`:
+Before changing or publishing `skills/code-intel-pipeline/SKILL.md`, run `python3 -m unittest discover -s tests`, which includes the benchmark contract checks.
 
-```powershell
-.\legacy/scripts/tests/test-skill-development-benchmark.ps1 -RepoPath .
-```
-
-This check does not run `yao-meta-skill`. It verifies that Code Intel has internalized the benchmark boundaries and required quality surfaces.
+These checks do not run `yao-meta-skill`. It verifies that Code Intel has internalized the benchmark boundaries and required quality surfaces.

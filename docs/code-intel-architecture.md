@@ -21,39 +21,23 @@ Artifact ownership and reader/writer boundaries are defined in `docs/artifact-da
    - `crates/code-intel-cli`: compiled `code-intel` CLI for integration orchestration, artifact resume, classify, and artifact doctor contracts.
    - `crates/code-nexus-lite`: incubated source, not a Cargo workspace member and not shipped as a beta binary. The supported beta surface is the optional CodeNexus compatibility adapter and artifact contract.
 
-4. PowerShell compatibility
-   - `legacy/code-intel.ps1`: recovery/update launcher for official GitHub releases.
-   - `legacy/invoke-code-intel.ps1`: quiet v0.x compatibility forwarder.
+4. Environment doctor and installer
+   - `code-intel doctor` / `code-intel doctor bootstrap`: verify local tools, Understand Anything presence, repo path, and Sentrux scope state.
+   - `code-intel setup`: finishes a Skill install from an extracted release (binary, PATH, Skill links, doctor).
 
-5. `legacy/check-code-intel-tools.ps1`
-   Environment doctor. Verifies local tools, Understand Anything presence, repo path, and Sentrux scope state.
-
-6. `legacy/run-code-intel.ps1`
-   Compatibility adapter host used by capabilities not yet internalized.
-
-7. Tool adapters
+5. Tool adapters
    - `rg`: exact inventory
    - `repowise`: optional semantic index and docs; included in the default plan but non-blocking
    - `Understand Anything`: optional graph artifact
    - `sentrux`: structure gate
    - `sentruxInsight`: parsed structural deltas and follow-up hints for agents
 
-8. Scoped helpers
-   - `legacy/Invoke-ScopedRepowise.ps1`
-   - `legacy/Invoke-RepowiseProviderProbe.ps1`
+6. Scoped helpers
    - `Run-ScopedRepowiseDocs.py`
-   - `legacy/Invoke-SentruxAgentTool.ps1`
-
-9. Stable-ops helpers
-   - `legacy/install-code-intel-pipeline.ps1`
-   - `legacy/scripts/tests/test-code-intel-provider.ps1` (test wrapper only)
-   - `legacy/scripts/tests/test-code-intel-pipeline.ps1`
-   - `legacy/update-code-intel-index.ps1`
-   - `legacy/tools/sentrux-shim`
+   - `code-intel sentrux`: narrow structure-governance commands (`scan`, `health`, `check`, `gate`, `gate_save`, `check_rules`, `dsm`, `hotspots`)
 
 These exist because some repos are too dirty or too nested for raw `repowise init` at the root.
-`legacy/Invoke-SentruxAgentTool.ps1` exists for a different reason: agents need a narrow JSON contract for structure governance, not raw terminal prose.
-`legacy/tools/sentrux-shim` makes Sentrux Pro activation reproducible on new machines: the installer puts the shim in a PATH-prepended Code Intel bin directory, the shim activates local open-source Pro features only when `SENTRUX_AUTO_PRO=1` is explicitly set (opt-in since supply-chain-009; the default stays free tier), and normal Sentrux commands still forward to the real binary when one exists. If the real binary is missing, `sentrux-lite-core.ps1` provides deterministic `scan`, `health`, `check`, `gate`, and `plugin list/validate` so a new machine still has a closed feedback loop.
+The `code-intel sentrux` subcommands exist for a different reason: agents need a narrow contract for structure governance, not raw terminal prose.
 
 ## Why The Wrapper Exists
 
@@ -114,7 +98,7 @@ The human version is `hospital.md`. The machine version exposes `triage.disposit
 
 `surgery-plan.json` and `surgery-plan.md` are emitted beside the hospital report. They translate the first failing what-if scenario, Sentrux hotspot, and CodeNexus context into a surgical target, operating plan, and verification checklist.
 
-For live Agent sessions, `legacy/Invoke-SentruxAgentTool.ps1` exposes `scan`, `health`, `session_start`, `session_end`, `rescan`, `check_rules`, `evolution`, `dsm`, `test_gaps`, and `what_if`. `session_start` saves the chosen scope baseline; `session_end` compares the current structure against that baseline and returns `pass`, `signal_before`, `signal_after`, and a short summary. Root paths are valid inputs: the wrapper automatically excludes dependency, build-output, cache, and bundled static-asset code from governed source metrics, while reporting those exclusions under `scope.excluded_by_reason`. `dsm` is the visualization handoff and carries 9 color modes: `Size`, `Coupling`, `TestGap`, `Age`, `Churn`, `Risk`, `Git`, `ExecDepth`, and `BlastRadius`. It also carries file detail data for side panels, including per-function LOC, complexity, parameter count, async/public flags, and source line ranges. `evolution` adds trend, hotspots, coupling, and bus-factor details. `what_if` simulates stricter gates before the team encodes them as rules.
+For live Agent sessions, `code-intel sentrux` exposes `scan`, `health`, `check`, `gate`, `gate_save`, `check_rules`, `dsm`, and `hotspots`. `gate_save` saves the chosen scope baseline; `gate` compares the current structure against that baseline and fails on regression. Root paths are valid inputs: the command automatically excludes dependency, build-output, cache, and bundled static-asset code from governed source metrics, while reporting those exclusions under `scope.excluded_by_reason`. `dsm` is the visualization handoff and carries 9 color modes: `Size`, `Coupling`, `TestGap`, `Age`, `Churn`, `Risk`, `Git`, `ExecDepth`, and `BlastRadius`. It also carries file detail data for side panels, including per-function LOC, complexity, parameter count, async/public flags, and source line ranges.
 
 The goal is not philosophical purity. The goal is that an operator can tell in ten seconds whether they should:
 
@@ -153,55 +137,40 @@ A02 snapshot
 ```
 
 `domain_failed` and `domain_unknown` runs may be committed with verified diagnostic evidence for
-forensics, but they never enter the authoritative index. PowerShell entrypoints invoke this spine
-and retain legacy routes only as explicit compatibility surfaces.
+forensics, but they never enter the authoritative index.
 
 Install check:
 
-```powershell
-& "$env:CODE_INTEL_HOME/legacy/install-code-intel-pipeline.ps1" -RepoPath <repo-path> -CheckProvider
+```bash
+code-intel doctor bootstrap --repo-path <repo-path>
 ```
 
 Integration registry:
 
-```powershell
-.\target\debug\code-intel.exe orchestrate --action Validate --json
-.\target\debug\code-intel.exe orchestrate --action Plan --repo <repo-path> --mode normal --json
+```bash
+code-intel orchestrate --action Validate --json
+code-intel orchestrate --action Plan --repo <repo-path> --mode normal --json
 ```
 
-Install or repair a teammate machine:
-
-```powershell
-& "$env:CODE_INTEL_HOME/legacy/install-code-intel-pipeline.ps1" -RepoPath <repo-path> -CheckProvider -RepairSkillLinks -InstallMissing
-```
-
-`-InstallMissing` is explicit by design. The default installer is a doctor; the install mode attempts supported CLI installs and records every attempt in `installActions`.
-
-`-RepairSkillLinks` installs the bundled `skills/code-intel-pipeline/` package into the user profile when the shared `.agents` skill is absent, then links Codex and Claude to that shared copy.
+Install or repair a teammate machine: run the Skill bootstrap (`python scripts/bootstrap.py --repo-path <repo-path>` from `skills/code-intel-pipeline/`), or run `bin/code-intel setup --repo-path <repo-path>` from an extracted release. `setup` reports missing tools with an install command and never installs system tools itself; it installs the bundled `skills/code-intel-pipeline/` package into `~/.agents/skills` and links Codex and Claude to that shared copy.
 
 Normal run:
 
-```powershell
+```bash
 code-intel <repo-path>
 ```
 
 Explicit profiles:
 
-```powershell
+```bash
 code-intel <repo-path> --mode lite
 code-intel <repo-path> --mode full
 ```
 
-Smoke test:
-
-```powershell
-& "$env:CODE_INTEL_HOME/legacy/scripts/tests/test-code-intel-pipeline.ps1" -RepoPath <repo-path>
-```
-
 Artifact index:
 
-```powershell
-& "$env:CODE_INTEL_HOME/legacy/update-code-intel-index.ps1"
+```bash
+code-intel artifact index --artifact-root <artifact-root>
 ```
 
 ## Design Rule

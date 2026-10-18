@@ -7,47 +7,11 @@ This repository is converging toward a smaller public surface.
 - `README.md`, `CHANGELOG.md`, `CONTEXT.md`: operator-facing docs.
 - `Cargo.toml`, `Cargo.lock`, `crates/code-intel-cli`: primary compiled CLI and execution kernel.
 
-No PowerShell entry point lives at the repository root. Every `.ps1` surface is
-under `legacy/`.
-
-## The `legacy/` Directory
-
-`legacy/` holds the whole PowerShell surface. The name records *which language
-tier a file belongs to*, not whether it is retired — the directory mixes live
-entry points with facades awaiting retirement. Read the per-file status below;
-do not infer it from the directory name.
-
-Still live, with no replacement today:
-
-- `legacy/install-code-intel-pipeline.ps1`: installer and repair entry point. The
-  only source-install path, including macOS and Linux.
-- `legacy/code-intel.ps1`: recovery and update launcher for the compiled CLI.
-- `legacy/Invoke-SentruxAgentTool.ps1`: coding-session gate entry point
-  (`session_start` / `session_end`), mandated by AGENTS.md. Teardown: #50.
-- `legacy/Find-CodeIntelProjects.ps1`: local project discovery entry point.
-- `legacy/bootstrap-new-machine.ps1`: new-machine bootstrap entry point.
-
-Superseded or retiring — do not add new callers:
-
-- `legacy/check-code-intel-tools.ps1`: superseded by the native Rust doctor
-  (#48). Use `code-intel doctor`.
-- `legacy/run-code-intel.ps1`: compatibility adapter host for capabilities not yet
-  internalized. Absorbed into `code-intel run` by #47.
-- `legacy/invoke-code-intel.ps1`: v0.x compatibility forwarder.
-
-## Internal Script Buckets
-
-`legacy/scripts/tests/` holds the PowerShell contract tests and smoke tests. It
-is the only bucket that exists today; `benchmarks/`, `adapters/` and
-`incubator/` are the reserved names for their categories, to be created under
-`legacy/scripts/` when such a script first appears.
-
-Do not move a PowerShell file out of `legacy/` without one of these:
-
-- a compatibility shim at the old path with the old filename, or
-- a simultaneous update to installer, CI, release packaging, README, skill docs,
-  and tests — plus a re-freeze of every retirement packet that pins a file you
-  touched, and a digest-pin re-sync afterwards.
+PowerShell has been removed from the product (DR-0018): the repository ships no
+`.ps1` entry point, and the install path is the Skill bootstrap plus
+`code-intel setup`. Install, environment checks and the structure gate are
+subcommands of the compiled CLI: `code-intel setup`, `code-intel doctor`,
+`code-intel doctor bootstrap`, `code-intel sentrux gate`.
 
 ## Rust Core Boundary
 
@@ -61,9 +25,6 @@ The Rust CLI owns the primary operator entry, execution kernel, policy, and arti
 - next protocol / GitHub research routing decisions
 
 The current policy contract is documented in `docs/rust-policy-core.md`.
-
-PowerShell remains for recovery, compatibility, and adapters that have not yet
-been internalized.
 
 ## Incubator Boundary
 
