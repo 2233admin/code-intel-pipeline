@@ -202,40 +202,54 @@ fn packaged_install_runs_relocated_sentrux_shim() {
     );
 }
 
-/// PATH holding only the directories of `git` and `rg`: the minimal host the
-/// native core path claims to need (#396). Fails loudly if either directory
-/// also exposes Python or PowerShell, since the test would then prove nothing.
-fn git_and_rg_only_path() -> OsString {
-    let locate = |name: &str| -> Option<PathBuf> {
-        let exe = if cfg!(windows) {
-            format!("{name}.exe")
-        } else {
-            name.to_string()
-        };
-        env::split_paths(&env::var_os("PATH")?).find_map(|dir| {
-            let candidate = dir.join(&exe);
-            candidate.is_file().then_some(dir)
-        })
+fn locate_on_path(name: &str) -> PathBuf {
+    let exe = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
     };
-    let dirs: Vec<PathBuf> = ["git", "rg"]
-        .iter()
-        .map(|tool| locate(tool).unwrap_or_else(|| panic!("{tool} must be on PATH for this smoke")))
-        .collect();
-    for dir in &dirs {
-        for forbidden in ["python", "python3", "pwsh"] {
-            let exe = if cfg!(windows) {
-                format!("{forbidden}.exe")
-            } else {
-                forbidden.to_string()
-            };
-            assert!(
-                !dir.join(&exe).is_file(),
-                "{} also provides {forbidden}; cannot build a python/pwsh-free PATH",
-                dir.display()
-            );
+    env::split_paths(&env::var_os("PATH").unwrap_or_default())
+        .map(|dir| dir.join(&exe))
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| panic!("{name} must be on PATH for this smoke"))
+}
+
+/// PATH exposing only `git` and `rg`: the minimal host the native core path
+/// claims to need (#396). On Unix the tools are symlinked into a fresh
+/// directory, because standard runners keep `git` in `/usr/bin` next to
+/// `python3`. On Windows `git.exe` locates its install relative to itself, so
+/// the real directories are used and must not expose Python or PowerShell.
+fn git_and_rg_only_path(scratch: &Path) -> OsString {
+    let tools = [locate_on_path("git"), locate_on_path("rg")];
+    #[cfg(unix)]
+    {
+        let dir = scratch.join("path");
+        fs::create_dir_all(&dir).expect("create isolated PATH dir");
+        for tool in &tools {
+            let link = dir.join(tool.file_name().expect("tool file name"));
+            std::os::unix::fs::symlink(tool, &link)
+                .unwrap_or_else(|error| panic!("link {}: {error}", tool.display()));
         }
+        dir.into_os_string()
     }
-    env::join_paths(dirs).expect("join git/rg PATH")
+    #[cfg(not(unix))]
+    {
+        let _ = scratch;
+        let dirs: Vec<PathBuf> = tools
+            .iter()
+            .map(|tool| tool.parent().expect("tool dir").to_path_buf())
+            .collect();
+        for dir in &dirs {
+            for forbidden in ["python.exe", "python3.exe", "pwsh.exe"] {
+                assert!(
+                    !dir.join(forbidden).is_file(),
+                    "{} also provides {forbidden}; cannot build a python/pwsh-free PATH",
+                    dir.display()
+                );
+            }
+        }
+        env::join_paths(dirs).expect("join git/rg PATH")
+    }
 }
 
 #[test]
@@ -256,7 +270,8 @@ fn packaged_doctor_is_ready_without_python_pwsh_or_bin_on_path() {
         binary.display()
     );
 
-    let fixture = env::temp_dir().join(format!("code-intel-396-fixture-{}", std::process::id()));
+    let scratch = env::temp_dir().join(format!("code-intel-396-{}", std::process::id()));
+    let fixture = scratch.join("repo");
     fs::create_dir_all(&fixture).expect("create fixture repo");
     fs::write(fixture.join("main.py"), "print('hi')\n").expect("write fixture source");
     let git = |args: &[&str]| {
@@ -286,7 +301,7 @@ fn packaged_doctor_is_ready_without_python_pwsh_or_bin_on_path() {
         .arg(&fixture)
         .args(["--no-require-repowise", "--json"])
         .current_dir(&fixture)
-        .env("PATH", git_and_rg_only_path())
+        .env("PATH", git_and_rg_only_path(&scratch))
         .env_remove("CODE_INTEL_HOME")
         .output()
         .unwrap_or_else(|error| panic!("launch {}: {error}", binary.display()));
@@ -303,5 +318,5 @@ fn packaged_doctor_is_ready_without_python_pwsh_or_bin_on_path() {
         "packaged doctor must be ready with only git + rg (#396); exit {:?}, missing {missing:?}:\n{stdout}",
         output.status.code()
     );
-    let _ = fs::remove_dir_all(&fixture);
+    let _ = fs::remove_dir_all(&scratch);
 }
