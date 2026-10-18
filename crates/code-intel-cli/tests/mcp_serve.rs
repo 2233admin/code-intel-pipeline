@@ -150,6 +150,7 @@ fn a_client_session_handshakes_lists_tools_and_closes_cleanly() {
             "get_evidence",
             "get_audit_status",
             "get_change_impact",
+            "get_code_context",
             "plan_structural_edit",
             "scan_security_findings",
         ]

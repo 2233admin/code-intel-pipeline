@@ -617,6 +617,42 @@
       "extensionPoint": "The default native provider executes gate/check with independently approved admission policy and typed results, preserving DR-0011 measurement and normalizing observations through A04. External providers without a valid same-policy handshake remain unknown for admission. Diagnosis policy stays in Hospital; legacy/Invoke-SentruxAgentTool.ps1 is a compatibility/rollback surface, not the authoritative normal route."
     },
     {
+      "id": "provider.codegraph",
+      "stage": "localization",
+      "owner": "code-intel-pipeline",
+      "kind": "internal-adapter",
+      "required": false,
+      "entrypoint": "crates/code-intel-cli/src/codegraph_provider/mod.rs",
+      "capabilities": [
+        "local_semantic_index",
+        "incremental_sync",
+        "symbol_context",
+        "call_relationships",
+        "advisory_impact_and_test_candidates",
+        "snapshot_binding",
+        "provider_neutral_admissibility"
+      ],
+      "commands": {
+        "index": "code-intel provider codegraph index --repo <repo-path>",
+        "sync": "code-intel provider codegraph sync --repo <repo-path>",
+        "query": "code-intel provider codegraph explore --repo <repo-path> --query <query>",
+        "mcp": "code-intel serve --mcp --repo-path <repo-path>"
+      },
+      "artifactContract": [
+        "orchestration/schemas/code-intel-codegraph-result.v1.schema.json",
+        "orchestration/schemas/code-intel-evidence-payload.v1.schema.json",
+        "orchestration/schemas/code-intel-evidence-admissibility-result.v1.schema.json"
+      ],
+      "upstream": {
+        "repository": "https://github.com/colbymchenry/codegraph",
+        "reviewedRevision": "6560052a6f856855d3f71eee838fd66ccfa4285d",
+        "reviewedVersion": "1.6.2",
+        "minimumVersion": "1.6.2",
+        "license": "MIT"
+      },
+      "extensionPoint": "Explicit, optional CodeGraph provider for the code/Git perception layer. Rust owns scope, snapshot binding, artifacts, admission and failure semantics; CodeGraph retains parsing, resolution, storage and ranking. No shared SQLite or codenexus.full impersonation. Partial semantic coverage remains advisory/unknown and cannot replace native evidence or authoritative gates."
+    },
+    {
       "id": "provider.session-adapt",
       "stage": "verification",
       "owner": "code-intel-pipeline",

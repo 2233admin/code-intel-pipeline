@@ -1120,6 +1120,7 @@ Common commands:
   code-intel graph --repo <path> --write
   code-intel resume --repo <path> --json
   code-intel sentrux check <path>
+  code-intel provider codegraph explore --repo <path> --query <text>
 
 Advanced commands:
   code-intel --help --all"#;
@@ -1146,6 +1147,7 @@ Commands:
   provider sentrux-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
   provider session-adapt --repo <repo> --trace <mindwalk-trace.json> [--hotspots <sentrux-hotspots-or-dsm.json>] [--out <session-evidence.json>] [--working-tree-policy head_only|explicit_overlay]
   provider codenexus-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
+  provider codegraph <index|sync|status|query|explore|node|callers|callees|impact|affected|files> --repo <path> [--query <text>] [--changed <relative-path>] [--file <relative-path>] [--limit <n>] [--depth <n>] [--artifact-root <directory>]
   codenexus generate --repo <path> [--target <path>] --out <codenexus-context.json> [--observed-at <unix-seconds>] [--max-files <count>] [--max-references-per-file <count>]
   provider file-boundary --request <request.json> --out <result.json>
   provider runtime-ci-evidence --artifact-root <directory> --request <request.json> --out <summary.json>
