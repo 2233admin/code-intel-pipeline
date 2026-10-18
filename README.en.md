@@ -39,40 +39,55 @@ See a real run against a fresh `expressjs/express` clone:
 
 ## Install
 
-**Windows** — download the ZIP from the
-[latest release](https://github.com/2233admin/code-intel-pipeline/releases/latest)
-and follow its notes, or install from source:
+Same on windows / macos / linux. **No PowerShell and no Rust toolchain needed.**
 
-```powershell
-git clone https://github.com/2233admin/code-intel-pipeline.git
-cd code-intel-pipeline
-.\legacy\install-code-intel-pipeline.ps1 -RepoPath C:\path\to\your\repo -RepairSkillLinks -InstallMissing
-code-intel C:\path\to\your\repo
+**Recommended: via the agent Skill (Codex / Claude Code).** Install the skill
+package with `$skill-installer` from
+[`skills/code-intel-pipeline`](skills/code-intel-pipeline), or run the
+bootstrap directly from that directory: review the plan first, then run it.
+
+```bash
+python scripts/bootstrap.py --repo-path "<repo>" --dry-run --json
+python scripts/bootstrap.py --repo-path "<repo>" --json
 ```
 
-**Coding agents (Codex / Claude Code)** — install the skill package with
-`$skill-installer` from
-[`skills/code-intel-pipeline`](skills/code-intel-pipeline); it downloads the
-stable release, and when `gh` 2.49+ is present first verifies the release
-ZIP's [GitHub Artifact Attestation](https://cli.github.com/manual/gh_attestation_verify)
-(proof the workflow of this repository produced it, not just that the bytes
-arrived intact) before falling back to the published SHA-256 checksum. When
-`gh` is missing or too old, the installer prints an explicit degradation
-notice instead of silently skipping the attestation check. Verify the same
-guarantee by hand with
-`gh attestation verify <zip> --repo 2233admin/code-intel-pipeline` — see
-[docs/release-provenance-runbook.md](docs/release-provenance-runbook.md) for
-the full command and a recorded verification run.
+Options: `--version <tag>`, `--channel prerelease`. It downloads the GitHub
+Release ZIP for your platform, verifies its SHA-256 and build provenance
+(`gh attestation verify` when `gh` 2.49+ is present; otherwise it prints an
+explicit degradation notice instead of silently skipping), extracts it, then
+runs the release's own `bin/code-intel setup`. Verify the same guarantee by
+hand with `gh attestation verify <zip> --repo 2233admin/code-intel-pipeline`;
+see [docs/release-provenance-runbook.md](docs/release-provenance-runbook.md).
 
-**macOS / Linux:** since v0.7.0 every release ships windows / macos / linux
-ZIPs and the `bootstrap.py` bootstrap works on all three — no Rust toolchain
-needed. The source build below is only required for v0.6.0 and earlier
-(source build; requires PowerShell 7.2+, Rust toolchain, ripgrep):
+**Manual install.** Download `code-intel-pipeline-<tag>-<platform>.zip` and its
+`.sha256` from [GitHub Releases](https://github.com/2233admin/code-intel-pipeline/releases),
+verify both, extract, then run (`code-intel.exe` on Windows):
+
+```bash
+<extracted>/code-intel-pipeline/bin/code-intel setup --repo-path <repo>
+```
+
+Add `--language zh|en` to record the repo's report language.
+
+`code-intel setup` copies the binary to the data bin dir (Windows
+`$env:LOCALAPPDATA\code-intel\bin`, macOS `~/Library/Application Support/code-intel/bin`,
+Linux `${XDG_DATA_HOME:-~/.local/share}/code-intel/bin`); persists `PATH` and
+`CODE_INTEL_HOME` (Windows: user environment; macOS/Linux: `~/.config/code-intel/env.sh`
+sourced from your shell profile, skipped with `--no-modify-path`); installs the
+Skill to `~/.agents/skills/code-intel-pipeline` and links it into
+`~/.claude/skills` and `~/.codex/skills` (`--no-skills` to skip); then runs
+doctor (`--skip-doctor` to skip). Missing external tools (`rg`, `git`, `python`,
+`repowise`) are reported with an install command; setup never installs system
+tools itself. Re-running it is idempotent.
+
+**Build from source** (needs a Rust toolchain):
 
 ```bash
 git clone https://github.com/2233admin/code-intel-pipeline.git
 cd code-intel-pipeline
-pwsh ./legacy/install-code-intel-pipeline.ps1 -RepoPath ~/src/your-repo -InstallMissing
+cargo build --release -p code-intel
+mkdir -p bin && cp target/release/code-intel bin/    # Windows: code-intel.exe
+bin/code-intel setup --repo-path ~/src/your-repo
 ```
 
 Note: the pipeline needs full git history for lineage identity — run
@@ -89,9 +104,9 @@ Note: the pipeline needs full git history for lineage identity — run
 
 ## Status
 
-Windows PowerShell surface is in public beta; production logic is moving to
-Rust (the compiled `code-intel` binary is the primary entry point). Since
-v0.7.0 all three platforms ship prebuilt release ZIPs. Enhancement providers
+Public beta. All production logic lives in the compiled Rust `code-intel`
+binary, the primary entry point; PowerShell has been removed from the product.
+Since v0.7.0 all three platforms ship prebuilt release ZIPs. Enhancement providers
 (Repowise semantic docs, Understand Anything graphs, CodeNexus context) are
 optional: when absent the run records them as skipped instead of faking
 success.

@@ -74,13 +74,6 @@
 
 ## 集成到 Code Intel Pipeline
 
-### 参数
-
-```powershell
--SkipOpenSpec    # 跳过三栈检测器（保留历史参数名/语义）
--AutoOpenSpec    # 自动模式，不询问用户（本检测器本身不做交互提示）
-```
-
 ### 输出位置
 
 - `summary.md` — "Workflow Stack Recommendations" 段落，三行式（每栈一行：栈名/verdict/入口技能），并额外输出 `spec-driven brief`，包含 recommended/confidence/do first/guardrails/acceptance。
@@ -91,16 +84,6 @@
   - `openSpec` 块 — 向后兼容，内容等同 `workflows` 数组中 `stack=spec-driven` 的一项
   - `workflows` 数组 — 三层完整判定：`{stack, tool?, verdict, score?, reasons[], entrySkills[]}`
 - `notes` 数组 — spec-driven 层判定摘要
-
-### 独立脚本
-
-`legacy/OpenSpec-Detector.ps1` 是同一套逻辑的独立可执行版本（不依赖 pipeline），供单独跑三栈检测：
-
-```powershell
-.\legacy\OpenSpec-Detector.ps1 -RepoPath <path> -Auto
-```
-
-> ⚠️ 实现同步提醒：`legacy/run-code-intel.ps1`（内联函数 `Get-CodeMetrics` / `Get-GovernanceIndicators` / `Get-SpecDrivenRecommendation` / `Get-MattFlowRecommendation` / `Get-GstackRecommendation` / `Invoke-WorkflowStackDetector` 等）与独立的 `legacy/OpenSpec-Detector.ps1` 是两份重复实现，改动其中一份逻辑时务必同步另一份。
 
 ## 下一步
 

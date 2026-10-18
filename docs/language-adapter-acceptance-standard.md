@@ -44,13 +44,7 @@ An adapter cannot obtain semantic or behavioral status merely by reaching produc
 Thresholds live only in `orchestration/language-adapter-acceptance-policy.v1.json`. Reports contain observations and cannot lower thresholds.
 The gate also enforces monotonic policy strength: candidate cannot be weaker than research, and production cannot be weaker than candidate for any threshold or boolean requirement.
 
-## Commands
-
-```powershell
-.\legacy/scripts/tests/Test-LanguageAdapterAcceptance.ps1 `
-  -Report .\orchestration\acceptance\native-code-evidence-candidate.json `
-  -Json
-```
+## Exit codes
 
 Exit code `0` means every required gate passed. Exit code `1` means the requested stage or claim is rejected; the JSON result lists exact failed gate ids. Malformed policy or report input exits `2`.
 
