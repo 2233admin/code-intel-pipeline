@@ -69,7 +69,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_analysis.rs",
-        "sha256": "0d829beee93f57a5b5edd5e9ae477129521ee80655233d5371fd1f78027cc7d5",
+        "sha256": "7d77d3107482a1d4aced1f398e39e96a698a812580bae08d6be060407005ed5e",
         "testName": "dsm_snapshot_preserves_contract_and_excludes_non_governed_source"
       }
     },
@@ -260,7 +260,7 @@
       "description": "native Rust governed-source, file/function metric, module graph, and DSM risk kernel",
       "evidenceIds": [
         "local:sentrux:rust-dsm-source-sha256:8ddc9cb3557cd8583d63c88410751eaa876977724005bcb3774a4e5bd876faa7",
-        "local:sentrux:rust-dsm-conformance-sha256:0d829beee93f57a5b5edd5e9ae477129521ee80655233d5371fd1f78027cc7d5"
+        "local:sentrux:rust-dsm-conformance-sha256:7d77d3107482a1d4aced1f398e39e96a698a812580bae08d6be060407005ed5e"
       ]
     },
     {
