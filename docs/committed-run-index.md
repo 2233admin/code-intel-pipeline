@@ -38,3 +38,34 @@ code-intel artifact index --artifact-root <root> --output <index.json> --operati
 ```
 
 `legacy/update-code-intel-index.ps1` is the compatibility facade. Normal mode routes to the Rust engine and writes a Markdown projection alongside the JSON index. The previous report-based traversal remains available only with `-LegacyCompatibilityMode`; it is advisory, cannot establish repository authority, and does not delete or migrate legacy data.
+
+## Snapshot catalog and query views (#264)
+
+`SnapshotCatalog` (`artifact_index.rs`) is the scan result before folding: every admitted
+`repository.iteration` publication per repository, oldest to newest by run name, plus the
+diagnostics for every refused one. The A08 v1 document above is its latest-by-repository
+projection, byte-for-byte what `rebuild` always produced, and `committed_evidence::load` selects
+its run through `SnapshotCatalog::latest`. Staging, forged, incomplete, non-completed and
+non-repository-iteration publications never enter the catalog.
+
+`QueryIndex` (`query_index.rs`) holds views derived from refs that were verified on the same call:
+
+| View | Content | Used by |
+|---|---|---|
+| `artifact-catalog` v1 | `(artifactSchema, type)` per ref | contract filter, `availableArtifactTypes` |
+| `lexical-content` v1 | lowercased UTF-8 (lossy) content per ref | `contains` matching |
+
+`ViewKey = sha256(view name, view version, snapshot identity, then for each ref in order:
+artifactSchema, type, path, sha256, consumedSnapshotIdentity)`. Checkout freshness is not part of
+the key, so a dirty checkout reports `stale` without invalidating committed views. A hit only skips
+re-deriving the view: `load` still re-runs A07/A08 admission and Artifact Ref verification on every
+call, and a view never becomes authority. The index keeps one view per kind (the last key), so a
+long-lived `serve --mcp` process reuses views while the committed run is unchanged and memory stays
+bounded. A poisoned cache is dropped and rebuilt.
+
+`ProjectContext::query(QueryIntent)` is the routed entry; CLI `query`, MCP `get_facts` and the raw
+`artifact query` adapter all reach the same `evidence_query::execute`, so their JSON is unchanged.
+
+Follow-on, not enabled here: historical revspec selection over `SnapshotCatalog::snapshots` and
+action-level content-addressed caching (#51, #100). Both stay advisory until promoted by a decision
+record, and neither changes the A08 v1 projection.

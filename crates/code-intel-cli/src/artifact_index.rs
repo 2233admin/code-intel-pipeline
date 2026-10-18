@@ -153,39 +153,53 @@ fn execute_cli(cli: Cli) -> Result<Value, IndexError> {
 }
 
 pub(crate) fn rebuild(artifact_root: &Path) -> Result<Value, IndexError> {
-    scan(artifact_root)
+    Ok(SnapshotCatalog::build(artifact_root)?.to_index())
 }
 
 pub(crate) fn incremental(artifact_root: &Path, existing: &Value) -> Result<Value, IndexError> {
     validate_index(existing)?;
     // Existing rows are hints only. Every refresh revalidates the A07 authority
     // boundary so a stale or tampered committed run cannot survive incrementally.
-    scan(artifact_root)
+    rebuild(artifact_root)
 }
 
-fn scan(artifact_root: &Path) -> Result<Value, IndexError> {
-    let mut admitted: BTreeMap<String, Value> = BTreeMap::new();
-    let mut diagnostics = Vec::new();
-    for repo in child_directories(artifact_root)? {
-        let repo_name = file_name(&repo)?;
-        for run in child_directories(&repo)? {
-            let run_name = file_name(&run)?;
-            if is_staging_name(&run_name) {
-                diagnostics.push(diagnostic(
-                    &repo_name,
-                    &run_name,
-                    "staging",
-                    "run directory is staging and has no publication authority",
-                ));
-                continue;
-            }
-            match run_commit::validate_committed_run(&run) {
-                Ok((marker, manifest)) => {
-                    let outcome = manifest["outcome"]
-                        .as_str()
-                        .expect("validated run manifest outcome");
-                    if outcome != "completed" {
-                        diagnostics.push(diagnostic(
+/// Every fully validated, completed `repository.iteration` publication under
+/// an authority root, per repository, plus the diagnostics for everything
+/// refused (#264). The A08 v1 index is the latest-by-repository projection of
+/// this catalog and stays the compatibility/authority document.
+#[derive(Debug)]
+pub(crate) struct SnapshotCatalog {
+    /// Per repository, oldest to newest by run name; the last is what A08 v1
+    /// selects as that repository's authority.
+    pub(crate) admitted: BTreeMap<String, Vec<Value>>,
+    /// Every refused publication, sorted by repository and run.
+    pub(crate) diagnostics: Vec<Value>,
+}
+
+impl SnapshotCatalog {
+    pub(crate) fn build(artifact_root: &Path) -> Result<Self, IndexError> {
+        let mut admitted: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+        let mut diagnostics = Vec::new();
+        for repo in child_directories(artifact_root)? {
+            let repo_name = file_name(&repo)?;
+            for run in child_directories(&repo)? {
+                let run_name = file_name(&run)?;
+                if is_staging_name(&run_name) {
+                    diagnostics.push(diagnostic(
+                        &repo_name,
+                        &run_name,
+                        "staging",
+                        "run directory is staging and has no publication authority",
+                    ));
+                    continue;
+                }
+                match run_commit::validate_committed_run(&run) {
+                    Ok((marker, manifest)) => {
+                        let outcome = manifest["outcome"]
+                            .as_str()
+                            .expect("validated run manifest outcome");
+                        if outcome != "completed" {
+                            diagnostics.push(diagnostic(
                             &repo_name,
                             &run_name,
                             "non_completed",
@@ -193,53 +207,62 @@ fn scan(artifact_root: &Path) -> Result<Value, IndexError> {
                                 "committed audit run outcome is {outcome}; only completed runs are query authority"
                             ),
                         ));
-                        continue;
-                    }
-                    if !is_repository_iteration(&run, &repo_name, &run_name, &marker, &manifest) {
-                        diagnostics.push(diagnostic(
+                            continue;
+                        }
+                        if !is_repository_iteration(&run, &repo_name, &run_name, &marker, &manifest)
+                        {
+                            diagnostics.push(diagnostic(
                             &repo_name,
                             &run_name,
                             "non_repository_iteration",
                             "committed run has no uniquely verified repository.iteration provenance bound to its authority path",
                         ));
-                        continue;
+                            continue;
+                        }
+                        admitted
+                            .entry(repo_name.clone())
+                            .or_default()
+                            .push(entry(&repo_name, &run_name, &marker, &manifest));
                     }
-                    let entry = entry(&repo_name, &run_name, &marker, &manifest);
-                    let replace = admitted
-                        .get(&repo_name)
-                        .and_then(|value| value["run"].as_str())
-                        .is_none_or(|prior| run_name.as_str() > prior);
-                    if replace {
-                        admitted.insert(repo_name.clone(), entry);
+                    Err(error) => {
+                        let marker_exists = run.join("run-complete.json").is_file();
+                        let (classification, reason) = if marker_exists {
+                            (
+                                "forged",
+                                "completion marker or its manifest/Artifact Refs failed validation",
+                            )
+                        } else if run.join("objects").is_dir() {
+                            ("incomplete", "A07 completion marker is absent")
+                        } else {
+                            ("legacy", "legacy run has no A07 completion marker")
+                        };
+                        let _ = error;
+                        diagnostics.push(diagnostic(&repo_name, &run_name, classification, reason));
                     }
-                }
-                Err(error) => {
-                    let marker_exists = run.join("run-complete.json").is_file();
-                    let (classification, reason) = if marker_exists {
-                        (
-                            "forged",
-                            "completion marker or its manifest/Artifact Refs failed validation",
-                        )
-                    } else if run.join("objects").is_dir() {
-                        ("incomplete", "A07 completion marker is absent")
-                    } else {
-                        ("legacy", "legacy run has no A07 completion marker")
-                    };
-                    let _ = error;
-                    diagnostics.push(diagnostic(&repo_name, &run_name, classification, reason));
                 }
             }
         }
+        for runs in admitted.values_mut() {
+            runs.sort_by(|left, right| left["run"].as_str().cmp(&right["run"].as_str()));
+        }
+        diagnostics.sort_by(|left, right| {
+            (left["repo"].as_str(), left["run"].as_str())
+                .cmp(&(right["repo"].as_str(), right["run"].as_str()))
+        });
+        Ok(Self {
+            admitted,
+            diagnostics,
+        })
     }
-    diagnostics.sort_by(|left, right| {
-        (left["repo"].as_str(), left["run"].as_str())
-            .cmp(&(right["repo"].as_str(), right["run"].as_str()))
-    });
-    Ok(json!({
-        "schema": INDEX_SCHEMA,
-        "entries": admitted.into_values().collect::<Vec<_>>(),
-        "diagnostics": diagnostics,
-    }))
+
+    /// The A08 v1 projection: one latest entry per repository.
+    pub(crate) fn to_index(&self) -> Value {
+        json!({
+            "schema": INDEX_SCHEMA,
+            "entries": self.admitted.values().filter_map(|runs| runs.last()).collect::<Vec<_>>(),
+            "diagnostics": self.diagnostics,
+        })
+    }
 }
 
 fn is_repository_iteration(

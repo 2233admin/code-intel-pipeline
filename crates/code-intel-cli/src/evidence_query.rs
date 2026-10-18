@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use serde_json::{json, Value};
 
 use crate::committed_evidence::{self, CommittedEvidence, EvidenceError};
+use crate::query_index::QueryIndex;
 
 const DEFAULT_LIMIT: usize = 20;
 pub(crate) const MAX_LIMIT: usize = 100;
@@ -15,7 +16,7 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
     match EvidenceQueryRequest::parse(raw).and_then(|request| {
         let evidence = committed_evidence::load(&request.artifact_root, &request.repo)
             .map_err(map_evidence_error)?;
-        execute(request, &evidence)
+        execute(request, &evidence, &QueryIndex::default())
     }) {
         Ok(result) => {
             println!("{}", serde_json::to_string(result.value()).unwrap());
@@ -183,6 +184,7 @@ impl EvidenceQueryResult {
 pub(crate) fn execute(
     cli: EvidenceQueryRequest,
     evidence: &CommittedEvidence,
+    index: &QueryIndex,
 ) -> Result<EvidenceQueryResult, QueryError> {
     let entry = &evidence.entry;
     let run = entry["run"].as_str().expect("A08 entry run");
@@ -192,34 +194,49 @@ pub(crate) fn execute(
         .map_err(map_evidence_error)?;
     let run_outcome = entry["outcome"].as_str().expect("A08 entry outcome");
     let needle = cli.contains.as_ref().map(|value| value.to_lowercase());
-    let available_artifact_types = evidence
-        .refs
+    // Views are re-derived only when the verified refs change; verification
+    // itself already ran in `committed_evidence::load` on this call.
+    let catalog = index.artifact_catalog(snapshot_identity, &evidence.refs);
+    let lexical = needle.as_ref().map(|_| {
+        let contents = evidence
+            .verified
+            .iter()
+            .map(|verified| verified.bytes())
+            .collect::<Vec<_>>();
+        index.lexical_content(snapshot_identity, &evidence.refs, &contents)
+    });
+    let available_artifact_types = catalog
+        .contracts
         .iter()
-        .filter_map(|artifact| artifact["type"].as_str())
-        .map(str::to_string)
+        .map(|(_, kind)| kind.clone())
         .collect::<BTreeSet<_>>();
     let mut contract_matches = 0usize;
     let mut matches = Vec::new();
-    for (artifact, verified) in evidence.refs.iter().zip(evidence.verified.iter()) {
+    for (position, (artifact, verified)) in evidence
+        .refs
+        .iter()
+        .zip(evidence.verified.iter())
+        .enumerate()
+    {
+        let (artifact_schema, artifact_type) = &catalog.contracts[position];
         if cli
             .artifact_schema
             .as_ref()
-            .is_some_and(|schema| artifact["artifactSchema"] != *schema)
+            .is_some_and(|schema| artifact_schema != schema)
             || cli
                 .artifact_type
                 .as_ref()
-                .is_some_and(|kind| artifact["type"] != *kind)
+                .is_some_and(|kind| artifact_type != kind)
         {
             continue;
         }
         contract_matches += 1;
-        let text = String::from_utf8_lossy(verified.bytes());
-        if needle
-            .as_ref()
-            .is_some_and(|needle| !text.to_lowercase().contains(needle))
-        {
-            continue;
+        if let (Some(needle), Some(lexical)) = (needle.as_ref(), lexical.as_ref()) {
+            if !lexical.lowered[position].contains(needle.as_str()) {
+                continue;
+            }
         }
+        let text = String::from_utf8_lossy(verified.bytes());
         let matched_by = matched_by(&cli);
         matches.push(json!({
             "artifactRef":artifact,

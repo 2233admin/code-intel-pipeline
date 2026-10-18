@@ -566,6 +566,29 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
         "query={project_query}"
     );
 
+    let contains_query = common::cli()
+        .arg("query")
+        .arg(&repo)
+        .args(["--kind", "evidence", "--contains", "FIXTURE", "--json"])
+        .env("CODE_INTEL_ARTIFACT_ROOT", &artifacts)
+        .output()
+        .expect("run project-context contains query");
+    assert!(
+        contains_query.status.success(),
+        "contains query failed: {}",
+        String::from_utf8_lossy(&contains_query.stderr)
+    );
+    let contains_query: serde_json::Value =
+        serde_json::from_slice(&contains_query.stdout).expect("contains query is JSON");
+    assert!(
+        !contains_query["matches"]
+            .as_array()
+            .expect("contains query matches")
+            .is_empty(),
+        "case-insensitive contains found nothing: {contains_query}"
+    );
+
+    let contains_call = serde_json::json!({"name":"get_facts","arguments":{"contains":"FIXTURE"}});
     let mcp = mcp_session(
         &repo,
         &artifacts,
@@ -576,13 +599,27 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
             serde_json::json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
             serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
                 "name":"get_facts","arguments":{"type":"observed.evidence.payload"}}}),
+            // The same lexical query twice: the second answer comes from the
+            // server's reused view (#264) and must not differ from the CLI.
+            serde_json::json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":contains_call}),
+            serde_json::json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":contains_call}),
         ],
     );
     assert_eq!(
         mcp.len(),
-        2,
+        4,
         "notification must not receive a response: {mcp:?}"
     );
+    for response in &mcp[2..] {
+        assert_eq!(response["result"]["isError"], false, "MCP facts={response}");
+        let facts: serde_json::Value = serde_json::from_str(
+            response["result"]["content"][0]["text"]
+                .as_str()
+                .expect("MCP facts text block"),
+        )
+        .expect("MCP facts payload is JSON");
+        assert_eq!(facts, contains_query, "CLI and reused MCP view diverged");
+    }
     assert_eq!(
         mcp[0]["result"]["repositoryBinding"]["status"], "verified",
         "MCP startup did not bind the named-run publication: {}",

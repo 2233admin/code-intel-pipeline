@@ -14,7 +14,7 @@ use serde_json::{json, Map, Value};
 
 use super::ServeContext;
 use crate::committed_evidence::{self, CommittedEvidence};
-use crate::project_context::{EvidenceQuery, ProjectError, Query};
+use crate::project_context::{EvidenceQuery, ProjectError, QueryIntent};
 use crate::{capability, capability_inventory, change_impact, execution_policy, snapshot};
 
 const EDIT_PLAN_CAPABILITY: &str = "edit.ast-grep-plan";
@@ -108,7 +108,7 @@ fn gate_verdict(context: &ServeContext, arguments: &Value) -> Result<Value, Proj
 
 fn facts(context: &ServeContext, arguments: &Value) -> Result<Value, ProjectError> {
     expect_keys(arguments, &["type", "artifactSchema", "contains", "limit"])?;
-    let query = Query::Evidence(EvidenceQuery::new(
+    let query = QueryIntent::Evidence(EvidenceQuery::new(
         optional_text(arguments, "artifactSchema")?,
         optional_text(arguments, "type")?,
         optional_text(arguments, "contains")?,

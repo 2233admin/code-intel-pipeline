@@ -5,6 +5,7 @@ use serde_json::Value;
 use crate::change_impact::{self, ChangeImpactRequest, ChangeImpactResult, ImpactError};
 use crate::committed_evidence::{self, CommittedEvidence, EvidenceError};
 use crate::evidence_query::{self, EvidenceQueryRequest, EvidenceQueryResult, QueryError};
+use crate::query_index::QueryIndex;
 
 /// Identity receipt for an admitted A08 repository iteration. There is no
 /// boolean authority switch: callers receive this only after the completed
@@ -167,15 +168,16 @@ impl CommittedEvidenceController {
     pub(crate) fn query(request: EvidenceQueryRequest) -> Result<CommittedQueryResult, QueryError> {
         let (evidence, authority) = Self::open(&request.artifact_root, &request.repo)
             .map_err(evidence_query::map_evidence_error)?;
-        Self::query_opened(request, evidence, authority)
+        Self::query_opened(request, evidence, authority, &QueryIndex::default())
     }
 
     pub(crate) fn query_opened(
         request: EvidenceQueryRequest,
         evidence: CommittedEvidence,
         authority: CommittedAuthority,
+        index: &QueryIndex,
     ) -> Result<CommittedQueryResult, QueryError> {
-        let result = evidence_query::execute(request, &evidence)?;
+        let result = evidence_query::execute(request, &evidence, index)?;
         Ok(CommittedQueryResult { result, authority })
     }
 

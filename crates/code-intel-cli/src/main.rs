@@ -64,6 +64,7 @@ mod ponytail_gate;
 mod project_context;
 mod project_orientation_benchmark;
 mod providers;
+mod query_index;
 mod recommender_retirement_diff;
 mod recommender_retirement_packet;
 mod recommender_retirement_restore;

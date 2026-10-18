@@ -14,19 +14,20 @@ pub(crate) struct CommittedEvidence {
 }
 
 pub(crate) fn load(artifact_root: &Path, repo: &str) -> Result<CommittedEvidence, EvidenceError> {
-    let index = artifact_index::rebuild(artifact_root).map_err(|error| match error {
-        artifact_index::IndexError::Contract(message) => EvidenceError::Contract(message),
-        artifact_index::IndexError::HostIo(message) => EvidenceError::HostIo(message),
-    })?;
-    let entry = index["entries"]
-        .as_array()
-        .and_then(|entries| entries.iter().find(|entry| entry["repo"] == repo))
+    let catalog =
+        artifact_index::SnapshotCatalog::build(artifact_root).map_err(|error| match error {
+            artifact_index::IndexError::Contract(message) => EvidenceError::Contract(message),
+            artifact_index::IndexError::HostIo(message) => EvidenceError::HostIo(message),
+        })?;
+    let entry = catalog
+        .admitted
+        .get(repo)
+        .and_then(|runs| runs.last())
         .cloned()
         .ok_or_else(|| {
-            let reasons = index["diagnostics"]
-                .as_array()
-                .into_iter()
-                .flatten()
+            let reasons = catalog
+                .diagnostics
+                .iter()
                 .filter(|diagnostic| diagnostic["repo"] == repo)
                 .filter_map(|diagnostic| {
                     Some(format!(

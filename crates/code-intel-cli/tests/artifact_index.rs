@@ -608,29 +608,65 @@ fn incomplete_and_legacy_runs_are_diagnostic_only_and_newer_invalid_does_not_win
 }
 
 #[test]
-fn newer_committed_non_completed_run_is_diagnostic_only_and_never_becomes_latest() {
-    let tree = Temp::new("non-completed");
+fn catalog_keeps_every_admitted_run_and_a_newer_refused_run_never_becomes_latest() {
+    let tree = Temp::new("catalog");
     committed_repo(&tree.0, "repo-a", "run-001", "dag-v1:aabb");
+    committed_repo(&tree.0, "repo-a", "run-002", "dag-v1:ccdd");
     let repo = tree.0.join("repo-a");
-    let (set, manifest_ref) = staged_with_outcome(&repo, "dag-v1:ccdd", "domain_failed", "run-999");
-    run_commit::commit(set, &manifest_ref, "run-999", CommitOptions::default()).unwrap();
+    let (set, manifest_ref) = staged_with_outcome(&repo, "dag-v1:eeff", "domain_failed", "run-003");
+    run_commit::commit(set, &manifest_ref, "run-003", CommitOptions::default()).unwrap();
+    let forged = committed_repo(&tree.0, "repo-a", "run-004", "dag-v1:1122");
+    let mut marker: Value =
+        serde_json::from_slice(&fs::read(forged.join("run-complete.json")).unwrap()).unwrap();
+    marker["manifest"]["sha256"] = json!("0".repeat(64));
+    fs::write(
+        forged.join("run-complete.json"),
+        serde_json::to_vec(&marker).unwrap(),
+    )
+    .unwrap();
+    let (staged_set, _) = staged(&repo, "dag-v1:3344", "run-005");
+    assert!(staged_set.path().is_dir());
 
-    let result = artifact_index::rebuild(&tree.0).unwrap();
+    let catalog = artifact_index::SnapshotCatalog::build(&tree.0).unwrap();
 
-    assert_eq!(result["entries"].as_array().unwrap().len(), 1);
-    assert_eq!(result["entries"][0]["run"], "run-001");
-    assert_eq!(result["entries"][0]["outcome"], "completed");
-    assert!(result["diagnostics"]
-        .as_array()
-        .unwrap()
+    let runs = catalog.admitted["repo-a"]
         .iter()
-        .any(|item| {
-            item["run"] == "run-999"
-                && item["classification"] == "non_completed"
-                && item["reason"]
-                    .as_str()
-                    .is_some_and(|reason| reason.contains("domain_failed"))
-        }));
+        .map(|entry| entry["run"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        runs,
+        ["run-001", "run-002"],
+        "older admitted runs are retained"
+    );
+    let refused = catalog
+        .diagnostics
+        .iter()
+        .map(|item| item["classification"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    for classification in ["non_completed", "forged", "staging"] {
+        assert!(
+            refused.contains(&classification),
+            "{classification} must be refused"
+        );
+    }
+    assert!(catalog.diagnostics.iter().any(|item| {
+        item["run"] == "run-003"
+            && item["reason"]
+                .as_str()
+                .is_some_and(|reason| reason.contains("domain_failed"))
+    }));
+    let index = artifact_index::rebuild(&tree.0).unwrap();
+    assert_eq!(index["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        index["entries"][0]["run"], "run-002",
+        "newest admitted run wins"
+    );
+    assert_eq!(index["entries"][0]["outcome"], "completed");
+    assert_eq!(
+        serde_json::to_vec(&catalog.to_index()).unwrap(),
+        serde_json::to_vec(&index).unwrap(),
+        "A08 v1 stays the latest-by-repository projection"
+    );
 }
 
 #[test]
