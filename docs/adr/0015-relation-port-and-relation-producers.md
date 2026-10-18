@@ -44,12 +44,10 @@ covers the same ground and is still pre-MVP.
      adapter producing `ast_extracted` relations plus Git signals.
      `provider.codegraph` and `provider.codenexus-adapt` merge into that adapter.
      The demoted `crates/code-nexus-lite` incubator, which is not on any production
-     path, is removed. The `legacy/Invoke-CodeNexusLite.ps1` compatibility route
-     follows the existing E04 retirement process
-     (`docs/compatibility-retire-codenexus-direct-branch.md`). It is deleted only
-     after the normal facade uses B04/B05, the observation window or a DR-0006
-     static-unreachability proof is satisfied, and E00 approval exists. Historical
-     rollback fixtures are kept.
+     path, is removed. The `legacy/Invoke-CodeNexusLite.ps1` compatibility route is
+     deleted together with the rest of PowerShell under DR-0018 (phase 1, #450),
+     with no retirement window. The native Rust `codenexus_lite` localization stays
+     until the CodeNexus adapter covers it.
    - *LSP* (internal client, external servers): Code Intel drives language servers
      directly from Rust for definition, references, implementation and call
      hierarchy, producing `lsp_resolved` relations. The server list and settings
