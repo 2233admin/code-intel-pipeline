@@ -13,6 +13,7 @@ mod provider_routes;
 mod repowise_routes;
 mod run_routes;
 mod serve_routes;
+mod setup_routes;
 mod types;
 
 pub(super) use types::{CommandRoute, LegacyRoute, RawRoute, VersionRoute};
@@ -119,6 +120,7 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             "retire only after typed administration parity and release-package verification"
         ),
     },
+    CommandRoute::Raw(setup_routes::SETUP),
     raw_route! {
         command: "compatibility",
         subcommand: Some("retirement-ticket"),

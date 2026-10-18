@@ -31,7 +31,7 @@ pub(crate) fn resolve_platform(requested: &str) -> Result<String, String> {
     }
 }
 
-pub(super) fn binary_name(platform: &str) -> String {
+pub(crate) fn binary_name(platform: &str) -> String {
     if platform == "windows" {
         "code-intel.exe".into()
     } else {
@@ -44,10 +44,7 @@ pub(super) fn binary_name(platform: &str) -> String {
 pub(super) fn platform_paths(platform: &str, pipeline_root: &Path) -> Value {
     let home = home_directory();
     let data_root = data_root(platform, &home);
-    let bin = match env::var("CODE_INTEL_BIN") {
-        Ok(value) if !value.trim().is_empty() => resolve_code_intel_path(Path::new(&value)),
-        _ => data_root.join("bin"),
-    };
+    let bin = bin_dir(&data_root);
     let code_intel_home = match env::var("CODE_INTEL_HOME") {
         Ok(value) if !value.trim().is_empty() => resolve_code_intel_path(Path::new(&value)),
         _ => resolve_code_intel_path(pipeline_root),
@@ -89,6 +86,15 @@ pub(crate) fn data_root(platform: &str, home: &Path) -> PathBuf {
     }
 }
 
+/// `Get-CodeIntelBinDir`: `CODE_INTEL_BIN`, else `<data root>/bin`. Shared by
+/// the doctor probe and `code-intel setup` so both agree where the binary lives.
+pub(crate) fn bin_dir(data_root: &Path) -> PathBuf {
+    match env::var("CODE_INTEL_BIN") {
+        Ok(value) if !value.trim().is_empty() => resolve_code_intel_path(Path::new(&value)),
+        _ => data_root.join("bin"),
+    }
+}
+
 pub(crate) fn home_directory() -> PathBuf {
     let raw = if cfg!(windows) {
         env::var_os("USERPROFILE").or_else(|| env::var_os("HOME"))
@@ -105,7 +111,7 @@ pub(crate) fn home_directory() -> PathBuf {
 /// absolute lexically-normalized path when it does not. Windows verbatim
 /// (`\\?\`) prefixes are stripped so the value stays comparable to the path
 /// strings every other producer in this pipeline emits.
-pub(super) fn resolve_code_intel_path(path: &Path) -> PathBuf {
+pub(crate) fn resolve_code_intel_path(path: &Path) -> PathBuf {
     match std::fs::canonicalize(path) {
         Ok(resolved) => strip_verbatim(&resolved),
         Err(_) => normalize(&absolute_from_cwd(path)),

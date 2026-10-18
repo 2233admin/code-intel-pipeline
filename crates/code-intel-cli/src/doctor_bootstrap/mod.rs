@@ -22,7 +22,7 @@ use serde_json::{json, Value};
 
 mod config;
 mod identity;
-mod paths;
+pub(crate) mod paths;
 mod probe;
 
 // Included by path so every crate root that pulls this module in — the binary

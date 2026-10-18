@@ -83,6 +83,7 @@ mod sentrux_gate;
 mod sentrux_hotspots;
 mod sentrux_quality_projection;
 mod session_evidence;
+mod setup;
 mod snapshot;
 mod stable_artifact;
 mod staged_artifact;

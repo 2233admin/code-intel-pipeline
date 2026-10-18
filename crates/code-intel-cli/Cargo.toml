@@ -15,3 +15,7 @@ url = "2.5.8"
 
 [dev-dependencies]
 jsonschema = { version = "0.59.0", default-features = false }
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+winreg = "0.56.0"
