@@ -66,6 +66,11 @@ Consequences:
   user-directory variables bare — in **prose or a comment**, not just in code —
   fails the scan, while the `$env:`-prefixed form passes. Always write the
   `$env:` form, including in comments and documentation.
+  On a host that cannot build the checkout (DR-0013 / #403) and whose installed
+  release predates the command (0.7.1 lacks it), do not substitute the retired
+  PowerShell script: CI runs the same scan on every PR in all three
+  `cross-platform-smoke` lanes ("Hardcoded path scan"), or install a released
+  0.7.2+ binary — installing is not compiling (#405).
 - Editing a file pinned by `orchestration/**/*.json` (`toolchainDigests`, or a
   `{path, sha256}` pair) makes its contract test fail with a stale-digest
   assertion. Re-sync those pins **once, after every other edit**, by literal
