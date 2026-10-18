@@ -207,7 +207,11 @@ fn ast_grep_has_a_single_declaration_site() {
     let text = fs::read_to_string(root.join(declaration["file"].as_str().unwrap()))
         .expect("declaration file");
     let found = find_all(&text, declaration["pattern"].as_str().unwrap());
-    assert_eq!(found.len(), 1, "ast-grep must be declared exactly once: {found:?}");
+    assert_eq!(
+        found.len(),
+        1,
+        "ast-grep must be declared exactly once: {found:?}"
+    );
 }
 
 #[test]
