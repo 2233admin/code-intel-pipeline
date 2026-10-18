@@ -34,5 +34,6 @@ Enforcement: 谁在什么时机强制它（gate / 测试 / 评审规约），没
 | [DR-0013](DR-0013-affected-host-compilation-isolation.md) | 本仓库 checkout 所在 Windows 主机在 #403 未结期间禁止编译/测试，验证走别的机或 CI | active |
 | [DR-0014](DR-0014-issue-convergence-verdict-rule.md) | 收敛 = 每条 open issue 都有 do/freeze/close 判决，不等于把 backlog 做完 | active |
 | [DR-0016](DR-0016-versioned-quality-admission.md) | 主人批准的版本化 admission：Quality 全量测量不变，aggregate 下降显式 advisory；其余硬门与证据准入不变，防护损失明确接受 | active |
+| [DR-0017](DR-0017-relation-port-gate-and-routing.md) | Relation Port：外部关系（CodeNexus/CodeGraph、LSP）不进入门禁判定；producer 按边合并，不全局择一；默认切换需实测胜出（ADR-0015） | active |
 
 平行 session 开工前先扫本目录（一次 `ls docs/decisions/` + 读 README 表格，30 秒）。与已有决策相悖的工作，先开 issue 挑战决策本身，不要直接实现相反语义。
