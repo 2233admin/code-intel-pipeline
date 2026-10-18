@@ -252,10 +252,22 @@ pub(crate) fn compute_modularity_q(edges: &BTreeSet<(String, String)>) -> f64 {
 /// granularity, because without it every file in a single-crate repository
 /// (this one included -- `crates/code-intel-cli/src/*.rs`) collapses into
 /// one module, making Q trivially ~0 for the exact repositories this
-/// engine most needs to say something useful about. A file directly under
-/// `<crate>/src|app|tests/` with no further subdirectory is its own module
-/// (top-level files are already separate concerns); a file inside a
-/// subdirectory shares that subdirectory as its module.
+/// engine most needs to say something useful about.
+///
+/// Under `<crate>/src|app|tests/`, a file inside a **subdirectory** shares
+/// that subdirectory as its module, and a file directly under the root
+/// shares `<crate>/src` with every other such file and with every
+/// subdirectory's parent. The two must be the same *kind* of thing for Q to
+/// mean anything: an earlier revision made each top-level file its own
+/// singleton module ("top-level files are already separate concerns"), but
+/// this repository refutes that premise -- 126 top-level files carry 198
+/// mutual `crate::` edges (`capability` alone is referenced by more than
+/// thirty of them). Treating each as its own community made every reuse of
+/// a shared top-level module a cross-community edge, so a subdirectory
+/// module that correctly reused the shared infrastructure scored *worse*
+/// than one that duplicated it. Issue #438 records the measurement that
+/// exposed this: internalizing a provider module dropped the aggregate
+/// quality signal 12.8% while coupling, cycles and god files all held.
 pub(crate) fn module_of(path: &str) -> &str {
     let Some((first, after_first)) = path.split_once('/') else {
         return ""; // File directly at the repository root.
@@ -266,9 +278,18 @@ pub(crate) fn module_of(path: &str) -> &str {
         };
         if let Some((root, after_root)) = after_name.split_once('/') {
             if matches!(root, "src" | "app" | "tests") {
-                let next_end = after_root.find('/').unwrap_or(after_root.len());
-                let prefix_end = path.len() - after_root.len() + next_end;
-                return &path[..prefix_end];
+                // A file inside a subdirectory keeps that subdirectory as its
+                // module. A file directly under `src|app|tests` -- one with no
+                // further slash -- shares the `src|app|tests` bucket with every
+                // other such file, and that bucket is the parent of every
+                // subdirectory module. Both are therefore siblings, which is
+                // what lets a subdirectory module reuse a shared top-level
+                // module without being scored as a cross-community breach.
+                let bucket_end = match after_root.find('/') {
+                    Some(next) => path.len() - after_root.len() + next,
+                    None => path.len() - after_root.len() - 1,
+                };
+                return &path[..bucket_end];
             }
         }
         return &path[..first.len() + 1 + name.len()];
@@ -456,6 +477,20 @@ pub(crate) fn import_target_candidate(line: &str) -> Option<String> {
     }
     let candidate = candidate.trim();
     let last_word = candidate.split_whitespace().last()?;
+    // A path rooted at `std`, `core` or `alloc` names the standard library,
+    // never a file in this repository. Without this check the last-segment
+    // reduction below throws the root away and leaves a bare word that
+    // `resolve_edge` happily matches against any single file with that stem:
+    // `use std::process::{Child, ...}` became a dependency on
+    // `codegraph_provider/process.rs` and, together with that file's real
+    // `use crate::node_timeout`, manufactured a two-file import cycle with no
+    // basis in the source (issue #438).
+    if last_word.starts_with("std::")
+        || last_word.starts_with("core::")
+        || last_word.starts_with("alloc::")
+    {
+        return None;
+    }
     let last_segment = last_word
         .split(&['.', ':', '/'][..])
         .filter(|segment| !segment.is_empty())
@@ -813,10 +848,16 @@ mod tests {
 
     #[test]
     fn module_of_gives_crates_paths_one_more_level_of_granularity() {
-        // Flat top-level file: its own module, not the whole crate.
+        // A flat top-level file shares the `src` bucket with every other flat
+        // file, and that bucket is the parent of every subdirectory module --
+        // they are siblings, not strangers (issue #438).
         assert_eq!(
             module_of("crates/code-intel-cli/src/sentrux_gate.rs"),
-            "crates/code-intel-cli/src/sentrux_gate.rs"
+            "crates/code-intel-cli/src"
+        );
+        assert_eq!(
+            module_of("crates/code-intel-cli/src/capability.rs"),
+            "crates/code-intel-cli/src"
         );
         // Two files under the same subdirectory: same module.
         assert_eq!(
@@ -831,6 +872,30 @@ mod tests {
         assert_eq!(
             module_of("crates/code-intel-cli/build.rs"),
             "crates/code-intel-cli"
+        );
+    }
+
+    /// Issue #438. The whole point of the granularity rule is that reusing a
+    /// shared top-level module must not be scored as crossing a community
+    /// boundary: a subdirectory module and the flat modules it depends on are
+    /// siblings under `src`. Before this, each flat file was its own singleton
+    /// community, so a module that correctly reused six of them accumulated six
+    /// cross-community edges and dragged Q below zero.
+    #[test]
+    fn a_subdirectory_module_and_the_flat_modules_it_reuses_are_not_cross_community() {
+        let flat = module_of("crates/code-intel-cli/src/capability.rs");
+        let sub = module_of("crates/code-intel-cli/src/codegraph_provider/mod.rs");
+        assert_eq!(flat, "crates/code-intel-cli/src");
+        assert_eq!(sub, "crates/code-intel-cli/src/codegraph_provider");
+        // Different buckets (the subdirectory is genuinely a separate
+        // concern), but one is the other's parent, not an unrelated singleton.
+        assert_ne!(flat, sub);
+        assert!(sub.starts_with(&format!("{flat}/")));
+        // The relation the fix establishes: every flat file is in ONE bucket,
+        // never one bucket per file.
+        assert_eq!(
+            module_of("crates/code-intel-cli/src/snapshot.rs"),
+            module_of("crates/code-intel-cli/src/capability.rs")
         );
     }
 
@@ -896,6 +961,68 @@ mod tests {
     fn unresolvable_targets_are_dropped_not_guessed() {
         let known: BTreeSet<String> = ["src/a.rs"].iter().map(|s| s.to_string()).collect();
         assert_eq!(resolve_edge("src/b.rs", "std::fs", &known), None);
+    }
+
+    // ── Issue #438: a standard-library import must not name a repository file. ──
+
+    #[test]
+    fn stdlib_rooted_paths_yield_no_candidate_at_all() {
+        // The extractor used to reduce each of these to its last segment
+        // (`process`, `Command`, `Duration`), and `resolve_edge` then matched
+        // that bare word against any single file with the matching stem. With
+        // `codegraph_provider/process.rs` in the tree, `std::process` became a
+        // dependency edge on it.
+        assert_eq!(
+            import_target_candidate("use std::process::{Child, Command, Output, Stdio};"),
+            None
+        );
+        assert_eq!(import_target_candidate("use std::process::Command;"), None);
+        assert_eq!(import_target_candidate("use core::fmt;"), None);
+        assert_eq!(import_target_candidate("use alloc::vec::Vec;"), None);
+        // A crate-local path is unaffected: its last segment is still extracted.
+        assert_eq!(
+            import_target_candidate("use crate::node_timeout::{self, NodeTimeoutError};")
+                .as_deref(),
+            Some("node_timeout")
+        );
+    }
+
+    #[test]
+    fn std_process_does_not_manufacture_a_cycle_with_the_provider_process_file() {
+        // End-to-end shape of the #438 defect: the false edge from
+        // `std::process` plus the provider's real `use crate::node_timeout`
+        // closed a two-file cycle that no source-level dependency justified.
+        let known: BTreeSet<String> = [
+            "crates/x/src/node_timeout.rs",
+            "crates/x/src/codegraph_provider/process.rs",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+        let false_target = import_target_candidate("use std::process::{Child, Command};");
+        assert_eq!(
+            false_target, None,
+            "stdlib import must not name a candidate"
+        );
+        // The bare stem would otherwise resolve, which is exactly the trap.
+        assert_eq!(
+            resolve_edge("crates/x/src/node_timeout.rs", "process", &known).as_deref(),
+            Some("crates/x/src/codegraph_provider/process.rs")
+        );
+
+        // The genuine direction still resolves.
+        let real = import_target_candidate("use crate::node_timeout::{self, NodeTimeoutError};");
+        assert_eq!(real.as_deref(), Some("node_timeout"));
+        assert_eq!(
+            resolve_edge(
+                "crates/x/src/codegraph_provider/process.rs",
+                "node_timeout",
+                &known
+            )
+            .as_deref(),
+            Some("crates/x/src/node_timeout.rs")
+        );
     }
 
     #[test]

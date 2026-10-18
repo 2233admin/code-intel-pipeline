@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-codegraph-result.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "operation", "provider", "repository", "scope", "snapshot", "cache", "authority", "completeness", "domainVerdict", "engineeringFacts", "result", "rawOutput", "admission", "artifactRoot", "diagnostics", "exitCode"],
+  "properties": {
+    "schema": { "const": "code-intel-codegraph-result.v1" },
+    "status": { "enum": ["ok", "unavailable", "rejected", "failed"] },
+    "operation": { "type": "string" },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "implementation", "executable", "launcher"],
+      "properties": {
+        "id": { "const": "codegraph.cli" },
+        "implementation": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "version", "digest"],
+              "properties": {
+                "id": { "const": "colbymchenry/codegraph" },
+                "version": { "type": "string", "minLength": 1 },
+                "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+              }
+            }
+          ]
+        },
+        "executable": { "type": ["string", "null"] },
+        "launcher": { "type": ["string", "null"] },
+        "identityFiles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256"],
+            "properties": {
+              "path": { "type": "string" },
+              "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            }
+          }
+        },
+        "digestScope": { "type": "string" }
+      }
+    },
+    "repository": { "type": ["string", "null"] },
+    "scope": { "const": ["."] },
+    "snapshot": { "$ref": "#/definitions/snapshot" },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["usable", "binding"],
+      "properties": {
+        "usable": { "type": "boolean" },
+        "binding": { "enum": ["current", "stale", "unbound", "invalid", "missing"] },
+        "boundSnapshot": { "$ref": "#/definitions/snapshot" }
+      }
+    },
+    "authority": { "const": "advisory" },
+    "completeness": { "const": "partial" },
+    "domainVerdict": { "const": "unknown" },
+    "engineeringFacts": { "type": "array", "maxItems": 0 },
+    "result": { "type": ["object", "array", "string", "null"] },
+    "rawOutput": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["stdout", "stderr", "format", "exitCode"],
+          "properties": {
+            "stdout": { "type": "string" },
+            "stderr": { "type": "string" },
+            "format": { "enum": ["json", "text", "bytes"] },
+            "exitCode": { "type": ["integer", "null"] },
+            "stdoutBytes": { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 255 } },
+            "stderrBytes": { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 255 } }
+          }
+        }
+      ]
+    },
+    "admission": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "code-intel-evidence-admissibility-result.v1.schema.json" }
+      ]
+    },
+    "artifactRoot": { "type": ["string", "null"] },
+    "diagnostics": { "type": "array", "items": { "type": "string" } },
+    "exitCode": { "enum": [0, 64, 65, 69, 70, 74] },
+    "uncertainty": { "type": "array", "items": { "type": "string" } }
+  },
+  "definitions": {
+    "snapshot": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "code-intel-repository-snapshot.v1.schema.json#/properties/snapshot" }
+      ]
+    }
+  }
+}

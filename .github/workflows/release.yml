@@ -81,8 +81,7 @@ jobs:
           rustup show active-toolchain
 
       - name: Install ripgrep
-        shell: pwsh
-        run: choco install ripgrep --version 14.1.0 -y --no-progress
+        uses: ./.github/actions/install-ripgrep
 
       - name: Rust format
         shell: pwsh
@@ -366,23 +365,7 @@ jobs:
           rustup show active-toolchain
 
       - name: Install ripgrep
-        shell: pwsh
-        # Same recipe as ci.yml cross-platform-smoke. Homebrew has no
-        # supported way to pin a formula version, so the macOS install is
-        # unpinned; apt installs the distribution-pinned ripgrep.
-        run: |
-          if ($IsMacOS) {
-            brew install ripgrep
-          }
-          else {
-            if (Get-Command rg -ErrorAction SilentlyContinue) {
-              rg --version
-            }
-            else {
-              sudo apt-get update
-              sudo apt-get install -y ripgrep
-            }
-          }
+        uses: ./.github/actions/install-ripgrep
 
       - name: Build Rust CLI
         shell: pwsh
