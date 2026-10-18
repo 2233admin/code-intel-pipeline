@@ -1,6 +1,6 @@
 # DR-0006 已证死代码分支的遥测窗口静态证明替代路径
 
-Status: active
+Status: superseded by DR-0018
 Date: 2026-08-25
 
 ## Decision

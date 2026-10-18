@@ -26,15 +26,15 @@
 ## Language direction
 
 - Do not add new PowerShell scripts or new product behavior to existing `.ps1` files.
-- Treat `.ps1` files as retired compatibility surfaces. New production paths must not invoke
-  PowerShell; migrate the capability to Rust and keep only a tested forwarding shim when external
-  compatibility still requires it.
+- PowerShell is being deleted, not retired (DR-0018). Do not keep compatibility facades, forwarding
+  shims, parity harnesses or rollback fixtures for `.ps1` code; delete them. New production paths must
+  not invoke PowerShell.
 - Implement production CLI, orchestration, artifact, policy, and provider-boundary work in Rust.
 - MoonBit is an approved experimental language for small, isolated components. Keep experiments
   outside the production path until they prove artifact-contract parity, cross-platform builds,
   tests, and a measured advantage over the Rust implementation.
-- Retire a compatibility entry point only after its Rust replacement passes the existing contract
-  tests and release packaging checks; do not delete historical rollback fixtures in the same change.
+- Before deleting a `.ps1` file, move any still-live behavior it alone tests into a Rust test.
+  Installer and packaging scripts stay until the Rust installer passes install-smoke (DR-0018 phase 2).
 
 ## Reading the crate's warning count
 
