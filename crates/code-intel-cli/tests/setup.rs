@@ -169,14 +169,17 @@ fn installs_binary_and_skill_then_a_second_run_changes_nothing() {
 fn shell_profiles_source_env_once_and_existing_content_survives() {
     let fixture = Fixture::new("profiles");
     fs::write(fixture.home().join(".bashrc"), "alias ll='ls -l'").unwrap();
+    let mut bin = String::new();
     for _ in 0..2 {
         let (output, value) = fixture.setup(&["--skip-doctor"]);
         assert_eq!(output.status.code(), Some(0), "{value:#}");
+        bin = value["paths"]["bin"].as_str().unwrap().to_string();
     }
+    // The data root differs per OS (macOS: Library/Application Support).
     let env_sh = fixture.home().join(".config/code-intel/env.sh");
     let body = fs::read_to_string(&env_sh).unwrap();
     assert!(body.contains("export CODE_INTEL_HOME="), "{body}");
-    assert!(body.contains(".local/share/code-intel/bin"), "{body}");
+    assert!(body.contains(&bin), "{body}");
     let line = format!(". \"{}\"", env_sh.display());
     let profile = fs::read_to_string(fixture.home().join(".profile")).unwrap();
     assert_eq!(profile.matches(&line).count(), 1, "{profile}");
@@ -198,11 +201,7 @@ fn shell_profiles_source_env_once_and_existing_content_survives() {
         .output()
         .unwrap();
     let path = String::from_utf8(shell.stdout).unwrap();
-    assert_eq!(
-        path.matches(".local/share/code-intel/bin").count(),
-        1,
-        "{path}"
-    );
+    assert_eq!(path.matches(bin.as_str()).count(), 1, "{path}");
 }
 
 #[cfg(unix)]
