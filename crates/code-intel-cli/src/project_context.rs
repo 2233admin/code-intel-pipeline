@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 use crate::committed_evidence::CommittedEvidence;
 use crate::committed_evidence_controller::{CommittedAuthority, CommittedEvidenceController};
-use crate::evidence_query::{EvidenceQueryRequest, MAX_LIMIT};
+use crate::evidence_query::{self, EvidenceQueryRequest, MAX_LIMIT};
 use crate::query_index::QueryIndex;
 use crate::{artifacts, authoritative_run, execution_policy};
 
@@ -226,16 +226,11 @@ impl ProjectContext {
                     CommittedEvidenceController::open(&self.artifact_root, &self.repo)
                         .map_err(ProjectError::from)?;
                 self.verify_evidence(&evidence)?.require_verified()?;
-                let result = CommittedEvidenceController::query_opened(
-                    request,
-                    evidence,
-                    authority,
-                    &self.index,
-                )
-                .map_err(ProjectError::from)?;
+                let result = evidence_query::execute(request, &evidence, &self.index)
+                    .map_err(ProjectError::from)?;
                 Ok(QueryAnswer {
                     value: result.value().clone(),
-                    authority: result.authority().clone(),
+                    authority,
                 })
             }
         }

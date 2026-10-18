@@ -45,13 +45,6 @@
 # already refused once below. Accepted and re-baselined rather than engineered
 # around.
 #
-# Ratchet movement (2026-10-18, #264): coupling 63.33 -> 63.35 for the new
-# `query_index.rs` module (snapshot-bound query views) and the one `use` line each
-# that `evidence_query`, `committed_evidence_controller` and `project_context`
-# need to reach it. That is real new structure, not a regression, and inlining
-# fully qualified paths to hide the edges is the trade refused above. God files
-# stay at 33 and quality_signal moves 6236 -> 6467. Re-baselined.
-#
 # Coupling denominator change (sentrux-native 2.1.0, 2026-07-31):
 # `coupling_score` now divides import edges by the count of files written in a
 # language whose dependency syntax the scanner models, not by every code file.
