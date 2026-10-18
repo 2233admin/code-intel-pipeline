@@ -109,14 +109,10 @@ pattern alone — see TASK_REPORT.md for the cases where the obvious pattern mat
 | docs/automatic-pull-request-beta.md | living-contract | kept | Referenced by follow-up-automation.md |
 | docs/change-impact.md | living-contract | kept | Live src module (change_impact) |
 | docs/code-intel-architecture.md | living-contract | kept | Referenced by reference-capability-map.md |
-| docs/code-intel-project-conformance.md | living-contract | kept | Referenced by language-adapter-acceptance-standard.md |
-| docs/code-intel-three-stage-acceptance.md | living-contract | kept | Documents live Invoke-CodeIntelAcceptance.ps1 entry point |
 | docs/codenexus-provider-adapter.md | living-contract | kept | Referenced by providers.rs |
 | docs/committed-run-index.md | living-contract | kept | Referenced by reference-capability-map.md |
-| docs/compatibility-facade-finalize.md | living-contract | kept | Referenced by final-commitment-reconciliation.md |
 | docs/compatibility-retirement-gate.md | living-contract | kept | Live src + test module (compatibility_retirement_gate) |
 | docs/compatibility-retirement-ticket-template.md | living-contract | kept | Live test module (compatibility_retirement_ticket_template) |
-| docs/compete-project-score.md | living-contract | kept | Documents live Invoke-CompeteProjectScore.ps1 + tool |
 | docs/dag-coordinator.md | living-contract | kept | Live src + test module (dag_coordinator) |
 | docs/decision-gap-detector.md | living-contract | kept | Backtick paths verified live (rules json, fixture) |
 | docs/decision-request-response-port.md | living-contract | kept | Referenced by decision_port.rs |
@@ -126,8 +122,6 @@ pattern alone — see TASK_REPORT.md for the cases where the obvious pattern mat
 | docs/evidence-query.md | living-contract | kept | Live src module (evidence_query) |
 | docs/execution-kernel-architecture.md | living-contract | kept | Documents live authoritative_run deep module and private kernel |
 | docs/file-boundary-observation.md | living-contract | kept | Referenced by file_boundary.rs |
-| docs/final-commitment-reconciliation-usage.md | living-contract | kept | Companion usage doc; backtick paths verified live |
-| docs/final-commitment-reconciliation.md | living-contract | kept | Referenced by final-commitment-reconciliation.json |
 | docs/follow-up-automation.md | living-contract | kept | Linked from README.md |
 | docs/frontier-quality-loop.md | living-contract | kept | Referenced by orchestration/internalization/frontier.json |
 | docs/graph-provider-adapter.md | living-contract | kept | Referenced by providers.rs |
@@ -145,11 +139,8 @@ pattern alone — see TASK_REPORT.md for the cases where the obvious pattern mat
 | docs/method-selection.md | living-contract | kept | References live method-selection-rules.v1.json |
 | docs/model-channel-routing.md | living-contract | kept | Documents live model_channels.rs routing |
 | docs/model-executable-handle.md | living-contract | kept | References 3 live legacy scripts |
-| docs/multi-agent-merge-queue.md | living-contract | kept | Referenced by internalization_record.rs test fixtures |
-| docs/multi-agent-workspace-governance.md | living-contract | kept | References live Invoke-MultiAgentWorkspacePreflight.ps1 |
 | docs/native-code-evidence.md | living-contract | kept | Live src + test module (native_code_evidence) |
 | docs/openspec-detector.md | living-contract | kept | Referenced by internalization_record.rs test fixtures |
-| docs/pon-conformance-ratchet.md | living-contract | kept | Referenced by orchestration/internalization/pon.json |
 | docs/pon-multilanguage-code-evidence.md | living-contract | kept | Referenced by pon-multilanguage.json |
 | docs/ponytail-gain-ledger.md | living-contract | kept | Active tracked cleanup ledger; cross-confirms this sweep |
 | docs/ponytail-governance-gate.md | living-contract | kept | Referenced by test-ponytail-gate-contract.ps1 |
@@ -158,7 +149,6 @@ pattern alone — see TASK_REPORT.md for the cases where the obvious pattern mat
 | docs/project-orientation-benchmark.md | living-contract | kept | Live src + test module (project_orientation_benchmark) |
 | docs/project-orientation.md | living-contract | kept | Live src + test module (project_orientation) |
 | docs/public-beta.md | living-contract | kept | Linked from README.md |
-| docs/python314-pon-development.md | living-contract | kept | Referenced by pon-python314-development.json |
 | docs/repository-layout.md | living-contract | kept | Linked from README.md |
 | docs/repository-snapshot-identity.md | living-contract | kept | Linked from README.md |
 | docs/repository-survival-scan.md | living-contract | kept | Referenced by survival_scan.rs |

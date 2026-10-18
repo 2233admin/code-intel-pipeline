@@ -235,10 +235,6 @@ fn every_probe_is_executable_as_described() {
                 probe["module"].as_str().is_some_and(|s| !s.is_empty()),
                 "{name}: python-module probe needs a module"
             ),
-            Some("npm-package") => assert!(
-                probe["package"].as_str().is_some_and(|s| !s.is_empty()),
-                "{name}: npm-package probe needs a package"
-            ),
             other => panic!("{name}: unknown probe kind {other:?}"),
         }
     }
