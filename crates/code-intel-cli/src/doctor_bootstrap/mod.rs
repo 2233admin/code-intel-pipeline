@@ -136,7 +136,7 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
     let tools = vec![
         probe::probe_tool("rg", true, prefix),
         probe::probe_tool("git", true, prefix),
-        probe::probe_python(prefix),
+        probe::probe_python(options.require_repowise, prefix),
         probe::probe_tool("repowise", options.require_repowise, prefix),
         probe::probe_tool("repomix", false, prefix),
         probe::probe_tool("sentrux", !builtin_sentrux, prefix),
