@@ -36,7 +36,9 @@ pub(super) fn install(home: &Path, release_root: &Path) -> Vec<Action> {
 
 fn install_canonical(source: &Path, canonical: &Path) -> Action {
     match (tree_digest(source), tree_digest(canonical)) {
-        (Ok(wanted), Ok(present)) if wanted == present => {
+        // A link that happens to resolve to matching content is not an
+        // installed copy: it breaks when its target goes away.
+        (Ok(wanted), Ok(present)) if wanted == present && is_real_dir(canonical) => {
             return Action::already_present("skill:source", &canonical.display().to_string())
         }
         (Err(error), _) => {
@@ -122,6 +124,10 @@ fn link(name: &str, canonical: &Path, target: &Path) -> Action {
             ),
         },
     }
+}
+
+fn is_real_dir(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_dir())
 }
 
 /// A link resolving to `canonical`, or a plain copy with identical contents.

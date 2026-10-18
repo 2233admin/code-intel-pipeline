@@ -210,7 +210,13 @@ mod windows {
         let bin = bin.display().to_string();
         let mut actions = Vec::new();
 
-        let current: String = environment.get_value("Path").unwrap_or_default();
+        // Only a missing value is empty: any other read error (say a Path of
+        // an unexpected registry type) must not let setup overwrite PATH.
+        let current: String = match environment.get_value("Path") {
+            Ok(value) => value,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+            Err(error) => return Err(error),
+        };
         let entries = current
             .split(';')
             .filter(|entry| !entry.is_empty())

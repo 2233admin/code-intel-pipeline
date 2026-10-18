@@ -288,3 +288,25 @@ fn usage_errors_exit_65_without_touching_the_home() {
     let leftovers: Vec<_> = fs::read_dir(fixture.home()).unwrap().collect();
     assert!(leftovers.is_empty(), "{leftovers:?}");
 }
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_canonical_skill_is_replaced_by_a_real_copy() {
+    let fixture = Fixture::new("canonical-link");
+    let skills = fixture.home().join(".agents/skills");
+    fs::create_dir_all(&skills).unwrap();
+    let canonical = skills.join("code-intel-pipeline");
+    std::os::unix::fs::symlink(
+        fixture.root.join("release/skills/code-intel-pipeline"),
+        &canonical,
+    )
+    .unwrap();
+    let (output, value) = fixture.setup(&["--skip-doctor", "--no-modify-path"]);
+    assert_eq!(output.status.code(), Some(0), "{value:#}");
+    assert_eq!(
+        status(&Fixture::statuses(&value), "skill:source"),
+        "installed"
+    );
+    let metadata = fs::symlink_metadata(&canonical).unwrap();
+    assert!(metadata.is_dir() && !metadata.file_type().is_symlink());
+}
