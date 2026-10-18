@@ -30,7 +30,7 @@ impl RunProfile {
 /// Deliberately a separate axis from [`RunProfile`]: the profile says how
 /// strictly providers are *required*, the mode says how much is *attempted*.
 /// A strict lite run is a meaningful combination, so the two must not be
-/// flattened into one enum — see docs/ps1-exit/t2-launcher-classification.md §2.
+/// flattened into one enum.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum RunMode {
     /// Skip the optional structural stage; the fastest useful run.
@@ -112,17 +112,16 @@ impl ProviderRequirement {
 
 /// The launcher stage switches that map cleanly onto provider requirements.
 ///
-/// Deliberately not every `-Skip*` the PowerShell launcher accepts. The ones
+/// Deliberately not every historical `-Skip*` switch. The ones
 /// left out need a Rust surface that does not exist yet, and shipping a flag
 /// that silently does nothing would be worse than not shipping it:
 ///
 /// - `-SkipSentruxCheck` / `-SkipSentruxGate` are sub-stage granularity; the
 ///   DAG has a single `provider.sentrux-adapt` node, so honouring them means
 ///   splitting that node or giving it options, not toggling a requirement.
-/// - `-SkipRepomix` / `-RepomixStyle` / `-RepomixCompress` are gone from the
-///   launcher (declared dead, not ported — R05 governance review found no
-///   pinned `repomix` executable or production conformance evidence; see
-///   docs/ps1-exit/t2-launcher-classification.md §1.3), so there is nothing
+/// - `-SkipRepomix` / `-RepomixStyle` / `-RepomixCompress` are gone
+///   (declared dead, not ported — R05 governance review found no pinned
+///   `repomix` executable or production conformance evidence), so there is nothing
 ///   here to map onto a requirement.
 /// - `-WorkspaceAdd` and `-AllowRepowiseShadowMutation` are options of the
 ///   repowise stage rather than switches over whether it runs.
@@ -131,8 +130,6 @@ impl ProviderRequirement {
 /// (`ProviderPolicy::open_spec`); `-AutoOpenSpec` is a same-shape passthrough
 /// option, not a requirement toggle, so it is not part of `SkipFlags` — see
 /// `ExecutionPolicy::with_open_spec_auto`.
-///
-/// See docs/ps1-exit/t2-launcher-classification.md §1.2.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct SkipFlags {
     pub(crate) repowise: bool,

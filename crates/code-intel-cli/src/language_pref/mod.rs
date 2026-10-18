@@ -17,9 +17,8 @@
 //! Every tier is a plain, fallible read that falls through silently to the
 //! next one on any absence or error -- there is no failure mode a caller
 //! must handle, and nothing here ever prompts or blocks. The interactive
-//! prompt (TTY-gated, install time only) lives in
-//! `legacy/install-code-intel-pipeline.ps1`; this module only resolves and
-//! persists, it never asks.
+//! prompt (TTY-gated, install time only) lives with the installer; this
+//! module only resolves and persists, it never asks.
 
 use std::path::{Path, PathBuf};
 use std::{env, fs, io};
@@ -132,7 +131,7 @@ pub(crate) fn project_config_path(repo: &Path) -> PathBuf {
 
 /// User-level config: `<platform data root>/config.json`, alongside the
 /// per-user data root `doctor_bootstrap::data_root` already derives (which
-/// mirrors `Get-CodeIntelDataRoot` from `code-intel-platform.psm1`: `
+/// resolves `
 /// CODE_INTEL_DATA_ROOT`, else `%LOCALAPPDATA%\code-intel` on Windows,
 /// `~/Library/Application Support/code-intel` on macOS, or
 /// `$XDG_DATA_HOME/code-intel`/`~/.local/share/code-intel` on Linux).

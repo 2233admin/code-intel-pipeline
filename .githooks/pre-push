@@ -6,7 +6,7 @@ queue_command="$repo_root/node_modules/.bin/claude-code-merge-queue"
 
 # Git for Windows can prepend user shim directories ahead of the Windows Python
 # launcher. Keep the native launcher discoverable so the CPython 3.14 acceptance
-# lane behaves the same in pre-push as it does in PowerShell.
+# lane behaves the same in pre-push as it does in an interactive shell.
 if [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev/null 2>&1; then
   windows_apps="$(cygpath -u "$LOCALAPPDATA")/Microsoft/WindowsApps"
   PATH="$windows_apps:$PATH"
@@ -14,7 +14,7 @@ if [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev/null 2>&1; then
 fi
 
 if [ ! -f "$queue_command" ]; then
-  printf '%s\n' 'pre-push: repository-local claude-code-merge-queue is missing; run legacy/Install-MultiAgentMergeQueue.ps1.' >&2
+  printf '%s\n' 'pre-push: repository-local claude-code-merge-queue is missing; run npm ci.' >&2
   exit 1
 fi
 

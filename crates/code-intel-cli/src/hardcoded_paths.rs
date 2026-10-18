@@ -1,12 +1,10 @@
-//! Hardcoded-path scan — Rust replacement for
-//! `legacy/tools/check-hardcoded-paths.ps1` (issue #275, PS1 retirement).
+//! Hardcoded-path scan (issue #275).
 //!
-//! Scans git-tracked `*.ps1` / `*.psm1` / `*.md` / `*.yml` files for
-//! machine-specific paths (Windows user directories, `powershell.exe`,
-//! env-var names) and for any absolute path ending in `code-intel-pipeline`.
-//! Lines where the match came only from a `$env:VAR` reference are exempt
-//! (the PowerShell script strips `$env:NAME` before matching; this port keeps
-//! the same rule).
+//! Scans git-tracked `*.md` / `*.yml` files for machine-specific paths
+//! (Windows user directories, `powershell.exe`, env-var names) and for any
+//! absolute path ending in `code-intel-pipeline`. Lines where the match came
+//! only from a `$env:VAR` reference are exempt: `$env:NAME` is removed before
+//! matching.
 //!
 //! Exit codes: 0 = clean, 1 = hits found, 74 = scan I/O failure.
 
@@ -16,8 +14,8 @@ use std::process::Command;
 
 use serde_json::{json, Value};
 
-/// Files whose tracked contents are scanned. Mirrors `$globs` in the facade.
-const SCAN_GLOBS: [&str; 4] = ["*.ps1", "*.psm1", "*.md", "*.yml"];
+/// Files whose tracked contents are scanned.
+const SCAN_GLOBS: [&str; 2] = ["*.md", "*.yml"];
 
 /// A single hit: file, 1-based line number, and the offending text.
 #[derive(Debug, PartialEq, Eq)]
@@ -36,8 +34,7 @@ pub(crate) struct ScanResult {
 }
 
 /// Returns true when `line` contains any machine-specific literal pattern.
-/// `$env:VAR` references are removed first, exactly like the PowerShell
-/// facade's `$envVarPattern.Replace($line, "")` step.
+/// `$env:VAR` references are removed first.
 fn line_has_hit(line: &str) -> bool {
     let stripped = strip_env_vars(line);
     literal_patterns()
@@ -46,8 +43,7 @@ fn line_has_hit(line: &str) -> bool {
         || absolute_pipeline_path(&stripped)
 }
 
-/// `$env:NAME` removal. Matches the facade's
-/// `\$env:[A-Za-z_][A-Za-z0-9_]*` (case-insensitive).
+/// `$env:NAME` removal: `\$env:[A-Za-z_][A-Za-z0-9_]*` (case-insensitive).
 fn strip_env_vars(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let bytes = line.as_bytes();
@@ -322,25 +318,25 @@ mod tests {
 
     #[test]
     fn powershell_exe_hits() {
-        assert!(line_has_hit("run: powershell.exe -File x.ps1"));
+        assert!(line_has_hit("run: powershell.exe -File x.sh"));
         assert!(line_has_hit("powershell.exe"));
     }
 
     #[test]
     fn pipeline_absolute_path_hits() {
-        // The facade's pattern is `[A-Za-z]:\\(?:[^\s"'\\]*\\)*code-intel-pipeline\b` —
-        // backslash separators only, exactly like the PowerShell original.
+        // The pattern is `[A-Za-z]:\\(?:[^\s"'\\]*\\)*code-intel-pipeline\b` —
+        // backslash separators only.
         assert!(line_has_hit(
-            "D:\\projects\\_tools\\code-intel-pipeline\\run.ps1"
+            "D:\\projects\\_tools\\code-intel-pipeline\\run.sh"
         ));
         assert!(line_has_hit("D:\\code-intel-pipeline\\x"));
         assert!(line_has_hit("D:\\projects\\code-intel-pipeline"));
         assert!(line_has_hit("\"D:\\projects\\code-intel-pipeline\""));
         assert!(!line_has_hit(
-            "D:/projects/_tools/code-intel-pipeline/run.ps1"
+            "D:/projects/_tools/code-intel-pipeline/run.sh"
         ));
         assert!(!line_has_hit(
-            "D:\\projects\\_tools\\code-intel-pipeline-backup\\run.ps1"
+            "D:\\projects\\_tools\\code-intel-pipeline-backup\\run.sh"
         ));
         assert!(!line_has_hit("code-intel-pipeline"));
     }

@@ -1,7 +1,8 @@
 mod common;
+#[path = "support/schema.rs"]
+mod schema_support;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -222,21 +223,12 @@ fn critical_and_supporting_unknowns_remain_visible_with_stable_provenance() {
         fs::read(temp.0.join("replay/understanding-quadrant.json")).unwrap()
     );
 
-    let schema = Command::new("pwsh")
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-Command",
-            "param($Document,$Schema); if (-not (Get-Content -Raw -LiteralPath $Document | Test-Json -SchemaFile $Schema -ErrorAction Stop)) { exit 1 }",
-        ])
-        .arg(&path)
-        .arg(root().join("orchestration/schemas/code-intel-understanding-quadrant.v1.schema.json"))
-        .output()
-        .unwrap();
     assert!(
-        schema.status.success(),
-        "{}",
-        String::from_utf8_lossy(&schema.stderr)
+        schema_support::validates_against_schema(
+            &path,
+            &root().join("orchestration/schemas/code-intel-understanding-quadrant.v1.schema.json")
+        ),
+        "understanding quadrant must validate against its schema"
     );
 }
 

@@ -1,6 +1,6 @@
 //! `pipeline.config.json` loading and repository resolution.
 //!
-//! Ports the resolution rules `check-code-intel-tools.ps1` implemented:
+//! Resolution rules:
 //! alias lookup through `repos`, the reverse path lookup an explicit
 //! `-RepoPath` triggers, and the `sentruxPath` scope override.
 
@@ -33,9 +33,8 @@ pub(super) fn repo_config_by_alias<'a>(
     config?.get("repos")?.get(alias)
 }
 
-/// Reverse lookup: which configured repo entry points at `repo_path`. Mirrors
-/// the PowerShell `Find-RepoConfigByPath`, including its trailing-separator
-/// trim and case-insensitive comparison.
+/// Reverse lookup: which configured repo entry points at `repo_path`. Trailing
+/// separators are trimmed and the comparison is case-insensitive.
 pub(super) fn find_repo_config_by_path<'a>(
     config: Option<&'a Value>,
     repo_path: &Path,

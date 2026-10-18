@@ -482,7 +482,7 @@ pub(crate) fn discover_manifest(explicit: Option<&Path>) -> Option<PathBuf> {
 /// but resolves nothing, and must lose discovery to a root that works.
 ///
 /// Only file-like entrypoints count as evidence either way — the same
-/// `.ps1`/`.py`/`.toml`/`.rs` suffix set `orchestrate` validates (kept in
+/// `.py`/`.toml`/`.rs` suffix set `orchestrate` validates (kept in
 /// sync by hand with `should_validate_entrypoint`; a shared constant would
 /// need every test binary that mounts this file to also mount
 /// `orchestration`). A manifest with no such entrypoints cannot be
@@ -518,7 +518,7 @@ pub(crate) fn manifest_entrypoints_resolve(manifest: &Path) -> bool {
             continue;
         };
         let lower = entrypoint.to_ascii_lowercase();
-        if ![".ps1", ".py", ".toml", ".rs"]
+        if ![".py", ".toml", ".rs"]
             .iter()
             .any(|suffix| lower.ends_with(suffix))
         {

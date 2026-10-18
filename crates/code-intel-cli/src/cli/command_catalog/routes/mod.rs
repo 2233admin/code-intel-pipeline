@@ -122,36 +122,6 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
     },
     CommandRoute::Raw(setup_routes::SETUP),
     raw_route! {
-        command: "compatibility",
-        subcommand: Some("retirement-ticket"),
-        argument_offset: 2,
-        id: CompatibilityRoute::CompatibilityRetirementTicket,
-        contract: command_contract!(
-            Internal,
-            ProviderAdmin,
-            Administrative,
-            &[CommandEffect::RepoRead],
-            stdout!("artifact-format:compatibility-retirement-ticket-lint-json.v1"),
-            exits!(0, 65),
-            "retire with the last compatibility surface after its recorded parity evidence"
-        ),
-    },
-    raw_route! {
-        command: "retirement",
-        subcommand: Some("guard"),
-        argument_offset: 2,
-        id: CompatibilityRoute::RetirementGuard,
-        contract: command_contract!(
-            Public,
-            ProviderAdmin,
-            Administrative,
-            &[CommandEffect::RepoRead],
-            stdout!("artifact-format:code-intel-retirement-guard-json.v1"),
-            exits!(0, 65, 74),
-            "closes the compatibility retirement gate's enforcement gap: fails if a tracked legacy branch under orchestration/retirements/* has disappeared from the tree without its packet's status.json saying retired: true"
-        ),
-    },
-    raw_route! {
         command: "lint",
         subcommand: Some("hardcoded-paths"),
         argument_offset: 2,

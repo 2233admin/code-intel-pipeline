@@ -1,7 +1,7 @@
 //! Binding tests for `orchestration/toolchain-versions.v1.json`.
 //!
 //! The manifest exists so the consistency self-check reads one format instead
-//! of five (TOML, pip, a shell variable inside a workflow, JSON, PowerShell).
+//! of five (TOML, pip, a shell variable inside a workflow, JSON, Rust source).
 //! A second source of truth that can drift from the first is worse than no
 //! second source at all, so every entry is asserted against its real
 //! declaration sites here.

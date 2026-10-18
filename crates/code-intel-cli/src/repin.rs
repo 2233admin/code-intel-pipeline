@@ -13,11 +13,7 @@
 //! Pin chains are not one level deep: a file whose own digest is itself
 //! pinned elsewhere (for example a shared measurements ledger) must be
 //! re-hashed and propagated again after it is patched, so the scan repeats
-//! to a fixpoint rather than running once. See `orchestration/retirements/`
-//! for the one case that must never be patched this way: those packets
-//! freeze a working-tree overlay taken at generation time, not a commit, so
-//! there is no "current" digest to resync them to — only their own
-//! `New-*RetirementPacket.ps1` generator can produce a valid one.
+//! to a fixpoint rather than running once.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -32,7 +28,7 @@ use crate::snapshot;
 mod check;
 pub(crate) use check::run_check;
 
-const DEFAULT_EXCLUDES: [&str; 1] = ["orchestration/retirements/"];
+const DEFAULT_EXCLUDES: [&str; 0] = [];
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_PASSES: usize = 25;
 

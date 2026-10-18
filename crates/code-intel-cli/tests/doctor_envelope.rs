@@ -309,7 +309,7 @@ fn doctor_cli_reports_nonconforming_provider_and_manifest_drift_as_domain_failur
     fs::remove_dir_all(root).ok();
 }
 
-/// A pipeline checkout shaped like the real one: `legacy/` plus the crate
+/// A pipeline checkout shaped like the real one: the crate
 /// files `graphProvider` probes for, so `sourceFound`/`cargoFound` are both
 /// true. That is the whole point — those two are the only things
 /// `--require-understand` used to check, and inside a checkout they are

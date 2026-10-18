@@ -58,7 +58,7 @@ fn normalize_context(mut document: Value, repo: &Path) -> Value {
 }
 
 #[test]
-fn compiled_route_matches_the_active_powershell_contract() {
+fn compiled_route_matches_the_codenexus_contract() {
     let root = TempRoot::new();
     let repo = root.0.join("repo");
     fs::create_dir_all(repo.join("src")).unwrap();

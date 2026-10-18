@@ -231,10 +231,6 @@ fn production_cli_registry_facade_schema_and_docs_are_closed() {
         .as_str()
         .unwrap()
         .contains("repository survival-scan"));
-    assert!(entry["commands"]["facade"]
-        .as_str()
-        .unwrap()
-        .contains("SurvivalScanRequest"));
     let schema: Value = serde_json::from_slice(
         &fs::read(repo.join(
             "orchestration/schemas/code-intel-repository-survival-scan-result.v1.schema.json",
@@ -246,8 +242,6 @@ fn production_cli_registry_facade_schema_and_docs_are_closed() {
     let docs = fs::read_to_string(repo.join("docs/repository-survival-scan.md")).unwrap();
     assert!(docs.contains("reduced"));
     assert!(docs.contains("structuralVerdict = unknown"));
-    let facade = fs::read_to_string(repo.join("legacy/run-code-intel.ps1")).unwrap();
-    assert!(facade.contains("repository survival-scan"));
 }
 
 #[test]

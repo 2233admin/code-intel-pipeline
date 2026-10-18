@@ -387,8 +387,7 @@ fn resolved_retry_target(
 }
 
 /// Composes a DAG staging directory the way `resume` and `artifact index` read
-/// runs back: `<artifact root>/<repo name>/<run>`. The PowerShell launcher owned
-/// this composition until it was retired, and the failure it existed to prevent
+/// runs back: `<artifact root>/<repo name>/<run>`. The failure it existed to prevent
 /// is repeating the repository name inside the path, which strands a run where
 /// no reader looks. Only the repository directory is created here; the run
 /// directory is left absent because `dag_run::execute_dag` claims it

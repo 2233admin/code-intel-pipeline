@@ -1,7 +1,8 @@
 mod common;
+#[path = "support/schema.rs"]
+mod schema_support;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -435,16 +436,12 @@ fn provider_quota_precedes_missing_current_graph_and_is_replay_stable() {
     let markdown = fs::read_to_string(out.join("hospital.md")).unwrap();
     assert!(markdown.contains("Primary diagnosis: provider quota exhausted"));
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let schema = Command::new("pwsh")
-        .args(["-NoLogo", "-NoProfile", "-Command", "param($Document,$Schema); if (-not (Get-Content -Raw -LiteralPath $Document | Test-Json -SchemaFile $Schema -ErrorAction Stop)) { exit 1 }"])
-        .arg(out.join("hospital-report.json"))
-        .arg(repo.join("orchestration/schemas/code-intel-hospital.v1.schema.json"))
-        .output()
-        .unwrap();
     assert!(
-        schema.status.success(),
-        "{}",
-        String::from_utf8_lossy(&schema.stderr)
+        schema_support::validates_against_schema(
+            &out.join("hospital-report.json"),
+            &repo.join("orchestration/schemas/code-intel-hospital.v1.schema.json")
+        ),
+        "hospital report must validate against its schema"
     );
 }
 
@@ -499,7 +496,7 @@ fn repowise_quota_signal_requires_an_exact_provider_identity() {
 }
 
 #[test]
-fn precedence_matrix_matches_the_legacy_stable_diagnoses_and_fails_closed() {
+fn precedence_matrix_matches_the_stable_diagnoses_and_fails_closed() {
     let temp = Temp::new();
     let cases = vec![
         (
@@ -946,106 +943,6 @@ fn a09_seeded_path_executes_hospital_through_a01_and_rejects_snapshot_mismatch()
     assert!(!failed_out
         .join("diagnosis.hospital/hospital-report.json")
         .exists());
-}
-
-#[test]
-fn legacy_facade_and_rust_execute_the_same_fixture_with_stable_machine_parity() {
-    let temp = Temp::new();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let source = fs::read_to_string(root.join("legacy/run-code-intel.ps1")).unwrap();
-    let main = source
-        .find("\n$configData = $null")
-        .expect("legacy function boundary");
-    // the facade now lives under legacy/, so $PSScriptRoot resolves there
-    let function_source = source[..main].replace(
-        "$PSScriptRoot",
-        &format!(
-            "'{}'",
-            root.join("legacy").to_string_lossy().replace('\\', "/")
-        ),
-    );
-    let legacy_out = temp.0.join("legacy");
-    fs::create_dir(&legacy_out).unwrap();
-    let seam = format!(
-        "{}\n{}",
-        function_source,
-        r#"
-$out = $ArtifactRoot
-$failureCounts = [ordered]@{ localToolError = 1; providerQuota = 0; sentruxFail = 0; graphMissing = 0 }
-$steps = @(
-  [pscustomobject]@{ name='git status'; status='failed'; output=''; error='fixture'; exitCode=1; durationMs=1 },
-  [pscustomobject]@{ name='rg file inventory'; status='ok'; output='2'; error=''; exitCode=0; durationMs=1 },
-  [pscustomobject]@{ name='understand graph'; status='ok'; output=''; error=''; exitCode=0; durationMs=1 },
-  [pscustomobject]@{ name='repowise fixture'; status='ok'; output=''; error=''; exitCode=0; durationMs=1 },
-  [pscustomobject]@{ name='sentrux check'; status='ok'; output=''; error=''; exitCode=0; durationMs=1 },
-  [pscustomobject]@{ name='sentrux gate fixture'; status='ok'; output=''; error=''; exitCode=0; durationMs=1 }
-)
-$hospital = New-CodeIntelHospitalReport -RepoPath $RepoPath -Mode 'normal' -RunDir $out -ReportPath (Join-Path $out 'report.json') -SummaryPath (Join-Path $out 'summary.md') -UnderstandingPath (Join-Path $out 'understanding.md') -Steps $steps -FailureCounts $failureCounts -SentruxInsight ([ordered]@{}) -SentruxDsmSummary $null -SentruxFileDetailsSummary $null -SentruxHotspotsSummary $null -SentruxEvolutionSummary $null -SentruxWhatIfSummary $null -CodeNexusContextSummary $null -UnderstandCommand 'fixture' -ToolState ([ordered]@{}) -GitHubResearch $null
-$surgery = New-CodeIntelSurgeryPlan -Hospital $hospital -RepoPath $RepoPath -SentruxTargetPath $RepoPath -HotspotsPath '' -WhatIfPath '' -CodeNexusPath ''
-$hospital['surgery_plan'] = [ordered]@{ path=(Join-Path $out 'surgery-plan.json'); markdown=(Join-Path $out 'surgery-plan.md'); status=$surgery.status; primary_target='' }
-$hospital | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $out 'hospital-report.json') -Encoding utf8NoBOM
-Convert-HospitalReportToMarkdown $hospital | Set-Content -LiteralPath (Join-Path $out 'hospital.md') -Encoding utf8NoBOM
-$surgery | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $out 'surgery-plan.json') -Encoding utf8NoBOM
-Convert-SurgeryPlanToMarkdown $surgery | Set-Content -LiteralPath (Join-Path $out 'surgery-plan.md') -Encoding utf8NoBOM
-[ordered]@{ primary_diagnosis=$hospital.triage.primary_diagnosis; disposition=$hospital.triage.disposition; next_protocol=$hospital.triage.next_protocol; surgery_status=$surgery.status } | ConvertTo-Json -Compress
-"#,
-    );
-    let seam_path = temp.0.join("legacy-hospital-seam.ps1");
-    fs::write(&seam_path, seam).unwrap();
-    let legacy = Command::new("pwsh")
-        .args(["-NoLogo", "-NoProfile", "-File"])
-        .arg(&seam_path)
-        .arg("-RepoPath")
-        .arg(&temp.0)
-        .arg("-ArtifactRoot")
-        .arg(&legacy_out)
-        .output()
-        .unwrap();
-    assert!(
-        legacy.status.success(),
-        "{}",
-        String::from_utf8_lossy(&legacy.stderr)
-    );
-    let legacy_machine: Value =
-        serde_json::from_slice(legacy.stdout.trim_ascii()).expect("legacy machine JSON");
-
-    let local_failure = admission(
-        &temp.0,
-        "legacy-parity-local",
-        "repowise.index",
-        "unknown",
-        "local_tool_error",
-        json!({"repowise":{"status":"unavailable"}}),
-    );
-    let (exit, _, rust_out, stderr) = run(&temp.0, vec![local_failure], "rust-parity");
-    assert_eq!(exit, 0, "{stderr}");
-    let rust_machine: Value =
-        serde_json::from_slice(&fs::read(rust_out.join("hospital-report.json")).unwrap()).unwrap();
-    assert_eq!(
-        legacy_machine["primary_diagnosis"],
-        rust_machine["triage"]["primary_diagnosis"]
-    );
-    assert_eq!(
-        legacy_machine["disposition"],
-        rust_machine["triage"]["disposition"]
-    );
-    assert_eq!(
-        legacy_machine["next_protocol"],
-        rust_machine["triage"]["next_protocol"]
-    );
-    assert_eq!(
-        legacy_machine["surgery_status"],
-        rust_machine["surgery_plan"]["status"]
-    );
-    for file in [
-        "hospital-report.json",
-        "hospital.md",
-        "surgery-plan.json",
-        "surgery-plan.md",
-    ] {
-        assert!(legacy_out.join(file).is_file(), "legacy omitted {file}");
-        assert!(rust_out.join(file).is_file(), "Rust omitted {file}");
-    }
 }
 
 #[test]

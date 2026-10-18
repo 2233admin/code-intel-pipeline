@@ -12,8 +12,7 @@ pub(super) fn provider_discovery_json() -> Result<Value, String> {
         "operations":["scan","health","dsm","git_stats","evolution","test_gaps","what_if","check_rules","check","gate","rescan"],
         "aliases":["pro_status","plugin_list","plugin_validate"],
         "explicitAuthorityOperations":["gate_save"],
-        "lifecycleOperations":["session_start","session_end"],
-        "legacyFallback":"legacy/Invoke-SentruxAgentTool.ps1"
+        "lifecycleOperations":["session_start","session_end"]
     }))
 }
 

@@ -5,10 +5,10 @@ use serde_json::{json, Value};
 
 use crate::{
     admissibility, artifact_index, audit_report, change_agenda, change_impact, change_risk,
-    codenexus_generate, compatibility_retirement_ticket, decision_port, decision_record,
+    codenexus_generate, decision_port, decision_record,
     doctor_bootstrap, edit_apply, edit_impact, evidence_query, friction_log, hardcoded_paths,
     invocation_identity, mcp_serve, model_channels, perf_optimize, ponytail_gate, providers, repin,
-    repowise_hooks, repowise_version, retirement_boundary_guard, run_cli, run_commit,
+    repowise_hooks, repowise_version, run_cli, run_commit,
     sentrux_quality_projection, session_evidence, snapshot, survival_scan, verify,
 };
 
@@ -68,8 +68,6 @@ pub(super) struct LegacyCommand {
 enum CompatibilityRoute {
     DoctorBootstrap,
     Setup,
-    CompatibilityRetirementTicket,
-    RetirementGuard,
     LintHardcodedPaths,
     ProviderRepowiseAdapt,
     ProviderGraphAdapt,
@@ -620,10 +618,6 @@ fn execute_compatibility(command: CompatibilityCommand) -> i32 {
     match command.route {
         CompatibilityRoute::DoctorBootstrap => doctor_bootstrap::run_raw(raw),
         CompatibilityRoute::Setup => crate::setup::run_raw(raw),
-        CompatibilityRoute::CompatibilityRetirementTicket => {
-            compatibility_retirement_ticket::run_raw(raw)
-        }
-        CompatibilityRoute::RetirementGuard => retirement_boundary_guard::run_raw(raw),
         CompatibilityRoute::LintHardcodedPaths => hardcoded_paths::run_raw(raw),
         CompatibilityRoute::ProviderRepowiseAdapt => providers::run_repowise_adapt_raw(raw),
         CompatibilityRoute::ProviderGraphAdapt => providers::run_graph_adapt_raw(raw),

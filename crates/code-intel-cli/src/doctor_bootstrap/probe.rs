@@ -17,8 +17,7 @@ use super::paths::display;
 mod tool_path;
 
 /// Substring `sentrux check --help` must print for the core overlay to count
-/// as conforming. PowerShell's `-match` is case-insensitive, so this compares
-/// case-insensitively too.
+/// as conforming. The comparison is case-insensitive.
 pub(super) const SENTRUX_CORE_MARKER: &str = "Enforce architectural rules";
 
 pub(super) fn locate(name: &str, prefix: Option<&Path>) -> Option<std::path::PathBuf> {
@@ -35,7 +34,7 @@ pub(super) fn probe_tool(name: &str, required: bool, prefix: Option<&Path>) -> V
     })
 }
 
-/// `python` falls back to `python3`, matching `Get-CodeIntelPythonCommand`.
+/// `python` falls back to `python3`.
 /// The reported `name` stays `python` so the `missing` list wording does not
 /// change with which interpreter happened to be installed.
 pub(super) fn probe_python(required: bool, prefix: Option<&Path>) -> Value {
@@ -146,7 +145,7 @@ pub(super) fn requires_pro_tier() -> bool {
 
 /// `Tier:\s+pro` when Pro auto-activation is opted into, `Tier:\s+(pro|free)`
 /// otherwise. Hand-rolled because the crate carries no regex dependency, and
-/// case-insensitive to match PowerShell `-match` semantics.
+/// case-insensitive.
 pub(super) fn matches_tier(text: &str, require_pro: bool) -> bool {
     let lower = text.to_ascii_lowercase();
     let mut rest = lower.as_str();
@@ -184,7 +183,7 @@ mod tests {
     }
 
     #[test]
-    fn core_marker_comparison_is_case_insensitive_like_powershell_match() {
+    fn core_marker_comparison_is_case_insensitive() {
         assert!(contains_ignore_case(
             "  ENFORCE ARCHITECTURAL RULES for a repo",
             SENTRUX_CORE_MARKER

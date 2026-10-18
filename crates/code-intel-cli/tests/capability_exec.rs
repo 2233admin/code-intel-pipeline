@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
-    "264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc";
+    "82a0e5a863141a63b87075c9c07913713fa895c258fd71d9bb62bdf2689bc1b4";
 const STRUCTURED_EDIT_DIGEST: &str =
     "ec36694a8ffca7ef068982cc574e6e42499a4634eb12f86a742026558bd1867d";
 const AST_GREP_SECURITY_DIGEST: &str =
@@ -1574,41 +1574,14 @@ fn inventory_disables_info_parent_and_ripgrep_config_ignore_sources() {
 }
 
 #[test]
-fn normalized_inventory_matches_real_legacy_runner_with_custom_exclude() {
-    let root = temp_dir("real-legacy");
+fn normalized_inventory_honors_custom_exclude_and_default_build_exclusions() {
+    let root = temp_dir("custom-exclude");
     let repo = root.join("repo & 文");
-    let artifacts = root.join("legacy artifacts");
     fs::create_dir_all(repo.join("custom excluded")).unwrap();
     fs::create_dir_all(repo.join("target")).unwrap();
     fs::write(repo.join("keep.txt"), "keep").unwrap();
-    fs::write(repo.join(".hidden"), "hidden").unwrap();
     fs::write(repo.join("custom excluded").join("drop.txt"), "drop").unwrap();
     fs::write(repo.join("target").join("built.txt"), "built").unwrap();
-    let runner = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("legacy/run-code-intel.ps1");
-    let legacy = Command::new("pwsh")
-        .args(["-NoProfile", "-File"])
-        .arg(&runner)
-        .arg("-RepoPath")
-        .arg(&repo)
-        .arg("-Mode")
-        .arg("lite")
-        .arg("-SkipOpenSpec")
-        .arg("-ArtifactRoot")
-        .arg(&artifacts)
-        .arg("-InventoryExclude")
-        .arg("!**/custom excluded/**")
-        .output()
-        .unwrap();
-    assert!(
-        legacy.status.success(),
-        "legacy stderr={} stdout={}",
-        String::from_utf8_lossy(&legacy.stderr),
-        String::from_utf8_lossy(&legacy.stdout)
-    );
-    let legacy_files = find_named_file(&artifacts, "files.txt").expect("legacy runner files.txt");
 
     let mut value = request(&repo, "inventory.rg");
     value["options"]["inventoryExclude"] = json!(["!**/custom excluded/**"]);
@@ -1620,9 +1593,18 @@ fn normalized_inventory_matches_real_legacy_runner_with_custom_exclude() {
         "{}",
         String::from_utf8_lossy(&new.stderr)
     );
-    assert_eq!(
-        normalized_repo_lines(&fs::read_to_string(legacy_files).unwrap(), &repo),
-        normalized_lines(&fs::read_to_string(out.join("files.txt")).unwrap())
+    let listed = normalized_lines(&fs::read_to_string(out.join("files.txt")).unwrap());
+    assert!(
+        listed.iter().any(|line| line.ends_with("keep.txt")),
+        "{listed:?}"
+    );
+    assert!(
+        !listed.iter().any(|line| line.contains("drop.txt")),
+        "custom exclude must drop its files: {listed:?}"
+    );
+    assert!(
+        !listed.iter().any(|line| line.contains("built.txt")),
+        "default exclusions must drop target/: {listed:?}"
     );
     let _ = fs::remove_dir_all(root);
 }
@@ -1633,16 +1615,15 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects() {
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("openspec")).unwrap();
     fs::create_dir_all(repo.join("src")).unwrap();
-    fs::write(repo.join("src/main.ps1"), "'ok'\n").unwrap();
+    fs::write(repo.join("src/main.sh"), "echo ok\n").unwrap();
 
     let mut value = request(&repo, "advisory.workflow-recommend");
     value["implementation"] = json!({
         "id":"advisory.workflow-recommend.compat",
         "version":"1.0.0",
         "toolchainDigests":[
-            "7fa18d2f751bc877c3367e314175e400c1a784a30fabc69b2a02efafcb6f3c85",
             "25a2185026cb61771ff2e5f4c2364687d01158cfc9a8266d00a20e5573ba1bde",
-            "264ed4390fbf70e6d1eaf0365f318b8587e4d2d88aa38dd344e9a0a9fbcc35cc"
+            "82a0e5a863141a63b87075c9c07913713fa895c258fd71d9bb62bdf2689bc1b4"
         ]
     });
     value["options"] = json!({"repoPath":repo,"auto":true});

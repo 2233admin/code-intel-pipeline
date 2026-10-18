@@ -174,11 +174,7 @@ fn validate_snapshot_input(
 
 /// Run the bootstrap probe in-process.
 ///
-/// Before T3 this shelled out to `legacy/check-code-intel-tools.ps1` and fell
-/// back to a hand-written stub when `pwsh` or the script was absent — a stub
-/// that answered `graphProvider` with hardcoded `true`s and so could not
-/// report the very drift doctor exists to catch. The probe is native now, so
-/// there is one implementation, no `pwsh` dependency on the kernel path, and
+/// There is one implementation and it runs in this process, so doctor gives
 /// the same answers on every platform.
 fn run_bootstrap(options: &Options) -> Result<Value, AdapterError> {
     let mut probe = doctor_bootstrap::Options::new(pipeline_root());
@@ -254,11 +250,7 @@ fn adapt(
     });
     let policy_bytes = serde_json::to_vec(&policy)
         .map_err(|error| AdapterError::Internal(format!("serialize doctor policy: {error}")))?;
-    let registry_ok = manifest
-        .pointer("/registryAudit/ok")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let manifest_ok = manifest["ok"].as_bool().unwrap_or(false) && registry_ok;
+    let manifest_ok = manifest["ok"].as_bool().unwrap_or(false);
     Ok(json!({
         "schema":"code-intel-doctor-observation.v1",
         "snapshotIdentity":request["snapshot"]["identity"],
@@ -267,7 +259,7 @@ fn adapt(
         "repository":{"presence":if raw.pointer("/checks/repo/exists").and_then(Value::as_bool).unwrap_or(false) { "present" } else { "missing" },"readiness":if raw.pointer("/checks/repo/exists").and_then(Value::as_bool).unwrap_or(false) { "ready" } else { "unavailable" },"conformance":"not_evaluated","admissibility":"not_evaluated"},
         "tools":tool_observations,
         "providers":doctor_provider_rows::provider_rows(raw),
-        "manifest":{"reconciled":manifest_ok,"registryReconciled":registry_ok,"findingCount":manifest["errors"].as_array().map_or(0, Vec::len)},
+        "manifest":{"reconciled":manifest_ok,"findingCount":manifest["errors"].as_array().map_or(0, Vec::len)},
         "diagnostics":{"bootstrapReady":raw["ok"],"manifestReady":manifest_ok},
         "engineeringFacts":[]
     }))
@@ -487,7 +479,7 @@ mod tests {
 
     #[test]
     fn adaptation_separates_health_boundaries_redacts_and_fails_domain() {
-        let manifest = json!({"ok":false,"errors":["drift"],"registryAudit":{"ok":false}});
+        let manifest = json!({"ok":false,"errors":["drift"]});
         let document = adapt(&request(), &options(), &bootstrap(), &manifest).unwrap();
         let text = serde_json::to_string(&document).unwrap();
 
@@ -509,7 +501,7 @@ mod tests {
 
     #[test]
     fn adaptation_is_byte_replayable_for_the_same_observations_and_policy() {
-        let manifest = json!({"ok":true,"errors":[],"registryAudit":{"ok":true}});
+        let manifest = json!({"ok":true,"errors":[]});
         let left =
             serde_json::to_vec(&adapt(&request(), &options(), &bootstrap(), &manifest).unwrap())
                 .unwrap();

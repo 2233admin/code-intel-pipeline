@@ -8,7 +8,6 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-POWERSHELL_TESTS = ROOT / "legacy" / "scripts" / "tests"
 
 # A line-start git conflict marker: `<<<<<<< [label]`, a bare `=======`
 # divider, `>>>>>>> [label]`, or the diff3 `||||||| [label]` ancestor marker.
@@ -17,33 +16,19 @@ POWERSHELL_TESTS = ROOT / "legacy" / "scripts" / "tests"
 CONFLICT_MARKER_PATTERN = re.compile(
     r"^(?:<{7}(?=[ \t]|$)|={7}$|>{7}(?=[ \t]|$)|\|{7}(?=[ \t]|$))"
 )
-PUBLIC_ENTRY_POINTS = {
-    "legacy/bootstrap-new-machine.ps1",
-    "legacy/check-code-intel-tools.ps1",
-    "legacy/Find-CodeIntelProjects.ps1",
-    "legacy/install-code-intel-pipeline.ps1",
-    "legacy/code-intel.ps1",
-    "legacy/invoke-code-intel.ps1",
-    "legacy/Invoke-SentruxAgentTool.ps1",
-    "legacy/run-code-intel.ps1",
-}
 
 
 class RepositoryLayoutTests(unittest.TestCase):
-    def test_public_entry_points_remain_stable(self) -> None:
-        for name in PUBLIC_ENTRY_POINTS:
-            with self.subTest(name=name):
-                self.assertTrue((ROOT / name).is_file())
-
-    def test_powershell_contract_tests_are_not_stored_at_root(self) -> None:
-        root_tests = sorted(
-            path.name
-            for path in ROOT.glob("*.ps1")
-            if path.name.lower().startswith("test-")
+    def test_no_powershell_files_are_tracked(self) -> None:
+        # DR-0018: the shipped product contains zero PowerShell.
+        result = subprocess.run(
+            ["git", "ls-files", "-z", "--", "*.ps1", "*.psm1"],
+            cwd=ROOT,
+            capture_output=True,
+            check=True,
         )
-        self.assertEqual(root_tests, [])
-        self.assertTrue(POWERSHELL_TESTS.is_dir())
-        self.assertGreater(len(list(POWERSHELL_TESTS.glob("*.ps1"))), 20)
+        tracked = sorted(p.decode("utf-8") for p in result.stdout.split(b"\0") if p)
+        self.assertEqual(tracked, [], "PowerShell files are still tracked")
 
     def test_completed_planning_records_are_archived(self) -> None:
         archive = ROOT / "docs" / "archive" / "2026-07"

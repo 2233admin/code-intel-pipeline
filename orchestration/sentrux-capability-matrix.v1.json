@@ -4,7 +4,6 @@
   "coverageStatus": "partial",
   "purpose": "Single inventory of Sentrux capabilities, their canonical operation, automation route, artifacts, consumers, and remaining gaps.",
   "sources": [
-    "legacy/Invoke-SentruxAgentTool.ps1",
     "crates/code-intel-cli/src/sentrux.rs",
     "crates/code-intel-cli/src/builtin_provider_evidence.rs",
     "orchestration/integrations.json"

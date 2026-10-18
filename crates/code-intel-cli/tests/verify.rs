@@ -65,7 +65,7 @@ fn sha256_of(path: &Path) -> String {
 }
 
 /// A minimal clean fixture: one tracked source file, nothing that trips
-/// `lint hardcoded-paths` (it only scans `.ps1`/`.psm1`/`.md`/`.yml`) or
+/// `lint hardcoded-paths` (it only scans `.md`/`.yml`) or
 /// `repin` (no 64-hex pin tokens anywhere).
 fn clean_fixture(label: &str) -> TempTree {
     let tree = TempTree::new(label);

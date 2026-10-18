@@ -1,16 +1,14 @@
 //! Path and platform derivation for the doctor bootstrap probe.
 //!
-//! Mirrors the helpers the retired `legacy/tools/code-intel-platform.psm1`
-//! exposed to `check-code-intel-tools.ps1`: platform resolution,
-//! `Resolve-CodeIntelPath`, the home/data-root/bin triple, and the
-//! platform-correct binary name.
+//! Platform resolution, path resolution, the home/data-root/bin triple, and
+//! the platform-correct binary name.
 
 use std::env;
 use std::path::{Component, Path, PathBuf};
 
 use serde_json::{json, Value};
 
-/// `Get-CodeIntelPlatform`. `auto` resolves from the compile target.
+/// `auto` resolves from the compile target.
 pub(crate) fn resolve_platform(requested: &str) -> Result<String, String> {
     match requested {
         "windows" | "macos" | "linux" => Ok(requested.to_string()),
@@ -39,7 +37,7 @@ pub(crate) fn binary_name(platform: &str) -> String {
     }
 }
 
-/// The `paths` block of the observation: `Get-CodeIntelPaths`'s home,
+/// The `paths` block of the observation: the home,
 /// dataRoot, bin and codeIntelHome, with the same env-var overrides.
 pub(super) fn platform_paths(platform: &str, pipeline_root: &Path) -> Value {
     let home = home_directory();
@@ -57,11 +55,10 @@ pub(super) fn platform_paths(platform: &str, pipeline_root: &Path) -> Value {
     })
 }
 
-/// `Get-CodeIntelDataRoot`: `CODE_INTEL_DATA_ROOT`, else the platform's
+/// `CODE_INTEL_DATA_ROOT`, else the platform's
 /// conventional per-user data location. `pub(crate)` so `language_pref` can
 /// derive the user-level config path from the same platform switch instead
-/// of restating it a third time (PowerShell's `code-intel-platform.psm1` and
-/// this module are already the first two copies).
+/// of restating it.
 pub(crate) fn data_root(platform: &str, home: &Path) -> PathBuf {
     if let Ok(value) = env::var("CODE_INTEL_DATA_ROOT") {
         if !value.trim().is_empty() {
@@ -86,7 +83,7 @@ pub(crate) fn data_root(platform: &str, home: &Path) -> PathBuf {
     }
 }
 
-/// `Get-CodeIntelBinDir`: `CODE_INTEL_BIN`, else `<data root>/bin`. Shared by
+/// `CODE_INTEL_BIN`, else `<data root>/bin`. Shared by
 /// the doctor probe and `code-intel setup` so both agree where the binary lives.
 pub(crate) fn bin_dir(data_root: &Path) -> PathBuf {
     match env::var("CODE_INTEL_BIN") {

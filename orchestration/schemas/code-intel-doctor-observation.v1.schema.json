@@ -56,10 +56,9 @@
     "manifest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["reconciled", "registryReconciled", "findingCount"],
+      "required": ["reconciled", "findingCount"],
       "properties": {
         "reconciled": { "type": "boolean" },
-        "registryReconciled": { "type": "boolean" },
         "findingCount": { "type": "integer", "minimum": 0 }
       }
     },

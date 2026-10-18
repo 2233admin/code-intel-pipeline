@@ -3,7 +3,7 @@
 //! separate commands before trusting a change (issue #367):
 //!
 //!   1. `lint hardcoded-paths <path>` -- machine-specific paths in tracked
-//!      `.ps1`/`.psm1`/`.md`/`.yml` files.
+//!      `.md`/`.yml` files.
 //!   2. `sentrux gate <path>` -- the structural regression gate against
 //!      `.sentrux/baseline.json`.
 //!   3. `repin --repo <path>` in check-only mode -- never `--write`; verify

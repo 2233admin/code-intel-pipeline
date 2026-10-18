@@ -19,10 +19,6 @@ mod assistance_discovery;
 mod ast_grep_security_scan;
 #[path = "builtin_provider_evidence.rs"]
 mod builtin_provider_evidence;
-#[path = "compatibility_retirement_gate.rs"]
-mod compatibility_retirement_gate;
-#[path = "compatibility_retirement_ticket.rs"]
-mod compatibility_retirement_ticket;
 #[path = "delivery_light_speed.rs"]
 mod delivery_light_speed;
 #[path = "design_proposal.rs"]
@@ -99,12 +95,6 @@ pub(crate) fn execute(
         "project.orientation.compat" => project_orientation::execute(request, verified_inputs, out),
         "understanding.quadrant.compat" => {
             understanding_quadrant::execute(request, verified_inputs, out)
-        }
-        "compatibility.retirement-gate.compat" => {
-            compatibility_retirement_gate::execute(request, verified_inputs, out)
-        }
-        "compatibility.retirement-ticket-template.compat" => {
-            compatibility_retirement_ticket::execute(request, verified_inputs, out)
         }
         "project.orientation-benchmark.compat" => {
             project_orientation_benchmark::execute(request, verified_inputs, out)

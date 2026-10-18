@@ -1,11 +1,7 @@
 mod common;
 #[path = "primary_entry/content_identity.rs"]
 mod content_identity;
-#[path = "primary_entry/session_gate.rs"]
-mod session_gate;
 use std::io::Write;
-#[path = "primary_entry/legacy_session.rs"]
-mod legacy_session;
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -21,7 +17,7 @@ fn root_help_leads_with_the_compiled_primary_entry() {
     let stdout = String::from_utf8(output.stdout).expect("help is UTF-8");
     assert!(stdout.contains("code-intel ."));
     assert!(stdout.contains("code-intel <path> --mode lite|normal|full"));
-    assert!(!stdout.contains("legacy/invoke-code-intel.ps1"));
+    assert!(!stdout.contains(".ps1"));
 }
 
 #[test]
@@ -252,9 +248,8 @@ fn unknown_subcommand_points_to_help() {
 /// subcommand, the summary it prints, and what the authoritative index does
 /// with a run that failed.
 ///
-/// This was `legacy/scripts/tests/test-stable-wrapper-e2e.ps1`. It never tested
-/// PowerShell — every assertion was already about the compiled binary — but it
-/// was the only cover for the summary lines `main.rs` prints.
+/// Every assertion is about the compiled binary; this is the only cover for the
+/// summary lines `main.rs` prints.
 #[test]
 fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_index() {
     let root = std::env::temp_dir().join(format!(

@@ -3,16 +3,6 @@
   "measuredAt": "2026-07-14T03:41:00+08:00",
   "host": "windows-x86_64-audited-workspace",
   "observations": {
-    "r05Repomix": {
-      "commandAvailable": false,
-      "npmRegistryMetadataEntries": 3,
-      "npmPackageTarballEntries": 3,
-      "npmInstalledOrExtractedExecutableEntries": 0,
-      "cacheAuditDefinition": "npm cache contains three registry metadata entries and three retrievable Repomix package tarballs, but no installed/extracted executable tree and no verified runnable Repomix command.",
-      "productionCallSitesAfterReview": 0,
-      "productionRegistryStatus": "deleted",
-      "reason": "Cached tarball payload bytes do not establish an installed runnable command or pinned production conformance; B07 reviewed deletion remains valid."
-    },
     "r06NativeCodeEvidence": {
       "command": "cargo test -p code-intel --test native_code_evidence --quiet",
       "testsPassed": 4,
@@ -39,41 +29,6 @@
         "elapsedMs": 3620
       }
     },
-    "r07Cocoindex": {
-      "installedVersion": "0.2.37",
-      "productionSemanticInvocations": 0,
-      "productionRegistryStatus": "deleted",
-      "productionIntegrationPresent": false,
-      "commandDiscoveryCallSites": 0,
-      "comparisonStatus": "reviewed-retirement-no-unique-value"
-    },
-    "r08GitHubResearch": {
-      "command": "pwsh -NoProfile -File legacy/scripts/tests/test-github-solution-research.ps1",
-      "fixtureElapsedMs": 855.4559,
-      "readOnlyCommandFamilies": 1,
-      "rateLimitFallbacksPassed": 1,
-      "credentialRedactionFixturesPassed": 1,
-      "externalWriteCommands": 0,
-      "representativeLiveRun": {
-        "measuredAt": "2026-07-14T03:39:12.3361140+08:00",
-        "elapsedMs": 13591.4758,
-        "blocker": "error[E0432]: unresolved import crate::authority in compatibility_retirement_gate.rs",
-        "status": "manual_required",
-        "reasonCode": "invalid-query",
-        "candidates": 0,
-        "resolutionAtK": 0,
-        "reproducible": false,
-        "rateCostRequests": 1,
-        "externalWrites": 0,
-        "generatedQuery": "rust compile blocker error[E0432]: unresolved import crate::authority in compatibility_retirement_gate.rs",
-        "invocationExitCodes": [1, 1, 0, 0],
-        "resultArtifact": "orchestration/internalization/evidence/r08-live-20260714/github-solution-research.json",
-        "resultArtifactSha256": "f838958011ac2ec9e8a525f5d0d0d249dd78c8fd481628f84061b97eef463b6c",
-        "returnedUrls": [],
-        "returnedSourceRevisions": []
-      },
-      "productionRegistryStatus": "deleted"
-    },
     "r10Git": {
       "installedVersion": "2.54.0.windows.1",
       "command": "cargo test -p code-intel --test snapshot_identity --quiet",
@@ -93,19 +48,16 @@
       "alternateMismatchPublishesArtifacts": false,
       "alternateAdapterActuallyExecuted": true,
       "repowiseShadowMutationAuthorityDefault": "deny",
-      "repowiseDeclaredEffects": ["repo_read", "process_execute", "local_write", "repo_mutation"],
-      "rollbackRoutesTested": ["git", "unversioned-explicit-overlay"]
-    },
-    "r12Greenfield": {
-      "command": "pwsh -NoProfile -File legacy/scripts/tests/test-greenfield-integration.ps1",
-      "fixtureElapsedMs": 2127.4285,
-      "planArtifacts": 2,
-      "explicitAnalyzeFixtures": 1,
-      "autoAnalyzeWithoutFlag": 0,
-      "externalProviderWrites": 0,
-      "reviewAuthorityGranted": false,
-      "externalPluginProductionIntegrationPresent": false,
-      "retirementReason": "No executable plugin source revision, local license, effect review, or reviewed generated-spec value could be bound; only the pipeline-owned plan-only handoff remains."
+      "repowiseDeclaredEffects": [
+        "repo_read",
+        "process_execute",
+        "local_write",
+        "repo_mutation"
+      ],
+      "rollbackRoutesTested": [
+        "git",
+        "unversioned-explicit-overlay"
+      ]
     }
   }
 }

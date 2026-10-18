@@ -200,10 +200,10 @@ fn alternate_vcs_contract_fixture_is_fail_closed_and_rolls_back_to_unversioned()
 
     let tree = TempTree::new("alternate-vcs-rollback");
     fs::write(tree.0.join("source.txt"), "rollback content\n").unwrap();
-    let adapter = tree.0.join("mismatched-adapter.ps1");
+    let adapter = tree.0.join("mismatched-adapter.sh");
     fs::write(
         &adapter,
-        "$request = [Console]::In.ReadToEnd() | ConvertFrom-Json\nif ($request.schema -ne 'code-intel-alternate-vcs-snapshot-request.v1') { exit 9 }\n'{\"snapshot\":{\"identity\":\"mismatch\"}}'\n",
+        "request=$(cat)\ncase \"$request\" in *code-intel-alternate-vcs-snapshot-request.v1*) ;; *) exit 9 ;; esac\nprintf '%s' '{\"snapshot\":{\"identity\":\"mismatch\"}}'\n",
     )
     .unwrap();
     let rejected = common::cli()
@@ -216,11 +216,7 @@ fn alternate_vcs_contract_fixture_is_fail_closed_and_rolls_back_to_unversioned()
         .arg("--scope")
         .arg(".")
         .arg("--alternate-vcs-command")
-        .arg("pwsh")
-        .arg("--alternate-vcs-arg")
-        .arg("-NoProfile")
-        .arg("--alternate-vcs-arg")
-        .arg("-File")
+        .arg("bash")
         .arg("--alternate-vcs-arg")
         .arg(&adapter)
         .output()

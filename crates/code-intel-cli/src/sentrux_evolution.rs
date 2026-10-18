@@ -1,9 +1,6 @@
 //! Real Rust engines for Sentrux `evolution` and `what_if`.
 //!
-//! Ports `Invoke-EvolutionTool`/`Invoke-WhatIfTool` from
-//! `legacy/Invoke-SentruxAgentTool.ps1` so `legacy/run-code-intel.ps1` can
-//! call `code-intel sentrux evolution|what_if <path>` the same low-risk,
-//! rust-first-then-ps1-fallback way it already calls `sentrux dsm` (see
+//! Native `code-intel sentrux evolution|what_if <path>` (see
 //! `orchestration.rs`'s `structure.sentrux` participant).
 //!
 //! `what_if` (issue #374) is also nested directly into
@@ -13,7 +10,7 @@
 //! `what_if_json` degraded fallback. `evolution` is not yet wired the same
 //! way: the DAG's `"evolution"` arm still calls
 //! `sentrux_lite_capabilities::evolution_json`, an intentionally
-//! simplified ("lite") fallback not shape-compatible with what the PS1
+//! simplified ("lite") fallback not shape-compatible with what the
 //! orchestrator's `sentrux-evolution.json` artifact and downstream
 //! hospital-report generation expect — see DR-0008 and its follow-up
 //! tracking issue for that asymmetry.
@@ -135,9 +132,8 @@ struct AuthorSignal {
 }
 
 /// Per-file commit-author touch counts, from one batched `git log --name-only`
-/// walk (mirrors `Get-GitAuthorSignals`). `last_author`/`last_commit_unix`
-/// from the PS1 version are dropped: nothing downstream reads them there
-/// either (`New-BusFactorEntry` only consumes the `authors` map).
+/// walk (`last_author`/`last_commit_unix` are dropped: nothing downstream reads
+/// them; only the `authors` map is consumed).
 fn git_author_signals(repo: &Path, files: &[String]) -> HashMap<String, AuthorSignal> {
     let mut signals: HashMap<String, AuthorSignal> = HashMap::new();
     for file in files {
@@ -658,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn bus_factor_risk_matches_ps1_formula() {
+    fn bus_factor_risk_matches_reference_formula() {
         assert_eq!(bus_factor_risk(0, 0.0), 100);
         assert_eq!(bus_factor_risk(1, 1.0), 100);
         assert_eq!(bus_factor_risk(2, 0.5), 50);

@@ -82,8 +82,8 @@
       "rationale": "Semantic index provider. The reviewed official PyPI release is acquired exactly when installation is needed; it is a compatibility floor, so newer installed versions pass without downgrade (DR-0002).",
       "declaredIn": [
         {
-          "file": "legacy/install-code-intel-pipeline.ps1",
-          "pattern": "\\$script:RepowisePinnedVersion = \"([^\"]+)\""
+          "file": "crates/code-intel-cli/src/setup/mod.rs",
+          "pattern": "repowise>=([0-9][0-9.]*)"
         }
       ],
       "probe": {

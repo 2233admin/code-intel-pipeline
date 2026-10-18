@@ -81,7 +81,7 @@ mod sentrux_contract_tests {
                 {
                     "name": "sentrux check",
                     "status": "failed",
-                    "output": "legacy/run-code-intel.ps1:Get-CodeEvidenceSymbols (cc=412)",
+                    "output": "src/engine.rs:big_function (cc=412)",
                     "error": ""
                 },
                 {
@@ -98,16 +98,16 @@ mod sentrux_contract_tests {
         assert_eq!(failures["status"], "failed");
         assert_eq!(
             failures["primary"]["target"]["symbol"],
-            "Get-CodeEvidenceSymbols"
+            "big_function"
         );
 
         let debt = build_sentrux_debt_register(&failures, "D:/repo");
         assert_eq!(debt["schema"], "code-intel-sentrux-debt-register.v1");
-        assert_eq!(debt["summary"]["knownDebt"], 1);
-        assert_eq!(debt["summary"]["newDebt"], 0);
+        assert_eq!(debt["summary"]["knownDebt"], 0);
+        assert_eq!(debt["summary"]["newDebt"], 1);
         assert_eq!(debt["summary"]["worsenedDebt"], 2);
         assert_eq!(debt["summary"]["informational"], 1);
-        assert_eq!(debt["summary"]["blocking"], 2);
+        assert_eq!(debt["summary"]["blocking"], 3);
     }
 
     #[test]
@@ -137,7 +137,7 @@ mod sentrux_contract_tests {
                 {
                     "name": "sentrux check",
                     "status": "failed",
-                    "output": "other.ps1:New-BigFunction (cc=101)",
+                    "output": "other.rs:new_big_function (cc=101)",
                     "error": ""
                 }
             ]
@@ -794,8 +794,6 @@ fn classify_sentrux_record(record: &Value) -> (&'static str, &'static str) {
     let source = string_at(record, &["source"]).unwrap_or_default();
     let kind = string_at(record, &["kind"]).unwrap_or_default();
     let target_status = string_at(record, &["target", "status"]).unwrap_or_default();
-    let target_file = string_at(record, &["target", "file"]).unwrap_or_default();
-    let target_symbol = string_at(record, &["target", "symbol"]).unwrap_or_default();
 
     if ["manual_required", "skipped", "unparsed"].contains(&kind.as_str())
         || target_status == "not_applicable"
@@ -803,18 +801,6 @@ fn classify_sentrux_record(record: &Value) -> (&'static str, &'static str) {
         return (
             "informational",
             "Sentrux record is not an actionable structural debt target.",
-        );
-    }
-
-    if source == "sentrux check"
-        && kind == "max_cc"
-        && target_status == "resolved"
-        && target_file == "legacy/run-code-intel.ps1"
-        && target_symbol == "Get-CodeEvidenceSymbols"
-    {
-        return (
-            "known_debt",
-            "Current pipeline historical max_cc debt; tracked but not blocking understanding artifacts.",
         );
     }
 
@@ -1152,8 +1138,6 @@ Commands:
   codenexus generate --repo <path> [--target <path>] --out <codenexus-context.json> [--observed-at <unix-seconds>] [--max-files <count>] [--max-references-per-file <count>]
   provider file-boundary --request <request.json> --out <result.json>
   provider runtime-ci-evidence --artifact-root <directory> --request <request.json> --out <summary.json>
-  compatibility retirement-ticket lint --ticket <ticket.json> --evaluated-at <unix-seconds>
-  retirement guard --repo-root <path> [--retirements-dir <path>]
   lint hardcoded-paths [<repo-path>] [--json]
   route|routes [--action List|Plan|Validate] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--json]
   sentrux <dsm|scan|health|check|gate|check_rules|gate_save|hotspots> <path> [--no-ratchet]

@@ -1,5 +1,4 @@
-//! Contract tests for `code-intel doctor bootstrap`, the subcommand that
-//! replaced `legacy/check-code-intel-tools.ps1` under T3 (issue #48).
+//! Contract tests for `code-intel doctor bootstrap`.
 //!
 //! What is pinned here is what other components actually read: the
 //! observation schema and `observation_only` authority the doctor capability
@@ -238,13 +237,11 @@ fn the_pipeline_root_defaults_to_the_checkout_the_caller_stands_in() {
     let checkout = root.join("checkout");
     let bin = root.join("bin");
     // A decoy manifest beside the "installed" binary location, mirroring what
-    // install-code-intel-pipeline.ps1 writes.
+    // the installer writes.
     for dir in [&checkout, &bin] {
         fs::create_dir_all(dir.join("orchestration")).unwrap();
         fs::write(dir.join("orchestration").join("integrations.json"), b"{}").unwrap();
     }
-    fs::create_dir_all(checkout.join("legacy")).unwrap();
-    fs::write(checkout.join("legacy").join("run-code-intel.ps1"), b"").unwrap();
     fs::write(checkout.join("pipeline.config.json"), b"{}").unwrap();
     let crate_src = checkout.join("crates").join("code-intel-cli").join("src");
     fs::create_dir_all(&crate_src).unwrap();
@@ -274,10 +271,7 @@ fn the_pipeline_root_defaults_to_the_checkout_the_caller_stands_in() {
     let observation: Value =
         serde_json::from_slice(&output.stdout).expect("observation is one JSON document");
 
-    assert_eq!(
-        observation["checks"]["pipelineScript"]["found"],
-        json!(true)
-    );
+    assert!(observation["checks"].get("pipelineScript").is_none());
     assert_eq!(observation["checks"]["config"]["found"], json!(true));
     assert_eq!(
         observation["checks"]["graphProvider"]["sourceFound"],
@@ -302,9 +296,7 @@ fn release_layout_reports_the_packaged_graph_provider_binary() {
     let release = temp_dir("release-layout");
     let repo = temp_dir("release-repo");
     let binary = release.join("bin").join("code-intel");
-    fs::create_dir_all(release.join("legacy")).unwrap();
     fs::create_dir_all(binary.parent().unwrap()).unwrap();
-    fs::write(release.join("legacy").join("run-code-intel.ps1"), b"").unwrap();
     fs::write(release.join("pipeline.config.json"), b"{}").unwrap();
     fs::write(&binary, b"packaged binary").unwrap();
     let binary_path = binary.to_string_lossy().into_owned();
@@ -404,29 +396,4 @@ fn an_unknown_flag_fails_closed_without_emitting_an_observation() {
     assert_eq!(code, 65);
     assert_eq!(observation, Value::Null);
     assert!(stderr.contains("unknown argument for doctor bootstrap"));
-}
-
-#[test]
-fn the_powershell_entry_point_is_a_thin_forwarder() {
-    // The retirement bar for T3 is "<=50 lines shim or deleted". Assert the
-    // shim stays thin and stays a forwarder rather than growing logic back.
-    let script = pipeline_root().join("legacy/check-code-intel-tools.ps1");
-    let text = fs::read_to_string(&script).expect("read forwarder");
-    let code_lines = text
-        .lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            !trimmed.is_empty() && !trimmed.starts_with('#')
-        })
-        .count();
-    assert!(
-        code_lines <= 50,
-        "{} has {code_lines} code lines; T3 caps the shim at 50",
-        script.display()
-    );
-    assert!(text.contains("doctor"), "forwarder must invoke the binary");
-    assert!(
-        text.contains("bootstrap"),
-        "forwarder must invoke the binary"
-    );
 }

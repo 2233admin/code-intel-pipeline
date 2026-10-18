@@ -11,7 +11,6 @@ MATRIX_PATH = ROOT / "orchestration" / "sentrux-capability-matrix.v1.json"
 INTEGRATIONS_PATH = ROOT / "orchestration" / "integrations.json"
 RUST_SENTRUX_PATH = ROOT / "crates" / "code-intel-cli" / "src" / "sentrux.rs"
 EXECUTOR_PATH = ROOT / "crates" / "code-intel-cli" / "src" / "sentrux_capability_artifacts.rs"
-LEGACY_SENTRY_PATH = ROOT / "legacy" / "Invoke-SentruxAgentTool.ps1"
 
 
 class SentruxCapabilityMatrixTests(unittest.TestCase):
@@ -21,7 +20,6 @@ class SentruxCapabilityMatrixTests(unittest.TestCase):
         cls.integrations = json.loads(INTEGRATIONS_PATH.read_text(encoding="utf-8"))
         cls.rust_source = RUST_SENTRUX_PATH.read_text(encoding="utf-8")
         cls.executor_source = EXECUTOR_PATH.read_text(encoding="utf-8")
-        cls.legacy_source = LEGACY_SENTRY_PATH.read_text(encoding="utf-8")
 
     def test_matrix_has_a_single_identity_for_every_capability_and_alias(self) -> None:
         capabilities = self.matrix["capabilities"]
@@ -61,17 +59,6 @@ class SentruxCapabilityMatrixTests(unittest.TestCase):
         for operation in expected:
             with self.subTest(operation=operation):
                 self.assertIn(f'"{operation}"', self.rust_source)
-
-    def test_legacy_operations_and_aliases_are_present_in_the_matrix(self) -> None:
-        validate_set = re.search(r"ValidateSet\(([^)]*)\)", self.legacy_source)
-        self.assertIsNotNone(validate_set)
-        declared = set(re.findall(r'"([a-z_]+)"', validate_set.group(1)))
-        mapped = {
-            value
-            for item in self.matrix["capabilities"]
-            for value in [item["operation"], *item["aliases"]]
-        }
-        self.assertTrue(declared <= mapped)
 
     def test_partial_coverage_is_explicit_until_all_release_capabilities_are_automatic(self) -> None:
         self.assertEqual(self.matrix["coverageStatus"], "partial")

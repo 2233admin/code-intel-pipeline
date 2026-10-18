@@ -296,7 +296,7 @@ fn cli_publication_preserves_the_callers_manifest_bytes_and_digest() {
     let inventory = b"portable evidence\n";
     let inventory_digest = capability::sha256_hex(inventory);
     fs::write(objects.join(&inventory_digest), inventory).unwrap();
-    // Key order mirrors the PowerShell producer; serde re-serialization would
+    // Key order mirrors the original producer; serde re-serialization would
     // reorder it, so byte preservation is observable through the digest.
     let manifest_text = format!(
         concat!(

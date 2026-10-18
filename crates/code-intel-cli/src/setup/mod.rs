@@ -326,7 +326,7 @@ fn install_hint(platform: &str, tool: &str) -> Option<&'static str> {
         ("windows", "python") => "winget install Python.Python.3.13",
         ("macos", "python") => "brew install python",
         (_, "python") => "sudo apt-get install python3",
-        (_, "repowise") => "python -m pip install --user repowise",
+        (_, "repowise") => "python -m pip install --user \"repowise>=0.55.0\"",
         _ => return None,
     })
 }

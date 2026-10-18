@@ -6,6 +6,6 @@ export default {
   disposableUntracked: [],
   symlinks: ["node_modules"],
   buildOutputDirs: ["target", "artifacts", "dist"],
-  checkCommand: "pwsh -NoProfile -File ./legacy/Invoke-CodeIntelAcceptance.ps1 -Stage land",
+  checkCommand: "cargo +stable test -p code-intel --locked",
   checksRequired: true,
 };

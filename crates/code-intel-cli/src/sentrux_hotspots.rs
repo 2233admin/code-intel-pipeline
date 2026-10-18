@@ -1,19 +1,16 @@
 //! Exhaustive Rust-native `sentrux-hotspots.json` producer.
 //!
-//! Issue #361: the only prior producer of this artifact was
-//! `legacy/run-code-intel.ps1` (`Select-Object -First 30/50/20` on
-//! files/functions/modules). That arbitrary top-N cut silently dropped any
-//! file below the cutoff, so consumers joining per-session evidence against
-//! it (`session_evidence.rs`'s `--hotspots`) got zero matches for sessions
-//! that only touched lower-complexity files -- a real, reproducible data
-//! loss with no error or degradation signal. No decision record in
-//! `docs/decisions/` pins the top-N cut as intentional.
+//! Issue #361: an arbitrary top-N cut silently dropped any file below the
+//! cutoff, so consumers joining per-session evidence against the artifact
+//! (`session_evidence.rs`'s `--hotspots`) got zero matches for sessions that
+//! only touched lower-complexity files -- a real, reproducible data loss with
+//! no error or degradation signal.
 //!
 //! This module reuses [`sentrux_analysis::analyze`]'s DSM output and
-//! reprojects it into the same `{tool, path, generated_from, modules, files,
-//! functions}` shape the legacy artifact used, but keeps every row: no
-//! `Select-Object -First N` equivalent. Ordering (descending by risk/
-//! complexity) is preserved for readability; coverage is exhaustive.
+//! reprojects it into the `{tool, path, generated_from, modules, files,
+//! functions}` shape, keeping every row: there is no top-N cut. Ordering
+//! (descending by risk/complexity) is preserved for readability; coverage is
+//! exhaustive.
 
 use serde_json::{json, Value};
 use std::path::Path;
@@ -198,74 +195,5 @@ mod tests {
         assert!(hotspots["files"].as_array().unwrap().is_empty());
         assert!(hotspots["functions"].as_array().unwrap().is_empty());
         assert!(hotspots["modules"].as_array().unwrap().is_empty());
-    }
-
-    #[test]
-    fn legacy_facade_calls_rust_hotspots_and_has_no_truncating_fallback() {
-        // Issue #361: the facade must call the exhaustive Rust producer and
-        // must not carry a reintroduced Select-Object -First N fallback for
-        // hotspots specifically (dsm/evolution/what_if keep their own
-        // unrelated fallbacks; only hotspots' fallback was provably lossy).
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let source = std::fs::read_to_string(root.join("legacy/run-code-intel.ps1")).unwrap();
-        assert!(
-            source.contains("sentrux hotspots $sentruxTargetPath --json"),
-            "facade must call the Rust sentrux hotspots producer"
-        );
-        assert!(
-            source.contains("has no PowerShell fallback (issue #361)"),
-            "facade must fail closed instead of falling back for hotspots"
-        );
-        assert!(
-            !source.contains("hotspotsProvider = \"powershell_compatibility\""),
-            "the lossy PowerShell hotspots fallback must not be reintroduced"
-        );
-    }
-
-    #[test]
-    fn facade_hotspots_failure_is_isolated_from_evolution_and_what_if() {
-        // Follow-up to issue #361: the fail-closed hotspots block above sits
-        // inside one big outer try/catch shared with dsm/file-details/
-        // evolution/what-if (a pre-existing safety net that logs a note and
-        // continues, rather than aborting the whole pipeline run). Without
-        // its own inner try/catch, hotspots' `throw` would propagate to
-        // that outer catch and skip evolution/what-if too -- both of which
-        // have complete, working fallbacks and nothing wrong with them.
-        // Uses PowerShell's own AST parser (not a text search) so this
-        // can't pass on a coincidental substring match: it finds the actual
-        // try/catch statement enclosing the hotspots call and asserts its
-        // body does not also enclose the evolution call, and that its catch
-        // does not rethrow.
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let script = r#"
-            $errors = $null
-            $tokens = $null
-            $ast = [System.Management.Automation.Language.Parser]::ParseFile("legacy/run-code-intel.ps1", [ref]$tokens, [ref]$errors)
-            if ($errors.Count -gt 0) { Write-Output "PARSE_ERROR"; exit 1 }
-            $tryStatements = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.TryStatementAst] }, $true)
-            $isolatingTry = @($tryStatements | Where-Object {
-                @($_.CatchClauses | Where-Object { $_.Body.Extent.Text -match "were not generated \(no lossy fallback exists, issue #361\)" }).Count -gt 0
-            })
-            if ($isolatingTry.Count -ne 1) { Write-Output "EXPECTED_ONE_ISOLATING_TRY:$($isolatingTry.Count)"; exit 1 }
-            $t = $isolatingTry[0]
-            if (-not ($t.Body.Extent.Text -match 'sentrux hotspots \$sentruxTargetPath --json')) { Write-Output "MISSING_HOTSPOTS_CALL"; exit 1 }
-            if ($t.Body.Extent.Text -match "sentrux evolution") { Write-Output "NOT_ISOLATED_FROM_EVOLUTION"; exit 1 }
-            if ($t.Body.Extent.Text -match "sentrux what_if" -or $t.Body.Extent.Text -match "sentrux what-if") { Write-Output "NOT_ISOLATED_FROM_WHATIF"; exit 1 }
-            foreach ($c in $t.CatchClauses) {
-                if ($c.Body.Extent.Text -match "\bthrow\b") { Write-Output "CATCH_RETHROWS"; exit 1 }
-            }
-            Write-Output "ISOLATED"
-        "#;
-        let output = std::process::Command::new("pwsh")
-            .args(["-NoProfile", "-Command", script])
-            .current_dir(&root)
-            .output()
-            .expect("run pwsh AST check");
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(
-            stdout.contains("ISOLATED"),
-            "hotspots try/catch must be isolated from evolution/what-if and must not rethrow: {stdout} {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
     }
 }

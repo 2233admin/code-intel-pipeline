@@ -330,12 +330,9 @@ pub(super) fn codenexus_admission(
     let lease = snapshot::begin_consumption(&normalized_repo, &request["snapshot"])
         .map_err(AdapterError::Contract)?;
     let collected_at = now()?;
-    // Issue #275: the CodeNexus-lite context is now generated in-process by
-    // the Rust implementation (`codenexus_lite`), replacing the PowerShell
-    // facade `legacy/Invoke-CodeNexusLite.ps1`. The facade previously ran
-    // without -DsmPath/-HotspotsPath, so it always took the largest-code-file
-    // fallback path; the Rust implementation preserves that exact behavior
-    // (no dsm/hotspots inputs are read).
+    // The CodeNexus-lite context is generated in-process by `codenexus_lite`.
+    // No dsm/hotspots inputs are read, so it always takes the
+    // largest-code-file fallback path.
     let implementation_digest = codenexus_lite::implementation_digest();
     let scratch_guard = ScratchDir(create_codenexus_scratch_dir()?);
     let scratch = scratch_guard.path();
@@ -546,16 +543,14 @@ fn run_sentrux(
                     // `sentrux_lite_capabilities::what_if_json`, an
                     // intentionally simplified fallback with a different
                     // shape. `sentrux_evolution::what_if` is the same real
-                    // engine `legacy/run-code-intel.ps1` already calls via
+                    // engine the CLI exposes as
                     // `code-intel sentrux what_if <path>`; its output is
                     // additionally the one `sentrux.what_if`'s only real
                     // structured-data consumer (`change_impact.rs`'s
                     // `summary.failing` read) was updated to match.
                     //
-                    // The engine mirrors the PS1 tool's own wall-clock
-                    // `generated_at` stamp
-                    // (`legacy/Invoke-SentruxAgentTool.ps1:3090`) for
-                    // CLI/PS1 consumers, but this DAG path's
+                    // The engine stamps a wall-clock `generated_at` for CLI
+                    // consumers, but this DAG path's
                     // `evidence.sentrux` payload is content-addressed and
                     // must be a pure function of the snapshot
                     // (`evidence_payload_determinism.rs`) -- so this path

@@ -1,11 +1,8 @@
-//! Native bootstrap/environment probe — the Rust owner of what
-//! `legacy/check-code-intel-tools.ps1` used to compute in PowerShell.
+//! Native bootstrap/environment probe.
 //!
 //! Emits `code-intel-doctor-bootstrap-observation.v1`, the same
 //! non-authoritative observation the doctor capability adapter consumes. The
-//! PowerShell entry point is now a thin forwarder onto this module, so there
-//! is exactly one implementation of the probe instead of a script plus a
-//! divergent in-process fallback that hardcoded its graph-provider answers.
+//! probe has exactly one implementation.
 //!
 //! Everything here is observation only: it reports presence and readiness of
 //! tools, providers, config and repository state. It never writes, never
@@ -32,9 +29,8 @@ mod doctor_provider_rows;
 
 use paths::display;
 // Re-exported so `language_pref` derives the user-level config root from the
-// same OS/`CODE_INTEL_DATA_ROOT` switch this probe already ported from
-// `Get-CodeIntelDataRoot` in `code-intel-platform.psm1`, instead of a third
-// independent copy of that logic.
+// same OS/`CODE_INTEL_DATA_ROOT` switch this probe already uses, instead of
+// an independent copy of that logic.
 pub(crate) use paths::{data_root, home_directory, resolve_platform};
 
 /// Marker the doctor capability adapter matches on. Kept as a constant so the
@@ -55,7 +51,7 @@ pub(crate) struct Options {
     /// Directory searched ahead of `PATH` when probing for tools. Lets a test
     /// stand up a fixture toolchain without mutating the process environment.
     pub(crate) tool_path_prefix: Option<PathBuf>,
-    /// Repository root holding `crates/`, `target/` and `legacy/`.
+    /// Repository root holding `crates/` and `target/`.
     pub(crate) pipeline_root: PathBuf,
 }
 
@@ -99,10 +95,6 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
         .as_ref()
         .map(|path| config::resolve_sentrux_scope(path, repo_config.as_ref()));
 
-    let pipeline_script = options
-        .pipeline_root
-        .join("legacy")
-        .join("run-code-intel.ps1");
     let cli_root = options.pipeline_root.join("crates").join("code-intel-cli");
     let graph_source = cli_root.join("src").join("graph").join("mod.rs");
     let graph_cargo = cli_root.join("Cargo.toml");
@@ -159,7 +151,7 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
         |text| probe::contains_ignore_case(text, probe::SENTRUX_CORE_MARKER),
     );
     // Tier: free is healthy without the SENTRUX_AUTO_PRO opt-in (Pro
-    // auto-activation is opt-in; see legacy/tools/sentrux-shim/sentrux-shim.ps1).
+    // auto-activation is opt-in).
     let require_pro_tier = probe::requires_pro_tier();
     let sentrux_pro = probe::probe_command_output(
         "sentrux-pro",
@@ -218,10 +210,6 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
     let weco_reason = weco_reason(weco_present, weco_byok_configured, weco_account_configured);
 
     let checks = json!({
-        "pipelineScript": {
-            "path": display(&pipeline_script),
-            "found": pipeline_script.is_file()
-        },
         "config": {
             "path": display(&config_path),
             "found": config_path.is_file(),
@@ -406,7 +394,7 @@ fn code_intel_home(pipeline_root: &Path) -> CodeIntelHome {
     }
 }
 
-/// The `missing` list, in the order the PowerShell probe emitted it — several
+/// The `missing` list, in a stable order — several
 /// callers (installer checks, CI logs) read it as a comma-joined string.
 fn missing_list(
     checks: &Value,
@@ -422,9 +410,6 @@ fn missing_list(
             .unwrap_or(false)
     };
     let mut missing = Vec::new();
-    if !flag("/pipelineScript/found") {
-        missing.push("pipeline script".to_string());
-    }
     if !flag("/config/found") {
         missing.push("pipeline config".to_string());
     }
@@ -456,8 +441,7 @@ fn missing_list(
     // The two checks above only prove the *internal* graph provider ships in
     // this checkout; inside the pipeline repo they are trivially true, which
     // left `--require-understand` a fail-open no-op that never once consulted
-    // the `understandAnything` block it computes. The retired PowerShell probe
-    // had the same hole. Understand Anything ships either as an agent skill or
+    // the `understandAnything` block it computes. Understand Anything ships either as an agent skill or
     // as a plugin directory, so either one satisfies the requirement — this is
     // the same "skill/plugin" wording the installer's own RequireUnderstand
     // check remediates with.
@@ -536,7 +520,7 @@ fn default_pipeline_root() -> PathBuf {
         .unwrap_or_else(pipeline_root)
 }
 
-/// The human-readable rendering the PowerShell probe printed without `-Json`.
+/// The human-readable rendering printed without `--json`.
 /// CI reads these lines, so the wording is preserved verbatim.
 pub(crate) fn render_human(observation: &Value) -> String {
     let text = |pointer: &str| {
@@ -555,7 +539,6 @@ pub(crate) fn render_human(observation: &Value) -> String {
     let mark = |ok: bool| if ok { "OK" } else { "MISSING" };
 
     let mut lines = vec![headline(observation)];
-    lines.push(format!("Pipeline: {}", text("/checks/pipelineScript/path")));
     lines.push(format!("Config: {}", text("/checks/config/path")));
     if let Some(tools) = observation
         .pointer("/checks/tools")
@@ -655,9 +638,8 @@ fn repo_lines(
     lines
 }
 
-/// `code-intel doctor bootstrap [...]` — the direct CLI surface that replaced
-/// `legacy/check-code-intel-tools.ps1`. Exits 1 when the probe reports
-/// missing prerequisites, matching the script it retired.
+/// `code-intel doctor bootstrap [...]` — the direct CLI surface. Exits 1 when the
+/// probe reports missing prerequisites.
 pub(crate) fn run_raw(raw: &[String]) -> i32 {
     let mut options = Options::new(default_pipeline_root());
     let mut json_output = false;

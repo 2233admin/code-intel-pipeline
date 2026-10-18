@@ -23,9 +23,7 @@
       "crates/code-intel-cli/src/main.rs": 21,
       "crates/code-intel-cli/src/orchestration.rs": 21,
       "crates/code-intel-cli/src/providers.rs": 21,
-      "crates/code-intel-cli/src/sentrux_analysis.rs": 21,
-      "invoke-code-intel.ps1": 21,
-      "run-code-intel.ps1": 21
+      "crates/code-intel-cli/src/sentrux_analysis.rs": 21
     },
     "workingTreeQualityBefore": 5470,
     "workingTreeQualityAfter": 5580,
