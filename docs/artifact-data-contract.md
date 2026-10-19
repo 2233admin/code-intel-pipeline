@@ -96,12 +96,7 @@ canonical `run-complete.json` marker last. The completed-only index revalidates 
 manifest, refs, and exactly one repository-iteration provenance payload against the authority
 directory names.
 
-The legacy PowerShell compatibility report path uses a staging directory named
-`<timestamp>.staging-<nonce>`. The scanner writes artifacts there, rewrites
-published path references, promotes the directory to its final timestamped
-name, but does not write a canonical marker. Its `report.json`, markdown, and auxiliary files are
-a non-authoritative compatibility view. The normal index must reject those directories; explicit
-legacy compatibility traversal may read them only as advisory reports.
+Directories without a canonical marker (for example legacy timestamped or `.staging-<nonce>` reports) are a non-authoritative compatibility view. The normal index must reject them.
 
 The provenance contract is non-cryptographic. A local actor able to coherently replace a whole
 publication can forge the JSON and digests; defending against that actor requires signed
@@ -146,22 +141,6 @@ code-intel sentrux-debt-register --failures sentrux-failures.json --repo <repo> 
 ```
 
 Shell wrappers may still orchestrate tools, but normalized Sentrux JSON and debt classification should converge on these CLI commands.
-
-## Exit Code Contract (issue #130)
-
-`legacy/run-code-intel.ps1` (and the legacy `check-code-intel-tools.ps1`/`code-intel.ps1`/`invoke-code-intel.ps1` compatibility chain, which forwards its exit code unchanged) uses a three-value exit code, not a binary one:
-
-| Exit | Meaning |
-|---|---|
-| `0` | Clean: no failures, no gate findings. |
-| `1` | The pipeline genuinely did not complete: a tool crash, missing artifacts, an unrecoverable step, or a `sentrux gate` step that failed without producing any parseable `gate:*` output at all. |
-| `2` | The pipeline completed. `sentrux gate` reported architecture/quality debt (`god_files`, `coupling`, `quality`, `cycles`, ...) for the target repo. This is gate **output**, not a process failure. |
-
-Before this fix, any blocking `sentrux gate` finding was folded into the same `effectiveFailed`/exit-1 path as a genuine crash: a repo with real architecture debt made the pipeline look like it had failed to run at all, even though every artifact was produced. The discriminator is `sentrux-failures.json`'s `gate` field (from `New-CodeIntelSentruxFailures`): non-null means a `gate:*` record was actually parsed from `sentrux gate` stdout (a finding); null means the step failed without producing any recognizable output (a genuine crash), which still counts as an effective failure.
-
-This exemption is scoped to `sentrux gate` only. `sentrux check` (`check:*`, max_cc) keeps its prior blocking-debt-gated behavior.
-
-`report.summary.gateFindings` is the count of blocking `sentrux gate`-sourced debt entries. It is informational — it does not raise `effectiveFailed`, `effectiveFailureCategories.sentruxFail`, or the process exit code past `2`. Consumers that read the legacy exit code directly must treat `2` the same as success unless they specifically want to gate on any Sentrux architecture/quality finding.
 
 ## Hospital Trust Contract
 
@@ -213,4 +192,4 @@ Artifact consumers must preserve these fields:
 - `hospital-report.json.triage.research_required`
 - `hospital-report.json.state_machine.current_state`
 
-When these fields change, update the PowerShell writer, GitHub research writer if relevant, CLI readers, cross-run indexers if searchable, README artifact lists, and contract tests together.
+When these fields change, update the Rust report writer, GitHub research writer if relevant, CLI readers, cross-run indexers if searchable, README artifact lists, and contract tests together.

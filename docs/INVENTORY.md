@@ -9,7 +9,7 @@ log) if a fresh inventory is needed. Columns: `path` (current location), `class`
 Verification method: every `one-shot` disposition below was confirmed against a primary source
 (status.json, orchestration schema, or checked implementation) before moving, not from filename
 pattern alone — see TASK_REPORT.md for the cases where the obvious pattern match was wrong
-(7 of 8 `compatibility-retire-*` docs turned out to still be blocked/live, not completed).
+(7 of 8 `compatibility-retire-*` docs turned out to still be blocked/live, not completed; those docs and `docs/ps1-exit/` were later deleted with the PowerShell removal, DR-0018).
 
 ## ADRs — permanent records (untouched per spec)
 
@@ -58,37 +58,11 @@ pattern alone — see TASK_REPORT.md for the cases where the obvious pattern mat
 | docs/archive/plans/understanding-quadrant-complexity-idea.md | one-shot | archived | Refactor done: staged a01/a03 helper tests exist |
 | docs/archive/plans/v0.3.0-release-bootstrap-and-layout-idea.md | one-shot | archived | v0.3.0 shipped; repo now v0.7.0-beta.2 |
 
-## Moved this sweep: one-shot compatibility retirement (executed)
-
-| path | class | disposition | reason |
-| --- | --- | --- | --- |
-| docs/compatibility-retire-doctor-wrapper-branch.md | living-contract | kept (restored) | E09 packet reconciliation pins this path as evidence; packets freeze paths even after retired=true |
-
 ## Kept: implemented plan retained as a living contract (do not archive)
 
 | path | class | disposition | reason |
 | --- | --- | --- | --- |
 | docs/plans/adr-0010-execution-plan.md | living-contract | kept | Status "implemented; superseded as an execution plan"; retained because 3 live files cite it |
-
-## Kept: compatibility retirement tickets still blocked (7 of 8 — verified via status.json, not archived)
-
-| path | class | disposition | reason |
-| --- | --- | --- | --- |
-| docs/compatibility-retire-codenexus-direct-branch.md | living-contract | kept | E04 status.json: decision=blocked, not retired |
-| docs/compatibility-retire-hospital-branch.md | living-contract | kept | E08 status.json: decision=blocked, not retired |
-| docs/compatibility-retire-index-branch.md | living-contract | kept | E10 status.json: decision=blocked, not retired |
-| docs/compatibility-retire-native-code-branch.md | living-contract | kept | E07 status.json: decision=blocked, not retired |
-| docs/compatibility-retire-provider-preflight-branch.md | living-contract | kept | E03 status.json: decision=blocked, not retired |
-| docs/compatibility-retire-publication-branch.md | living-contract | kept | E05 status.json: decision=blocked, not retired |
-| docs/compatibility-retire-recommender-branch.md | living-contract | kept | E02 status.json: decision=blocked, not retired |
-
-## Kept: PS1-exit migration docs (all directly cited by live Rust source)
-
-| path | class | disposition | reason |
-| --- | --- | --- | --- |
-| docs/ps1-exit/contract-inventory.md | living-contract | kept | Companion doc to live parity-observe.yml harness |
-| docs/ps1-exit/t2-dot-source-parity-map.md | living-contract | kept | Cited by crates/.../hospital_score.rs source |
-| docs/ps1-exit/t2-launcher-classification.md | living-contract | kept | Cited by crates/.../execution_policy/inputs.rs source |
 
 ## Kept: living-contract docs (referenced by code/tests/other current docs)
 
@@ -111,8 +85,6 @@ pattern alone — see TASK_REPORT.md for the cases where the obvious pattern mat
 | docs/code-intel-architecture.md | living-contract | kept | Referenced by reference-capability-map.md |
 | docs/codenexus-provider-adapter.md | living-contract | kept | Referenced by providers.rs |
 | docs/committed-run-index.md | living-contract | kept | Referenced by reference-capability-map.md |
-| docs/compatibility-retirement-gate.md | living-contract | kept | Live src + test module (compatibility_retirement_gate) |
-| docs/compatibility-retirement-ticket-template.md | living-contract | kept | Live test module (compatibility_retirement_ticket_template) |
 | docs/dag-coordinator.md | living-contract | kept | Live src + test module (dag_coordinator) |
 | docs/decision-gap-detector.md | living-contract | kept | Backtick paths verified live (rules json, fixture) |
 | docs/decision-request-response-port.md | living-contract | kept | Referenced by decision_port.rs |
@@ -133,17 +105,16 @@ pattern alone — see TASK_REPORT.md for the cases where the obvious pattern mat
 | docs/internalization-advisory-candidates.md | living-contract | kept | Referenced by final-commitment-reconciliation.md |
 | docs/internalization-r09-r26-records.md | living-contract | kept | Referenced by final-commitment-reconciliation.md |
 | docs/internalization-record-engine.md | living-contract | kept | Documents live internalization_record.rs module |
-| docs/inventory-rg-capability-contract.md | living-contract | kept | References live legacy/run-code-intel.ps1 |
+| docs/inventory-rg-capability-contract.md | living-contract | kept | Referenced by its Rust test |
 | docs/language-adapter-acceptance-standard.md | living-contract | kept | Backtick paths verified live (policy json, doc) |
 | docs/method-catalog.md | living-contract | kept | Live src + test module (method_catalog, #[path]-included) |
 | docs/method-selection.md | living-contract | kept | References live method-selection-rules.v1.json |
 | docs/model-channel-routing.md | living-contract | kept | Documents live model_channels.rs routing |
-| docs/model-executable-handle.md | living-contract | kept | References 3 live legacy scripts |
 | docs/native-code-evidence.md | living-contract | kept | Live src + test module (native_code_evidence) |
 | docs/openspec-detector.md | living-contract | kept | Referenced by internalization_record.rs test fixtures |
 | docs/pon-multilanguage-code-evidence.md | living-contract | kept | Referenced by pon-multilanguage.json |
 | docs/ponytail-gain-ledger.md | living-contract | kept | Active tracked cleanup ledger; cross-confirms this sweep |
-| docs/ponytail-governance-gate.md | living-contract | kept | Referenced by test-ponytail-gate-contract.ps1 |
+| docs/ponytail-governance-gate.md | living-contract | kept | Referenced by ponytail gate docs |
 | docs/ponytail-impact-scoreboard.md | living-contract | kept | Linked from README.md |
 | docs/project-management-support.md | living-contract | kept | Linked from README.md |
 | docs/project-orientation-benchmark.md | living-contract | kept | Live src + test module (project_orientation_benchmark) |
@@ -166,8 +137,8 @@ pattern alone — see TASK_REPORT.md for the cases where the obvious pattern mat
 
 ## Totals
 
-- Files inventoried: 123
-- living-contract (kept): 104 (14 ADR + 1 open plan + 7 blocked retirements + 3 ps1-exit + 79 other)
+- Files inventoried: 100
+- living-contract (kept): 81 (14 ADR + 1 open plan + 66 other)
 - one-shot archived this sweep: 17 (16 plans + 1 compatibility-retire)
 - one-shot already archived (prior sweep): 2
 - stale: 0 (no doc found describing wholly nonexistent paths/symbols; a handful of docs have one

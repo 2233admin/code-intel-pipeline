@@ -59,11 +59,11 @@ than hiding trade-offs in one score.
 
 The deterministic scorer is available as:
 
-```powershell
-code-intel benchmark tools `
-  --corpus <code-intel-tool-effectiveness-corpus.v1.json> `
-  --runs <code-intel-tool-effectiveness-runs.v1.json> `
-  --artifact-root <A03-authority-root> `
+```sh
+code-intel benchmark tools \
+  --corpus <code-intel-tool-effectiveness-corpus.v1.json> \
+  --runs <code-intel-tool-effectiveness-runs.v1.json> \
+  --artifact-root <A03-authority-root> \
   --out <new-output-directory>
 ```
 

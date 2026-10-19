@@ -9,7 +9,7 @@
 | `DEADLINE` | `{{DEADLINE}}` ← 投放时填绝对时间戳 |
 | `TEST_CMD` | `cargo test -p code-intel --locked -j 4 -- --test-threads=4` |
 | `LINT_CMD` | `cargo fmt -p code-intel -- --check && cargo check --locked` |
-| `LOC_CMD` | `pwsh -NoProfile -Command "(Get-ChildItem crates -Recurse -Filter *.rs \| Where-Object { $_.FullName -notmatch '\\tests\\' } \| Get-Content \| Where-Object { $_ -notmatch '^\s*(//\|$)' }).Count"` |
+| `LOC_CMD` | `rg --files -g 'crates/**/*.rs' -g '!**/tests/**' \| xargs cat \| rg -v '^\s*(//\|$)' \| wc -l` (经 `rtk proxy` 前缀直跑) |
 | `BENCH_CMD` | `cargo build -p code-intel --release --locked` 然后 `target/release/code-intel.exe benchmark orientation --out <每次全新目录,放 %TEMP%> --repetitions 3` |
 | `PERF_METRICS` | `report.json` 里 typical p95(orientation 与 fixture-materialization 分列)+ 每 fixture 重放 digest 全等 |
 | `PERF_TOLERANCE` | 相对基线 p95 劣化 ≤ 10%,且绝对契约 typical p95 ≤ 60s 不破 |
@@ -52,9 +52,9 @@
 
 按顺序执行,结果写入 `.night/BASELINE.md`:
 
-1. TEST_CMD 连续跑 **2 遍**,**经 PowerShell 通道执行**(§8.1;若只有 Bash 通道则加 `rtk proxy` 前缀——裸跑第二遍可能吃 RTK 缓存重放,两遍恒等,FLAKY 集为假空)。两遍结果不一致的测试进入 **FLAKY 集**,逐条记录。此后所有"全绿"的定义都是:**(全部测试 − FLAKY 集)全绿**。FLAKY 集今晚只在此刻确定,不再增补。同时记录通过测试总数(近期基线量级 ~3400+)。
+1. TEST_CMD 连续跑 **2 遍**,**加 `rtk proxy` 前缀执行**(§8.1——裸跑第二遍可能吃 RTK 缓存重放,两遍恒等,FLAKY 集为假空)。两遍结果不一致的测试进入 **FLAKY 集**,逐条记录。此后所有"全绿"的定义都是:**(全部测试 − FLAKY 集)全绿**。FLAKY 集今晚只在此刻确定,不再增补。同时记录通过测试总数(近期基线量级 ~3400+)。
 2. 跑 BENCH_CMD:先 `cargo build -p code-intel --release --locked`,然后 `target/release/code-intel.exe benchmark orientation --out %TEMP%\night-bench-baseline --repetitions 3`(输出目录必须事先不存在;reps 3 与 CI 口径一致,该基准内部已含 cold/warm × 9 个语料格,reps 调高整轮时间会失控)。把 `report.json` 的 typical p95(orientation / fixture-materialization 分列)与 determinism 结论抄进 `BASELINE.md`。此后"性能无回归"的定义:p95 劣化 ≤ 10% 且绝对 p95 ≤ 60s 且 determinism digest 全等。
-3. 跑 LOC_CMD(表格里的 pwsh 命令)记录源码行数。口径:`crates/` 下全部 `.rs`,排除 `tests/` 目录,排除空行与 `//` 注释行;**inline `mod tests` 计入此口径**,因此删 inline 测试刷不动净减少——"测试数不减"(第 1 步的总数)是配对绊线。参考值(2026-08-06):53,675。
+3. 跑 LOC_CMD(表格里的命令)记录源码行数。口径:`crates/` 下全部 `.rs`,排除 `tests/` 目录,排除空行与 `//` 注释行;**inline `mod tests` 计入此口径**,因此删 inline 测试刷不动净减少——"测试数不减"(第 1 步的总数)是配对绊线。参考值(2026-08-06):53,675。
 4. 建 `.night/REPORT.md` 骨架(§7 结构,各节留空)。报告从此刻起**增量书写**。
 5. 在报告顶部用**三句话**复述今晚要做什么。说不清就回去重读,不要动手。
 6. commit 上述全部至 `night` 分支。**此后对 `BASELINE.md` 的任何改动即违规**——早上报告须附 `git log --oneline -- .night/BASELINE.md`,只允许出现这一次提交。
@@ -72,7 +72,7 @@
 | #106 | bug(gate): `sentrux check` 与权威 self-scan 口径漂移,最小门禁给假绿灯 | 复现 = 找一个权威 self-scan 红、`sentrux check` 绿的输入;修判据别修表象 |
 | #178 | bug(test): 并行测试进程共享 target/tool-path 且无归属 | 与已修的 #175/#177 同因;修法先例:资源命名带进程归属 |
 | #186 | test helpers 继承宿主环境,env 变量漏进被测分支 | 修法:枚举全部 env 分支输入,子进程 env 用显式 allowlist(仓里已有同类修复先例) |
-| #176 | gate: 门禁清单漏掉 PowerShell 合同测试,cargo test + repin 全绿仍被 CI 打回 | 与 #184 同病:写入方/校验方各持清单必然盲区;修法方向:单一清单模块 + 从磁盘发现 |
+| #176 | gate: 门禁清单漏掉部分合同测试,cargo test + repin 全绿仍被 CI 打回 | 与 #184 同病:写入方/校验方各持清单必然盲区;修法方向:单一清单模块 + 从磁盘发现 |
 
 **先 triage 后修复。** 每条固定 20 分钟只做一件事:写出复现脚本,标把握度(高/中/低)。全部过完后按把握度从高到低修。
 
@@ -185,7 +185,7 @@ State:      <分支名 + 停在哪>
 
 ## 8. 本仓陷阱(与正文同级效力)
 
-1. **RTK 命令重写与缓存重放。** 本机 Bash 工具挂了 RTK hook:命令会被透明重写(`grep`→`rg`、`find`→`fd`,语义不同会直接炸),且**重复执行同一命令可能重放旧缓存结果**——修好的红灯会"复活",没修的绿灯会假绿。规避通道按优先级:(a) **所有判定命令(基线、退出条件、验证)一律经 PowerShell 执行**——RTK hook 只挂在 Bash 工具上,pwsh 通道机制上不过 rtk,重写与缓存双免;(b) 只有 Bash 通道可用时,加 `rtk proxy ` 前缀直跑;(c) `find`/`grep` 管道无论哪个通道都改用 pwsh 等价物(LOC_CMD 已是)。hook 已配 10s 超时(fail-open),rtk 自身卡死不会吊死工具调用,但超时后命令是**未经重写**原样执行的——对判定命令无影响(它们本来就该原样跑)。
+1. **RTK 命令重写与缓存重放。** 本机 Bash 工具挂了 RTK hook:命令会被透明重写(`grep`→`rg`、`find`→`fd`,语义不同会直接炸),且**重复执行同一命令可能重放旧缓存结果**——修好的红灯会"复活",没修的绿灯会假绿。规避办法:**所有判定命令(基线、退出条件、验证)一律加 `rtk proxy ` 前缀直跑**,重写与缓存双免;`find`/`grep` 管道改用 `rg` 等价写法(LOC_CMD 已是)。hook 已配 10s 超时(fail-open),rtk 自身卡死不会吊死工具调用,但超时后命令是**未经重写**原样执行的——对判定命令无影响(它们本来就该原样跑)。
 2. **内存红线。** 本机 commit charge 长期贴顶;cargo 默认并行在 LLVM 阶段会 OOM,子进程撞 error 1455 **静默死(空 stderr)**。`-j 4` 与 `--test-threads=4` 是硬参数不许调高。症状识别:测试数骤降、进程无输出消失 → 按环境故障写 blocker,不是当测试失败去修。
 3. **禁 push、禁 PR,全夜。** 本仓 PR 绿灯即自动合并。夜里一切只落在本地 `night` 分支,早上人 review 后才谈 PR。
 4. **主 checkout 占用检查。** 开跑第一步 `git status` + `git branch --show-current`:若工作树不净或停在别的 agent 的分支(如 `codex/*`),写 blocker 终止,不许 stash 别人的东西。若不得不在 worktree 里跑:每个测试子进程显式设 `CODE_INTEL_HOME` 指向该 worktree(默认会读主 checkout 的 manifest),且 repowise 在 worktree 里不可用是预期,自扫已带 `--doctor-require-repowise false`。
@@ -203,4 +203,4 @@ State:      <分支名 + 停在哪>
 2. 腾出主 checkout `D:\projects\code-intel-pipeline`:切回 main、工作树净、无别的 agent 会话占用(2026-08-06 时它停在 `codex/architecture-convergence`)。
 3. 暂时把 `.git/hooks/post-commit` 挪出(`post-commit.night-bak`),早上恢复。理由:它每次 commit 起后台 `repowise update`,整夜几十个 commit 会与 cargo 编译抢内存——本机 commit charge 贴顶,这是 #123 静默死子进程的同款根因。
 4. 关掉其他并行 agent 会话与大内存进程,确认磁盘余量(`target/` + release 构建 + bench 输出,预留 ≥ 20GB)。
-5. RTK 不用拆:hook 已配 10s 超时(fail-open),且判定命令按 §8.1 走 PowerShell 通道,机制上不经过 rtk。
+5. RTK 不用拆:hook 已配 10s 超时(fail-open),且判定命令按 §8.1 加 `rtk proxy` 前缀,机制上不吃缓存重放。

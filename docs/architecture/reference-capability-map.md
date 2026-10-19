@@ -2,6 +2,8 @@
 
 Status: canonical audit baseline (2026-07-13)
 
+> PowerShell was removed from the product (DR-0018). This table is the 2026-07-13 baseline: the `legacy/*.ps1` paths and line numbers it cites no longer exist on `main`; read them at commit `f59be54`, the last commit before their deletion. The equivalent behavior now lives in the compiled Rust `code-intel` CLI or has been deleted.
+
 This map classifies the active integrations and design references named by the restored commitment checkpoints. It is an inventory, not an adoption approval, implementation claim, or health claim. Repository code and accepted/proposed ADRs are the primary evidence; the checkpoints are audit inputs that establish coverage expectations only.
 
 ## Classification rules

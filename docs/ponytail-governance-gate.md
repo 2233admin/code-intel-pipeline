@@ -54,11 +54,5 @@ exits 0; an enforce result with `enforcedBlock=true` remains schema-valid on std
 Usage errors exit 64, contract-invalid input exits 65 without emitting a result, and host I/O
 failures exit 74. The gate is not coupled to the A09 DAG runner.
 
-Run the focused CI contract with:
-
-```powershell
-./legacy/scripts/tests/test-ponytail-gate-contract.ps1 -RepoPath .
-```
-
 No Ponytail package or runtime is installed or invoked. The source project remains a reference;
 the semantic contract is owned by Code Intel Pipeline.

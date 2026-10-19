@@ -12,4 +12,4 @@ Production CLI:
 code-intel repository survival-scan --request <request.json|-> --artifact-root <artifact-directory>
 ```
 
-The PowerShell facade exposes the same route through `-SurvivalScanRequest` and `-SurvivalScanArtifactRoot`. The existing `inventory.rg` adapter remains the rollback-compatible inventory producer; B05 does not add a parser or provider database.
+The existing `inventory.rg` adapter remains the rollback-compatible inventory producer; B05 does not add a parser or provider database.

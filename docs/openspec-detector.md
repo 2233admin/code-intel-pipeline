@@ -69,7 +69,7 @@
 ## 代码规模扫描
 
 - 扫描范围：仓库根目录递归，排除 `node_modules/ .git/ target/ dist/ build/ vendor/ venv/ .venv/ __pycache__/`
-- 扩展名：`.ts .tsx .js .jsx .rs .py .go .ps1 .psm1 .cs .java .kt .swift .vue .svelte .v`
+- 扩展名：`.ts .tsx .js .jsx .rs .py .go .cs .java .kt .swift .vue .svelte .v`
 - 不再局限于 `src/lib/app/packages/crates` 五个白名单目录，避免像 `tools/` 下的脚本被漏统计
 
 ## 集成到 Code Intel Pipeline

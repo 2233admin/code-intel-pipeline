@@ -57,16 +57,15 @@ Consequences:
 ## Verification
 
 - Rust changes require focused `cargo test` coverage plus the relevant integration-contract checks.
-- Run `code-intel lint hardcoded-paths` before pushing (issue #275: the Rust
-  implementation replaced `legacy/tools/check-hardcoded-paths.ps1`). It scans tracked
-  `.ps1`/`.psm1`/`.md`/`.yml` for machine-specific paths, and it strips
+- Run `code-intel lint hardcoded-paths` before pushing (issue #275). It scans tracked
+  `.md`/`.yml` and other text files for machine-specific paths, and it strips
   `$env:VAR` references before matching. So naming one of the scanned Windows
   user-directory variables bare — in **prose or a comment**, not just in code —
   fails the scan, while the `$env:`-prefixed form passes. Always write the
   `$env:` form, including in comments and documentation.
   On a host that cannot build the checkout (DR-0013 / #403) and whose installed
-  release predates the command (0.7.1 lacks it), do not substitute the retired
-  PowerShell script: CI runs the same scan on every PR in all three
+  release predates the command (0.7.1 lacks it), do not substitute a hand-rolled
+  scan: CI runs the same scan on every PR in all three
   `cross-platform-smoke` lanes ("Hardcoded path scan"). The first release that
   ships the command is the prerelease `v0.7.2-beta.6`; installing it is not
   compiling, but per the Skill's install rules it needs the owner's explicit
@@ -76,12 +75,11 @@ Consequences:
   assertion. Re-sync those pins **once, after every other edit**, by literal
   string replacement — never by reserializing the JSON. Several of those files
   are historical attestations whose formatting and unrelated digests must not
-  move, and a pin can chain: editing `legacy/run-code-intel.ps1` to update a digest it
-  quotes changes `legacy/run-code-intel.ps1`'s own pinned digest too.
+  move, and a pin can chain: editing a pinned file to update a digest it
+  quotes changes that file's own pinned digest too.
 - MoonBit experiments require `moon test` and parity fixtures against the current artifact contract before promotion.
 - New documentation and command examples must lead with the compiled `code-intel` CLI. Do not
-  document PowerShell as an operational prerequisite; mention it only when identifying a retained
-  compatibility fixture or migration boundary.
+  document PowerShell as a prerequisite or an entry point; it is gone from the product (DR-0018).
 
 ## While writing code
 

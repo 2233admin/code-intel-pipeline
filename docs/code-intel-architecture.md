@@ -60,7 +60,7 @@ As the pipeline absorbs Repowise, Sentrux, graph providers, and future project-i
 
 That place is `orchestration/integrations.json`.
 
-The rule is simple: no new project-intelligence dependency goes straight into an agent-facing script. Register the integration first, declare its stage, capabilities, artifact contract, and adapter entrypoint, then wire the adapter into the runner. When a Rust target exists, the Rust crate is the real integration entrypoint and `.ps1` files are compatibility surfaces. `code-intel.exe orchestrate` validates the registry and can print the current plan for humans or agents.
+The rule is simple: no new project-intelligence dependency goes straight into an agent-facing script. Register the integration first, declare its stage, capabilities, artifact contract, and adapter entrypoint, then wire the adapter into the Rust runner. When a Rust target exists, the Rust crate is the integration entrypoint (PowerShell was removed, DR-0018). `code-intel orchestrate` validates the registry and can print the current plan for humans or agents.
 
 Detailed extension rules are in `docs/integration-orchestration.md`.
 

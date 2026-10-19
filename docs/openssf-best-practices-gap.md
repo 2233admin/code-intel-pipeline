@@ -58,7 +58,7 @@ move.
 |---|---|---|
 | `build` — working automated build | Met | `cargo build`, wired into every CI workflow. |
 | `build_common_tools` (SUGGESTED) | Met | Standard Cargo/rustup toolchain. |
-| `build_floss_tools` — buildable with only FLOSS tools | Met | Rust toolchain, ripgrep, Python — all FLOSS. PowerShell 7+ (`pwsh`) is required by the installer/launchers; PowerShell 7 is FLOSS (MIT) and cross-platform, so this still holds. |
+| `build_floss_tools` — buildable with only FLOSS tools | Met | Rust toolchain, ripgrep, Python — all FLOSS. The installer is the Skill bootstrap plus `code-intel setup`; no PowerShell is required. |
 | `test` — automated, publicly released, documented test suite | Met | `cargo test`, Python `tests/*.py`; invocation documented in `release.yml`/`ci.yml` and this repo's own docs. |
 | `test_invocation` (SUGGESTED) | Met | Standard `cargo test` / `python -m unittest` invocations. |
 | `test_most` (SUGGESTED) — most branches/functionality covered | Not verified this pass | No line/branch coverage tool is wired into CI to measure this against; the audit report's `supply-chain` finding does not cover test quality (out of this department's scope — `security`/`quality` territory). |

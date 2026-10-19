@@ -1,5 +1,8 @@
 # ADR 0010 Execution Plan
 
+> PowerShell was removed from the product (DR-0018). References below to `.ps1` scripts, the PowerShell runner and its compatibility facades describe the plan-authoring baseline; that code no longer exists and the work now runs through the Rust `code-intel` CLI.
+
+
 Status: implemented; superseded as an execution plan
 Scope: ADR 0009 runtime convergence plus ADR 0010 tool-neutral engineering-intelligence core
 Rule: every ticket below delivers exactly one independently testable capability. A checked-in definition, schema, ADR, or plan is not implementation evidence.

@@ -68,7 +68,7 @@ code-intel capability exec <capability-id> --request - --out <staging-dir>
 - large evidence crosses boundaries by Artifact Ref;
 - exit code distinguishes a domain failure from invalid input, unavailable dependency, internal error, or I/O error.
 
-Existing PowerShell, Python, and Rust implementations remain valid adapters while they converge on this contract.
+Python and Rust implementations remain valid adapters while they converge on this contract.
 
 Capability requests with Artifact Ref inputs pass an independent `--artifact-root`; see
 `docs/artifact-ref-verifier.md`. Verification returns owned bytes so consumers never treat the
@@ -91,14 +91,12 @@ Network-backed results will also bind provider, model, prompt/config digest, and
 5. Wrap Repowise, Understand, and Sentrux behind effect-declaring adapters.
 6. Add node-level cache, resume, and red-green invalidation.
 7. Separate rendering, transactional publish, and indexing.
-8. Keep `legacy/run-code-intel.ps1` as a compatibility façade until parity is proven.
 
 ## Non-Goals
 
 - Do not turn every function into a process.
 - Do not pass repository contents through stdout.
 - Do not introduce a workflow engine, database, message queue, Nix, Bazel, or OPA runtime.
-- Do not migrate all PowerShell to Rust before contracts and parity tests exist.
 - Do not cache network output without provider and configuration provenance.
 
 The project absorbs mechanisms from Unix pipes, reproducible builds, content-addressed storage, incremental query systems, SLSA provenance, and policy-as-code. It does not import those systems as mandatory runtime dependencies.

@@ -209,7 +209,7 @@ diverging from the `model_channels.rs` CC-Switch shape (`CODE_INTEL_CC_SWITCH_EN
 config, structurally identical to the existing `CODE_INTEL_INTEGRATIONS_MANIFEST` pattern in
 `capability.rs::discover_manifest()` (env var → file path → `.is_file()` check → fallback
 candidate paths under `CODE_INTEL_HOME`/`CODE_INTEL_DATA_ROOT`). Inline JSON in a Windows
-PowerShell env var is exactly the quoting pain ADR 0001 names as its #1 motivating complaint
+shell env var is exactly the quoting pain ADR 0001 names as its #1 motivating complaint
 ("every time PowerShell trips me up it kills efficiency") — a file path sidesteps that
 entirely, so the manifest shape is the better-fitting precedent here, even though CC-Switch is
 the more recently-added example.
