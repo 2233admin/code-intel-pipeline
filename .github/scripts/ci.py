@@ -79,6 +79,10 @@ TOOL_URLS = {
 
 
 def fail(message: str) -> None:
+    # A workflow-command annotation is readable from the checks API; the raw
+    # job log is not.
+    encoded = message.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+    print(f"::error title=ci.py::{encoded}", flush=True)
     raise SystemExit(f"error: {message}")
 
 
@@ -346,13 +350,19 @@ def sentrux_closure(args: argparse.Namespace) -> None:
         [str(binary), "run", "execute", "--repo", str(repo), "--out", str(staging),
          "--authority-root", str(authority), "--final-name", final,
          "--manifest", str(repo / "orchestration/integrations.json"),
-         "--doctor-require-repowise", "false"]
+         "--doctor-require-repowise", "false"],
+        capture_output=True,
     )
+    print(completed.stdout, completed.stderr, sep="\n", flush=True)
     if completed.returncode != 0:
+        try:
+            failures = json.dumps(json.loads(completed.stdout).get("failures"), indent=1)
+        except (json.JSONDecodeError, AttributeError):
+            failures = completed.stderr[-2000:]
         fail(
-            f"run execute failed with exit code {completed.returncode}: 10 = architecture/domain "
-            "gate failure, 70 = process failure, 73 = --final-name already published; read the "
-            "run manifest failures block"
+            f"run execute failed with exit code {completed.returncode} (10 = architecture/domain "
+            f"gate failure, 70 = process failure, 73 = --final-name already published, 76 = "
+            f"budget stopped):\n{failures}"
         )
     index_path = authority / "index.json"
     check([str(binary), "artifact", "index", "--artifact-root", str(authority),
