@@ -562,7 +562,8 @@ fn evaluate(observations: &Value) -> Result<Value, AdapterError> {
                     orientation["purpose"]["status"] == "unknown",
                     orientation["purpose"]["evidence"] == json!([]),
                     orientation["activeChange"]["status"] == fixture["expected"]["activeChange"],
-                    observed_file_count.saturating_add(2)
+                    // Cargo.toml, README.md and run.sh carry no language.
+                    observed_file_count.saturating_add(3)
                         == fixture["expected"]["fileCount"]
                             .as_u64()
                             .unwrap_or(u64::MAX),
