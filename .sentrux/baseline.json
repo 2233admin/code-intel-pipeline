@@ -155,30 +155,6 @@
       "rule": "loc>800; functions>25&&loc>400"
     },
     {
-      "functions": 100,
-      "loc": 2873,
-      "path": "legacy/Invoke-SentruxAgentTool.ps1",
-      "rule": "loc>800; functions>25&&loc>400"
-    },
-    {
-      "functions": 44,
-      "loc": 1410,
-      "path": "legacy/install-code-intel-pipeline.ps1",
-      "rule": "loc>800; functions>25&&loc>400"
-    },
-    {
-      "functions": 92,
-      "loc": 4834,
-      "path": "legacy/run-code-intel.ps1",
-      "rule": "loc>800; functions>25&&loc>400"
-    },
-    {
-      "functions": 13,
-      "loc": 1318,
-      "path": "legacy/scripts/tests/test-regression-fixes.ps1",
-      "rule": "loc>800"
-    },
-    {
       "functions": 28,
       "loc": 801,
       "path": "skills/code-intel-pipeline/scripts/bootstrap.py",
@@ -193,7 +169,7 @@
     "cycle_count": 0,
     "files": 403,
     "functions": 5247,
-    "god_file_count": 30,
+    "god_file_count": 26,
     "import_modeled_files": 338,
     "max_complexity": 80,
     "quality_signal": 6631,
