@@ -10,8 +10,8 @@
 # Complexity counting change (sentrux-native 2.2.0, 2026-07-31):
 # `complexity_terms` now strips comments and string bodies before tokenising,
 # and only counts the words `and`/`or` for languages where they really are
-# operators (Python). PowerShell's `-and`/`-or` are counted; its bare English
-# `and`/`or` are not.
+# operators (Python); elsewhere bare English `and`/`or` are not counted.
+# (PowerShell's `-and`/`-or` were counted until #465 removed PowerShell analysis.)
 #
 # This is where max_cc = 162 came from. The number was produced by
 # legacy/scripts/tests/test-code-intel-pipeline.ps1: 465 lines, one recognised

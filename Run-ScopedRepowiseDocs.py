@@ -53,8 +53,7 @@ def resolve_provider_settings(default_provider: str = "", default_model: str = "
         CODE_INTEL_BASE_URL  generic endpoint override
 
     Backward compat: for provider=anthropic, missing generic vars fall back to
-    the process-scoped ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL that the calling
-    PowerShell wrapper injects from user-scoped CODE_INTEL_ANTHROPIC_*.
+    the process-scoped ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL set by the caller.
 
     default_provider/default_model come from the explicitly routed
     --provider/--model CLI args and are pinned. Model selection never falls
