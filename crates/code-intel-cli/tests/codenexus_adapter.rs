@@ -462,7 +462,7 @@ fn production_route_rejects_secret_fields_wrong_snapshot_and_bad_usage() {
 }
 
 #[test]
-fn production_registry_facade_and_route_schema_are_declared() {
+fn production_registry_route_and_schema_are_declared() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let manifest: Value =
         serde_json::from_slice(&fs::read(root.join("orchestration/integrations.json")).unwrap())
@@ -478,14 +478,7 @@ fn production_registry_facade_and_route_schema_are_declared() {
         .as_str()
         .unwrap()
         .contains("provider codenexus-adapt"));
-    assert!(integration["commands"]["facade"]
-        .as_str()
-        .unwrap()
-        .contains("-CodeNexusAdapterRequest"));
-
-    let facade = fs::read_to_string(root.join("legacy/run-code-intel.ps1")).unwrap();
-    assert!(facade.contains("provider codenexus-adapt"));
-    assert!(facade.contains("CodeNexusAdapterMaxAgeSeconds"));
+    assert!(integration["commands"].get("facade").is_none());
 
     let schema: Value = serde_json::from_slice(
         &fs::read(

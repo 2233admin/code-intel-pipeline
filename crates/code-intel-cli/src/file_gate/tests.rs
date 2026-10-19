@@ -50,7 +50,7 @@ fn identity_holds_and_every_gate_is_represented_over_a_mixed_fixture_tree() {
     let root = fixture_root("all-gates");
     write(&root, "src/lib.rs", b"pub fn ordinary() {}\n");
     write(&root, "README.md", b"not a recognised source extension\n");
-    write(&root, "legacy/tools/nested.ps1", b"function F {}\n");
+    write(&root, "scripts/tools/nested.rs", b"fn f() {}\n");
     write(&root, "vendor/inner/thing.py", b"x = 1\n");
     write(&root, ".claude/worktrees/garbage.rs", b"fn garbage() {}\n");
     write(&root, ".gitignore", b"ignored/\n");
@@ -76,7 +76,7 @@ fn identity_holds_and_every_gate_is_represented_over_a_mixed_fixture_tree() {
         GATE_UNSUPPORTED_EXT
     );
     assert_eq!(
-        decision_for(&report, "legacy/tools/nested.ps1").gate,
+        decision_for(&report, "scripts/tools/nested.rs").gate,
         GATE_DEFAULT_PATH,
         "default_path must match `tools` at any depth, not just the repository root"
     );

@@ -46,7 +46,7 @@ pub(crate) const CODE_EXTENSIONS: &[&str] = &[
 
 /// Directory names default-excluded at *any* depth, not just the repository
 /// root. Before #152, `sentrux dsm` checked `tools`/`vendor`/`third_party`/
-/// `external` only against the first path segment, so `legacy/tools/*` was
+/// `external` only against the first path segment, so `scripts/tools/*` was
 /// invisible to that check -- the majority contributor to issue #148 C2's
 /// 277/315 split on this repository's own self-scan. `sentrux scan`'s
 /// `SKIP_DIRECTORIES` already matched at any depth; this list ports that

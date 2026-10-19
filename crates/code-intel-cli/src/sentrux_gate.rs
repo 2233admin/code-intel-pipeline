@@ -794,9 +794,7 @@ fn metrics_json(repo: &Path, metrics: &ProjectMetrics) -> Value {
         "cross_module_edges": metrics.total_import_edges,
         "call_edges": metrics.call_edges,
         // `unresolved_imports` was a constant `0` here (and, before that, in
-        // the sentrux-lite shim this engine replaced --
-        // `legacy/tools/sentrux-shim/sentrux-lite-core.ps1:248` has the exact
-        // same literal). No import-resolution pass has ever populated it
+        // the sentrux-lite shim this engine replaced). No import-resolution pass has ever populated it
         // anywhere in this repository's history (issue #375). `null` says
         // "not computed" instead of the previous `0`, which read as "computed
         // and found zero unresolved imports" to any consumer that did not
@@ -1258,7 +1256,7 @@ fn is_import_line(trimmed: &str) -> bool {
 /// **Prose does not branch.** The original tokenised the raw file, so every
 /// `if`, `or` and `and` inside a comment or a string literal counted. That is
 /// how `.sentrux/rules.toml` ended up ratcheted at `max_cc = 162`: the number
-/// came from `legacy/scripts/tests/test-code-intel-pipeline.ps1`, 465 lines
+/// came from a 465-line PowerShell test script
 /// with one recognised function, whose 161 "terms" included 45 bare `or` and
 /// 11 bare `and` — English words in comments, since PowerShell spells the
 /// operators `-or` and `-and`. Comments and string bodies are stripped first.

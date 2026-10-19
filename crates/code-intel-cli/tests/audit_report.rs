@@ -1,10 +1,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
+
+#[path = "support/schema.rs"]
+mod schema;
+use schema::validates_against_schema;
 
 // This crate has no lib target (see Cargo.toml — `code-intel` is bin-only),
 // so this black-box test cannot call into `audit_report::validate()`
@@ -61,29 +64,6 @@ fn registry_value() -> Value {
         &fs::read(repo_root().join("orchestration/audit/departments.v1.json")).unwrap(),
     )
     .unwrap()
-}
-
-/// Mirrors the `Test-Json` shell-out already used by
-/// `tests/hospital_diagnosis.rs` for `code-intel-hospital.v1`, but passes the
-/// paths through the environment instead of trailing `-Command` arguments:
-/// `pwsh -Command "<script>" <arg1> <arg2>` does not reliably bind trailing
-/// positional arguments to `$args`/`param()` when launched as a subprocess
-/// (verified empirically — they arrive as `$null`), so a schema-rejection
-/// case would silently no-op instead of exercising `Test-Json`.
-fn validates_against_schema(document: &Path, schema: &Path) -> bool {
-    Command::new("pwsh")
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-Command",
-            "if (-not (Get-Content -Raw -LiteralPath $env:CIP_TEST_JSON_DOCUMENT | Test-Json -SchemaFile $env:CIP_TEST_JSON_SCHEMA -ErrorAction Stop)) { exit 1 }",
-        ])
-        .env("CIP_TEST_JSON_DOCUMENT", document)
-        .env("CIP_TEST_JSON_SCHEMA", schema)
-        .output()
-        .unwrap()
-        .status
-        .success()
 }
 
 #[test]

@@ -44,13 +44,15 @@ python scripts/bootstrap.py --repo-path "<repo-path>" --json
 
 The default follows GitHub's latest published stable release. Add `--version <tag>` only for a
 requested version. Add `--channel prerelease` only when the user explicitly requests the latest
-published prerelease. Add `--install-missing` only when the user authorizes installing third-party
-dependencies. Never put provider keys in commands, repository files, artifacts, or Skill
+published prerelease. Never put provider keys in commands, repository files, artifacts, or Skill
 resources.
 
-The bootstrap script supports the currently published Windows release package. Stop with the
-reported platform error on unsupported systems instead of substituting an unverified source
-archive.
+Bootstrap verifies and extracts the release, then hands off to the release's own binary with
+`code-intel setup`. Setup installs the binary, adds it to `PATH`, sets `CODE_INTEL_HOME`, links this
+Skill for Claude Code and Codex, and runs doctor. It never installs system tools: relay each entry
+in `missing_tools` (tool plus install command) to the user and let them decide. When the result has
+`path_refresh`, run it (or open a new terminal) before calling `code-intel`. Windows, macOS and
+Linux are supported; stop with the reported platform error anywhere else.
 
 ## Run the pipeline
 

@@ -200,13 +200,20 @@ fn alternate_vcs_contract_fixture_is_fail_closed_and_rolls_back_to_unversioned()
 
     let tree = TempTree::new("alternate-vcs-rollback");
     fs::write(tree.0.join("source.txt"), "rollback content\n").unwrap();
-    let adapter = tree.0.join("mismatched-adapter.ps1");
-    fs::write(
-        &adapter,
-        "$request = [Console]::In.ReadToEnd() | ConvertFrom-Json\nif ($request.schema -ne 'code-intel-alternate-vcs-snapshot-request.v1') { exit 9 }\n'{\"snapshot\":{\"identity\":\"mismatch\"}}'\n",
-    )
-    .unwrap();
-    let rejected = common::cli()
+    // The adapter only has to answer with a mismatching identity; printing a
+    // fixed reply keeps the fixture free of any particular shell.
+    let reply = tree.0.join("mismatched-reply.json");
+    fs::write(&reply, r#"{"snapshot":{"identity":"mismatch"}}"#).unwrap();
+    let (program, args): (&str, Vec<std::ffi::OsString>) = if cfg!(windows) {
+        (
+            "cmd",
+            vec!["/C".into(), "type".into(), reply.clone().into_os_string()],
+        )
+    } else {
+        ("cat", vec![reply.clone().into_os_string()])
+    };
+    let mut command = common::cli();
+    command
         .arg("snapshot")
         .arg("identity")
         .arg("--repo")
@@ -216,15 +223,11 @@ fn alternate_vcs_contract_fixture_is_fail_closed_and_rolls_back_to_unversioned()
         .arg("--scope")
         .arg(".")
         .arg("--alternate-vcs-command")
-        .arg("pwsh")
-        .arg("--alternate-vcs-arg")
-        .arg("-NoProfile")
-        .arg("--alternate-vcs-arg")
-        .arg("-File")
-        .arg("--alternate-vcs-arg")
-        .arg(&adapter)
-        .output()
-        .unwrap();
+        .arg(program);
+    for arg in &args {
+        command.arg("--alternate-vcs-arg").arg(arg);
+    }
+    let rejected = command.output().unwrap();
     assert_eq!(rejected.status.code(), Some(65));
     assert!(
         rejected.stdout.is_empty(),

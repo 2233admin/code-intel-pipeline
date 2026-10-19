@@ -1,7 +1,8 @@
 mod common;
+#[path = "support/schema.rs"]
+mod schema_support;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -379,22 +380,9 @@ fn historical_clean_machine_attestation_is_closed_and_cannot_claim_current_sourc
         root.join("orchestration/evidence/d02-clean-machine-verifier-attestation.v1.json");
     let schema_path = root
         .join("orchestration/schemas/code-intel-clean-machine-verifier-attestation.v1.schema.json");
-    let powershell = if cfg!(windows) { "powershell" } else { "pwsh" };
-    let output = Command::new(powershell)
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-Command",
-            "param($Document,$Schema); if (-not (Get-Content -Raw -LiteralPath $Document | Test-Json -SchemaFile $Schema -ErrorAction Stop)) { exit 1 }",
-        ])
-        .arg(&evidence_path)
-        .arg(&schema_path)
-        .output()
-        .unwrap();
     assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
+        schema_support::validates_against_schema(&evidence_path, &schema_path),
+        "attestation must validate against its schema"
     );
     let evidence: Value = serde_json::from_slice(&fs::read(&evidence_path).unwrap()).unwrap();
     assert_eq!(evidence["environment"]["cleanMachine"], true);

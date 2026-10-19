@@ -2,10 +2,11 @@
 mod authority;
 #[path = "../src/internalization_record.rs"]
 mod internalization_record;
+#[path = "support/sha256.rs"]
+mod sha256;
 
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 
 use serde_json::Value;
 
@@ -14,24 +15,7 @@ fn root() -> PathBuf {
 }
 
 fn recompute_sha(relative: &str) -> String {
-    let path = root().join(relative);
-    let output = Command::new("pwsh")
-        .args([
-            "-NoProfile",
-            "-CommandWithArgs",
-            "(Get-FileHash -LiteralPath $args[0] -Algorithm SHA256).Hash.ToLowerInvariant()",
-            path.to_str().unwrap(),
-        ])
-        .output()
-        .expect("run Get-FileHash");
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let digest = String::from_utf8(output.stdout).unwrap().trim().to_string();
-    assert_eq!(digest.len(), 64);
-    digest
+    sha256::sha256(&root().join(relative))
 }
 
 #[test]

@@ -1,10 +1,9 @@
 //! Pure-Rust implementation of the CodeNexus-lite context generator.
 //!
-//! This is the Rust replacement for `legacy/Invoke-CodeNexusLite.ps1`
-//! (issue #275, PS1 retirement campaign). The PowerShell facade was the
-//! repository-owned adapter that produced `codenexus-context.json` from
-//! sentrux hotspots/DSM signals; `builtin_provider_evidence::codenexus_admission`
-//! shelled out to it. The contract — the `codenexus-context.json` document
+//! This is the repository-owned adapter that produces
+//! `codenexus-context.json` from sentrux hotspots/DSM signals
+//! (`builtin_provider_evidence::codenexus_admission` calls it in-process).
+//! The contract — the `codenexus-context.json` document
 //! shape, the selection semantics, and the exclusion rules — is preserved
 //! verbatim so existing consumers (evidence payloads, artifact refs) are
 //! byte-compatible.
@@ -516,11 +515,9 @@ fn civil_from_days(z: i64) -> (i64, i64, i64) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-/// The `implementation.id` reported in evidence. Was `invoke-codenexus-lite.ps1`
-/// when the facade produced the document; the Rust implementation keeps the
-/// same id so contract validators that admit `codenexus.lite-compat` keep
-/// matching (issue #275 changes the executor, not the contract).
-pub(crate) const IMPLEMENTATION_ID: &str = "invoke-codenexus-lite.ps1";
+/// The `implementation.id` reported in evidence; contract validators that
+/// admit `codenexus.lite-compat` match on it.
+pub(crate) const IMPLEMENTATION_ID: &str = "codenexus-lite";
 
 /// SHA-256 of this source file at build time — the digest the admission
 /// route reports as `implementation.digest`. Kept in a function so the value

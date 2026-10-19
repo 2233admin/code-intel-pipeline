@@ -28,9 +28,9 @@
       "rationale": "Structural-edit engine. CI pins the version, verifies the download's sha256, and re-checks --version after install.",
       "declaredIn": [
         {
-          "file": ".github/workflows/ci.yml",
-          "pattern": "\\$version = '([^']+)'",
-          "note": "Two jobs install ast-grep independently; every match must agree."
+          "file": ".github/scripts/ci.py",
+          "pattern": "AST_GREP_VERSION = \"([^\"]+)\"",
+          "note": "Every workflow installs ast-grep through this one constant."
         }
       ],
       "probe": {
@@ -57,23 +57,6 @@
       }
     },
     {
-      "name": "claude-code-merge-queue",
-      "version": "0.7.1",
-      "scope": "ci",
-      "required": false,
-      "rationale": "Merge-queue tooling, pinned exactly rather than by range.",
-      "declaredIn": [
-        {
-          "file": "package.json",
-          "pattern": "\"claude-code-merge-queue\": \"([^\"]+)\""
-        }
-      ],
-      "probe": {
-        "kind": "npm-package",
-        "package": "claude-code-merge-queue"
-      }
-    },
-    {
       "name": "repowise",
       "version": "0.55.0",
       "comparison": "minimum",
@@ -82,8 +65,8 @@
       "rationale": "Semantic index provider. The reviewed official PyPI release is acquired exactly when installation is needed; it is a compatibility floor, so newer installed versions pass without downgrade (DR-0002).",
       "declaredIn": [
         {
-          "file": "legacy/install-code-intel-pipeline.ps1",
-          "pattern": "\\$script:RepowisePinnedVersion = \"([^\"]+)\""
+          "file": "crates/code-intel-cli/src/setup/mod.rs",
+          "pattern": "repowise>=([^\"]+)"
         }
       ],
       "probe": {

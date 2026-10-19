@@ -59,7 +59,7 @@
     },
     "productionReport": {
       "type": "object", "additionalProperties": false, "required": ["cleanMachine", "externalVerificationComplete", "statement"],
-      "properties": { "cleanMachine": { "const": false }, "externalVerificationComplete": { "const": true }, "statement": { "type": "string", "minLength": 1 } }
+      "properties": { "cleanMachine": { "const": false }, "externalVerificationComplete": { "const": false }, "statement": { "type": "string", "minLength": 1 } }
     },
     "cleanup": {
       "type": "object", "additionalProperties": false, "required": ["containerDestroyed", "containerRemaining", "taskVolumesRemaining"],

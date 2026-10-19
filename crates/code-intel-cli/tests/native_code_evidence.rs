@@ -2,7 +2,6 @@ mod common;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
@@ -102,68 +101,6 @@ fn run(repo: &Path, out: &Path) -> Value {
 
 fn read_json(path: impl AsRef<Path>) -> Value {
     serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
-}
-
-fn run_legacy(repo: &Path, root: &Path) -> PathBuf {
-    fs::create_dir_all(root).unwrap();
-    let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let config = root.join("pipeline.config.json");
-    fs::write(
-        &config,
-        serde_json::to_vec(&serde_json::json!({
-            "artifactRoot":"",
-            "repowiseWorkspaceRoot":"",
-            "codeEvidence":{
-                "enabled":true,
-                "nativeMinimal":true,
-                "adapters":{"cocoindex-code":{"enabled":false,"required":false,"command":"ccc"}}
-            },
-            "inventoryExclude":[],
-            "repos":{}
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-    let artifacts = root.join("legacy-artifacts");
-    let mut pwsh_command = Command::new("pwsh");
-    // The legacy facade must not inherit pipeline env vars from the test
-    // process: `common::cli` clears them for direct binary calls, and a
-    // developer shell that exported `CODE_INTEL_HOME` (pointing at an
-    // installed release, whose integrations.json predates this tree's
-    // repinned digests) would otherwise make the facade's internal
-    // `code-intel` calls cohere against the wrong manifest.
-    for name in common::env_contract::PIPELINE_VARS {
-        pwsh_command.env_remove(name);
-    }
-    let output = pwsh_command
-        .arg("-NoProfile")
-        .arg("-File")
-        .arg(project_root.join("legacy/run-code-intel.ps1"))
-        .arg("-RepoPath")
-        .arg(repo)
-        .arg("-Config")
-        .arg(config)
-        .arg("-Mode")
-        .arg("lite")
-        .arg("-ArtifactRoot")
-        .arg(&artifacts)
-        .args(["-SkipRepowise", "-SkipSentrux"])
-        .output()
-        .unwrap();
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "legacy stdout={} stderr={}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let repo_runs = artifacts.join(repo.file_name().unwrap());
-    fs::read_dir(repo_runs)
-        .unwrap()
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .find(|path| path.join("code-evidence/merged/full/files.json").is_file())
-        .expect("legacy producer must publish code evidence")
 }
 
 fn canonicalize_artifact(relative: &str, mut value: Value) -> Value {
@@ -495,8 +432,8 @@ fn labeled_multilingual_corpus_quantifies_native_symbol_precision_recall_and_cov
 }
 
 #[test]
-fn a01_a09_artifacts_match_the_real_legacy_producer_on_the_same_fixture() {
-    let temp = Temp::new("legacy-parity");
+fn a01_a09_artifacts_are_canonical_and_rank_the_representative_fixture() {
+    let temp = Temp::new("canonical-ranking");
     let repo = temp.0.join("repo");
     let out = temp.0.join("native-run");
     fs::create_dir_all(&repo).unwrap();
@@ -536,43 +473,16 @@ fn a01_a09_artifacts_match_the_real_legacy_producer_on_the_same_fixture() {
         "code-evidence/merged/agent/ranking.json",
         "code-evidence/adapters/cocoindex-code/outcome.json",
     ];
-    let mut raw_file_orders = HashSet::new();
-    let mut first_raw = Vec::new();
-    for iteration in 0..10 {
-        let legacy_root = temp.0.join(format!("legacy-{iteration}"));
-        let legacy = run_legacy(&repo, &legacy_root);
-        for relative in comparable {
-            let legacy_raw = read_json(legacy.join(relative));
-            let native_value = read_json(native.join(relative));
-            assert_eq!(
-                canonicalize_artifact(relative, native_value.clone()),
-                native_value,
-                "native artifact is not in canonical order: {relative}"
-            );
-            assert_eq!(
-                canonicalize_artifact(relative, legacy_raw.clone()),
-                native_value,
-                "legacy/A01-A09 canonical artifact drift on iteration {iteration}: {relative}"
-            );
-            if iteration == 0 {
-                first_raw.push((relative, legacy_raw));
-            }
-        }
-        let raw_files = read_json(legacy.join("code-evidence/merged/full/files.json"));
-        raw_file_orders.insert(
-            raw_files["files"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|file| file["path"].as_str().unwrap().to_string())
-                .collect::<Vec<_>>(),
-        );
-    }
-    assert!(!raw_file_orders.is_empty());
-    for (relative, raw) in first_raw {
-        let permuted = reverse_semantic_arrays(relative, raw.clone());
+    for relative in comparable {
+        let native_value = read_json(native.join(relative));
         assert_eq!(
-            canonicalize_artifact(relative, raw),
+            canonicalize_artifact(relative, native_value.clone()),
+            native_value,
+            "native artifact is not in canonical order: {relative}"
+        );
+        let permuted = reverse_semantic_arrays(relative, native_value.clone());
+        assert_eq!(
+            canonicalize_artifact(relative, native_value),
             canonicalize_artifact(relative, permuted),
             "canonical comparison must ignore non-semantic traversal order: {relative}"
         );

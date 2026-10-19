@@ -315,6 +315,30 @@ fn a_symlinked_canonical_skill_is_replaced_by_a_real_copy() {
     assert!(metadata.is_dir() && !metadata.file_type().is_symlink());
 }
 
+/// An upgrade or rollback: a different binary already sits in the bin
+/// directory and must be replaced (on Windows too, where this runs in CI).
+#[test]
+fn a_different_installed_binary_is_replaced() {
+    let fixture = Fixture::new("upgrade");
+    let mut flags = platform_flags();
+    flags.push("--no-skills");
+    let (output, value) = fixture.setup(&flags);
+    assert_eq!(output.status.code(), Some(0), "{value:#}");
+    let installed = PathBuf::from(value["paths"]["bin"].as_str().unwrap()).join(if cfg!(windows) {
+        "code-intel.exe"
+    } else {
+        "code-intel"
+    });
+    fs::write(&installed, b"an older release").unwrap();
+    let (output, value) = fixture.setup(&flags);
+    assert_eq!(output.status.code(), Some(0), "{value:#}");
+    assert_eq!(status(&Fixture::statuses(&value), "binary"), "installed");
+    assert_eq!(
+        fs::read(&installed).unwrap(),
+        fs::read(env!("CARGO_BIN_EXE_code-intel")).unwrap()
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn an_identical_binary_that_lost_its_execute_bit_is_repaired() {

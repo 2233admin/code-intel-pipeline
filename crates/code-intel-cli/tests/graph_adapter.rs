@@ -448,14 +448,7 @@ fn public_route_usage_registry_facade_and_schemas_are_real() {
         .as_str()
         .unwrap()
         .contains("provider graph-adapt"));
-    assert!(integration["commands"]["facade"]
-        .as_str()
-        .unwrap()
-        .contains("-GraphAdapterRequest"));
-
-    let facade = fs::read_to_string(root.join("legacy/run-code-intel.ps1")).unwrap();
-    assert!(facade.contains("provider graph-adapt"));
-    assert!(facade.contains("GraphAdapterMaxAgeSeconds"));
+    assert!(integration["commands"].get("facade").is_none());
 
     for schema in [
         "code-intel-architecture-graph-port.v1.schema.json",

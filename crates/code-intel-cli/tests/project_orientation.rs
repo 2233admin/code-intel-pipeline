@@ -1,7 +1,8 @@
 mod common;
+#[path = "support/schema.rs"]
+mod schema_support;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -229,16 +230,12 @@ fn fixture_composes_first_actionable_view_without_fabricating_purpose() {
             "summary projection lacks {section}"
         );
     }
-    let schema_check = Command::new("pwsh")
-        .args(["-NoLogo", "-NoProfile", "-Command", "param($Document,$Schema); if (-not (Get-Content -Raw -LiteralPath $Document | Test-Json -SchemaFile $Schema -ErrorAction Stop)) { exit 1 }"])
-        .arg(out.join("project-orientation.json"))
-        .arg(repo_root.join("orchestration/schemas/code-intel-project-orientation.v1.schema.json"))
-        .output()
-        .unwrap();
     assert!(
-        schema_check.status.success(),
-        "schema stderr={}",
-        String::from_utf8_lossy(&schema_check.stderr)
+        schema_support::validates_against_schema(
+            &out.join("project-orientation.json"),
+            &repo_root.join("orchestration/schemas/code-intel-project-orientation.v1.schema.json")
+        ),
+        "project orientation must validate against its schema"
     );
 
     let mut incoherent_survival = survival;

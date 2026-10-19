@@ -20,7 +20,7 @@
   "adoption": {
     "rung": "adapt",
     "ownedBoundary": [
-      "Pipeline-owned B03 collection normalization, authoritative rule-kind validation, effect reconciliation, A04 route, native Rust DSM analysis kernel, and retained legacy/Invoke-SentruxAgentTool.ps1 rollback",
+      "Pipeline-owned B03 collection normalization, authoritative rule-kind validation, effect reconciliation, A04 route, native Rust DSM analysis kernel, and the native gate",
       "Sentrux algorithms and diagnosis semantics remain provider-owned; the external executable is an accelerator and direct output is never diagnosis authority"
     ],
     "necessityEvidence": {
@@ -65,11 +65,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux_analysis.rs",
-        "sha256": "2ceeb4596a6a126dfa404cf566b021cca62117a1d716ce016e66235d52ce3cc8"
+        "sha256": "8ddc9cb3557cd8583d63c88410751eaa876977724005bcb3774a4e5bd876faa7"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_analysis.rs",
-        "sha256": "c25439a0edd24d72ec906e38a9b4706f71d737730a30c6a009f48fab42122307",
+        "sha256": "7d77d3107482a1d4aced1f398e39e96a698a812580bae08d6be060407005ed5e",
         "testName": "dsm_snapshot_preserves_contract_and_excludes_non_governed_source"
       }
     },
@@ -94,25 +94,6 @@
     },
     {
       "integrationId": "provider.sentrux-adapt",
-      "operation": "facade",
-      "command": "legacy/run-code-intel.ps1 -SentruxAdapterRequest <native.json> -SentruxAdapterArtifactRoot <artifact-directory> -SentruxAdapterEvaluatedAt <unix-seconds> -SentruxAdapterMaxAgeSeconds <seconds>",
-      "implementationIdentity": {
-        "providerId": "sentrux.provider",
-        "implementationId": "sentrux-adapter.v1",
-        "activation": "compatibility_facade"
-      },
-      "source": {
-        "path": "crates/code-intel-cli/src/sentrux_adapter.rs",
-        "sha256": "4702bbed12b8012e8f0c84c601c148e5557554449922860b19b96605538b9701"
-      },
-      "conformance": {
-        "path": "crates/code-intel-cli/tests/sentrux_adapter.rs",
-        "sha256": "06e21b5f3258720eb52311a61b42f7d35df256eb4e50fe0a9ffa391c98d82f33",
-        "testName": "real_quality_only_decline_is_admitted_as_advisory_not_a_hard_violation"
-      }
-    },
-    {
-      "integrationId": "provider.sentrux-adapt",
       "operation": "capabilityExec",
       "command": "target/debug/code-intel.exe capability exec provider.sentrux-adapt --request <request.json|-> --out <staging-dir> --artifact-root <run-root>",
       "implementationIdentity": {
@@ -122,11 +103,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/builtin_provider_evidence.rs",
-        "sha256": "161f82337d79a41b0837b9b49c83dc4d388bd4d6409b911e71551e05ddf0c826"
+        "sha256": "a0127c7e3d6745f1c415522159adb9a73eb502d109c0def01aefee72eacbaacd"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "40328c46fe0c955617aaf9c094953898155cb9c9802455ab03f9df132a3c8506",
+        "sha256": "1a95f8f6102df4b475800da942e85325f40afdde532ed545da584c49fde6b5dc",
         "testName": "production_dag_output_commits_and_enters_the_authoritative_index"
       }
     },
@@ -188,63 +169,6 @@
       }
     },
     {
-      "integrationId": "structure.sentrux",
-      "operation": "shimScan",
-      "command": "legacy/Invoke-SentruxAgentTool.ps1 scan <repo-path>",
-      "implementationIdentity": {
-        "providerId": "sentrux.compat",
-        "implementationId": "legacy/Invoke-SentruxAgentTool.ps1",
-        "activation": "legacy_rollback"
-      },
-      "source": {
-        "path": "legacy/Invoke-SentruxAgentTool.ps1",
-        "sha256": "cc2bb463fb8a66d1aee8175cd015a2fa315e172450fb46a8312cf1e8a58c663e"
-      },
-      "conformance": {
-        "path": "legacy/scripts/tests/test-sentrux-failure-normalization.ps1",
-        "sha256": "fee9666670084fdd8f339dd785514ed54976c87ca20d3d4ec7ddc0c30c73e7c0",
-        "testName": "Sentrux failure normalization tests passed"
-      }
-    },
-    {
-      "integrationId": "structure.sentrux",
-      "operation": "shimSessionStart",
-      "command": "legacy/Invoke-SentruxAgentTool.ps1 session_start <repo-path>",
-      "implementationIdentity": {
-        "providerId": "sentrux.compat",
-        "implementationId": "legacy/Invoke-SentruxAgentTool.ps1",
-        "activation": "legacy_rollback"
-      },
-      "source": {
-        "path": "legacy/Invoke-SentruxAgentTool.ps1",
-        "sha256": "cc2bb463fb8a66d1aee8175cd015a2fa315e172450fb46a8312cf1e8a58c663e"
-      },
-      "conformance": {
-        "path": "legacy/scripts/tests/test-sentrux-failure-normalization.ps1",
-        "sha256": "fee9666670084fdd8f339dd785514ed54976c87ca20d3d4ec7ddc0c30c73e7c0",
-        "testName": "Sentrux failure normalization tests passed"
-      }
-    },
-    {
-      "integrationId": "structure.sentrux",
-      "operation": "shimSessionEnd",
-      "command": "legacy/Invoke-SentruxAgentTool.ps1 session_end <repo-path>",
-      "implementationIdentity": {
-        "providerId": "sentrux.compat",
-        "implementationId": "legacy/Invoke-SentruxAgentTool.ps1",
-        "activation": "legacy_rollback"
-      },
-      "source": {
-        "path": "legacy/Invoke-SentruxAgentTool.ps1",
-        "sha256": "cc2bb463fb8a66d1aee8175cd015a2fa315e172450fb46a8312cf1e8a58c663e"
-      },
-      "conformance": {
-        "path": "legacy/scripts/tests/test-sentrux-failure-normalization.ps1",
-        "sha256": "fee9666670084fdd8f339dd785514ed54976c87ca20d3d4ec7ddc0c30c73e7c0",
-        "testName": "Sentrux failure normalization tests passed"
-      }
-    },
-    {
       "integrationId": "provider.sentrux-adapt",
       "operation": "native-gate",
       "command": "target/debug/code-intel.exe sentrux --operation check|gate --repo <repo-path>",
@@ -255,11 +179,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux_gate.rs",
-        "sha256": "f62f38aafa8b31853edeaa2cd1264dad4b7fa53acf1d4c061a407b8736e5a727"
+        "sha256": "c04370471267cea55b87138119d9ca8a0ec607ac6883da298544ae3bf4c8b44d"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "40328c46fe0c955617aaf9c094953898155cb9c9802455ab03f9df132a3c8506",
+        "sha256": "1a95f8f6102df4b475800da942e85325f40afdde532ed545da584c49fde6b5dc",
         "testName": "production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch"
       }
     }
@@ -335,29 +259,21 @@
       "path": "crates/code-intel-cli/src/sentrux_analysis.rs",
       "description": "native Rust governed-source, file/function metric, module graph, and DSM risk kernel",
       "evidenceIds": [
-        "local:sentrux:rust-dsm-source-sha256:2ceeb4596a6a126dfa404cf566b021cca62117a1d716ce016e66235d52ce3cc8",
-        "local:sentrux:rust-dsm-conformance-sha256:c25439a0edd24d72ec906e38a9b4706f71d737730a30c6a009f48fab42122307"
-      ]
-    },
-    {
-      "path": "legacy/Invoke-SentruxAgentTool.ps1",
-      "description": "retained compatibility implementation and rollback path, not provider authority",
-      "evidenceIds": [
-        "local:b03:shim-retained",
-        "gap:sentrux:shim-retirement-proof"
+        "local:sentrux:rust-dsm-source-sha256:8ddc9cb3557cd8583d63c88410751eaa876977724005bcb3774a4e5bd876faa7",
+        "local:sentrux:rust-dsm-conformance-sha256:7d77d3107482a1d4aced1f398e39e96a698a812580bae08d6be060407005ed5e"
       ]
     },
     {
       "path": "crates/code-intel-cli/src/sentrux_gate.rs",
       "description": "Pipeline-owned built-in structural gate engine (metrics, rules check, versioned blocking/advisory admission, cycle detection)",
       "evidenceIds": [
-        "local:b03:native-gate-source-sha256:f62f38aafa8b31853edeaa2cd1264dad4b7fa53acf1d4c061a407b8736e5a727",
-        "local:b03:native-gate-conformance:40328c46fe0c955617aaf9c094953898155cb9c9802455ab03f9df132a3c8506"
+        "local:b03:native-gate-source-sha256:c04370471267cea55b87138119d9ca8a0ec607ac6883da298544ae3bf4c8b44d",
+        "local:b03:native-gate-conformance:1a95f8f6102df4b475800da942e85325f40afdde532ed545da584c49fde6b5dc"
       ]
     }
   ],
   "rollback": {
-    "strategy": "keep legacy/Invoke-SentruxAgentTool.ps1 as the declared implementation/rollback behind provider.sentrux-adapt; never bypass A04",
+    "strategy": "keep the native Rust implementation as the declared implementation behind provider.sentrux-adapt; never bypass A04",
     "evidence": {
       "evidenceIds": [
         "local:b03:shim-rollback-identity",

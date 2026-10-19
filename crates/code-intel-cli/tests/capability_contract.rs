@@ -1,4 +1,4 @@
-//! Port of the deleted `test-atomic-capability-contract.ps1` (DR-0018).
+//! Lock for the capability contract document (DR-0018).
 //!
 //! These tests are the authoritative lock for the contract document,
 //! registry digest pairing, envelope fixtures, and cross-envelope coherence.

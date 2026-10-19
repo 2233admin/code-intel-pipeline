@@ -493,10 +493,8 @@ pub fn what_if(repo: &Path) -> Result<Value, String> {
         })
         .collect();
 
-    // god_files_violations is computed to mirror the PS1 tool's full metric
-    // set, matching `$godFiles` there — the PS1 `Invoke-WhatIfTool` also
-    // computes it but never turns it into its own scenario; keep parity by
-    // leaving it unused as a scenario input here too.
+    // god_files_violations is computed as part of the full metric set but
+    // never turns into its own scenario; leave it unused as a scenario input.
     let _ = &god_files_violations;
 
     let mut pollution_exclusions = rule_hints.pollution_exclusions.clone();

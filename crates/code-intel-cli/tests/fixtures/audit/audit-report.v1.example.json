@@ -36,7 +36,7 @@
     {
       "id": "security-001",
       "department": "security",
-      "title": "Workflow recommendation shells out to pwsh with an unvalidated repo path",
+      "title": "Capability inventory spawns an external process with an unvalidated repo path",
       "severity": "medium",
       "confidence": "high",
       "status": "confirmed",
@@ -49,14 +49,14 @@
           "line_start": 156,
           "line_end": 165,
           "modality": "xray",
-          "note": "Command::new(\"pwsh\") receives options.repoPath after only an is_dir() check; the path is not canonicalized or bounded to the artifact root."
+          "note": "Command::new(...) receives options.repoPath after only an is_dir() check; the path is not canonicalized or bounded to the artifact root."
         }
       ],
-      "problem": "advisory.workflow-recommend builds a pwsh Command using the caller-supplied repoPath option after only an is_dir() check. It does not canonicalize the path or bound it to the artifact root or an allow-listed directory set before the external process starts.",
-      "failure_scenario": "A caller with request-construction access supplies a repoPath outside the intended workspace, such as a mounted directory containing unrelated material. The legacy facade script runs against that path and its stdout is trusted as a workflow proposal, so the returned proposal can carry details about a directory the caller was never meant to reach.",
-      "minimal_fix": "Canonicalize repoPath and reject any value that resolves outside the configured artifact root before constructing the pwsh Command.",
-      "long_term_fix": "Replace the PowerShell facade invocation with the in-process Rust recommendation path once it reaches parity, removing the external-process boundary entirely.",
-      "regression_test": "Add a capability_inventory test asserting advisory.workflow-recommend returns AdapterError::InvalidOptions when repoPath resolves outside the artifact root.",
+      "problem": "The capability inventory builds an external-process Command using the caller-supplied repoPath option after only an is_dir() check. It does not canonicalize the path or bound it to the artifact root or an allow-listed directory set before the external process starts.",
+      "failure_scenario": "A caller with request-construction access supplies a repoPath outside the intended workspace, such as a mounted directory containing unrelated material. The external process runs against that path and its stdout is trusted as an inventory result, so the returned result can carry details about a directory the caller was never meant to reach.",
+      "minimal_fix": "Canonicalize repoPath and reject any value that resolves outside the configured artifact root before constructing the external-process Command.",
+      "long_term_fix": "Move the inventory into the in-process Rust path, removing the external-process boundary entirely.",
+      "regression_test": "Add a capability_inventory test asserting the inventory capability returns AdapterError::InvalidOptions when repoPath resolves outside the artifact root.",
       "estimated_effort": "hours",
       "redacted": false
     }

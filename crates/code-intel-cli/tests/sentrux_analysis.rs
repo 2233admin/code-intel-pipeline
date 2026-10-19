@@ -243,12 +243,9 @@ fn dsm_single_crate_intra_crate_coupling_is_no_longer_structurally_empty() {
 
 #[test]
 fn dsm_powershell_dot_source_and_import_module_edges_are_now_modeled() {
-    // Regression for issue #376/#148 E1's other half: before this fix
-    // `dsm_edges` never parsed `.ps1`/`.psm1` at all (line 689's extension
-    // gate was `.py`/`.rs`/`.v` only), so a PowerShell-heavy repository --
-    // like this one, where most of the orchestration layer is PowerShell --
-    // was structurally blind to its *own* dominant language's coupling, not
-    // just to intra-crate Rust coupling.
+    // Regression for issue #376/#148 E1's other half: `dsm_edges` once never
+    // parsed `.ps1`/`.psm1`, so a PowerShell-heavy repository under analysis
+    // was structurally blind to its own dominant language's coupling.
     let fixture = Fixture::new();
     fixture.write(
         "run-code-intel.ps1",
@@ -352,22 +349,4 @@ fn dsm_inventory_does_not_traverse_directory_symlinks() {
         .unwrap()
         .iter()
         .all(|detail| detail["path"] != "linked/outside.py"));
-}
-
-#[test]
-fn production_pipeline_prefers_rust_dsm_with_explicit_powershell_rollback() {
-    let pipeline = include_str!("../../../legacy/run-code-intel.ps1");
-    assert!(pipeline.contains("CODE_INTEL_SENTRUX_DSM_PROVIDER"));
-    assert!(pipeline.contains("CODE_INTEL_RUST_CLI"));
-    assert!(pipeline.contains("& $sentruxDsmRustCli sentrux dsm $sentruxTargetPath"));
-    assert!(pipeline.contains("& $sentruxAgentTool dsm $sentruxTargetPath"));
-    assert!(pipeline.contains("$rustExecutableName = if ($effectivePlatform -eq \"windows\")"));
-    // target/ stayed at the repository root when the facade moved under legacy/
-    assert!(pipeline.contains(
-        "$defaultRustCli = Join-Path (Split-Path -Parent $PSScriptRoot) (Join-Path \"target/debug\" $rustExecutableName)"
-    ));
-    assert!(pipeline.contains("$sentruxDsmRustCli = if"));
-    assert!(pipeline.contains("$defaultRustCli"));
-    assert!(pipeline.contains("$dsmLaunchError = $_.Exception.Message"));
-    assert!(pipeline.contains("Sentrux DSM provider: $sentruxDsmProvider"));
 }

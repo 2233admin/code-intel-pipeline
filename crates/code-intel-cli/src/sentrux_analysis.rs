@@ -119,7 +119,7 @@ pub fn analyze(target: &Path) -> Result<Value, String> {
 /// decision record (issue #152) instead of a separately maintained walk.
 /// Before #152, this function's own `inventory_files` walked the tree and
 /// its own `excluded_reason` matched `tools`/`vendor`/`third_party`/
-/// `external` only against the first path segment, so `legacy/tools/*` was
+/// `external` only against the first path segment, so `scripts/tools/*` was
 /// invisible to it and silently counted as included -- the majority
 /// contributor to issue #148 C2's 277/315 split against `sentrux scan`'s
 /// count on this repository's own tree. `sentrux_gate::measure_project` now

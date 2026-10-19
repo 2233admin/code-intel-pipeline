@@ -162,26 +162,12 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         protocol: "artifact+command",
         method: "POST",
         route: "/api/providers/codenexus/lite",
-        command_template: r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy/Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#,
+        command_template: "target/debug/code-intel.exe codenexus generate --repo <repo-path> --out codenexus-context.json",
         artifact: "codenexus-context.json",
         required: false,
         status: "compatibility",
-        source_spec: "Repository-owned legacy/Invoke-CodeNexusLite.ps1 localization adapter",
+        source_spec: "Compiled `codenexus generate` route (codenexus_lite.rs) localization adapter",
         notes: "Canonical compatibility route; non-blocking and replaceable, with Survival Scanner preserving localization when unavailable.",
-    },
-    ProviderOperation {
-        provider: "repowise",
-        operation: "lite",
-        stage: "localization",
-        protocol: "compatibility-alias",
-        method: "POST",
-        route: "/api/providers/repowise/lite",
-        command_template: r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy/Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#,
-        artifact: "codenexus-context.json",
-        required: false,
-        status: "compatibility",
-        source_spec: "Legacy Repowise-namespaced alias for the repository-owned CodeNexus-lite adapter",
-        notes: "Deprecated compatibility alias for one release; migrate callers to codenexus/lite.",
     },
     ProviderOperation {
         provider: "understand",
@@ -862,13 +848,6 @@ pub fn validate() -> Value {
         if operation.artifact.trim().is_empty() {
             errors.push(format!("{key} missing artifact contract"));
         }
-        if operation.command_template.contains("code-nexus-lite.exe")
-            && (operation.required || operation.status == "active")
-        {
-            errors.push(format!(
-                "{key} references removed code-nexus-lite.exe but is active or required"
-            ));
-        }
     }
 
     validate_codenexus_registry(&mut errors);
@@ -1023,19 +1002,6 @@ fn validate_codenexus_registry(errors: &mut Vec<String>) {
         );
     }
 
-    let Some(legacy) = find("repowise", "lite") else {
-        errors.push("missing legacy provider operation: repowise/lite".to_string());
-        return;
-    };
-    if legacy.required
-        || legacy.status != "compatibility"
-        || !legacy.notes.to_ascii_lowercase().contains("deprecated")
-    {
-        errors.push(
-            "repowise/lite must be optional and explicitly deprecated compatibility".to_string(),
-        );
-    }
-
     let (manifest_path, root) = match orchestration_manifest() {
         Ok(value) => value,
         Err(error) => {
@@ -1071,14 +1037,6 @@ fn validate_codenexus_registry(errors: &mut Vec<String>) {
         &root,
         "localization.codenexus-lite",
         canonical,
-        false,
-        errors,
-    );
-    validate_codenexus_integration(
-        &manifest,
-        &root,
-        "runtime.code-nexus-lite",
-        legacy,
         false,
         errors,
     );
@@ -1210,12 +1168,6 @@ fn validate_codenexus_integration(
             "{integration_id} entrypoint missing from repository: {entrypoint}"
         ));
     }
-    let entrypoint_reference = format!(r#"$env:CODE_INTEL_HOME\{entrypoint}"#);
-    if !command.contains(&entrypoint_reference) {
-        errors.push(format!(
-            "{integration_id} command does not invoke its entrypoint: {command}"
-        ));
-    }
     if command != operation.command_template {
         errors.push(format!(
             "{integration_id} command drifts from {}/{} provider command: {command}",
@@ -1260,7 +1212,7 @@ fn cwd_manifest_path() -> Option<PathBuf> {
         // unrelated repository that merely happens to have a file at
         // orchestration/integrations.json is not ambiguity — the operator
         // named a checkout and nothing here rivals it, which is exactly what
-        // the deleted test-integration-orchestration.ps1 asserted. Only a
+        // the original orchestration test asserted. Only a
         // real code-intel registry is a rival, and that is the worktree case
         // this guard exists for.
         .find(|candidate| candidate.is_file() && is_safe_cwd_manifest(candidate))
@@ -1572,18 +1524,11 @@ pub fn operation_json(operation: &ProviderOperation) -> Value {
 
 pub fn render_command(operation: &ProviderOperation, repo: Option<&Path>) -> String {
     match repo {
-        Some(repo) if operation.command_template.contains("'<repo-path>'") => operation
-            .command_template
-            .replace("'<repo-path>'", &powershell_literal(repo)),
         Some(repo) => operation
             .command_template
             .replace("<repo-path>", &repo.to_string_lossy()),
         None => operation.command_template.to_string(),
     }
-}
-
-fn powershell_literal(path: &Path) -> String {
-    format!("'{}'", path.to_string_lossy().replace('\'', "''"))
 }
 
 fn print_human(value: &Value) {
@@ -1641,20 +1586,16 @@ mod tests {
     }
 
     #[test]
-    fn codenexus_registry_uses_real_adapter_and_deprecates_legacy_alias() {
+    fn codenexus_registry_uses_native_generate_route() {
         let canonical = find("codenexus", "lite").expect("canonical CodeNexus provider");
         assert_eq!(
             canonical.command_template,
-            r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy/Invoke-CodeNexusLite.ps1" -RepoPath '<repo-path>'"#
+            "target/debug/code-intel.exe codenexus generate --repo <repo-path> --out codenexus-context.json"
         );
         assert!(!canonical.required);
         assert_eq!(canonical.status, "compatibility");
         assert!(canonical.notes.contains("non-blocking"));
-
-        let legacy = find("repowise", "lite").expect("legacy Repowise alias");
-        assert!(!legacy.required);
-        assert_eq!(legacy.status, "compatibility");
-        assert!(legacy.notes.to_ascii_lowercase().contains("deprecated"));
+        assert!(find("repowise", "lite").is_none());
     }
 
     #[test]
@@ -1664,16 +1605,19 @@ mod tests {
             .expect("clock should be after epoch")
             .as_nanos();
         let root = env::temp_dir().join(format!("code-intel-provider-drift-{stamp}"));
-        fs::create_dir_all(root.join("legacy")).expect("fixture root");
-        fs::write(root.join("legacy/Invoke-CodeNexusLite.ps1"), "# fixture\n")
-            .expect("fixture entrypoint");
+        fs::create_dir_all(root.join("crates/code-intel-cli/src")).expect("fixture root");
+        fs::write(
+            root.join("crates/code-intel-cli/src/codenexus_generate.rs"),
+            "// fixture\n",
+        )
+        .expect("fixture entrypoint");
         let manifest = json!({
             "integrations": [{
                 "id": "localization.codenexus-lite",
                 "required": false,
                 "kind": "compatibility-adapter",
-                "entrypoint": "legacy/Invoke-CodeNexusLite.ps1",
-                "commands": {"compat": "target/debug/code-nexus-lite.exe codenexus::lite"}
+                "entrypoint": "crates/code-intel-cli/src/codenexus_generate.rs",
+                "commands": {"compat": "target/debug/code-intel.exe codenexus generate --repo drift"}
             }]
         });
         let mut errors = Vec::new();
@@ -1687,9 +1631,6 @@ mod tests {
         );
         fs::remove_dir_all(&root).expect("fixture cleanup");
 
-        assert!(errors
-            .iter()
-            .any(|error| error.contains("command does not invoke its entrypoint")));
         assert!(errors
             .iter()
             .any(|error| error.contains("command drifts from codenexus/lite")));
@@ -1773,7 +1714,7 @@ mod tests {
 
     #[test]
     fn an_unrelated_cwd_manifest_never_rivals_code_intel_home() {
-        // Regression guard ported from the deleted test-integration-orchestration.ps1. A
+        // Regression guard ported from the original orchestration test. A
         // directory holding {"policy":{"name":"unrelated"},"integrations":[]}
         // is not a code-intel registry, so CODE_INTEL_HOME still wins and
         // nothing is ambiguous.
@@ -1803,17 +1744,5 @@ mod tests {
         // Running against an arbitrary directory that has no manifest of its
         // own is the normal installed-CLI case, not an ambiguity.
         assert!(reject_foreign_checkout(same, None).is_ok());
-    }
-
-    #[test]
-    fn codenexus_plan_quotes_repo_paths_for_powershell() {
-        let command = render_command(
-            find("codenexus", "lite").unwrap(),
-            Some(Path::new(r"D:\work repo\O'Brien")),
-        );
-        assert_eq!(
-            command,
-            r#"pwsh -NoProfile -File "$env:CODE_INTEL_HOME\legacy/Invoke-CodeNexusLite.ps1" -RepoPath 'D:\work repo\O''Brien'"#
-        );
     }
 }

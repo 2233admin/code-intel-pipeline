@@ -437,50 +437,29 @@ def safe_extract_zip(archive: Path, destination: Path) -> None:
             restore_member_mode(member, target)
 
 
-ENTRY_POINTS = (
-    "install-code-intel-pipeline.ps1",
-    "check-code-intel-tools.ps1",
-    "code-intel.ps1",
-    "invoke-code-intel.ps1",
-)
-
-# Releases from 0.7.0-beta.2 onward carry the PowerShell entry points under
-# legacy/. Earlier archives keep them at the payload root, and bootstrap has
-# to stay able to install those, so both layouts are probed, newest first.
-PAYLOAD_LAYOUTS = ("legacy/", "")
+SKILL_ENTRY = "skills/code-intel-pipeline/SKILL.md"
 
 
-def find_payload_root(extracted_root: Path) -> Path:
-    for prefix in PAYLOAD_LAYOUTS:
-        installer = f"{prefix}{ENTRY_POINTS[0]}"
-        depth = installer.count("/")
-        candidates = [
-            path.parents[depth]
-            for path in extracted_root.glob(f"*/{installer}")
-            if path.is_file()
-        ]
-        if (extracted_root / installer).is_file():
-            candidates.append(extracted_root)
-        unique_candidates = list(dict.fromkeys(candidates))
-        if len(unique_candidates) > 1:
-            raise BootstrapError(
-                "Release archive must contain exactly one Code Intel Pipeline root."
-            )
-        if not unique_candidates:
-            continue
-
-        payload = unique_candidates[0]
-        required = tuple(f"{prefix}{name}" for name in ENTRY_POINTS)
-        missing = [name for name in required if not (payload / name).is_file()]
-        if missing:
-            raise BootstrapError(
-                "Release archive is missing required files: " + ", ".join(missing)
-            )
-        return payload
-
-    raise BootstrapError(
-        "Release archive must contain exactly one Code Intel Pipeline root."
-    )
+def find_payload_root(extracted_root: Path, platform_name: str) -> Path:
+    """The single release root: it carries the Skill and this platform's binary."""
+    depth = SKILL_ENTRY.count("/")
+    candidates = [
+        path.parents[depth]
+        for path in extracted_root.glob(f"*/{SKILL_ENTRY}")
+        if path.is_file()
+    ]
+    if (extracted_root / SKILL_ENTRY).is_file():
+        candidates.append(extracted_root)
+    unique_candidates = list(dict.fromkeys(candidates))
+    if len(unique_candidates) != 1:
+        raise BootstrapError(
+            "Release archive must contain exactly one Code Intel Pipeline root."
+        )
+    payload = unique_candidates[0]
+    binary = payload / "bin" / release_binary_name(platform_name)
+    if not binary.is_file():
+        raise BootstrapError(f"Release archive is missing the packaged binary: {binary}")
+    return payload
 
 
 def payload_manifest(payload: Path) -> dict[str, dict[str, Any]]:
@@ -533,16 +512,6 @@ def default_install_root() -> Path:
     return default_data_root() / "releases"
 
 
-def find_pwsh() -> str:
-    executable = shutil.which("pwsh")
-    if executable:
-        return executable
-    raise BootstrapError(
-        "PowerShell 7.2+ (pwsh) is required on every platform because the "
-        "published installer is implemented in PowerShell."
-    )
-
-
 def ensure_release_binary_executable(release_root: Path, platform_name: str) -> None:
     """Fail closed unless the packaged CLI binary is runnable on this platform.
 
@@ -564,9 +533,23 @@ def ensure_release_binary_executable(release_root: Path, platform_name: str) -> 
         )
 
 
-def command_result(
-    command: list[str], *, environment: dict[str, str] | None = None
-) -> dict[str, Any]:
+def run_setup(release_root: Path, platform_name: str, repo_path: Path) -> dict[str, Any]:
+    """Hand the extracted release to its own binary: `code-intel setup`.
+
+    Setup installs the binary, persists PATH and CODE_INTEL_HOME, installs the
+    Skill for agents and ends with the doctor probe. Exit 0 is success even
+    when doctor reports missing tools; those come back as install hints.
+    """
+    binary = release_root / "bin" / release_binary_name(platform_name)
+    command = [
+        str(binary),
+        "setup",
+        "--release-root",
+        str(release_root),
+        "--repo-path",
+        str(repo_path),
+        "--json",
+    ]
     completed = subprocess.run(
         command,
         check=False,
@@ -574,24 +557,33 @@ def command_result(
         text=True,
         encoding="utf-8",
         errors="replace",
-        env=environment,
     )
-    result = {
-        "exit_code": completed.returncode,
-        "stdout": completed.stdout[-8000:],
-        "stderr": completed.stderr[-4000:],
-    }
-    if completed.returncode != 0:
+    try:
+        report = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        report = None
+    if not isinstance(report, dict) or report.get("schema") != "code-intel-setup.v1":
         raise BootstrapError(
-            f"Command failed with exit code {completed.returncode}: "
-            + subprocess.list2cmdline(command)
-            + f"\n{completed.stderr[-2000:] or completed.stdout[-2000:]}"
+            "This release predates `code-intel setup`; install a newer release. "
+            f"(exit {completed.returncode}: "
+            f"{completed.stderr[-2000:] or completed.stdout[-2000:]})"
         )
-    return result
+    if completed.returncode != 0:
+        failed = [
+            f"{action.get('name')}: {action.get('detail')}"
+            for action in report.get("actions", [])
+            if action.get("status") == "failed"
+        ]
+        raise BootstrapError("code-intel setup failed: " + "; ".join(failed))
+    return report
 
 
 def install_release(
-    asset: dict[str, str], install_root: Path, *, local_source: Path | None = None
+    asset: dict[str, str],
+    install_root: Path,
+    platform_name: str,
+    *,
+    local_source: Path | None = None,
 ) -> tuple[Path, str]:
     tag = asset["tag"]
     destination = install_root / tag
@@ -634,7 +626,7 @@ def install_release(
                 else verify_build_provenance(archive)
             )
             safe_extract_zip(archive, staging_root)
-        payload = find_payload_root(staging_root)
+        payload = find_payload_root(staging_root, platform_name)
         verified_manifest = payload_manifest(payload)
         verified_manifest_digest = manifest_digest(verified_manifest)
         verified_metadata = {
@@ -655,7 +647,7 @@ def install_release(
         )
         if existing_metadata is not None:
             try:
-                find_payload_root(destination)
+                find_payload_root(destination, platform_name)
                 installed_manifest = payload_manifest(destination)
             except (BootstrapError, OSError):
                 installed_manifest = {}
@@ -689,7 +681,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--repo-path",
         type=Path,
         default=Path.cwd(),
-        help="Repository that the installer and doctor should validate.",
+        help="Repository that setup and doctor should validate.",
     )
     parser.add_argument("--version", help="Release tag, for example v0.2.0.")
     parser.add_argument(
@@ -714,16 +706,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=default_install_root(),
         help="Versioned release installation directory.",
-    )
-    parser.add_argument(
-        "--install-missing",
-        action="store_true",
-        help="Allow the pipeline installer to install missing third-party tools.",
-    )
-    parser.add_argument(
-        "--check-provider",
-        action="store_true",
-        help="Run the optional provider connectivity check.",
     )
     parser.add_argument(
         "--dry-run",
@@ -778,69 +760,23 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "sha256": asset["sha256"],
         "install_path": str(install_root / asset["tag"]),
         "repo_path": str(repo_path),
-        "install_missing": bool(args.install_missing),
-        "check_provider": bool(args.check_provider),
     }
     if args.dry_run:
         return plan
 
     release_root, install_status = install_release(
-        asset, install_root, local_source=local_source
+        asset, install_root, platform_name, local_source=local_source
     )
     ensure_release_binary_executable(release_root, platform_name)
-    pwsh = find_pwsh()
-    installer = release_root / "legacy/install-code-intel-pipeline.ps1"
-    install_command = [
-        pwsh,
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        str(installer),
-        "-RepoPath",
-        str(repo_path),
-        "-RepairSkillLinks",
-        "-Json",
-    ]
-    if args.install_missing:
-        install_command.append("-InstallMissing")
-    if args.check_provider:
-        install_command.append("-CheckProvider")
-    # Build the child environment before the installer subprocess: the
-    # installer persists CODE_INTEL_HOME into the user environment, and it
-    # resolves that value from the child process environment first. Without
-    # pinning it here, a caller shell that exports a MSYS-style or otherwise
-    # stale CODE_INTEL_HOME (for example `/d/projects/...` from git-bash,
-    # which Windows resolves as `C:\d\projects\...`) would get written to the
-    # registry verbatim and break every later run.
-    environment = os.environ.copy()
-    environment["CODE_INTEL_HOME"] = str(release_root)
-    data_root = default_data_root()
-    environment["PATH"] = (
-        str(data_root / "bin") + os.pathsep + environment.get("PATH", "")
-    )
-    installer_result = command_result(install_command, environment=environment)
-    doctor_result = command_result(
-        [
-            pwsh,
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(release_root / "legacy/check-code-intel-tools.ps1"),
-            "-RepoPath",
-            str(repo_path),
-            "-RequireRepowise:$false",
-            "-Json",
-        ],
-        environment=environment,
-    )
+    setup = run_setup(release_root, platform_name, repo_path)
+    doctor = setup.get("doctor", {})
     plan.update(
         {
             "status": install_status,
             "release_root": str(release_root),
-            "installer": installer_result,
-            "doctor": doctor_result,
+            "setup": setup,
+            "missing_tools": doctor.get("installHints", []),
+            "path_refresh": setup.get("pathRefresh"),
         }
     )
     return plan
@@ -872,6 +808,10 @@ def main(argv: list[str] | None = None) -> int:
             f"Code Intel bootstrap {result['status']}: "
             f"{result['tag']} -> {result['install_path']}"
         )
+        for hint in result.get("missing_tools", []):
+            print(f"  missing {hint['tool']}: {hint['install']}")
+        if result.get("path_refresh"):
+            print(f"  this shell: {result['path_refresh']}")
     return 0
 
 

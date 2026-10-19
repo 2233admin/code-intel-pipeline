@@ -77,7 +77,6 @@ fn strict(require_understand: bool) -> Options {
 #[test]
 fn missing_list_preserves_the_retired_scripts_wording_and_order() {
     let checks = json!({
-        "pipelineScript": {"found": false},
         "config": {"found": true, "parsed": false, "parseError": "bad json"},
         "sentrux": {"core": {"found": false}, "pro": {"found": false}},
         "graphProvider": {"sourceFound": false, "cargoFound": false},
@@ -90,7 +89,6 @@ fn missing_list_preserves_the_retired_scripts_wording_and_order() {
     assert_eq!(
         missing_list(&checks, &tools, false, &strict(true), &home(true, false)),
         vec![
-            "pipeline script".to_string(),
             "pipeline config: invalid JSON (bad json)".to_string(),
             "rg".to_string(),
             "sentrux core".to_string(),
@@ -107,7 +105,6 @@ fn missing_list_preserves_the_retired_scripts_wording_and_order() {
 #[test]
 fn builtin_sentrux_makes_the_external_overlay_optional() {
     let checks = json!({
-        "pipelineScript": {"found": true},
         "config": {"found": true, "parsed": true},
         "sentrux": {"core": {"found": false}, "pro": {"found": false}},
         "graphProvider": {"sourceFound": true, "cargoFound": true},
@@ -142,7 +139,6 @@ fn observation_carries_the_v1_contract_and_every_retired_check() {
             "config".to_string(),
             "env".to_string(),
             "graphProvider".to_string(),
-            "pipelineScript".to_string(),
             "repo".to_string(),
             "sentrux".to_string(),
             "tools".to_string(),
@@ -203,8 +199,7 @@ fn configured_sentrux_path_resolves_the_scope_and_finds_scoped_rules() {
 
     let mut options = Options::new(root.clone());
     options.config = Some(config_path);
-    // A `.` segment in the argument, exactly the shape the retired
-    // PowerShell contract test exercised.
+    // A `.` segment in the argument, a shape callers pass in practice.
     options.repo_path = Some(display(&repo.join(".")));
     let observation = observe(&options).unwrap();
 

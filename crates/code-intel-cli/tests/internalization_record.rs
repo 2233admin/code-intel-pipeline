@@ -6,21 +6,21 @@ mod content_sha256;
 mod hardened_git;
 #[path = "../src/internalization_record.rs"]
 mod internalization_record;
+#[path = "support/schema.rs"]
+mod schema;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
 
+use schema::validates_against_schema;
 use serde_json::{json, Value};
 
 const NOW: u64 = 1_700_000_100;
 static NEXT_SCHEMA_CHECK: AtomicUsize = AtomicUsize::new(1);
 static NEXT_REPOSITORY_FIXTURE: AtomicUsize = AtomicUsize::new(1);
 static NEXT_SOURCE_SCRATCH: AtomicUsize = AtomicUsize::new(1);
-static SCHEMA_CHECK_LOCK: Mutex<()> = Mutex::new(());
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -51,17 +51,6 @@ fn c03_measurements() -> Value {
             .unwrap(),
     )
     .unwrap()
-}
-
-fn integration_exists(id: &str) -> bool {
-    let registry: Value =
-        serde_json::from_slice(&fs::read(root().join("orchestration/integrations.json")).unwrap())
-            .unwrap();
-    registry["integrations"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|entry| entry["id"] == id)
 }
 
 fn known(record: &Value) -> Vec<String> {
@@ -630,19 +619,6 @@ fn integration(id: &str) -> Value {
         .iter()
         .find(|entry| entry["id"] == id)
         .unwrap_or_else(|| panic!("missing integration {id}"))
-        .clone()
-}
-
-fn production_participant(id: &str) -> Value {
-    let registry: Value =
-        serde_json::from_slice(&fs::read(root().join("orchestration/integrations.json")).unwrap())
-            .unwrap();
-    registry["productionRegistry"]["participants"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|entry| entry["capabilityId"] == id)
-        .unwrap_or_else(|| panic!("missing production participant {id}"))
         .clone()
 }
 
@@ -1300,11 +1276,8 @@ fn repository_git(repo: &Path) -> Command {
     command
 }
 
-/// Digests are recomputed in process rather than through `Get-FileHash`. Every
-/// operation trace pins two files, so shelling out once per pin spawned dozens
-/// of concurrent `pwsh` processes; the macOS runner killed them with
-/// `Stack overflow.`, which surfaced here as 26 of 40 records failing at once
-/// and read exactly like real digest drift. Repository source pins are read
+/// Digests are recomputed in process rather than by shelling out once per
+/// pin. Repository source pins are read
 /// from a disposable Git index so current unstaged edits receive the same
 /// clean conversion as a future commit without mutating the real repository.
 /// General artifact payload hashing remains byte-exact.
@@ -1375,16 +1348,13 @@ fn ticket_r01_repowise_record_traces_b01_operations_and_stays_research_only() {
         "crates/code-intel-cli/tests/repowise_route.rs",
         "local-conformance-sha256",
     );
-    assert_operation_trace_exact(&record, &["provider.repowise-adapt", "memory.repowise"]);
+    assert_operation_trace_exact(&record, &["provider.repowise-adapt"]);
     let route = integration("provider.repowise-adapt");
     assert!(route["commands"]["adapt"]
         .as_str()
         .unwrap()
         .contains("provider repowise-adapt"));
-    assert!(route["commands"]["facade"]
-        .as_str()
-        .unwrap()
-        .contains("-RepowiseAdapterRequest"));
+    assert!(route["commands"].get("facade").is_none());
     assert_eq!(record["economics"]["benefit"]["value"], 2);
     let evidence = serde_json::to_string(&record).unwrap();
     assert!(evidence.contains("local:b01:production-operation-trace"));
@@ -1419,10 +1389,7 @@ fn ticket_r02_graph_record_keeps_internal_and_external_evidence_separate() {
         .as_str()
         .unwrap()
         .contains("provider graph-adapt"));
-    assert!(route["commands"]["facade"]
-        .as_str()
-        .unwrap()
-        .contains("-GraphAdapterRequest"));
+    assert!(route["commands"].get("facade").is_none());
     let internal = integration("graph.code-intel-understand");
     let external = integration("graph.understand-external");
     assert_eq!(internal["kind"], "internal-rust-provider");
@@ -1461,10 +1428,7 @@ fn ticket_r03_sentrux_record_blocks_shim_retirement_on_windows_and_plugin_gaps()
         .as_str()
         .unwrap()
         .contains("provider sentrux-adapt"));
-    assert!(route["commands"]["facade"]
-        .as_str()
-        .unwrap()
-        .contains("-SentruxAdapterRequest"));
+    assert!(route["commands"].get("facade").is_none());
     let runtime = integration("structure.sentrux");
     assert!(runtime["commands"]["rustScan"]
         .as_str()
@@ -1479,7 +1443,7 @@ fn ticket_r03_sentrux_record_blocks_shim_retirement_on_windows_and_plugin_gaps()
     assert!(retirement.contains("gap:sentrux:upstream-windows-conformance"));
     assert!(retirement.contains("gap:sentrux:upstream-plugin-conformance"));
     let owned = record["ownedModifications"].as_array().unwrap();
-    assert_eq!(owned.len(), 4);
+    assert_eq!(owned.len(), 3);
     assert!(owned
         .iter()
         .any(|entry| { entry["path"] == "crates/code-intel-cli/src/sentrux_analysis.rs" }));
@@ -1510,11 +1474,7 @@ fn ticket_r04_codenexus_record_traces_full_lite_swap_without_vendoring_semantics
     );
     assert_operation_trace_exact(
         &record,
-        &[
-            "provider.codenexus-adapt",
-            "runtime.code-nexus-lite",
-            "localization.codenexus-lite",
-        ],
+        &["provider.codenexus-adapt", "localization.codenexus-lite"],
     );
     assert_recomputable_sha(
         &record,
@@ -1526,11 +1486,7 @@ fn ticket_r04_codenexus_record_traces_full_lite_swap_without_vendoring_semantics
         .as_str()
         .unwrap()
         .contains("provider codenexus-adapt"));
-    assert!(route["commands"]["facade"]
-        .as_str()
-        .unwrap()
-        .contains("-CodeNexusAdapterRequest"));
-    assert_eq!(integration("runtime.code-nexus-lite")["required"], false);
+    assert!(route["commands"].get("facade").is_none());
     assert_eq!(
         integration("localization.codenexus-lite")["kind"],
         "compatibility-adapter"
@@ -1552,92 +1508,6 @@ fn ticket_r04_codenexus_record_traces_full_lite_swap_without_vendoring_semantics
     assert!(evidence.contains("local:b04:full-lite-swap-trace"));
     assert!(evidence.contains("gap:codenexus:measured-localization-value"));
     assert!(evidence.contains("gap:codenexus:full-provider-security-review"));
-}
-
-#[test]
-fn ticket_r04_codenexus_compat_command_executes_and_writes_context() {
-    let temp = std::env::temp_dir().join(format!(
-        "code-intel-r04-compat-{}-{}",
-        std::process::id(),
-        NEXT_SCHEMA_CHECK.fetch_add(1, Ordering::Relaxed)
-    ));
-    let repo = temp.join("repo");
-    fs::create_dir_all(&repo).unwrap();
-    fs::write(repo.join("README.md"), "# R04 compat fixture\n").unwrap();
-
-    let mut command = Command::new("pwsh");
-    command.args([
-        "-NoProfile",
-        "-File",
-        root()
-            .join("legacy/Invoke-CodeNexusLite.ps1")
-            .to_str()
-            .unwrap(),
-        "-RepoPath",
-        repo.to_str().unwrap(),
-        "-Quiet",
-    ]);
-    let output = run_command_with_timeout(&mut command);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let context_path = repo.join(".code-intel/codenexus-context.json");
-    let context: Value = serde_json::from_slice(&fs::read(&context_path).unwrap()).unwrap();
-    assert_eq!(context["tool"], "codenexus-lite");
-    let emitted_repo = PathBuf::from(context["repo"].as_str().unwrap());
-    assert_eq!(
-        fs::canonicalize(emitted_repo).unwrap(),
-        fs::canonicalize(&repo).unwrap(),
-        "compatibility context must identify the same repository across Windows short/long path aliases"
-    );
-    fs::remove_dir_all(temp).unwrap();
-}
-
-#[test]
-fn ticket_r05_repomix_is_a_measured_reviewed_deletion_not_fake_production() {
-    let record = advisory_candidate("repomix");
-    assert_research_record_projects(&record, "internalization.repomix-record");
-    assert_recomputable_sha(
-        &record,
-        "orchestration/internalization/c03-r05-r12-measurements.json",
-        "measurement-sha256",
-    );
-    let participant = production_participant("pack.repomix");
-    assert_eq!(participant["status"], "deleted");
-    assert!(participant["reviewedDeletion"]["evidence"]
-        .as_str()
-        .unwrap()
-        .contains("no Repomix executable"));
-    let registry: Value =
-        serde_json::from_slice(&fs::read(root().join("orchestration/integrations.json")).unwrap())
-            .unwrap();
-    assert!(!registry["integrations"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|entry| entry["id"] == "pack.repomix"));
-    assert!(record.get("operationTrace").is_none());
-    assert_eq!(record["retirement"]["status"], "completed");
-    assert_eq!(record["economics"]["benefit"]["value"], 0);
-    assert_eq!(record["economics"]["cost"]["value"], 0);
-    let measurements = c03_measurements();
-    assert_eq!(
-        measurements["observations"]["r05Repomix"]["npmRegistryMetadataEntries"],
-        3
-    );
-    assert_eq!(
-        measurements["observations"]["r05Repomix"]["npmPackageTarballEntries"],
-        3
-    );
-    assert_eq!(
-        measurements["observations"]["r05Repomix"]["npmInstalledOrExtractedExecutableEntries"],
-        0
-    );
-    let source = fs::read_to_string(root().join("legacy/run-code-intel.ps1")).unwrap();
-    assert!(!source.contains("$repomixTool = Join-Path"));
-    assert!(source.contains("Repomix production participation was reviewed and removed"));
 }
 
 #[test]
@@ -1688,74 +1558,6 @@ fn ticket_r06_native_record_binds_b08_parity_size_coverage_and_latency() {
 }
 
 #[test]
-fn ticket_r07_cocoindex_is_a_reviewed_retirement_with_no_production_path() {
-    let record = advisory_candidate("cocoindex");
-    assert_research_record_projects(&record, "internalization.cocoindex-record");
-    assert_recomputable_sha(
-        &record,
-        "orchestration/internalization/c03-r05-r12-measurements.json",
-        "measurement-sha256",
-    );
-    assert!(record.get("operationTrace").is_none());
-    assert_eq!(
-        production_participant("evidence.cocoindex-code")["status"],
-        "deleted"
-    );
-    assert!(!integration_exists("evidence.cocoindex-code"));
-    assert_eq!(record["retirement"]["status"], "completed");
-    assert_eq!(record["economics"]["benefit"]["value"], 0);
-    assert_eq!(record["economics"]["cost"]["value"], 0);
-    let text = serde_json::to_string(&record).unwrap();
-    for boundary in [
-        "production-semantic-invocations:0",
-        "reviewed-deletion",
-        "native-baseline-independent",
-    ] {
-        assert!(text.contains(boundary), "missing {boundary}");
-    }
-    let source = fs::read_to_string(root().join("legacy/run-code-intel.ps1")).unwrap();
-    assert!(!source.contains("Get-JsonProperty $adapters \"cocoindex-code\""));
-    assert!(!source.contains("Test-CommandAvailable $cocoCommand"));
-}
-
-#[test]
-fn ticket_r08_github_research_failed_live_reproduction_is_reviewed_out() {
-    let record = advisory_candidate("github-research");
-    assert_research_record_projects(&record, "internalization.github-research-record");
-    assert_recomputable_sha(
-        &record,
-        "orchestration/internalization/c03-r05-r12-measurements.json",
-        "measurement-sha256",
-    );
-    assert!(record.get("operationTrace").is_none());
-    assert_eq!(
-        production_participant("research.github-solution")["status"],
-        "deleted"
-    );
-    assert!(!integration_exists("research.github-solution"));
-    assert_eq!(record["retirement"]["status"], "completed");
-    assert_eq!(record["economics"]["benefit"]["value"], 0);
-    let measurements = c03_measurements();
-    let live = &measurements["observations"]["r08GitHubResearch"]["representativeLiveRun"];
-    assert_eq!(live["status"], "manual_required");
-    assert_eq!(live["candidates"], 0);
-    assert_eq!(live["reproducible"], false);
-    assert_eq!(live["externalWrites"], 0);
-    assert_eq!(live["invocationExitCodes"], serde_json::json!([1, 1, 0, 0]));
-    assert_eq!(live["returnedUrls"], serde_json::json!([]));
-    assert_eq!(live["returnedSourceRevisions"], serde_json::json!([]));
-    assert_recomputable_sha(
-        &record,
-        "orchestration/internalization/evidence/r08-live-20260714/github-solution-research.json",
-        "run-artifact-sha256",
-    );
-    let text = serde_json::to_string(&record).unwrap();
-    assert!(text.contains("invalid-query"));
-    let source = fs::read_to_string(root().join("legacy/run-code-intel.ps1")).unwrap();
-    assert!(!source.contains("$githubResearchScript"));
-}
-
-#[test]
 fn ticket_r10_git_is_versioned_measured_and_read_only() {
     let record = advisory_candidate("git");
     assert_research_record_projects(&record, "internalization.git-record");
@@ -1788,30 +1590,6 @@ fn ticket_r10_git_is_versioned_measured_and_read_only() {
     assert!(text.contains("rollback-to-git-or-unversioned"));
     assert!(!text.contains("gap:git:local-license-copy"));
     assert!(!text.contains("gap:git:alternate-vcs-port"));
-}
-
-#[test]
-fn ticket_r12_unverified_greenfield_plugin_is_retired_from_production() {
-    let record = advisory_candidate("greenfield");
-    assert_research_record_projects(&record, "internalization.greenfield-record");
-    assert_recomputable_sha(
-        &record,
-        "orchestration/internalization/c03-r05-r12-measurements.json",
-        "measurement-sha256",
-    );
-    assert!(record.get("operationTrace").is_none());
-    assert!(!integration_exists("spec.greenfield"));
-    let registry = fs::read_to_string(root().join("orchestration/integrations.json")).unwrap();
-    assert!(!registry.contains("\"capabilityId\": \"spec.greenfield\""));
-    assert_eq!(record["retirement"]["status"], "completed");
-    assert_eq!(record["economics"]["benefit"]["value"], 2);
-    assert_eq!(record["economics"]["cost"]["value"], 2127.4285);
-    let text = serde_json::to_string(&record).unwrap();
-    assert!(text.contains("auto-analyze-without-flag-0"));
-    assert!(text.contains("explicit-analyze-fixture-1"));
-    assert!(text.contains("external-plugin-retired"));
-    assert!(text.contains("pipeline-owned-plan-only"));
-    assert!(text.contains("never grant specification or implementation authority"));
 }
 
 #[test]
@@ -1878,8 +1656,10 @@ fn ticket_r13_openspec_record_is_measured_removable_and_fail_closed() {
     assert_checked_schema(&reuse, "code-intel-reuse-record.v1.schema.json");
     assert_checked_schema(&notice, "code-intel-notice-provenance.v1.schema.json");
 
-    let atom = fs::read_to_string(root().join("legacy/OpenSpec-Detector.ps1")).unwrap();
-    assert_eq!(atom.matches("openspec-opsx").count(), 5);
+    let atom =
+        fs::read_to_string(root().join("crates/code-intel-cli/src/workflow_recommendation.rs"))
+            .unwrap();
+    assert!(atom.contains("openspec-opsx"));
     assert_eq!(record["economics"]["benefit"]["value"], 5);
     let boundary = serde_json::to_string(&record["adoption"]["ownedBoundary"]).unwrap();
     assert!(boundary.contains("no openspec init"));
@@ -1893,8 +1673,10 @@ fn ticket_r13_openspec_record_is_measured_removable_and_fail_closed() {
 fn ticket_r14_spec_kit_record_requires_facts_and_has_no_auto_init_authority() {
     let record = advisory_candidate("spec-kit");
     assert_research_candidate(&record, "internalization.spec-kit-record");
-    let atom = fs::read_to_string(root().join("legacy/OpenSpec-Detector.ps1")).unwrap();
-    assert_eq!(atom.matches("spec-kit").count(), 8);
+    let atom =
+        fs::read_to_string(root().join("crates/code-intel-cli/src/workflow_recommendation.rs"))
+            .unwrap();
+    assert!(atom.contains("spec-kit"));
     assert_eq!(record["economics"]["benefit"]["value"], 8);
     let boundary = serde_json::to_string(&record["adoption"]["ownedBoundary"]).unwrap();
     assert!(boundary.contains("no specify init"));
@@ -1908,8 +1690,10 @@ fn ticket_r14_spec_kit_record_requires_facts_and_has_no_auto_init_authority() {
 fn ticket_r15_matt_flow_record_traces_one_owned_branch_without_external_effects() {
     let record = advisory_candidate("matt-flow");
     assert_research_candidate(&record, "internalization.matt-flow-record");
-    let atom = fs::read_to_string(root().join("legacy/OpenSpec-Detector.ps1")).unwrap();
-    assert_eq!(atom.matches("stack = \"matt-flow\"").count(), 1);
+    let atom =
+        fs::read_to_string(root().join("crates/code-intel-cli/src/workflow_recommendation.rs"))
+            .unwrap();
+    assert_eq!(atom.matches("\"stack\":\"matt-flow\"").count(), 1);
     assert_eq!(record["economics"]["benefit"]["value"], 1);
     let boundary = serde_json::to_string(&record["adoption"]["ownedBoundary"]).unwrap();
     assert!(boundary.contains("no issue creation"));
@@ -1920,8 +1704,10 @@ fn ticket_r15_matt_flow_record_traces_one_owned_branch_without_external_effects(
 fn ticket_r16_gstack_record_exposes_source_gap_and_no_execution_authority() {
     let record = advisory_candidate("gstack");
     assert_research_candidate(&record, "internalization.gstack-record");
-    let atom = fs::read_to_string(root().join("legacy/OpenSpec-Detector.ps1")).unwrap();
-    assert_eq!(atom.matches("stack = \"gstack\"").count(), 1);
+    let atom =
+        fs::read_to_string(root().join("crates/code-intel-cli/src/workflow_recommendation.rs"))
+            .unwrap();
+    assert_eq!(atom.matches("\"stack\":\"gstack\"").count(), 1);
     assert_eq!(record["economics"]["benefit"]["value"], 1);
     assert!(record["subject"]["source"]["uri"]
         .as_str()
@@ -2098,16 +1884,10 @@ fn ticket_r09_rg_record_traces_every_registered_production_operation() {
         "local-conformance-sha256",
     );
     assert_operation_trace_exact(&record, &["inventory.rg"]);
-    let exact = std::collections::BTreeMap::from([
-        (
-            ("inventory.rg", "run"),
-            "normalized_inventory_matches_real_legacy_runner_with_custom_exclude",
-        ),
-        (
-            ("inventory.rg", "capabilityExec"),
-            "inventory_rg_exec_emits_one_result_and_stable_real_rg_artifact",
-        ),
-    ]);
+    let exact = std::collections::BTreeMap::from([(
+        ("inventory.rg", "capabilityExec"),
+        "inventory_rg_exec_emits_one_result_and_stable_real_rg_artifact",
+    )]);
     for trace in record["operationTrace"].as_array().unwrap() {
         let key = (
             trace["integrationId"].as_str().unwrap(),
@@ -2128,11 +1908,6 @@ fn ticket_r09_rg_record_traces_every_registered_production_operation() {
 fn ticket_r11_tree_sitter_v_record_does_not_claim_sentrux_or_grammar_ownership() {
     let record = advisory_candidate("tree-sitter-v");
     assert_research_record_projects(&record, "internalization.tree-sitter-v-record");
-    assert_recomputable_sha(
-        &record,
-        "legacy/Install-SentruxVlangOverlay.ps1",
-        "local-installer-sha256",
-    );
     assert_recomputable_sha(
         &record,
         "overlays/sentrux/vlang/grammars/windows-x86_64.dll",
@@ -2216,7 +1991,7 @@ fn ticket_r23_r24_r25_reference_records_add_no_external_write_ui_or_model_runtim
         );
         assert_recomputable_sha(
             &record,
-            "legacy/scripts/tests/test-project-management-support.ps1",
+            "crates/code-intel-cli/tests/project_management_support.rs",
             "local-boundary-test-sha256",
         );
         assert_eq!(record["economics"]["benefit"]["value"], 0);
@@ -2283,63 +2058,7 @@ fn checked_schemas_accept_complete_record_and_both_projections() {
     );
 }
 
-#[test]
-fn claude_code_merge_queue_record_traces_optional_adapter_and_keeps_promotion_human_only() {
-    let record = advisory_candidate("claude-code-merge-queue");
-    assert_research_record_projects(&record, "internalization.claude-code-merge-queue-record");
-    assert_eq!(record["subject"]["license"]["id"], "MIT");
-    assert!(record["subject"]["source"]["revision"]
-        .as_str()
-        .unwrap()
-        .contains("e7a76958dbd3953b84f12abbc2e6bd755aafce53"));
-    assert_recomputable_sha(
-        &record,
-        "legacy/Invoke-MultiAgentMergeQueue.ps1",
-        "local-adapter-sha256",
-    );
-    // This record attests the pre-upgrade conformance source, not today's live test.
-    // Preserve its observed digest and audit the archived bytes without rewriting history.
-    assert_recomputable_sha(
-        &record,
-        "tests/fixtures/internalization/test-multi-agent-merge-queue.ps1.snapshot",
-        "local-conformance-sha256",
-    );
-    assert_recomputable_sha(
-        &record,
-        "orchestration/multi-agent-merge-queue-policy.v1.json",
-        "local-policy-sha256",
-    );
-    assert_recomputable_sha(
-        &record,
-        "docs/multi-agent-merge-queue.md",
-        "local-doc-sha256",
-    );
-    assert_operation_trace_exact(&record, &["delivery.multi-agent-merge-queue"]);
-    let integration = integration("delivery.multi-agent-merge-queue");
-    assert_eq!(integration["required"], false);
-    assert_eq!(integration["stage"], "landing_coordination");
-    assert!(integration["commands"].get("promote").is_none());
-    assert!(integration["commands"]["land"]
-        .as_str()
-        .unwrap()
-        .contains("-AllowNetworkPush"));
-    let evidence = serde_json::to_string(&record).unwrap();
-    assert!(evidence.contains("production promotion remains human-only"));
-    assert!(evidence.contains("gap:merge-queue:representative-cluster-throughput"));
-}
-
 fn assert_checked_schema(value: &Value, schema: &str) {
-    // PowerShell's Test-Json schema engine is not reliable under concurrent
-    // invocations from this parallel test binary. Keep the external validator
-    // serialized while preserving unique payload paths for failure diagnosis.
-    // Recover from poisoning instead of propagating it. The lock guards
-    // nothing but serialisation of an external validator — there is no shared
-    // state a panicking holder could have corrupted. Unwrapping turned a
-    // single timeout in one test into eight failures in unrelated ones, all
-    // reporting a poisoned mutex rather than the timeout that caused it.
-    let _guard = SCHEMA_CHECK_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let path = std::env::temp_dir().join(format!(
         "code-intel-c03-schema-{}-{}.json",
         std::process::id(),
@@ -2347,52 +2066,7 @@ fn assert_checked_schema(value: &Value, schema: &str) {
     ));
     fs::write(&path, serde_json::to_vec(value).unwrap()).unwrap();
     let schema_path = root().join("orchestration/schemas").join(schema);
-    let mut command = Command::new("pwsh");
-    command.args([
-        "-NoProfile",
-        "-CommandWithArgs",
-        "if (-not ((Get-Content -Raw -LiteralPath $args[0]) | Test-Json -SchemaFile $args[1])) { exit 1 }",
-        path.to_str().unwrap(),
-        schema_path.to_str().unwrap(),
-    ]);
-    let output = run_command_with_timeout(&mut command);
+    let valid = validates_against_schema(&path, &schema_path);
     fs::remove_file(path).unwrap();
-    assert!(
-        output.status.success(),
-        "{schema}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-/// Ten seconds was a cold-start budget, not a work budget: `SCHEMA_CHECK_LOCK`
-/// serialises roughly thirty of these, each one a fresh `pwsh` process loading
-/// `Test-Json`, and a Windows CI runner under load has exceeded it on a tree
-/// byte-identical to one that passed minutes earlier. The timeout exists to
-/// stop a hung validator from hanging the suite, so it only has to be shorter
-/// than the job timeout — being tight buys nothing and costs false failures.
-const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(120);
-
-fn run_command_with_timeout(command: &mut Command) -> std::process::Output {
-    let mut child = command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let started = Instant::now();
-    let deadline = started + SUBPROCESS_TIMEOUT;
-    loop {
-        if child.try_wait().unwrap().is_some() {
-            return child.wait_with_output().unwrap();
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let output = child.wait_with_output().unwrap();
-            panic!(
-                "subprocess exceeded {}s; stderr: {}",
-                SUBPROCESS_TIMEOUT.as_secs(),
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    assert!(valid, "{schema}: document does not satisfy the schema");
 }

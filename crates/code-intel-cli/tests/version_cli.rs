@@ -62,10 +62,10 @@ fn json_version_carries_a_stable_schema_id() {
 
 #[test]
 fn version_token_is_parseable_by_the_installer_regex() {
-    // Get-ToolVersion in legacy/install-code-intel-pipeline.ps1 matches
+    // Installers match
     // `\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?` against this output. A version that
     // does not match reads as "unknown" and the pin gate cannot fire, so the
-    // shape is asserted here rather than only in PowerShell.
+    // shape is asserted here here.
     let (stdout, _, _) = run(&["--version"]);
     let token = stdout
         .trim()

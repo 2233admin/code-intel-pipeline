@@ -34,7 +34,7 @@
       "required": ["capabilityId", "implementation", "repository", "compatibilityOptions"],
       "properties": {
         "capabilityId": { "const": "advisory.workflow-recommend" },
-        "implementation": { "const": "OpenSpec-Detector.ps1" },
+        "implementation": { "const": "rust.workflow_recommendation" },
         "repository": { "type": "string", "minLength": 1 },
         "compatibilityOptions": {
           "type": "object",

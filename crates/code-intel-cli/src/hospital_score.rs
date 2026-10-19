@@ -1,20 +1,14 @@
-//! Hospital report scoring, ported from `legacy/run-code-intel.ps1`.
-//!
-//! The Rust hospital emitted `null` for every score while the PowerShell
-//! launcher computed real values, so this was never duplication — it was the
-//! only implementation, and it lived in the file T2 is retiring. See
-//! docs/ps1-exit/t2-dot-source-parity-map.md §3.
+//! Hospital report scoring.
 //!
 //! This module is the scoring arithmetic only. It is deliberately pure: no
 //! I/O, no artifact reading, no knowledge of where the inputs come from. The
 //! wiring — which run signals feed which score — is a separate problem,
-//! because roughly half the launcher's score inputs (DSM scope, CodeNexus
+//! because roughly half the score inputs (DSM scope, CodeNexus
 //! context, runtime CI health) have no Rust producer yet. Emitting `0` for
 //! those would be the same mistake the structural-scope fix corrected: `0`
 //! here means *observed and absent*, not *never attempted*.
 //!
-//! Hence `allow(dead_code)`: the arithmetic is complete and verified against
-//! the PowerShell original, but nothing calls it until those inputs exist.
+//! Hence `allow(dead_code)`: the arithmetic is complete and verified, but nothing calls it until those inputs exist.
 //! Wiring it against inputs the pipeline does not produce would publish
 //! confidently wrong scores, which is worse than the `null`s it replaces.
 #![allow(dead_code)]

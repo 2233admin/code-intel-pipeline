@@ -7,6 +7,8 @@ mod common;
 // autodiscovery the same way `tests/common/mod.rs` already does.
 #[path = "dag_run_support/timeout.rs"]
 mod dag_run_timeout;
+#[path = "support/schema.rs"]
+mod schema_support;
 #[path = "support/sha256.rs"]
 mod sha256;
 use std::fs;
@@ -932,8 +934,8 @@ fn checked_in_execution_result_schema_is_closed_and_binds_outcomes_to_exit_codes
 /// Collects instance keys that a closed (`additionalProperties: false`)
 /// schema node does not declare. Recurses through declared objects and
 /// array items; stops at `$ref` boundaries (those subtrees carry their own
-/// schema files). #168: the pwsh `Test-Json` step does not enforce the
-/// closed-world bit, so the strict half of the contract is asserted here.
+/// schema files). #168: asserts the closed-world half of the contract with a
+/// precise list of the offending keys.
 fn undeclared_keys(instance: &Value, schema_node: &Value, at: &str, out: &mut Vec<String>) {
     let Some(fields) = instance.as_object() else {
         return;
@@ -1025,7 +1027,7 @@ fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
     let execution: Value = serde_json::from_slice(&output.stdout).unwrap();
 
     // #168: a real run's output must not carry keys its own closed schema
-    // omits — `Test-Json` below is blind to `additionalProperties: false`.
+    // omits — the schema validation below covers the rest.
     let execution_schema: Value = serde_json::from_str(include_str!(
         "../../../orchestration/schemas/code-intel-execution-result.v1.schema.json"
     ))
@@ -1058,22 +1060,9 @@ fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
     fs::write(&result_path, &output.stdout).unwrap();
     let schema = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../orchestration/schemas/code-intel-execution-result.v1.schema.json");
-    let validated = Command::new("pwsh")
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-Command",
-            "param($Document,$Schema); if (-not (Get-Content -Raw -LiteralPath $Document | Test-Json -SchemaFile $Schema -ErrorAction Stop)) { exit 1 }",
-        ])
-        .arg(&result_path)
-        .arg(&schema)
-        .output()
-        .unwrap();
     assert!(
-        validated.status.success(),
-        "stdout={} stderr={}",
-        String::from_utf8_lossy(&validated.stdout),
-        String::from_utf8_lossy(&validated.stderr)
+        schema_support::validates_against_schema(&result_path, &schema),
+        "execution result must validate against its schema"
     );
 
     let _ = fs::remove_dir_all(root);
@@ -1456,8 +1445,7 @@ fn baselined_repository_that_regresses_still_fails_the_architecture_gate() {
     let _ = fs::remove_dir_all(root);
 }
 
-/// `test-dag-facade.ps1` guarded the artifact-path composition the PowerShell
-/// launcher owned: a run lands directly under `<artifact root>/<repo name>`,
+/// Guards the artifact-path composition: a run lands directly under `<artifact root>/<repo name>`,
 /// the repository name never repeats inside the path, and the explicit route
 /// and the environment default produce the same evidence. `run dag-coordinate`
 /// owns that composition now, so the guard lives here. The run outcome is

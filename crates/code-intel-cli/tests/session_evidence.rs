@@ -231,7 +231,7 @@ fn unsupported_trace_is_rejected_without_echoing_provider_content() {
 #[test]
 fn exhaustive_hotspots_producer_lets_session_adapt_match_a_file_past_the_old_top_30_cut() {
     // Regression for issue #361: the only prior producer of
-    // sentrux-hotspots.json (legacy/run-code-intel.ps1) truncated to the
+    // sentrux-hotspots.json truncated to the
     // top 30 files by complexity, so session-adapt's --hotspots join
     // silently missed any target below that cut. This spawns the real
     // `code-intel sentrux hotspots` CLI against a real 35-file repo, writes

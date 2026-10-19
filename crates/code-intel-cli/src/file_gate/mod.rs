@@ -9,7 +9,7 @@
 //!
 //!   - `sentrux dsm`'s old `excluded_reason` matched `tools` / `vendor` /
 //!     `third_party` / `external` only against the *first* path segment
-//!     (`parts.first()`), so `legacy/tools/*.ps1` was invisible to that
+//!     (`parts.first()`), so `scripts/tools/*` was invisible to that
 //!     check and silently counted as included. `sentrux scan`'s
 //!     `SKIP_DIRECTORIES` had always matched at any depth. On this
 //!     repository's own tree that one gap alone accounted for 39 files

@@ -411,9 +411,9 @@ mod tests {
     fn dsm_is_declared_authoritative_automatic() {
         // #376/DR-0010: sentrux.dsm was promoted from automatic_degraded to
         // authoritative_automatic once `dsm_edges` stopped being
-        // structurally blind to single-crate/PowerShell-heavy repositories
+        // structurally blind to single-crate repositories
         // (finer module granularity under crates/packages src/app/tests
-        // roots, plus a new PowerShell dot-source/Import-Module resolver).
+        // roots).
         // Same precedent as DR-0009: capability_audit only ever trusts this
         // hand-declared currentState field, so pin it here rather than let
         // a future edit flip it back silently.

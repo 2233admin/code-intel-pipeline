@@ -14,8 +14,8 @@ use super::AdapterError;
 
 static CODENEXUS_SCRATCH_NONCE: AtomicU64 = AtomicU64::new(0);
 
-/// Bounds how long the CodeNexus-lite facade may run. Without this, a hung
-/// `pwsh` process (network stall inside the script, a pathologically large
+/// Bounds how long the CodeNexus-lite generator may run. Without this, a hung
+/// process (network stall, a pathologically large
 /// git history) would block `evidence.codenexus` -- and the whole DAG run --
 /// forever. `status: "unavailable"` is already a first-class admitted
 /// outcome, so timing out just routes into that existing branch rather than

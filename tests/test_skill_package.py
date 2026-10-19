@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import stat
 import tempfile
@@ -30,15 +31,23 @@ def load_bootstrap_module():
     return module
 
 
-def write_release_archive(path: Path, *, installer: str = "Write-Output 'ok'\n") -> None:
+def write_release_archive(path: Path, *, binary: str = "bin/code-intel.exe") -> None:
     with zipfile.ZipFile(path, "w") as handle:
         for name, content in {
-            "legacy/install-code-intel-pipeline.ps1": installer,
-            "legacy/check-code-intel-tools.ps1": "Write-Output 'doctor'\n",
-            "legacy/code-intel.ps1": "Write-Output 'launch'\n",
-            "legacy/invoke-code-intel.ps1": "Write-Output 'invoke'\n",
+            "skills/code-intel-pipeline/SKILL.md": "# code-intel-pipeline\n",
+            binary: "binary\n",
         }.items():
             handle.writestr(f"code-intel-pipeline/{name}", content)
+
+
+def write_fake_binary(release_root: Path, stdout: str, exit_code: int) -> None:
+    binary = release_root / "bin" / "code-intel"
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_text(
+        "#!/bin/sh\ncat <<'JSON'\n" + stdout + "\nJSON\nexit " + str(exit_code) + "\n",
+        encoding="utf-8",
+    )
+    binary.chmod(0o755)
 
 
 class SkillPackageTests(unittest.TestCase):
@@ -54,16 +63,45 @@ class SkillPackageTests(unittest.TestCase):
         self.assertTrue(BOOTSTRAP_PATH.is_file())
         self.assertFalse((ROOT / "skill").exists())
 
-    def test_installer_uses_canonical_skill_path(self) -> None:
-        installer = (ROOT / "legacy/install-code-intel-pipeline.ps1").read_text(
-            encoding="utf-8"
-        )
-        # skills/ stayed at the repository root when the installer moved
-        # under legacy/, so it is reached through $repoRoot rather than $root
-        self.assertIn(
-            'Join-Path (Join-Path $repoRoot "skills") "code-intel-pipeline"',
-            installer,
-        )
+    def test_payload_root_requires_the_platform_binary(self) -> None:
+        bootstrap = load_bootstrap_module()
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            archive = temp_path / "release.zip"
+            write_release_archive(archive, binary="bin/code-intel")
+            bootstrap.safe_extract_zip(archive, temp_path / "out")
+            payload = bootstrap.find_payload_root(temp_path / "out", "linux")
+            self.assertEqual(payload, temp_path / "out" / "code-intel-pipeline")
+            with self.assertRaisesRegex(bootstrap.BootstrapError, "packaged binary"):
+                bootstrap.find_payload_root(temp_path / "out", "windows")
+
+    @unittest.skipUnless(os.name == "posix", "fake binary is a shell script")
+    def test_setup_report_is_returned_and_old_releases_are_refused(self) -> None:
+        bootstrap = load_bootstrap_module()
+        with tempfile.TemporaryDirectory() as temp:
+            release = Path(temp)
+            report = {
+                "schema": "code-intel-setup.v1",
+                "ok": True,
+                "actions": [],
+                "doctor": {"installHints": [{"tool": "rg", "install": "x"}]},
+            }
+            write_fake_binary(release, json.dumps(report), 0)
+            self.assertEqual(
+                bootstrap.run_setup(release, "linux", release)["doctor"],
+                report["doctor"],
+            )
+
+            failed = dict(report, ok=False, actions=[
+                {"name": "binary", "status": "failed", "detail": "disk full"}
+            ])
+            write_fake_binary(release, json.dumps(failed), 1)
+            with self.assertRaisesRegex(bootstrap.BootstrapError, "binary: disk full"):
+                bootstrap.run_setup(release, "linux", release)
+
+            write_fake_binary(release, "unknown command: setup", 64)
+            with self.assertRaisesRegex(bootstrap.BootstrapError, "predates"):
+                bootstrap.run_setup(release, "linux", release)
 
     def test_selects_release_asset_with_digest(self) -> None:
         bootstrap = load_bootstrap_module()
@@ -274,18 +312,13 @@ class SkillPackageTests(unittest.TestCase):
             archive = temp_path / "safe.zip"
             destination = temp_path / "out"
             with zipfile.ZipFile(archive, "w") as handle:
-                handle.writestr(
-                    "code-intel-pipeline/install-code-intel-pipeline.ps1",
-                    "Write-Output 'ok'\n",
-                )
+                handle.writestr("code-intel-pipeline/payload.txt", "ok\n")
 
             bootstrap.safe_extract_zip(archive, destination)
 
             # arbitrary member name -- this exercises safe_extract_zip, not the
             # release layout, so it must match what the fixture zip wrote above
-            extracted = (
-                destination / "code-intel-pipeline" / "install-code-intel-pipeline.ps1"
-            )
+            extracted = destination / "code-intel-pipeline" / "payload.txt"
             self.assertTrue(extracted.is_file())
             expected = hashlib.sha256(archive.read_bytes()).hexdigest()
             self.assertEqual(bootstrap.sha256_file(archive), expected)
@@ -347,7 +380,7 @@ class SkillPackageTests(unittest.TestCase):
                 return_value="verified",
             ):
                 destination, status = bootstrap.install_release(
-                    asset, temp_path / "installs"
+                    asset, temp_path / "installs", "windows"
                 )
                 self.assertEqual(status, "installed")
                 marker = destination / bootstrap.RELEASE_MARKER
@@ -356,15 +389,15 @@ class SkillPackageTests(unittest.TestCase):
                 self.assertEqual(marker_data["attestation"], "verified")
 
                 _, repeated_status = bootstrap.install_release(
-                    asset, temp_path / "installs"
+                    asset, temp_path / "installs", "windows"
                 )
                 self.assertEqual(repeated_status, "already_installed")
 
-                (destination / "legacy/install-code-intel-pipeline.ps1").write_text(
+                (destination / "skills/code-intel-pipeline/SKILL.md").write_text(
                     "tampered\n", encoding="utf-8"
                 )
                 repaired_destination, repaired_status = bootstrap.install_release(
-                    asset, temp_path / "installs"
+                    asset, temp_path / "installs", "windows"
                 )
                 self.assertEqual(repaired_destination, destination)
                 self.assertEqual(repaired_status, "repaired")
@@ -391,7 +424,7 @@ class SkillPackageTests(unittest.TestCase):
                 bootstrap, "verify_build_provenance"
             ) as verify_mock:
                 destination, status = bootstrap.install_release(
-                    asset, temp_path / "installs", local_source=local_source
+                    asset, temp_path / "installs", "windows", local_source=local_source
                 )
                 self.assertEqual(status, "installed")
                 verify_mock.assert_not_called()

@@ -1,7 +1,5 @@
-//! Port of `legacy/scripts/tests/test-project-management-support.ps1`.
-//!
-//! The PowerShell file stays on disk: internalization records pin it as the
-//! local boundary-test digest. These tests are the CI-facing lock.
+//! Lock for the project-management-support boundary. Internalization records
+//! pin this file as the local boundary-test digest.
 
 use std::fs;
 use std::path::{Path, PathBuf};

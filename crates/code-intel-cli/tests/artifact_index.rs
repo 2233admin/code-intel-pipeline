@@ -808,10 +808,7 @@ fn production_cli_writes_the_registered_committed_only_schema() {
         route["entrypoint"],
         "crates/code-intel-cli/src/artifact_index.rs"
     );
-    assert!(route["commands"]["facade"]
-        .as_str()
-        .unwrap()
-        .contains("legacy/update-code-intel-index.ps1"));
+    assert!(route["commands"].get("facade").is_none());
     assert!(route["artifactContract"].as_array().unwrap().iter().any(
         |contract| contract == "orchestration/schemas/code-intel-artifact-index.v1.schema.json"
     ));
