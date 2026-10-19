@@ -56,7 +56,7 @@
   "economics": {
     "benefit": {
       "metric": "supported source languages pinned to one Code Evidence field contract",
-      "value": 7,
+      "value": 6,
       "unit": "languages"
     },
     "cost": {
