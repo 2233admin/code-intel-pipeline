@@ -22,6 +22,7 @@
     {"if": {"properties": {"baseline": {"type": "null"}}}, "then": {"properties": {"verdict": {"enum": ["fail", "unknown"]}, "advisories": {"maxItems": 0}, "blockingViolations": {"minItems": 1}}}}
   ],
   "$defs": {
+    "couplingInputs": {"type": "object", "additionalProperties": false, "required": ["couplingScore", "importEdges"], "properties": {"couplingScore": {"type": "number", "minimum": 0}, "importEdges": {"type": "integer", "minimum": 0}}},
     "nonEmpty": {"type": "string", "minLength": 1},
     "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "current": {"type": "object", "additionalProperties": false, "required": ["sourceCommit", "scope"], "properties": {"sourceCommit": {"$ref": "#/$defs/nonEmpty"}, "scope": {"const": "."}}},
@@ -34,7 +35,7 @@
       "properties": {"rule": {"enum": ["quality_degraded", "coupling_increased", "cycles_increased", "god_files_increased", "max_cc", "max_cycles", "max_coupling", "no_god_files", "layer_order", "boundary_dependency"]}, "before": {}, "after": {}, "disposition": {"enum": ["advisory", "blocking"]}, "verdict": {"enum": ["pass", "fail"]}},
       "allOf": [
         {"if": {"properties": {"rule": {"const": "quality_degraded"}}}, "then": {"properties": {"disposition": {"const": "advisory"}, "before": {"type": "integer", "minimum": 0, "maximum": 10000}, "after": {"type": "integer", "minimum": 0, "maximum": 10000}}}, "else": {"properties": {"disposition": {"const": "blocking"}}}},
-        {"if": {"properties": {"rule": {"const": "coupling_increased"}}}, "then": {"properties": {"before": {"type": "number", "minimum": 0}, "after": {"type": "number", "minimum": 0}}}},
+        {"if": {"properties": {"rule": {"const": "coupling_increased"}}}, "then": {"properties": {"before": {"$ref": "#/$defs/couplingInputs"}, "after": {"$ref": "#/$defs/couplingInputs"}}}},
         {"if": {"properties": {"rule": {"const": "cycles_increased"}}}, "then": {"properties": {"before": {"type": "integer", "minimum": 0}, "after": {"type": "integer", "minimum": 0}}}},
         {"if": {"properties": {"rule": {"const": "god_files_increased"}}}, "then": {"properties": {"before": {"$ref": "#/$defs/paths"}, "after": {"$ref": "#/$defs/paths"}}}},
         {"if": {"properties": {"rule": {"enum": ["max_cc", "max_cycles", "max_coupling", "no_god_files", "layer_order", "boundary_dependency"]}}}, "then": {"properties": {"before": {"type": "null"}, "after": {"$ref": "#/$defs/violation"}, "verdict": {"const": "fail"}}}}

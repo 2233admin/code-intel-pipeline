@@ -45,6 +45,17 @@
 # already refused once below. Accepted and re-baselined rather than engineered
 # around.
 #
+# `coupling_increased` pairs the ratio with the edge count (2026-10-18, owner
+# decision on #456): the rule fails only when coupling_score rises AND
+# total_import_edges rises. Deleting files that import less than the average
+# shrinks the denominator and raises the ratio with no new dependency; the
+# PowerShell retirement (DR-0018) hit exactly that (#456: edges 2131 -> 2117,
+# ratio 63.05 -> 63.77). Growth that keeps the ratio flat still passes, and a
+# new edge that raises the ratio still fails. The baseline was re-saved from
+# main in the same change because the recorded edge count (2052) predated the
+# tree's real 2131; every re-saved metric is equal or tighter (coupling 63.33 ->
+# 63.05, god files 33 -> 30, quality 6236 -> 6631).
+#
 # Coupling denominator change (sentrux-native 2.1.0, 2026-07-31):
 # `coupling_score` now divides import edges by the count of files written in a
 # language whose dependency syntax the scanner models, not by every code file.
