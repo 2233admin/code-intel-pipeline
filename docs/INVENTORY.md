@@ -137,8 +137,8 @@ pattern alone — see TASK_REPORT.md for the cases where the obvious pattern mat
 
 ## Totals
 
-- Files inventoried: 123
-- living-contract (kept): 104 (14 ADR + 1 open plan + 79 other)
+- Files inventoried: 100
+- living-contract (kept): 81 (14 ADR + 1 open plan + 66 other)
 - one-shot archived this sweep: 17 (16 plans + 1 compatibility-retire)
 - one-shot already archived (prior sweep): 2
 - stale: 0 (no doc found describing wholly nonexistent paths/symbols; a handful of docs have one

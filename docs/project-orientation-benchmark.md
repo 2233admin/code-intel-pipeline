@@ -5,8 +5,7 @@
 ## Run
 
 ```sh
-cargo build -p code-intel
-target/debug/code-intel.exe benchmark orientation --out artifacts/orientation-benchmark --repetitions 3
+cargo run -p code-intel -- benchmark orientation --out artifacts/orientation-benchmark --repetitions 3
 ```
 
 The output directory must not already exist. The runner writes:
