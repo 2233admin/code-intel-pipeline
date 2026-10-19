@@ -126,6 +126,23 @@ fn metadata(value: &Value, baseline: bool) -> Result<(), String> {
 
 /// Validate the whole admission claim, not merely its label or exit status.
 /// Snapshot binding remains the provider boundary's responsibility.
+fn coupling_inputs(value: &Value) -> Result<(f64, u64), String> {
+    let object = value
+        .as_object()
+        .filter(|object| object.len() == 2)
+        .ok_or("coupling comparison must carry exactly couplingScore and importEdges")?;
+    let score = object
+        .get("couplingScore")
+        .and_then(Value::as_f64)
+        .filter(|score| score.is_finite() && *score >= 0.0)
+        .ok_or("coupling comparison couplingScore must be a non-negative number")?;
+    let edges = object
+        .get("importEdges")
+        .and_then(Value::as_u64)
+        .ok_or("coupling comparison importEdges must be a non-negative integer")?;
+    Ok((score, edges))
+}
+
 pub(crate) fn validate_result(value: &Value) -> Result<(), String> {
     if value.as_object().is_none_or(|object| object.len() != 10) || value["schema"] != RESULT_SCHEMA
     {
@@ -202,6 +219,12 @@ pub(crate) fn validate_result(value: &Value) -> Result<(), String> {
             let before = paths(&comparison["before"])?;
             let after = paths(&comparison["after"])?;
             !after.is_subset(&before)
+        } else if rule == "coupling_increased" {
+            // A higher ratio regresses only alongside new import edges: files
+            // deleted with few imports raise the ratio without new coupling.
+            let (before_score, before_edges) = coupling_inputs(&comparison["before"])?;
+            let (after_score, after_edges) = coupling_inputs(&comparison["after"])?;
+            after_score > before_score && after_edges > before_edges
         } else if is_ratchet {
             let before = comparison["before"]
                 .as_f64()

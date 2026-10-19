@@ -252,7 +252,15 @@ fn install_binary(platform: &str, release_root: &Path, bin: &Path) -> Action {
         );
     };
     if fs::read(&destination).is_ok_and(|current| current == bytes) {
-        return Action::already_present("binary", &destination.display().to_string());
+        // Identical bytes can still have lost the execute bit.
+        return match make_executable(&destination) {
+            Ok(()) => Action::already_present("binary", &destination.display().to_string()),
+            Err(error) => Action::failed(
+                "binary",
+                &format!("make {} executable: {error}", destination.display()),
+                None,
+            ),
+        };
     }
     let copied = fs::create_dir_all(bin).and_then(|()| {
         // Copy beside the target, then rename, so a running copy of the old

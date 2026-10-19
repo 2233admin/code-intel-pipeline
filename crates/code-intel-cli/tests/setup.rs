@@ -314,3 +314,24 @@ fn a_symlinked_canonical_skill_is_replaced_by_a_real_copy() {
     let metadata = fs::symlink_metadata(&canonical).unwrap();
     assert!(metadata.is_dir() && !metadata.file_type().is_symlink());
 }
+
+#[cfg(unix)]
+#[test]
+fn an_identical_binary_that_lost_its_execute_bit_is_repaired() {
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = Fixture::new("chmod");
+    let (output, value) = fixture.setup(&["--skip-doctor", "--no-modify-path", "--no-skills"]);
+    assert_eq!(output.status.code(), Some(0), "{value:#}");
+    let installed = PathBuf::from(value["paths"]["bin"].as_str().unwrap()).join("code-intel");
+    fs::set_permissions(&installed, fs::Permissions::from_mode(0o644)).unwrap();
+    let (output, value) = fixture.setup(&["--skip-doctor", "--no-modify-path", "--no-skills"]);
+    assert_eq!(output.status.code(), Some(0), "{value:#}");
+    assert_eq!(
+        status(&Fixture::statuses(&value), "binary"),
+        "already_present"
+    );
+    assert_eq!(
+        fs::metadata(&installed).unwrap().permissions().mode() & 0o111,
+        0o111
+    );
+}
