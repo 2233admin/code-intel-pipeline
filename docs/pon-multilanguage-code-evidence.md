@@ -12,7 +12,7 @@ The Pipeline's language-neutral structural representation is the existing Code E
 - `imports.json`: normalized import target observations;
 - `coverage.json`: supported heuristics and explicit unknowns.
 
-Python, JavaScript, TypeScript, Rust, Go, Java, and PowerShell adapters emit the same field shapes. Consumers can therefore rank and navigate code without branching on source syntax. The multilingual fixture is a ratchet over that shared contract: a supported language cannot silently disappear, change fact shape, or fabricate additional facts without a reviewed fixture change.
+Python, JavaScript, TypeScript, Rust, Go, and Java adapters emit the same field shapes. Consumers can therefore rank and navigate code without branching on source syntax. The multilingual fixture is a ratchet over that shared contract: a supported language cannot silently disappear, change fact shape, or fabricate additional facts without a reviewed fixture change.
 
 ## Precision boundary
 

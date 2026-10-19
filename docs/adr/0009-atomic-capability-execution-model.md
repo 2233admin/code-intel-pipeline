@@ -1,3 +1,5 @@
+> Superseded in part by DR-0018: PowerShell was removed; the steps below now run through the Rust `code-intel` CLI.
+
 # ADR 0009: Adopt an Atomic Capability Execution Model
 
 - Status: accepted

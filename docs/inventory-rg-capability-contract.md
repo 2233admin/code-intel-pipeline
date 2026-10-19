@@ -1,7 +1,7 @@
 # inventory.rg capability contract
 
-`inventory.rg` v1 is the deterministic capability-envelope adapter for the existing
-`legacy/run-code-intel.ps1` file-inventory step. It does not replace the compatibility facade.
+`inventory.rg` v1 is the deterministic capability-envelope adapter for the file-inventory step
+previously implemented by the PowerShell runner (removed, DR-0018).
 
 Compatibility is defined over the normalized file set, not the byte order emitted by a
 particular `rg --files` process. The legacy runner preserves ripgrep's process order, which is
@@ -12,8 +12,7 @@ containing a newline or non-UTF-8 byte is not trimmed, split, or otherwise rewri
 and platform encoding are versioned materialized-view rules; they do not add or remove path values.
 
 The adapter applies the legacy default exclusions and accepts `options.inventoryExclude` as an
-ordered array of additional ripgrep glob arguments. Tests compare the normalized output of the
-real PowerShell runner with the capability output, including hidden files, default exclusions,
+ordered array of additional ripgrep glob arguments. Tests cover hidden files, default exclusions,
 custom exclusions, Unicode, whitespace, quotes, and shell metacharacters.
 
 Glob evaluation is delegated to the pinned `rg` executable rather than reimplemented. The lease

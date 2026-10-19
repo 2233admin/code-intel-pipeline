@@ -4,7 +4,7 @@
 
 ## Command
 
-```powershell
+```sh
 code-intel snapshot identity --repo <root> --working-tree-policy <head_only|explicit_overlay> --scope <relative-path>
 ```
 

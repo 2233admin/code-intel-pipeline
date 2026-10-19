@@ -11,12 +11,10 @@ chunks, symbol containment, heuristic imports, the scorecard, and Agent Code Sli
 Artifact Ref and is reverified by A03 before A09 exposes it to downstream nodes. Markdown Agent
 Code Slice views are deterministic rebuildable views of those machine artifacts.
 
-Coverage is deliberately bounded. The built-in extractor uses line heuristics for PowerShell,
-Python, JavaScript/TypeScript, Rust, Go, and Java. Other files remain in files/chunks but appear in
+Coverage is deliberately bounded. The built-in extractor uses line heuristics for Python, JavaScript/TypeScript, Rust, Go, and Java. Other files remain in files/chunks but appear in
 `code-evidence/coverage.json` as unsupported. Symbol and import precision are `heuristic`;
 relationship precision and call-graph status are always `unknown`. The atom never emits a
 call-graph artifact and makes no claim about external cocoindex or specialized semantic graphs.
 
-Declared and observed effects are exactly `repo_read` and `local_write`. The existing embedded
-PowerShell producer remains the compatibility/rollback implementation until later facade
-retirement tickets complete parity and independent verification.
+Declared and observed effects are exactly `repo_read` and `local_write`. The former embedded
+PowerShell producer was removed with PowerShell (DR-0018).

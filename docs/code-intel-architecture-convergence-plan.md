@@ -1,5 +1,8 @@
 # Code Intel Pipeline architecture convergence plan
 
+> PowerShell was removed from the product (DR-0018). References below to `.ps1` scripts, the PowerShell runner and its compatibility facades describe the plan-authoring baseline; that code no longer exists and the work now runs through the Rust `code-intel` CLI.
+
+
 Status: proposed implementation plan
 Date: 2026-08-02
 Scope: converge the existing implementation without dropping committed product behavior

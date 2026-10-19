@@ -3,6 +3,8 @@ status: accepted
 date: 2026-07-25
 ---
 
+> Superseded in part by DR-0018: PowerShell was removed; the steps below now run through the Rust `code-intel` CLI.
+
 # Make code-intel the primary entry and PowerShell the recovery launcher
 
 The compiled `code-intel` command is the only Primary Operator Entry and the

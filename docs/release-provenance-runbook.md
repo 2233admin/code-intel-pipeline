@@ -29,7 +29,7 @@ machine and recorded."* Run against the already-published `v0.7.0-beta.6`
 release (the most recent tag built after the attestation step landed in
 `ad67738`, 2026-07-28):
 
-```powershell
+```sh
 gh release download v0.7.0-beta.6 -p 'code-intel-pipeline-v0.7.0-beta.6-windows.zip'
 gh attestation verify code-intel-pipeline-v0.7.0-beta.6-windows.zip --repo 2233admin/code-intel-pipeline
 # exit 0 -- 1 attestation verified, Sigstore certificate chain resolves to

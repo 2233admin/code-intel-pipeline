@@ -131,7 +131,7 @@ _Avoid_: Project commitment, approved roadmap, generated backlog as fact
 _Avoid_: LLM plan, draft roadmap, inferred priority
 
 **Scanner**: The authoritative producer of a new artifact run for a target repository. The scanner gathers current evidence and writes the reports that other components read.
-_Avoid_: PowerShell runner, Rust scanner, artifact reader
+_Avoid_: Rust scanner, artifact reader
 
 **Resume CLI**: A command-line reader for existing artifact runs. It does not produce fresh repository evidence and does not replace the scanner.
 _Avoid_: Rust scanner, new pipeline, replacement scanner

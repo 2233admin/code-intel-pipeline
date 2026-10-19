@@ -12,7 +12,7 @@ code-intel provider graph-adapt \
   --max-age-seconds <seconds>
 ```
 
-The PowerShell facade exposes the same route through `-GraphAdapterRequest`, `-GraphAdapterArtifactRoot`, `-GraphAdapterEvaluatedAt`, and `-GraphAdapterMaxAgeSeconds`. Success emits one `code-intel-graph-route-result.v1` document and exits `0`. Usage errors exit `64`. Invalid input, stale evidence, a wrong snapshot, digest failure, or payload/port drift emits one rejected route document and exits `65`. Diagnostics never include request bytes.
+Success emits one `code-intel-graph-route-result.v1` document and exits `0`. Usage errors exit `64`. Invalid input, stale evidence, a wrong snapshot, digest failure, or payload/port drift emits one rejected route document and exits `65`. Diagnostics never include request bytes.
 
 ## Provider-neutral port
 

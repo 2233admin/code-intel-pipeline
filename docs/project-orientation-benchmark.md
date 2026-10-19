@@ -4,7 +4,7 @@
 
 ## Run
 
-```powershell
+```sh
 cargo build -p code-intel
 target/debug/code-intel.exe benchmark orientation --out artifacts/orientation-benchmark --repetitions 3
 ```

@@ -6,7 +6,7 @@ Make one deep Rust module authoritative for a Code Intel run. The typed CLI adap
 intent into one immutable policy; the authoritative-run controller owns the production request,
 committed-run validation, and completed-only index publication. Its private kernel owns policy
 application, DAG execution, outcome classification, and atomic run publication. PowerShell
-remains a compatibility adapter and batch selector.
+was removed from the product (DR-0018).
 
 ## External interface
 
@@ -80,9 +80,8 @@ legacy doctor overrides.
 1. Replace stringly run outcomes with a typed enum that owns exit semantics.
 2. Replace duplicated CLI/executor policy fields with one immutable `ExecutionPolicy`.
 3. Add a high-level Rust authoritative-run route that executes and publishes in one call.
-4. Move the stable PowerShell wrapper to the high-level route.
-5. Apply optional/offline provider behavior without changing artifact authority.
-6. Retire compatibility routes only after their observation window and rollback gates pass.
+4. Apply optional/offline provider behavior without changing artifact authority.
+5. Retire compatibility routes only after their observation window and rollback gates pass.
 
 ## Regression contract
 
