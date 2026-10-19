@@ -66,7 +66,9 @@ gh attestation verify ./code-intel-pipeline-<tag>-<platform>.zip --repo 2233admi
    Official (non-beta, non-rc) tags are additionally SSH-signed; run
    `git verify-tag <tag>` against `.github/allowed_signers` — see
    [RELEASE_SIGNING.md](RELEASE_SIGNING.md).
-4. Extract the ZIP to a writable directory.
+4. Extract the ZIP to a writable directory. On macOS and Linux, some
+   extractors drop the execute bit, so run
+   `chmod +x <extracted>/code-intel-pipeline/bin/code-intel` first.
 5. Run setup from the extracted package (`code-intel.exe` on Windows):
 
 ```bash
