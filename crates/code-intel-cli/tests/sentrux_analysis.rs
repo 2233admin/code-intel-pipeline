@@ -78,8 +78,8 @@ fn dsm_snapshot_preserves_contract_and_excludes_non_governed_source() {
         "fn choose_contract() { assert_eq!(1, 1); }\n",
     );
     fixture.write(
-        "tools/ignored.ps1",
-        "function Invoke-Ignored { if ($true) { 1 } }\n",
+        "tools/ignored.py",
+        "def ignored():\n    if True:\n        return 1\n",
     );
     fixture.write("target/ignored.rs", "fn ignored() {}\n");
     fixture.write(".gitignore", "work/\n");
@@ -242,42 +242,6 @@ fn dsm_single_crate_intra_crate_coupling_is_no_longer_structurally_empty() {
 }
 
 #[test]
-fn dsm_powershell_dot_source_and_import_module_edges_are_now_modeled() {
-    // Regression for issue #376/#148 E1's other half: `dsm_edges` once never
-    // parsed `.ps1`/`.psm1`, so a PowerShell-heavy repository under analysis
-    // was structurally blind to its own dominant language's coupling.
-    let fixture = Fixture::new();
-    fixture.write(
-        "run-code-intel.ps1",
-        concat!(
-            "$platformModule = Join-Path (Join-Path $PSScriptRoot \"modules\") \"platform.psm1\"\n",
-            "Import-Module $platformModule -Force\n",
-            ". (Join-Path $PSScriptRoot \"logging.ps1\")\n",
-        ),
-    );
-    fixture.write("modules/platform.psm1", "function Invoke-Platform { 1 }\n");
-    fixture.write("logging.ps1", "function Write-Log { param($msg) 1 }\n");
-
-    let snapshot = sentrux_analysis::analyze(&fixture.root).expect("native DSM analysis");
-    let edges = snapshot["edges"].as_array().expect("edge array");
-    assert!(
-        edges.iter().any(|edge| {
-            edge["from"] == "run-code-intel.ps1" && edge["to"] == "modules"
-        }),
-        "Import-Module of a variable built from nested Join-Path calls should resolve to an edge: {edges:?}"
-    );
-    assert!(
-        edges
-            .iter()
-            .any(|edge| { edge["from"] == "run-code-intel.ps1" && edge["to"] == "logging.ps1" }),
-        "dot-sourcing via Join-Path $PSScriptRoot should resolve to an edge: {edges:?}"
-    );
-
-    let script = module(&snapshot, "run-code-intel.ps1");
-    assert_eq!(script["metrics"]["outbound_edges"], 2);
-}
-
-#[test]
 fn dsm_execution_depth_collapses_dependency_cycles() {
     let fixture = Fixture::new();
     fixture.write("a.py", "import b\n");
@@ -301,7 +265,6 @@ fn dsm_function_boundaries_ignore_sibling_decorators_and_structural_braces() {
         "src/lib.rs",
         "trait Contract {\n    fn declaration(&self);\n}\npub fn real() -> &'static str {\n    let marker = \"}\"; // }\n    \"ok\"\n}\n",
     );
-    fixture.write("script.ps1", "function   Invoke-Contract { 1 }\n");
     fixture.write(
         "frontend/main.js",
         "export const project = (items) => items.map((item) => item + 1);\n",
@@ -313,7 +276,6 @@ fn dsm_function_boundaries_ignore_sibling_decorators_and_structural_braces() {
     let rust = file(&snapshot, "src/lib.rs");
     assert_eq!(rust["functions"][0]["end_line"], 2);
     assert_eq!(rust["functions"][1]["end_line"], 7);
-    assert_eq!(file(&snapshot, "script.ps1")["function_count"], 1);
     assert_eq!(
         file(&snapshot, "frontend/main.js")["functions"][0]["complexity"],
         1

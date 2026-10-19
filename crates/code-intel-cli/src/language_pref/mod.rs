@@ -170,15 +170,12 @@ fn read_language(path: &Path) -> Option<String> {
         .map(str::to_string)
 }
 
-/// `$PSUICulture` (Windows) / `LANG`, `LC_ALL` (POSIX) only -- issue #155
-/// deliberately stops here rather than reading other files or history to
-/// guess. `PSUICulture` is a PowerShell automatic *variable*, not an OS
-/// environment variable, so `env::var("PSUICulture")` is almost always
-/// absent even on a Windows box whose live PowerShell session reports one;
-/// that is the intended "signal unavailable" outcome falling through to
-/// `en`, not a bug to route around with a WinAPI call or a shell-out to
-/// `powershell.exe` -- the issue asks for a deterministic signal or `en`,
-/// not best-effort culture detection.
+/// `PSUICulture` (Windows) / `LANG`, `LC_ALL` (POSIX) environment variables
+/// only -- issue #155 deliberately stops here rather than reading other files
+/// or history to guess. When the variable is absent that is the intended
+/// "signal unavailable" outcome falling through to `en`, not a bug to route
+/// around with a WinAPI call or a shell-out -- the issue asks for a
+/// deterministic signal or `en`, not best-effort culture detection.
 fn system_locale_language() -> Option<String> {
     let raw = if cfg!(windows) {
         env::var("PSUICulture").ok()

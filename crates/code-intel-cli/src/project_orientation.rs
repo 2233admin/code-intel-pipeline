@@ -326,7 +326,7 @@ fn inventory_paths(bytes: &[u8]) -> Result<Vec<String>, AdapterError> {
 }
 
 fn command_script(path: &str) -> bool {
-    [".ps1", ".sh", ".cmd", ".bat"]
+    [".sh", ".cmd", ".bat"]
         .iter()
         .any(|suffix| path.to_ascii_lowercase().ends_with(suffix))
 }

@@ -13,16 +13,9 @@
 //! coupling counts only files written in a language whose dependency syntax
 //! this scanner actually models (`IMPORT_MODELED_EXTENSIONS`).
 //!
-//! The coupling denominator matters more than it looks. `is_import_line` reads
-//! `import` / `from` / `use` / `mod` / `require(` / `#include` / `using`; none
-//! of those is how PowerShell declares a dependency (it dot-sources and calls
-//! `Import-Module`). Counting `.ps1` files in the denominator therefore made
-//! the score fall whenever PowerShell grew and rise whenever it shrank: the
-//! metric read "share of PowerShell", not "coupling". In a repository midway
-//! through replacing PowerShell with Rust, that inverted the gate — every
-//! correct migration step registered as structural regression. Restricting
-//! both numerator and denominator to modelled languages leaves the score
-//! unchanged for repositories that have none of the unmodelled ones.
+//! The coupling denominator is restricted to import-modelled languages, so a
+//! file whose dependency syntax `is_import_line` cannot read never dilutes the
+//! score.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -88,8 +81,8 @@ const GATED_METRIC_KEYS: [&str; 5] = [
 
 /// `coupling_score` is import edges per import-modelled file. Deleting files
 /// that import less than the average shrinks the denominator and raises the
-/// ratio with no new dependency (#456: PowerShell retirement deleted six
-/// low-import files, edges fell 2131 -> 2117, the ratio rose 63.05 -> 63.77).
+/// ratio with no new dependency (#456: deleting six low-import files, edges
+/// fell 2131 -> 2117, the ratio rose 63.05 -> 63.77).
 /// A higher ratio is therefore a regression only when the tree also gained
 /// import edges; growth that keeps the ratio flat still passes, as before.
 fn coupling_regressed(before: &Value, metrics: &ProjectMetrics) -> bool {
@@ -99,19 +92,13 @@ fn coupling_regressed(before: &Value, metrics: &ProjectMetrics) -> bool {
 
 // Subset of `file_gate::CODE_EXTENSIONS` whose dependency declarations `is_import_line`
 // recognises. Everything measured except coupling (size, functions,
-// complexity, god files) still covers the full CODE_EXTENSIONS set — a
-// PowerShell god file is still a god file.
-// `every_code_extension_is_classified_as_import_modeled_or_not` keeps this
-// list from silently drifting when CODE_EXTENSIONS grows.
+// complexity, god files) still covers the full CODE_EXTENSIONS set.
+// `every_code_extension_is_import_modeled` keeps this list from silently
+// drifting when CODE_EXTENSIONS grows.
 const IMPORT_MODELED_EXTENSIONS: &[&str] = &[
     "py", "rs", "go", "ts", "tsx", "js", "jsx", "mjs", "cjs", "java", "cs", "cpp", "c", "h", "hpp",
     "v",
 ];
-// PowerShell declares dependencies by dot-sourcing and `Import-Module`; this
-// scanner reads neither, so counting .ps1/.psm1 files would only dilute the
-// average. Adding either form to `is_import_line` is the prerequisite for
-// moving these into IMPORT_MODELED_EXTENSIONS.
-const IMPORT_UNMODELED_EXTENSIONS: &[&str] = &["ps1", "psm1"];
 const MAX_VIOLATION_TARGETS: usize = 8;
 // The god-file rule, single source for both measurement (`measure_file`) and
 // reporting (`god_rule_label`) so the printed rule branch can never drift
@@ -1256,14 +1243,13 @@ fn is_import_line(trimmed: &str) -> bool {
 /// **Prose does not branch.** The original tokenised the raw file, so every
 /// `if`, `or` and `and` inside a comment or a string literal counted. That is
 /// how `.sentrux/rules.toml` ended up ratcheted at `max_cc = 162`: the number
-/// came from a 465-line PowerShell test script
-/// with one recognised function, whose 161 "terms" included 45 bare `or` and
-/// 11 bare `and` — English words in comments, since PowerShell spells the
-/// operators `-or` and `-and`. Comments and string bodies are stripped first.
+/// came from a 465-line test script with one recognised function, whose 161
+/// "terms" included 45 bare `or` and 11 bare `and` — English words in
+/// comments. Comments and string bodies are stripped first.
 ///
 /// **`and`/`or` are only operators in some languages.** They branch in Python;
-/// in PowerShell, Rust, C-family and JS they are ordinary words, and the
-/// operators are `-and`/`-or` or `&&`/`||`. Counting by extension stops one
+/// in Rust, C-family and JS they are ordinary words, and the operators are
+/// `&&`/`||`. Counting by extension stops one
 /// language's prose from inflating another language's threshold.
 fn complexity_terms(relative: &str, content: &str) -> i64 {
     const WORDS: &[&str] = &[
@@ -1290,13 +1276,6 @@ fn complexity_terms(relative: &str, content: &str) -> i64 {
             // Skip the pair so `&&&&` reads as two operators, not three.
             index += 2;
             continue;
-        }
-        if window == b"-a" || window == b"-o" {
-            // PowerShell's `-and` / `-or`.
-            let rest = &stripped[index..];
-            if rest.starts_with("-and") || rest.starts_with("-or") {
-                count += 1;
-            }
         }
         index += 1;
     }
@@ -1760,63 +1739,22 @@ mod tests {
     }
 
     #[test]
-    fn every_code_extension_is_classified_as_import_modeled_or_not() {
+    fn every_code_extension_is_import_modeled() {
         // A new extension added to file_gate::CODE_EXTENSIONS without a
         // decision here would silently land in the coupling denominator
-        // with zero imports, which is the exact defect this split exists
-        // to prevent.
+        // with zero imports.
         for extension in file_gate::CODE_EXTENSIONS {
-            let modeled = IMPORT_MODELED_EXTENSIONS.contains(extension);
-            let unmodeled = IMPORT_UNMODELED_EXTENSIONS.contains(extension);
             assert!(
-                modeled ^ unmodeled,
-                "{extension} must appear in exactly one of IMPORT_MODELED_EXTENSIONS / IMPORT_UNMODELED_EXTENSIONS"
+                IMPORT_MODELED_EXTENSIONS.contains(extension),
+                "{extension} must appear in IMPORT_MODELED_EXTENSIONS"
             );
         }
-        for extension in IMPORT_MODELED_EXTENSIONS
-            .iter()
-            .chain(IMPORT_UNMODELED_EXTENSIONS)
-        {
+        for extension in IMPORT_MODELED_EXTENSIONS {
             assert!(
                 file_gate::CODE_EXTENSIONS.contains(extension),
                 "{extension} is classified but never collected"
             );
         }
-    }
-
-    #[test]
-    fn coupling_ignores_files_whose_language_has_no_modeled_imports() {
-        let root = fixture_root("sentrux-native-coupling");
-        fs::write(
-            root.join("lib.rs"),
-            "use std::fs;\nuse std::io;\npub fn f() {}\n",
-        )
-        .expect("write rust fixture");
-        let (rust_only, _) = measure_project(&root).expect("measure rust-only tree");
-        assert_eq!(rust_only.import_modeled_file_count, 1);
-        assert_eq!(rust_only.coupling_score, 20.0);
-
-        // Ten PowerShell files, each carrying a real dot-source dependency
-        // this scanner cannot read. Under the old all-files denominator the
-        // score would fall from 20.0 to 1.82 purely for gaining PowerShell.
-        for index in 0..10 {
-            fs::write(
-                root.join(format!("helper{index}.ps1")),
-                ". $PSScriptRoot/other.ps1\nfunction Invoke-Thing {}\n",
-            )
-            .expect("write powershell fixture");
-        }
-        let (mixed, _) = measure_project(&root).expect("measure mixed tree");
-        assert_eq!(mixed.file_count, 11);
-        assert_eq!(mixed.import_modeled_file_count, 1);
-        assert_eq!(mixed.coupling_score, rust_only.coupling_score);
-
-        // Deleting PowerShell — the whole point of the migration — must not
-        // register as a coupling regression either.
-        fs::remove_file(root.join("helper0.ps1")).expect("remove one powershell fixture");
-        let (after_deletion, _) = measure_project(&root).expect("measure tree after deletion");
-        assert_eq!(after_deletion.coupling_score, mixed.coupling_score);
-        fs::remove_dir_all(&root).expect("remove fixture");
     }
 
     #[test]
@@ -1838,17 +1776,10 @@ mod tests {
 
     #[test]
     fn prose_in_comments_and_strings_does_not_count_as_branching() {
-        // The shape that produced this repository's max_cc = 162: PowerShell
-        // spells its operators -and / -or, so bare "and"/"or" in a comment is
-        // English, not control flow.
-        let powershell = "# choose one branch or another, this and that\n$message = \"if or and while\"\nif ($x) { }\n";
-        assert_eq!(complexity_terms("script.ps1", powershell), 1);
-
-        // Real PowerShell operators still count.
-        assert_eq!(
-            complexity_terms("script.ps1", "if ($a -and $b -or $c) { }\n"),
-            3
-        );
+        // The shape that produced this repository's max_cc = 162: bare
+        // "and"/"or" in a comment or string is English, not control flow.
+        let script = "// choose one branch or another, this and that\nlet message = \"if or and while\";\nif x { }\n";
+        assert_eq!(complexity_terms("script.rs", script), 1);
 
         // Python is the language where the words really are operators.
         assert_eq!(complexity_terms("m.py", "if a and b or c:\n    pass\n"), 3);

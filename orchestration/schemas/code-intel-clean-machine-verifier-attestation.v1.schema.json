@@ -27,8 +27,8 @@
         "os": { "type": "string", "minLength": 1 },
         "architecture": { "type": "string", "minLength": 1 },
         "toolchain": {
-          "type": "object", "additionalProperties": false, "required": ["rustc", "cargo", "powershell"],
-          "properties": { "rustc": { "type": "string", "minLength": 1 }, "cargo": { "type": "string", "minLength": 1 }, "powershell": { "type": "string", "minLength": 1 } }
+          "type": "object", "additionalProperties": false, "required": ["rustc", "cargo"],
+          "properties": { "rustc": { "type": "string", "minLength": 1 }, "cargo": { "type": "string", "minLength": 1 } }
         },
         "mountCount": { "const": 0 },
         "bindsPresent": { "const": false },

@@ -22,8 +22,7 @@ const EXCLUDED_DIRS: &[&str] = &[
     "__pycache__",
 ];
 const SOURCE_EXTENSIONS: &[&str] = &[
-    "ts", "tsx", "js", "jsx", "rs", "py", "go", "ps1", "psm1", "cs", "java", "kt", "swift", "vue",
-    "svelte", "v",
+    "ts", "tsx", "js", "jsx", "rs", "py", "go", "cs", "java", "kt", "swift", "vue", "svelte", "v",
 ];
 
 pub(crate) fn execute(

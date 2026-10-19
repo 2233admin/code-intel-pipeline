@@ -74,7 +74,7 @@ fn orientation() -> Value {
         "languages":[{"name":"Rust","fileCount":3,"provenance":provenance("/languages/0")}],
         "boundaries":[{"path":"src","kind":"top_level_directory","provenance":provenance("/boundaries/0")}],
         "entryPoints":[{"path":"src/main.rs","classification":"heuristic","provenance":provenance("/entryPoints/0")}],
-        "commands":[{"path":"build.ps1","kind":"script_path","provenance":provenance("/commands/0")}],
+        "commands":[{"path":"build.sh","kind":"script_path","provenance":provenance("/commands/0")}],
         "activeChange":{"status":"clean","paths":[],"provenance":provenance("/activeChange")},
         "evidenceAvailability":[
             {"evidence":"survival_scan","status":"available","provenance":provenance("/evidenceAvailability/0")},

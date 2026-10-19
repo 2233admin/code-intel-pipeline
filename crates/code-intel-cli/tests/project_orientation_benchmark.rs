@@ -197,7 +197,7 @@ fn representative_corpus_measures_quality_latency_and_rejects_fast_provenance_fr
         for fixture in [clean, dirty, missing] {
             assert_eq!(
                 fixture["samples"]["warm"][0]["coverage"]["unsupportedFiles"],
-                json!(["Cargo.toml", "README.md"])
+                json!(["Cargo.toml", "README.md", "run.sh"])
             );
             assert!(fixture["samples"]["warm"][0]["artifact"]["bytes"]
                 .as_u64()

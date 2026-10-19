@@ -280,7 +280,7 @@ fn execute(request: &Request, result: &mut Value) -> Result<(), Failure> {
     }
     let provenance = json!({"collectionId":format!("codegraph-{identity}-{started}-{completed}-{}",std::process::id()),
         "command":serde_json::to_string(&engine.invocation(&args)).map_err(|e| Failure::contract(e.to_string()))?,"startedAt":started,"completedAt":completed});
-    let uncertainty = json!(["Upstream language support is finite; unsupported source including PowerShell is not complete evidence.",
+    let uncertainty = json!(["Upstream language support is finite; unsupported source is not complete evidence.",
         "Static relationships, dynamic dispatch, confidence/provenance and upstream truncation remain partial; absence is not proof.",
         "Affected tests are candidates, not an authoritative test selection or delivery gate."]);
     let payload = json!({"schema":"code-intel-evidence-payload.v1","data":{"codegraph":{"schema":"code-intel-codegraph-observation.v1",

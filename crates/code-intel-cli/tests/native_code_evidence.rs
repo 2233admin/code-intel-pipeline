@@ -423,11 +423,11 @@ fn labeled_multilingual_corpus_quantifies_native_symbol_precision_recall_and_cov
             (false, false) => tn += 1,
         }
     }
-    assert_eq!((tp, fp, fn_, tn), (6, 2, 2, 2));
+    assert_eq!((tp, fp, fn_, tn), (5, 2, 2, 2));
     assert_eq!(unsupported.len(), 2);
-    assert_eq!(corpus["samples"].as_array().unwrap().len(), 12);
-    assert_eq!(tp as f64 / (tp + fp) as f64, 0.75);
-    assert_eq!(tp as f64 / (tp + fn_) as f64, 0.75);
+    assert_eq!(corpus["samples"].as_array().unwrap().len(), 11);
+    assert_eq!(tp as f64 / (tp + fp) as f64, 5.0 / 7.0);
+    assert_eq!(tp as f64 / (tp + fn_) as f64, 5.0 / 7.0);
     assert!(started.elapsed().as_millis() < 120_000);
 }
 

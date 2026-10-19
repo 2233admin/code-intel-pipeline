@@ -173,7 +173,6 @@ fn collect_source_files(
 fn language_from_path(path: &Path) -> Option<&'static str> {
     match path.extension().and_then(|value| value.to_str())? {
         "rs" => Some("rust"),
-        "ps1" | "psm1" | "psd1" => Some("powershell"),
         "py" => Some("python"),
         "js" | "mjs" | "cjs" => Some("javascript"),
         "ts" | "tsx" => Some("typescript"),
@@ -271,18 +270,6 @@ fn edge_targets(language: &str, line: &str) -> Vec<(&'static str, String)> {
                 }
             }
         }
-        "powershell" => {
-            if line.starts_with(". ") || line.starts_with("& ") {
-                if let Some(target) = first_path_like_token(line) {
-                    targets.push(("invoke", target));
-                }
-            }
-            if line.contains("Join-Path") {
-                if let Some(target) = quoted_tail(line) {
-                    targets.push(("path_reference", target));
-                }
-            }
-        }
         _ => {
             if let Some(target) = quoted_tail(line) {
                 if target.contains('/') || target.contains('\\') {
@@ -309,7 +296,7 @@ fn resolve_target(
         candidates.push(normalized.clone());
     }
 
-    let extension_candidates = ["rs", "ps1", "py", "js", "ts", "tsx", "json", "md", "toml"];
+    let extension_candidates = ["rs", "py", "js", "ts", "tsx", "json", "md", "toml"];
     let mut expanded = Vec::new();
     for candidate in candidates {
         expanded.push(candidate.clone());
@@ -339,7 +326,6 @@ fn extract_symbols(file: &SourceFile, full: bool) -> Vec<Value> {
         let line = raw_line.trim();
         let symbol = match file.language {
             "rust" => rust_symbol(line),
-            "powershell" => powershell_symbol(line),
             "python" => python_symbol(line),
             "javascript" | "javascript-react" | "typescript" => js_symbol(line),
             _ => None,
@@ -377,11 +363,6 @@ fn rust_symbol(line: &str) -> Option<(&'static str, String)> {
         }
     }
     None
-}
-
-fn powershell_symbol(line: &str) -> Option<(&'static str, String)> {
-    line.strip_prefix("function ")
-        .map(|rest| ("function", take_ident(rest)))
 }
 
 fn python_symbol(line: &str) -> Option<(&'static str, String)> {
@@ -455,14 +436,6 @@ fn quoted_after(line: &str, marker: &str) -> Option<String> {
     let quote = tail.chars().find(|ch| *ch == '\'' || *ch == '"')?;
     let after_quote = tail.split_once(quote)?.1;
     Some(after_quote.split_once(quote)?.0.to_string())
-}
-
-fn first_path_like_token(line: &str) -> Option<String> {
-    line.split_whitespace()
-        .skip(1)
-        .map(|value| value.trim_matches('"').trim_matches('\''))
-        .find(|value| value.contains(".ps1") || value.contains('/') || value.contains('\\'))
-        .map(ToString::to_string)
 }
 
 fn truncate(value: &str, max: usize) -> String {
