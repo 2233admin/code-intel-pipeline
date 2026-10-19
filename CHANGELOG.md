@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2-beta.7] — 2026-10-19
+
+First release installable through the Skill with no PowerShell: `bootstrap.py` verifies the release, then runs its `code-intel setup`.
+
 ### Added
 
 - **`code-intel setup`** ([#401](https://github.com/2233admin/code-intel-pipeline/issues/401)): Rust step that finishes a Skill install from an extracted release. It copies the binary into `<data root>/bin`, persists `PATH` and `CODE_INTEL_HOME` (Unix: `~/.config/code-intel/env.sh` sourced once from `~/.profile`, plus `~/.bashrc`/`~/.bash_profile` when present and `.zshenv` when zsh is installed; Windows: user registry and a `WM_SETTINGCHANGE` broadcast, never `setx`), installs the Skill to `~/.agents/skills` and links it from `~/.claude/skills` and `~/.codex/skills` (occupied paths are moved aside, never deleted), then runs the doctor. Missing tools are reported with install commands and do not fail setup. `--no-modify-path` leaves shell profiles and the registry untouched. On Unix the default artifact root is now `<data root>/artifacts`, matching setup and the doctor; existing `~/.code-intel/code-intel/artifacts` is not migrated.
