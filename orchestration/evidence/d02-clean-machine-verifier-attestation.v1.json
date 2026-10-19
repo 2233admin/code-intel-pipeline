@@ -16,8 +16,7 @@
     "architecture": "x86_64",
     "toolchain": {
       "rustc": "1.96.1 (31fca3adb 2026-06-26)",
-      "cargo": "1.96.1 (356927216 2026-06-26)",
-      "powershell": "7.6.3"
+      "cargo": "1.96.1 (356927216 2026-06-26)"
     },
     "mountCount": 0,
     "bindsPresent": false,

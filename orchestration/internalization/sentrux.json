@@ -65,11 +65,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux_analysis.rs",
-        "sha256": "8ddc9cb3557cd8583d63c88410751eaa876977724005bcb3774a4e5bd876faa7"
+        "sha256": "25604e3583f5fe1160098ae9d6bffd7a9babe0b9bb731edc966cb4a9c3e0e1be"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/sentrux_analysis.rs",
-        "sha256": "7d77d3107482a1d4aced1f398e39e96a698a812580bae08d6be060407005ed5e",
+        "sha256": "e22a4d21ed8419d11ef214869f139680a7e5d0e30cd1c2f8d93dfbefc3aeb155",
         "testName": "dsm_snapshot_preserves_contract_and_excludes_non_governed_source"
       }
     },
@@ -179,7 +179,7 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/sentrux_gate.rs",
-        "sha256": "c04370471267cea55b87138119d9ca8a0ec607ac6883da298544ae3bf4c8b44d"
+        "sha256": "161dbf574b884fa1078eeb9fcc5b8103ddd65f8321f235f1178e6d550c53542b"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
@@ -259,15 +259,15 @@
       "path": "crates/code-intel-cli/src/sentrux_analysis.rs",
       "description": "native Rust governed-source, file/function metric, module graph, and DSM risk kernel",
       "evidenceIds": [
-        "local:sentrux:rust-dsm-source-sha256:8ddc9cb3557cd8583d63c88410751eaa876977724005bcb3774a4e5bd876faa7",
-        "local:sentrux:rust-dsm-conformance-sha256:7d77d3107482a1d4aced1f398e39e96a698a812580bae08d6be060407005ed5e"
+        "local:sentrux:rust-dsm-source-sha256:25604e3583f5fe1160098ae9d6bffd7a9babe0b9bb731edc966cb4a9c3e0e1be",
+        "local:sentrux:rust-dsm-conformance-sha256:e22a4d21ed8419d11ef214869f139680a7e5d0e30cd1c2f8d93dfbefc3aeb155"
       ]
     },
     {
       "path": "crates/code-intel-cli/src/sentrux_gate.rs",
       "description": "Pipeline-owned built-in structural gate engine (metrics, rules check, versioned blocking/advisory admission, cycle detection)",
       "evidenceIds": [
-        "local:b03:native-gate-source-sha256:c04370471267cea55b87138119d9ca8a0ec607ac6883da298544ae3bf4c8b44d",
+        "local:b03:native-gate-source-sha256:161dbf574b884fa1078eeb9fcc5b8103ddd65f8321f235f1178e6d550c53542b",
         "local:b03:native-gate-conformance:1a95f8f6102df4b475800da942e85325f40afdde532ed545da584c49fde6b5dc"
       ]
     }

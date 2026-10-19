@@ -2,7 +2,7 @@
   "schema": "code-intel-internalization-record.v1",
   "id": "internalization.bmad-record",
   "projectId": "code-intel-pipeline",
-  "subject": { "name": "BMAD advisory candidate", "kind": "design_reference", "source": { "uri": "https://github.com/bmad-code-org/BMAD-METHOD", "revision": "unverified-upstream; local-atom-sha256:25a2185026cb61771ff2e5f4c2364687d01158cfc9a8266d00a20e5573ba1bde" }, "license": { "id": "UNKNOWN-RESEARCH-ONLY", "obligations": ["do not distribute, vendor, invoke, or production-enable until canonical upstream URI, exact revision, and license are verified", "retain the local reference provenance and gap notice"] } },
+  "subject": { "name": "BMAD advisory candidate", "kind": "design_reference", "source": { "uri": "https://github.com/bmad-code-org/BMAD-METHOD", "revision": "unverified-upstream; local-atom-sha256:4a11d639a27ec7ae039c07f1731f16b68e546b0e1ccc79ca43665718198fcef9" }, "license": { "id": "UNKNOWN-RESEARCH-ONLY", "obligations": ["do not distribute, vendor, invoke, or production-enable until canonical upstream URI, exact revision, and license are verified", "retain the local reference provenance and gap notice"] } },
   "adoption": {
     "rung": "reimplement",
     "ownedBoundary": ["pipeline-owned spec-driven advisory candidate data only", "no BMAD runtime dependency", "no skill execution, deployment, commit, publish, or external-write authority"],

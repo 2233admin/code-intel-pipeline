@@ -318,7 +318,7 @@
         "version": "1.0.0",
         "toolchainDigests": [
               "a0127c7e3d6745f1c415522159adb9a73eb502d109c0def01aefee72eacbaacd",
-              "245bd6d7eb6f774ea6f9cead43eb67f8b351fc92c930252d180d072f00524947",
+              "96779241e8da95440cdb35da35a192d35c1010bdac5c78ce7080d50d188dac70",
               "68a4f55b76080575721cde3ee62fd746999c6df8e79303b809baecf5d2514338",
               "4bfbebebe9e80fa6821100dbb572542a314be399ae0f929bac455c8f1531c4b2",
               "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26"
@@ -370,7 +370,7 @@
         "toolchainDigests": [
               "a0127c7e3d6745f1c415522159adb9a73eb502d109c0def01aefee72eacbaacd",
               "4702bbed12b8012e8f0c84c601c148e5557554449922860b19b96605538b9701",
-              "c04370471267cea55b87138119d9ca8a0ec607ac6883da298544ae3bf4c8b44d",
+              "161dbf574b884fa1078eeb9fcc5b8103ddd65f8321f235f1178e6d550c53542b",
               "4bfbebebe9e80fa6821100dbb572542a314be399ae0f929bac455c8f1531c4b2",
               "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26",
               "c5191136d0b5fbe9f34a39b4c180a77e7439abab028dd5ad7e0e22713b02b778",
@@ -559,7 +559,7 @@
           "id": "project.orientation.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "6a5a3e18f68b13406b5cd4b2198050aff2a86f74b61024aaeb5d4850572761c2"
+            "20637cc5012613ff2cbec22c881c52a03410044cf0d53070fb9e2c6304961502"
           ]
         },
         "determinism": "deterministic",
@@ -649,7 +649,7 @@
           "id": "project.orientation-benchmark.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "d65a4162a2063cb4b3fb86556169bd009eeb5ce4640c2e7d59a267b05af12c19"
+            "bb9c1e3e5863e45c9bf61d36e4172f837cf7b5924818f07f63ea8e15d2f01032"
           ]
         },
         "determinism": "external_nondeterministic",
@@ -755,7 +755,7 @@
           "id": "advisory.workflow-recommend.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "25a2185026cb61771ff2e5f4c2364687d01158cfc9a8266d00a20e5573ba1bde",
+            "4a11d639a27ec7ae039c07f1731f16b68e546b0e1ccc79ca43665718198fcef9",
             "82a0e5a863141a63b87075c9c07913713fa895c258fd71d9bb62bdf2689bc1b4"
           ]
         },
@@ -1020,7 +1020,7 @@
           "id": "evidence.native-code.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "d07d257df1c36e879bba2f6bdc3f18f4c26a34ee05889fc19f4ab96bc2027051"
+            "95f9186f6a7b926ce935e064de7925ef74cc7e10e1d46ca62f156b145e1ff2c8"
           ]
         },
         "determinism": "deterministic",
@@ -1331,7 +1331,6 @@
         "orchestration/schemas/code-intel-model-routing-result.v1.schema.json",
         "orchestration/schemas/code-intel-model-adapter-request.v1.schema.json",
         "orchestration/schemas/code-intel-model-adapter-request.v2.schema.json",
-        "orchestration/schemas/code-intel-model-executable-handle.v1.schema.json",
         "orchestration/schemas/code-intel-model-adapter-result.v1.schema.json",
         "orchestration/schemas/code-intel-model-assistance-dossier.v1.schema.json"
       ],

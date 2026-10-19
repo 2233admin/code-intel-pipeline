@@ -55,14 +55,6 @@
       "expectedImports": []
     },
     {
-      "path": "main.ps1",
-      "language": "powershell",
-      "supported": true,
-      "content": "function Invoke-Main { 'ok' }\n",
-      "expectedSymbols": [{ "kind": "function", "name": "Invoke-Main" }],
-      "expectedImports": []
-    },
-    {
       "path": "Main.cs",
       "language": "csharp",
       "supported": false,

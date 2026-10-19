@@ -5,7 +5,7 @@
     "version": "compat-1.0.0",
     "claimLevel": "structural",
     "requestedStage": "candidate",
-    "languages": ["powershell", "python", "javascript", "typescript", "rust", "go", "java"]
+    "languages": ["python", "javascript", "typescript", "rust", "go", "java"]
   },
   "contract": {
     "artifactSchemas": [
@@ -26,10 +26,10 @@
     "behavioral": false
   },
   "corpus": {
-    "labeledSamples": 12,
-    "precision": 0.75,
-    "recall": 0.75,
-    "declaredCoverage": 0.833333,
+    "labeledSamples": 11,
+    "precision": 0.714286,
+    "recall": 0.714286,
+    "declaredCoverage": 0.818182,
     "unsupportedExplicit": true,
     "fabricatedFactsForUnsupported": 0
   },
@@ -55,9 +55,9 @@
     "sourceRevisionPinned": true,
     "implementationLicense": "PROJECT-LICENSE-PIPELINE-OWNED",
     "sourcePath": "crates/code-intel-cli/src/native_code_evidence.rs",
-    "sourceDigest": "d07d257df1c36e879bba2f6bdc3f18f4c26a34ee05889fc19f4ab96bc2027051",
+    "sourceDigest": "95f9186f6a7b926ce935e064de7925ef74cc7e10e1d46ca62f156b145e1ff2c8",
     "conformancePath": "crates/code-intel-cli/tests/native_code_evidence.rs",
-    "conformanceDigest": "d348456050ac2beaf0f5d8a8565446bcbb0feda80bc5db2a3cde685cea82041f"
+    "conformanceDigest": "45c90e72d07d0ce0b539374d7b2650105aada9e4e852c55eb49b72f02212b992"
   },
   "rollback": {
     "documented": true,
@@ -68,12 +68,12 @@
     "reviewer": ""
   },
   "evidence": [
-    "local:r06:labeled-corpus-samples-12",
-    "local:r06:precision-0.75",
-    "local:r06:recall-0.75",
-    "local:r06:supported-coverage-0.833333",
+    "local:r06:labeled-corpus-samples-11",
+    "local:r06:precision-0.714286",
+    "local:r06:recall-0.714286",
+    "local:r06:supported-coverage-0.818182",
     "local:b08:normalized-parity-artifacts-6",
-    "local:pon-multilanguage:seven-supported-languages"
+    "local:pon-multilanguage:six-supported-languages"
   ],
   "gaps": [
     "semantic oracle not implemented",

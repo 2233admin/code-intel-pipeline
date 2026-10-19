@@ -1542,17 +1542,17 @@ fn ticket_r06_native_record_binds_b08_parity_size_coverage_and_latency() {
     }
     let measurements = c03_measurements();
     let labeled = &measurements["observations"]["r06NativeCodeEvidence"]["labeledCorpus"];
-    assert_eq!(labeled["samples"], 12);
-    assert_eq!(labeled["truePositives"], 6);
+    assert_eq!(labeled["samples"], 11);
+    assert_eq!(labeled["truePositives"], 5);
     assert_eq!(labeled["falsePositives"], 2);
     assert_eq!(labeled["falseNegatives"], 2);
-    assert_eq!(labeled["precision"], 0.75);
-    assert_eq!(labeled["recall"], 0.75);
-    assert_eq!(labeled["supportedCoverage"], 0.833333);
+    assert_eq!(labeled["precision"], 0.714286);
+    assert_eq!(labeled["recall"], 0.714286);
+    assert_eq!(labeled["supportedCoverage"], 0.818182);
     assert!(labeled["elapsedMs"]
         .as_f64()
         .is_some_and(|value| value >= 0.0));
-    assert!(text.contains("labeled-corpus-samples-12"));
+    assert!(text.contains("labeled-corpus-samples-11"));
     assert!(!text.contains("gap:native-code:representative-precision-recall"));
     assert!(text.contains("line-heuristic"));
 }

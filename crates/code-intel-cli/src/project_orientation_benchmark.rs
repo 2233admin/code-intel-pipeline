@@ -175,7 +175,7 @@ fn run(raw: &[String]) -> Result<Value, (i32, String)> {
                 "fileCount":fixture.file_count,
                 "providerStatus":if fixture.condition == "provider_missing" {"unavailable"} else {"available"},
                 "unknownFields":["call_graph","purpose","structural_relationships"],
-                "unsupportedFiles":["Cargo.toml","README.md"]
+                "unsupportedFiles":["Cargo.toml","README.md","run.sh"]
             },
             "warmPreparationMs":warm_materialization,
             "samples":{"cold":cold,"warm":warm}
@@ -258,7 +258,7 @@ fn materialize(root: &Path, fixture: &Fixture, manifest: &Path) -> Result<PathBu
     let mut paths = vec![
         "Cargo.toml".to_string(),
         "README.md".into(),
-        "run.ps1".into(),
+        "run.sh".into(),
         "src/main.rs".into(),
         "tests/orientation.rs".into(),
     ];
@@ -268,11 +268,13 @@ fn materialize(root: &Path, fixture: &Fixture, manifest: &Path) -> Result<PathBu
     paths.sort();
     let native = paths
         .iter()
-        .map(|path| json!({
-            "path":path,
-            "language":if path.ends_with(".rs") {"rust"} else if path.ends_with(".ps1") {"powershell"} else {"text"},
-            "bytes":16,"lines":1,"textHash":"3".repeat(64),"source":"benchmark-fixture"
-        }))
+        .map(|path| {
+            json!({
+                "path":path,
+                "language":if path.ends_with(".rs") {"rust"} else {"text"},
+                "bytes":16,"lines":1,"textHash":"3".repeat(64),"source":"benchmark-fixture"
+            })
+        })
         .collect::<Vec<_>>();
     let dirty = fixture.condition == "dirty";
     let snapshot = json!({
@@ -299,7 +301,7 @@ fn materialize(root: &Path, fixture: &Fixture, manifest: &Path) -> Result<PathBu
     let survival = json!({
         "schema":"code-intel-repository-survival-scan-result.v1","status":"completed","snapshotIdentity":SNAPSHOT,
         "repository":{"kind":"unversioned","identity":format!("content-v1:{}", "c".repeat(64)),"revision":"benchmark-corpus-v1","dirty":dirty,"sourceSha256":snapshot_ref["sha256"]},
-        "inventory":{"fileCount":fixture.file_count,"extensions":{"rs":fixture.file_count.saturating_sub(3),"md":1,"toml":1,"ps1":1},"sourceSha256":inventory_ref["sha256"]},
+        "inventory":{"fileCount":fixture.file_count,"extensions":{"rs":fixture.file_count.saturating_sub(3),"md":1,"toml":1,"sh":1},"sourceSha256":inventory_ref["sha256"]},
         "providerDiagnosis":{"providerId":"codenexus.full","status":"provider_unavailable","domainVerdict":"unknown"},
         "completeness":"reduced","structuralVerdict":"unknown",
         "limitations":["only repository identity and basic file inventory are available","deeper structural perception requires an admitted provider result"],
@@ -331,7 +333,7 @@ fn materialize(root: &Path, fixture: &Fixture, manifest: &Path) -> Result<PathBu
             "native-coverage.json",
             "code-evidence-coverage.v1",
             "code_evidence.coverage",
-            &json!({"schema":"code-evidence-coverage.v1","producer":if fixture.condition == "provider_missing" {"benchmark-provider-missing"} else {"benchmark-provider-ready"},"parserKind":"line-heuristic","supportedHeuristics":["rust","powershell"],"unsupportedFiles":["Cargo.toml","README.md"],"symbolPrecision":"heuristic","importPrecision":"heuristic","relationshipPrecision":"unknown","callGraph":"unknown","effects":["repo_read","local_write"]}),
+            &json!({"schema":"code-evidence-coverage.v1","producer":if fixture.condition == "provider_missing" {"benchmark-provider-missing"} else {"benchmark-provider-ready"},"parserKind":"line-heuristic","supportedHeuristics":["rust"],"unsupportedFiles":["Cargo.toml","README.md","run.sh"],"symbolPrecision":"heuristic","importPrecision":"heuristic","relationshipPrecision":"unknown","callGraph":"unknown","effects":["repo_read","local_write"]}),
         )?,
         write_json_ref(
             root,

@@ -10,15 +10,8 @@ use crate::artifact_ref::VerifiedArtifact;
 use crate::capability::sha256_hex;
 use crate::snapshot;
 
-const SUPPORTED_HEURISTICS: [&str; 7] = [
-    "powershell",
-    "python",
-    "javascript",
-    "typescript",
-    "rust",
-    "go",
-    "java",
-];
+const SUPPORTED_HEURISTICS: [&str; 6] =
+    ["python", "javascript", "typescript", "rust", "go", "java"];
 
 pub(crate) fn execute(
     request: &Value,
@@ -438,7 +431,6 @@ pub(crate) fn language(path: &str) -> &'static str {
         .to_ascii_lowercase()
         .as_str()
     {
-        "ps1" | "psm1" => "powershell",
         "py" => "python",
         "js" | "jsx" | "mjs" | "cjs" => "javascript",
         "ts" | "tsx" => "typescript",
@@ -475,7 +467,6 @@ fn extract_symbols(path: &str, language: &str, lines: &[&str]) -> Vec<Value> {
 fn symbol_candidate<'a>(language: &str, line: &'a str) -> Option<(&'static str, &'a str)> {
     let line = line.trim_start();
     match language {
-        "powershell" => word_after_ci(line, "function ").map(|name| ("function", name)),
         "python" => word_after(line, "def ")
             .map(|name| ("function", name))
             .or_else(|| word_after(line, "class ").map(|name| ("class", name))),
@@ -553,12 +544,6 @@ pub(crate) fn find_symbol_line(
 
 fn word_after<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
     identifier(line.strip_prefix(prefix)?)
-}
-
-fn word_after_ci<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
-    line.get(..prefix.len())
-        .filter(|actual| actual.eq_ignore_ascii_case(prefix))?;
-    identifier(&line[prefix.len()..])
 }
 
 fn identifier(text: &str) -> Option<&str> {

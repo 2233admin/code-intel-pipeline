@@ -6,7 +6,6 @@
     { "path": "javascript_positive.js", "languageClass": "supported", "polarity": "positive", "symbolPresent": true, "content": "// Español: función real\nfunction saludar(nombre) { return nombre; }\n" },
     { "path": "rust_positive.rs", "languageClass": "supported", "polarity": "positive", "symbolPresent": true, "content": "// 日本語: 実関数\npub fn greet() {}\n" },
     { "path": "go_positive.go", "languageClass": "supported", "polarity": "positive", "symbolPresent": true, "content": "// Português: função real\nfunc Saudacao() {}\n" },
-    { "path": "powershell_positive.ps1", "languageClass": "supported", "polarity": "positive", "symbolPresent": true, "content": "# Français : fonction réelle\nfunction Get-Greeting { 'bonjour' }\n" },
     { "path": "java_positive.java", "languageClass": "supported", "polarity": "positive", "symbolPresent": true, "content": "// Deutsch: echte Klasse\npublic class Greeting {}\n" },
     { "path": "python_false_positive.py", "languageClass": "supported", "polarity": "negative", "symbolPresent": false, "content": "TEXT = '''\ndef ghost():\n    pass\n'''\n" },
     { "path": "javascript_false_positive.js", "languageClass": "supported", "polarity": "negative", "symbolPresent": false, "content": "const text = `\nfunction ghost() {}\n`;\n" },
