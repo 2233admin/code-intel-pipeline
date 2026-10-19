@@ -285,7 +285,7 @@ fn structural_data(snapshot: &str, decline: bool, blocking: Option<Value>) -> Va
         "current":{"sourceCommit":"head","scope":"."},"ruleScope":"baseline_ratchet",
         "comparisons":[
             {"rule":"quality_degraded","before":9000,"after":if decline {8800} else {9000},"disposition":"advisory","verdict":if decline {"fail"} else {"pass"}},
-            {"rule":"coupling_increased","before":4,"after":4,"disposition":"blocking","verdict":"pass"},
+            {"rule":"coupling_increased","before":{"couplingScore":4,"importEdges":40},"after":{"couplingScore":4,"importEdges":40},"disposition":"blocking","verdict":"pass"},
             {"rule":"cycles_increased","before":0,"after":0,"disposition":"blocking","verdict":"pass"},
             {"rule":"god_files_increased","before":[],"after":[],"disposition":"blocking","verdict":"pass"}
         ],
