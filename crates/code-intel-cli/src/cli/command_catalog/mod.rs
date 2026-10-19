@@ -67,6 +67,7 @@ pub(super) struct LegacyCommand {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CompatibilityRoute {
     DoctorBootstrap,
+    Setup,
     CompatibilityRetirementTicket,
     RetirementGuard,
     LintHardcodedPaths,
@@ -618,6 +619,7 @@ fn execute_compatibility(command: CompatibilityCommand) -> i32 {
     let raw = &command.arguments;
     match command.route {
         CompatibilityRoute::DoctorBootstrap => doctor_bootstrap::run_raw(raw),
+        CompatibilityRoute::Setup => crate::setup::run_raw(raw),
         CompatibilityRoute::CompatibilityRetirementTicket => {
             compatibility_retirement_ticket::run_raw(raw)
         }

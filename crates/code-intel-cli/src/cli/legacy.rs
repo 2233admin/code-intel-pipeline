@@ -1140,6 +1140,7 @@ Commands:
   sentrux-debt-register --failures <sentrux-failures.json> [--repo <path>] [--out <sentrux-debt-register.json>]
   doctor [--artifact-root <path>] [--json]
   doctor bootstrap [--repo <alias>] [--repo-path <path>] [--config <pipeline.config.json>] [--platform auto|windows|macos|linux] [--no-require-repowise] [--require-understand] [--json]
+  setup [--release-root <dir>] [--repo-path <path>] [--language zh|en] [--platform auto|windows|macos|linux] [--no-modify-path] [--no-skills] [--skip-doctor] [--json] (finish a Skill install: binary into bin, PATH/CODE_INTEL_HOME, Skill links, doctor; never installs system tools)
   graph|understand --repo <path> [--language zh] [--full] [--write] [--json]
   provider|providers [--action List|Plan|Validate|Invoke] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--language zh] [--write] [--json]
   provider repowise-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>

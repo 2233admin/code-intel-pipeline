@@ -308,16 +308,12 @@ pub(crate) fn resolve_artifact_root(explicit: Option<&Path>) -> Result<PathBuf> 
             return Ok(PathBuf::from(value));
         }
     }
-    if let Ok(value) = env::var("LOCALAPPDATA") {
-        if !value.trim().is_empty() {
-            return Ok(PathBuf::from(value).join("code-intel").join("artifacts"));
-        }
-    }
-    let home = env::var("HOME").or_else(|_| env::var("USERPROFILE"))?;
-    Ok(PathBuf::from(home)
-        .join(".code-intel")
-        .join("code-intel")
-        .join("artifacts"))
+    // The same data root `code-intel setup` and the doctor use (#401):
+    // `%LOCALAPPDATA%\code-intel` on Windows, `~/Library/Application Support/
+    // code-intel` on macOS, `$XDG_DATA_HOME/code-intel` on Linux.
+    let platform = crate::doctor_bootstrap::paths::resolve_platform("auto")?;
+    let home = crate::doctor_bootstrap::paths::home_directory();
+    Ok(crate::doctor_bootstrap::paths::data_root(&platform, &home).join("artifacts"))
 }
 
 /// Creates `path` (and any missing ancestors), tolerating a Windows quirk
