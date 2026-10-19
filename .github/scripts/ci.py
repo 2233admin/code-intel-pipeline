@@ -501,6 +501,15 @@ def secret_guard(_args: argparse.Namespace) -> None:
 # --- quality-summary --------------------------------------------------------
 
 
+def shown(value: Any) -> str:
+    """A projection value as the summary prints it: no Python repr leaks."""
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True)
+    return str(value)
+
+
 def quality_summary(args: argparse.Namespace) -> None:
     """Render the Quality Signal projection as the job summary, a sticky
     comment body and annotations. The projection itself comes from the
@@ -512,6 +521,9 @@ def quality_summary(args: argparse.Namespace) -> None:
     admission = projection.get("admission") or {}
     policy = admission.get("policy") or {}
     policy_text = f"{policy['policyId']} v{policy.get('policyVersion')}" if policy.get("policyId") else "unbound"
+    regression = signal.get("regression")
+    if isinstance(regression, dict):
+        regression = regression.get("status")
 
     def short(value: Any, length: int) -> str:
         return str(value or "")[:length]
@@ -523,11 +535,11 @@ def quality_summary(args: argparse.Namespace) -> None:
         f"`{short(projection.get('snapshotIdentity'), 12)}` &middot; commit "
         f"`{short(projection.get('binding', {}).get('commit'), 12)}`",
         f"Admission: **{admission.get('verdict') or 'unknown'}** &middot; policy **{policy_text}** "
-        f"&middot; aggregate regression: **{signal.get('regression')}** (advisory, not a blocking gate)",
+        f"&middot; aggregate regression: **{shown(regression)}** (advisory, not a blocking gate)",
         "",
         "| Total | Baseline | Delta |",
         "|---|---|---|",
-        f"| {total.get('current')} | {total.get('baseline')} | "
+        f"| {shown(total.get('current'))} | {shown(total.get('baseline'))} | "
         f"{'[DOWN]' if delta is not None and delta < 0 else '[OK]'} {'n/a' if delta is None else delta} |",
         "",
         f"Bottleneck: **{signal.get('bottleneck') or 'none'}**",
@@ -538,7 +550,7 @@ def quality_summary(args: argparse.Namespace) -> None:
     for cause in signal.get("rootCauses") or []:
         raw = cause.get("raw") or {}
         raw_delta = "n/a" if raw.get("delta") is None else round(float(raw["delta"]), 2)
-        lines.append(f"| {cause.get('label')} | {raw.get('baseline')} | {raw.get('current')} | {raw_delta} |")
+        lines.append(f"| {cause.get('label')} | {shown(raw.get('baseline'))} | {shown(raw.get('current'))} | {raw_delta} |")
     lines.append("")
     findings = projection.get("findings") or []
     if findings:
