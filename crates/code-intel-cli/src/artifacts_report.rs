@@ -476,7 +476,7 @@ mod tests {
             "current":{"sourceCommit":"head","scope":"."},"ruleScope":"baseline_ratchet",
             "comparisons":[
                 {"rule":"quality_degraded","before":9000,"after":8800,"disposition":"advisory","verdict":"fail"},
-                {"rule":"coupling_increased","before":4,"after":if hard_failure {5} else {4},"disposition":"blocking","verdict":if hard_failure {"fail"} else {"pass"}},
+                {"rule":"coupling_increased","before":{"couplingScore":4,"importEdges":40},"after":if hard_failure {json!({"couplingScore":5,"importEdges":50})} else {json!({"couplingScore":4,"importEdges":40})},"disposition":"blocking","verdict":if hard_failure {"fail"} else {"pass"}},
                 {"rule":"cycles_increased","before":0,"after":0,"disposition":"blocking","verdict":"pass"},
                 {"rule":"god_files_increased","before":[],"after":[],"disposition":"blocking","verdict":"pass"}
             ],
