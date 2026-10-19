@@ -35,8 +35,8 @@ pub(crate) fn normalized_canonical_path(path: &Path) -> std::io::Result<PathBuf>
 mod hardened_git;
 
 /// File extensions the fallback "largest code file" selector considers.
-const CODE_EXTENSIONS: [&str; 10] = [
-    ".ps1", ".py", ".rs", ".go", ".ts", ".tsx", ".js", ".jsx", ".java", ".cs",
+const CODE_EXTENSIONS: [&str; 9] = [
+    ".py", ".rs", ".go", ".ts", ".tsx", ".js", ".jsx", ".java", ".cs",
 ];
 
 /// Paths that must never enter the CodeNexus context (build output, VCS,

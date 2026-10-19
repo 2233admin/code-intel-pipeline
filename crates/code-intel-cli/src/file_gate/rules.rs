@@ -40,8 +40,8 @@ pub(crate) const SOURCE_PROJECT: &str = "project";
 /// all. `every_extension_is_only_classified_once` guards against silent
 /// duplication.
 pub(crate) const CODE_EXTENSIONS: &[&str] = &[
-    "ps1", "psm1", "py", "rs", "go", "ts", "tsx", "js", "jsx", "mjs", "cjs", "java", "cs", "cpp",
-    "c", "h", "hpp", "v",
+    "py", "rs", "go", "ts", "tsx", "js", "jsx", "mjs", "cjs", "java", "cs", "cpp", "c", "h", "hpp",
+    "v",
 ];
 
 /// Directory names default-excluded at *any* depth, not just the repository

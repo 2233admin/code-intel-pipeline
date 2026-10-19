@@ -12,7 +12,7 @@ adapters merely expose. The governing experiment design is
 | --- | --- | --- | --- |
 | Repository snapshot and Artifact Ref | portable identity, replay, digest and snapshot binding | contract and negative tests pass | necessary infrastructure; no standalone Agent uplift claim |
 | `rg` inventory | deterministic repository inventory when snapshot consumption succeeds | covered by parity and orientation fixtures | exact inventory baseline; real self-run currently exposed a `.git` path-set failure |
-| Native code evidence | heuristic structural extraction for seven declared languages | 12 labeled samples; precision `0.75`, recall `0.75`, declared coverage `0.833333`, 10 stable replays | candidate structural baseline only |
+| Native code evidence | heuristic structural extraction for six declared languages | 11 labeled samples; precision `0.714286`, recall `0.714286`, declared coverage `0.818182`, 10 stable replays | candidate structural baseline only |
 | Native retrieval slice | query-term and one-hop import selection can reduce a synthetic JavaScript repository | recall `1.0` for four expected files in one fixture | promising smoke test; precision, ranking, symbol and root-cause quality unmeasured |
 | Project orientation | fixed corpus output is deterministic, provenance-complete, bounded, and honest about missing providers | representative Rust benchmark passes; typical p95 target is at most 60 seconds | strong contract/cost evidence; no downstream Agent task comparison |
 | Sentrux | command output is normalized, admitted, and fail-closed across complete, partial, crash, and unknown cases | adapter and gate tests pass | architecture-detection precision and diagnosis uplift unknown |

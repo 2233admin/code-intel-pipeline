@@ -16,17 +16,18 @@
       "testSha256": "11c7f5fe4343a266b35dcfaa7a35d75fb86b17766341fbc38a239915bc87bf9f",
       "labeledCorpus": {
         "fixture": "orchestration/internalization/fixtures/r06-native-labeled-corpus.json",
-        "samples": 12,
-        "supportedHeuristicSamples": 10,
+        "samples": 11,
+        "supportedHeuristicSamples": 9,
         "unsupportedSamples": 2,
-        "truePositives": 6,
+        "truePositives": 5,
         "falsePositives": 2,
         "falseNegatives": 2,
         "trueNegatives": 2,
-        "precision": 0.75,
-        "recall": 0.75,
-        "supportedCoverage": 0.833333,
-        "elapsedMs": 3620
+        "precision": 0.714286,
+        "recall": 0.714286,
+        "supportedCoverage": 0.818182,
+        "elapsedMs": 3620,
+        "recount": "2026-10-19 (#465): the PowerShell sample was removed from the corpus; the counts and ratios above are recomputed from the remaining labels. elapsedMs, the hashes and measuredAt are from the 2026-07-14 run."
       }
     },
     "r10Git": {

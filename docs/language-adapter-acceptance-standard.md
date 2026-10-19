@@ -50,6 +50,6 @@ Exit code `0` means every required gate passed. Exit code `1` means the requeste
 
 ## Current native baseline
 
-`evidence.native-code` passes `candidate + structural` at the existing measured floor: 12 labeled samples, precision 0.75, recall 0.75, coverage 0.833333, ten deterministic replays, six compatibility artifacts, explicit unsupported behavior, and zero new runtime dependencies.
+`evidence.native-code` passes `candidate + structural` at the existing measured floor: 11 labeled samples, precision 0.714286, recall 0.714286, coverage 0.818182, ten deterministic replays, six compatibility artifacts, explicit unsupported behavior, and zero new runtime dependencies.
 
 It does not pass `semantic`, `behavioral`, or `production`. Those require parser/differential oracles, stronger measurements, and independent verification rather than a label change.

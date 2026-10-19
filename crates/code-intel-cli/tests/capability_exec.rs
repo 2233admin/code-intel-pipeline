@@ -1622,7 +1622,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects() {
         "id":"advisory.workflow-recommend.compat",
         "version":"1.0.0",
         "toolchainDigests":[
-            "25a2185026cb61771ff2e5f4c2364687d01158cfc9a8266d00a20e5573ba1bde",
+            "4a11d639a27ec7ae039c07f1731f16b68e546b0e1ccc79ca43665718198fcef9",
             "82a0e5a863141a63b87075c9c07913713fa895c258fd71d9bb62bdf2689bc1b4"
         ]
     });

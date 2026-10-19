@@ -7,7 +7,7 @@
     "kind": "design_reference",
     "source": {
       "uri": "https://github.com/can1357/pon",
-      "revision": "ab9067dbd2899c64c4d67a4bc27b8ad49472b126; local-plan-sha256:13aba02afe50ba96b51f8af8f25a5f4adbf485737d4ccc4897d3f769aee7cea9; local-doc-sha256:7dadae1b81ad355ce135f8bf5c7caf613223926c42a5d9e95eda175a3e90444a; local-test-sha256:83620098bbe864243e7b0f83bcea1836bca534b25ae5b8810687d859158e457c; local-fixture-sha256:26429a991641d142404eca462fdfb23b5256fdf3501724b63b6d441faa58cd6d"
+      "revision": "ab9067dbd2899c64c4d67a4bc27b8ad49472b126; local-plan-sha256:13aba02afe50ba96b51f8af8f25a5f4adbf485737d4ccc4897d3f769aee7cea9; local-doc-sha256:7dadae1b81ad355ce135f8bf5c7caf613223926c42a5d9e95eda175a3e90444a; local-test-sha256:83620098bbe864243e7b0f83bcea1836bca534b25ae5b8810687d859158e457c; local-fixture-sha256:47bff8d0a45da6eec001f185fd45a21989ae52fdf3464db35e2e4d88421657f1"
     },
     "license": {
       "id": "UNKNOWN-RESEARCH-ONLY",
@@ -21,13 +21,13 @@
     "rung": "reimplement",
     "ownedBoundary": [
       "Pipeline reuses its existing Code Evidence v1 files, symbols, symbol-chunks, imports, and coverage artifacts as one language-neutral structural fact contract",
-      "the multilingual conformance floor covers Python, JavaScript, TypeScript, Rust, Go, Java, and PowerShell while C# remains an explicit unsupported control",
+      "the multilingual conformance floor covers Python, JavaScript, TypeScript, Rust, Go, and Java while C# remains an explicit unsupported control",
       "no pon runtime dependency, Python runtime semantics, new intermediate representation, parser claim, type claim, call graph, or automatic fixture mutation"
     ],
     "necessityEvidence": {
       "evidenceIds": [
         "local:pon-multilanguage:existing-code-evidence-contract",
-        "local:pon-multilanguage:seven-supported-languages",
+        "local:pon-multilanguage:six-supported-languages",
         "gap:pon-multilanguage:parser-backed-adapter"
       ],
       "checkedAt": 1784073600,
@@ -45,7 +45,7 @@
     "conformanceEvidence": {
       "evidenceIds": [
         "local:pon-multilanguage:targeted-rust-test-pass",
-        "local:pon-multilanguage:seven-supported-languages",
+        "local:pon-multilanguage:six-supported-languages",
         "local:pon-multilanguage:unsupported-csharp-no-fabrication",
         "gap:pon-multilanguage:independent-verifier"
       ],
@@ -56,7 +56,7 @@
   "economics": {
     "benefit": {
       "metric": "supported source languages pinned to one Code Evidence field contract",
-      "value": 7,
+      "value": 6,
       "unit": "languages"
     },
     "cost": {
@@ -66,7 +66,7 @@
     },
     "benefitEvidence": {
       "evidenceIds": [
-        "local:pon-multilanguage:seven-supported-languages",
+        "local:pon-multilanguage:six-supported-languages",
         "local:pon-multilanguage:artifact-schemas-v1"
       ],
       "checkedAt": 1784073600,
@@ -141,9 +141,9 @@
     },
     {
       "path": "orchestration/internalization/fixtures/pon-multilanguage-code-evidence.json",
-      "description": "Eight-sample cross-language mapping floor with seven supported languages and one unsupported control",
+      "description": "Seven-sample cross-language mapping floor with six supported languages and one unsupported control",
       "evidenceIds": [
-        "local:pon-multilanguage:seven-supported-languages",
+        "local:pon-multilanguage:six-supported-languages",
         "local:pon-multilanguage:fixture-digest-pinned"
       ]
     }
