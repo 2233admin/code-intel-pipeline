@@ -26,7 +26,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ vars.CI_5070X_ENABLED == 'true' && (((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && contains(fromJSON('["ubuntu-latest","ubuntu-24.04"]'), matrix.os) && 'ci-5070x-linux' || matrix.os }}
+    runs-on: ${{ vars.CI_5070X_ENABLED == 'true' && (((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && (contains(fromJSON('["ubuntu-latest","ubuntu-24.04"]'), matrix.os) && 'ci-5070x-linux' || contains(fromJSON('["windows-latest","windows-2025"]'), matrix.os) && 'ci-5070x-windows') || matrix.os }}
     timeout-minutes: 30
     env:
       DO_NOT_TRACK: '1'
