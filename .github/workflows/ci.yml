@@ -103,7 +103,7 @@ jobs:
           - macos-latest
           - ubuntu-latest
 
-    runs-on: ${{ vars.CI_5070X_ENABLED == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && contains(fromJSON('["ubuntu-latest","ubuntu-24.04"]'), matrix.os) && 'ci-5070x-linux' || matrix.os }}
+    runs-on: ${{ vars.CI_5070X_ENABLED == 'true' && (((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && contains(fromJSON('["ubuntu-latest","ubuntu-24.04"]'), matrix.os) && 'ci-5070x-linux' || matrix.os }}
     timeout-minutes: 30
     env:
       SMOKE_TAG: v0.0.0-smoketest
@@ -248,7 +248,7 @@ jobs:
     # #418: exercise release.yml's archive download contract without its
     # write token, provenance action, tag trigger, or release publication.
     needs: cross-platform-smoke
-    runs-on: ${{ vars.CI_5070X_ENABLED == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && 'ci-5070x-linux' || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_5070X_ENABLED == 'true' && (((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && 'ci-5070x-linux' || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
