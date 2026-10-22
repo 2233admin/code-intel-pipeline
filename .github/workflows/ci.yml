@@ -21,7 +21,7 @@ jobs:
 
   windows-build-test-package:
     needs: admission-policy
-    runs-on: windows-latest
+    runs-on: ${{ vars.CI_5070X_ENABLED == 'true' && (((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && 'ci-5070x-windows' || 'windows-latest' }}
     # Every step passes in ~30 min (Rust tests alone ~16 min on Windows), so a
     # 30-min ceiling cancelled green runs at the final step (#440).
     timeout-minutes: 45
@@ -413,7 +413,7 @@ jobs:
           - macos-latest
           - ubuntu-latest
 
-    runs-on: ${{ vars.CI_5070X_ENABLED == 'true' && (((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && contains(fromJSON('["ubuntu-latest","ubuntu-24.04"]'), matrix.os) && 'ci-5070x-linux' || matrix.os }}
+    runs-on: ${{ vars.CI_5070X_ENABLED == 'true' && (((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && (contains(fromJSON('["ubuntu-latest","ubuntu-24.04"]'), matrix.os) && 'ci-5070x-linux' || contains(fromJSON('["windows-latest","windows-2025"]'), matrix.os) && 'ci-5070x-windows') || matrix.os }}
     timeout-minutes: 30
 
     steps:
