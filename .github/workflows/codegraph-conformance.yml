@@ -18,7 +18,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: codegraph-${{ github.head_ref || github.ref }}
+  # 同 ci.yml：PR 按号分组（新推送顶掉旧的），main 按 sha 分组，排队中的旧 run 也不会被顶掉。
+  group: codegraph-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
