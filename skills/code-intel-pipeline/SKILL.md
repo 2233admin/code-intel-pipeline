@@ -30,22 +30,25 @@ Do not infer a clean result from a partial run, provider outage, stale advisory,
    missing pipeline.
 4. `code-intel setup`, and therefore this Skill's bootstrap, needs release `v0.7.2-beta.7` or newer.
    The default stable channel currently resolves to a release that predates `setup`, and the
-   bootstrap rejects it with "This release predates `code-intel setup`". Use `--version
-   v0.7.2-beta.7` or `--channel prerelease` only when the user explicitly requests it. For a
+   bootstrap rejects it with "This release predates `code-intel setup`": the default commands below
+   currently fail on stable v0.7.1, and that is expected, not a success path. Only when the user
+   explicitly requests a prerelease, add `--version v0.7.2-beta.7 --channel prerelease` (the
+   bootstrap checks `--channel` even with `--version`, so a pinned prerelease needs both) or just
+   `--channel prerelease`. Never add them on your own. For a
    first install and the per-version prerequisites (including the stable v0.7.1 manual path that
    needs no `setup`), follow `docs/public-beta.md`.
-5. From this skill directory, inspect the release plan:
+5. From this skill directory, inspect the latest published stable release plan:
 
 ```text
-python scripts/bootstrap.py --repo-path "<repo-path>" --version v0.7.2-beta.7 --dry-run --json
+python scripts/bootstrap.py --repo-path "<repo-path>" --dry-run --json
 ```
 
 6. Review the reported release tag, version source, asset URL, SHA-256 digest, destination, and
    target repository.
-7. Install the verified release:
+7. Install the verified stable release:
 
 ```text
-python scripts/bootstrap.py --repo-path "<repo-path>" --version v0.7.2-beta.7 --json
+python scripts/bootstrap.py --repo-path "<repo-path>" --json
 ```
 
 Add `--version <tag>` only for a requested version. Add `--channel prerelease` only when the user

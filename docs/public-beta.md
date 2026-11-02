@@ -117,7 +117,7 @@ use them with the stable ZIP.
 - The Skill's `scripts/bootstrap.py` ends by running the release's own
   `bin/code-intel setup`, so it has the same requirement. Its default stable
   channel is currently rejected with "This release predates `code-intel
-  setup`". Use `--version v0.7.2-beta.7` or `--channel prerelease`, and only
+  setup`". Use `--version v0.7.2-beta.7 --channel prerelease` (the bootstrap checks `--channel` even with `--version`, so pass both) or just `--channel prerelease`, and only
   when the user explicitly asks for it.
 - `code-intel status <repo>` and `code-intel query <repo> ...` exist only in
   current source builds and newer prereleases.
@@ -125,8 +125,8 @@ use them with the stable ZIP.
 With such a build, review the plan first, then install:
 
 ```bash
-python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --dry-run --json   # review the plan
-python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --json
+python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --channel prerelease --dry-run --json   # review the plan
+python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --channel prerelease --json
 ```
 
 or, from an extracted `v0.7.2-beta.7`-or-newer package:

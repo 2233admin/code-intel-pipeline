@@ -68,15 +68,15 @@ on Linux or macOS.
 
 **Current source / prerelease only (not in v0.7.1): `code-intel setup` and the
 Skill bootstrap.** They need `v0.7.2-beta.7` or newer: pass
-`--version v0.7.2-beta.7` or `--channel prerelease`, and only when the user
+`--version v0.7.2-beta.7 --channel prerelease` (the bootstrap checks `--channel` even with `--version`, so pass both) or just `--channel prerelease`, and only when the user
 explicitly asks for it (#405). The default stable channel is now rejected with
 "This release predates `code-intel setup`". `code-intel status <repo>` and
 `code-intel query <repo>` are likewise absent from v0.7.1. Review the plan
 first, then run it, from `skills/code-intel-pipeline/`:
 
 ```bash
-python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --dry-run --json
-python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --json
+python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --channel prerelease --dry-run --json
+python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --channel prerelease --json
 ```
 
 The script downloads the GitHub Release ZIP for your platform, verifies its

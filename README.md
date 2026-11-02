@@ -166,13 +166,13 @@ windows / macos / linux 三平台相同：**不需要 PowerShell，也不需要 
 
 ### 仅当前源码 / 预发布：`code-intel setup` 与 Skill bootstrap
 
-> 下面这些在 v0.7.1 稳定版里没有。`code-intel setup` 和 Skill 的 `scripts/bootstrap.py` 需要 `v0.7.2-beta.7` 或更新的版本：传 `--version v0.7.2-beta.7` 或 `--channel prerelease`，并且只在用户明确要求时才用（#405）。默认的稳定频道现在会被拒绝，报错是 "This release predates `code-intel setup`"。
+> 下面这些在 v0.7.1 稳定版里没有。`code-intel setup` 和 Skill 的 `scripts/bootstrap.py` 需要 `v0.7.2-beta.7` 或更新的版本：传 `--version v0.7.2-beta.7 --channel prerelease`（bootstrap 即使给了 `--version` 也会核对 `--channel`，所以两个都要传）或只传 `--channel prerelease`，并且只在用户明确要求时才用（#405）。默认的稳定频道现在会被拒绝，报错是 "This release predates `code-intel setup`"。
 
 Codex 可以先安装官方结构的 Skill 包，再由 Skill 下载并校验该 Release；也可以在 `skills/code-intel-pipeline/` 下直接运行引导脚本：先看计划，再执行：
 
 ```bash
-python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --dry-run --json
-python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --json
+python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --channel prerelease --dry-run --json
+python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --channel prerelease --json
 ```
 
 它会下载当前平台的 GitHub Release ZIP，校验 SHA-256 和构建来源，解压后运行该 Release 自带的 `bin/code-intel setup`。`gh` 2.49+ 在场时先验 [GitHub Artifact Attestation](https://cli.github.com/manual/gh_attestation_verify)（证明这份 ZIP 确实产自本仓发布流水线，不只是字节没传坏），再校验 GitHub Release 提供的 SHA-256；`gh` 缺失或过旧会显式打印降级说明而不是静默只查 SHA-256。命令与验证记录见 [docs/release-provenance-runbook.md](docs/release-provenance-runbook.md)。第三方依赖安装需要显式选择。
