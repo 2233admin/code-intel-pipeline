@@ -1,7 +1,6 @@
 {
   "concurrency": 3,
   "max_rounds": 3,
-  "stall_minutes": 90,
   "base_branch": "main",
   "merge_method": "squash",
   "labels": {
@@ -227,6 +226,7 @@
     }
   ],
   "decision_docs": [
-    "docs/adr/*"
+    "docs/adr/*",
+    "docs/decisions/*"
   ]
 }
