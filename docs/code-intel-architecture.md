@@ -22,13 +22,12 @@ Artifact ownership and reader/writer boundaries are defined in `docs/artifact-da
    - `crates/code-nexus-lite`: incubated source, not a Cargo workspace member and not shipped as a beta binary. The supported beta surface is the optional CodeNexus compatibility adapter and artifact contract.
 
 4. Environment doctor and installer
-   - `code-intel doctor` / `code-intel doctor bootstrap`: verify local tools, Understand Anything presence, repo path, and Sentrux scope state.
+   - `code-intel doctor` / `code-intel doctor bootstrap`: verify local tools, repo path, and Sentrux scope state.
    - `code-intel setup`: finishes a Skill install from an extracted release (binary, PATH, Skill links, doctor).
 
 5. Tool adapters
    - `rg`: exact inventory
    - `repowise`: optional semantic index and docs; included in the default plan but non-blocking
-   - `Understand Anything`: optional graph artifact
    - `sentrux`: structure gate
    - `sentruxInsight`: parsed structural deltas and follow-up hints for agents
 
@@ -87,7 +86,6 @@ This classification is written into:
 `hospital-report.json` is the diagnosis layer over those artifacts. It does not replace the tools; it organizes their output into modalities and protocols:
 
 - `xray`: rg file inventory and repo surface.
-- `anatomy`: Understand Anything graph freshness.
 - `ct`: Sentrux DSM, hotspots, and file/function detail.
 - `mri`: CodeNexus impact localization.
 - `pet`: execution-risk proxy from evolution, what-if, and test gaps.
@@ -104,7 +102,6 @@ The goal is not philosophical purity. The goal is that an operator can tell in t
 
 - wait for provider quota reset
 - fix a local installation
-- refresh the Understand graph
 - repair an architecture regression
 
 ## Repo Strategy
@@ -127,7 +124,7 @@ The default `normal` route is one manifest-bound Rust production spine:
 
 ```text
 A02 snapshot
-  -> doctor / inventory.rg / graph provider / Sentrux provider
+  -> doctor / inventory.rg / Sentrux provider
   -> native code evidence / Hospital diagnosis
   -> A03 verified Artifact Refs
   -> A09 terminal manifest

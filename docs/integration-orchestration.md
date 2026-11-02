@@ -45,13 +45,12 @@ Use `code-intel provider` as the source of truth for provider operations, then e
 ```bash
 .\code-intel provider --action Validate --json
 .\code-intel provider --action List --json
-.\code-intel provider --action Plan --provider understand --operation graph --repo <repo-path> --json
 .\code-intel provider --action Plan --provider repowise --operation index --repo <repo-path> --json
 .\code-intel route --action Validate --json
 .\code-intel route --action List --json
 ```
 
-Repowise and Understand-compatible graph operations share the `code-intel-provider-api.v1` schema: provider, operation, protocol, route, command template, artifact contract, requirement, status, source spec, and notes. Repowise routes live under `/api/providers/repowise/*`. Understand-compatible graph routes live under `/api/providers/understand/*`. Compatibility aliases such as `/scan`, `/lite`, `/doctor`, and `/understand` are allowed only as fallback surfaces. Future route-needing projects must add provider operations to this global provider layer first, then wire their implementation behind the route.
+Provider operations share the `code-intel-provider-api.v1` schema: provider, operation, protocol, route, command template, artifact contract, requirement, status, source spec, and notes. Repowise routes live under `/api/providers/repowise/*`. Compatibility aliases such as `/scan`, `/lite`, and `/doctor` are allowed only as fallback surfaces. Future route-needing projects must add provider operations to this global provider layer first, then wire their implementation behind the route.
 
 ## Add A New Integration
 
@@ -79,7 +78,6 @@ cargo test -p code-intel --bin code-intel -- orchestration providers
 | `rust_runtime` | Compiled Rust command and worker targets used by the pipeline. |
 | `inventory` | Exact file and text surface. |
 | `semantic_memory` | Long-term project memory, index, status, and docs. |
-| `architecture_graph` | Graph snapshot and freshness. |
 | `structure_governance` | Structural scan, rules, gate, DSM, evolution, and what-if signals. |
 | `localization` | Hotspot and reference localization. |
 | `diagnosis` | Hospital report, protocol, and surgery plan. |
@@ -107,12 +105,6 @@ Agent workflows should depend on `code-intel sentrux` and the artifact contract,
 
 The stable surface is `code-intel sentrux <dsm|scan|health|check|gate|check_rules|gate_save|hotspots> <repo-path>`.
 
-## Graph Direction
-
-`graph.code-intel-understand` is the internal provider contract.
-
-It emits `.understand-anything/knowledge-graph.json` through `code-intel graph --repo <repo-path> --language zh --write --json`. External `/understand` is now `graph.understand-external`, a compatibility fallback for richer Claude-side passes or internal provider failure. Future graph providers should preserve the same `architecture_graph` stage and artifact contract.
-
 ## Runner Direction
 
-The runner is `code-intel run <repo-path> --mode <mode>`, with report writing, hospital diagnosis, graph generation, Repowise, and Sentrux orchestration moved behind Rust modules registered in this manifest.
+The runner is `code-intel run <repo-path> --mode <mode>`, with report writing, hospital diagnosis, Repowise, and Sentrux orchestration moved behind Rust modules registered in this manifest.

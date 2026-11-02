@@ -68,18 +68,12 @@ fn home(set: bool, exists: bool) -> CodeIntelHome {
     }
 }
 
-fn strict(require_understand: bool) -> Options {
-    let mut options = Options::new(PathBuf::from("."));
-    options.require_understand = require_understand;
-    options
-}
-
 #[test]
 fn missing_list_preserves_the_retired_scripts_wording_and_order() {
     let checks = json!({
         "config": {"found": true, "parsed": false, "parseError": "bad json"},
         "sentrux": {"core": {"found": false}, "pro": {"found": false}},
-        "graphProvider": {"sourceFound": false, "cargoFound": false},
+        "graphProvider": {"binaryFound": false},
         "repo": {"path": "x", "exists": false}
     });
     let tools = vec![
@@ -87,15 +81,12 @@ fn missing_list_preserves_the_retired_scripts_wording_and_order() {
         json!({"name": "repomix", "required": false, "found": false}),
     ];
     assert_eq!(
-        missing_list(&checks, &tools, false, &strict(true), &home(true, false)),
+        missing_list(&checks, &tools, false, &home(true, false)),
         vec![
             "pipeline config: invalid JSON (bad json)".to_string(),
             "rg".to_string(),
             "sentrux core".to_string(),
             "sentrux pro auto-activation".to_string(),
-            "internal graph provider source".to_string(),
-            "code-intel Rust runtime".to_string(),
-            "Understand Anything skill or plugin".to_string(),
             "repo path".to_string(),
             "CODE_INTEL_HOME: directory does not exist (C:/nope)".to_string(),
         ]
@@ -107,11 +98,11 @@ fn builtin_sentrux_makes_the_external_overlay_optional() {
     let checks = json!({
         "config": {"found": true, "parsed": true},
         "sentrux": {"core": {"found": false}, "pro": {"found": false}},
-        "graphProvider": {"sourceFound": true, "cargoFound": true},
+        "graphProvider": {"binaryFound": true},
         "repo": {"exists": true}
     });
     let tools = vec![json!({"name": "sentrux", "required": false, "found": false})];
-    assert!(missing_list(&checks, &tools, true, &strict(false), &home(false, false)).is_empty());
+    assert!(missing_list(&checks, &tools, true, &home(false, false)).is_empty());
 }
 
 #[test]
@@ -142,7 +133,6 @@ fn observation_carries_the_v1_contract_and_every_retired_check() {
             "repo".to_string(),
             "sentrux".to_string(),
             "tools".to_string(),
-            "understandAnything".to_string(),
             "weco".to_string(),
         ]
     );

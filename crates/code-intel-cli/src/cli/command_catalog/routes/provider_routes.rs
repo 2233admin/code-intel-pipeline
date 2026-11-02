@@ -49,27 +49,6 @@ pub(super) const REPOWISE_ADAPT: super::RawRoute = super::RawRoute {
     },
 };
 
-pub(super) const GRAPH_ADAPT: super::RawRoute = super::RawRoute {
-    command: "provider",
-    subcommand: Some("graph-adapt"),
-    argument_offset: 2,
-    id: super::CompatibilityRoute::ProviderGraphAdapt,
-    contract: super::CommandContract {
-        stability: super::CommandStability::Internal,
-        controller: super::ControllerOwnership::Internal,
-        authority: super::CommandAuthority::Internal,
-        effects: &[super::CommandEffect::RepoRead],
-        output_contract: super::OutputContract::Stdout {
-            identities: &[
-                "code-intel-graph-route-result.v1",
-                "code-intel-graph-adapter-result.v1",
-            ],
-        },
-        exit_contract: super::ExitContract::Exact(&[0, 64, 65]),
-        retirement_condition: "retire when the DAG exclusively calls the typed graph adapter seam",
-    },
-};
-
 pub(super) const SENTRUX_ADAPT: super::RawRoute = super::RawRoute {
     command: "provider",
     subcommand: Some("sentrux-adapt"),

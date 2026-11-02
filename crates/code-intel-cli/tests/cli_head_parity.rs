@@ -144,7 +144,7 @@ fn every_ordinary_case_matches_old_head_exactly() {
     );
     // The retained fixture records the repin scanCoverage transition;
     // tests/repin.rs verifies complete/partial/not-computed behavior directly.
-    assert_eq!(cases.len(), 48);
+    assert_eq!(cases.len(), 45);
 
     let repo = FixtureRepository::create();
     for case in cases {

@@ -231,7 +231,7 @@
         "name": "code-modernization@claude-plugins-official",
         "fit": {
           "status": "partial",
-          "basis": "Its assess and map stages restate what `code_evidence.agent_slice`, `diagnosis.hospital` and `graph.code-intel-understand` already publish, so those overlap rather than compose. The blanks it does fill are real: extract-rules turns undocumented behaviour into Given/When/Then specs, and uplift reads breaking changes between two versions of one stack, neither of which any pipeline artifact carries. Aimed at COBOL, legacy Java/C++/.NET and monolith web apps, which is a wider target than this pipeline's current repositories."
+          "basis": "Its assess and map stages restate what `code_evidence.agent_slice` and `diagnosis.hospital` already publish, so those overlap rather than compose. The blanks it does fill are real: extract-rules turns undocumented behaviour into Given/When/Then specs, and uplift reads breaking changes between two versions of one stack, neither of which any pipeline artifact carries. Aimed at COBOL, legacy Java/C++/.NET and monolith web apps, which is a wider target than this pipeline's current repositories."
         },
         "license": {
           "status": "acceptable",

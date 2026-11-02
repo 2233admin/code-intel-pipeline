@@ -5,9 +5,8 @@
 //! the identity never enters the observation builder. Kept inside
 //! `doctor_bootstrap` instead of calling `crate::invocation_identity`: the
 //! parent module is `#[path]`-included as an independent compilation root by
-//! the doctor-adapter copies in integration tests (see the graphProvider
-//! comment in `observe`), where `crate::` references outside the included set
-//! do not resolve.
+//! the doctor-adapter copies in integration tests, where `crate::`
+//! references outside the included set do not resolve.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};

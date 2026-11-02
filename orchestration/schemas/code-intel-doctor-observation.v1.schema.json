@@ -16,11 +16,10 @@
         "policy": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["platform", "requireRepowise", "requireUnderstand"],
+          "required": ["platform", "requireRepowise"],
           "properties": {
             "platform": { "enum": ["auto", "windows", "macos", "linux"] },
-            "requireRepowise": { "type": "boolean" },
-            "requireUnderstand": { "type": "boolean" }
+            "requireRepowise": { "type": "boolean" }
           }
         },
         "sha256": { "$ref": "#/definitions/sha256" }

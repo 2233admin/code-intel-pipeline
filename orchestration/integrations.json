@@ -33,12 +33,6 @@
       "description": "Optional, non-blocking long-term project memory, index, status, and docs; included in the default plan when available."
     },
     {
-      "id": "architecture_graph",
-      "order": 40,
-      "required": false,
-      "description": "Architecture graph snapshot and graph freshness."
-    },
-    {
       "id": "structure_governance",
       "order": 50,
       "required": true,
@@ -113,14 +107,14 @@
           "id": "doctor.envelope.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "11c3270944eff8524f37eedc4cd513bf6cb6ecffe6388c69939daab48e15e236",
-            "e0134baa9e4e96a128f6d7d2a4b1ffdbb6ae9b08eefbaa08a42b2b13f0a4fda5",
-            "3d2ed512528a3dfa9e5deb60b361a26b9e5dab2f5509be7774c46f69db2789a0",
+            "0c5eb87c9ffdfa471e758753fd08cb16b950c8e67799e17ab2bcb501787b49d3",
+            "03c59ba2bccbc29abfa4493cdc82a795033ff1ee3bacd71bed16bfbe3bc6577c",
+            "5a3b6821b02bf5522443c8b02fb3a8fff04792d44f9a40e329ef4dc30029fbb2",
             "ea4783645953e151eb618f9b338dd3e86ae0ae0741b36896bd76b4a58d38df87",
             "a582f3d519c30870768c858db9c1b8a09ba5d83a8f8faba2e843a69efabfa438",
-            "c0012f6b965b35f98b845ec90c6af826b53e008f31642b1c2ee85bffe12dfd35",
-            "82a0e5a863141a63b87075c9c07913713fa895c258fd71d9bb62bdf2689bc1b4",
-            "5749c0bc4b61b078d84bba9d54753ac1be630c0ec9c574114bdddf5b8a580740"
+            "282175fa4f8fdeede65e13077583d81e8c54dc637ff50680ca13b27e93923ef8",
+            "664e82bb51bc9f1361539afafd139249601cb272c1c30b146c2d2bd0f7171faf",
+            "30d139b104834bc1313ee30202f11283f696fc20fa25549f21c1e37dbc8b650a"
           ]
         },
         "determinism": "external_nondeterministic",
@@ -160,7 +154,6 @@
         "integration_plan",
         "global_route_registry",
         "provider_api",
-        "understand_compatible_graph",
         "artifact_resume",
         "failure_classification",
         "artifact_doctor"
@@ -170,8 +163,6 @@
         "orchestrateValidate": "target/debug/code-intel.exe orchestrate --action Validate --json",
         "orchestrateList": "target/debug/code-intel.exe orchestrate --action List --json",
         "orchestratePlan": "target/debug/code-intel.exe orchestrate --action Plan --repo <repo-path> --mode <mode> --json",
-        "graph": "target/debug/code-intel.exe graph --repo <repo-path> --language zh --write --json",
-        "graphFull": "target/debug/code-intel.exe graph --repo <repo-path> --language zh --full --write --json",
         "routeValidate": "target/debug/code-intel.exe route --action Validate --json",
         "routeList": "target/debug/code-intel.exe route --action List --json",
         "routePlan": "target/debug/code-intel.exe route --action Plan --provider <provider> --operation <operation> --repo <repo-path> --json",
@@ -179,14 +170,13 @@
         "providerList": "target/debug/code-intel.exe provider --action List --json",
         "providerPlan": "target/debug/code-intel.exe provider --action Plan --provider <provider> --operation <operation> --repo <repo-path> --json",
         "providerInvoke": "target/debug/code-intel.exe provider --action Invoke --provider <provider> --operation <operation> --repo <repo-path> --json",
-        "graphAdapt": "target/debug/code-intel.exe provider graph-adapt --request <native.json|-> --artifact-root <artifact-directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>",
         "sentruxAdapt": "target/debug/code-intel.exe provider sentrux-adapt --request <native.json|-> --artifact-root <artifact-directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>",
         "capabilityExec": "target/debug/code-intel.exe capability exec <id> --request <request.json|-> --out <staging-dir>",
         "doctor": "target/debug/code-intel.exe doctor --json",
         "resume": "target/debug/code-intel.exe resume --repo <repo-path> --json",
         "classify": "target/debug/code-intel.exe classify --report <report-path> --json",
         "evidenceValidate": "target/debug/code-intel.exe evidence validate --request <request.json> --artifact-root <artifact-directory>",
-        "dagCoordinate": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]",
+        "dagCoordinate": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--doctor-require-repowise <true|false>]",
         "execute": "target/debug/code-intel.exe run execute --repo <repo-root> --out <run-staging-directory> --authority-root <publication-root> --final-name <name> [--profile default|strict|offline]"
       },
       "artifactContract": [
@@ -293,61 +283,6 @@
       "extensionPoint": "Repowise remains external; this adapter translates native observations and submits every emitted evidence request through A04 before any downstream consumer may use it."
     },
     {
-      "id": "provider.graph-adapt",
-      "stage": "architecture_graph",
-      "owner": "code-intel-pipeline",
-      "kind": "internal-adapter",
-      "required": true,
-      "entrypoint": "crates/code-intel-cli/src/providers.rs",
-      "capabilities": [
-        "internal_external_graph_translation",
-        "current_snapshot_binding",
-        "explicit_fallback_identity",
-        "provider_neutral_admissibility"
-      ],
-    "commands": {
-      "adapt": "target/debug/code-intel.exe provider graph-adapt --request <native.json|-> --artifact-root <artifact-directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>",
-      "capabilityExec": "target/debug/code-intel.exe capability exec provider.graph-adapt --request <request.json|-> --out <staging-dir> --artifact-root <run-root>"
-    },
-    "capabilityDeclaration": {
-      "schema": "code-intel-capability-declaration.v1",
-      "id": "provider.graph-adapt",
-      "contractVersion": 1,
-      "implementation": {
-        "id": "provider.graph-builtin.compat",
-        "version": "1.0.0",
-        "toolchainDigests": [
-              "a0127c7e3d6745f1c415522159adb9a73eb502d109c0def01aefee72eacbaacd",
-              "96779241e8da95440cdb35da35a192d35c1010bdac5c78ce7080d50d188dac70",
-              "68a4f55b76080575721cde3ee62fd746999c6df8e79303b809baecf5d2514338",
-              "4bfbebebe9e80fa6821100dbb572542a314be399ae0f929bac455c8f1531c4b2",
-              "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26"
-            ]
-      },
-      "determinism": "external_nondeterministic",
-      "allowedEffects": ["repo_read", "local_write"],
-      "dependencies": ["repo.snapshot"]
-    },
-    "runtimeAdapter": "provider.graph-builtin.compat",
-    "toolchainDigestEvidence": {
-      "algorithm": "sha256",
-      "inputs": [
-        "crates/code-intel-cli/src/builtin_provider_evidence.rs",
-        "crates/code-intel-cli/src/graph/mod.rs",
-        "crates/code-intel-cli/src/graph_adapter.rs",
-        "crates/code-intel-cli/src/admissibility.rs",
-        "crates/code-intel-cli/src/adapter_contract.rs"
-      ]
-    },
-      "artifactContract": [
-        "orchestration/schemas/code-intel-architecture-graph-port.v1.schema.json",
-        "orchestration/schemas/code-intel-graph-route-result.v1.schema.json",
-        "orchestration/schemas/code-intel-evidence-provider-port.v1.schema.json",
-        "orchestration/schemas/code-intel-evidence-admissibility-result.v1.schema.json"
-      ],
-      "extensionPoint": "The adapter is the only admissible architecture-graph evidence route. Internal Rust and explicit Understand-compatible fallback outputs must preserve this port and pass A04; direct graph artifacts are not current anatomy."
-    },
-    {
       "id": "provider.sentrux-adapt",
       "stage": "structure_governance",
       "owner": "code-intel-pipeline",
@@ -368,7 +303,7 @@
         "id": "provider.sentrux-builtin.compat",
         "version": "1.0.0",
         "toolchainDigests": [
-              "a0127c7e3d6745f1c415522159adb9a73eb502d109c0def01aefee72eacbaacd",
+              "a706e61d415c69e37dd0843322e76a795969431b440926b2a13d0d0992d4da24",
               "4702bbed12b8012e8f0c84c601c148e5557554449922860b19b96605538b9701",
               "9bb6ec43f3152e483b6426ebc9839626950ff7c5042493265d7c9e3179f5be64",
               "4bfbebebe9e80fa6821100dbb572542a314be399ae0f929bac455c8f1531c4b2",
@@ -482,7 +417,7 @@
           "id": "provider.codenexus-builtin.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-                "a0127c7e3d6745f1c415522159adb9a73eb502d109c0def01aefee72eacbaacd",
+                "a706e61d415c69e37dd0843322e76a795969431b440926b2a13d0d0992d4da24",
                 "07fa25c19ae895ea8ba455b2acbeec7d0558ed2bf50028119026d0a524cd47fc",
                 "4bfbebebe9e80fa6821100dbb572542a314be399ae0f929bac455c8f1531c4b2",
                 "98ccc64478b2c61bfd7af741ea1f8ee01a88094065c0f025700e8110b525ef26"
@@ -603,7 +538,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "6aed5efc531e841d620484af4cee50cac4595a41d2dca38ed5352163bedecd00",
-            "82a0e5a863141a63b87075c9c07913713fa895c258fd71d9bb62bdf2689bc1b4"
+            "664e82bb51bc9f1361539afafd139249601cb272c1c30b146c2d2bd0f7171faf"
           ]
         },
         "determinism": "deterministic",
@@ -694,7 +629,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "3ba256f4ca0bf62aca08f688f7ecf31800dd10e68371054e2f1605eff197ea81",
-            "82a0e5a863141a63b87075c9c07913713fa895c258fd71d9bb62bdf2689bc1b4",
+            "664e82bb51bc9f1361539afafd139249601cb272c1c30b146c2d2bd0f7171faf",
             "4a0afde307480b3f023d20d09964592eb4733019e3c70eb0197f0a9d5571cdd4",
             "363155d6dd2a53204250f9dc7d34300aeebd8956a3a5b3e6daf2a61814e5b9b8",
             "e3072b6b01a4f692c2ac75c7c4995747f9a0fd1ce4f32e1ab1599f348661f570",
@@ -756,7 +691,7 @@
           "version": "1.0.0",
           "toolchainDigests": [
             "4a11d639a27ec7ae039c07f1731f16b68e546b0e1ccc79ca43665718198fcef9",
-            "82a0e5a863141a63b87075c9c07913713fa895c258fd71d9bb62bdf2689bc1b4"
+            "664e82bb51bc9f1361539afafd139249601cb272c1c30b146c2d2bd0f7171faf"
           ]
         },
         "determinism": "deterministic",
@@ -806,8 +741,8 @@
           "toolchainDigests": [
             "56ddff826de649523a12e706ff3d1cad10db305b799135363e91e09ffd6a203a",
             "eb77a30abb4fb9891f0328ac26a7b50c21a1ada75aff52b88c39cf4184e25ba8",
-            "82a0e5a863141a63b87075c9c07913713fa895c258fd71d9bb62bdf2689bc1b4",
-            "85e964c401d62917ca11bc3f1c7ad6e56832f72da71b44d1c6a15cc261298449"
+            "664e82bb51bc9f1361539afafd139249601cb272c1c30b146c2d2bd0f7171faf",
+            "6a412818b61e5916d388cd3ea9ad8027eddfe93eb2137e15639dc89c08d0e1f7"
           ]
         },
         "determinism": "deterministic",
@@ -943,7 +878,7 @@
       "entrypoint": "crates/code-intel-cli/src/dag_run.rs",
       "capabilities": ["deterministic_dag", "bounded_concurrency", "resumable_run_state", "a03_verified_seeded_diagnosis"],
       "commands": {
-        "run": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--doctor-tool-path-prefix <controlled-tool-directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]",
+        "run": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> [--doctor-tool-path-prefix <controlled-tool-directory>] [--doctor-require-repowise <true|false>]",
         "diagnosis": "target/debug/code-intel.exe run dag-coordinate --repo <repo-root> --out <run-staging-directory> --diagnosis-inputs <artifact-refs.json> --seed-artifact-root <artifact-root>"
       },
       "artifactContract": [
@@ -975,7 +910,7 @@
           "id": "inventory.rg.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "82a0e5a863141a63b87075c9c07913713fa895c258fd71d9bb62bdf2689bc1b4"
+            "664e82bb51bc9f1361539afafd139249601cb272c1c30b146c2d2bd0f7171faf"
           ]
         },
         "determinism": "deterministic",
@@ -1162,51 +1097,6 @@
       "extensionPoint": "The only capability in this registry that rewrites repository source bytes. It writes exactly the addressed spans of exactly one file, after verifying each span's current bytes against a caller-supplied sha256, and publishes the expected/found digests as evidence when it refuses. Structural planning stays in edit.ast-grep-plan; this capability never decides what to change."
     },
     {
-      "id": "graph.code-intel-understand",
-      "stage": "architecture_graph",
-      "owner": "code-intel-pipeline",
-      "kind": "internal-rust-provider",
-      "required": true,
-      "entrypoint": "crates/code-intel-cli/Cargo.toml",
-      "capabilities": [
-        "graph_state",
-        "freshness",
-        "understand_compatible_artifact",
-        "provider_graph_adapter_source"
-      ],
-      "commands": {
-        "refresh": "target/debug/code-intel.exe graph --repo <repo-path> --language zh --write --json",
-        "refreshFull": "target/debug/code-intel.exe graph --repo <repo-path> --language zh --full --write --json"
-      },
-      "artifactContract": [
-        ".understand-anything/knowledge-graph.json",
-        "report.json.steps[understand graph]"
-      ],
-      "extensionPoint": "This command is the preferred native producer behind provider.graph-adapt. Its direct artifact is not admissible current anatomy until the adapter binds it to the requested snapshot and A04 accepts it."
-    },
-    {
-      "id": "graph.understand-external",
-      "stage": "architecture_graph",
-      "owner": "understand-anything",
-      "kind": "compatibility-fallback",
-      "required": false,
-      "entrypoint": "/understand",
-      "capabilities": [
-        "manual_refresh_command",
-        "rich_agent_graph",
-        "explicit_fallback_only",
-        "legacy_rollback_only"
-      ],
-      "commands": {
-        "refresh": "/understand <repo-path> --language zh",
-        "refreshFull": "/understand <repo-path> --language zh --full"
-      },
-      "artifactContract": [
-        ".understand-anything/knowledge-graph.json"
-      ],
-      "extensionPoint": "Use only as an explicitly selected fallback or legacy rollback. Output must enter provider.graph-adapt with a named fallback identity and pass A04; direct external artifacts never become current anatomy."
-    },
-    {
       "id": "structure.sentrux",
       "stage": "structure_governance",
       "owner": "code-intel-pipeline",
@@ -1281,14 +1171,13 @@
           "id": "diagnosis.hospital.compat",
           "version": "1.0.0",
           "toolchainDigests": [
-            "74da6e583b7ed36f581e24313bcf11890038ff6cdbc28fd0b904f7c9ad8c6b82"
+            "c651cdf6f1c80eccc4ccc225079ebb32ec8fe994e6bf86490c8105d34870c03b"
           ]
         },
         "determinism": "deterministic",
         "allowedEffects": ["local_write"],
         "dependencies": [
           "provider.repowise-adapt",
-          "provider.graph-adapt",
           "provider.sentrux-adapt",
           "repository.survival-scan",
           "evidence.native-code"

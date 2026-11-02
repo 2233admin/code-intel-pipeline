@@ -47,7 +47,7 @@ fn list_routes(provider: Option<&str>) -> Value {
 
 fn plan_route(options: &Options<'_>) -> Result<Value> {
     // `route plan` has no `--language` flag of its own; resolve through the
-    // same project/user/locale chain `graph`/`provider` use rather than the
+    // same project/user/locale chain `provider` uses rather than the
     // literal `"zh"` this used to hardcode (issue #155). `providers::plan`
     // does not read this field into its output today, but hardcoding a
     // language here was still a second, un-resolved copy of a value the
@@ -124,12 +124,12 @@ mod tests {
     }
 
     #[test]
-    fn plans_understand_graph_command() {
+    fn plans_repowise_status_command() {
         let repo = Path::new("C:/repo");
         let result = plan_route(&Options {
             action: "Plan",
-            provider: Some("understand"),
-            operation: Some("graph"),
+            provider: Some("repowise"),
+            operation: Some("status"),
             repo: Some(repo),
             json: true,
         })
@@ -138,10 +138,6 @@ mod tests {
         assert!(result["command"]
             .as_str()
             .unwrap()
-            .contains("code-intel.exe provider --action Invoke --provider understand"));
-        assert!(result["command"]
-            .as_str()
-            .unwrap()
-            .contains("--repo C:/repo"));
+            .contains("repowise status --no-workspace C:/repo"));
     }
 }

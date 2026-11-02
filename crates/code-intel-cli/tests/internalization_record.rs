@@ -1306,52 +1306,6 @@ fn ticket_r01_repowise_record_traces_b01_operations_and_stays_research_only() {
 }
 
 #[test]
-fn ticket_r02_graph_record_keeps_internal_and_external_evidence_separate() {
-    let record = advisory_candidate("graph");
-    assert_research_candidate(&record, "internalization.graph-record");
-    assert_recomputable_sha(
-        &record,
-        "crates/code-intel-cli/src/graph_adapter.rs",
-        "local-adapter-sha256",
-    );
-    assert_operation_trace_exact(
-        &record,
-        &[
-            "provider.graph-adapt",
-            "graph.code-intel-understand",
-            "graph.understand-external",
-        ],
-    );
-    assert_recomputable_sha(
-        &record,
-        "crates/code-intel-cli/tests/graph_adapter.rs",
-        "local-conformance-sha256",
-    );
-    let route = integration("provider.graph-adapt");
-    assert!(route["commands"]["adapt"]
-        .as_str()
-        .unwrap()
-        .contains("provider graph-adapt"));
-    assert!(route["commands"].get("facade").is_none());
-    let internal = integration("graph.code-intel-understand");
-    let external = integration("graph.understand-external");
-    assert_eq!(internal["kind"], "internal-rust-provider");
-    assert_eq!(external["kind"], "compatibility-fallback");
-    assert!(internal["commands"]["refresh"]
-        .as_str()
-        .unwrap()
-        .contains("code-intel.exe graph"));
-    assert!(external["commands"]["refresh"]
-        .as_str()
-        .unwrap()
-        .starts_with("/understand"));
-    let evidence = serde_json::to_string(&record).unwrap();
-    assert!(evidence.contains("local:b02:internal-operation-trace"));
-    assert!(evidence.contains("local:b02:external-fallback-operation-trace"));
-    assert!(evidence.contains("gap:graph:external-upstream-conformance"));
-}
-
-#[test]
 fn ticket_r03_sentrux_record_blocks_shim_retirement_on_windows_and_plugin_gaps() {
     let record = advisory_candidate("sentrux");
     assert_research_candidate(&record, "internalization.sentrux-record");

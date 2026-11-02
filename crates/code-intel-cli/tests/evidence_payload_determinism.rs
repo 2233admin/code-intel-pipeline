@@ -4,10 +4,9 @@
 //!
 //! Two `run dag-coordinate` executions over one unchanged tree used to emit
 //! two different payload digests, because the provider stamped its collection
-//! wall-clock into the hashed bytes (`provenance.observedAt`, and
-//! `graph.generatedAtUnix` inside the embedded architecture graph). A 1.9 MB
-//! graph payload was re-published on every run, and the digest churn
-//! propagated into `admissionIdentity`.
+//! wall-clock into the hashed bytes (`provenance.observedAt`). A payload was
+//! re-published on every run, and the digest churn propagated into
+//! `admissionIdentity`.
 //!
 //! Freshness is not lost: `observedAt` still rides in the native result, the
 //! provider port and the A04 observation, which is where
@@ -130,10 +129,7 @@ fn evidence_payloads_are_byte_identical_across_runs_of_one_unchanged_tree() {
     let second_out = root.join("run-2");
     let second = dag_run(&repo, &second_out, &doctor_tools);
 
-    for (node, relative) in [
-        ("evidence.graph", "evidence.graph/graph-payload.json"),
-        ("evidence.sentrux", "evidence.sentrux/sentrux-payload.json"),
-    ] {
+    for (node, relative) in [("evidence.sentrux", "evidence.sentrux/sentrux-payload.json")] {
         let first_bytes = fs::read(first_out.join(relative)).unwrap();
         let second_bytes = fs::read(second_out.join(relative)).unwrap();
         let first_payload: Value = serde_json::from_slice(&first_bytes).unwrap();

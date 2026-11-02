@@ -114,12 +114,11 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
 /// `{"language": "zh"}`.
 ///
 /// A repo-root dot-directory of its own -- structurally parallel to
-/// `.sentrux/` (sentrux's quality-gate config) and `.understand-anything/`
-/// (the graph provider's artifact directory), each owned by the one
-/// subsystem it belongs to. Language preference is a pipeline-wide setting,
-/// not a sentrux one, so it does not live inside `.sentrux/`; `.code-intel/`
-/// names it after the pipeline itself the same way the other two directories
-/// are named after their owning subsystem. JSON (not TOML) because the
+/// `.sentrux/` (sentrux's quality-gate config) and `.repowise/`, each owned
+/// by the one subsystem it belongs to. Language preference is a pipeline-wide
+/// setting, not a sentrux one, so it does not live inside `.sentrux/`;
+/// `.code-intel/` names it after the pipeline itself the same way the other
+/// two directories are named after their owning subsystem. JSON (not TOML) because the
 /// crate's only existing config parser (`serde_json`) already reads
 /// `pipeline.config.json` this way, and `.sentrux/rules.toml` is not
 /// actually parsed as TOML here -- `sentrux_gate::evaluate_rules` hand-reads

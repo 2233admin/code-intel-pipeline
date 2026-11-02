@@ -34,7 +34,7 @@ If a lower rung would weaken one of these boundaries, move up the ladder to the 
 
 This benchmark constrains implementation selection only. It does not produce artifact runs, change scanner output, replace Agent Goal Intake, replace Harness Factory Reference, or define the harness factory runtime.
 
-Use it during Code Intel skill and pipeline changes to keep the repository thin: prefer deleting redundant logic, reusing existing tools, and keeping orchestration as shell over `rg`, Repowise, Understand Anything, Sentrux, and CodeNexus-lite.
+Use it during Code Intel skill and pipeline changes to keep the repository thin: prefer deleting redundant logic, reusing existing tools, and keeping orchestration as shell over `rg`, Repowise, Sentrux, and CodeNexus-lite.
 
 Deferred cleanup gains are tracked in `docs/ponytail-gain-ledger.md`.
 Measured impact is tracked in `docs/ponytail-impact-scoreboard.md`.

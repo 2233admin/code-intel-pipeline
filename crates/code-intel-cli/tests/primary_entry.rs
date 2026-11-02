@@ -316,7 +316,7 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
     let completed_run = latest_core_run(&authority);
     let completed = manifest_of(&completed_run);
     assert_eq!(completed["outcome"], "completed", "manifest={completed}");
-    for node in ["evidence.graph", "evidence.sentrux", "diagnosis.hospital"] {
+    for node in ["evidence.sentrux", "diagnosis.hospital"] {
         assert_eq!(
             completed["nodes"][node]["status"], "succeeded",
             "default spine did not complete {node}: {completed}"

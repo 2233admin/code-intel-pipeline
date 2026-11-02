@@ -96,7 +96,6 @@ impl Cli {
         let mut seed_artifact_root = None;
         let mut doctor_tool_path_prefix = None;
         let mut doctor_require_repowise = None;
-        let mut doctor_require_understand = None;
         let mut profile = match command {
             RunCommand::DagCoordinate => RunProfile::Compatibility,
             RunCommand::Execute => RunProfile::Default,
@@ -122,7 +121,6 @@ impl Cli {
                     | "--skip-sentrux"
                     | "--skip-open-spec"
                     | "--auto-open-spec"
-                    | "--require-understand-graph"
                     | "--max-concurrency"
                     | "--budget-wall-clock"
                     | "--node-timeout"
@@ -134,7 +132,6 @@ impl Cli {
                     | "--seed-artifact-root"
                     | "--doctor-tool-path-prefix"
                     | "--doctor-require-repowise"
-                    | "--doctor-require-understand"
                     | "--session-evidence"
             ) {
                 return Err(format!("unknown DAG run argument: {flag}"));
@@ -178,9 +175,6 @@ impl Cli {
                 "--skip-sentrux" => skips.sentrux = parse_bool_flag(flag, value)?,
                 "--skip-open-spec" => skips.open_spec = parse_bool_flag(flag, value)?,
                 "--auto-open-spec" => open_spec_auto = parse_bool_flag(flag, value)?,
-                "--require-understand-graph" => {
-                    skips.require_understand_graph = parse_bool_flag(flag, value)?
-                }
                 "--max-concurrency" => {
                     max_concurrency = value
                         .parse::<usize>()
@@ -233,9 +227,6 @@ impl Cli {
                 }
                 "--doctor-require-repowise" => {
                     doctor_require_repowise = Some(parse_bool_flag(flag, value)?);
-                }
-                "--doctor-require-understand" => {
-                    doctor_require_understand = Some(parse_bool_flag(flag, value)?);
                 }
                 "--session-evidence"
                     if session_evidence.replace(PathBuf::from(value)).is_some() =>
@@ -348,11 +339,7 @@ impl Cli {
             .with_skips(skips)
             .with_open_spec_auto(open_spec_auto)
             .with_working_tree(WorkingTreePolicy::parse(&working_tree_policy)?, scopes)
-            .with_doctor_overrides(
-                doctor_require_repowise,
-                doctor_require_understand,
-                doctor_tool_path_prefix,
-            );
+            .with_doctor_overrides(doctor_require_repowise, doctor_tool_path_prefix);
         if command == RunCommand::Execute && out.is_none() {
             return Err("--out is required".into());
         }
@@ -378,7 +365,7 @@ impl Cli {
 }
 
 pub(crate) fn usage() -> String {
-    "usage: run <dag-coordinate|execute> --repo <repo-root> <--out <run-staging-directory> | --artifact-root <root> (dag-coordinate only; also read from CODE_INTEL_ARTIFACT_ROOT)> [--authority-root <publication-root> --final-name <name>] [--profile <default|strict|offline>] [--mode <lite|normal|full>] [--skip-repowise <true|false>] [--skip-sentrux <true|false>] [--skip-open-spec <true|false>] [--auto-open-spec <true|false>] [--require-understand-graph <true|false>] [--manifest <integrations.json>] [--max-concurrency <n>] [--budget-wall-clock <seconds>] [--budget-bytes <bytes>] [--oversize-threshold <1-100>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>] [--doctor-require-understand <true|false>]"
+    "usage: run <dag-coordinate|execute> --repo <repo-root> <--out <run-staging-directory> | --artifact-root <root> (dag-coordinate only; also read from CODE_INTEL_ARTIFACT_ROOT)> [--authority-root <publication-root> --final-name <name>] [--profile <default|strict|offline>] [--mode <lite|normal|full>] [--skip-repowise <true|false>] [--skip-sentrux <true|false>] [--skip-open-spec <true|false>] [--auto-open-spec <true|false>] [--manifest <integrations.json>] [--max-concurrency <n>] [--budget-wall-clock <seconds>] [--budget-bytes <bytes>] [--oversize-threshold <1-100>] [--working-tree-policy <head_only|explicit_overlay>] [--scope <relative-path>]... [--session-evidence <session-evidence.json>] [--diagnosis-inputs <artifact-refs.json> --seed-artifact-root <root>] [--doctor-tool-path-prefix <directory>] [--doctor-require-repowise <true|false>]"
         .to_string()
 }
 

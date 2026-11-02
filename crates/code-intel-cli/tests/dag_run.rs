@@ -190,7 +190,6 @@ fn production_run_route_executes_snapshot_then_inventory() {
         manifest["nodes"]["evidence.native-code"]["status"],
         "succeeded"
     );
-    assert_eq!(manifest["nodes"]["evidence.graph"]["status"], "succeeded");
     assert_eq!(manifest["nodes"]["evidence.sentrux"]["status"], "succeeded");
     assert_eq!(
         manifest["nodes"]["evidence.codenexus"]["status"],
@@ -201,18 +200,12 @@ fn production_run_route_executes_snapshot_then_inventory() {
         "succeeded"
     );
     for node in [
-        "evidence.graph",
         "evidence.sentrux",
         "evidence.codenexus",
         "diagnosis.hospital",
     ] {
         assert_eq!(manifest["nodes"][node]["verdict"], "pass", "node={node}");
     }
-    assert!(manifest["nodes"]["evidence.graph"]["artifacts"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|artifact| artifact["type"] == "observed.evidence.payload"));
     assert!(manifest["nodes"]["evidence.sentrux"]["artifacts"]
         .as_array()
         .unwrap()
@@ -365,7 +358,6 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     let doctor_request: Value =
         serde_json::from_slice(&fs::read(source.join("doctor.request.json")).unwrap()).unwrap();
     assert_eq!(doctor_request["options"]["requireRepowise"], false);
-    assert_eq!(doctor_request["options"]["requireUnderstand"], false);
 
     let index: Value =
         serde_json::from_slice(&fs::read(artifact_root.join("index.json")).unwrap()).unwrap();
@@ -683,7 +675,6 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
         manifest["nodes"]["evidence.native-code"]["status"],
         "succeeded"
     );
-    assert_eq!(manifest["nodes"]["evidence.graph"]["status"], "succeeded");
     assert_eq!(manifest["nodes"]["evidence.sentrux"]["status"], "succeeded");
     assert_eq!(
         manifest["nodes"]["evidence.codenexus"]["status"],
@@ -996,7 +987,6 @@ fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
         .arg(&authority)
         .args(["--final-name", "offline-001", "--profile", "offline"])
         .args(["--doctor-require-repowise", "true"])
-        .args(["--doctor-require-understand", "true"])
         .env("PATH", &doctor_tools)
         .output()
         .unwrap();
@@ -1023,7 +1013,6 @@ fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
     );
 
     let nodes = execution["manifest"]["nodes"].as_object().unwrap();
-    assert!(!nodes.contains_key("evidence.graph"));
     assert!(!nodes.contains_key("evidence.sentrux"));
     assert!(!nodes.contains_key("evidence.codenexus"));
     assert!(!nodes.contains_key("diagnosis.hospital"));
@@ -1031,13 +1020,11 @@ fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
     assert!(nodes.contains_key("inventory.rg"));
     assert!(nodes.contains_key("evidence.native-code"));
 
-    assert!(!out.join("evidence.graph.request.json").exists());
     assert!(!out.join("evidence.sentrux.request.json").exists());
     assert!(!out.join("evidence.codenexus.request.json").exists());
     let doctor_request: Value =
         serde_json::from_slice(&fs::read(out.join("doctor.request.json")).unwrap()).unwrap();
     assert_eq!(doctor_request["options"]["requireRepowise"], false);
-    assert_eq!(doctor_request["options"]["requireUnderstand"], false);
 
     let result_path = root.join("execution-result.json");
     fs::write(&result_path, &output.stdout).unwrap();
@@ -1105,7 +1092,6 @@ fn strict_profile_cannot_be_weakened_and_keeps_all_provider_nodes_required() {
         .arg(&authority)
         .args(["--final-name", "strict-001", "--profile", "strict"])
         .args(["--doctor-require-repowise", "false"])
-        .args(["--doctor-require-understand", "false"])
         .env("PATH", &doctor_tools)
         .output()
         .unwrap();
@@ -1126,7 +1112,6 @@ fn strict_profile_cannot_be_weakened_and_keeps_all_provider_nodes_required() {
         "typed result and terminal manifest must agree"
     );
     let nodes = execution["manifest"]["nodes"].as_object().unwrap();
-    assert!(nodes.contains_key("evidence.graph"));
     assert!(nodes.contains_key("evidence.sentrux"));
     assert!(nodes.contains_key("evidence.codenexus"));
     assert!(nodes.contains_key("diagnosis.hospital"));
@@ -1134,7 +1119,6 @@ fn strict_profile_cannot_be_weakened_and_keeps_all_provider_nodes_required() {
     let doctor_request: Value =
         serde_json::from_slice(&fs::read(out.join("doctor.request.json")).unwrap()).unwrap();
     assert_eq!(doctor_request["options"]["requireRepowise"], true);
-    assert_eq!(doctor_request["options"]["requireUnderstand"], true);
 }
 
 /// Reads the single admitted structural rule of one kind out of a completed
