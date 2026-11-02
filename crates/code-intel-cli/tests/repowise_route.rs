@@ -1,7 +1,7 @@
 mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{json, Value};
@@ -46,13 +46,12 @@ fn result(output: &Output) -> Value {
     })
 }
 
-fn with_fixture(name: &str, edit: impl FnOnce(&mut Value)) -> PathBuf {
+fn with_fixture(dir: &Path, name: &str, edit: impl FnOnce(&mut Value)) -> PathBuf {
     let mut value: Value =
         serde_json::from_slice(&fs::read(fixtures().join(name)).unwrap()).unwrap();
     edit(&mut value);
-    let path = std::env::temp_dir().join(format!(
-        "code-intel-repowise-route-{}-{}.json",
-        std::process::id(),
+    let path = dir.join(format!(
+        "native-{}.json",
         NEXT_FILE.fetch_add(1, Ordering::Relaxed)
     ));
     fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
@@ -101,11 +100,12 @@ fn public_route_translates_and_a04_validates_success_quota_and_index_only() {
 
 #[test]
 fn public_route_preserves_missing_cli_and_incomplete_docs_without_fake_facts() {
-    let missing = with_fixture("success.json", |native| {
+    let scratch = common::TempDir::new("repowise-route");
+    let missing = with_fixture(scratch.path(), "success.json", |native| {
         native["cli"]["status"] = json!("missing");
         native["health"]["status"] = json!("unavailable");
     });
-    let incomplete = with_fixture("success.json", |native| {
+    let incomplete = with_fixture(scratch.path(), "success.json", |native| {
         native["docs"]["status"] = json!("partial");
         native["docs"]["payload"]["path"] = json!("partial-docs-payload.json");
         native["docs"]["payload"]["sha256"] =
@@ -129,13 +129,12 @@ fn public_route_preserves_missing_cli_and_incomplete_docs_without_fake_facts() {
         incomplete_result["adapter"]["factPromotion"]["engineeringFacts"],
         json!([])
     );
-    fs::remove_file(missing).unwrap();
-    fs::remove_file(incomplete).unwrap();
 }
 
 #[test]
 fn public_route_reports_stale_as_a04_rejection_and_never_leaks_native_diagnostics() {
-    let stale = with_fixture("index-only.json", |native| {
+    let scratch = common::TempDir::new("repowise-route");
+    let stale = with_fixture(scratch.path(), "index-only.json", |native| {
         native["collectedAt"] = json!(1_699_999_000u64);
         native["index"]["observedAt"] = json!(1_699_999_000u64);
     });
@@ -147,7 +146,6 @@ fn public_route_reports_stale_as_a04_rejection_and_never_leaks_native_diagnostic
     assert!(!text.contains("super-secret"));
     assert!(!text.contains("sk-live-123"));
     assert!(!text.contains("ANTHROPIC_API_KEY"));
-    fs::remove_file(stale).unwrap();
 }
 
 #[test]

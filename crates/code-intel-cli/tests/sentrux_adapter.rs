@@ -1,34 +1,11 @@
 mod common;
+
+use common::TempDir;
 #[path = "support/sha256.rs"]
 mod sha256;
 use serde_json::{json, Value};
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
-
-static SEQ: AtomicU64 = AtomicU64::new(0);
-struct Temp(PathBuf);
-impl Temp {
-    fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-admission-provider-{}-{nonce}-{}",
-            std::process::id(),
-            SEQ.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+use std::path::Path;
 
 fn sentrux(repo: &Path, operation: &str) -> Value {
     let output = common::cli()
@@ -149,9 +126,9 @@ fn replace_payload(root: &Path, native: &mut Value, change: impl FnOnce(&mut Val
 
 #[test]
 fn real_quality_only_decline_is_admitted_as_advisory_not_a_hard_violation() {
-    let root = Temp::new();
-    let native = case(&root.0, true);
-    let (code, result, stderr) = route(&root.0, &native);
+    let root = TempDir::new("sentrux_adapter");
+    let native = case(root.path(), true);
+    let (code, result, stderr) = route(root.path(), &native);
     assert_eq!(code, 0, "{stderr}");
     assert_eq!(result["admission"]["domainVerdict"], "observed");
     assert_eq!(result["adapter"]["port"]["diagnosisEligible"], true);
@@ -176,12 +153,12 @@ fn real_quality_only_decline_is_admitted_as_advisory_not_a_hard_violation() {
 
 #[test]
 fn external_exit_zero_rule_labels_cannot_replace_a_typed_policy_handshake() {
-    let root = Temp::new();
-    let mut native = case(&root.0, false);
+    let root = TempDir::new("sentrux_adapter");
+    let mut native = case(root.path(), false);
     for entry in native["gateResults"].as_array_mut().unwrap() {
         entry["admission"] = Value::Null;
     }
-    replace_payload(&root.0, &mut native, |payload| {
+    replace_payload(root.path(), &mut native, |payload| {
         payload["data"]["structuralEvidence"]["gateResults"] = json!([
             {"kind":"sentrux_gate","admission":null},{"kind":"sentrux_check","admission":null}
         ]);
@@ -195,7 +172,7 @@ fn external_exit_zero_rule_labels_cannot_replace_a_typed_policy_handshake() {
             rule["failure"] = json!({"kind":"domain_unknown","message":"same-policy typed gate admission is unavailable"});
         }
     });
-    let (code, result, stderr) = route(&root.0, &native);
+    let (code, result, stderr) = route(root.path(), &native);
     assert_eq!(code, 0, "{stderr}");
     assert_eq!(result["admission"]["domainVerdict"], "unknown");
     assert_eq!(result["adapter"]["port"]["diagnosisEligible"], false);
@@ -205,8 +182,8 @@ fn external_exit_zero_rule_labels_cannot_replace_a_typed_policy_handshake() {
 #[test]
 fn missing_evaluation_or_crashed_provider_cannot_promote_a_complete_label() {
     for state in ["missing_gate", "not_evaluated", "crashed"] {
-        let root = Temp::new();
-        let mut native = case(&root.0, false);
+        let root = TempDir::new("sentrux_adapter");
+        let mut native = case(root.path(), false);
         match state {
             "missing_gate" => native["authoritativeRules"]
                 .as_array_mut()
@@ -231,13 +208,13 @@ fn missing_evaluation_or_crashed_provider_cannot_promote_a_complete_label() {
         }
         let rules = native["authoritativeRules"].clone();
         let results = native["gateResults"].clone();
-        replace_payload(&root.0, &mut native, |payload| {
+        replace_payload(root.path(), &mut native, |payload| {
             let evidence = &mut payload["data"]["structuralEvidence"];
             evidence["completeness"] = json!("partial");
             evidence["rules"] = rules;
             evidence["gateResults"] = results;
         });
-        let (code, result, stderr) = route(&root.0, &native);
+        let (code, result, stderr) = route(root.path(), &native);
         assert_eq!(code, 0, "{state}: {stderr}");
         assert_eq!(result["admission"]["domainVerdict"], "unknown", "{state}");
         assert_eq!(
@@ -249,8 +226,8 @@ fn missing_evaluation_or_crashed_provider_cannot_promote_a_complete_label() {
 
 #[test]
 fn forged_missing_old_or_contradictory_policy_claims_are_rejected_at_public_route() {
-    let root = Temp::new();
-    let base = case(&root.0, false);
+    let root = TempDir::new("sentrux_adapter");
+    let base = case(root.path(), false);
     let mut cases = Vec::new();
     let mut value = base.clone();
     value["observedEffects"] = json!(["repo_read"]);
@@ -326,7 +303,7 @@ fn forged_missing_old_or_contradictory_policy_claims_are_rejected_at_public_rout
     quality["after"] = json!(7777.5);
     cases.push(value);
     for native in cases {
-        let (code, result, _) = route(&root.0, &native);
+        let (code, result, _) = route(root.path(), &native);
         assert_eq!(code, 65, "{result}");
         assert_eq!(result["status"], "rejected");
         assert!(result["admission"].is_null());
@@ -335,27 +312,27 @@ fn forged_missing_old_or_contradictory_policy_claims_are_rejected_at_public_rout
 
 #[test]
 fn stale_snapshot_and_digest_bound_payload_relabel_cannot_be_admitted() {
-    let root = Temp::new();
-    let base = case(&root.0, false);
+    let root = TempDir::new("sentrux_adapter");
+    let base = case(root.path(), false);
     let mut native = base.clone();
     native["expectedSnapshotIdentity"] = json!("f".repeat(64));
-    let (code, result, stderr) = route(&root.0, &native);
+    let (code, result, stderr) = route(root.path(), &native);
     assert_eq!(code, 65, "{stderr}");
     assert_eq!(result["status"], "rejected");
     assert!(result["admission"].is_null());
     let mut native = base;
-    replace_payload(&root.0, &mut native, |payload| {
+    replace_payload(root.path(), &mut native, |payload| {
         payload["data"]["structuralEvidence"]["gatePolicy"]["policyVersion"] = json!(2);
     });
-    assert_eq!(route(&root.0, &native).0, 65);
+    assert_eq!(route(root.path(), &native).0, 65);
 }
 
 #[test]
 fn secret_shaped_extra_input_is_rejected_without_echo() {
-    let root = Temp::new();
-    let mut native = case(&root.0, false);
+    let root = TempDir::new("sentrux_adapter");
+    let mut native = case(root.path(), false);
     native["apiToken"] = json!("SENTINEL_DO_NOT_ECHO");
-    let (code, result, stderr) = route(&root.0, &native);
+    let (code, result, stderr) = route(root.path(), &native);
     assert_eq!(code, 65);
     assert!(!format!("{result}{stderr}").contains("SENTINEL_DO_NOT_ECHO"));
 }

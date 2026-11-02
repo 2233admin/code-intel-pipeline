@@ -1,37 +1,10 @@
 mod common;
+
+use common::TempDir;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
-
-static SEQ: AtomicU64 = AtomicU64::new(0);
-
-struct Temp(PathBuf);
-
-impl Temp {
-    fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-session-evidence-{}-{nonce}-{}",
-            std::process::id(),
-            SEQ.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn fixture(root: &Path) -> (PathBuf, PathBuf, PathBuf) {
     let repo = root.join("repo");
@@ -134,8 +107,8 @@ fn run(
 
 #[test]
 fn normalizes_private_trace_and_joins_structural_evidence() {
-    let root = Temp::new();
-    let (repo, trace, hotspots) = fixture(&root.0);
+    let root = TempDir::new("session_evidence");
+    let (repo, trace, hotspots) = fixture(root.path());
     let output = run(&repo, &trace, Some(&hotspots), None);
     assert_eq!(
         output.status.code(),
@@ -182,9 +155,9 @@ fn normalizes_private_trace_and_joins_structural_evidence() {
 
 #[test]
 fn optional_enrichment_stays_unknown_and_output_is_non_overwriting() {
-    let root = Temp::new();
-    let (repo, trace, _) = fixture(&root.0);
-    let out = root.0.join("session-evidence.json");
+    let root = TempDir::new("session_evidence");
+    let (repo, trace, _) = fixture(root.path());
+    let out = root.path().join("session-evidence.json");
     let first = run(&repo, &trace, None, Some(&out));
     assert_eq!(
         first.status.code(),
@@ -205,10 +178,10 @@ fn optional_enrichment_stays_unknown_and_output_is_non_overwriting() {
 }
 #[test]
 fn unsupported_trace_is_rejected_without_echoing_provider_content() {
-    let root = Temp::new();
-    let repo = root.0.join("repo");
+    let root = TempDir::new("session_evidence");
+    let repo = root.path().join("repo");
     fs::create_dir(&repo).unwrap();
-    let trace = root.0.join("bad.json");
+    let trace = root.path().join("bad.json");
     fs::write(
         &trace,
         serde_json::to_vec(&json!({
@@ -238,8 +211,8 @@ fn exhaustive_hotspots_producer_lets_session_adapt_match_a_file_past_the_old_top
     // its real stdout to disk, then feeds that real artifact into a real
     // `session-adapt` invocation touching the single lowest-complexity file
     // -- the one an old top-30 cut would have dropped -- end to end.
-    let root = Temp::new();
-    let repo = root.0.join("repo").join("src");
+    let root = TempDir::new("session_evidence");
+    let repo = root.path().join("repo").join("src");
     fs::create_dir_all(&repo).unwrap();
     let repo = repo.parent().unwrap().to_path_buf();
     const FILE_COUNT: usize = 35;
@@ -272,11 +245,11 @@ fn exhaustive_hotspots_producer_lets_session_adapt_match_a_file_past_the_old_top
         FILE_COUNT,
         "hotspots producer must not drop files below any top-N cutoff"
     );
-    let hotspots_path = root.0.join("real-hotspots.json");
+    let hotspots_path = root.path().join("real-hotspots.json");
     fs::write(&hotspots_path, &hotspots_output.stdout).unwrap();
 
     let lowest_complexity_file = "src/file_34.rs";
-    let trace = root.0.join("trace.json");
+    let trace = root.path().join("trace.json");
     fs::write(
         &trace,
         serde_json::to_vec(&json!({

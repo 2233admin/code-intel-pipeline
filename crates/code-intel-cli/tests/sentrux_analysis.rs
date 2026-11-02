@@ -1,32 +1,20 @@
 mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[path = "../src/sentrux_analysis.rs"]
 mod sentrux_analysis;
 
 struct Fixture {
+    _dir: common::TempDir,
     root: PathBuf,
 }
 
-static FIXTURE_COUNTER: AtomicU64 = AtomicU64::new(0);
-
 impl Fixture {
     fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let sequence = FIXTURE_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!(
-            "code-intel-sentrux-analysis-{}-{nonce}-{sequence}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).expect("create fixture root");
-        Self { root }
+        let dir = common::TempDir::new("sentrux-analysis");
+        let root = dir.path().to_path_buf();
+        Self { _dir: dir, root }
     }
 
     fn write(&self, relative: &str, content: &str) {
@@ -39,12 +27,6 @@ impl Fixture {
         let path = self.root.join(relative);
         fs::create_dir_all(path.parent().expect("fixture parent")).expect("create fixture dir");
         fs::write(path, content).expect("write fixture bytes");
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

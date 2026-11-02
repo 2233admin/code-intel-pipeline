@@ -1,39 +1,14 @@
 #[path = "../src/method_catalog.rs"]
 mod method_catalog;
 
+mod common;
+
+use common::TempDir;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
-
-static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-struct TempTree(PathBuf);
-
-impl TempTree {
-    fn new(label: &str) -> Self {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-method-catalog-{label}-{}-{nanos}-{sequence}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for TempTree {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn root() -> PathBuf {
     option_env!("CODE_INTEL_REPO_ROOT")
@@ -195,9 +170,9 @@ fn unversioned_paths_and_unregistered_nested_cards_fail_closed() {
     unversioned_cards[0].0 = "cards/unversioned.json".to_string();
     assert!(method_catalog::validate_documents(&unversioned_index, &unversioned_cards).is_err());
 
-    let temp = TempTree::new("nested-card");
+    let temp = TempDir::new("nested-card");
     let source = root().join("orchestration/methods");
-    let target = temp.0.join("methods");
+    let target = temp.path().join("methods");
     fs::create_dir_all(target.join("cards/rogue")).unwrap();
     fs::copy(
         source.join("catalog.v1.json"),

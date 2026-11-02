@@ -1,39 +1,14 @@
 mod common;
+
+use common::TempDir;
 #[path = "support/schema.rs"]
 mod schema_support;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-struct Temp(PathBuf);
-
-impl Temp {
-    fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-b09-{}-{nonce}-{}",
-            std::process::id(),
-            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn artifact_ref(root: &Path, path: &str, schema: &str, kind: &str, value: &Value) -> Value {
     let bytes = serde_json::to_vec(value).unwrap();
@@ -369,9 +344,9 @@ fn diagnosis(root: &Path, inputs: Vec<Value>, name: &str) -> (i32, String, Strin
 
 #[test]
 fn provider_quota_precedes_missing_current_graph_and_is_replay_stable() {
-    let temp = Temp::new();
+    let temp = TempDir::new("hospital_diagnosis");
     let repowise = admission(
-        &temp.0,
+        temp.path(),
         "repowise-docs",
         "repowise.docs",
         "unknown",
@@ -379,7 +354,7 @@ fn provider_quota_precedes_missing_current_graph_and_is_replay_stable() {
         json!({"repowise":{"channel":"docs","status":"quota"}}),
     );
     let graph = admission(
-        &temp.0,
+        temp.path(),
         "graph",
         "architecture-graph.internal",
         "unknown",
@@ -388,7 +363,7 @@ fn provider_quota_precedes_missing_current_graph_and_is_replay_stable() {
     );
 
     let (exit, envelope, out, stderr) =
-        run(&temp.0, vec![repowise.clone(), graph.clone()], "first");
+        run(temp.path(), vec![repowise.clone(), graph.clone()], "first");
     assert_eq!(exit, 0, "{stderr}");
     assert_eq!(envelope["status"], "completed");
     assert_eq!(envelope["observedEffects"], json!(["local_write"]));
@@ -426,7 +401,8 @@ fn provider_quota_precedes_missing_current_graph_and_is_replay_stable() {
         .any(|v| v.as_str().unwrap().contains("provider quota")));
     assert_eq!(machine["surgery_plan"]["status"], "not_required");
 
-    let (replay_exit, _, replay_out, replay_stderr) = run(&temp.0, vec![graph, repowise], "replay");
+    let (replay_exit, _, replay_out, replay_stderr) =
+        run(temp.path(), vec![graph, repowise], "replay");
     assert_eq!(replay_exit, 0, "{replay_stderr}");
     assert_eq!(
         fs::read(out.join("hospital-report.json")).unwrap(),
@@ -447,7 +423,7 @@ fn provider_quota_precedes_missing_current_graph_and_is_replay_stable() {
 
 #[test]
 fn provider_identity_spoofs_cannot_supply_any_admitted_modality() {
-    let temp = Temp::new();
+    let temp = TempDir::new("hospital_diagnosis");
     let cases = [
         (
             "graph-spoof",
@@ -466,8 +442,8 @@ fn provider_identity_spoofs_cannot_supply_any_admitted_modality() {
         ),
     ];
     for (name, provider, data) in cases {
-        let spoof = admission(&temp.0, name, provider, "observed", "none", data);
-        let (exit, _, out, _) = run(&temp.0, vec![spoof], &format!("{name}-out"));
+        let spoof = admission(temp.path(), name, provider, "observed", "none", data);
+        let (exit, _, out, _) = run(temp.path(), vec![spoof], &format!("{name}-out"));
         assert_eq!(exit, 65, "spoof provider {provider} must fail closed");
         assert!(!out.join("hospital-report.json").exists());
         assert!(!out.join("hospital.md").exists());
@@ -478,16 +454,20 @@ fn provider_identity_spoofs_cannot_supply_any_admitted_modality() {
 
 #[test]
 fn repowise_quota_signal_requires_an_exact_provider_identity() {
-    let temp = Temp::new();
+    let temp = TempDir::new("hospital_diagnosis");
     let spoof = admission(
-        &temp.0,
+        temp.path(),
         "repowise-spoof",
         "repowise.docs-spoof",
         "unknown",
         "provider_unavailable",
         json!({"repowise":{"channel":"docs","status":"quota"}}),
     );
-    let (exit, _, out, _) = run(&temp.0, vec![spoof, graph(&temp.0, false)], "quota-spoof");
+    let (exit, _, out, _) = run(
+        temp.path(),
+        vec![spoof, graph(temp.path(), false)],
+        "quota-spoof",
+    );
     assert_eq!(exit, 65);
     assert!(!out.join("hospital-report.json").exists());
     assert!(!out.join("hospital.md").exists());
@@ -497,13 +477,13 @@ fn repowise_quota_signal_requires_an_exact_provider_identity() {
 
 #[test]
 fn precedence_matrix_matches_the_stable_diagnoses_and_fails_closed() {
-    let temp = Temp::new();
+    let temp = TempDir::new("hospital_diagnosis");
     let cases = vec![
         (
             "local-first",
             vec![
                 admission(
-                    &temp.0,
+                    temp.path(),
                     "local",
                     "repowise.index",
                     "unknown",
@@ -511,7 +491,7 @@ fn precedence_matrix_matches_the_stable_diagnoses_and_fails_closed() {
                     json!({"repowise":{"status":"unavailable"}}),
                 ),
                 admission(
-                    &temp.0,
+                    temp.path(),
                     "quota-2",
                     "repowise.docs",
                     "unknown",
@@ -525,8 +505,8 @@ fn precedence_matrix_matches_the_stable_diagnoses_and_fails_closed() {
         (
             "gate-before-graph",
             vec![
-                graph(&temp.0, false),
-                structural(&temp.0, "structural-fail", Some("fail"), true),
+                graph(temp.path(), false),
+                structural(temp.path(), "structural-fail", Some("fail"), true),
             ],
             "architecture gate failure",
             "govern",
@@ -534,24 +514,24 @@ fn precedence_matrix_matches_the_stable_diagnoses_and_fails_closed() {
         (
             "graph-missing",
             vec![
-                graph(&temp.0, false),
-                structural(&temp.0, "structural-pass-1", Some("pass"), true),
+                graph(temp.path(), false),
+                structural(temp.path(), "structural-pass-1", Some("pass"), true),
             ],
             "architecture graph missing",
             "diagnose",
         ),
         (
             "authoritative-missing",
-            vec![graph(&temp.0, true), native(&temp.0, false)],
+            vec![graph(temp.path(), true), native(temp.path(), false)],
             "authoritative structural evidence unavailable",
             "diagnose",
         ),
         (
             "authoritative-untrusted",
             vec![
-                graph(&temp.0, true),
-                structural(&temp.0, "structural-unknown", Some("unknown"), false),
-                native(&temp.0, false),
+                graph(temp.path(), true),
+                structural(temp.path(), "structural-unknown", Some("unknown"), false),
+                native(temp.path(), false),
             ],
             "authoritative structural evidence unavailable",
             "diagnose",
@@ -559,8 +539,8 @@ fn precedence_matrix_matches_the_stable_diagnoses_and_fails_closed() {
         (
             "ungoverned",
             vec![
-                graph(&temp.0, true),
-                structural(&temp.0, "structural-empty", None, true),
+                graph(temp.path(), true),
+                structural(temp.path(), "structural-empty", None, true),
             ],
             "authoritative structural evidence unavailable",
             "diagnose",
@@ -568,9 +548,9 @@ fn precedence_matrix_matches_the_stable_diagnoses_and_fails_closed() {
         (
             "modernization",
             vec![
-                graph(&temp.0, true),
-                structural(&temp.0, "structural-pass-2", Some("pass"), true),
-                native(&temp.0, true),
+                graph(temp.path(), true),
+                structural(temp.path(), "structural-pass-2", Some("pass"), true),
+                native(temp.path(), true),
             ],
             "known modernization debt",
             "surgery_plan",
@@ -578,16 +558,16 @@ fn precedence_matrix_matches_the_stable_diagnoses_and_fails_closed() {
         (
             "clean",
             vec![
-                graph(&temp.0, true),
-                structural(&temp.0, "structural-pass-3", Some("pass"), true),
-                native(&temp.0, false),
+                graph(temp.path(), true),
+                structural(temp.path(), "structural-pass-3", Some("pass"), true),
+                native(temp.path(), false),
             ],
             "clean snapshot",
             "post_op",
         ),
     ];
     for (name, inputs, expected_diagnosis, expected_protocol) in cases {
-        let (exit, actual_diagnosis, actual_protocol, _) = diagnosis(&temp.0, inputs, name);
+        let (exit, actual_diagnosis, actual_protocol, _) = diagnosis(temp.path(), inputs, name);
         let expected_exit = if matches!(expected_protocol, "govern" | "surgery_plan") {
             10
         } else {
@@ -601,13 +581,13 @@ fn precedence_matrix_matches_the_stable_diagnoses_and_fails_closed() {
 
 #[test]
 fn architecture_gate_failure_names_the_rule_targets_and_smallest_rerun_command() {
-    let temp = Temp::new();
+    let temp = TempDir::new("hospital_diagnosis");
     let violation = json!({
         "rule":"max_cycles","message":"cycles exceeded: 1 > 0",
         "targets":["crates/code-intel-cli/src/dag_run.rs","crates/code-intel-cli/src/execution_kernel.rs"]
     });
     let structural_fail = admission(
-        &temp.0,
+        temp.path(),
         "structural-cycle-fail",
         "structural-evidence.sentrux",
         "observed",
@@ -615,8 +595,8 @@ fn architecture_gate_failure_names_the_rule_targets_and_smallest_rerun_command()
         structural_data(SNAPSHOT, false, Some(violation)),
     );
     let (exit, _, out, stderr) = run(
-        &temp.0,
-        vec![graph(&temp.0, true), structural_fail],
+        temp.path(),
+        vec![graph(temp.path(), true), structural_fail],
         "cycle-gate-failure",
     );
     assert_eq!(exit, 10, "{stderr}");
@@ -659,10 +639,10 @@ fn architecture_gate_failure_names_the_rule_targets_and_smallest_rerun_command()
 
 #[test]
 fn missing_or_non_admitted_authority_is_rejected_and_enrichment_never_overrides_it() {
-    let temp = Temp::new();
+    let temp = TempDir::new("hospital_diagnosis");
     let (exit, diagnosis_text, protocol, _) = diagnosis(
-        &temp.0,
-        vec![graph(&temp.0, true), native(&temp.0, true)],
+        temp.path(),
+        vec![graph(temp.path(), true), native(temp.path(), true)],
         "missing-authority",
     );
     assert_eq!(exit, 0);
@@ -673,11 +653,11 @@ fn missing_or_non_admitted_authority_is_rejected_and_enrichment_never_overrides_
     assert_eq!(protocol, "diagnose");
 
     let (untrusted_exit, untrusted_diagnosis, untrusted_protocol, untrusted_out) = diagnosis(
-        &temp.0,
+        temp.path(),
         vec![
-            graph(&temp.0, true),
-            structural(&temp.0, "untrusted-with-target", Some("unknown"), false),
-            native(&temp.0, true),
+            graph(temp.path(), true),
+            structural(temp.path(), "untrusted-with-target", Some("unknown"), false),
+            native(temp.path(), true),
         ],
         "untrusted-authority-with-enrichment",
     );
@@ -693,15 +673,19 @@ fn missing_or_non_admitted_authority_is_rejected_and_enrichment_never_overrides_
     assert_eq!(untrusted_machine["domainVerdict"], "unknown");
     assert_eq!(untrusted_machine["surgery_plan"]["status"], "not_required");
 
-    let mut rejected = structural(&temp.0, "rejected-structural", Some("pass"), true);
-    let path = temp.0.join(rejected["path"].as_str().unwrap());
+    let mut rejected = structural(temp.path(), "rejected-structural", Some("pass"), true);
+    let path = temp.path().join(rejected["path"].as_str().unwrap());
     let mut value: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     value["status"] = json!("rejected");
     fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
     rejected["sha256"] = json!(file_sha256(&path));
     let (rejected_exit, _, out, stderr) = run(
-        &temp.0,
-        vec![graph(&temp.0, true), rejected, native(&temp.0, true)],
+        temp.path(),
+        vec![
+            graph(temp.path(), true),
+            rejected,
+            native(temp.path(), true),
+        ],
         "rejected-authority",
     );
     assert_eq!(rejected_exit, 65, "{stderr}");
@@ -710,9 +694,9 @@ fn missing_or_non_admitted_authority_is_rejected_and_enrichment_never_overrides_
 
 #[test]
 fn conflicting_or_provider_injected_modalities_fail_closed_independent_of_input_order() {
-    let temp = Temp::new();
+    let temp = TempDir::new("hospital_diagnosis");
     let first = admission(
-        &temp.0,
+        temp.path(),
         "graph-provider-a",
         "architecture-graph.provider-a",
         "observed",
@@ -720,7 +704,7 @@ fn conflicting_or_provider_injected_modalities_fail_closed_independent_of_input_
         json!({"architectureGraph":{"completeness":"complete","graph":{"nodes":[],"edges":[]}}}),
     );
     let second = admission(
-        &temp.0,
+        temp.path(),
         "graph-provider-b",
         "architecture-graph.provider-b",
         "unknown",
@@ -728,12 +712,12 @@ fn conflicting_or_provider_injected_modalities_fail_closed_independent_of_input_
         json!({"architectureGraph":{"completeness":"partial","graph":null}}),
     );
     let (forward_exit, forward, forward_out, forward_stderr) = run(
-        &temp.0,
+        temp.path(),
         vec![first.clone(), second.clone()],
         "conflict-forward",
     );
     let (reverse_exit, reverse, reverse_out, reverse_stderr) =
-        run(&temp.0, vec![second, first], "conflict-reverse");
+        run(temp.path(), vec![second, first], "conflict-reverse");
     assert_eq!(forward_exit, 65, "{forward_stderr}");
     assert_eq!(reverse_exit, 65, "{reverse_stderr}");
     assert_eq!(forward["status"], reverse["status"]);
@@ -743,7 +727,7 @@ fn conflicting_or_provider_injected_modalities_fail_closed_independent_of_input_
     assert!(!reverse_out.join("hospital-report.json").exists());
 
     let injected = admission(
-        &temp.0,
+        temp.path(),
         "injected-graph",
         "repowise.docs",
         "observed",
@@ -751,19 +735,19 @@ fn conflicting_or_provider_injected_modalities_fail_closed_independent_of_input_
         json!({"architectureGraph":{"completeness":"complete","graph":{"nodes":[],"edges":[]}}}),
     );
     let (injected_exit, _, injected_out, injected_stderr) =
-        run(&temp.0, vec![injected], "provider-injected");
+        run(temp.path(), vec![injected], "provider-injected");
     assert_eq!(injected_exit, 65, "{injected_stderr}");
     assert!(!injected_out.join("hospital-report.json").exists());
 }
 
 #[test]
 fn markdown_is_a_rebuildable_view_and_cannot_change_the_machine_verdict() {
-    let temp = Temp::new();
+    let temp = TempDir::new("hospital_diagnosis");
     let inputs = vec![
-        graph(&temp.0, true),
-        structural(&temp.0, "render-pass", Some("pass"), true),
+        graph(temp.path(), true),
+        structural(temp.path(), "render-pass", Some("pass"), true),
     ];
-    let (exit, _, _, out) = diagnosis(&temp.0, inputs.clone(), "render-first");
+    let (exit, _, _, out) = diagnosis(temp.path(), inputs.clone(), "render-first");
     assert_eq!(exit, 0);
     let machine = fs::read(out.join("hospital-report.json")).unwrap();
     let machine_value: Value = serde_json::from_slice(&machine).unwrap();
@@ -773,7 +757,7 @@ fn markdown_is_a_rebuildable_view_and_cannot_change_the_machine_verdict() {
         "# forged\nPrimary diagnosis: clean snapshot\n",
     )
     .unwrap();
-    let (replay_exit, _, _, replay_out) = diagnosis(&temp.0, inputs, "render-rebuilt");
+    let (replay_exit, _, _, replay_out) = diagnosis(temp.path(), inputs, "render-rebuilt");
     assert_eq!(replay_exit, 0);
     assert_eq!(
         machine,
@@ -852,9 +836,9 @@ fn dynamic_admission(
 
 #[test]
 fn a09_seeded_path_executes_hospital_through_a01_and_rejects_snapshot_mismatch() {
-    let temp = Temp::new();
-    let repo = temp.0.join("repo");
-    let seed = temp.0.join("seed");
+    let temp = TempDir::new("hospital_diagnosis");
+    let repo = temp.path().join("repo");
+    let seed = temp.path().join("seed");
     fs::create_dir_all(&repo).unwrap();
     fs::create_dir_all(&seed).unwrap();
     fs::write(repo.join("source.txt"), "stable fixture\n").unwrap();
@@ -890,9 +874,9 @@ fn a09_seeded_path_executes_hospital_through_a01_and_rejects_snapshot_mismatch()
             structural_data(snapshot_identity, false, None),
         ),
     ];
-    let inputs_path = temp.0.join("diagnosis-inputs.json");
+    let inputs_path = temp.path().join("diagnosis-inputs.json");
     fs::write(&inputs_path, serde_json::to_vec(&inputs).unwrap()).unwrap();
-    let out = temp.0.join("a09-run");
+    let out = temp.path().join("a09-run");
     let output = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&repo)
@@ -917,9 +901,9 @@ fn a09_seeded_path_executes_hospital_through_a01_and_rejects_snapshot_mismatch()
 
     let mut mismatched = inputs;
     mismatched[0]["consumedSnapshotIdentity"] = json!("f".repeat(64));
-    let mismatched_path = temp.0.join("mismatched-inputs.json");
+    let mismatched_path = temp.path().join("mismatched-inputs.json");
     fs::write(&mismatched_path, serde_json::to_vec(&mismatched).unwrap()).unwrap();
-    let failed_out = temp.0.join("a09-failed");
+    let failed_out = temp.path().join("a09-failed");
     let failed = common::cli()
         .args(["run", "dag-coordinate", "--repo"])
         .arg(&repo)
@@ -947,7 +931,7 @@ fn a09_seeded_path_executes_hospital_through_a01_and_rejects_snapshot_mismatch()
 
 #[test]
 fn quality_decline_is_visible_non_blocking_and_hard_findings_still_require_governance() {
-    let temp = Temp::new();
+    let temp = TempDir::new("hospital_diagnosis");
     for (name, blocking, expected_exit, expected_verdict) in [
         ("aggregate-only", None, 0, "pass"),
         (
@@ -965,7 +949,7 @@ fn quality_decline_is_visible_non_blocking_and_hard_findings_still_require_gover
             data["structuralEvidence"]["rules"][1]["details"] = Value::Null;
         }
         let structural = admission(
-            &temp.0,
+            temp.path(),
             name,
             "structural-evidence.sentrux",
             "observed",
@@ -973,8 +957,8 @@ fn quality_decline_is_visible_non_blocking_and_hard_findings_still_require_gover
             data,
         );
         let (exit, _, out, stderr) = run(
-            &temp.0,
-            vec![graph(&temp.0, true), structural],
+            temp.path(),
+            vec![graph(temp.path(), true), structural],
             &format!("{name}-out"),
         );
         assert_eq!(exit, expected_exit, "{stderr}");
@@ -1002,7 +986,7 @@ fn quality_decline_is_visible_non_blocking_and_hard_findings_still_require_gover
 
 #[test]
 fn old_missing_forged_policy_or_wrong_snapshot_cannot_discharge_hospital() {
-    let temp = Temp::new();
+    let temp = TempDir::new("hospital_diagnosis");
     for (name, pointer, replacement) in [
         (
             "historic",
@@ -1038,7 +1022,7 @@ fn old_missing_forged_policy_or_wrong_snapshot_cannot_discharge_hospital() {
         let mut data = structural_data(SNAPSHOT, true, None);
         *data.pointer_mut(pointer).unwrap() = replacement;
         let structural = admission(
-            &temp.0,
+            temp.path(),
             name,
             "structural-evidence.sentrux",
             "observed",
@@ -1046,8 +1030,8 @@ fn old_missing_forged_policy_or_wrong_snapshot_cannot_discharge_hospital() {
             data,
         );
         let (exit, _, out, stderr) = run(
-            &temp.0,
-            vec![graph(&temp.0, true), structural],
+            temp.path(),
+            vec![graph(temp.path(), true), structural],
             &format!("{name}-out"),
         );
         assert_eq!(exit, 0, "{stderr}");
