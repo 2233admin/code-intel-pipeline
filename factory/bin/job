@@ -1101,7 +1101,8 @@ def confirm(job, reviewer, path, findings, run_now):
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     if cache.exists():
         c = json.loads(cache.read_text())
-        if c.get("review_sha256") == digest and c.get("commit") == job["head"]:
+        # A cache from before proofs were classified (no env_failed count) is re-run under the current rules.
+        if c.get("review_sha256") == digest and c.get("commit") == job["head"] and "env_failed" in c:
             return c
     if not run_now:
         return None
