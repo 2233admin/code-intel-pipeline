@@ -233,7 +233,11 @@ fn alternate_vcs_contract_fixture_is_fail_closed_and_rolls_back_to_unversioned()
         rejected.stdout.is_empty(),
         "mismatch must publish no artifact"
     );
-    assert!(String::from_utf8_lossy(&rejected.stderr).contains("does not match"));
+    assert!(
+        String::from_utf8_lossy(&rejected.stderr).contains("does not match"),
+        "stderr was: {}",
+        String::from_utf8_lossy(&rejected.stderr)
+    );
 
     let rolled_back = ok_json(snapshot(&tree.0, "explicit_overlay", &["."]));
     assert_eq!(rolled_back["snapshot"]["head"], "unversioned");
