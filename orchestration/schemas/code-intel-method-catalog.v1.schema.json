@@ -19,7 +19,7 @@
         "required": ["id", "path"],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
-          "path": { "type": "string", "pattern": "^cards/.+\\.v1\\.json$" }
+          "path": { "type": "string", "pattern": "^cards/[\\s\\S]+\\.v1\\.json$" }
         }
       }
     }
