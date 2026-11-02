@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Understand Anything and the whole `architecture_graph` stage** ([#500](https://github.com/2233admin/code-intel-pipeline/issues/500)): the internal Rust graph generator, the B02 graph adapter and the DAG `evidence.graph` node are gone. Commands `code-intel graph`, its alias `understand` and `provider graph-adapt` now fail as unknown commands; `provider`/`route` no longer list `understand/*` or `graph/adapt` operations. Flags `run dag-coordinate|execute --require-understand-graph` and `--doctor-require-understand` (exit 64) and `doctor bootstrap --require-understand` (exit 65) are unknown arguments, and the doctor capability rejects the `requireUnderstand` option. Registry: stage `architecture_graph`, integrations `provider.graph-adapt`, `graph.code-intel-understand` and `graph.understand-external`, the `understand_compatible_graph` capability and `graph`/`graphFull`/`graphAdapt` commands, `orchestration/internalization/graph.json` and the graph route-result / architecture-graph port schemas. Doctor observation: `checks.understandAnything` and `checks.repo.understandGraph` are dropped, `checks.graphProvider` keeps only `binaryFound`/`binaryPath` (read by the install-smoke gate), and the `graph.code-intel` provider row is gone. Hospital diagnosis drops the `architecture graph missing` rung; missing graph evidence no longer affects the verdict. Architecture graphs will come from the repowise dependency graph ([#499](https://github.com/2233admin/code-intel-pipeline/issues/499)).
+
 ### Fixed
 
 - `sentrux` native gate now honors `ignore_test_dependencies` from `.sentrux/rules.toml` (#394): test files no longer count toward coupling (imports and file denominator), so import-only test changes do not trigger `coupling_increased`. `scan` reports `coupling_policy`, `save_baseline` records `couplingPolicy`, and `gate`/`check` fail closed with `baseline_engine_mismatch` when the baseline's recorded policy differs from the current rules (or is invalid) instead of comparing incomparable numbers.
