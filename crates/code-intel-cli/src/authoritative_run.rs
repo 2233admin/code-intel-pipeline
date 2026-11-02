@@ -100,6 +100,7 @@ struct Publication {
 pub(crate) struct ProductionRunResult {
     outcome: crate::dag_coordinator::RunOutcome,
     manifest: serde_json::Value,
+    committed_manifest: serde_json::Value,
     publication: Publication,
     anchors: crate::anchor_verification::AnchorCounts,
 }
@@ -115,6 +116,12 @@ impl ProductionRunResult {
 
     pub(crate) fn manifest(&self) -> &serde_json::Value {
         &self.manifest
+    }
+
+    /// The validated manifest bound by `run-complete.json`; its Artifact Ref
+    /// paths are the committed content-addressed objects.
+    pub(crate) fn committed_manifest(&self) -> &serde_json::Value {
+        &self.committed_manifest
     }
 
     pub(crate) fn publication_path(&self) -> &std::path::Path {
@@ -178,7 +185,7 @@ pub(crate) fn execute(
         session_evidence: request.session_evidence,
     })?;
 
-    completion::admit(result.outcome, &result.publication)?;
+    let committed_manifest = completion::admit(result.outcome, &result.publication)?;
 
     if cleanup_staging && staging_root.is_dir() {
         std::fs::remove_dir_all(&staging_root).map_err(|error| {
@@ -188,6 +195,7 @@ pub(crate) fn execute(
     Ok(ProductionRunResult {
         outcome: result.outcome,
         manifest: result.manifest,
+        committed_manifest,
         publication: Publication {
             name: result.publication.name,
             repo: result.publication.repo,
