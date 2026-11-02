@@ -104,11 +104,20 @@ fn domain_failed_normal_run_advertises_committed_objects() {
     let tools = root.join("tools");
     std::fs::create_dir_all(&tools).expect("create stub tools");
     for name in ["python", "repowise"] {
-        let path = tools.join(name);
-        std::fs::write(&path, "#!/bin/sh\nexit 0\n").expect("write stub");
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-            .expect("chmod stub");
+        #[cfg(windows)]
+        std::fs::write(
+            tools.join(format!("{name}.cmd")),
+            "@echo off\r\nexit /b 0\r\n",
+        )
+        .expect("write stub");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let path = tools.join(name);
+            std::fs::write(&path, "#!/bin/sh\nexit 0\n").expect("write stub");
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod stub");
+        }
     }
     let binary_dir = Path::new(env!("CARGO_BIN_EXE_code-intel"))
         .parent()
