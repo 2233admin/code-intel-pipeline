@@ -90,6 +90,8 @@ Follow-up automation can proactively propose `/investigate` for actionable scan 
 - `code-intel`: 人工和 Agent 的正式主入口。新文档和命令示例一律以它开头。
 - `crates/code-intel-cli`: Rust policy/artifact CLI core。
 - 常用子命令：`code-intel setup`（安装收尾）、`code-intel doctor` / `code-intel doctor bootstrap`（环境检查）、`code-intel sentrux gate`（结构门禁）、`code-intel lint hardcoded-paths`（机器路径扫描）。完整列表见 `code-intel --help --all`。
+- [CONTRIBUTING.md](CONTRIBUTING.md): 贡献步骤（认领、构建、验证、PR）。
+- [SECURITY.md](SECURITY.md): 漏洞报告的现状说明（目前没有私密渠道）。
 
 ## Public beta 范围
 
@@ -218,7 +220,7 @@ Skill 默认只解析稳定版；`gh` 2.49+ 在场时先验 [GitHub Artifact Att
 ```bash
 git clone https://github.com/2233admin/code-intel-pipeline.git
 cd code-intel-pipeline
-cargo build --release -p code-intel
+cargo build --release --locked -p code-intel
 mkdir -p bin && cp target/release/code-intel bin/    # Windows 为 code-intel.exe
 bin/code-intel setup --repo-path ~/src/your-repo
 ```
