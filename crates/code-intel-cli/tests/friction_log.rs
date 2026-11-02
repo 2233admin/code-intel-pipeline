@@ -1,36 +1,10 @@
 mod common;
 
+use common::TempDir;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Output;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
-
-static TEMP_TREE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-struct TempTree(PathBuf);
-
-impl TempTree {
-    fn new(label: &str) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let sequence = TEMP_TREE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-{label}-{nonce}-{}-{sequence}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for TempTree {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 /// A directory holding a stub `gh` executable that never touches the real
 /// GitHub CLI: it records its own argv to `GH_STUB_LOG`, then answers
@@ -38,15 +12,15 @@ impl Drop for TempTree {
 /// `GH_STUB_STATE` (default `OPEN`), matching the two calls
 /// `friction publish`/`friction sync` make.
 struct FakeGh {
-    dir: TempTree,
+    dir: TempDir,
     log: PathBuf,
 }
 
 impl FakeGh {
     fn new() -> Self {
-        let dir = TempTree::new("friction-gh-stub");
-        let log = dir.0.join("invocations.log");
-        write_stub(&dir.0);
+        let dir = TempDir::new("friction-gh-stub");
+        let log = dir.path().join("invocations.log");
+        write_stub(dir.path());
         Self { dir, log }
     }
 
@@ -83,8 +57,6 @@ exit /b 1
 
 #[cfg(unix)]
 fn write_stub(dir: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-
     let script = r#"#!/bin/sh
 echo "ARGS=$*" >> "$GH_STUB_LOG"
 case "$*" in
@@ -93,9 +65,7 @@ case "$*" in
   *) exit 1 ;;
 esac
 "#;
-    let path = dir.join("gh");
-    fs::write(&path, script).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    common::write_executable(dir, "gh", script);
 }
 
 fn run(repo: &Path, args: &[&str], gh: Option<(&FakeGh, &str)>) -> Output {
@@ -107,7 +77,8 @@ fn run(repo: &Path, args: &[&str], gh: Option<(&FakeGh, &str)>) -> Output {
     command.arg("--repo").arg(repo);
     if let Some((stub, state)) = gh {
         let existing = std::env::var_os("PATH").unwrap_or_default();
-        let entries = std::iter::once(stub.dir.0.clone()).chain(std::env::split_paths(&existing));
+        let entries =
+            std::iter::once(stub.dir.path().to_path_buf()).chain(std::env::split_paths(&existing));
         let path_with_stub = std::env::join_paths(entries).unwrap();
         command
             .env("PATH", path_with_stub)
@@ -133,12 +104,12 @@ fn entry_dirs(repo: &Path) -> Vec<PathBuf> {
 
 #[test]
 fn log_writes_frontmatter_body_and_artifacts() {
-    let repo = TempTree::new("friction-log-basic");
-    let artifact = repo.0.join("repro.txt");
+    let repo = TempDir::new("friction-log-basic");
+    let artifact = repo.path().join("repro.txt");
     fs::write(&artifact, "reproduction steps").unwrap();
 
     let output = run(
-        &repo.0,
+        repo.path(),
         &[
             "log",
             "--title",
@@ -156,7 +127,7 @@ fn log_writes_frontmatter_body_and_artifacts() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let dirs = entry_dirs(&repo.0);
+    let dirs = entry_dirs(repo.path());
     assert_eq!(dirs.len(), 1, "expected exactly one entry: {dirs:?}");
     let content = fs::read_to_string(dirs[0].join("friction.md")).unwrap();
     assert!(content.starts_with("title: Config loader turns missing env into a string\n"));
@@ -168,10 +139,14 @@ fn log_writes_frontmatter_body_and_artifacts() {
 
 #[test]
 fn list_reports_a_logged_entry_and_exits_zero() {
-    let repo = TempTree::new("friction-list-happy");
-    run(&repo.0, &["log", "--title", "t", "--summary", "s"], None);
+    let repo = TempDir::new("friction-list-happy");
+    run(
+        repo.path(),
+        &["log", "--title", "t", "--summary", "s"],
+        None,
+    );
 
-    let output = run(&repo.0, &["list"], None);
+    let output = run(repo.path(), &["list"], None);
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("[pending] t"));
@@ -179,20 +154,26 @@ fn list_reports_a_logged_entry_and_exits_zero() {
 
 #[test]
 fn list_exits_65_when_an_entry_fails_to_parse() {
-    let repo = TempTree::new("friction-list-malformed");
-    let entry_dir = repo.0.join(".agents/friction-log/20260101T000000Z-bad");
+    let repo = TempDir::new("friction-list-malformed");
+    let entry_dir = repo
+        .path()
+        .join(".agents/friction-log/20260101T000000Z-bad");
     fs::create_dir_all(&entry_dir).unwrap();
     fs::write(entry_dir.join("friction.md"), "not frontmatter at all").unwrap();
 
-    let output = run(&repo.0, &["list"], None);
+    let output = run(repo.path(), &["list"], None);
     assert_eq!(output.status.code(), Some(65));
 }
 
 #[test]
 fn publish_defaults_to_dry_run_and_calls_gh_only_with_yes() {
-    let repo = TempTree::new("friction-publish-dry-run");
-    run(&repo.0, &["log", "--title", "t", "--summary", "s"], None);
-    let slug = entry_dirs(&repo.0)[0]
+    let repo = TempDir::new("friction-publish-dry-run");
+    run(
+        repo.path(),
+        &["log", "--title", "t", "--summary", "s"],
+        None,
+    );
+    let slug = entry_dirs(repo.path())[0]
         .file_name()
         .unwrap()
         .to_string_lossy()
@@ -200,7 +181,7 @@ fn publish_defaults_to_dry_run_and_calls_gh_only_with_yes() {
     let stub = FakeGh::new();
 
     let dry_run = run(
-        &repo.0,
+        repo.path(),
         &["publish", "--slug", &slug],
         Some((&stub, "OPEN")),
     );
@@ -210,11 +191,12 @@ fn publish_defaults_to_dry_run_and_calls_gh_only_with_yes() {
         "dry run must never invoke gh: {:?}",
         stub.invocations()
     );
-    let content_before = fs::read_to_string(entry_dirs(&repo.0)[0].join("friction.md")).unwrap();
+    let content_before =
+        fs::read_to_string(entry_dirs(repo.path())[0].join("friction.md")).unwrap();
     assert!(content_before.contains("status: pending"));
 
     let published = run(
-        &repo.0,
+        repo.path(),
         &["publish", "--slug", &slug, "--yes"],
         Some((&stub, "OPEN")),
     );
@@ -235,16 +217,20 @@ fn publish_defaults_to_dry_run_and_calls_gh_only_with_yes() {
         "the entry summary text must never appear inline on argv: {}",
         invocations[0]
     );
-    let content_after = fs::read_to_string(entry_dirs(&repo.0)[0].join("friction.md")).unwrap();
+    let content_after = fs::read_to_string(entry_dirs(repo.path())[0].join("friction.md")).unwrap();
     assert!(content_after.contains("status: published"));
     assert!(content_after.contains("issue: https://github.com/example/repo/issues/1"));
 }
 
 #[test]
 fn publish_writes_the_issue_body_inside_the_entry_dir_not_the_shared_temp_dir() {
-    let repo = TempTree::new("friction-publish-body-location");
-    run(&repo.0, &["log", "--title", "t", "--summary", "s"], None);
-    let entry_dir = entry_dirs(&repo.0)[0].clone();
+    let repo = TempDir::new("friction-publish-body-location");
+    run(
+        repo.path(),
+        &["log", "--title", "t", "--summary", "s"],
+        None,
+    );
+    let entry_dir = entry_dirs(repo.path())[0].clone();
     let slug = entry_dir
         .file_name()
         .unwrap()
@@ -253,7 +239,7 @@ fn publish_writes_the_issue_body_inside_the_entry_dir_not_the_shared_temp_dir() 
     let stub = FakeGh::new();
 
     let published = run(
-        &repo.0,
+        repo.path(),
         &["publish", "--slug", &slug, "--yes"],
         Some((&stub, "OPEN")),
     );
@@ -279,10 +265,10 @@ fn publish_writes_the_issue_body_inside_the_entry_dir_not_the_shared_temp_dir() 
 
 #[test]
 fn publish_rejects_a_slug_that_could_escape_the_friction_log_root() {
-    let repo = TempTree::new("friction-publish-invalid-slug");
+    let repo = TempDir::new("friction-publish-invalid-slug");
 
     for slug in ["../../etc/passwd", "..\\..\\windows", "a/b", ".."] {
-        let output = run(&repo.0, &["publish", "--slug", slug, "--yes"], None);
+        let output = run(repo.path(), &["publish", "--slug", slug, "--yes"], None);
         assert_eq!(
             output.status.code(),
             Some(64),
@@ -291,59 +277,67 @@ fn publish_rejects_a_slug_that_could_escape_the_friction_log_root() {
         );
     }
     assert!(
-        entry_dirs(&repo.0).is_empty(),
+        entry_dirs(repo.path()).is_empty(),
         "a rejected slug must never create anything under .agents/friction-log"
     );
 }
 
 #[test]
 fn sync_dry_run_lists_without_deleting_then_yes_removes_closed_entries() {
-    let repo = TempTree::new("friction-sync");
-    run(&repo.0, &["log", "--title", "t", "--summary", "s"], None);
-    let slug = entry_dirs(&repo.0)[0]
+    let repo = TempDir::new("friction-sync");
+    run(
+        repo.path(),
+        &["log", "--title", "t", "--summary", "s"],
+        None,
+    );
+    let slug = entry_dirs(repo.path())[0]
         .file_name()
         .unwrap()
         .to_string_lossy()
         .into_owned();
     let stub = FakeGh::new();
     run(
-        &repo.0,
+        repo.path(),
         &["publish", "--slug", &slug, "--yes"],
         Some((&stub, "OPEN")),
     );
 
-    let dry_run = run(&repo.0, &["sync"], Some((&stub, "CLOSED")));
+    let dry_run = run(repo.path(), &["sync"], Some((&stub, "CLOSED")));
     assert!(dry_run.status.success());
     assert!(String::from_utf8_lossy(&dry_run.stdout).contains("would remove"));
-    assert_eq!(entry_dirs(&repo.0).len(), 1, "dry run must not delete");
+    assert_eq!(entry_dirs(repo.path()).len(), 1, "dry run must not delete");
 
-    let applied = run(&repo.0, &["sync", "--yes"], Some((&stub, "CLOSED")));
+    let applied = run(repo.path(), &["sync", "--yes"], Some((&stub, "CLOSED")));
     assert!(applied.status.success());
     assert!(
-        entry_dirs(&repo.0).is_empty(),
+        entry_dirs(repo.path()).is_empty(),
         "closed entry must be removed"
     );
 }
 
 #[test]
 fn sync_keeps_entries_whose_issue_is_still_open() {
-    let repo = TempTree::new("friction-sync-open");
-    run(&repo.0, &["log", "--title", "t", "--summary", "s"], None);
-    let slug = entry_dirs(&repo.0)[0]
+    let repo = TempDir::new("friction-sync-open");
+    run(
+        repo.path(),
+        &["log", "--title", "t", "--summary", "s"],
+        None,
+    );
+    let slug = entry_dirs(repo.path())[0]
         .file_name()
         .unwrap()
         .to_string_lossy()
         .into_owned();
     let stub = FakeGh::new();
     run(
-        &repo.0,
+        repo.path(),
         &["publish", "--slug", &slug, "--yes"],
         Some((&stub, "OPEN")),
     );
 
-    let output = run(&repo.0, &["sync", "--yes"], Some((&stub, "OPEN")));
+    let output = run(repo.path(), &["sync", "--yes"], Some((&stub, "OPEN")));
     assert!(output.status.success());
-    assert_eq!(entry_dirs(&repo.0).len(), 1, "open entry must be kept");
+    assert_eq!(entry_dirs(repo.path()).len(), 1, "open entry must be kept");
 }
 
 #[test]
@@ -352,8 +346,10 @@ fn sync_rejects_a_committed_issue_url_that_does_not_start_with_https_github_com(
     // committed (not produced by `gh issue create`) with a value shaped
     // like a `gh` flag. `sync` must refuse to pass it to `gh issue view`
     // at all rather than let `gh` interpret it as an argument.
-    let repo = TempTree::new("friction-sync-malicious-issue-url");
-    let entry_dir = repo.0.join(".agents/friction-log/20260101T000000Z-evil");
+    let repo = TempDir::new("friction-sync-malicious-issue-url");
+    let entry_dir = repo
+        .path()
+        .join(".agents/friction-log/20260101T000000Z-evil");
     fs::create_dir_all(&entry_dir).unwrap();
     fs::write(
         entry_dir.join("friction.md"),
@@ -369,7 +365,7 @@ body
     .unwrap();
     let stub = FakeGh::new();
 
-    let output = run(&repo.0, &["sync"], Some((&stub, "OPEN")));
+    let output = run(repo.path(), &["sync"], Some((&stub, "OPEN")));
 
     assert_eq!(output.status.code(), Some(65));
     assert!(

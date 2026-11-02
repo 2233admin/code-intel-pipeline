@@ -1,41 +1,15 @@
 mod common;
+
+use common::TempDir;
 #[path = "support/sha256.rs"]
 mod sha256;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
-    "664e82bb51bc9f1361539afafd139249601cb272c1c30b146c2d2bd0f7171faf";
-static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-struct TempTree(PathBuf);
-
-impl TempTree {
-    fn new(label: &str) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-a03-{label}-{}-{nonce}-{sequence}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for TempTree {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+    "82a0e5a863141a63b87075c9c07913713fa895c258fd71d9bb62bdf2689bc1b4";
 
 fn snapshot(repo: &Path) -> Value {
     let output = common::cli()
@@ -137,9 +111,9 @@ fn run(
     command.output().unwrap()
 }
 
-fn fixture() -> (TempTree, PathBuf, Value, Vec<u8>) {
-    let root = TempTree::new("fixture");
-    let repo = root.0.join("repo");
+fn fixture() -> (TempDir, PathBuf, Value, Vec<u8>) {
+    let root = TempDir::new("fixture");
+    let repo = root.path().join("repo");
     fs::create_dir_all(&repo).unwrap();
     fs::write(repo.join("source.rs"), "fn main() {}\n").unwrap();
     let snapshot = snapshot(&repo);
@@ -150,8 +124,8 @@ fn fixture() -> (TempTree, PathBuf, Value, Vec<u8>) {
 #[test]
 fn artifact_ref_is_content_identified_and_relocation_safe() {
     let (root, repo, snapshot, bytes) = fixture();
-    let first = root.0.join("artifacts-one");
-    let second = root.0.join("artifacts-two");
+    let first = root.path().join("artifacts-one");
+    let second = root.path().join("artifacts-two");
     fs::create_dir_all(first.join("nested")).unwrap();
     fs::create_dir_all(second.join("nested")).unwrap();
     fs::write(first.join("nested/payload.bin"), &bytes).unwrap();
@@ -160,8 +134,8 @@ fn artifact_ref_is_content_identified_and_relocation_safe() {
     let request = request(&repo, reference);
 
     for (index, artifact_root) in [&first, &second].into_iter().enumerate() {
-        let out = root.0.join(format!("out-{index}"));
-        let output = run(&root.0, &request, Some(artifact_root), &out);
+        let out = root.path().join(format!("out-{index}"));
+        let output = run(root.path(), &request, Some(artifact_root), &out);
         assert_eq!(
             output.status.code(),
             Some(0),
@@ -175,24 +149,24 @@ fn artifact_ref_is_content_identified_and_relocation_safe() {
 #[test]
 fn artifact_ref_fails_closed_for_missing_tamper_snapshot_and_root_omission() {
     let (root, repo, snapshot, bytes) = fixture();
-    let artifacts = root.0.join("artifacts");
+    let artifacts = root.path().join("artifacts");
     fs::create_dir(&artifacts).unwrap();
     let reference = artifact_ref("payload.bin", &bytes, &snapshot["identity"]);
 
     let missing = run(
-        &root.0,
+        root.path(),
         &request(&repo, reference.clone()),
         Some(&artifacts),
-        &root.0.join("out-missing"),
+        &root.path().join("out-missing"),
     );
     assert_eq!(missing.status.code(), Some(65));
 
     fs::write(artifacts.join("payload.bin"), b"tampered\n").unwrap();
     let tampered = run(
-        &root.0,
+        root.path(),
         &request(&repo, reference.clone()),
         Some(&artifacts),
-        &root.0.join("out-tampered"),
+        &root.path().join("out-tampered"),
     );
     assert_eq!(tampered.status.code(), Some(65));
 
@@ -200,18 +174,18 @@ fn artifact_ref_fails_closed_for_missing_tamper_snapshot_and_root_omission() {
     let mut wrong_snapshot = reference.clone();
     wrong_snapshot["consumedSnapshotIdentity"] = json!("f".repeat(64));
     let wrong = run(
-        &root.0,
+        root.path(),
         &request(&repo, wrong_snapshot),
         Some(&artifacts),
-        &root.0.join("out-wrong"),
+        &root.path().join("out-wrong"),
     );
     assert_eq!(wrong.status.code(), Some(65));
 
     let no_root = run(
-        &root.0,
+        root.path(),
         &request(&repo, reference),
         None,
-        &root.0.join("out-no-root"),
+        &root.path().join("out-no-root"),
     );
     assert_eq!(no_root.status.code(), Some(65));
 }
@@ -223,7 +197,7 @@ fn artifact_ref_maps_a_deny_share_lock_to_host_io_exit_74() {
     use std::os::windows::fs::OpenOptionsExt;
 
     let (root, repo, snapshot, bytes) = fixture();
-    let artifacts = root.0.join("artifacts");
+    let artifacts = root.path().join("artifacts");
     fs::create_dir(&artifacts).unwrap();
     let payload = artifacts.join("payload.bin");
     fs::write(&payload, &bytes).unwrap();
@@ -235,10 +209,10 @@ fn artifact_ref_maps_a_deny_share_lock_to_host_io_exit_74() {
         .unwrap();
 
     let output = run(
-        &root.0,
+        root.path(),
         &request(&repo, reference),
         Some(&artifacts),
-        &root.0.join("out-locked"),
+        &root.path().join("out-locked"),
     );
     assert_eq!(
         output.status.code(),
@@ -253,7 +227,7 @@ fn artifact_ref_maps_a_deny_share_lock_to_host_io_exit_74() {
 #[test]
 fn artifact_ref_preflights_all_collisions_before_missing_or_tampered_files() {
     let (root, repo, snapshot, bytes) = fixture();
-    let artifacts = root.0.join("artifacts");
+    let artifacts = root.path().join("artifacts");
     fs::create_dir(&artifacts).unwrap();
 
     for (label, first_path, second_path) in [
@@ -269,10 +243,10 @@ fn artifact_ref_preflights_all_collisions_before_missing_or_tampered_files() {
             ],
         );
         let output = run(
-            &root.0,
+            root.path(),
             &request,
             Some(&artifacts),
-            &root.0.join(format!("out-preflight-{label}")),
+            &root.path().join(format!("out-preflight-{label}")),
         );
         assert_eq!(
             output.status.code(),
@@ -292,19 +266,19 @@ fn artifact_ref_preflights_all_collisions_before_missing_or_tampered_files() {
         ],
     );
     let output = run(
-        &root.0,
+        root.path(),
         &collision,
         Some(&artifacts),
-        &root.0.join("out-preflight-present"),
+        &root.path().join("out-preflight-present"),
     );
     assert_eq!(output.status.code(), Some(65));
 
     fs::write(&first, b"tampered\n").unwrap();
     let output = run(
-        &root.0,
+        root.path(),
         &collision,
         Some(&artifacts),
-        &root.0.join("out-preflight-tampered"),
+        &root.path().join("out-preflight-tampered"),
     );
     assert_eq!(output.status.code(), Some(65));
 }
@@ -316,7 +290,7 @@ fn artifact_ref_preflights_casefold_collision_before_a_first_file_lock() {
     use std::os::windows::fs::OpenOptionsExt;
 
     let (root, repo, snapshot, bytes) = fixture();
-    let artifacts = root.0.join("artifacts");
+    let artifacts = root.path().join("artifacts");
     fs::create_dir(&artifacts).unwrap();
     let first = artifacts.join("Ä.bin");
     fs::write(&first, &bytes).unwrap();
@@ -333,10 +307,10 @@ fn artifact_ref_preflights_casefold_collision_before_a_first_file_lock() {
         ],
     );
     let output = run(
-        &root.0,
+        root.path(),
         &collision,
         Some(&artifacts),
-        &root.0.join("out-preflight-locked"),
+        &root.path().join("out-preflight-locked"),
     );
     assert_eq!(
         output.status.code(),
@@ -351,7 +325,7 @@ fn artifact_ref_preflights_casefold_collision_before_a_first_file_lock() {
 #[test]
 fn artifact_ref_rejects_absolute_parent_directory_and_link_payloads() {
     let (root, repo, snapshot, bytes) = fixture();
-    let artifacts = root.0.join("artifacts");
+    let artifacts = root.path().join("artifacts");
     fs::create_dir(&artifacts).unwrap();
     fs::write(artifacts.join("payload.bin"), &bytes).unwrap();
 
@@ -365,10 +339,10 @@ fn artifact_ref_rejects_absolute_parent_directory_and_link_payloads() {
     {
         let reference = artifact_ref(path, &bytes, &snapshot["identity"]);
         let output = run(
-            &root.0,
+            root.path(),
             &request(&repo, reference),
             Some(&artifacts),
-            &root.0.join(format!("out-path-{index}")),
+            &root.path().join(format!("out-path-{index}")),
         );
         assert_eq!(
             output.status.code(),
@@ -378,7 +352,7 @@ fn artifact_ref_rejects_absolute_parent_directory_and_link_payloads() {
         );
     }
 
-    let outside = root.0.join("outside.bin");
+    let outside = root.path().join("outside.bin");
     fs::write(&outside, &bytes).unwrap();
     let link = artifacts.join("link.bin");
     #[cfg(unix)]
@@ -388,10 +362,10 @@ fn artifact_ref_rejects_absolute_parent_directory_and_link_payloads() {
     if linked {
         let reference = artifact_ref("link.bin", &bytes, &snapshot["identity"]);
         let output = run(
-            &root.0,
+            root.path(),
             &request(&repo, reference),
             Some(&artifacts),
-            &root.0.join("out-link"),
+            &root.path().join("out-link"),
         );
         assert_eq!(output.status.code(), Some(65));
     }
@@ -402,11 +376,11 @@ fn artifact_ref_rejects_absolute_parent_directory_and_link_payloads() {
 fn artifact_ref_maps_root_intermediate_and_leaf_links_to_contract_exit_65() {
     use std::os::unix::fs::symlink;
     let (root, repo, snapshot, bytes) = fixture();
-    let real = root.0.join("artifacts-real");
+    let real = root.path().join("artifacts-real");
     let nested = real.join("nested");
     fs::create_dir_all(&nested).unwrap();
     fs::write(nested.join("payload.bin"), &bytes).unwrap();
-    let root_link = root.0.join("artifacts-root-link");
+    let root_link = root.path().join("artifacts-root-link");
     symlink(&real, &root_link).unwrap();
     symlink(&nested, real.join("intermediate-link")).unwrap();
     symlink(nested.join("payload.bin"), real.join("leaf-link.bin")).unwrap();
@@ -422,10 +396,10 @@ fn artifact_ref_maps_root_intermediate_and_leaf_links_to_contract_exit_65() {
     ] {
         let reference = artifact_ref(path, &bytes, &snapshot["identity"]);
         let output = run(
-            &root.0,
+            root.path(),
             &request(&repo, reference),
             Some(artifact_root),
-            &root.0.join(format!("out-linux-{label}")),
+            &root.path().join(format!("out-linux-{label}")),
         );
         assert_eq!(
             output.status.code(),
@@ -440,17 +414,17 @@ fn artifact_ref_maps_root_intermediate_and_leaf_links_to_contract_exit_65() {
 #[test]
 fn artifact_ref_rejects_unregistered_contract_invalid_payload_and_duplicate_aliases() {
     let (root, repo, snapshot, bytes) = fixture();
-    let artifacts = root.0.join("artifacts");
+    let artifacts = root.path().join("artifacts");
     fs::create_dir(&artifacts).unwrap();
     fs::write(artifacts.join("payload.bin"), &bytes).unwrap();
 
     let mut unknown = artifact_ref("payload.bin", &bytes, &snapshot["identity"]);
     unknown["artifactSchema"] = json!("unknown.v1");
     let output = run(
-        &root.0,
+        root.path(),
         &request(&repo, unknown),
         Some(&artifacts),
-        &root.0.join("out-contract"),
+        &root.path().join("out-contract"),
     );
     assert_eq!(output.status.code(), Some(65));
 
@@ -465,10 +439,10 @@ fn artifact_ref_rejects_unregistered_contract_invalid_payload_and_duplicate_alia
         "consumedSnapshotIdentity":snapshot["identity"]
     });
     let output = run(
-        &root.0,
+        root.path(),
         &request(&repo, invalid),
         Some(&artifacts),
-        &root.0.join("out-payload"),
+        &root.path().join("out-payload"),
     );
     assert_eq!(output.status.code(), Some(65));
 
@@ -481,10 +455,10 @@ fn artifact_ref_rejects_unregistered_contract_invalid_payload_and_duplicate_alia
         .unwrap()
         .push(second);
     let output = run(
-        &root.0,
+        root.path(),
         &duplicate_request,
         Some(&artifacts),
-        &root.0.join("out-duplicate"),
+        &root.path().join("out-duplicate"),
     );
     assert_eq!(output.status.code(), Some(65));
 }
@@ -492,7 +466,7 @@ fn artifact_ref_rejects_unregistered_contract_invalid_payload_and_duplicate_alia
 #[test]
 fn artifact_ref_rejects_payload_over_the_registered_size_limit_before_reading() {
     let (root, repo, snapshot, _) = fixture();
-    let artifacts = root.0.join("artifacts");
+    let artifacts = root.path().join("artifacts");
     fs::create_dir(&artifacts).unwrap();
     let oversized = artifacts.join("large.bin");
     fs::File::create(&oversized)
@@ -508,10 +482,10 @@ fn artifact_ref_rejects_payload_over_the_registered_size_limit_before_reading() 
         "consumedSnapshotIdentity":snapshot["identity"]
     });
     let output = run(
-        &root.0,
+        root.path(),
         &request(&repo, reference),
         Some(&artifacts),
-        &root.0.join("out-large"),
+        &root.path().join("out-large"),
     );
     assert_eq!(output.status.code(), Some(65));
 }
@@ -519,7 +493,7 @@ fn artifact_ref_rejects_payload_over_the_registered_size_limit_before_reading() 
 #[test]
 fn artifact_ref_rejects_hardlink_aliases_and_duplicate_root_authority() {
     let (root, repo, snapshot, bytes) = fixture();
-    let artifacts = root.0.join("artifacts");
+    let artifacts = root.path().join("artifacts");
     fs::create_dir(&artifacts).unwrap();
     fs::write(artifacts.join("one.bin"), &bytes).unwrap();
     fs::hard_link(artifacts.join("one.bin"), artifacts.join("two.bin")).unwrap();
@@ -528,14 +502,14 @@ fn artifact_ref_rejects_hardlink_aliases_and_duplicate_root_authority() {
     let mut request_value = request(&repo, first);
     request_value["inputs"].as_array_mut().unwrap().push(second);
     let output = run(
-        &root.0,
+        root.path(),
         &request_value,
         Some(&artifacts),
-        &root.0.join("out-alias"),
+        &root.path().join("out-alias"),
     );
     assert_eq!(output.status.code(), Some(65));
 
-    let request_path = root.0.join("duplicate-root-request.json");
+    let request_path = root.path().join("duplicate-root-request.json");
     fs::write(
         &request_path,
         serde_json::to_vec(&request(
@@ -549,7 +523,7 @@ fn artifact_ref_rejects_hardlink_aliases_and_duplicate_root_authority() {
         .args(["capability", "exec", "inventory.rg", "--request"])
         .arg(&request_path)
         .arg("--out")
-        .arg(root.0.join("out-duplicate-root"))
+        .arg(root.path().join("out-duplicate-root"))
         .arg("--artifact-root")
         .arg(&artifacts)
         .arg("--artifact-root")
@@ -561,7 +535,7 @@ fn artifact_ref_rejects_hardlink_aliases_and_duplicate_root_authority() {
 #[test]
 fn design_proposal_artifact_contracts_register_and_fail_closed() {
     let (root, repo, snapshot, _) = fixture();
-    let artifacts = root.0.join("artifacts");
+    let artifacts = root.path().join("artifacts");
     fs::create_dir(&artifacts).unwrap();
     let payload_path = artifacts.join("payload.json");
 
@@ -584,10 +558,10 @@ fn design_proposal_artifact_contracts_register_and_fail_closed() {
         &snapshot["identity"],
     );
     let context_output = run(
-        &root.0,
+        root.path(),
         &request(&repo, context_ref),
         Some(&artifacts),
-        &root.0.join("out-context-contract"),
+        &root.path().join("out-context-contract"),
     );
     assert_eq!(
         context_output.status.code(),
@@ -608,10 +582,10 @@ fn design_proposal_artifact_contracts_register_and_fail_closed() {
         &snapshot["identity"],
     );
     let output = run(
-        &root.0,
+        root.path(),
         &request(&repo, context_unknown_ref),
         Some(&artifacts),
-        &root.0.join("out-context-unknown-key"),
+        &root.path().join("out-context-unknown-key"),
     );
     assert_eq!(output.status.code(), Some(65));
     assert!(String::from_utf8_lossy(&output.stdout).contains("proposal_invalid_shape"));
@@ -625,10 +599,10 @@ fn design_proposal_artifact_contracts_register_and_fail_closed() {
         &snapshot["identity"],
     );
     let output = run(
-        &root.0,
+        root.path(),
         &request(&repo, wrong_schema_ref),
         Some(&artifacts),
-        &root.0.join("out-context-wrong-schema"),
+        &root.path().join("out-context-wrong-schema"),
     );
     assert_eq!(output.status.code(), Some(65));
     assert!(String::from_utf8_lossy(&output.stdout).contains("not registered"));
@@ -662,10 +636,10 @@ fn design_proposal_artifact_contracts_register_and_fail_closed() {
             &snapshot["identity"],
         );
         let output = run(
-            &root.0,
+            root.path(),
             &request(&repo, reference),
             Some(&artifacts),
-            &root.0.join(format!("out-valid-{index}")),
+            &root.path().join(format!("out-valid-{index}")),
         );
         assert_eq!(
             output.status.code(),
@@ -691,10 +665,10 @@ fn design_proposal_artifact_contracts_register_and_fail_closed() {
             &snapshot["identity"],
         );
         let output = run(
-            &root.0,
+            root.path(),
             &request(&repo, malformed_ref),
             Some(&artifacts),
-            &root.0.join(format!("out-malformed-{index}")),
+            &root.path().join(format!("out-malformed-{index}")),
         );
         assert_eq!(output.status.code(), Some(65));
         let text = String::from_utf8_lossy(&output.stdout);
@@ -718,10 +692,10 @@ fn design_proposal_artifact_contracts_register_and_fail_closed() {
         &snapshot["identity"],
     );
     let output = run(
-        &root.0,
+        root.path(),
         &request(&repo, unknown_ref),
         Some(&artifacts),
-        &root.0.join("out-unknown-design-contract"),
+        &root.path().join("out-unknown-design-contract"),
     );
     assert_eq!(output.status.code(), Some(65));
     assert!(String::from_utf8_lossy(&output.stdout).contains("not registered"));

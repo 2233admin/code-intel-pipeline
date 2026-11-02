@@ -1,24 +1,10 @@
 mod common;
+
+use common::TempDir;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
-
-static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-fn temp_dir() -> PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock")
-        .as_nanos();
-    std::env::temp_dir().join(format!(
-        "code-intel-b10-{}-{nonce}-{}",
-        std::process::id(),
-        TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-    ))
-}
 
 fn manifest_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -107,7 +93,8 @@ fn exec(
 
 #[test]
 fn doctor_cli_emits_one_envelope_and_snapshot_bound_redacted_observation() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("doctor_envelope");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
@@ -166,12 +153,12 @@ fn doctor_cli_emits_one_envelope_and_snapshot_bound_redacted_observation() {
     assert_eq!(observation["schema"], "code-intel-doctor-observation.v1");
     assert_eq!(observation["engineeringFacts"], json!([]));
     assert!(!observation_text.to_ascii_lowercase().contains("password="));
-    fs::remove_dir_all(root).ok();
 }
 
 #[test]
 fn doctor_cli_fails_closed_without_verified_snapshot_input() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("doctor_envelope");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     let snapshot = snapshot(&repo);
@@ -190,12 +177,12 @@ fn doctor_cli_fails_closed_without_verified_snapshot_input() {
     assert_eq!(envelope["verdict"], "unknown");
     assert!(envelope["artifacts"].as_array().unwrap().is_empty());
     assert!(!out.exists());
-    fs::remove_dir_all(root).ok();
 }
 
 #[test]
 fn doctor_cli_reports_nonconforming_provider_and_manifest_drift_as_domain_failure() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("doctor_envelope");
+    let root = root_dir.path();
     let repo = root.join("repo");
     let fixture_bin = root.join("fixture-bin");
     fs::create_dir_all(&repo).unwrap();
@@ -209,15 +196,11 @@ fn doctor_cli_reports_nonconforming_provider_and_manifest_drift_as_domain_failur
     .unwrap();
     #[cfg(not(windows))]
     {
-        use std::os::unix::fs::PermissionsExt;
-
-        let sentrux = fixture_bin.join("sentrux");
-        fs::write(
-            &sentrux,
+        common::write_executable(
+            &fixture_bin,
+            "sentrux",
             "#!/bin/sh\necho 'Authorization: Bearer fixture-secret-token'\nexit 0\n",
-        )
-        .unwrap();
-        fs::set_permissions(&sentrux, fs::Permissions::from_mode(0o755)).unwrap();
+        );
     }
 
     let mut drift: Value = serde_json::from_slice(&fs::read(manifest_path()).unwrap()).unwrap();
@@ -305,5 +288,4 @@ fn doctor_cli_reports_nonconforming_provider_and_manifest_drift_as_domain_failur
     assert_eq!(observation["engineeringFacts"], json!([]));
     assert!(!observation_text.contains("fixture-secret-token"));
     assert!(!observation_text.contains(root.to_string_lossy().as_ref()));
-    fs::remove_dir_all(root).ok();
 }

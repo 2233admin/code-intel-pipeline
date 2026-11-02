@@ -7,29 +7,12 @@
 //! exit code CI gates on.
 mod common;
 
+use common::TempDir;
+
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
-
-static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-fn temp_dir(tag: &str) -> PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock")
-        .as_nanos();
-    let dir = std::env::temp_dir().join(format!(
-        "code-intel-doctor-cli-{tag}-{}-{nonce}-{}",
-        std::process::id(),
-        TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir_all(&dir).expect("scratch");
-    dir
-}
 
 fn pipeline_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -54,7 +37,8 @@ fn doctor(args: &[&str]) -> (i32, Value, String) {
 
 #[test]
 fn emits_one_observation_only_document_the_adapter_contract_accepts() {
-    let repo = temp_dir("ok");
+    let repo_dir = TempDir::new("ok");
+    let repo = repo_dir.path();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     let (code, observation, stderr) = doctor(&[
         "--repo-path",
@@ -83,12 +67,12 @@ fn emits_one_observation_only_document_the_adapter_contract_accepts() {
         .unwrap()
         .is_boolean());
     assert_eq!(observation["checks"]["repo"]["exists"], json!(true));
-    fs::remove_dir_all(repo).ok();
 }
 
 #[test]
 fn invocation_identity_is_cli_layer_unique_and_echoes_the_nonce() {
-    let repo = temp_dir("identity");
+    let repo_dir = TempDir::new("identity");
+    let repo = repo_dir.path();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
     let args = [
         "--repo-path",
@@ -115,7 +99,6 @@ fn invocation_identity_is_cli_layer_unique_and_echoes_the_nonce() {
     // Byte-identical argv, distinct identity: a replayed capture repeats the
     // id, a live rerun cannot.
     assert_ne!(first_id, second_id);
-    fs::remove_dir_all(repo).ok();
 }
 
 #[test]
@@ -127,7 +110,8 @@ fn nonce_without_a_value_fails_closed() {
 
 #[test]
 fn exit_code_tracks_ok_so_ci_gates_on_it() {
-    let root = temp_dir("absent");
+    let root_dir = TempDir::new("absent");
+    let root = root_dir.path();
     let missing_repo = root.join("not-here");
     let (code, observation, _) = doctor(&[
         "--repo-path",
@@ -143,12 +127,12 @@ fn exit_code_tracks_ok_so_ci_gates_on_it() {
         .unwrap()
         .iter()
         .any(|value| value == "repo path"));
-    fs::remove_dir_all(root).ok();
 }
 
 #[test]
 fn configured_sentrux_path_is_resolved_through_a_reverse_repo_lookup() {
-    let root = temp_dir("scope");
+    let root_dir = TempDir::new("scope");
+    let root = root_dir.path();
     let repo = root.join("ConfiguredRepo");
     let sentrux = repo.join("backend").join(".sentrux");
     fs::create_dir_all(&sentrux).unwrap();
@@ -193,12 +177,12 @@ fn configured_sentrux_path_is_resolved_through_a_reverse_repo_lookup() {
         observation["checks"]["repo"]["sentruxBaseline"],
         json!(true)
     );
-    fs::remove_dir_all(root).ok();
 }
 
 #[test]
 fn unparsable_config_is_a_domain_finding_not_a_crash() {
-    let root = temp_dir("badconfig");
+    let root_dir = TempDir::new("badconfig");
+    let root = root_dir.path();
     let config_path = root.join("pipeline.config.json");
     fs::write(&config_path, b"{ not json").unwrap();
 
@@ -222,7 +206,6 @@ fn unparsable_config_is_a_domain_finding_not_a_crash() {
         .any(|value| value
             .as_str()
             .is_some_and(|text| text.starts_with("pipeline config: invalid JSON"))));
-    fs::remove_dir_all(root).ok();
 }
 
 /// Regression: an installed `code-intel` sits next to a copy of
@@ -233,7 +216,8 @@ fn unparsable_config_is_a_domain_finding_not_a_crash() {
 /// `--pipeline-root`, the checkout the caller is standing in must win.
 #[test]
 fn the_pipeline_root_defaults_to_the_checkout_the_caller_stands_in() {
-    let root = temp_dir("cwd-root");
+    let root_dir = TempDir::new("cwd-root");
+    let root = root_dir.path();
     let checkout = root.join("checkout");
     let bin = root.join("bin");
     // A decoy manifest beside the "installed" binary location, mirroring what
@@ -265,7 +249,6 @@ fn the_pipeline_root_defaults_to_the_checkout_the_caller_stands_in() {
             "{absent} must not be reported when standing in the checkout: {missing:?}"
         );
     }
-    fs::remove_dir_all(root).ok();
 }
 
 /// A release payload has the compiled `code-intel` binary in `bin/`, not in a
@@ -274,8 +257,10 @@ fn the_pipeline_root_defaults_to_the_checkout_the_caller_stands_in() {
 /// necessarily lacks (issue #232).
 #[test]
 fn release_layout_reports_the_packaged_binary() {
-    let release = temp_dir("release-layout");
-    let repo = temp_dir("release-repo");
+    let release_dir = TempDir::new("release-layout");
+    let release = release_dir.path();
+    let repo_dir = TempDir::new("release-repo");
+    let repo = repo_dir.path();
     let binary = release.join("bin").join("code-intel");
     fs::create_dir_all(binary.parent().unwrap()).unwrap();
     fs::write(release.join("pipeline.config.json"), b"{}").unwrap();
@@ -307,8 +292,6 @@ fn release_layout_reports_the_packaged_binary() {
         observation["checks"]["graphProvider"]["binaryPath"],
         json!(binary_path)
     );
-    fs::remove_dir_all(release).ok();
-    fs::remove_dir_all(repo).ok();
 }
 
 /// Regression (F4): `orchestration/integrations.json` ships
@@ -338,7 +321,8 @@ fn the_probe_list_covers_the_external_tool_a_shipped_capability_shells_out_to() 
         "edit.ast-grep-plan is no longer a shipped runtime capability; drop this test rather than weakening it"
     );
 
-    let repo = temp_dir("ast-grep");
+    let repo_dir = TempDir::new("ast-grep");
+    let repo = repo_dir.path();
     let (_, observation, _) = doctor(&[
         "--repo-path",
         repo.to_str().unwrap(),
@@ -362,7 +346,6 @@ fn the_probe_list_covers_the_external_tool_a_shipped_capability_shells_out_to() 
     // fix is that the doctor reports on the tool, not that it starts failing.
     assert_eq!(probed["required"], json!(false));
     assert!(probed["found"].is_boolean());
-    fs::remove_dir_all(repo).ok();
 }
 
 #[test]

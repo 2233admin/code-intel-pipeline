@@ -2,35 +2,16 @@
 //! #367): the aggregating gate that composes `lint hardcoded-paths`,
 //! `sentrux gate`, and `repin`'s check-only scan into one pass/fail verdict.
 mod common;
+
+use common::TempDir;
 #[path = "../src/content_contract/sha256.rs"]
 mod content_sha256;
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
-
-struct TempTree(PathBuf);
-
-impl TempTree {
-    fn new(label: &str) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("code-intel-verify-{label}-{nonce}"));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for TempTree {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn git(repo: &Path, args: &[&str]) {
     let output = Command::new("git")
@@ -67,11 +48,11 @@ fn sha256_of(path: &Path) -> String {
 /// A minimal clean fixture: one tracked source file, nothing that trips
 /// `lint hardcoded-paths` (it only scans `.md`/`.yml`) or
 /// `repin` (no 64-hex pin tokens anywhere).
-fn clean_fixture(label: &str) -> TempTree {
-    let tree = TempTree::new(label);
-    init_repo(&tree.0);
-    fs::write(tree.0.join("lib.rs"), "pub fn entry() {}\n").unwrap();
-    commit_all(&tree.0, "init");
+fn clean_fixture(label: &str) -> TempDir {
+    let tree = TempDir::new(label);
+    init_repo(tree.path());
+    fs::write(tree.path().join("lib.rs"), "pub fn entry() {}\n").unwrap();
+    commit_all(tree.path(), "init");
     tree
 }
 
@@ -123,9 +104,9 @@ fn check_by_name<'a>(report: &'a Value, name: &str) -> &'a Value {
 #[test]
 fn clean_repo_reports_ok_true_with_all_three_check_results() {
     let tree = clean_fixture("clean");
-    save_baseline(&tree.0);
+    save_baseline(tree.path());
 
-    let output = verify_json(&tree.0);
+    let output = verify_json(tree.path());
     assert_eq!(
         output.status.code(),
         Some(0),
@@ -150,7 +131,7 @@ fn missing_sentrux_baseline_fails_the_gate_subcheck_and_the_overall_verdict() {
     // as a real failure, and so must `verify`.
     let tree = clean_fixture("missing-baseline");
 
-    let output = verify_json(&tree.0);
+    let output = verify_json(tree.path());
     assert_eq!(
         output.status.code(),
         Some(1),
@@ -175,35 +156,35 @@ fn missing_sentrux_baseline_fails_the_gate_subcheck_and_the_overall_verdict() {
 
 #[test]
 fn stale_declared_pin_fails_the_repin_subcheck_without_mutating_the_repo() {
-    let tree = TempTree::new("stale-pin");
-    init_repo(&tree.0);
-    fs::write(tree.0.join("source.rs"), "fn a() {}\n").unwrap();
-    commit_all(&tree.0, "init source");
-    save_baseline(&tree.0);
-    commit_all(&tree.0, "save baseline");
+    let tree = TempDir::new("stale-pin");
+    init_repo(tree.path());
+    fs::write(tree.path().join("source.rs"), "fn a() {}\n").unwrap();
+    commit_all(tree.path(), "init source");
+    save_baseline(tree.path());
+    commit_all(tree.path(), "save baseline");
 
-    let head_digest = sha256_of(&tree.0.join("source.rs"));
+    let head_digest = sha256_of(&tree.path().join("source.rs"));
     fs::write(
-        tree.0.join("record.json"),
+        tree.path().join("record.json"),
         format!(r#"{{"source":{{"path":"source.rs","sha256":"{head_digest}"}}}}"#),
     )
     .unwrap();
-    commit_all(&tree.0, "pin record");
+    commit_all(tree.path(), "pin record");
 
     // Edit the source; record.json's pin is now stale relative to the
     // worktree. Snapshot every tracked file's bytes first so we can prove
     // `verify` never touches any of them (issue #367's "never --write"
     // requirement).
-    fs::write(tree.0.join("source.rs"), "fn a() { changed(); }\n").unwrap();
+    fs::write(tree.path().join("source.rs"), "fn a() { changed(); }\n").unwrap();
     let before: Vec<(PathBuf, Vec<u8>)> = ["source.rs", "record.json"]
         .iter()
         .map(|name| {
-            let path = tree.0.join(name);
+            let path = tree.path().join(name);
             (path.clone(), fs::read(&path).unwrap())
         })
         .collect();
 
-    let output = verify_json(&tree.0);
+    let output = verify_json(tree.path());
     assert_eq!(
         output.status.code(),
         Some(1),
@@ -233,7 +214,7 @@ fn stale_declared_pin_fails_the_repin_subcheck_without_mutating_the_repo() {
 fn human_output_reports_a_short_pass_fail_summary_per_subcheck() {
     let tree = clean_fixture("human-missing-baseline");
     // No baseline saved: forces a mixed pass/fail summary.
-    let output = verify_text(&tree.0);
+    let output = verify_text(tree.path());
     assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
@@ -260,12 +241,12 @@ fn verify_rejects_write_flag_as_a_usage_error_without_mutating_the_repo() {
     // `verify` invocation is an unrecognized argument and must be rejected
     // as a usage error (exit 64), not silently ignored into a false OK.
     let tree = clean_fixture("no-write-flag");
-    save_baseline(&tree.0);
-    let before = fs::read(tree.0.join("lib.rs")).unwrap();
+    save_baseline(tree.path());
+    let before = fs::read(tree.path().join("lib.rs")).unwrap();
 
     let output = common::cli()
         .arg("verify")
-        .arg(&tree.0)
+        .arg(tree.path())
         .arg("--write")
         .arg("--json")
         .output()
@@ -276,17 +257,17 @@ fn verify_rejects_write_flag_as_a_usage_error_without_mutating_the_repo() {
             || String::from_utf8_lossy(&output.stdout).contains("unrecognized argument")
     );
 
-    assert_eq!(fs::read(tree.0.join("lib.rs")).unwrap(), before);
+    assert_eq!(fs::read(tree.path().join("lib.rs")).unwrap(), before);
 }
 
 #[test]
 fn extra_positional_argument_is_a_usage_error_not_a_false_ok() {
     let tree = clean_fixture("extra-positional");
-    save_baseline(&tree.0);
+    save_baseline(tree.path());
 
     let output = common::cli()
         .arg("verify")
-        .arg(&tree.0)
+        .arg(tree.path())
         .arg("extra-arg")
         .output()
         .unwrap();

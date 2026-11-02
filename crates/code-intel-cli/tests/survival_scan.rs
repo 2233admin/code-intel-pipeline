@@ -1,9 +1,9 @@
 mod common;
+
+use common::TempDir;
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::Path;
 
 use serde_json::{json, Value};
 
@@ -30,29 +30,6 @@ mod survival_scan;
 
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const IMPL: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-static NONCE: AtomicU64 = AtomicU64::new(0);
-
-struct Temp(PathBuf);
-impl Temp {
-    fn new() -> Self {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-b05-{}-{now}-{}",
-            std::process::id(),
-            NONCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn artifact(root: &Path, path: &str, schema: &str, kind: &str, bytes: &[u8]) -> Value {
     fs::write(root.join(path), bytes).unwrap();
@@ -102,8 +79,8 @@ fn request(root: &Path) -> Value {
 
 #[test]
 fn unavailable_provider_yields_useful_basic_evidence_and_unknown_structure() {
-    let root = Temp::new();
-    let result = survival_scan::scan(&request(&root.0), &root.0).unwrap();
+    let root = TempDir::new("survival_scan");
+    let result = survival_scan::scan(&request(root.path()), root.path()).unwrap();
     let expectations: Value = serde_json::from_str(include_str!(
         "fixtures/survival-scan/unavailable-expectations.json"
     ))
@@ -137,63 +114,63 @@ fn unavailable_provider_yields_useful_basic_evidence_and_unknown_structure() {
 
 #[test]
 fn fallback_rejects_observed_provider_and_forged_admission() {
-    let root = Temp::new();
-    let mut observed = request(&root.0);
+    let root = TempDir::new("survival_scan");
+    let mut observed = request(root.path());
     observed["codenexusAdapter"]["port"]["status"] = json!("current");
-    assert!(survival_scan::scan(&observed, &root.0).is_err());
+    assert!(survival_scan::scan(&observed, root.path()).is_err());
 
-    let mut forged = request(&root.0);
+    let mut forged = request(root.path());
     forged["codenexusAdapter"]["evidence"]["request"]["observation"]["failure"] =
         json!({"kind":"none"});
-    assert!(survival_scan::scan(&forged, &root.0).is_err());
+    assert!(survival_scan::scan(&forged, root.path()).is_err());
 }
 
 #[test]
 fn fallback_rejects_undeclared_codenexus_port_fields() {
-    let root = Temp::new();
-    let mut forged = request(&root.0);
+    let root = TempDir::new("survival_scan");
+    let mut forged = request(root.path());
     forged["codenexusAdapter"]["port"]["graph"] = json!({"nodes": []});
-    assert!(survival_scan::scan(&forged, &root.0)
+    assert!(survival_scan::scan(&forged, root.path())
         .unwrap_err()
         .contains("port fields are invalid"));
 }
 
 #[test]
 fn fallback_rejects_undeclared_fact_promotion_fields() {
-    let root = Temp::new();
-    let mut forged = request(&root.0);
+    let root = TempDir::new("survival_scan");
+    let mut forged = request(root.path());
     forged["codenexusAdapter"]["factPromotion"]["secret"] = json!("not-authority");
-    assert!(survival_scan::scan(&forged, &root.0)
+    assert!(survival_scan::scan(&forged, root.path())
         .unwrap_err()
         .contains("fact promotion fields are invalid"));
 }
 
 #[test]
 fn snapshot_and_inventory_are_a03_verified_and_snapshot_bound() {
-    let root = Temp::new();
-    let mut tampered = request(&root.0);
+    let root = TempDir::new("survival_scan");
+    let mut tampered = request(root.path());
     fs::write(
-        root.0.join("files.txt"),
+        root.path().join("files.txt"),
         b"Cargo.lock\0README.md\0src/lib.rs\0",
     )
     .unwrap();
-    assert!(survival_scan::scan(&tampered, &root.0)
+    assert!(survival_scan::scan(&tampered, root.path())
         .unwrap_err()
         .contains("SHA-256"));
-    tampered = request(&root.0);
+    tampered = request(root.path());
     tampered["inputs"][1]["consumedSnapshotIdentity"] = json!("e".repeat(64));
-    assert!(survival_scan::scan(&tampered, &root.0)
+    assert!(survival_scan::scan(&tampered, root.path())
         .unwrap_err()
         .contains("snapshot"));
 }
 
 #[test]
 fn production_cli_registry_facade_schema_and_docs_are_closed() {
-    let root = Temp::new();
-    let request_path = root.0.join("request.json");
+    let root = TempDir::new("survival_scan");
+    let request_path = root.path().join("request.json");
     fs::write(
         &request_path,
-        serde_json::to_vec(&request(&root.0)).unwrap(),
+        serde_json::to_vec(&request(root.path())).unwrap(),
     )
     .unwrap();
     let output = common::cli()
@@ -203,7 +180,7 @@ fn production_cli_registry_facade_schema_and_docs_are_closed() {
             "--request",
             request_path.to_str().unwrap(),
             "--artifact-root",
-            root.0.to_str().unwrap(),
+            root.path().to_str().unwrap(),
         ])
         .output()
         .unwrap();
@@ -246,8 +223,8 @@ fn production_cli_registry_facade_schema_and_docs_are_closed() {
 
 #[test]
 fn result_has_exact_top_level_contract() {
-    let root = Temp::new();
-    let result = survival_scan::scan(&request(&root.0), &root.0).unwrap();
+    let root = TempDir::new("survival_scan");
+    let result = survival_scan::scan(&request(root.path()), root.path()).unwrap();
     let keys = result
         .as_object()
         .unwrap()

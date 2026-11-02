@@ -1,4 +1,6 @@
 mod common;
+
+use common::TempDir;
 // Not a bare `tests/dag_run_timeout.rs`: Cargo's default test-target
 // autodiscovery (`tests/*.rs`) would register it as its own top-level
 // integration binary in addition to this `#[path]` inclusion, and its
@@ -14,23 +16,8 @@ mod sha256;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
-
-fn temp_dir() -> PathBuf {
-    static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let sequence = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!(
-        "code-intel-a09-run-{}-{nonce}-{sequence}",
-        std::process::id()
-    ))
-}
 
 fn doctor_tool_fixture(root: &Path, builtin_sentrux: bool) -> PathBuf {
     let bin = root.join(if builtin_sentrux {
@@ -58,16 +45,15 @@ fn doctor_tool_fixture(root: &Path, builtin_sentrux: bool) -> PathBuf {
     }
     #[cfg(not(windows))]
     {
-        use std::os::unix::fs::PermissionsExt;
         for name in ["python", "repowise"] {
-            let path = bin.join(name);
-            fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            common::write_executable(&bin, name, "#!/bin/sh\nexit 0\n");
         }
         if !builtin_sentrux {
-            let path = bin.join("sentrux");
-            fs::write(&path, "#!/bin/sh\necho 'fixture nonconforming'\nexit 0\n").unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            common::write_executable(
+                &bin,
+                "sentrux",
+                "#!/bin/sh\necho 'fixture nonconforming'\nexit 0\n",
+            );
         }
     }
     bin
@@ -103,7 +89,8 @@ fn save_baseline(repo: &Path) {
 
 #[test]
 fn production_run_route_executes_snapshot_then_inventory() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("dag_run");
+    let root = root_dir.path();
     let repo = root.join("repo");
     let out = root.join("run");
     fs::create_dir_all(repo.join("src")).unwrap();
@@ -229,8 +216,6 @@ fn production_run_route_executes_snapshot_then_inventory() {
         .unwrap()
         .iter()
         .any(|artifact| artifact["type"] == "observed.evidence.payload"));
-
-    let _ = fs::remove_dir_all(root);
 }
 #[test]
 fn production_run_timeout_keeps_sibling_artifact_and_commits_manifest() {
@@ -244,7 +229,8 @@ fn production_run_budget_reports_completed_failed_and_budget_stopped() {
         ("0", "failed", 70),
         ("2", "budget_stopped", 76),
     ] {
-        let root = temp_dir();
+        let root_dir = TempDir::new("dag_run");
+        let root = root_dir.path();
         let repo = root.join("fixture-repo");
         let source = root.join("run-source");
         let authority = root.join("authority");
@@ -305,13 +291,13 @@ fn production_run_budget_reports_completed_failed_and_budget_stopped() {
                 "not_dispatched"
             );
         }
-        let _ = fs::remove_dir_all(root);
     }
 }
 
 #[test]
 fn production_dag_output_commits_and_enters_the_authoritative_index() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("dag_run");
+    let root = root_dir.path();
     // Named to match the "fixture-repo" identity used below for the
     // authority subdirectory, the index entry, and every `--repo` query
     // flag: `run execute` (A08 F2 fix) derives the published repo key from
@@ -615,13 +601,12 @@ fn production_dag_output_commits_and_enters_the_authoritative_index() {
     assert_eq!(staleness_rejected.status.code(), Some(65));
     assert!(String::from_utf8_lossy(&staleness_rejected.stderr)
         .contains("--staleness must be current or advisory"));
-
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("dag_run");
+    let root = root_dir.path();
     // See production_dag_output_commits_and_enters_the_authoritative_index:
     // must match the "fixture-repo" authority/query identity used below.
     let repo = root.join("fixture-repo");
@@ -761,13 +746,12 @@ fn production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch
     assert_eq!(impact.status.code(), Some(0));
     let impact: Value = serde_json::from_slice(&impact.stdout).unwrap();
     assert_eq!(impact["run"], "completed-001");
-
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn optional_session_evidence_is_snapshot_bound_a03_verified_and_manifested() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("dag_run");
+    let root = root_dir.path();
     let repo = root.join("repo");
     let out = root.join("run");
     let trace = root.join("trace.json");
@@ -847,8 +831,6 @@ fn optional_session_evidence_is_snapshot_bound_a03_verified_and_manifested() {
     assert!(out
         .join("verification.session-evidence/session-evidence.json")
         .is_file());
-
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
@@ -986,7 +968,8 @@ fn strict_key_check_rejects_fields_the_schema_does_not_declare() {
 
 #[test]
 fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("dag_run");
+    let root = root_dir.path();
     let repo = root.join("repo");
     let out = root.join("offline-staging");
     let authority = root.join("authority");
@@ -1051,13 +1034,12 @@ fn offline_profile_omits_provider_and_provider_diagnosis_nodes() {
         schema_support::validates_against_schema(&result_path, &schema),
         "execution result must validate against its schema"
     );
-
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn authoritative_execute_rejects_diagnosis_only_runs_before_staging_or_publication() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("dag_run");
+    let root = root_dir.path();
     let repo = root.join("repo");
     let out = root.join("staging");
     let authority = root.join("authority");
@@ -1086,13 +1068,12 @@ fn authoritative_execute_rejects_diagnosis_only_runs_before_staging_or_publicati
     );
     assert!(!out.exists());
     assert!(!authority.join("diagnosis-only").exists());
-
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn strict_profile_cannot_be_weakened_and_keeps_all_provider_nodes_required() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("dag_run");
+    let root = root_dir.path();
     let repo = root.join("repo");
     let out = root.join("strict-staging");
     let authority = root.join("authority");
@@ -1138,8 +1119,6 @@ fn strict_profile_cannot_be_weakened_and_keeps_all_provider_nodes_required() {
     let doctor_request: Value =
         serde_json::from_slice(&fs::read(out.join("doctor.request.json")).unwrap()).unwrap();
     assert_eq!(doctor_request["options"]["requireRepowise"], true);
-
-    let _ = fs::remove_dir_all(root);
 }
 
 /// Reads the single admitted structural rule of one kind out of a completed
@@ -1192,7 +1171,8 @@ fn doctor_succeeded(manifest: &Value) -> bool {
 /// the current structural gate or promote a clean diagnosis.
 #[test]
 fn unbaselined_repository_cannot_claim_current_gate_admission() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("dag_run");
+    let root = root_dir.path();
     let repo = root.join("repo");
     let out = root.join("run");
     fs::create_dir_all(repo.join("src")).unwrap();
@@ -1233,12 +1213,12 @@ fn unbaselined_repository_cannot_claim_current_gate_admission() {
         hospital["triage"]["primary_diagnosis"],
         "authoritative structural evidence unavailable"
     );
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn native_dag_admits_quality_advisory_with_snapshot_bound_v2_artifact_refs() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("dag_run");
+    let root = root_dir.path();
     let repo = root.join("repo");
     let out = root.join("run");
     fs::create_dir_all(repo.join("src")).unwrap();
@@ -1348,13 +1328,13 @@ fn native_dag_admits_quality_advisory_with_snapshot_bound_v2_artifact_refs() {
         hospital["triage"]["advisories"][0]["rule"],
         "quality_degraded"
     );
-    let _ = fs::remove_dir_all(root);
 }
 
 /// A hard identity-ratchet regression still stops the diagnosis and run.
 #[test]
 fn baselined_repository_that_regresses_still_fails_the_architecture_gate() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("dag_run");
+    let root = root_dir.path();
     let repo = root.join("repo");
     let out = root.join("run");
     fs::create_dir_all(repo.join("src")).unwrap();
@@ -1425,8 +1405,6 @@ fn baselined_repository_that_regresses_still_fails_the_architecture_gate() {
         hospital["triage"]["primary_diagnosis"],
         "architecture gate failure"
     );
-
-    let _ = fs::remove_dir_all(root);
 }
 
 /// Guards the artifact-path composition: a run lands directly under `<artifact root>/<repo name>`,
@@ -1438,7 +1416,8 @@ fn baselined_repository_that_regresses_still_fails_the_architecture_gate() {
 /// with the doctor configured.
 #[test]
 fn artifact_root_routes_runs_where_readers_look_and_matches_the_environment_default() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("dag_run");
+    let root = root_dir.path();
     // The launcher fixture carried a space, an ampersand and non-ASCII, because
     // each of those has broken a path round trip in this pipeline before.
     let repo_name = "repo & 文";
@@ -1499,15 +1478,14 @@ fn artifact_root_routes_runs_where_readers_look_and_matches_the_environment_defa
         fs::read(default.join("inventory.rg/files.txt")).unwrap(),
         "the explicit and default artifact roots disagreed about the inventory"
     );
-
-    let _ = fs::remove_dir_all(root);
 }
 
 /// The two routes disagree about who owns the staging path, so accepting both
 /// would silently honour one and drop the other.
 #[test]
 fn out_and_artifact_root_cannot_both_name_the_staging_directory() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("dag_run");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
 
@@ -1526,8 +1504,6 @@ fn out_and_artifact_root_cannot_both_name_the_staging_directory() {
         "stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
-
-    let _ = fs::remove_dir_all(root);
 }
 
 fn git(repo: &Path, args: &[&str]) {
@@ -1551,7 +1527,8 @@ fn git(repo: &Path, args: &[&str]) {
 /// surfaces here while `repo.snapshot` still passes in the parent.
 #[test]
 fn production_run_completes_on_a_linked_worktree_checkout() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("dag_run");
+    let root = root_dir.path();
     let primary = root.join("primary");
     let linked = root.join("linked");
     let out = root.join("run");
@@ -1622,5 +1599,4 @@ fn production_run_completes_on_a_linked_worktree_checkout() {
             linked.to_str().expect("fixture path is UTF-8"),
         ],
     );
-    let _ = fs::remove_dir_all(root);
 }

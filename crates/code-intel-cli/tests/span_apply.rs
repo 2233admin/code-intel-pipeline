@@ -9,8 +9,6 @@ mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
@@ -18,25 +16,17 @@ use serde_json::{json, Value};
 mod sha256_support;
 use sha256_support::sha256_hex;
 
-static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
 const FIXTURE: &str = "pub fn poll() {\n    let retry_budget = 3; // keep in sync with docs/retry.md\n    let _ = retry_budget;\n}\n";
 
 struct Fixture {
+    _dir: common::TempDir,
     root: PathBuf,
 }
 
 impl Fixture {
     fn create(name: &str) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!(
-            "code-intel-span-apply-{name}-{}-{nonce}-{sequence}",
-            std::process::id()
-        ));
+        let dir = common::TempDir::new(&format!("span-apply-{name}"));
+        let root = dir.path().to_path_buf();
         fs::create_dir_all(root.join("src")).expect("create fixture");
         fs::write(root.join("src/lib.rs"), FIXTURE).expect("write fixture source");
         for arguments in [
@@ -57,7 +47,7 @@ impl Fixture {
                 String::from_utf8_lossy(&output.stderr)
             );
         }
-        Self { root }
+        Self { _dir: dir, root }
     }
 
     fn source(&self) -> Vec<u8> {
@@ -66,14 +56,6 @@ impl Fixture {
 
     fn overwrite(&self, bytes: &[u8]) {
         fs::write(self.root.join("src/lib.rs"), bytes).expect("overwrite fixture source");
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        // Git packs some objects read-only on Windows; a failed cleanup must
-        // never be the reason a contract test reports red.
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

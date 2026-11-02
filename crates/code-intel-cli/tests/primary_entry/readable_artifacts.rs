@@ -14,15 +14,9 @@ const READABLE_TYPES: [(&str, &str); 3] = [
     ("agentCodeSliceRanking", "code_evidence.agent_slice"),
 ];
 
-fn fixture_repo(label: &str) -> (PathBuf, PathBuf, PathBuf) {
-    let root = std::env::temp_dir().join(format!(
-        "code-intel-readable-{label}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock is after the epoch")
-            .as_nanos()
-    ));
+fn fixture_repo(label: &str) -> (common::TempDir, PathBuf, PathBuf) {
+    let tree = common::TempDir::new(&format!("readable-{label}"));
+    let root = tree.path();
     let repo = root.join("repo");
     std::fs::create_dir_all(repo.join("src")).expect("create fixture repository");
     std::fs::write(repo.join("README.md"), "fixture\n").expect("write readme");
@@ -38,7 +32,7 @@ fn fixture_repo(label: &str) -> (PathBuf, PathBuf, PathBuf) {
         String::from_utf8_lossy(&output.stderr)
     );
     let artifacts = root.join("artifacts");
-    (root, repo, artifacts)
+    (tree, repo, artifacts)
 }
 
 /// Every advertised path is a file under the publication whose bytes match the
@@ -81,7 +75,7 @@ fn assert_readable_artifacts(result: &Value) -> Vec<String> {
 
 #[test]
 fn completed_lite_run_advertises_committed_objects() {
-    let (root, repo, artifacts) = fixture_repo("lite");
+    let (_root, repo, artifacts) = fixture_repo("lite");
     commit_fixture(&repo, "fixture");
 
     let result = run_lite_json(&repo, &artifacts);
@@ -92,7 +86,6 @@ fn completed_lite_run_advertises_committed_objects() {
         names.contains(&"agentCodeSliceRanking".to_string()),
         "{names:?}"
     );
-    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
@@ -101,7 +94,7 @@ fn domain_failed_normal_run_advertises_committed_objects() {
     std::fs::write(repo.join("src/god.rs"), "pub fn wide() {}\n".repeat(900))
         .expect("write god file");
     commit_fixture(&repo, "fixture");
-    let tools = root.join("tools");
+    let tools = root.path().join("tools");
     std::fs::create_dir_all(&tools).expect("create stub tools");
     for name in ["python", "repowise"] {
         #[cfg(windows)]
@@ -111,13 +104,7 @@ fn domain_failed_normal_run_advertises_committed_objects() {
         )
         .expect("write stub");
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let path = tools.join(name);
-            std::fs::write(&path, "#!/bin/sh\nexit 0\n").expect("write stub");
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-                .expect("chmod stub");
-        }
+        common::write_executable(&tools, name, "#!/bin/sh\nexit 0\n");
     }
     let binary_dir = Path::new(env!("CARGO_BIN_EXE_code-intel"))
         .parent()
@@ -154,5 +141,4 @@ fn domain_failed_normal_run_advertises_committed_objects() {
         ["agentCodeSliceRanking", "hospital", "hospitalMarkdown"],
         "{result}"
     );
-    let _ = std::fs::remove_dir_all(root);
 }

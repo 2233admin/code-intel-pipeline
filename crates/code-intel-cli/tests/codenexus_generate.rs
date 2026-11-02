@@ -1,32 +1,11 @@
 mod common;
 
+use common::TempDir;
+
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::path::Path;
 
 use serde_json::{json, Value};
-
-static TEST_NONCE: AtomicU64 = AtomicU64::new(0);
-
-struct TempRoot(PathBuf);
-
-impl TempRoot {
-    fn new() -> Self {
-        let nonce = TEST_NONCE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-codenexus-generate-{}-{nonce}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).expect("create CodeNexus test root");
-        Self(path)
-    }
-}
-
-impl Drop for TempRoot {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn normalize_context(mut document: Value, repo: &Path) -> Value {
     document["repo"] = json!("@repo@");
@@ -59,8 +38,8 @@ fn normalize_context(mut document: Value, repo: &Path) -> Value {
 
 #[test]
 fn compiled_route_matches_the_codenexus_contract() {
-    let root = TempRoot::new();
-    let repo = root.0.join("repo");
+    let root = TempDir::new("codenexus_generate");
+    let repo = root.path().join("repo");
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::create_dir_all(repo.join("docs")).unwrap();
     fs::create_dir_all(repo.join("target")).unwrap();
@@ -76,7 +55,7 @@ fn compiled_route_matches_the_codenexus_contract() {
     )
     .unwrap();
     fs::write(repo.join("target/ignored.rs"), "largest\n".repeat(1_000)).unwrap();
-    let output_path = root.0.join("out/codenexus-context.json");
+    let output_path = root.path().join("out/codenexus-context.json");
 
     let output = common::cli()
         .args(["codenexus", "generate", "--repo"])
@@ -154,9 +133,9 @@ fn compiled_route_matches_the_codenexus_contract() {
 
 #[test]
 fn compiled_route_preserves_outside_target_relative_paths() {
-    let root = TempRoot::new();
-    let repo = root.0.join("repo");
-    let outside = root.0.join("external");
+    let root = TempDir::new("codenexus_generate");
+    let repo = root.path().join("repo");
+    let outside = root.path().join("external");
     fs::create_dir_all(&repo).unwrap();
     fs::create_dir_all(&outside).unwrap();
     fs::write(repo.join("anchor.rs"), "fn anchor() {}\n").unwrap();
@@ -165,7 +144,7 @@ fn compiled_route_preserves_outside_target_relative_paths() {
         "pub fn largest() {}\n".repeat(20),
     )
     .unwrap();
-    let output_path = root.0.join("out/codenexus-context.json");
+    let output_path = root.path().join("out/codenexus-context.json");
 
     let output = common::cli()
         .args(["codenexus", "generate", "--repo"])
@@ -190,10 +169,10 @@ fn compiled_route_preserves_outside_target_relative_paths() {
 }
 #[test]
 fn compiled_route_rejects_unreachable_dsm_and_history_options() {
-    let root = TempRoot::new();
-    let repo = root.0.join("repo");
+    let root = TempDir::new("codenexus_generate");
+    let repo = root.path().join("repo");
     fs::create_dir_all(&repo).unwrap();
-    let output_path = root.0.join("codenexus-context.json");
+    let output_path = root.path().join("codenexus-context.json");
 
     for unsupported in ["--dsm", "--hotspots", "--max-commits-per-file"] {
         let output = common::cli()

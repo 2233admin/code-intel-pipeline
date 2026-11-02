@@ -14,33 +14,21 @@ fn head_parity_fixture() -> serde_json::Value {
     .unwrap_or_else(|error| panic!("parse HEAD parity fixture {}: {error}", path.display()))
 }
 
-struct FixtureRepository(PathBuf);
+struct FixtureRepository(common::TempDir);
 
 impl FixtureRepository {
     fn create() -> Self {
-        let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-cli-head-parity-{}-{nonce}",
-            std::process::id()
-        ));
+        let tree = common::TempDir::new("cli-head-parity");
+        let path = tree.path();
         std::fs::create_dir_all(path.join("src")).expect("create route fixture repo");
         std::fs::write(path.join("src/lib.rs"), "pub fn fixture() {}\n")
             .expect("write route fixture source");
-        commit_fixture(&path, "route golden fixture");
-        Self(path)
+        commit_fixture(path, "route golden fixture");
+        Self(tree)
     }
 
     fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for FixtureRepository {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        self.0.path()
     }
 }
 
