@@ -129,3 +129,108 @@ fn packaged_doctor_is_ready_without_python_pwsh_or_bin_on_path() {
     );
     let _ = fs::remove_dir_all(&scratch);
 }
+
+#[test]
+#[ignore = "DR-0001 topology gate; CI sets CODE_INTEL_SMOKE_* after packaged install"]
+fn packaged_sentrux_gate_honors_ignore_test_dependencies() {
+    let bin = PathBuf::from(
+        env::var("CODE_INTEL_SMOKE_BIN")
+            .expect("CODE_INTEL_SMOKE_BIN must point at the installed release bin directory"),
+    );
+    let binary = bin.join(if cfg!(windows) {
+        "code-intel.exe"
+    } else {
+        "code-intel"
+    });
+    assert!(
+        binary.is_file(),
+        "installed binary missing: {}",
+        binary.display()
+    );
+    let scratch = env::temp_dir().join(format!("code-intel-394-{}", std::process::id()));
+    let repo = scratch.join("repo");
+    fs::create_dir_all(repo.join("src")).expect("create src");
+    fs::create_dir_all(repo.join("tests")).expect("create tests");
+    fs::create_dir_all(repo.join(".sentrux")).expect("create .sentrux");
+    fs::write(
+        repo.join("src/app.py"),
+        "import os\n\ndef run():\n    pass\n",
+    )
+    .expect("app.py");
+    fs::write(
+        repo.join("tests/test_app.py"),
+        "import app\n\ndef test_run():\n    pass\n",
+    )
+    .expect("test_app.py");
+    let rules = |value: bool| {
+        fs::write(
+            repo.join(".sentrux/rules.toml"),
+            format!("[constraints]\nignore_test_dependencies = {value}\n"),
+        )
+        .expect("write rules");
+    };
+    let gate = |operation: &str| -> (bool, serde_json::Value) {
+        let output = Command::new(&binary)
+            .args(["sentrux", "--operation", operation, "--repo"])
+            .arg(&repo)
+            .arg("--json")
+            .current_dir(&repo)
+            .env_remove("CODE_INTEL_HOME")
+            .output()
+            .unwrap_or_else(|error| panic!("launch {}: {error}", binary.display()));
+        let value = serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+            panic!(
+                "sentrux {operation} did not emit JSON ({error}):\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            )
+        });
+        (output.status.success(), value)
+    };
+    let rule_names = |result: &serde_json::Value| -> Vec<String> {
+        result["blockingViolations"]
+            .as_array()
+            .map(|violations| {
+                violations
+                    .iter()
+                    .filter_map(|violation| violation["rule"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    rules(true);
+    assert!(gate("save_baseline").0, "save_baseline failed");
+    let saved = fs::read(repo.join(".sentrux/baseline.json")).expect("read baseline");
+    fs::write(
+        repo.join("tests/test_app.py"),
+        "import app\nimport sys\nimport json\nimport re\nimport time\n\ndef test_run():\n    pass\n",
+    )
+    .expect("add test imports");
+    let (success, result) = gate("gate");
+    assert!(
+        success,
+        "test-only imports must pass with the policy on: {result}"
+    );
+    assert_eq!(result["verdict"], "pass");
+
+    fs::write(
+        repo.join("src/app.py"),
+        "import os\nimport sys\n\ndef run():\n    pass\n",
+    )
+    .expect("add production import");
+    let (success, result) = gate("gate");
+    assert!(!success, "a production import must fail: {result}");
+    assert!(rule_names(&result).contains(&"coupling_increased".to_string()));
+
+    rules(false);
+    let (success, result) = gate("gate");
+    assert!(!success, "a flipped policy must fail closed: {result}");
+    assert!(rule_names(&result).contains(&"baseline_engine_mismatch".to_string()));
+    assert!(!rule_names(&result).contains(&"coupling_increased".to_string()));
+    assert_eq!(
+        fs::read(repo.join(".sentrux/baseline.json")).expect("read baseline"),
+        saved
+    );
+    let _ = fs::remove_dir_all(&scratch);
+}

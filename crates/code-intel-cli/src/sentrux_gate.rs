@@ -27,6 +27,8 @@ mod boundary_rules;
 mod file_gate;
 #[path = "hardened_git.rs"]
 mod hardened_git;
+#[path = "sentrux_coupling_policy.rs"]
+mod sentrux_coupling_policy;
 #[path = "sentrux_gate_policy.rs"]
 pub(crate) mod sentrux_gate_policy;
 #[path = "sentrux_quality_signal.rs"]
@@ -175,6 +177,9 @@ struct ProjectMetrics {
     quality_signal_raw: sentrux_quality_signal::RootCauseRaw,
     cycle_count: i64,
     cycles: Vec<Vec<String>>,
+    /// `ignore_test_dependencies` from `.sentrux/rules.toml` (#394): test
+    /// files are then outside the coupling numerator and denominator.
+    ignore_test_dependencies: bool,
 }
 
 pub(crate) fn run_check(repo: &Path) -> Result<EngineRun, String> {
@@ -317,6 +322,25 @@ fn gate_measured(repo: &Path, save: bool, metrics: &ProjectMetrics) -> Result<En
         return Ok(baseline_failure(
             repo, "baseline_engine_mismatch", message, true,
             "Re-baseline intentionally with: code-intel sentrux --operation save_baseline --repo <repo>\n".into(),
+        ));
+    }
+    let recorded = recorded_coupling_policy(&baseline);
+    if recorded != Some(metrics.ignore_test_dependencies) {
+        let recorded_text = recorded.map_or_else(
+            || format!("invalid couplingPolicy {}", baseline["couplingPolicy"]),
+            |value| value.to_string(),
+        );
+        let message = format!(
+            "baseline engine mismatch: {} records ignore_test_dependencies = {recorded_text} but .sentrux/rules.toml now has ignore_test_dependencies = {}; coupling numbers from the two policies are not comparable",
+            baseline_path.display(),
+            metrics.ignore_test_dependencies,
+        );
+        return Ok(baseline_failure(
+            repo, "baseline_engine_mismatch", message, true,
+            format!(
+                "Re-baseline intentionally with: code-intel sentrux --operation save_baseline --repo {}\n",
+                repo.display()
+            ),
         ));
     }
     let before = &baseline["metrics"];
@@ -489,6 +513,16 @@ fn valid_baseline(baseline: &Value) -> bool {
                 .as_str()
                 .is_some_and(|path| sentrux_gate_policy::valid_path(path) && paths.insert(path))
         })
+}
+
+/// The coupling policy a baseline was saved under. A v6 baseline without the
+/// key predates #394 and counted test files; a key that is not an object with
+/// a boolean `ignore_test_dependencies` was not written by this engine.
+fn recorded_coupling_policy(baseline: &Value) -> Option<bool> {
+    match &baseline["couplingPolicy"] {
+        Value::Null if baseline.get("couplingPolicy").is_none() => Some(false),
+        policy => policy["ignore_test_dependencies"].as_bool(),
+    }
 }
 
 fn baseline_failure(
@@ -695,6 +729,7 @@ fn baseline_document(repo: &Path, metrics: &ProjectMetrics) -> Result<Value, Str
         "sourceCommit": git_head(repo),
         "savedAt": saved_at,
         "scope": ".",
+        "couplingPolicy": {"ignore_test_dependencies": metrics.ignore_test_dependencies},
         "metrics": {
             "quality_signal": metrics.quality_signal,
             "coupling_score": metrics.coupling_score,
@@ -760,6 +795,7 @@ fn metrics_json(repo: &Path, metrics: &ProjectMetrics) -> Value {
         "tool": ENGINE_ID,
         "engine": {"id": ENGINE_ID, "version": ENGINE_VERSION},
         "path": repo.display().to_string(),
+        "coupling_policy": {"ignore_test_dependencies": metrics.ignore_test_dependencies},
         "quality_signal": metrics.quality_signal,
         "quality_signal_detail": quality_signal_json(metrics),
         "files": metrics.file_count,
@@ -1016,6 +1052,8 @@ fn measure_project(repo: &Path) -> Result<(ProjectMetrics, file_gate::GateReport
     let repo = repo
         .canonicalize()
         .map_err(|error| format!("resolve repository path: {error}"))?;
+    let ignore_test_dependencies = fs::read_to_string(repo.join(".sentrux").join("rules.toml"))
+        .is_ok_and(|rules| sentrux_coupling_policy::ignore_test_dependencies(&rules));
     let config = file_gate::GateConfig::built_in();
     let report = file_gate::evaluate(&repo, &config)?;
     let paths = report.included.clone();
@@ -1043,7 +1081,11 @@ fn measure_project(repo: &Path) -> Result<(ProjectMetrics, file_gate::GateReport
             &strip_comments_and_strings(relative, &content),
         );
         normalized_content.insert(relative.clone(), normalized);
-        files.push(measure_file(relative, &content));
+        let mut file = measure_file(relative, &content);
+        if ignore_test_dependencies && sentrux_coupling_policy::is_test_file(relative) {
+            file.import_modeled = false;
+        }
+        files.push(file);
     }
     let file_count = files.len() as i64;
     let import_modeled_file_count = files.iter().filter(|file| file.import_modeled).count() as i64;
@@ -1141,6 +1183,7 @@ fn measure_project(repo: &Path) -> Result<(ProjectMetrics, file_gate::GateReport
         quality_signal,
         quality_signal_detail,
         quality_signal_raw,
+        ignore_test_dependencies,
     };
     Ok((metrics, report))
 }
@@ -2313,6 +2356,100 @@ mod tests {
         assert!(
             raw_cycles >= 1,
             "expected at least one detected cycle, got {raw_cycles}"
+        );
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    fn policy_repo(label: &str, policy: bool) -> std::path::PathBuf {
+        let root = fixture_root(label);
+        fs::create_dir_all(root.join("src")).expect("create src");
+        fs::create_dir_all(root.join("tests")).expect("create tests");
+        fs::create_dir_all(root.join(".sentrux")).expect("create .sentrux");
+        fs::write(root.join("src/app.py"), "import os\n").expect("write app.py");
+        fs::write(root.join("tests/test_app.py"), "import app\nimport sys\n")
+            .expect("write test_app.py");
+        fs::write(
+            root.join(".sentrux/rules.toml"),
+            format!("[constraints]\nignore_test_dependencies = {policy}\n"),
+        )
+        .expect("write rules");
+        root
+    }
+
+    #[test]
+    fn policy_on_removes_test_files_from_coupling_numerator_and_denominator() {
+        let root = policy_repo("sentrux-policy-on", true);
+        let (metrics, _) = measure_project(&root).expect("measure");
+        assert!(metrics.ignore_test_dependencies);
+        assert_eq!(metrics.total_import_edges, 1);
+        assert_eq!(metrics.import_modeled_file_count, 1);
+        assert_eq!(metrics.coupling_score, 10.0);
+        assert_eq!(top_import_files(&metrics), vec!["src/app.py".to_string()]);
+        assert_eq!(metrics.file_count, 2);
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn policy_on_still_counts_production_imports() {
+        let root = policy_repo("sentrux-policy-prod", true);
+        fs::write(root.join("src/app.py"), "import os\nimport sys\n").expect("add import");
+        let (metrics, _) = measure_project(&root).expect("measure");
+        assert_eq!(metrics.total_import_edges, 2);
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn policy_off_still_counts_test_imports() {
+        let root = policy_repo("sentrux-policy-off", false);
+        let (metrics, _) = measure_project(&root).expect("measure");
+        assert!(!metrics.ignore_test_dependencies);
+        assert_eq!(metrics.total_import_edges, 3);
+        assert_eq!(metrics.import_modeled_file_count, 2);
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[test]
+    fn recorded_coupling_policy_reads_missing_invalid_and_valid_values() {
+        assert_eq!(recorded_coupling_policy(&json!({})), Some(false));
+        assert_eq!(
+            recorded_coupling_policy(
+                &json!({"couplingPolicy": {"ignore_test_dependencies": true}})
+            ),
+            Some(true)
+        );
+        for invalid in [
+            json!(true),
+            json!(null),
+            json!({}),
+            json!({"ignore_test_dependencies": "true"}),
+        ] {
+            assert_eq!(
+                recorded_coupling_policy(&json!({"couplingPolicy": invalid})),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn gate_fails_closed_when_recorded_policy_differs_from_rules() {
+        let root = policy_repo("sentrux-policy-mismatch", true);
+        assert!(expect_gate_ran(&root, true).success);
+        fs::write(
+            root.join(".sentrux/rules.toml"),
+            "[constraints]\nignore_test_dependencies = false\n",
+        )
+        .expect("flip policy");
+        let saved = fs::read(root.join(".sentrux/baseline.json")).expect("read baseline");
+        let run = expect_gate_ran(&root, false);
+        assert!(!run.success);
+        assert_eq!(run.violations[0].rule, "baseline_engine_mismatch");
+        assert!(run.violations[0]
+            .message
+            .contains("ignore_test_dependencies"));
+        assert!(run.stdout.contains("save_baseline"));
+        assert_eq!(
+            fs::read(root.join(".sentrux/baseline.json")).expect("read baseline"),
+            saved
         );
         fs::remove_dir_all(&root).expect("remove fixture");
     }

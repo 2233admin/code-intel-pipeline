@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `sentrux` native gate now honors `ignore_test_dependencies` from `.sentrux/rules.toml` (#394): test files no longer count toward coupling (imports and file denominator), so import-only test changes do not trigger `coupling_increased`. `scan` reports `coupling_policy`, `save_baseline` records `couplingPolicy`, and `gate`/`check` fail closed with `baseline_engine_mismatch` when the baseline's recorded policy differs from the current rules (or is invalid) instead of comparing incomparable numbers.
+
 ## [0.7.2-beta.7] — 2026-10-19
 
 First release installable through the Skill with no PowerShell: `bootstrap.py` verifies the release, then runs its `code-intel setup`.
