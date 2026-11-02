@@ -103,11 +103,11 @@
       },
       "source": {
         "path": "crates/code-intel-cli/src/builtin_provider_evidence.rs",
-        "sha256": "a0127c7e3d6745f1c415522159adb9a73eb502d109c0def01aefee72eacbaacd"
+        "sha256": "a706e61d415c69e37dd0843322e76a795969431b440926b2a13d0d0992d4da24"
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "1a95f8f6102df4b475800da942e85325f40afdde532ed545da584c49fde6b5dc",
+        "sha256": "cae8ba46a74e4209666583706eb245d0f20c9e5d66871baacdbfd75ac582d015",
         "testName": "production_dag_output_commits_and_enters_the_authoritative_index"
       }
     },
@@ -183,7 +183,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/dag_run.rs",
-        "sha256": "1a95f8f6102df4b475800da942e85325f40afdde532ed545da584c49fde6b5dc",
+        "sha256": "cae8ba46a74e4209666583706eb245d0f20c9e5d66871baacdbfd75ac582d015",
         "testName": "production_run_preserves_doctor_domain_failure_and_completes_unrelated_branch"
       }
     }
@@ -268,7 +268,7 @@
       "description": "Pipeline-owned built-in structural gate engine (metrics, rules check, versioned blocking/advisory admission, cycle detection)",
       "evidenceIds": [
         "local:b03:native-gate-source-sha256:9bb6ec43f3152e483b6426ebc9839626950ff7c5042493265d7c9e3179f5be64",
-        "local:b03:native-gate-conformance:1a95f8f6102df4b475800da942e85325f40afdde532ed545da584c49fde6b5dc"
+        "local:b03:native-gate-conformance:cae8ba46a74e4209666583706eb245d0f20c9e5d66871baacdbfd75ac582d015"
       ]
     }
   ],

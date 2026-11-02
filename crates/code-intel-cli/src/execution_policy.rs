@@ -9,8 +9,6 @@ pub(crate) use inputs::{ProviderRequirement, RunMode, RunProfile, SkipFlags, Wor
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ProviderPolicy {
     pub(crate) repowise: ProviderRequirement,
-    pub(crate) understand: ProviderRequirement,
-    graph: ProviderRequirement,
     sentrux: ProviderRequirement,
     codenexus: ProviderRequirement,
     open_spec: ProviderRequirement,
@@ -38,32 +36,24 @@ impl ExecutionPolicy {
         let providers = match profile {
             RunProfile::Default => ProviderPolicy {
                 repowise: ProviderRequirement::Optional,
-                understand: ProviderRequirement::Optional,
-                graph: ProviderRequirement::Required,
                 sentrux: ProviderRequirement::Optional,
                 codenexus: ProviderRequirement::Optional,
                 open_spec: ProviderRequirement::Optional,
             },
             RunProfile::Strict => ProviderPolicy {
                 repowise: ProviderRequirement::Required,
-                understand: ProviderRequirement::Required,
-                graph: ProviderRequirement::Required,
                 sentrux: ProviderRequirement::Required,
                 codenexus: ProviderRequirement::Required,
                 open_spec: ProviderRequirement::Required,
             },
             RunProfile::Compatibility => ProviderPolicy {
                 repowise: ProviderRequirement::Required,
-                understand: ProviderRequirement::Optional,
-                graph: ProviderRequirement::Required,
                 sentrux: ProviderRequirement::Required,
                 codenexus: ProviderRequirement::Required,
                 open_spec: ProviderRequirement::Required,
             },
             RunProfile::Offline => ProviderPolicy {
                 repowise: ProviderRequirement::Disabled,
-                understand: ProviderRequirement::Disabled,
-                graph: ProviderRequirement::Disabled,
                 sentrux: ProviderRequirement::Disabled,
                 codenexus: ProviderRequirement::Disabled,
                 open_spec: ProviderRequirement::Disabled,
@@ -107,10 +97,6 @@ impl ExecutionPolicy {
     /// narrow within what the profile already permits. `Required` survives
     /// every skip, so no compatibility switch can disarm a strict gate, and
     /// `Disabled` is never turned back on, so `Offline` stays offline.
-    ///
-    /// `require_understand_graph` moves in the other direction — it
-    /// *strengthens* — which is always safe, but it still may not resurrect a
-    /// capability the profile disabled.
     pub(crate) fn with_skips(mut self, skips: SkipFlags) -> Self {
         if skips.repowise {
             self.providers.repowise = self.providers.repowise.narrowed();
@@ -120,11 +106,6 @@ impl ExecutionPolicy {
         }
         if skips.open_spec {
             self.providers.open_spec = self.providers.open_spec.narrowed();
-        }
-        if skips.require_understand_graph
-            && self.providers.understand == ProviderRequirement::Optional
-        {
-            self.providers.understand = ProviderRequirement::Required;
         }
         self
     }
@@ -146,7 +127,6 @@ impl ExecutionPolicy {
     pub(crate) fn with_doctor_overrides(
         mut self,
         require_repowise: Option<bool>,
-        require_understand: Option<bool>,
         tool_path_prefix: Option<PathBuf>,
     ) -> Self {
         if matches!(
@@ -155,9 +135,6 @@ impl ExecutionPolicy {
         ) {
             if let Some(required) = require_repowise {
                 self.providers.repowise = requirement_override(required);
-            }
-            if let Some(required) = require_understand {
-                self.providers.understand = requirement_override(required);
             }
         }
         self.tool_path_prefix = tool_path_prefix;
@@ -184,7 +161,6 @@ impl ExecutionPolicy {
 
     pub(crate) fn capability_requirement(&self, capability: &str) -> Option<ProviderRequirement> {
         match capability {
-            "provider.graph-adapt" => Some(self.providers.graph),
             "provider.sentrux-adapt" => Some(self.providers.sentrux),
             "provider.codenexus-adapt" => Some(self.providers.codenexus),
             "advisory.workflow-recommend" => Some(self.providers.open_spec),
@@ -198,9 +174,7 @@ impl ExecutionPolicy {
     }
 
     pub(crate) fn provider_diagnosis_enabled(&self) -> bool {
-        self.providers.graph.is_enabled()
-            || self.providers.sentrux.is_enabled()
-            || self.providers.codenexus.is_enabled()
+        self.providers.sentrux.is_enabled() || self.providers.codenexus.is_enabled()
     }
 
     pub(crate) fn capability_options(
@@ -222,7 +196,6 @@ impl ExecutionPolicy {
                 "repoPath":repo,
                 "manifestPath":manifest,
                 "requireRepowise":self.providers.repowise.is_required(),
-                "requireUnderstand":self.providers.understand.is_required(),
             }),
             "advisory.workflow-recommend" => json!({
                 "repoPath":repo,
@@ -264,18 +237,13 @@ mod tests {
         let offline = ExecutionPolicy::for_profile(RunProfile::Offline);
 
         assert!(!default.providers.repowise.is_required());
-        assert!(default.providers.graph.is_required());
         assert!(!default.providers.sentrux.is_required());
         assert!(!default.providers.open_spec.is_required());
         assert!(strict.providers.repowise.is_required());
-        assert!(strict.providers.understand.is_required());
-        assert!(strict.providers.graph.is_required());
         assert!(strict.providers.sentrux.is_required());
         assert!(strict.providers.open_spec.is_required());
         assert_eq!(offline.providers.repowise, ProviderRequirement::Disabled);
-        assert_eq!(offline.providers.understand, ProviderRequirement::Disabled);
         assert_eq!(offline.providers.open_spec, ProviderRequirement::Disabled);
-        assert!(!offline.capability_enabled("provider.graph-adapt"));
         assert!(!offline.capability_enabled("provider.sentrux-adapt"));
         assert!(!offline.capability_enabled("advisory.workflow-recommend"));
         assert!(!offline.provider_diagnosis_enabled());
@@ -301,8 +269,9 @@ mod tests {
     fn lite_drops_the_structural_stage_only_where_the_profile_left_it_optional() {
         let lite = ExecutionPolicy::for_profile(RunProfile::Default).with_mode(RunMode::Lite);
         assert!(!lite.capability_enabled("provider.sentrux-adapt"));
-        // The graph stage is Required under Default and must survive lite.
-        assert!(lite.capability_enabled("provider.graph-adapt"));
+        // CodeNexus is still optional-enabled under Default, so the hospital
+        // keeps a provider to diagnose.
+        assert!(lite.capability_enabled("provider.codenexus-adapt"));
         assert!(lite.provider_diagnosis_enabled());
     }
 
@@ -323,7 +292,7 @@ mod tests {
         for mode in [RunMode::Lite, RunMode::Normal, RunMode::Full] {
             let offline = ExecutionPolicy::for_profile(RunProfile::Offline).with_mode(mode);
             assert_eq!(offline.providers.sentrux, ProviderRequirement::Disabled);
-            assert_eq!(offline.providers.graph, ProviderRequirement::Disabled);
+            assert_eq!(offline.providers.codenexus, ProviderRequirement::Disabled);
             assert!(!offline.provider_diagnosis_enabled());
         }
     }
@@ -353,7 +322,6 @@ mod tests {
             repowise: true,
             sentrux: true,
             open_spec: true,
-            require_understand_graph: true,
         };
         let strict = ExecutionPolicy::for_profile(RunProfile::Strict).with_skips(all);
         assert!(strict.providers.repowise.is_required());
@@ -365,9 +333,6 @@ mod tests {
         assert_eq!(offline.providers.repowise, ProviderRequirement::Disabled);
         assert_eq!(offline.providers.sentrux, ProviderRequirement::Disabled);
         assert_eq!(offline.providers.open_spec, ProviderRequirement::Disabled);
-        // require_understand_graph strengthens, but must not resurrect a
-        // capability the profile disabled.
-        assert_eq!(offline.providers.understand, ProviderRequirement::Disabled);
     }
 
     #[test]
@@ -401,20 +366,6 @@ mod tests {
     }
 
     #[test]
-    fn require_understand_graph_promotes_an_optional_stage_to_required() {
-        let policy = ExecutionPolicy::for_profile(RunProfile::Default).with_skips(SkipFlags {
-            require_understand_graph: true,
-            ..SkipFlags::default()
-        });
-        assert!(policy.providers.understand.is_required());
-        // ...and it reaches the doctor, which is what makes a missing graph
-        // fatal rather than advisory.
-        let options =
-            policy.capability_options("doctor", Path::new("repo"), Path::new("integrations.json"));
-        assert_eq!(options["requireUnderstand"], json!(true));
-    }
-
-    #[test]
     fn no_skips_is_the_identity_on_the_provider_policy() {
         let plain = ExecutionPolicy::for_profile(RunProfile::Default);
         let skipped =
@@ -424,20 +375,12 @@ mod tests {
 
     #[test]
     fn strict_and_offline_profiles_cannot_be_weakened_or_reenabled_by_compatibility_flags() {
-        let strict = ExecutionPolicy::for_profile(RunProfile::Strict).with_doctor_overrides(
-            Some(false),
-            Some(false),
-            None,
-        );
+        let strict = ExecutionPolicy::for_profile(RunProfile::Strict)
+            .with_doctor_overrides(Some(false), None);
         assert!(strict.providers.repowise.is_required());
-        assert!(strict.providers.understand.is_required());
 
-        let offline = ExecutionPolicy::for_profile(RunProfile::Offline).with_doctor_overrides(
-            Some(true),
-            Some(true),
-            None,
-        );
+        let offline = ExecutionPolicy::for_profile(RunProfile::Offline)
+            .with_doctor_overrides(Some(true), None);
         assert_eq!(offline.providers.repowise, ProviderRequirement::Disabled);
-        assert_eq!(offline.providers.understand, ProviderRequirement::Disabled);
     }
 }

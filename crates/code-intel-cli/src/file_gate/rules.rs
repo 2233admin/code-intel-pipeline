@@ -55,7 +55,6 @@ pub(crate) const CODE_EXTENSIONS: &[&str] = &[
 pub(crate) const DEFAULT_EXCLUDE_DIRS: &[&str] = &[
     ".git",
     ".repowise",
-    ".understand-anything",
     ".sentrux",
     ".claude",
     "tools",

@@ -10,7 +10,7 @@ This prompt is an operating instruction for an agent running the `security` audi
 - Pipeline evidence for that repository when available, in this priority order:
   - `xray` (rg file inventory + text signals) — cheapest sweep surface.
   - `ct` (Sentrux hotspots, complexity, coupling) — ordering: audit hot, tangled files first.
-  - `anatomy` (Understand Anything graph) — entry points and trust boundaries.
+  - `anatomy` (architecture graph, when one is supplied) — entry points and trust boundaries.
   - `chart` (Repowise semantic memory) — project background; use it to kill false positives, never to manufacture findings.
 - If a modality is missing, proceed without it and say so in the coverage matrix `exclusions` — never guess what it would have said.
 

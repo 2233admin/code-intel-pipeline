@@ -47,7 +47,6 @@ pub(crate) struct Options {
     /// `auto` | `windows` | `macos` | `linux`.
     pub(crate) platform: String,
     pub(crate) require_repowise: bool,
-    pub(crate) require_understand: bool,
     /// Directory searched ahead of `PATH` when probing for tools. Lets a test
     /// stand up a fixture toolchain without mutating the process environment.
     pub(crate) tool_path_prefix: Option<PathBuf>,
@@ -63,7 +62,6 @@ impl Options {
             config: None,
             platform: "auto".into(),
             require_repowise: false,
-            require_understand: false,
             tool_path_prefix: None,
             pipeline_root,
         }
@@ -95,17 +93,9 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
         .as_ref()
         .map(|path| config::resolve_sentrux_scope(path, repo_config.as_ref()));
 
-    let cli_root = options.pipeline_root.join("crates").join("code-intel-cli");
-    let graph_source = cli_root.join("src").join("graph").join("mod.rs");
-    let graph_cargo = cli_root.join("Cargo.toml");
-    let binary_candidates = binary_candidates(&options.pipeline_root, &platform);
-    let graph_binary = binary_candidates
-        .iter()
-        .find(|path| path.is_file())
-        .cloned();
-    let graph_command_binary = graph_binary
-        .clone()
-        .unwrap_or_else(|| binary_candidates[0].clone());
+    let code_intel_binary = binary_candidates(&options.pipeline_root, &platform)
+        .into_iter()
+        .find(|path| path.is_file());
 
     // The structural gate engine ships inside the code-intel binary; an
     // external sentrux on PATH is an optional overlay, not a bootstrap
@@ -113,7 +103,7 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
     // This probe runs inside that binary, so a clean extracted package
     // invoked by absolute path (bin dir not on PATH, no target/ builds)
     // still has the engine (#396).
-    let builtin_sentrux = graph_binary.is_some()
+    let builtin_sentrux = code_intel_binary.is_some()
         || probe::locate("code-intel", prefix).is_some()
         || std::env::current_exe().is_ok_and(|exe| exe.is_file());
 
@@ -162,32 +152,6 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
     );
 
     let home_dir = paths::home_directory();
-    let understand_skill = [".claude", ".agents", ".codex"]
-        .iter()
-        .map(|agent| {
-            home_dir
-                .join(agent)
-                .join("skills")
-                .join("understand")
-                .join("SKILL.md")
-        })
-        .find(|path| path.is_file());
-    let repo_parent = repo_path
-        .as_ref()
-        .and_then(|path| path.parent().map(Path::to_path_buf))
-        .unwrap_or_else(|| options.pipeline_root.clone());
-    let understand_plugin = [
-        home_dir
-            .join(".claude")
-            .join("plugins")
-            .join("cache")
-            .join("understand-anything"),
-        home_dir.join(".understand-anything-plugin"),
-        repo_parent.join("Understand-Anything"),
-    ]
-    .into_iter()
-    .find(|path| path.is_dir());
-
     let assistance_plugins = probe::probe_assistance_plugins(
         &options
             .pipeline_root
@@ -222,32 +186,12 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
             "pro": sentrux_pro,
             "builtin": {"found": builtin_sentrux}
         },
-        "understandAnything": {
-            "skillFound": understand_skill.is_some(),
-            "skillPath": understand_skill.as_deref().map(display).unwrap_or_default(),
-            "pluginFound": understand_plugin.is_some(),
-            "pluginPath": understand_plugin.as_deref().map(display).unwrap_or_default()
-        },
+        // Key name kept: the install-smoke gate (`.github/scripts/ci.py`,
+        // DR-0001) reads `binaryFound`/`binaryPath` to confirm an installed
+        // binary can find itself.
         "graphProvider": {
-            "sourceFound": graph_source.is_file(),
-            "cargoFound": graph_cargo.is_file(),
-            "binaryFound": graph_binary.is_some(),
-            "binaryPath": graph_binary.as_deref().map(display).unwrap_or_default(),
-            // Deliberately not wired to `language_pref::resolve` (issue
-            // #155): this module's source is `#[path]`-included as its own
-            // independent compilation root by roughly a dozen integration
-            // test files (each pulling it in transitively through
-            // `capability_inventory::doctor_adapter`), none of which declare
-            // a `language_pref` module. A `crate::language_pref` reference
-            // here compiles in the real binary but fails every one of those
-            // test targets with `cannot find language_pref in crate`. The
-            // command below is illustrative only (this probe never writes),
-            // so it stays a static example rather than gaining a fragile
-            // cross-module dependency for a cosmetic string.
-            "command": format!(
-                "{} graph --repo <repo-path> --language zh --write --json",
-                display(&graph_command_binary)
-            )
+            "binaryFound": code_intel_binary.is_some(),
+            "binaryPath": code_intel_binary.as_deref().map(display).unwrap_or_default()
         },
         "assistancePlugins": assistance_plugins,
         "repo": repo_state,
@@ -265,7 +209,7 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
         }
     });
 
-    let missing = missing_list(&checks, &tools, builtin_sentrux, options, &home);
+    let missing = missing_list(&checks, &tools, builtin_sentrux, &home);
     Ok(json!({
         "schema": BOOTSTRAP_SCHEMA,
         "authority": "observation_only",
@@ -276,8 +220,7 @@ pub(crate) fn observe(options: &Options) -> Result<Value, String> {
         "paths": paths::platform_paths(&platform, &options.pipeline_root),
         "checks": checks,
         "strict": {
-            "requireRepowise": options.require_repowise,
-            "requireUnderstand": options.require_understand
+            "requireRepowise": options.require_repowise
         }
     }))
 }
@@ -400,7 +343,6 @@ fn missing_list(
     checks: &Value,
     tools: &[Value],
     builtin_sentrux: bool,
-    options: &Options,
     home: &CodeIntelHome,
 ) -> Vec<String> {
     let flag = |pointer: &str| {
@@ -432,25 +374,6 @@ fn missing_list(
     if !flag("/sentrux/pro/found") && !builtin_sentrux {
         missing.push("sentrux pro auto-activation".to_string());
     }
-    if options.require_understand && !flag("/graphProvider/sourceFound") {
-        missing.push("internal graph provider source".to_string());
-    }
-    if options.require_understand && !flag("/graphProvider/cargoFound") {
-        missing.push("code-intel Rust runtime".to_string());
-    }
-    // The two checks above only prove the *internal* graph provider ships in
-    // this checkout; inside the pipeline repo they are trivially true, which
-    // left `--require-understand` a fail-open no-op that never once consulted
-    // the `understandAnything` block it computes. Understand Anything ships either as an agent skill or
-    // as a plugin directory, so either one satisfies the requirement — this is
-    // the same "skill/plugin" wording the installer's own RequireUnderstand
-    // check remediates with.
-    if options.require_understand
-        && !flag("/understandAnything/skillFound")
-        && !flag("/understandAnything/pluginFound")
-    {
-        missing.push("Understand Anything skill or plugin".to_string());
-    }
     if checks["repo"].is_object() && !flag("/repo/exists") {
         missing.push("repo path".to_string());
     }
@@ -476,10 +399,6 @@ fn repo_state(repo_path: Option<&Path>, sentrux_scope: Option<&Path>) -> Value {
         "path": display(repo_path),
         "exists": true,
         "isGitRepo": repo_path.join(".git").exists(),
-        "understandGraph": repo_path
-            .join(".understand-anything")
-            .join("knowledge-graph.json")
-            .is_file(),
         "repowiseState": repo_path.join(".repowise").is_dir(),
         "sentruxScope": display(scope),
         "sentruxRules": sentrux_dir.join("rules.toml").is_file(),
@@ -564,22 +483,6 @@ pub(crate) fn render_human(observation: &Value) -> String {
         mark(flag("/checks/sentrux/pro/found") || builtin),
         text("/checks/sentrux/pro/output")
     ));
-    lines.push(format!(
-        "{} internal graph provider source={} cargo={} binary={}",
-        mark(flag("/checks/graphProvider/sourceFound") && flag("/checks/graphProvider/cargoFound")),
-        flag("/checks/graphProvider/sourceFound"),
-        flag("/checks/graphProvider/cargoFound"),
-        flag("/checks/graphProvider/binaryFound")
-    ));
-    lines.push(format!(
-        "{} external Understand fallback skill={} plugin={}",
-        mark(
-            flag("/checks/understandAnything/skillFound")
-                && flag("/checks/understandAnything/pluginFound")
-        ),
-        text("/checks/understandAnything/skillPath"),
-        text("/checks/understandAnything/pluginPath")
-    ));
     lines.extend(repo_lines(observation, &text, &flag));
     lines.join("\n")
 }
@@ -614,10 +517,6 @@ fn repo_lines(
         format!("Repo exists: {}", flag("/checks/repo/exists")),
     ];
     if flag("/checks/repo/exists") {
-        lines.push(format!(
-            "Understand graph: {}",
-            flag("/checks/repo/understandGraph")
-        ));
         lines.push(format!(
             "Repowise state: {}",
             flag("/checks/repo/repowiseState")
@@ -672,10 +571,6 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
             }
             ("--no-require-repowise", _) => {
                 options.require_repowise = false;
-                1
-            }
-            ("--require-understand", _) => {
-                options.require_understand = true;
                 1
             }
             ("--require-provider-conformance", _) => {

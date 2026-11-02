@@ -79,7 +79,7 @@ fn emits_one_observation_only_document_the_adapter_contract_accepts() {
         .unwrap()
         .is_boolean());
     assert!(observation
-        .pointer("/checks/graphProvider/sourceFound")
+        .pointer("/checks/graphProvider/binaryFound")
         .unwrap()
         .is_boolean());
     assert_eq!(observation["checks"]["repo"]["exists"], json!(true));
@@ -243,22 +243,7 @@ fn the_pipeline_root_defaults_to_the_checkout_the_caller_stands_in() {
         fs::write(dir.join("orchestration").join("integrations.json"), b"{}").unwrap();
     }
     fs::write(checkout.join("pipeline.config.json"), b"{}").unwrap();
-    let crate_src = checkout.join("crates").join("code-intel-cli").join("src");
-    fs::create_dir_all(&crate_src).unwrap();
-    // graph.rs is a directory module (mod.rs + tests.rs, issue #155's
-    // god-file split): the probe's sourceFound check looks for
-    // src/graph/mod.rs.
-    let graph_dir = crate_src.join("graph");
-    fs::create_dir_all(&graph_dir).unwrap();
-    fs::write(graph_dir.join("mod.rs"), b"").unwrap();
-    fs::write(
-        checkout
-            .join("crates")
-            .join("code-intel-cli")
-            .join("Cargo.toml"),
-        b"[package]",
-    )
-    .unwrap();
+    fs::create_dir_all(checkout.join("crates")).unwrap();
 
     // No --pipeline-root, and the working directory is a subdirectory of the
     // checkout so the upward walk is exercised too.
@@ -273,10 +258,6 @@ fn the_pipeline_root_defaults_to_the_checkout_the_caller_stands_in() {
 
     assert!(observation["checks"].get("pipelineScript").is_none());
     assert_eq!(observation["checks"]["config"]["found"], json!(true));
-    assert_eq!(
-        observation["checks"]["graphProvider"]["sourceFound"],
-        json!(true)
-    );
     let missing = observation["missing"].as_array().unwrap();
     for absent in ["pipeline script", "pipeline config"] {
         assert!(
@@ -287,12 +268,12 @@ fn the_pipeline_root_defaults_to_the_checkout_the_caller_stands_in() {
     fs::remove_dir_all(root).ok();
 }
 
-/// A release payload has the compiled graph provider in `bin/`, not in a
+/// A release payload has the compiled `code-intel` binary in `bin/`, not in a
 /// source checkout's `target/{release,debug}` directories. Doctor must report
 /// that installed binary instead of describing a path every release install
 /// necessarily lacks (issue #232).
 #[test]
-fn release_layout_reports_the_packaged_graph_provider_binary() {
+fn release_layout_reports_the_packaged_binary() {
     let release = temp_dir("release-layout");
     let repo = temp_dir("release-repo");
     let binary = release.join("bin").join("code-intel");
@@ -324,13 +305,7 @@ fn release_layout_reports_the_packaged_graph_provider_binary() {
     );
     assert_eq!(
         observation["checks"]["graphProvider"]["binaryPath"],
-        json!(binary_path.clone())
-    );
-    assert!(
-        observation["checks"]["graphProvider"]["command"]
-            .as_str()
-            .is_some_and(|command| command.contains(&binary_path)),
-        "doctor must recommend the packaged binary: {observation}"
+        json!(binary_path)
     );
     fs::remove_dir_all(release).ok();
     fs::remove_dir_all(repo).ok();

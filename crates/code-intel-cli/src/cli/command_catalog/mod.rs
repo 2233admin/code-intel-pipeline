@@ -12,10 +12,9 @@ use crate::{
 };
 
 use super::legacy::{
-    cmd_classify, cmd_doctor, cmd_graph, cmd_help, cmd_language, cmd_orchestrate, cmd_provider,
-    cmd_report, cmd_resume, cmd_route, cmd_sentrux, cmd_sentrux_debt_register,
-    cmd_sentrux_normalize, parse_args, run_benchmark, run_capability, run_file_boundary_raw,
-    run_runtime_ci_raw, Args,
+    cmd_classify, cmd_doctor, cmd_help, cmd_language, cmd_orchestrate, cmd_provider, cmd_report,
+    cmd_resume, cmd_route, cmd_sentrux, cmd_sentrux_debt_register, cmd_sentrux_normalize,
+    parse_args, run_benchmark, run_capability, run_file_boundary_raw, run_runtime_ci_raw, Args,
 };
 use super::primary::{
     execute_primary, matches_primary_pattern, parse_primary_args, parse_run_alias_args, PrimaryArgs,
@@ -69,7 +68,6 @@ enum CompatibilityRoute {
     Setup,
     LintHardcodedPaths,
     ProviderRepowiseAdapt,
-    ProviderGraphAdapt,
     ProviderSentruxAdapt,
     ProviderSessionAdapt,
     ProviderCodenexusAdapt,
@@ -120,7 +118,6 @@ enum LegacyRouteId {
     Doctor,
     SentruxNormalize,
     SentruxDebtRegister,
-    Graph,
     Orchestrate,
     Provider,
     Route,
@@ -619,7 +616,6 @@ fn execute_compatibility(command: CompatibilityCommand) -> i32 {
         CompatibilityRoute::Setup => crate::setup::run_raw(raw),
         CompatibilityRoute::LintHardcodedPaths => hardcoded_paths::run_raw(raw),
         CompatibilityRoute::ProviderRepowiseAdapt => providers::run_repowise_adapt_raw(raw),
-        CompatibilityRoute::ProviderGraphAdapt => providers::run_graph_adapt_raw(raw),
         CompatibilityRoute::ProviderSentruxAdapt => providers::run_sentrux_adapt_raw(raw),
         CompatibilityRoute::ProviderSessionAdapt => session_evidence::run_raw(raw),
         CompatibilityRoute::ProviderCodenexusAdapt => providers::run_codenexus_adapt_raw(raw),
@@ -696,7 +692,6 @@ fn execute_legacy(command: &LegacyCommand) -> std::result::Result<(), Box<dyn Er
         LegacyRouteId::Doctor => cmd_doctor(&command.arguments),
         LegacyRouteId::SentruxNormalize => cmd_sentrux_normalize(&command.arguments),
         LegacyRouteId::SentruxDebtRegister => cmd_sentrux_debt_register(&command.arguments),
-        LegacyRouteId::Graph => cmd_graph(&command.arguments),
         LegacyRouteId::Orchestrate => cmd_orchestrate(&command.arguments),
         LegacyRouteId::Provider => cmd_provider(&command.arguments),
         LegacyRouteId::Route => cmd_route(&command.arguments),

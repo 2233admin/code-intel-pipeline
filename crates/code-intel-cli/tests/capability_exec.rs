@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 const IMPLEMENTATION_DIGEST: &str =
-    "82a0e5a863141a63b87075c9c07913713fa895c258fd71d9bb62bdf2689bc1b4";
+    "664e82bb51bc9f1361539afafd139249601cb272c1c30b146c2d2bd0f7171faf";
 const STRUCTURED_EDIT_DIGEST: &str =
     "ec36694a8ffca7ef068982cc574e6e42499a4634eb12f86a742026558bd1867d";
 const AST_GREP_SECURITY_DIGEST: &str =
@@ -153,7 +153,6 @@ fn legacy_inventory(repo: &Path) -> Vec<u8> {
         "!**/.git/**",
         "!**/node_modules/**",
         "!**/.repowise/**",
-        "!**/.understand-anything/**",
         "!**/.sentrux/**",
         "!**/target/**",
         "!**/dist/**",
@@ -1623,7 +1622,7 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects() {
         "version":"1.0.0",
         "toolchainDigests":[
             "4a11d639a27ec7ae039c07f1731f16b68e546b0e1ccc79ca43665718198fcef9",
-            "82a0e5a863141a63b87075c9c07913713fa895c258fd71d9bb62bdf2689bc1b4"
+            "664e82bb51bc9f1361539afafd139249601cb272c1c30b146c2d2bd0f7171faf"
         ]
     });
     value["options"] = json!({"repoPath":repo,"auto":true});
@@ -2144,7 +2143,7 @@ fn assistance_discovery_refuses_a_candidate_that_was_never_reviewed() {
 }
 
 /// `provider.codenexus-adapt` has no builtin adapter dispatch test to mirror
-/// (graph/sentrux builtins are exercised only through the full DAG in
+/// (sentrux builtins are exercised only through the full DAG in
 /// `dag_run.rs`, never through a standalone `capability exec` here), so this
 /// builds the chain by hand: a real `repo.snapshot` artifact first, then the
 /// codenexus dispatch consuming it -- the same shape `CapabilityEnvelopeExecutor`

@@ -69,7 +69,6 @@ struct Options {
     manifest_path: PathBuf,
     platform: String,
     require_repowise: bool,
-    require_understand: bool,
     tool_path_prefix: Option<PathBuf>,
 }
 
@@ -84,14 +83,13 @@ impl Options {
             "manifestPath",
             "platform",
             "requireRepowise",
-            "requireUnderstand",
             "toolPathPrefix",
         ]
         .into_iter()
         .collect::<BTreeSet<_>>();
         if options.keys().any(|key| !allowed.contains(key.as_str())) {
             return Err(AdapterError::InvalidOptions(
-                "doctor accepts only repoPath/configPath/manifestPath/platform/requireRepowise/requireUnderstand/toolPathPrefix"
+                "doctor accepts only repoPath/configPath/manifestPath/platform/requireRepowise/toolPathPrefix"
                     .into(),
             ));
         }
@@ -133,11 +131,6 @@ impl Options {
                 options.get("requireRepowise"),
                 true,
                 "requireRepowise",
-            )?,
-            require_understand: optional_bool(
-                options.get("requireUnderstand"),
-                false,
-                "requireUnderstand",
             )?,
             tool_path_prefix: options
                 .get("toolPathPrefix")
@@ -182,7 +175,6 @@ fn run_bootstrap(options: &Options) -> Result<Value, AdapterError> {
     probe.config = options.config_path.clone();
     probe.platform = options.platform.clone();
     probe.require_repowise = options.require_repowise;
-    probe.require_understand = options.require_understand;
     probe.tool_path_prefix = options.tool_path_prefix.clone();
     let value = doctor_bootstrap::observe(&probe)
         .map_err(|error| AdapterError::InvalidOptions(format!("doctor bootstrap: {error}")))?;
@@ -245,8 +237,7 @@ fn adapt(
         .collect::<Vec<_>>();
     let policy = json!({
         "platform": options.platform,
-        "requireRepowise": options.require_repowise,
-        "requireUnderstand": options.require_understand
+        "requireRepowise": options.require_repowise
     });
     let policy_bytes = serde_json::to_vec(&policy)
         .map_err(|error| AdapterError::Internal(format!("serialize doctor policy: {error}")))?;
@@ -447,7 +438,6 @@ mod tests {
             manifest_path: PathBuf::from("integrations.json"),
             platform: "windows".into(),
             require_repowise: true,
-            require_understand: false,
             tool_path_prefix: None,
         }
     }
@@ -472,7 +462,7 @@ mod tests {
                     "core":{"found":false,"output":"Authorization: Bearer super-secret-token"},
                     "pro":{"found":true,"output":"password=hunter2"}
                 },
-                "graphProvider":{"sourceFound":true,"cargoFound":true,"binaryFound":true,"command":"secret"}
+                "graphProvider":{"binaryFound":true,"binaryPath":"C:/secret/bin/code-intel.exe"}
             }
         })
     }

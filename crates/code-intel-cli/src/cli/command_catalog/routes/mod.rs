@@ -137,7 +137,6 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
         ),
     },
     CommandRoute::Raw(provider_routes::REPOWISE_ADAPT),
-    CommandRoute::Raw(provider_routes::GRAPH_ADAPT),
     CommandRoute::Raw(provider_routes::SENTRUX_ADAPT),
     CommandRoute::Raw(provider_routes::SESSION_ADAPT),
     CommandRoute::Raw(provider_routes::CODENEXUS_ADAPT),
@@ -596,23 +595,6 @@ pub(super) const COMMAND_ROUTES: &[CommandRoute] = &[
             artifacts_and_stdout!(["code-intel-sentrux-debt-register.v1"], ["code-intel-sentrux-debt-register.v1"]),
             exits!(0, 1),
             "retire after typed session diagnostics preserve debt classification"
-        ),
-    },
-    legacy_route! {
-        command: "graph",
-        aliases: &["understand"],
-        id: LegacyRouteId::Graph,
-        contract: command_contract!(
-            Compatibility,
-            WorkspaceAdvisory,
-            Advisory,
-            &[
-                CommandEffect::RepoRead,
-                CommandEffect::LocalWrite
-            ],
-            artifacts_and_stdout!(["code-intel-understand-graph.v1"], ["code-intel-understand-graph.v1", "text-format:graph-human.v1"]),
-            exits!(0, 1),
-            "retire after graph and understand spellings have typed advisory parity"
         ),
     },
     legacy_route! {

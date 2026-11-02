@@ -48,14 +48,13 @@ mod understanding_quadrant;
 
 #[path = "workflow_recommendation.rs"]
 mod workflow_recommendation;
-const EXCLUDES: [&str; 11] = [
+const EXCLUDES: [&str; 10] = [
     "!**/.git/**",
     // In a linked git worktree `.git` is a pointer FILE, which `!**/.git/**`
     // does not match; without this the self-scan process-fails in worktrees.
     "!**/.git",
     "!**/node_modules/**",
     "!**/.repowise/**",
-    "!**/.understand-anything/**",
     "!**/.sentrux/**",
     "!**/target/**",
     "!**/dist/**",
@@ -106,9 +105,6 @@ pub(crate) fn execute(
             design_proposal::execute(request, verified_inputs, out)
         }
         "diagnosis.hospital.compat" => hospital_diagnosis::execute(request, verified_inputs, out),
-        "provider.graph-builtin.compat" => {
-            builtin_provider_evidence::graph_admission(request, verified_inputs, out)
-        }
         "provider.sentrux-builtin.compat" => {
             builtin_provider_evidence::sentrux_admission(request, verified_inputs, out)
         }

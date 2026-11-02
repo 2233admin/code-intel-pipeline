@@ -58,22 +58,9 @@ pub(crate) fn provider_rows(raw: &Value) -> Vec<Value> {
     // exactly the verdict-drift hazard this doctor exists to surface.
     let external_sentrux = tool_present("sentrux");
     let sentrux_ready = (sentrux_builtin && !external_sentrux) || (sentrux_core && sentrux_pro);
-    let graph_source = raw
-        .pointer("/checks/graphProvider/sourceFound")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let graph_cargo = raw
-        .pointer("/checks/graphProvider/cargoFound")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let graph_binary = raw
-        .pointer("/checks/graphProvider/binaryFound")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
     let mut rows = vec![
         json!({"id":"repowise","presence":if tool_present("repowise") {"present"} else {"missing"},"readiness":if tool_present("repowise") {"ready"} else {"unavailable"},"conformance":"not_evaluated","admissibility":"not_evaluated"}),
         json!({"id":"sentrux","presence":if sentrux_builtin || tool_present("sentrux") {"present"} else {"missing"},"readiness":if sentrux_ready {"ready"} else {"unavailable"},"conformance":if sentrux_ready {"conforming"} else if tool_present("sentrux") {"nonconforming"} else {"not_evaluated"},"admissibility":"not_evaluated"}),
-        json!({"id":"graph.code-intel","presence":if graph_source && graph_cargo {"present"} else {"missing"},"readiness":if graph_source && graph_cargo && graph_binary {"ready"} else {"unavailable"},"conformance":if graph_source && graph_cargo {"conforming"} else {"not_evaluated"},"admissibility":"not_evaluated"}),
     ];
     // weco (#300): optional external perf-optimize engine, PATH presence plus
     // BYOK auth. The human-readable reason for "unavailable" lives in

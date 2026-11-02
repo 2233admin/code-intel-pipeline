@@ -101,9 +101,6 @@ pub(crate) fn execute_dag(cli: DagExecutionRequest) -> Result<DagExecutionResult
         ]
     };
     if !diagnosis_mode {
-        if cli.policy.capability_enabled("provider.graph-adapt") {
-            required.push("provider.graph-adapt");
-        }
         if cli.policy.capability_enabled("provider.sentrux-adapt") {
             required.push("provider.sentrux-adapt");
         }
@@ -180,15 +177,6 @@ pub(crate) fn execute_dag(cli: DagExecutionRequest) -> Result<DagExecutionResult
             EdgeSpec::new("repo.snapshot", "inventory.rg"),
             EdgeSpec::new("inventory.rg", "evidence.native-code"),
         ];
-        if cli.policy.capability_enabled("provider.graph-adapt") {
-            nodes.push(NodeSpec::new(
-                "evidence.graph",
-                "provider.graph-adapt",
-                request_identity("provider.graph-adapt"),
-            ));
-            edges.push(EdgeSpec::new("repo.snapshot", "evidence.graph"));
-            edges.push(EdgeSpec::new("evidence.graph", "diagnosis.hospital"));
-        }
         if cli.policy.capability_enabled("provider.sentrux-adapt") {
             nodes.push(NodeSpec::new(
                 "evidence.sentrux",
