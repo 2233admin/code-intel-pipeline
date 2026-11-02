@@ -222,6 +222,18 @@ Role: <role>.
 
 ## 推进一张单
 
+单子在 `build`、`gate`、`review`、`approve` 时，每次 agent 回来后跑 `factory/bin/job drive <job-id>`，照它的输出做：
+
+- `DISPATCH <角色> <模型>` 加下面几行提示词（可能有几块，每块一个 agent）：在一条消息里全部后台派出，提示词原样用。
+  `builder` 那块是续接（第四行是门禁退回或审查发现的续接句）：`SendMessage` 给 `builder-<job-id>`，内容是第四行；
+  它不在了就用同样的名字新起，prompt 用整块。
+- `WAIT <阶段> <角色…>`：已派出的这些 agent 还没写完自己的文件。什么都不做，等它们回来再跑一次 `job drive`。
+- `STOP <阶段> <原因>`：脚本做不了的那一步，或某一步被拒（原因是拒绝的原话）。到下面对应阶段，照那里写的处理。
+- `ERROR <命令> <输出>`（退出 1）：某一步没能跑起来。停下，把这一行告诉用户。
+
+它只做没有判断的那几步（`advance`、`gate`、`evidence`、`sync`、`merge`），步骤和下面各阶段写的一样；
+其他阶段、以及它 `STOP` 下来的情况，照下面手工做。
+
 每一步都先读 `job.json` 的 `stage`，按阶段做下面的事。每个脚本命令只打印一行；拒绝时退出非零并说明原因。
 退回、挂起和升级都要一个原因：`intake.md`（NEEDS-INFO、REJECT）、`spec.md`（NEEDS-DECISION）、`build.md`（BLOCKED）、
 审查（CHANGES）、`decision.md`（ESCALATE）的文件头要有 `REASON: <值>`，取值是 `config.json` 的 `reasons`。

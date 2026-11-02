@@ -20,6 +20,13 @@ Usage:
                                  prints `<n> <url>`
   job create <issue>             new job for an open `factory` issue; prints the job id
   job advance <job> <stage>      move a job to <stage>, or refuse
+  job drive <job>                from build, gate, review or approve, run the steps that need no judgement
+                                 (advance, gate, evidence, sync, merge) up to the next agent or person; prints
+                                 `DISPATCH <role> <model>` + its prompt per agent (a builder continuation: the three
+                                 header lines + the continuation); `WAIT <stage> <roles>` while dispatched agents
+                                 haven't written their file (drive again when they return); or `STOP <stage> <why>`
+                                 when a person or the orchestrator's judgement is next (a refusal word for word);
+                                 `ERROR <command> <output>` and exit 1 when a step fails to run
   job merge <job>                APPROVE → sync with the base branch, gate, merge the PR at that commit
   job rework <job>               needs-human → build, with your PR comments as rework-<k>.md
   job prompt <job> <role>        the standard four-line prompt for an agent of the job's current stage
@@ -938,8 +945,12 @@ EVIDENCE_REVIEWERS = {"ux", "ui"}  # the only reviewers that may prove a finding
 NOT_FOR_CHANGES = {"style", "unproven"}  # style is a 建议; unproven is written by this script
 PROOF_FORMAT = ("`VERDICT: CHANGES` needs a `## 发现` section with one `### <title>` per finding, each with a proof: "
                 "a line 命令: `<command>` that exits non-zero in the worktree at COMMIT, a ```text block with its "
-                "output and a line 应为: <what the intent requires>; or (reviewer-ux, reviewer-ui only) a line "
+                "output, a line 应为: <what the intent requires> and a line EXPECT: <the exit code, or a piece of text "
+                "its output must contain>; or (reviewer-ux, reviewer-ui only) a line "
                 "证据: round-<N>/evidence/<file> <what it shows, what it should be>. Unproven remarks go under `## 建议`")
+# A proof that fails like this didn't reach the code it means to test: the environment failed, not the branch.
+ENV_FAILED_EXITS = {126, 127}
+ENV_FAILED_TEXT = ("ModuleNotFoundError", "ImportError", "SyntaxError", "command not found", "No such file")
 FENCE = re.compile(r"^\s*(```+|~~~+)")
 WHY = {}  # reviewer → why its review is invalid, for the refusal `advance` prints in the same run
 
@@ -993,12 +1004,14 @@ def parse_findings(path, reviewer, job):
                 outside.append(line.strip())
         cmd = next((m.group(1) for l in outside if (m := re.match(r"命令\s*[:：]\s*`(.+)`$", l))), None)
         want = next((m.group(1) for l in outside if (m := re.match(r"应为\s*[:：]\s*(\S.*)$", l))), None)
+        expect = next((m.group(1).strip().strip("`") for l in outside
+                       if (m := re.match(r"EXPECT\s*[:：]\s*(.*)$", l))), None)
         ev = next((m for l in outside if (m := re.match(r"证据\s*[:：]\s*`?([^\s`]+)`?\s*(.*)$", l))), None)
         where = f"review-{reviewer}.md finding {title!r}"
         if cmd:
             if text is None or not want:
                 return None, f"{where} has 命令 but no ```text block of its output or no 应为: line. {PROOF_FORMAT}"
-            out.append({"title": title, "kind": "run", "command": cmd, "body": body})
+            out.append({"title": title, "kind": "run", "command": cmd, "expect": expect, "body": body})
         elif ev:
             if reviewer not in EVIDENCE_REVIEWERS:
                 return None, f"{where}: only reviewer-ux and reviewer-ui may prove with 证据; run it instead. {PROOF_FORMAT}"
@@ -1043,6 +1056,36 @@ def run_proof(command, cwd):
     return code, out, int(time.monotonic() - start)
 
 
+def proof_result(code, log, expect):
+    """One run at HEAD: unjudged, unconfirmed, env-failed or confirmed.
+
+    A text EXPECT the output meets wins over environment-looking text: the reviewer said what the failure looks
+    like. A numeric EXPECT doesn't: exit 1 is also what an import error gives."""
+    expect = (expect or "").strip()
+    if code is None or not expect:
+        return "unjudged"  # timed out, or no EXPECT to judge it by
+    if code == 0:
+        return "unconfirmed"
+    if code in ENV_FAILED_EXITS:
+        return "env-failed"
+    numeric = re.fullmatch(r"-?\d+", expect)
+    if not numeric and expect in log:
+        return "confirmed"
+    if any(s in log for s in ENV_FAILED_TEXT):
+        return "env-failed"
+    return "confirmed" if numeric and code == int(expect) else "unconfirmed"
+
+
+def evidence_result(job, f):
+    """An evidence file confirms a finding when it exists, isn't empty, and index.md or the finding names it."""
+    path = f["path"]
+    if not path.is_file() or path.stat().st_size == 0:
+        return "unconfirmed"
+    index = round_dir(job) / "evidence" / "index.md"
+    named = path.name in (index.read_text() if index.is_file() else "") or f["evidence"] in "\n".join(f["body"])
+    return "confirmed" if named else "unconfirmed"
+
+
 def tree_state(job):
     """(HEAD, `git status --porcelain`) of the worktree: what a proof must leave as it found it."""
     return head(job), git(job, "status", "--porcelain", check=False).stdout.strip()
@@ -1070,17 +1113,20 @@ def confirm(job, reviewer, path, findings, run_now):
                 f"the worktree isn't clean at {(job['head'] or '?')[:7]}, so the proofs weren't run "
                 f"(git status: {before[1].splitlines()[0] if before[1] else 'HEAD ' + (before[0] or '?')[:7]}); "
                 f"the reviewer whose proof changed it restores it: git -C {job['worktree']} status")}
-    results, why = [], None
+    results, why, no_expect = [], None, []
     for k, f in enumerate(findings, 1):
         r = {"title": f["title"], "kind": f["kind"]}
         if f["kind"] == "evidence":
-            r.update(evidence=f["evidence"], result="confirmed" if f["path"].is_file() else "unconfirmed")
+            r.update(evidence=f["evidence"], result=evidence_result(job, f))
+        elif not f["expect"]:
+            r.update(command=f["command"], result="unjudged")
+            no_expect.append(f["title"])
         else:
             code, log, seconds = run_proof(f["command"], job["worktree"])
             out_dir.mkdir(parents=True, exist_ok=True)
             (out_dir / f"confirm-{k}.log").write_text(f"$ {f['command']}\n{log}")
-            r.update(command=f["command"], exit=code, seconds=seconds, timed_out=code is None,
-                     log=f"confirm-{k}.log", result="confirmed" if code not in (0, None) else "unconfirmed")
+            r.update(command=f["command"], expect=f["expect"], exit=code, seconds=seconds, timed_out=code is None,
+                     log=f"confirm-{k}.log", result=proof_result(code, log, f["expect"]))
             after = tree_state(job)
             if after != before:
                 changed = after[1].splitlines()[0] if after[1] else f"HEAD {(after[0] or '?')[:7]}"
@@ -1090,10 +1136,16 @@ def confirm(job, reviewer, path, findings, run_now):
                 results.append(r)
                 break
         results.append(r)
-    confirmed = sum(r["result"] == "confirmed" for r in results)
+    if no_expect and not why:
+        why = (f"finding(s) {', '.join(map(repr, no_expect))} have no `EXPECT:` line, so their proofs can't be "
+               f"judged. {PROOF_FORMAT}")
+    def count(result):
+        return sum(r["result"] == result for r in results)
+    confirmed = count("confirmed")
     c = {"reviewer": reviewer, "round": job["round"], "commit": job["head"], "review_sha256": digest,
          "status": "invalid" if why else "CHANGES" if confirmed else "unproven", "why": why,
-         "confirmed": confirmed, "findings": results, "ran": now()}
+         "confirmed": confirmed, "env_failed": count("env-failed"), "unjudged": count("unjudged"),
+         "findings": results, "ran": now()}
     out_dir.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps(c, indent=2, ensure_ascii=False) + "\n")
     return c
@@ -1229,7 +1281,8 @@ def sync(job, run_proofs=True):
                         and (v == "PASS" or c):
                     job.setdefault("proofs", {}).setdefault(str(job["round"]), {})[r] = {
                         "model": job["agents"]["reviewers"][r], "status": v, "findings": len(findings),
-                        "confirmed": c["confirmed"] if c else 0}
+                        "confirmed": c["confirmed"] if c else 0, "env_failed": c["env_failed"] if c else 0,
+                        "unjudged": c["unjudged"] if c else 0}
     if job.get("satisfaction"):  # the latest round's result the gate wrote, for job metrics
         done = sorted(job_dir(job["id"]).glob("round-*/satisfaction.json"), key=lambda p: int(p.parent.name[6:]))
         if done:
@@ -1270,7 +1323,7 @@ def write_findings(job, changes):
     rd = round_dir(job)
     lines = [f"# Round {job['round']}: confirmed findings", "",
              (f"Only findings whose proof factory/bin/job re-ran at {(job['head'] or '?')[:7]} and saw fail "
-              "(or whose evidence file exists) are here. Fix each one; in build.md write what its proof gives now."), ""]
+              "(or whose evidence file exists, isn't empty and is named) are here. Fix each one; in build.md write what its proof gives now."), ""]
     for r in changes:
         path = rd / f"review-{r}.md"
         c = json.loads((rd / "proof" / r / "confirm.json").read_text())
@@ -2421,7 +2474,9 @@ def job_metrics(job, events, at, escaped=None, refusals=()):
         "tool_refusals": {t: sum(r["tool"] == t for r in refusals) for t in sorted({r["tool"] for r in refusals})},
         # Per reviewed round: findings and how many a re-run confirmed; per review, for the by-model rate.
         "findings": {rnd: {"findings": sum(x["findings"] for x in rs.values()),
-                           "confirmed": sum(x["confirmed"] for x in rs.values())}
+                           "confirmed": sum(x["confirmed"] for x in rs.values()),
+                           "env_failed": sum(x.get("env_failed", 0) for x in rs.values()),
+                           "unjudged": sum(x.get("unjudged", 0) for x in rs.values())}
                      for rnd, rs in sorted((job.get("proofs") or {}).items(), key=lambda kv: int(kv[0]))},
         "review_findings": [{"round": int(rnd), "reviewer": r, **x}
                             for rnd, rs in (job.get("proofs") or {}).items() for r, x in rs.items()],
@@ -2474,6 +2529,7 @@ def summarize(records, tools):
     rounds = [f for r in records for f in r["findings"].values()]
     found = sum(f["findings"] for f in rounds)
     confirmed = sum(f["confirmed"] for f in rounds)
+    env_failed, unjudged = (sum(f.get(k, 0) for f in rounds) for k in ("env_failed", "unjudged"))
     by_model = {}
     for x in (x for r in records for x in r["review_findings"]):
         m = by_model.setdefault(x["model"], {"findings": 0, "unconfirmed": 0})
@@ -2513,6 +2569,7 @@ def summarize(records, tools):
         "findings": {"rounds": len(rounds), "total": found,
                      "per_round": round(found / len(rounds), 2) if rounds else None,
                      "confirmed": confirmed, "confirmed_rate": round(confirmed / found, 3) if found else None,
+                     "env_failed": env_failed, "unjudged": unjudged,
                      "unconfirmed_by_model": dict(sorted(by_model.items()))},
     }
 
@@ -2634,7 +2691,8 @@ def cmd_metrics(args):
           + (f" ({f['per_round']}/round), confirmed {f['confirmed']} ({f['confirmed_rate']:.0%})" if f["total"] else "")
           + "; unconfirmed by reviewer model: "
           + (", ".join(f"{k} {v['unconfirmed']}/{v['findings']}" + (f" ({v['rate']:.0%})" if v["findings"] else "")
-                       for k, v in f["unconfirmed_by_model"].items()) or "none"))
+                       for k, v in f["unconfirmed_by_model"].items()) or "none")
+          + f"; env-failed {f['env_failed']}, unjudged {f['unjudged']}")
     st = s["satisfaction"]
     pct = lambda x: "-" if x is None else f"{x:.0%}"
     print(f"stability: {st['jobs']} jobs, mean pass rate HEAD {pct(st['head_pass_rate'])}, "
@@ -3831,7 +3889,13 @@ def run_advance(args):
 def run_sync(args):
     job = sync(resolve(args[0]))
     save(job)
-    reviews = " ".join(f"{k}:{v}" for k, v in job["reviews"].items())
+    proofs = (job.get("proofs") or {}).get(str(job["round"]), {})
+
+    def named(k):  # env-failed and unjudged proofs are named, so an unproven review isn't silently waved through
+        parts = [f"{label} {n}" for label, n in (("env-failed", proofs.get(k, {}).get("env_failed")),
+                                                ("unjudged", proofs.get(k, {}).get("unjudged"))) if n]
+        return f"({', '.join(parts)})" if parts else ""
+    reviews = " ".join(f"{k}:{v}{named(k)}" for k, v in job["reviews"].items())
     print(f"{job['id']}: {job['stage']} round {job['round']} gate {job['gate'] or '-'} "
           f"head {(job['head'] or '-')[:7]} {reviews}".rstrip())
 
@@ -3841,6 +3905,142 @@ def run_new_issue(args):
         cmd_new_issue(*args[1:], plan=True)
     else:
         cmd_new_issue(*args)
+
+
+# ---- drive -----------------------------------------------------------------
+# `job drive` runs the steps the orchestrator does without judgement, each through the existing command, and stops
+# where an agent or a person is next. It never holds a job's lock: every step is a separate `job`/`gate`/`evidence`
+# process that takes the lock itself.
+
+DRIVEN = ("build", "gate", "review", "approve")
+
+
+class DriveWait(Exception):
+    """`WAIT <stage> <roles>`: agents already dispatched haven't written their files; drive again when they return."""
+
+
+class DriveStop(Exception):
+    """`STOP <stage> <why>`: a person (or the orchestrator's judgement) is next."""
+
+
+class DriveError(Exception):
+    """`ERROR <command> <its output>`: a step failed without refusing."""
+
+
+def peek(job_id):
+    """job.json without taking the job's lock."""
+    return json.loads((job_dir(job_id) / "job.json").read_text())
+
+
+def drive_id(arg):
+    if not arg.isdigit():
+        if not (job_dir(arg) / "job.json").exists():
+            die(f"no job {arg}")
+        return arg
+    for p in sorted(JOBS.iterdir()) if JOBS.exists() else []:
+        if (p / "job.json").exists() and peek(p.name)["issue"] == int(arg):
+            return p.name
+    die(f"no job for issue #{arg}")
+
+
+def drive_job(*args, stop=None):
+    """Run one `job` step. Non-zero exit: a refusal (STOP at `stop`) when `stop` is given, else an error."""
+    res = run([sys.executable, str(BIN / "job"), *args], check=False)
+    if res.returncode:
+        out = (res.stderr or res.stdout).strip().removeprefix("job: ")
+        if stop:
+            raise DriveStop(stop, out)
+        raise DriveError(f"factory/bin/job {' '.join(args)}", out)
+    return res.stdout.strip()
+
+
+def dispatch(job_id, role, model, tail=None):
+    """A DISPATCH block: `job prompt`'s prompt, or its three header lines and `tail` for a continuation."""
+    prompt = drive_job("prompt", job_id, role)
+    if tail:
+        prompt = "\n".join([*prompt.splitlines()[:3], tail])
+    return f"DISPATCH {role} {model}\n{prompt}"
+
+
+def drive_gate(job_id):
+    res = run([str(BIN / "gate"), job_id], check=False)
+    if res.returncode not in (0, 1, 3):  # PASS, FAIL, BASE-RED; anything else is the gate failing to run
+        raise DriveError(f"factory/bin/gate {job_id}", (res.stderr or res.stdout).strip())
+    job = peek(job_id)
+    rnd = job["round"]
+    if header(round_dir(job) / "checks.md").get("GATE") == "PASS":
+        run([str(BIN / "evidence"), job_id], check=False)  # a partial failure still writes index.md; advance judges
+        drive_job("advance", job_id, "review", stop="gate")
+        reviewers_ = peek(job_id)["agents"]["reviewers"]
+        return [dispatch(job_id, f"reviewer-{k}", m) for k, m in reviewers_.items()]
+    drive_job("advance", job_id, "build", stop="gate")  # refused for the last round, BASE-RED or a weak holdout
+    return [dispatch(job_id, "builder", job["agents"]["builder"],
+                     f"The gate failed in round {rnd}: read round-{rnd}/checks.md and checks.log, fix it, commit, "
+                     f"push, and update build.md for round {rnd + 1}.")]
+
+
+def drive_review(job_id):
+    job = peek(job_id)
+    missing = [f"reviewer-{k}" for k in job["agents"]["reviewers"] if not (round_dir(job) / f"review-{k}.md").exists()]
+    if missing:
+        raise DriveWait("review", " ".join(missing))
+    drive_job("sync", job_id)
+    job = peek(job_id)
+    rnd = job["round"]
+    target = "build" if "CHANGES" in job.get("reviews", {}).values() else "approve"
+    drive_job("advance", job_id, target, stop="review")  # refuses with the reason on missing, invalid or stale
+    if target == "approve":
+        return [dispatch(job_id, "approver", agent_model("approver"))]
+    return [dispatch(job_id, "builder", job["agents"]["builder"],
+                     f"Round {rnd} confirmed findings are in round-{rnd}/findings.md. Fix each one, commit, push, "
+                     f"and update build.md for round {rnd + 1} with what each finding's proof command gives now.")]
+
+
+def drive_approve(job_id):
+    decision = job_dir(job_id) / "decision.md"
+    if not decision.exists():
+        raise DriveWait("approve", "approver")
+    verdict = first_line(decision)
+    if verdict == "APPROVE":
+        out = drive_job("merge", job_id, stop="approve")
+        raise DriveStop(peek(job_id)["stage"], out)
+    if verdict == "ESCALATE":
+        drive_job("advance", job_id, "needs-human", stop="approve")
+        raise DriveStop("needs-human", f"the approver escalated: REASON {header(decision).get('REASON')}")
+    raise DriveStop("approve", "decision.md's first line is neither APPROVE nor ESCALATE")
+
+
+def drive(job_id):
+    stage = peek(job_id)["stage"]
+    if stage == "build":
+        if not (job_dir(job_id) / "build.md").exists():
+            raise DriveWait("build", "builder")
+        h = header(job_dir(job_id) / "build.md")
+        if h.get("STATUS") != "READY":
+            why = f" (REASON: {h['REASON']})" if h.get("REASON") else ""
+            raise DriveStop("build", f"build.md is {h.get('STATUS') or 'without a STATUS'}{why}, not READY")
+        drive_job("advance", job_id, "gate", stop="build")
+        stage = "gate"
+    if stage == "gate":
+        return drive_gate(job_id)
+    if stage == "review":
+        return drive_review(job_id)
+    if stage == "approve":
+        return drive_approve(job_id)
+    raise DriveStop(stage, f"job drive only advances {', '.join(DRIVEN)}; follow the factory skill for {stage}")
+
+
+def cmd_drive(arg):
+    job_id = drive_id(arg)
+    try:
+        print("\n\n".join(drive(job_id)))
+    except DriveWait as w:
+        print(f"WAIT {w.args[0]} {w.args[1]}")
+    except DriveStop as s:
+        print(f"STOP {s.args[0]} {s.args[1]}")
+    except DriveError as e:
+        print(f"ERROR {e.args[0]} {e.args[1]}")
+        sys.exit(1)
 
 
 # cmd -> (args 合法吗, 处理函数)；不合法走 die("bad arguments")
@@ -3892,6 +4092,7 @@ COMMANDS = {
     "plan": (lambda a: True, cmd_plan),
     "create": (lambda a: len(a) == 1 and a[0].isdigit(), lambda a: cmd_create(a[0])),
     "advance": (lambda a: len(a) == 2, run_advance),
+    "drive": (lambda a: len(a) == 1, lambda a: cmd_drive(a[0])),
     "merge": (lambda a: len(a) == 1, lambda a: cmd_merge(resolve(a[0]))),
     "rework": (lambda a: len(a) == 1, lambda a: cmd_rework(resolve(a[0]))),
     "prompt": (lambda a: len(a) == 2, lambda a: cmd_prompt(resolve(a[0]), a[1])),
