@@ -14,6 +14,13 @@
 //! pinned elsewhere (for example a shared measurements ledger) must be
 //! re-hashed and propagated again after it is patched, so the scan repeats
 //! to a fixpoint rather than running once.
+//!
+//! That scan anchors only on HEAD: a bare token with no declared path stops
+//! being visible once `--write` pushes it off HEAD. Pins that do declare a path
+//! (internalization, acceptance, and the toolchain digests of
+//! `orchestration/integrations.json`) are audited by `declared_pins` against the
+//! worktree file instead, at any generation. `--write` alternates both until
+//! neither has anything left, so a chain of declared pins converges in one run.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -60,60 +67,15 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
         }
     };
 
+    let mut later_passes = String::new();
     if cli.write {
-        if let Err(error) = flush(&cli.repo, &report) {
-            eprintln!("error: {error}");
-            return 74;
-        }
-        match declared_pins::resync(&cli.repo, &declared) {
-            Ok(records) if !records.is_empty() => {
-                for record in &records {
-                    println!("repin: resynced declared pins in {record}");
-                }
-            }
-            Err(message) => {
-                eprintln!("error: resyncing declared pins: {message}");
-                return 74;
-            }
-            Ok(_) => {}
-        }
-        match scan(&cli.repo, &cli.excludes) {
-            Ok(verify) if !verify.findings.is_empty() => {
-                eprintln!(
-                    "error: repin left {} stale pin site(s) after write \u{2014} internal inconsistency, please report",
-                    verify.findings.len()
-                );
-                return 65;
-            }
-            Err(message) => {
-                eprintln!("error: verifying after write: {message}");
-                return 65;
-            }
-            Ok(_) => {}
-        }
-        match declared_pins::audit(&cli.repo) {
-            Ok(verify) => {
-                let unresolved: Vec<_> = verify
-                    .iter()
-                    .filter(|finding| {
-                        matches!(finding.state, declared_pins::PinState::Stale { .. })
-                    })
-                    .collect();
-                if !unresolved.is_empty() {
-                    eprintln!(
-                        "error: repin left {} declared pin(s) stale after write \u{2014} internal inconsistency, please report",
-                        unresolved.len()
-                    );
-                    return 65;
-                }
-            }
-            Err(message) => {
-                eprintln!("error: verifying declared pins after write: {message}");
-                return 65;
-            }
+        match write_to_fixpoint(&cli, &report, &declared) {
+            Ok(text) => later_passes = text,
+            Err(code) => return code,
         }
     }
     print!("{}", declared_pins::render_findings(&declared, cli.write));
+    print!("{later_passes}");
     if cli.json {
         println!(
             "{}",
@@ -130,7 +92,9 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
     let declared_unresolved = declared.iter().any(|finding| {
         matches!(
             finding.state,
-            declared_pins::PinState::Ambiguous | declared_pins::PinState::SourceMissing
+            declared_pins::PinState::Ambiguous
+                | declared_pins::PinState::SourceMissing
+                | declared_pins::PinState::Unpaired
         )
     });
     let declared_dirty = declared
@@ -144,6 +108,73 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
     } else {
         1
     }
+}
+
+/// Apply the first scan and declared-pin audit, then keep rescanning and
+/// resyncing until both are quiet. A declared-pin resync edits a file that
+/// another declared pin (or a HEAD digest) may point at, so one round is not
+/// enough. Returns the report lines for the declared pins fixed after the first
+/// round, or the exit code to stop with. Not converging within `MAX_PASSES` is
+/// an error, never exit 0.
+fn write_to_fixpoint(
+    cli: &Cli,
+    report: &RepinReport,
+    declared: &[declared_pins::PinFinding],
+) -> Result<String, i32> {
+    // The generic scan rewrites a bare token anywhere, which would also touch
+    // an integration the registry audit refused to pair. Leave the whole
+    // registry to the declared-pin resync while any integration is unpaired.
+    let withheld = declared
+        .iter()
+        .any(|finding| matches!(finding.state, declared_pins::PinState::Unpaired))
+        .then_some(declared_pins::REGISTRY);
+    let apply = |report: &RepinReport, declared: &[declared_pins::PinFinding]| {
+        if let Err(error) = flush(&cli.repo, report, withheld) {
+            eprintln!("error: {error}");
+            return Err(74);
+        }
+        match declared_pins::resync(&cli.repo, declared) {
+            Ok(records) => {
+                for record in &records {
+                    println!("repin: resynced declared pins in {record}");
+                }
+                Ok(())
+            }
+            Err(message) => {
+                eprintln!("error: resyncing declared pins: {message}");
+                Err(74)
+            }
+        }
+    };
+    apply(report, declared)?;
+    let mut later = String::new();
+    for _ in 0..MAX_PASSES {
+        let rescan = scan(&cli.repo, &cli.excludes).map_err(|message| {
+            eprintln!("error: verifying after write: {message}");
+            65
+        })?;
+        let audit = declared_pins::audit(&cli.repo).map_err(|message| {
+            eprintln!("error: verifying declared pins after write: {message}");
+            65
+        })?;
+        let stale: Vec<_> = audit
+            .into_iter()
+            .filter(|finding| matches!(finding.state, declared_pins::PinState::Stale { .. }))
+            .collect();
+        let scan_quiet = rescan
+            .findings
+            .iter()
+            .all(|finding| Some(finding.path.as_str()) == withheld);
+        if scan_quiet && stale.is_empty() {
+            return Ok(later);
+        }
+        later.push_str(&declared_pins::render_findings(&stale, true));
+        apply(&rescan, &stale)?;
+    }
+    eprintln!(
+        "error: repin did not reach a fixpoint within {MAX_PASSES} passes \u{2014} internal inconsistency, please report"
+    );
+    Err(65)
 }
 
 struct Cli {
@@ -390,8 +421,11 @@ fn render_human(report: &RepinReport, write: bool) -> String {
     out
 }
 
-fn flush(repo: &Path, report: &RepinReport) -> Result<(), String> {
+fn flush(repo: &Path, report: &RepinReport, withheld: Option<&str>) -> Result<(), String> {
     for (path, bytes) in &report.rewritten {
+        if Some(path.as_str()) == withheld {
+            continue;
+        }
         let target = repo.join(path);
         // Append rather than replace the extension (`Path::with_extension`
         // would turn `a.json` and `a.txt` into the same `a.repin-tmp`), and

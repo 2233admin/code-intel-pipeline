@@ -20,6 +20,16 @@
 //! This module reads that declaration, so the writer that refreshes a pin and
 //! the gate that fails on a stale one work from one list instead of two that
 //! agree until they don't.
+//!
+//! The same anchoring covers one more declaration shape: the toolchain digests
+//! in `orchestration/integrations.json`, where `toolchainDigestEvidence.inputs[i]`
+//! names a file and `capabilityDeclaration.implementation.toolchainDigests[i]`
+//! is its digest, paired by array index (issue #129: after one `--write` that
+//! pin holds an uncommitted digest, matches no HEAD digest, and the generic scan
+//! reported `clean` on the next edit). An integration whose two arrays do not
+//! pair up is `Unpaired`: none of its pins are rewritten. Bare 64-hex tokens
+//! with no declared path next to them are still anchored to HEAD only, by the
+//! generic scan in `repin`.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -81,6 +91,10 @@ pub(crate) enum PinState {
     /// The record states this digest for more than one distinct path, so a
     /// textual rewrite cannot tell the occurrences apart. Never rewritten.
     Ambiguous,
+    /// An integration's `toolchainDigestEvidence.inputs` and
+    /// `toolchainDigests` cannot be paired by index. The finding's `path`
+    /// carries the integration `id`. Never rewritten.
+    Unpaired,
 }
 
 #[derive(Debug, Clone)]
@@ -129,9 +143,66 @@ fn collect(value: &Value, record: &str, keys: &[(&str, &str)], out: &mut Vec<Dec
     }
 }
 
+/// Fixed location of the integration registry, the one record whose pins are
+/// declared by array index instead of by an adjacent key pair.
+pub(crate) const REGISTRY: &str = "orchestration/integrations.json";
+
+/// Collect the index-paired toolchain pins of every integration in `registry`.
+/// Returns the ids of integrations whose arrays do not pair up; those add no
+/// pins, because guessing an index would rewrite the wrong digest.
+fn collect_registry(registry: &Value, out: &mut Vec<DeclaredPin>) -> Vec<String> {
+    let mut unpaired = Vec::new();
+    let integrations = registry["integrations"].as_array().into_iter().flatten();
+    for integration in integrations {
+        let Some(evidence) = integration.get("toolchainDigestEvidence") else {
+            continue;
+        };
+        let inputs = evidence["inputs"].as_array();
+        let digests =
+            integration["capabilityDeclaration"]["implementation"]["toolchainDigests"].as_array();
+        let pairs = match (inputs, digests) {
+            (Some(inputs), Some(digests)) if inputs.len() == digests.len() => {
+                inputs.iter().zip(digests)
+            }
+            _ => {
+                unpaired.push(integration["id"].as_str().unwrap_or_default().to_string());
+                continue;
+            }
+        };
+        for (input, digest) in pairs {
+            if let (Some(path), Some(sha)) = (input.as_str(), digest.as_str()) {
+                if is_sha256(sha) {
+                    out.push(DeclaredPin {
+                        record: REGISTRY.to_string(),
+                        path: path.to_string(),
+                        declared: sha.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    unpaired
+}
+
+/// Everything `discover` found: pins, and ids of integrations that could not
+/// be paired.
+pub(crate) struct Discovered {
+    pub(crate) pins: Vec<DeclaredPin>,
+    pub(crate) unpaired: Vec<String>,
+}
+
 /// Every declared pin under every kind, sorted by record then path.
-pub(crate) fn discover(repo: &Path) -> Result<Vec<DeclaredPin>, String> {
+pub(crate) fn discover(repo: &Path) -> Result<Discovered, String> {
     let mut pins = Vec::new();
+    let mut unpaired = Vec::new();
+    let registry = repo.join(REGISTRY);
+    if registry.is_file() {
+        let text = fs::read_to_string(&registry)
+            .map_err(|err| format!("read {}: {err}", registry.display()))?;
+        let parsed: Value = serde_json::from_str(&text)
+            .map_err(|err| format!("parse {}: {err}", registry.display()))?;
+        unpaired = collect_registry(&parsed, &mut pins);
+    }
     for kind in KINDS {
         let dir = repo.join(kind.dir);
         // A repository without the directory — a fixture tree, or any repo that
@@ -168,12 +239,12 @@ pub(crate) fn discover(repo: &Path) -> Result<Vec<DeclaredPin>, String> {
     }
     pins.sort_by(|a, b| (&a.record, &a.path).cmp(&(&b.record, &b.path)));
     pins.dedup();
-    Ok(pins)
+    Ok(Discovered { pins, unpaired })
 }
 
 /// Compare every declared pin against the file it names.
 pub(crate) fn audit(repo: &Path) -> Result<Vec<PinFinding>, String> {
-    let pins = discover(repo)?;
+    let Discovered { pins, unpaired } = discover(repo)?;
 
     // A digest stated for two different paths inside one record cannot be
     // rewritten textually without guessing which occurrence meant which file.
@@ -185,7 +256,17 @@ pub(crate) fn audit(repo: &Path) -> Result<Vec<PinFinding>, String> {
             .push(pin.path.clone());
     }
 
-    let mut findings = Vec::new();
+    let mut findings: Vec<PinFinding> = unpaired
+        .into_iter()
+        .map(|id| PinFinding {
+            pin: DeclaredPin {
+                record: REGISTRY.to_string(),
+                path: id,
+                declared: String::new(),
+            },
+            state: PinState::Unpaired,
+        })
+        .collect();
     for pin in pins {
         let paths = owners
             .get(&(pin.record.clone(), pin.declared.clone()))
@@ -254,6 +335,10 @@ pub(crate) fn render_findings(findings: &[PinFinding], wrote: bool) -> String {
                 "repin: UNRESOLVED {} states one digest for several paths ({}) \u{2014} never rewritten\n",
                 pin.record, pin.path
             )),
+            PinState::Unpaired => out.push_str(&format!(
+                "repin: UNRESOLVED {} integration {} has toolchain inputs and digests that do not pair by index \u{2014} never rewritten\n",
+                pin.record, pin.path
+            )),
             PinState::Fresh => {}
         }
     }
@@ -267,8 +352,8 @@ pub(crate) fn render_findings(findings: &[PinFinding], wrote: bool) -> String {
 /// structured field — the same reason `repin` scans for the raw token rather
 /// than modeling each JSON shape.
 ///
-/// Returns the records that changed. `Ambiguous` and `SourceMissing` findings
-/// are never rewritten: both need a human to say what the record now means.
+/// Returns the records that changed. `Ambiguous`, `SourceMissing` and `Unpaired`
+/// findings are never rewritten: both need a human to say what the record now means.
 pub(crate) fn resync(repo: &Path, findings: &[PinFinding]) -> Result<Vec<String>, String> {
     let mut edits: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     for finding in findings {

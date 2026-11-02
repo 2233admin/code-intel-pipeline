@@ -40,6 +40,7 @@ pub(crate) fn run_check(repo: &Path) -> Result<CheckOutcome, String> {
                     declared_pins::PinState::Stale { actual } => ("stale", Some(actual.clone())),
                     declared_pins::PinState::SourceMissing => ("source_missing", None),
                     declared_pins::PinState::Ambiguous => ("ambiguous", None),
+                    declared_pins::PinState::Unpaired => ("unpaired", None),
                     declared_pins::PinState::Fresh => ("fresh", None),
                 };
                 json!({
