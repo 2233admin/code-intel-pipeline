@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-anchor-verification.v1",
+  "title": "Code Intel Anchor Verification Report",
+  "description": "Not expressible here and left to the Rust validator: counts equal the tally of anchor states across all sources.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "counts", "sources"],
+  "properties": {
+    "schema": { "const": "code-intel-anchor-verification.v1" },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verified", "approximate", "dropped"],
+      "properties": {
+        "verified": { "type": "integer", "minimum": 0 },
+        "approximate": { "type": "integer", "minimum": 0 },
+        "dropped": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/source" }
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactType", "artifactPath", "anchorKind", "anchors"],
+      "properties": {
+        "artifactType": { "type": "string" },
+        "artifactPath": { "type": "string" },
+        "anchorKind": { "enum": ["file", "symbol"] },
+        "anchors": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/anchor" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "anchorKind": { "const": "file" } } },
+          "then": {
+            "properties": {
+              "anchors": {
+                "items": {
+                  "required": ["path"],
+                  "properties": { "path": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "anchorKind": { "const": "symbol" } } },
+          "then": {
+            "properties": {
+              "anchors": {
+                "items": {
+                  "required": ["file", "name", "claimedLine"],
+                  "properties": {
+                    "file": { "type": "string" },
+                    "name": { "type": "string" },
+                    "claimedLine": { "type": "integer", "minimum": 0 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "anchor": {
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["verified", "approximate", "dropped"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "approximate" } } },
+          "then": {
+            "required": ["resolvedLine"],
+            "properties": { "resolvedLine": { "type": "integer", "minimum": 0 } }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "const": "dropped" } } },
+          "then": {
+            "required": ["reason"],
+            "properties": { "reason": { "type": "string", "minLength": 1 } }
+          }
+        }
+      ]
+    }
+  }
+}

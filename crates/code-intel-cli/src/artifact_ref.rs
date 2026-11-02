@@ -3161,26 +3161,6 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    /// Registered contracts that do not yet publish a JSON Schema.
-    ///
-    /// What `every_registered_contract_publishes_a_schema_file` enforces: an
-    /// entry that gains a schema file fails (delete the entry), an entry that
-    /// stops being registered fails (delete the entry), and a contract outside
-    /// this list with no schema fails (publish the schema).
-    ///
-    /// What it does **not** enforce: a developer can still grow the list by
-    /// appending an id and widening the array length. That edit is visible in
-    /// review, but it is not gated. Gating it needs a merge-base or CI-held
-    /// baseline to compare against — tracked in #210, not claimed here.
-    ///
-    /// Tracked by https://github.com/2233admin/code-intel-pipeline/issues/206.
-    const AWAITING_SCHEMA: [&str; 4] = [
-        "code-intel-anchor-verification.v1",
-        "code-intel-file-inventory.v1",
-        "code-intel-method-catalog.v1",
-        "code-intel-surgery-plan.v1",
-    ];
-
     fn schemas_dir() -> std::path::PathBuf {
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../orchestration/schemas")
     }
@@ -3434,44 +3414,235 @@ mod tests {
         let umbrella = native_umbrella_schema_ids();
 
         let mut unpublished = Vec::new();
-        for schema in &registered {
-            if published.contains(*schema) {
-                continue;
+        for (schema, artifact_type) in &arms {
+            let contract =
+                registered_contract(&json!({"artifactSchema": schema, "type": artifact_type}))
+                    .expect("the registry resolves every parsed arm");
+            if !schema_is_published(schema, &contract, &registered, &published, &umbrella) {
+                unpublished.push(schema.as_str());
             }
-            // A markdown view carries no schema of its own; the JSON contract
-            // it renders carries it, and that contract is checked on its own.
-            if let Some(stem) = schema.strip_suffix("-markdown.v1") {
-                assert!(
-                    registered.contains(format!("{stem}.v1").as_str()),
-                    "{schema} renders {stem}.v1, which is not a registered contract"
-                );
-                continue;
-            }
-            // The native code-evidence family is published as one `oneOf`
-            // umbrella rather than a file per artifact.
-            if umbrella.contains(*schema) {
-                continue;
-            }
-            if AWAITING_SCHEMA.contains(schema) {
-                continue;
-            }
-            unpublished.push(*schema);
         }
         assert!(
             unpublished.is_empty(),
-            "registered contracts with no published schema: {unpublished:?} — publish orchestration/schemas/<id>.schema.json, or add the id to AWAITING_SCHEMA with an issue"
+            "registered contracts with no published schema: {unpublished:?} — publish orchestration/schemas/<id>.schema.json"
         );
+    }
 
-        for schema in AWAITING_SCHEMA {
-            assert!(
-                registered.contains(schema),
-                "{schema} is exempted but no longer registered — delete the exemption"
-            );
-            assert!(
-                !published.contains(schema),
-                "{schema} now publishes a schema — delete it from AWAITING_SCHEMA"
-            );
+    /// Whether a registered contract is covered by the schema surface.
+    ///
+    /// A contract is covered when it publishes `orchestration/schemas/<id>.schema.json`,
+    /// is a markdown view of a registered JSON contract, is admitted by the native
+    /// code-evidence umbrella, or carries a text payload (decided from the
+    /// contract's own `validate_payload`, not from its id) that no JSON Schema
+    /// can describe.
+    fn schema_is_published(
+        schema: &str,
+        contract: &ArtifactContract,
+        registered: &BTreeSet<&str>,
+        published: &BTreeSet<String>,
+        umbrella: &BTreeSet<String>,
+    ) -> bool {
+        if published.contains(schema) {
+            return true;
         }
+        // A markdown view carries no schema of its own; the JSON contract
+        // it renders carries it, and that contract is checked on its own.
+        if let Some(stem) = schema.strip_suffix("-markdown.v1") {
+            assert!(
+                registered.contains(format!("{stem}.v1").as_str()),
+                "{schema} renders {stem}.v1, which is not a registered contract"
+            );
+            return true;
+        }
+        // The native code-evidence family is published as one `oneOf`
+        // umbrella rather than a file per artifact.
+        if umbrella.contains(schema) {
+            return true;
+        }
+        // The file inventory is a newline or NUL separated path list, not JSON.
+        std::ptr::fn_addr_eq(
+            contract.validate_payload,
+            validate_inventory as fn(&[u8]) -> Result<(), String>,
+        )
+    }
+
+    fn contract_with(
+        schema: &'static str,
+        validate_payload: fn(&[u8]) -> Result<(), String>,
+    ) -> ArtifactContract {
+        ArtifactContract {
+            artifact_schema: schema,
+            artifact_type: "test.type",
+            max_bytes: 1,
+            validate_payload,
+        }
+    }
+
+    #[test]
+    fn text_payload_rule_exempts_only_the_inventory_validator() {
+        let registered = BTreeSet::new();
+        let published = BTreeSet::new();
+        let umbrella = BTreeSet::new();
+        let text = contract_with("code-intel-made-up.v1", validate_inventory);
+        assert!(schema_is_published(
+            "code-intel-made-up.v1",
+            &text,
+            &registered,
+            &published,
+            &umbrella
+        ));
+        // Same id, a JSON validator, no schema file, not markdown, not in the umbrella.
+        let json_contract = contract_with("code-intel-made-up.v1", validate_method_catalog);
+        assert!(
+            !schema_is_published(
+                "code-intel-made-up.v1",
+                &json_contract,
+                &registered,
+                &published,
+                &umbrella
+            ),
+            "a JSON contract with no schema must be reported unpublished"
+        );
+    }
+
+    #[test]
+    fn file_inventory_is_text_payload_without_a_schema_file() {
+        let contract = registered_contract(
+            &json!({"artifactSchema": "code-intel-file-inventory.v1", "type": registered_contract_arms().iter().find(|(s, _)| s == "code-intel-file-inventory.v1").unwrap().1}),
+        )
+        .expect("file inventory is registered");
+        assert!(std::ptr::fn_addr_eq(
+            contract.validate_payload,
+            validate_inventory as fn(&[u8]) -> Result<(), String>
+        ));
+        assert!(!published_schema_ids().contains("code-intel-file-inventory.v1"));
+    }
+
+    fn schema_validator(id: &str) -> jsonschema::Validator {
+        let text = fs::read_to_string(schemas_dir().join(format!("{id}.schema.json")))
+            .expect("schema is published");
+        let schema: Value = serde_json::from_str(&text).expect("schema is JSON");
+        assert_eq!(schema["$id"], id);
+        assert_eq!(
+            schema["$schema"],
+            "https://json-schema.org/draft/2020-12/schema"
+        );
+        jsonschema::validator_for(&schema).expect("schema compiles")
+    }
+
+    /// The validator accepts `good`, the schema accepts it too.
+    fn assert_accepted_by_both(
+        validate: fn(&[u8]) -> Result<(), String>,
+        validator: &jsonschema::Validator,
+        good: &Value,
+    ) {
+        let bytes = serde_json::to_vec(good).unwrap();
+        assert_eq!(
+            validate(&bytes),
+            Ok(()),
+            "validator rejects the fixture {good}"
+        );
+        assert!(validator.is_valid(good), "schema rejects {good}");
+    }
+
+    /// Neither the validator nor the schema accepts `bad`.
+    fn assert_rejected_by_both(
+        validate: fn(&[u8]) -> Result<(), String>,
+        validator: &jsonschema::Validator,
+        bad: &Value,
+    ) {
+        let bytes = serde_json::to_vec(bad).unwrap();
+        assert!(validate(&bytes).is_err(), "validator accepts {bad}");
+        assert!(!validator.is_valid(bad), "schema accepts {bad}");
+    }
+
+    /// Shared negative cases: extra top-level key, missing `schema`, wrong `schema`.
+    fn assert_envelope_rejections(
+        validate: fn(&[u8]) -> Result<(), String>,
+        validator: &jsonschema::Validator,
+        good: &Value,
+    ) {
+        let mut extra = good.clone();
+        extra["unexpected"] = json!(true);
+        assert_rejected_by_both(validate, validator, &extra);
+        let mut missing = good.clone();
+        missing.as_object_mut().unwrap().remove("schema");
+        assert_rejected_by_both(validate, validator, &missing);
+        let mut wrong = good.clone();
+        wrong["schema"] = json!("code-intel-other.v1");
+        assert_rejected_by_both(validate, validator, &wrong);
+    }
+
+    #[test]
+    fn surgery_plan_schema_agrees_with_validator() {
+        let validator = schema_validator("code-intel-surgery-plan.v1");
+        let good = json!({
+            "schema": "code-intel-surgery-plan.v1",
+            "status": "planned",
+            "admission": {"anything": 1},
+            "primary_target": {},
+            "operating_plan": [1, "two"],
+            "verification": [],
+            "discharge_criteria": [null]
+        });
+        assert_accepted_by_both(validate_surgery_plan, &validator, &good);
+        let mut not_required = good.clone();
+        not_required["status"] = json!("not_required");
+        assert_accepted_by_both(validate_surgery_plan, &validator, &not_required);
+        assert_envelope_rejections(validate_surgery_plan, &validator, &good);
+        let mut bad_status = good.clone();
+        bad_status["status"] = json!("done");
+        assert_rejected_by_both(validate_surgery_plan, &validator, &bad_status);
+    }
+
+    #[test]
+    fn method_catalog_schema_agrees_with_validator() {
+        let validator = schema_validator("code-intel-method-catalog.v1");
+        let text = fs::read_to_string(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../orchestration/methods/catalog.v1.json"),
+        )
+        .expect("the shipped catalog is readable");
+        let good: Value = serde_json::from_str(&text).unwrap();
+        assert_accepted_by_both(validate_method_catalog, &validator, &good);
+        assert_envelope_rejections(validate_method_catalog, &validator, &good);
+        let mut empty = good.clone();
+        empty["cards"] = json!([]);
+        assert_rejected_by_both(validate_method_catalog, &validator, &empty);
+    }
+
+    #[test]
+    fn anchor_verification_schema_agrees_with_validator() {
+        let validator = schema_validator("code-intel-anchor-verification.v1");
+        let good = json!({
+            "schema": "code-intel-anchor-verification.v1",
+            "counts": {"verified": 2, "approximate": 1, "dropped": 1},
+            "sources": [
+                {
+                    "artifactType": "a.type",
+                    "artifactPath": "a.json",
+                    "anchorKind": "file",
+                    "anchors": [
+                        {"path": "src/a.rs", "state": "verified"},
+                        {"path": "src/b.rs", "state": "dropped", "reason": "gone"}
+                    ]
+                },
+                {
+                    "artifactType": "b.type",
+                    "artifactPath": "b.json",
+                    "anchorKind": "symbol",
+                    "anchors": [
+                        {"file": "src/a.rs", "name": "f", "claimedLine": 3, "state": "verified"},
+                        {"file": "src/a.rs", "name": "g", "claimedLine": 9, "state": "approximate", "resolvedLine": 11, "extra": true}
+                    ]
+                }
+            ]
+        });
+        assert_accepted_by_both(validate_anchor_verification, &validator, &good);
+        assert_envelope_rejections(validate_anchor_verification, &validator, &good);
+        let mut bad_kind = good.clone();
+        bad_kind["sources"][0]["anchorKind"] = json!("line");
+        assert_rejected_by_both(validate_anchor_verification, &validator, &bad_kind);
     }
 
     #[test]

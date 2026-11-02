@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-method-catalog.v1",
+  "title": "Code Intel Method Catalog",
+  "description": "Not expressible here and left to the Rust validator: card ids are unique, and each path equals cards/<id>.v1.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "catalogVersion", "selectionPolicy", "cards"],
+  "properties": {
+    "schema": { "const": "code-intel-method-catalog.v1" },
+    "catalogVersion": { "type": "string", "minLength": 1 },
+    "selectionPolicy": { "const": "none_catalog_only" },
+    "cards": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "path"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "pattern": "^cards/.+\\.v1\\.json$" }
+        }
+      }
+    }
+  }
+}
