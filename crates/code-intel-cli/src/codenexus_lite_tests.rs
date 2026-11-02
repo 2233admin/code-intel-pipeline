@@ -189,6 +189,16 @@ fn walk_code_files_keeps_readable_siblings_when_directory_is_unreadable() {
         <fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o000),
     )
     .unwrap();
+    // Root ignores permission bits, so the directory can't be made unreadable (issue #475).
+    if fs::read_dir(&blocked).is_ok() {
+        fs::set_permissions(
+            &blocked,
+            <fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o755),
+        )
+        .unwrap();
+        eprintln!("skipped: a 0o000 directory is still readable here (running as root)");
+        return;
+    }
 
     let walked = walk_code_files(&repo).unwrap();
     fs::set_permissions(
