@@ -14,7 +14,7 @@ const STRUCTURED_EDIT_DIGEST: &str =
 const AST_GREP_SECURITY_DIGEST: &str =
     "d3a55f2a70f1d13581258e34344826fa26433c586907945fdc797363853d43c6";
 const REPO_SNAPSHOT_DIGEST: &str =
-    "9e75addea8b423dc6ea20f6e8f45a005266f17a8e1a0528c51d2afb82c37a993";
+    "7bcba2edd7e6c5609049b18b98db17234d8906d235b879ddfb7352e7e40ef6f5";
 static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn temp_dir(name: &str) -> PathBuf {
