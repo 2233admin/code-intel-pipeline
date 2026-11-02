@@ -56,9 +56,33 @@ fn write_fixture(dir: &Path, name: &str, run_id: &str, responds_to_stop: bool) -
     script
 }
 
+/// Writes `body` to `script` and marks it 0o755 from a child process, so this
+/// test process never holds a writable handle on a file it is about to
+/// execute. A sibling test thread forking while we held one would leak it into
+/// its child until that child's `execve`, and executing the script in that
+/// window fails with ETXTBSY (rust-lang/rust#114554).
+#[cfg(not(windows))]
+fn write_executable_via_child(script: &Path, body: &str) {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = Command::new("sh")
+        .args(["-c", "cat > \"$1\" && chmod 755 \"$1\"", "sh"])
+        .arg(script)
+        .stdin(Stdio::piped())
+        .spawn()
+        .expect("spawn fixture writer");
+    child
+        .stdin
+        .take()
+        .expect("fixture writer stdin")
+        .write_all(body.as_bytes())
+        .expect("feed fixture writer");
+    let status = child.wait().expect("wait for fixture writer");
+    assert!(status.success(), "fixture writer failed: {status}");
+}
+
 #[cfg(not(windows))]
 fn write_fixture(dir: &Path, name: &str, run_id: &str, responds_to_stop: bool) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
     let script = dir.join(name);
     let loop_body = if responds_to_stop {
         "i=0\nwhile [ $i -lt 300 ]; do\n  if [ -f \"$DIR/stop-requested.marker\" ]; then exit 0; fi\n  sleep 0.02\n  i=$((i+1))\ndone\n"
@@ -68,8 +92,7 @@ fn write_fixture(dir: &Path, name: &str, run_id: &str, responds_to_stop: bool) -
     let body = format!(
         "#!/bin/sh\nDIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\nif [ \"$2\" = \"stop\" ]; then\n  touch \"$DIR/stop-requested.marker\"\n  exit 0\nfi\necho \"Run ID: {run_id}\"\n{loop_body}"
     );
-    fs::write(&script, body).unwrap();
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    write_executable_via_child(&script, &body);
     script
 }
 
@@ -86,14 +109,11 @@ fn write_fast_success_fixture(dir: &Path, run_id: &str) -> PathBuf {
 
 #[cfg(not(windows))]
 fn write_fast_success_fixture(dir: &Path, run_id: &str) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
     let script = dir.join("weco.sh");
-    fs::write(
+    write_executable_via_child(
         &script,
-        format!("#!/bin/sh\necho \"Run ID: {run_id}\"\nexit 0\n"),
-    )
-    .unwrap();
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        &format!("#!/bin/sh\necho \"Run ID: {run_id}\"\nexit 0\n"),
+    );
     script
 }
 
