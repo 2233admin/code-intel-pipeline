@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""Page evidence for a ui job, collected by script so reviewers only judge it.
+
+Usage:
+  evidence <job>     round-N/evidence/<i>.png and index.md; exit 0 when every shot was taken
+
+For a job whose intake SURFACES include ui, with config.json dev_server.cmd and
+ft.shot set: starts the dev server with `factory/tools/ft serve <job> evidence`,
+then for each line of spec.md's optional `## 验收路径` section
+(`- <path> [| <selector to wait for>]`, relative to the server root; `/` when
+the section is missing) records the HTTP status, takes `ft shot <url>
+round-N/evidence/<i>.png [--wait <selector>]`, and counts the lines ft.shot
+wrote to <i>.console.txt (page errors) and links <i>.a11y.json (axe) when they
+exist. Then it releases the dev server by its pid (`job res <job> release --pid`).
+
+Run it after the gate passes and before `job advance <job> review`, which
+requires round-N/evidence/index.md for such a job. Without ui, or without the
+config, it prints why and exits 0 without writing anything.
+"""
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[2]
+FACTORY = REPO / "factory"
+JOBS = FACTORY / "jobs"
+JOB = FACTORY / "bin" / "job"
+FT = FACTORY / "tools" / "ft"
+CONFIG = json.loads((FACTORY / "config.json").read_text())
+
+
+def out(msg, code=0):
+    print(f"evidence: {msg}", file=sys.stderr if code else sys.stdout)
+    sys.exit(code)
+
+
+def find_job(arg):
+    for path in sorted(JOBS.glob("*/job.json")) if JOBS.is_dir() else []:
+        job = json.loads(path.read_text())
+        if job["id"] == arg or (arg.isdigit() and job["issue"] == int(arg)):
+            return job
+    out(f"no job {arg}", 2)
+
+
+def accept_paths(spec):
+    """[(path, selector)] from spec.md's `## 验收路径`, or None without the section."""
+    if not spec.exists():
+        return None
+    m = re.search(r"^## 验收路径[ \t]*\n(.*?)(?=^## |\Z)", spec.read_text(), re.MULTILINE | re.DOTALL)
+    if not m:
+        return None
+    paths = []
+    for line in m.group(1).splitlines():
+        item = re.match(r"\s*[-*]\s+(.*)", line)
+        if not item:
+            continue
+        path, _, selector = item.group(1).partition("|")
+        path, selector = path.strip().strip("`"), selector.strip().strip("`")
+        if path:
+            paths.append(("/" + path.lstrip("/"), selector))
+    return paths
+
+
+def status_of(url):
+    try:
+        with urllib.request.urlopen(url, timeout=30) as r:
+            return str(r.status)
+    except urllib.error.HTTPError as e:
+        return str(e.code)
+    except (urllib.error.URLError, OSError) as e:
+        return f"error: {getattr(e, 'reason', e)}"
+
+
+def cell(text):
+    return str(text).replace("|", "\\|").replace("\n", " ")
+
+
+def skip_reason(job):
+    """Why evidence isn't collected for this job, or None."""
+    jid = job["id"]
+    if "ui" not in ((job.get("intake") or {}).get("surfaces") or []):
+        return f"{jid} has no ui surface; nothing to collect"
+    missing = [k for k, v in (("dev_server.cmd", (CONFIG.get("dev_server") or {}).get("cmd")),
+                              ("ft.shot", (CONFIG.get("ft") or {}).get("shot"))) if not v]
+    if missing:
+        return (f"{jid}: skipped, factory/config.json has no {' or '.join(missing)}; "
+                "job advance … review lets it through with a warning")
+    return None
+
+
+def start_server(jid):
+    serve = subprocess.run([str(FT), "serve", jid, "evidence"], capture_output=True, text=True, check=False)
+    line = (serve.stdout or serve.stderr).strip()
+    m = re.search(r"(https?://\S+?/)（(?:已在运行，)?pid (\d+)", line)
+    if serve.returncode != 0 or not m:
+        out(f"{jid}: the dev server didn't start: {line}", 1)
+    return m.group(1), m.group(2)
+
+
+def shoot(jid, root, folder, paths, rows, failed):
+    for i, (path, selector) in enumerate(paths, 1):
+        url = root.rstrip("/") + path
+        status = status_of(url)
+        png = folder / f"{i}.png"
+        shot = subprocess.run([str(FT), "shot", url, str(png), *(["--wait", selector] if selector else [])],
+                              capture_output=True, text=True, env={**os.environ, "FT_SESSION": f"{jid}-evidence"}, check=False)
+        if shot.returncode != 0:
+            failed.append(f"{i}. `{path}`: {(shot.stderr or shot.stdout).strip()}")
+        console = folder / f"{i}.console.txt"
+        errors = (str(sum(1 for l in console.read_text().splitlines() if l.strip()))
+                  if console.exists() else "-")
+        a11y = folder / f"{i}.a11y.json"
+        rows.append(f"| {i} | `{cell(path)}`" + (f" (wait `{cell(selector)}`)" if selector else "")
+                    + f" | {f'[{png.name}]({png.name})' if png.exists() else 'failed'} | {cell(status)} | "
+                    + f"{errors} | {f'[{a11y.name}]({a11y.name})' if a11y.exists() else '-'} |")
+
+
+def main(argv):
+    if len(argv) != 1 or argv[0].startswith("-"):
+        print(__doc__.strip(), file=sys.stderr)
+        sys.exit(2)
+    job = find_job(argv[0])
+    jid = job["id"]
+    why = skip_reason(job)
+    if why:
+        out(why)
+    if job["round"] < 1:
+        out(f"{jid} hasn't started a build round", 2)
+    rnd = job["round"]
+    folder = JOBS / jid / f"round-{rnd}" / "evidence"
+    paths = accept_paths(JOBS / jid / "spec.md")
+    note = None
+    if not paths:
+        paths, note = [("/", "")], "spec.md has no `## 验收路径`; only the root was taken."
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=job["worktree"], capture_output=True, text=True, check=False)
+    commit = head.stdout.strip() if head.returncode == 0 else "?"
+
+    root, pid = start_server(jid)
+
+    if folder.exists():
+        shutil.rmtree(folder)
+    folder.mkdir(parents=True)
+    rows, failed = [], []
+    try:
+        shoot(jid, root, folder, paths, rows, failed)
+    finally:
+        rel = subprocess.run([str(JOB), "res", jid, "release", "--pid", pid], capture_output=True, text=True, check=False)
+
+    text = (f"EVIDENCE: {len(paths)} paths, {len(failed)} failed\nCOMMIT: {commit}\nROUND: {rnd}\n\n"
+            f"Collected by factory/bin/evidence from {root} (dev server pid {pid}, released). "
+            "HTTP is a plain GET of the URL; 控制台错误 counts the lines ft.shot wrote to <i>.console.txt "
+            "(`-`: not collected); axe links <i>.a11y.json when ft.shot wrote it.\n\n"
+            "| # | 路径 | 截图 | HTTP | 控制台错误 | axe |\n|---|---|---|---|---|---|\n" + "\n".join(rows) + "\n")
+    if note:
+        text += f"\n{note}\n"
+    if failed:
+        text += "\n## Failed\n" + "\n".join(failed) + "\n"
+    (folder / "index.md").write_text(text)
+    summary = (f"{jid} round {rnd}: {len(paths) - len(failed)}/{len(paths)} shots, "
+               f"round-{rnd}/evidence/index.md; {(rel.stdout or rel.stderr).strip()}")
+    out(summary if not failed else f"{summary}; failed: {'; '.join(failed)}", 1 if failed else 0)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

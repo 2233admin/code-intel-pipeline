@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""Copy the factory prompts from the kit's claude/ into the installed .claude/. `--check` only compares.
+
+Kit claude/agents/<name>.md -> .claude/agents/<name>.md; claude/skills/factory/SKILL.md.tmpl -> .claude/skills/factory/SKILL.md.
+config.json: `kit_path` (relative to the repo root; absent = this repo carries no kit copy),
+`sync_prompts_skip` (sources relative to <kit_path>/claude/, default ["agents/intake.md"]).
+"""
+import json
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[2]
+DEFAULT_SKIP = ["agents/intake.md"]
+NO_KIT_DIR = 2
+
+
+def mapping(src_root):
+    """(source relative to claude/, installed path relative to the repo root) for every kit prompt."""
+    pairs = [(f"agents/{p.name}", f".claude/agents/{p.name}") for p in sorted((src_root / "agents").glob("*.md"))]
+    if (src_root / "skills/factory/SKILL.md.tmpl").is_file():
+        pairs.append(("skills/factory/SKILL.md.tmpl", ".claude/skills/factory/SKILL.md"))
+    return pairs
+
+
+def main(argv):
+    check = "--check" in argv
+    config = json.loads((REPO / "factory" / "config.json").read_text())
+    if not config.get("kit_path"):
+        print("这个仓库不带 kit 副本")
+        return 0
+    src_root = REPO / config["kit_path"] / "claude"
+    if not src_root.is_dir():
+        print(f"sync-prompts: {src_root.relative_to(REPO)} 不存在")
+        return NO_KIT_DIR
+    skip = set(config.get("sync_prompts_skip", DEFAULT_SKIP))
+    stale = []
+    for source, installed in mapping(src_root):
+        if source in skip:
+            continue
+        data = (src_root / source).read_bytes()
+        target = REPO / installed
+        if target.is_file() and target.read_bytes() == data:
+            continue
+        stale.append(installed)
+        if not check:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+    for installed in stale:
+        print(installed)
+    return 1 if check and stale else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
