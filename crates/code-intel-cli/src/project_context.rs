@@ -364,7 +364,7 @@ fn run_result(
             "path": result.publication_path(),
             "marker": result.publication_path().join("run-complete.json"),
         },
-        "readableArtifacts": readable_artifact_paths(result.manifest(), result.publication_path()),
+        "readableArtifacts": readable_artifact_paths(result.committed_manifest(), result.publication_path()),
         "failureNode": failure_node,
         "diagnostic": diagnostic,
         "failures": result.failures(),
