@@ -29,9 +29,10 @@ Do not infer a clean result from a partial run, provider outage, stale advisory,
 3. Bootstrap only when the user requested installation or the task explicitly requires the
    missing pipeline.
 4. `code-intel setup`, and therefore this Skill's bootstrap, needs release `v0.7.2-beta.7` or newer.
-   The default stable channel currently resolves to a release that predates `setup`, and the
-   bootstrap rejects it with "This release predates `code-intel setup`": the default commands below
-   currently fail on stable v0.7.1, and that is expected, not a success path. Only when the user
+   The default stable channel currently resolves to a release that predates `setup`. On stable
+   v0.7.1 the step 5 `--dry-run` still succeeds and returns a v0.7.1 plan; the real install in
+   step 7 is rejected with "This release predates `code-intel setup`", and that is expected, not a
+   success path. Only when the user
    explicitly requests a prerelease, add `--version v0.7.2-beta.7 --channel prerelease` (the
    bootstrap checks `--channel` even with `--version`, so a pinned prerelease needs both) or just
    `--channel prerelease`. Never add them on your own. For a
