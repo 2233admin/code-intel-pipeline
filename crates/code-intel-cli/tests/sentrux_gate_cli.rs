@@ -700,3 +700,137 @@ fn aggregate_only_python_cycle_is_advisory_without_claiming_equivalent_protectio
     );
     fs::remove_dir_all(root).expect("remove fixture");
 }
+
+// ---- #394: `ignore_test_dependencies` coupling policy ----
+
+fn policy_fixture(tag: &str, policy: Option<bool>) -> PathBuf {
+    let root = fixture_root(tag);
+    fs::create_dir_all(root.join("tests")).expect("create tests dir");
+    fs::create_dir_all(root.join(".sentrux")).expect("create .sentrux");
+    fs::write(root.join("src/app.py"), "import os\n").expect("app.py");
+    fs::write(root.join("tests/test_app.py"), "import app\n").expect("test_app.py");
+    let rules = format!(
+        "[constraints]\n{}",
+        policy.map_or(String::new(), |v| format!(
+            "ignore_test_dependencies = {v}\n"
+        ))
+    );
+    fs::write(root.join(".sentrux/rules.toml"), rules).expect("rules");
+    root
+}
+
+#[test]
+fn coupling_policy_ignores_test_imports_only_when_on_and_records_itself() {
+    let blocks_coupling = |result: &serde_json::Value| {
+        result["blockingViolations"]
+            .as_array()
+            .expect("blockingViolations")
+            .iter()
+            .any(|violation| violation["rule"] == "coupling_increased")
+    };
+    for (policy, file, passes) in [
+        (Some(true), "tests/test_app.py", true),
+        (Some(true), "src/app.py", false),
+        (Some(false), "tests/test_app.py", false),
+        (None, "tests/test_app.py", false),
+    ] {
+        let root = policy_fixture("policy-ratchet", policy);
+        save_fixture(&root);
+        let baseline: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.join(".sentrux/baseline.json")).unwrap())
+                .expect("baseline json");
+        let recorded = serde_json::json!({"ignore_test_dependencies": policy == Some(true)});
+        assert_eq!(baseline["couplingPolicy"], recorded);
+        let (_, scan) = cli_result(&root, "scan", &[]);
+        assert_eq!(scan["coupling_policy"], recorded);
+        let expected_edges = if policy == Some(true) { 1 } else { 2 };
+        assert_eq!(scan["total_import_edges"], expected_edges);
+        assert_eq!(scan["import_modeled_files"], expected_edges);
+        let path = root.join(file);
+        let source = fs::read_to_string(&path).unwrap();
+        let more = "import sys\nimport json\nimport re\nimport time\n";
+        fs::write(&path, source + more).unwrap();
+        for operation in ["gate", "check"] {
+            let (success, result) = cli_result(&root, operation, &[]);
+            assert_eq!(success, passes, "{policy:?} {file} {operation}: {result}");
+            assert_eq!(blocks_coupling(&result), !passes, "{result}");
+            assert_eq!(result["verdict"], if passes { "pass" } else { "fail" });
+        }
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+}
+
+#[test]
+fn coupling_policy_mismatch_or_invalid_record_fails_closed_without_touching_baseline() {
+    let baseline_of = |root: &PathBuf| fs::read(root.join(".sentrux/baseline.json")).unwrap();
+    let set_policy = |root: &PathBuf, value: Option<serde_json::Value>| {
+        let mut baseline: serde_json::Value = serde_json::from_slice(&baseline_of(root)).unwrap();
+        match value {
+            Some(value) => baseline["couplingPolicy"] = value,
+            None => drop(baseline.as_object_mut().unwrap().remove("couplingPolicy")),
+        }
+        let bytes = serde_json::to_vec_pretty(&baseline).unwrap();
+        fs::write(root.join(".sentrux/baseline.json"), bytes).unwrap();
+    };
+    let flip = |root: &PathBuf, now: bool| {
+        let rules = format!("[constraints]\nignore_test_dependencies = {now}\n");
+        fs::write(root.join(".sentrux/rules.toml"), rules).unwrap();
+    };
+    let assert_fails_closed = |root: &PathBuf, recorded: &str, current: &str| {
+        let before = baseline_of(root);
+        for operation in ["gate", "check"] {
+            let (success, result) = cli_result(root, operation, &[]);
+            assert!(!success, "{operation}: {result}");
+            assert_eq!(result["verdict"], "fail");
+            assert!(result["baseline"].is_null());
+            assert_eq!(result["comparisons"], serde_json::json!([]));
+            let violations = result["blockingViolations"].as_array().unwrap();
+            assert_eq!(violations.len(), 1, "{result}");
+            assert_eq!(violations[0]["rule"], "baseline_engine_mismatch");
+            let message = violations[0]["message"].as_str().unwrap();
+            for needle in [
+                "ignore_test_dependencies",
+                recorded,
+                current,
+                "baseline.json",
+            ] {
+                assert!(message.contains(needle), "{needle} missing: {message}");
+            }
+        }
+        assert_eq!(baseline_of(root), before);
+    };
+    for (saved, now) in [(true, false), (false, true)] {
+        let root = policy_fixture("policy-flip", Some(saved));
+        save_fixture(&root);
+        flip(&root, now);
+        assert_fails_closed(&root, &saved.to_string(), &now.to_string());
+        let text = code_intel(&[
+            "sentrux",
+            "--operation",
+            "gate",
+            "--repo",
+            root.to_str().unwrap(),
+        ]);
+        assert!(String::from_utf8_lossy(&text.stdout).contains("save_baseline"));
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+    let root = policy_fixture("policy-missing", Some(false));
+    save_fixture(&root);
+    set_policy(&root, None);
+    assert!(
+        cli_result(&root, "gate", &[]).0,
+        "missing couplingPolicy means off"
+    );
+    flip(&root, true);
+    assert_fails_closed(&root, "false", "true");
+    flip(&root, false);
+    for invalid in [
+        serde_json::json!({"ignore_test_dependencies": "true"}),
+        serde_json::json!({}),
+        serde_json::json!(true),
+    ] {
+        set_policy(&root, Some(invalid));
+        assert_fails_closed(&root, "invalid couplingPolicy", "false");
+    }
+    fs::remove_dir_all(root).expect("remove fixture");
+}

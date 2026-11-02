@@ -313,12 +313,12 @@ cat "objects/sha256/$view_sha"   # 就是 hospital.md 的 markdown 正文
 不想手工解引用 blob，直接读最近一次已提交结果：
 
 ```bash
-code-intel report --repo C:\path\to\your\repo --artifact-root <artifact-root>
+<解压目录>/code-intel-pipeline/bin/code-intel artifact query --artifact-root <artifact-root> --repo <published-repo-key> --type diagnosis.hospital-view
 ```
 
-它校验 `run-complete.json` 和 manifest 的 Artifact Ref，打印 `hospital.md`、机器报告和可选的 Agent 切片排名；`--json` 只输出这些已验证路径。
+它按 `run-complete.json` 和 manifest 校验后读出 `diagnosis.hospital-view`，与上面 jq 路径读到的是同一份已验证字节。
 
-或者跳过手工 jq，直接用上面「全链路命令」里的 `artifact query --type diagnosis.hospital-view`——两条路径读到的是同一份已验证字节，`artifact query` 只是替你做了这趟 manifest 解引用。artifact 根目录的 `index.json` 只有主入口会在提交后自动重建；单独跑 `run execute` 不会顺带写它，要索引就显式 `artifact index --operation rebuild`。
+`artifact query` 只是替你做了上面那趟 manifest 解引用。artifact 根目录的 `index.json` 只有主入口会在提交后自动重建；单独跑 `run execute` 不会顺带写它，要索引就显式 `artifact index --operation rebuild`。
 
 `run-complete.json` 是最后写入的事务提交标记；主入口的标记绑定 manifest blob 的 sha256（即上面 `manifest.sha256` 字段），索引只接受标记存在且校验一致的运行目录。
 

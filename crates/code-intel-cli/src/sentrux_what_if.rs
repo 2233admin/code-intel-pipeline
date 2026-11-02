@@ -10,6 +10,9 @@ use serde_json::{json, Value};
 
 use super::sentrux_analysis;
 
+#[path = "sentrux_coupling_policy.rs"]
+mod sentrux_coupling_policy;
+
 use super::{as_array, evolution_bus_factor};
 
 struct RuleHints {
@@ -97,9 +100,7 @@ fn read_rule_hints(repo: &Path) -> RuleHints {
         max_coupling: rule_value(&text, "max_coupling")
             .map(|v| v.trim_matches('"').trim_matches('\'').to_string()),
         no_god_files: rule_value(&text, "no_god_files").and_then(|v| parse_toml_bool(&v)),
-        ignore_test_dependencies: rule_value(&text, "ignore_test_dependencies")
-            .and_then(|v| parse_toml_bool(&v))
-            .unwrap_or(false),
+        ignore_test_dependencies: sentrux_coupling_policy::ignore_test_dependencies(&text),
         pollution_exclusions: rule_value(&text, "pollution_exclusions")
             .map(|v| parse_pollution_list(&v))
             .unwrap_or_default(),

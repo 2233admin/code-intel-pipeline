@@ -10,7 +10,11 @@ max_cycles = 0
 # Default behavior includes a small built-in noisy list (node_modules, vendor, dist, tools ...).
 # Use only for local build/support directories you do not want to govern yet.
 # pollution_exclusions = ["tools", "third_party", "dist"]
-# Optional: exclude test↔production dependency edges from DSM coupling metrics.
+# Optional: take test files (as classified by sentrux_analysis `is_test_file`) out of the native
+# gate's coupling score, both the import-edge numerator and the file denominator.
+# Quality Signal, cycles, god files and complexity are not affected.
+# The baseline records this value: after changing it, re-save the baseline on purpose
+# (code-intel sentrux --operation save_baseline); a mismatched baseline fails closed.
 # Keep false if architectural review needs test-contract coupling to be measured.
 # ignore_test_dependencies = true
 

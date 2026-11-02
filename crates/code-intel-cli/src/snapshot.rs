@@ -288,8 +288,16 @@ fn verify_alternate_vcs(cli: &Cli, authoritative: Value) -> Result<Value, Snapsh
                 .expect("alternate VCS request serializes")
                 .as_bytes(),
         )
-        .map_err(|error| {
-            SnapshotError::Contract(format!("alternate VCS adapter request failed: {error}"))
+        // An adapter may answer without reading the request; if it has already exited, the
+        // write fails with EPIPE and its output still decides (#481).
+        .or_else(|error| {
+            if error.kind() == std::io::ErrorKind::BrokenPipe {
+                Ok(())
+            } else {
+                Err(SnapshotError::Contract(format!(
+                    "alternate VCS adapter request failed: {error}"
+                )))
+            }
         })?;
     let output = child.wait_with_output().map_err(|error| {
         SnapshotError::Contract(format!("alternate VCS adapter did not complete: {error}"))
