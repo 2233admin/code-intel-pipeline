@@ -262,3 +262,24 @@ fn unpaired_integration_is_unresolved_and_never_rewritten() {
     assert_ne!(written.status.code(), Some(0));
     assert_eq!(tree.read(REGISTRY), text);
 }
+
+#[test]
+fn unpaired_integration_sharing_a_stale_digest_keeps_it() {
+    let tree = fixture("shared");
+    let tool = tree.digest("src/tool.rs");
+    let text = format!(
+        r#"{{
+  "integrations": [
+    {{"id": "demo.paired", "toolchainDigestEvidence": {{"inputs": ["src/tool.rs"]}}, "capabilityDeclaration": {{"implementation": {{"toolchainDigests": ["{tool}"]}}}}}},
+    {{"id": "demo.unpaired", "toolchainDigestEvidence": {{"inputs": ["src/tool.rs", "src/other.rs"]}}, "capabilityDeclaration": {{"implementation": {{"toolchainDigests": ["{tool}"]}}}}}}
+  ]
+}}
+"#
+    );
+    tree.write(REGISTRY, &text);
+    commit_all(&tree.0);
+    tree.write("src/tool.rs", "fn tool() { 9 }\n");
+    let _ = repin(&tree, true);
+    let now = tree.digest("src/tool.rs");
+    assert_eq!(tree.read(REGISTRY), text.replacen(&tool, &now, 1));
+}

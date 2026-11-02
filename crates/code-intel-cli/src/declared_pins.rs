@@ -157,19 +157,16 @@ fn collect_registry(registry: &Value, out: &mut Vec<DeclaredPin>) -> Vec<String>
         let Some(evidence) = integration.get("toolchainDigestEvidence") else {
             continue;
         };
-        let inputs = evidence["inputs"].as_array();
-        let digests =
-            integration["capabilityDeclaration"]["implementation"]["toolchainDigests"].as_array();
-        let pairs = match (inputs, digests) {
-            (Some(inputs), Some(digests)) if inputs.len() == digests.len() => {
-                inputs.iter().zip(digests)
-            }
-            _ => {
-                unpaired.push(integration["id"].as_str().unwrap_or_default().to_string());
-                continue;
-            }
-        };
-        for (input, digest) in pairs {
+        if is_unpaired(integration) {
+            unpaired.push(integration["id"].as_str().unwrap_or_default().to_string());
+            continue;
+        }
+        let inputs = evidence["inputs"].as_array().into_iter().flatten();
+        let digests = integration["capabilityDeclaration"]["implementation"]["toolchainDigests"]
+            .as_array()
+            .into_iter()
+            .flatten();
+        for (input, digest) in inputs.zip(digests) {
             if let (Some(path), Some(sha)) = (input.as_str(), digest.as_str()) {
                 if is_sha256(sha) {
                     out.push(DeclaredPin {
@@ -182,6 +179,86 @@ fn collect_registry(registry: &Value, out: &mut Vec<DeclaredPin>) -> Vec<String>
         }
     }
     unpaired
+}
+
+/// An integration declares toolchain evidence its arrays cannot pair up.
+fn is_unpaired(integration: &Value) -> bool {
+    let Some(evidence) = integration.get("toolchainDigestEvidence") else {
+        return false;
+    };
+    let inputs = evidence["inputs"].as_array();
+    let digests =
+        integration["capabilityDeclaration"]["implementation"]["toolchainDigests"].as_array();
+    !matches!((inputs, digests), (Some(i), Some(d)) if i.len() == d.len())
+}
+
+/// Byte ranges of the unpaired integration objects in the registry text.
+/// Walks the text (string-aware) instead of re-serializing, so the rewrite
+/// keeps every other byte as it was.
+fn unpaired_spans(text: &str) -> Vec<std::ops::Range<usize>> {
+    let bytes = text.as_bytes();
+    let Some(key) = text.find("\"integrations\"") else {
+        return Vec::new();
+    };
+    let Some(open) = text[key..].find('[').map(|offset| key + offset) else {
+        return Vec::new();
+    };
+    let (mut spans, mut depth, mut start) = (Vec::new(), 0usize, 0usize);
+    let (mut in_string, mut escaped) = (false, false);
+    for (index, &byte) in bytes.iter().enumerate().skip(open + 1) {
+        if in_string {
+            match (escaped, byte) {
+                (true, _) => escaped = false,
+                (false, b'\\') => escaped = true,
+                (false, b'"') => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match byte {
+            b'"' => in_string = true,
+            b'{' | b'[' => {
+                if depth == 0 && byte == b'{' {
+                    start = index;
+                }
+                depth += 1;
+            }
+            b'}' | b']' if depth == 0 => break,
+            b'}' | b']' => {
+                depth -= 1;
+                if depth == 0 && byte == b'}' {
+                    let range = start..index + 1;
+                    let parsed = serde_json::from_str::<Value>(&text[range.clone()]);
+                    if parsed.is_ok_and(|value| is_unpaired(&value)) {
+                        spans.push(range);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    spans
+}
+
+/// `text.replace(old, new)` skipping occurrences that start inside `protected`.
+fn replace_outside(
+    text: &str,
+    old: &str,
+    new: &str,
+    protected: &[std::ops::Range<usize>],
+) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    for (index, _) in text.match_indices(old) {
+        if protected.iter().any(|span| span.contains(&index)) {
+            continue;
+        }
+        out.push_str(&text[last..index]);
+        out.push_str(new);
+        last = index + old.len();
+    }
+    out.push_str(&text[last..]);
+    out
 }
 
 /// Everything `discover` found: pins, and ids of integrations that could not
@@ -370,8 +447,16 @@ pub(crate) fn resync(repo: &Path, findings: &[PinFinding]) -> Result<Vec<String>
         let path = repo.join(&record);
         let mut text =
             fs::read_to_string(&path).map_err(|err| format!("read {}: {err}", path.display()))?;
+        // Spans the literal replacement must not enter: an unpaired
+        // integration's digests are never rewritten, even when they spell the
+        // same old digest as a paired one.
+        let protected = if record == REGISTRY {
+            unpaired_spans(&text)
+        } else {
+            Vec::new()
+        };
         for (old, new) in replacements {
-            text = text.replace(&old, &new);
+            text = replace_outside(&text, &old, &new, &protected);
         }
         fs::write(&path, text.as_bytes())
             .map_err(|err| format!("write {}: {err}", path.display()))?;
