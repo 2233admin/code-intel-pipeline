@@ -1,0 +1,1071 @@
+#!/usr/bin/env python3
+"""The deterministic gate: does the job's branch pass the repo's checks?
+
+Usage:
+  gate <job-id>            write round-N/checks.md; exit 0 PASS, 1 FAIL, 3 BASE-RED
+  gate <job-id> --merge    same, as round-N/merge-checks.md (job merge runs it)
+  gate --hook              builder SubagentStop hook: run the checks once, exit 2 on failure
+  gate --at <sha>          checks.sh alone on a worktree of one commit (for `job watch`); exit 0 green,
+                           1 red; result cached in factory/jobs/.watch/runs/<sha>.json and .log
+
+The gate runs the main checkout's factory/checks.sh inside the job's worktree,
+so a branch can't change the checks it is judged by. Everything below comes
+from the main checkout's config.json too:
+
+- light_checks: [{"paths": [<fnmatch>], "except": [<fnmatch>], "run": "<command>"}];
+  when every file the branch changes matches an entry's paths and none matches
+  its except, `run` replaces checks.sh (the hook and base-red check use it too).
+  No changed files (the base, `gate --at`) always runs the full checks.sh.
+- A passing run of the same checks on the same commit and origin/<base> is
+  reused, not repeated: the builder hook and the gate share
+  factory/jobs/<job>/checks-cache/. `--merge` copies this round's checks.md
+  when it passed on exactly this commit and base (nothing changed since).
+- protected_paths: FAIL when the branch modifies or deletes a matching file
+  (fnmatch patterns, where `*` also matches `/`). Adding new files is fine.
+- fail_patterns: regexes; FAIL when any line of the log matches, even on exit 0.
+- path_checks: [{"paths": [<fnmatch>], "run": "<command>"}]; when the branch
+  changes a matching path, `run` runs after checks.sh, in the worktree.
+- signoff: when true, FAIL unless every commit in base..HEAD has Signed-off-by.
+- tools.json: every `kind: "script"` tool whose `stages` include "gate" (and whose
+  `surfaces`, when set, meet the job's) runs after the path checks, in the
+  worktree, output in round-N/tools/<name>.log. A failure is FAIL (correctness)
+  unless the tool says `"blocking": false`, then it is only recorded.
+- new_tests_must_fail_on_base: when true and everything above passed, the files
+  the branch adds that match test_globs are copied into a worktree of the base
+  and run there with the ft.test template (factory/tools/ft test). If they pass
+  on the base they can't tell the change apart: FAIL, REASON test-weak.
+  Modified tests aren't checked. ft.setup, when set, runs first in that worktree.
+- Existing tests are read-only: a file matching test_globs that the branch
+  modifies or deletes is a protected path too, unless the spec listed it under
+  `## 允许修改的测试` (job.json `allowed_tests`, recorded at spec → build).
+- Holdout acceptance (job.json `holdout`, recorded at spec → build): the job
+  folder's holdout/ files must still have the sha256 recorded then, else FAIL
+  (protected-path). When everything above passed, holdout/manifest.json's files
+  are copied to their `dest` in a throwaway worktree of HEAD and `run` runs there
+  ({files} is the dest list), then the same on the base. Green on HEAD and red
+  on the base passes; red on HEAD is FAIL (correctness); green on the base too is
+  FAIL (test-weak) with the header line `HOLDOUT: WEAK`, which `job` sends back
+  to spec, not to the builder. checks.md gets only failing case names and
+  assertion lines, never a line of the holdout's source; the full logs go to
+  the job folder's holdout-logs/, which the builder must not read.
+- Satisfaction (job.json `satisfaction`, from the spec's `## 稳定性`): when
+  everything above passed, `command` runs `runs` times in the job's worktree and
+  `runs` times in a worktree of the base; round-N/satisfaction.md and .json
+  record both. Fewer than `min_pass` green on HEAD is FAIL (flaky); fewer than
+  `base_min_fail` red on the base only adds a weak-evidence note to checks.md.
+- gate_slots: at most this many gates (and hooks) run checks at once; "auto"
+  is half the CPUs (at least 1), from factory/jobs/.capabilities.json `cpus`
+  when `job doctor` wrote it, else os.cpu_count().
+- quality (config.json, everything off by default): when everything above
+  passed, in the same slot, unclebob's crapper, dryer and mutator (installed by
+  `factory/tools/ft tools` at the commits in quality.tools) judge the functions
+  the branch changed against origin/<base>:
+  crap_max: a function in a changed source file scoring above it (CRAP with
+  quality.crap_coverage, else cyclomatic complexity) that is new, or scores
+  worse than the same namespace and name on the base, is FAIL (complexity).
+  dry_threshold: a duplicate pair at that similarity with a side on a changed
+  line, and no pair on the base with the same files and first lines, is FAIL
+  (duplication). mutation: mutator on the changed source files (ft.mutate_test,
+  --no-coverage, --max-workers gate_slots); a surviving mutant in a function
+  with a changed line is FAIL (test-weak) and checks.md lists file:line and the
+  replacement; quality.mutation_timeout_s (900) running out, a red baseline,
+  no test command, a tool error, or a broken overlay is recorded, not judged:
+  `ft _mutrun` runs the tests in each of mutator's worker overlays on the
+  unmutated source (must pass, else every mutant counts as killed) and with the
+  source replaced by garbage (must fail, else the tests load the original tree
+  and every mutant survives). The tools run in the job's worktree;
+  what they write (.metrics/, target/mutation-workers, coverage) is copied to
+  round-N/quality/ and removed. The base side runs in a throwaway worktree.
+
+Checks run without GH_TOKEN, GITHUB_TOKEN, GH_ENTERPRISE_TOKEN or
+GITHUB_ENTERPRISE_TOKEN and with GH_CONFIG_DIR pointing at an empty directory,
+so nothing they run can reach the real GitHub as you.
+
+When checks.sh fails, the gate runs it again on a worktree of origin/<base>
+(cached per base commit). If the base fails too and nothing else failed, the
+verdict is GATE: BASE-RED: the base is broken, not the branch.
+
+A verdict other than PASS carries a `REASON:` header line (config.json reasons):
+base-red, else protected-path, else signoff, else test-weak (R1, the holdout or
+a surviving mutant), else flaky, else env (ft.setup failed in the holdout's HEAD
+worktree), else complexity, else duplication, else correctness (checks.sh,
+fail_patterns, a path check, a blocking script tool or the holdout failed).
+"""
+
+import contextlib
+import fcntl
+import fnmatch
+import hashlib
+import importlib.machinery
+import importlib.util
+import json
+import os
+import re
+import shlex
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import UTC, datetime
+from pathlib import Path, PurePosixPath
+
+REPO = Path(__file__).resolve().parents[2]
+FACTORY = REPO / "factory"
+JOBS = FACTORY / "jobs"
+CONFIG = json.loads((FACTORY / "config.json").read_text())
+CHECKS = FACTORY / "checks.sh"
+TOOLS = FACTORY / "tools.json"
+FT = FACTORY / "tools" / "ft"
+BASE = CONFIG["base_branch"]
+TAIL = 80
+SECRETS = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN")
+
+
+def die(msg):
+    print(f"gate: {msg}", file=sys.stderr)
+    sys.exit(2)
+
+
+def git(worktree, *args, check=True):
+    res = subprocess.run(["git", *args], cwd=worktree, capture_output=True, text=True, check=False)
+    if check and res.returncode != 0:
+        die(f"`git {' '.join(args)}` failed: {res.stderr.strip()}")
+    return res.stdout
+
+
+def changed_files(worktree):
+    return [f for f in git(worktree, "diff", "--name-only", f"origin/{BASE}...HEAD").splitlines() if f]
+
+
+def protected_changes(worktree, allowed_tests=()):
+    """Existing files the branch modified or deleted that it mustn't: under protected_paths, or matching
+    test_globs and not in the spec's `## 允许修改的测试`."""
+    diff = git(worktree, "diff", "--name-status", f"origin/{BASE}...HEAD")
+    tests = CONFIG.get("test_globs") or []
+    hits = []
+    for line in diff.splitlines():
+        status, *paths = line.split("\t")
+        if status.startswith("A"):
+            continue
+        old = paths[0]  # for renames and copies, the original path
+        if any(fnmatch.fnmatch(old, pattern) for pattern in CONFIG["protected_paths"]):
+            hits.append(f"{status[0]} {old}")
+        elif any(fnmatch.fnmatch(old, g) for g in tests) and not any(fnmatch.fnmatch(old, a) for a in allowed_tests):
+            hits.append(f"{status[0]} {old} (existing test, not in spec.md `## 允许修改的测试`)")
+    return hits
+
+
+def unsigned_commits(worktree):
+    if not CONFIG.get("signoff"):
+        return []
+    log = git(worktree, "log", "--format=%H%x00%B%x01", f"origin/{BASE}..HEAD")
+    out = []
+    for entry in filter(str.strip, log.split("\x01")):
+        sha, _, body = entry.strip().partition("\x00")
+        if not re.search(r"^Signed-off-by: .+", body, re.MULTILINE):
+            out.append(sha[:7])
+    return out
+
+
+def load_ft():
+    """factory/tools/ft as a module: the quality tools' runner and report parsers live there."""
+    loader = importlib.machinery.SourceFileLoader("factory_ft", str(FT))
+    module = importlib.util.module_from_spec(importlib.util.spec_from_loader("factory_ft", loader))
+    loader.exec_module(module)
+    return module
+
+
+sys.dont_write_bytecode = True  # loading ft must not leave factory/tools/__pycache__/ in the checkout
+FTM = load_ft()
+slot_count = FTM.slot_count
+
+
+class Slot:
+    """A file lock among config.json gate_slots; waits while every slot is taken."""
+
+    def __enter__(self):
+        JOBS.mkdir(parents=True, exist_ok=True)
+        slots = slot_count()
+        while True:
+            for i in range(slots):
+                f = open(JOBS / f".gate-slot-{i}.lock", "w")
+                try:
+                    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    self.f = f
+                    return self
+                except BlockingIOError:
+                    f.close()
+            time.sleep(1)
+
+    def __exit__(self, *exc):
+        self.f.close()
+
+
+def clean_env(empty_dir):
+    env = {k: v for k, v in os.environ.items() if k not in SECRETS}
+    env["GH_CONFIG_DIR"] = empty_dir
+    return env
+
+
+def run_timed(cmd, cwd, env=None, timeout=None):
+    """(exit code, log, seconds, first fail_patterns hit, timed out) for one command.
+
+    With `timeout` the command runs in its own process group; on expiry the group is killed by the pid
+    this started (never by name) and the exit code is 124."""
+    start = time.monotonic()
+    timed_out = False
+    with tempfile.TemporaryDirectory(prefix="gate-gh-") as empty:
+        proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                env={**clean_env(empty), **(env or {})}, start_new_session=timeout is not None)
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            out, err = proc.communicate()
+    log = (out or "") + (err or "")
+    code = 124 if timed_out else proc.returncode
+    hit = None
+    for pattern in CONFIG.get("fail_patterns", []):
+        m = re.search(pattern, log, re.MULTILINE)
+        if m:
+            start_of_line = log.rfind("\n", 0, m.start()) + 1
+            end_of_line = log.find("\n", m.end())
+            hit = log[start_of_line:end_of_line if end_of_line != -1 else None].strip()
+            break
+    return code, log, int(time.monotonic() - start), hit, timed_out
+
+
+def run_cmd(cmd, cwd, env=None):
+    """(exit code, log, seconds, first fail_patterns hit) for one command."""
+    return run_timed(cmd, cwd, env)[:4]
+
+
+def run_checks(worktree, argv=None):
+    return run_cmd(argv or ["bash", str(CHECKS)], worktree)
+
+
+def light_entry(changed):
+    """The first config.json `light_checks` entry whose `paths` cover every changed file and whose `except`
+    covers none, or None. No changed files (the base itself, `gate --at`) always means the full checks.sh."""
+    if not changed:
+        return None
+    for entry in CONFIG.get("light_checks") or []:
+        def fits(f, entry=entry):
+            return any(fnmatch.fnmatch(f, p) for p in entry.get("paths", [])) \
+                and not any(fnmatch.fnmatch(f, p) for p in entry.get("except", []))
+        if all(fits(f) for f in changed):
+            return entry
+    return None
+
+
+def checks_argv(changed):
+    """(argv, label) for this branch: a light check when one covers every changed file, else checks.sh."""
+    entry = light_entry(changed)
+    return (["bash", "-c", entry["run"]], f"light check `{entry['run']}`") if entry else (["bash", str(CHECKS)], "checks.sh")
+
+
+CACHE_LINES = 400
+
+
+def cache_path(job_id, commit, base, label):
+    key = hashlib.sha256(f"{commit} {base} {label}".encode()).hexdigest()[:16]
+    return JOBS / job_id / "checks-cache" / f"{commit[:12]}-{key}.json"
+
+
+def cached_pass(job_id, commit, base, label):
+    """A passing run of the same checks on the same commit and base (by the builder hook or an earlier gate)."""
+    path = cache_path(job_id, commit, base, label)
+    return json.loads(path.read_text()) if path.exists() else None
+
+
+def remember_pass(job_id, commit, base, label, log, seconds):
+    path = cache_path(job_id, commit, base, label)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tail = "\n".join(log.splitlines()[-CACHE_LINES:])
+    path.write_text(json.dumps({"commit": commit, "base": base, "label": label, "seconds": seconds, "log": tail}) + "\n")
+
+
+def base_sha(worktree):
+    git(worktree, "fetch", "origin", BASE, check=False)
+    return git(worktree, "rev-parse", f"origin/{BASE}").strip()
+
+
+@contextlib.contextmanager
+def base_tree(sha):
+    """A throwaway detached worktree at the base commit, removed afterwards."""
+    with tempfile.TemporaryDirectory(prefix="gate-base-") as tmp:
+        tree = Path(tmp) / "base"
+        git(REPO, "worktree", "add", "--detach", str(tree), sha)
+        try:
+            yield tree
+        finally:
+            git(REPO, "worktree", "remove", "--force", str(tree), check=False)
+
+
+def base_red(worktree, argv=None, label="checks.sh"):
+    """(base sha, whether the same checks fail on it), cached per base commit and checks."""
+    sha = base_sha(worktree)
+    suffix = "" if label == "checks.sh" else "-" + hashlib.sha256(label.encode()).hexdigest()[:8]
+    cache = JOBS / f".base-{sha}{suffix}.json"
+    if cache.exists():
+        return sha, json.loads(cache.read_text())["red"]
+    with base_tree(sha) as tree:
+        code, _, _, hit = run_checks(tree, argv)
+    red = code != 0 or hit is not None
+    cache.write_text(json.dumps({"red": red, "exit": code, "fail_pattern": hit}) + "\n")
+    return sha, red
+
+
+def script_tools(job):
+    """tools.json `kind: "script"` tools the gate runs for this job, in file order."""
+    if not TOOLS.exists():
+        return []
+    try:
+        tools = json.loads(TOOLS.read_text()).get("tools") or []
+    except (json.JSONDecodeError, AttributeError) as e:
+        die(f"factory/tools.json isn't a JSON object with a `tools` list: {e}")
+    surfaces = set((job.get("intake") or {}).get("surfaces") or [])
+    return [t for t in tools if t.get("kind") == "script" and "gate" in t.get("stages", [])
+            and (not t.get("surfaces") or surfaces & set(t["surfaces"]))]
+
+
+def run_tools(job, worktree, round_dir):
+    """[(name, exit, seconds, fail_patterns hit, blocking)] for each script tool, logs in round-N/tools/."""
+    out = []
+    for t in script_tools(job):
+        code, log, sec, hit = run_cmd(["bash", "-c", t["run"]], worktree)
+        logs = round_dir / "tools"
+        logs.mkdir(exist_ok=True)
+        (logs / f"{t['name']}.log").write_text(f"$ {t['run']}\n{log}")
+        out.append((t["name"], code, sec, hit, t.get("blocking", True)))
+    return out
+
+
+def new_tests(worktree):
+    """Files the branch adds (not modifies) that match config.json test_globs."""
+    added = git(worktree, "diff", "--name-only", "--diff-filter=A", f"origin/{BASE}...HEAD").splitlines()
+    return [f for f in added if any(fnmatch.fnmatch(f, g) for g in CONFIG.get("test_globs", []))]
+
+
+def weak_tests(worktree, round_dir, name):
+    """R1: (verdict, files, note). verdict is True when the new tests pass on the base, None when not judged."""
+    if not CONFIG.get("new_tests_must_fail_on_base"):
+        return None, [], None
+    files = new_tests(worktree)
+    if not files:
+        return None, [], "The branch adds no files matching test_globs; nothing to run on the base."
+    if not (CONFIG.get("ft") or {}).get("test"):
+        return None, files, "config.json ft.test is empty, so the new tests couldn't be run on the base."
+    sha = base_sha(worktree)
+    log_path = round_dir / f"{name}-base-tests.log"
+    with base_tree(sha) as tree:
+        for f in files:
+            (tree / f).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(Path(worktree) / f, tree / f)
+        setup = (CONFIG.get("ft") or {}).get("setup")
+        if setup:
+            scode, slog, _, _ = run_cmd(["bash", "-c", setup], tree)
+            (round_dir / f"{name}-base-setup.log").write_text(f"$ {setup}\n{slog}")
+            if scode != 0:
+                return None, files, (f"ft.setup failed on the base (exit {scode}), so the new tests weren't judged. "
+                                     f"Log: {name}-base-setup.log.")
+        code, _, _, _ = run_cmd([str(FT), "test", *files], tree, {"FT_LOG": str(log_path)})
+    if code == 0:
+        return True, files, (f"这些新测试在基线上就通过，测不到本次改动。origin/{BASE} {sha[:7]}, "
+                             f"log: {log_path.name}.")
+    return False, files, f"The new tests fail on origin/{BASE} {sha[:7]} (exit {code}), as they should. Log: {log_path.name}."
+
+
+# ---- Holdout acceptance: tests the spec-writer wrote and the builder never sees -----------
+
+
+def holdout_hashes(folder):
+    """{path relative to holdout/: sha256} of every file under it ({} when it doesn't exist)."""
+    folder = Path(folder)
+    if not folder.is_dir():
+        return {}
+    return {p.relative_to(folder).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(folder.rglob("*")) if p.is_file()}
+
+
+def read_manifest(folder):
+    """([(src, dest)], run) from holdout/manifest.json; ValueError saying what's wrong."""
+    path = Path(folder) / "manifest.json"
+    if not path.is_file():
+        raise ValueError("holdout/manifest.json doesn't exist")
+    try:
+        m = json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        raise ValueError(f"holdout/manifest.json isn't JSON: {e}") from None
+    files = m.get("files") if isinstance(m, dict) else None
+    if not isinstance(files, list) or not files:
+        raise ValueError("holdout/manifest.json needs a non-empty `files` list of {\"src\", \"dest\"}")
+    out = []
+    for f in files:
+        src, dest = (f.get("src"), f.get("dest")) if isinstance(f, dict) else (None, None)
+        for p in (src, dest):
+            if not isinstance(p, str) or not p or PurePosixPath(p).is_absolute() or ".." in PurePosixPath(p).parts:
+                raise ValueError(f"holdout/manifest.json: every `src` and `dest` is a relative path without `..`, "
+                                 f"not {p!r}")
+        if src == "manifest.json" or not (Path(folder) / src).is_file():
+            raise ValueError(f"holdout/manifest.json: `src` {src!r} isn't a test file under holdout/")
+        out.append((src, dest))
+    run = m.get("run")
+    if not isinstance(run, str) or not run.strip():
+        raise ValueError("holdout/manifest.json needs a `run` command ({files} is the dest list)")
+    return out, run
+
+
+def holdout_tampered(job):
+    """holdout/ files added, changed or removed since spec → build recorded their sha256."""
+    want = (job.get("holdout") or {}).get("sha256") or {}
+    have = holdout_hashes(JOBS / job["id"] / "holdout")
+    out = []
+    for f in sorted(set(want) | set(have)):
+        if have.get(f) != want.get(f):
+            letter, what = ("D", "removed") if f not in have else ("A", "added") if f not in want else ("M", "changed")
+            out.append(f"{letter} holdout/{f} ({what} after spec → build)")
+    return out
+
+
+# Lines of a test log that name a failing case or state an assertion, across unittest, pytest, jest/vitest,
+# playwright and TAP. Anything else in the log (tracebacks, source excerpts) stays out of checks.md.
+CASE_LINE = re.compile(r"^\s*(?:FAIL|ERROR|FAILED|not ok)\b|^\s*E\s{2,}\S|\w*Error\b[^:]*:|[✘✗×]\s|"
+                       r"\b(?:[Ee]xpected|Received)\b")
+
+
+def failure_summary(log, secret, limit=20):
+    """Case names and assertion lines from a failing holdout run, minus any line that contains holdout source."""
+    out = []
+    for line in log.splitlines():
+        s = line.strip()
+        if not s or not CASE_LINE.search(s) or any(x in s for x in secret):
+            continue
+        if s[:200] not in out:
+            out.append(s[:200])
+    return out[:limit]
+
+
+def holdout_source(folder, files):
+    """The holdout tests' own lines (6+ characters), which nothing the builder reads may contain."""
+    lines = set()
+    for src, _ in files:
+        for line in (Path(folder) / src).read_text(errors="replace").splitlines():
+            if len(line.strip()) >= 6:
+                lines.add(line.strip())
+    return lines
+
+
+def run_holdout(job, worktree, commit, name):
+    """(result, notes): result None without a holdout, else "pass", "fail", "weak" or "error"."""
+    if not (job.get("holdout") or {}).get("sha256"):
+        return None, []
+    folder = JOBS / job["id"] / "holdout"
+    try:
+        files, run = read_manifest(folder)
+    except ValueError as e:
+        die(str(e))
+    secret = holdout_source(folder, files)
+    logs = JOBS / job["id"] / "holdout-logs"
+    logs.mkdir(exist_ok=True)
+    prefix = f"round-{job['round']}-{name}"
+    cmd = run.replace("{files}", " ".join(shlex.quote(dest) for _, dest in files))
+
+    def attempt(sha, side):
+        """(green, exit, log); exit None when ft.setup failed."""
+        with base_tree(sha) as tree:
+            for src, dest in files:
+                (tree / dest).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(folder / src, tree / dest)
+            setup = (CONFIG.get("ft") or {}).get("setup")
+            if setup:
+                scode, slog, _, _ = run_cmd(["bash", "-c", setup], tree)
+                if scode != 0:
+                    (logs / f"{prefix}-{side}.log").write_text(f"$ {setup}\n{slog}")
+                    return False, None, slog
+            code, log, _, hit = run_cmd(["bash", "-c", cmd], tree)
+        (logs / f"{prefix}-{side}.log").write_text(f"$ {cmd}\n{log}")
+        return code == 0 and hit is None, code, log
+
+    green, code, log = attempt(commit, "head")
+    if code is None:
+        return "error", [f"ft.setup 在 HEAD {commit[:7]} 的临时工作树里失败，留出验收没跑。"]
+    if not green:
+        summary = failure_summary(log, secret)
+        return "fail", [f"留出验收在 HEAD {commit[:7]} 上失败（exit {code}）。失败的用例与断言摘要（不含测试源码）：", ""] \
+            + ([f"- `{s}`" for s in summary] or ["- （日志里没认出用例名或断言行）"])
+    sha = base_sha(worktree)
+    base_green, base_code, _ = attempt(sha, "base")
+    if base_green:
+        return "weak", [(f"留出验收在 HEAD {commit[:7]} 和 origin/{BASE} {sha[:7]} 上都通过，测不到本次改动。"
+                         "交回 spec-writer 加强（`job advance <job> spec`，不占轮次）。")]
+    why = "ft.setup 在基线上失败，基线一侧没判" if base_code is None else f"exit {base_code}"
+    return "pass", [f"留出验收在 HEAD {commit[:7]} 上通过，在 origin/{BASE} {sha[:7]} 上失败（{why}）。"]
+
+
+# ---- Satisfaction: a pass rate over N runs instead of one green run ----------------------------
+
+
+def satisfaction(job, worktree, round_dir, name):
+    """None without `## 稳定性`, else {"flaky": bool, "weak": note or None, "line": checks.md text}.
+
+    Writes round-N/<prefix>satisfaction.md and .json (prefix `merge-` for the merge gate)."""
+    s = job.get("satisfaction")
+    if not s:
+        return None
+    cmd, n = s["command"], s["runs"]
+    timeout = (CONFIG.get("satisfaction") or {}).get("timeout_s", 600)
+
+    def runs(cwd):
+        out = []
+        for _ in range(n):
+            start = time.monotonic()
+            code, log, _, hit, timed_out = run_timed(["bash", "-c", cmd], cwd, timeout=timeout)
+            out.append({"green": code == 0 and hit is None and not timed_out, "exit": code, "timeout": timed_out,
+                        "seconds": round(time.monotonic() - start, 2), "log": log})
+        return out
+
+    head_runs = runs(worktree)
+    head_green = sum(r["green"] for r in head_runs)
+    base_runs, base_note, sha = None, None, None
+    if head_green >= s["min_pass"]:
+        sha = base_sha(worktree)
+        with base_tree(sha) as tree:
+            setup = (CONFIG.get("ft") or {}).get("setup")
+            scode = run_cmd(["bash", "-c", setup], tree)[0] if setup else 0
+            if scode == 0:
+                base_runs = runs(tree)
+            else:
+                base_note = f"ft.setup 在基线上失败（exit {scode}），基线没跑"
+    else:
+        base_note = "HEAD 达不到 min_pass，基线没跑"
+    base_green = sum(r["green"] for r in base_runs) if base_runs is not None else None
+    base_red = n - base_green if base_runs is not None else 0
+    flaky = head_green < s["min_pass"]
+    weak = None
+    if not flaky and s["base_min_fail"] and base_red < s["base_min_fail"]:
+        weak = (f"基线上 {n} 次只失败 {base_red} 次（规格要求至少 {s['base_min_fail']} 次），修复的证据弱。"
+                "approver 须在 decision.md 里回应这一条。")
+        if base_runs is None:
+            weak = f"{base_note}，修复的证据弱（规格要求基线上至少失败 {s['base_min_fail']} 次）。" \
+                   "approver 须在 decision.md 里回应这一条。"
+
+    def side(title, rs, note):
+        if rs is None:
+            return [f"## {title}", "", note, ""]
+        green = sum(r["green"] for r in rs)
+        lines = [f"## {title}", "", f"通过 {green}/{len(rs)}（{green / len(rs):.0%}）", "",
+                 "| 次 | 结果 | exit | 秒 |", "| --- | --- | --- | --- |"]
+        lines += [f"| {i} | {'pass' if r['green'] else 'fail'}{' (timeout)' if r['timeout'] else ''} "
+                  f"| {r['exit']} | {r['seconds']} |"
+                  for i, r in enumerate(rs, 1)]
+        first = next((r for r in rs if not r["green"]), None)
+        if first:
+            tail = "\n".join(first["log"].rstrip().splitlines()[-40:])
+            lines += ["", "第一次失败的输出尾部：", "", "```", tail, "```"]
+        return lines + [""]
+
+    prefix = "merge-" if name == "merge-checks" else ""
+    md = [f"# 稳定性：`{cmd}`", "",
+          f"runs {n}, min_pass {s['min_pass']}, base_min_fail {s['base_min_fail']}, timeout {timeout}s（超时算失败）", ""]
+    md += side(f"HEAD {git(worktree, 'rev-parse', 'HEAD').strip()[:7]}", head_runs, None)
+    md += side(f"基线 origin/{BASE}" + (f" {sha[:7]}" if sha else ""), base_runs, base_note)
+    (round_dir / f"{prefix}satisfaction.md").write_text("\n".join(md))
+    (round_dir / f"{prefix}satisfaction.json").write_text(json.dumps({
+        "command": cmd, "runs": n, "min_pass": s["min_pass"], "base_min_fail": s["base_min_fail"],
+        "timeout_s": timeout,
+        "head": {"green": head_green, "runs": n, "timeouts": sum(r["timeout"] for r in head_runs)},
+        "base": {"green": base_green, "runs": n, "timeouts": sum(r["timeout"] for r in base_runs)}
+        if base_runs is not None else None}) + "\n")
+    line = (f"`{cmd}`：HEAD 上通过 {head_green}/{n}（要求至少 {s['min_pass']}）；"
+            + (f"基线上通过 {base_green}/{n}（失败 {base_red}）" if base_runs is not None else base_note)
+            + f"。每次的结果与耗时见 {prefix}satisfaction.md。")
+    return {"flaky": flaky, "weak": weak, "line": line, "head": head_green, "base": base_green, "runs": n}
+
+
+# ---- Quality: complexity, duplication and mutation of the changed functions ------------------
+
+
+def quality_tools():
+    """The tools config.json quality turns on ([] when it turns nothing on)."""
+    q = CONFIG.get("quality") or {}
+    on = {"crapper": q.get("crap_max") is not None, "dryer": q.get("dry_threshold") is not None,
+          "mutator": bool(q.get("mutation"))}
+    return [name for name, wanted in on.items() if wanted]
+
+
+def first_line(root, file, line):
+    lines = (Path(root) / file).read_text(errors="replace").splitlines() if (Path(root) / file).is_file() else []
+    return lines[line - 1].strip() if 0 < line <= len(lines) else ""
+
+
+def pair_key(pair, root):
+    """A duplicate pair by its files and the first line of each side, so line shifts don't make it new."""
+    return frozenset((f, first_line(root, f, start)) for f, start, _ in pair[1:])
+
+
+class QualityRun:
+    """One quality() call: the base worktree made on first use, the tool runner, and a method per tool."""
+
+    def __init__(self, stack, env, wt, folder, rel, lines, sources, res):
+        self.stack, self.env, self.wt, self.folder, self.rel = stack, env, wt, folder, rel
+        self.lines, self.sources, self.res = lines, sources, res
+        self.q = CONFIG["quality"]
+        self.trees = {}
+
+    def base(self, setup=False):
+        """A throwaway worktree of the base, made on first use. With `setup`, ft.setup has run in it
+        (once); None when that failed."""
+        trees = self.trees
+        if "base" not in trees:
+            trees["base"] = self.stack.enter_context(base_tree(base_sha(self.wt)))
+        cmd = (CONFIG.get("ft") or {}).get("setup")
+        if setup and cmd and "setup" not in trees:
+            code, log, _, _ = run_cmd(["bash", "-c", cmd], trees["base"])
+            (self.folder / "base-setup.log").write_text(f"$ {cmd}\n{log}")
+            trees["setup"] = code == 0
+        return trees["base"] if not setup or trees.get("setup", True) else None
+
+    def run(self, name, args, cwd, tag, timeout=None):
+        code, log, timed_out, metrics = FTM.run_tool(name, args, cwd, env=self.env, timeout=timeout)
+        (self.folder / f"{tag}.log").write_text(f"$ {name} {shlex.join(args)}\n{log}")
+        FTM.save_metrics(metrics, self.folder / tag)
+        return code, timed_out, metrics
+
+    def crap_judged(self, over, tree):
+        """The complexity line once crapper ran and the base worktree (if needed) is ready."""
+        res = self.res
+        known = [s for s in self.sources if (tree / s).is_file()] if over else []
+        was = FTM.crap_scores(self.run("crapper", FTM.crap_args(known), tree, "crap-base")[2]) if known else {}
+        res["complexity"] = [(f"{ns}.{n}", v, was.get((ns, n))) for (ns, n), v in sorted(over.items())
+                             if was.get((ns, n)) is None or v > was[(ns, n)]]
+        if res["complexity"]:
+            return ("；".join(f"`{n}` {v:g}（" + ("新函数" if b is None else f"基线 {b:g}") + "）"
+                             for n, v, b in res["complexity"]) + " 超过上限，新增或变差，FAIL。")
+        return f"改动的源文件里超过上限的 {len(over)} 个函数都不比基线差，不拦。" if over else "没有超过上限的函数。"
+
+    def crap(self):
+        res, q, rel = self.res, self.q, self.rel
+        limit, label = q["crap_max"], FTM.crap_label()
+        code, _, metrics = self.run("crapper", FTM.crap_args(self.sources), self.wt, "crap")
+        over = {k: v for k, v in FTM.crap_scores(metrics).items() if v is not None and v > limit}
+        tree = self.base(setup=bool(q.get("crap_coverage"))) if over and code == 0 else None
+        if code != 0:
+            line = f"crapper exit {code}，没判（{rel}/crap.log）。"
+            res["notes"].append(f"crapper exit {code}, not judged")
+        elif over and tree is None:
+            line = f"基线的临时工作树里 `ft.setup` 失败，没判（{rel}/base-setup.log）。"
+            res["notes"].append("complexity not judged: ft.setup failed on the base")
+        else:
+            line = self.crap_judged(over, tree)
+        res["md"].append(f"- 复杂度（`crap_max` {limit}，{label}）：{line}")
+
+    def dry(self):
+        res, q, rel, lines = self.res, self.q, self.rel, self.lines
+        code, _, metrics = self.run("dryer", FTM.dry_args(q.get("dry_paths") or []), self.wt, "dry")
+        pairs = [p for p in FTM.dry_pairs(metrics) if FTM.touches(p[1], lines) or FTM.touches(p[2], lines)]
+        if code != 0:
+            line = f"dryer exit {code}，没判（{rel}/dry.log）。"
+            res["notes"].append(f"dryer exit {code}, not judged")
+        else:
+            known = {pair_key(p, self.base()) for p in FTM.dry_pairs(
+                self.run("dryer", FTM.dry_args(q.get("dry_paths") or []), self.base(), "dry-base")[2])} if pairs else set()
+            res["duplication"] = [p for p in pairs if pair_key(p, self.wt) not in known]
+            line = ("；".join(map(FTM.pair_text, res["duplication"])) + " 至少一侧在改动行上，基线上没有，FAIL。"
+                    if res["duplication"] else
+                    f"落在改动行上的 {len(pairs)} 对基线上已有，不拦。" if pairs else "改动行上没有重复。")
+        res["md"].append(f"- 重复（`dry_threshold` {q['dry_threshold']}）：{line}")
+
+    def mutation_line(self, code, timed_out, metrics, cmd, bad, timeout, sec):
+        """The mutation line, with the notes for the one-line verdict when it wasn't judged."""
+        res, rel = self.res, self.rel
+        if cmd is None:
+            res["notes"].append("mutation not judged: no test command")
+            return f"没配 `ft.mutate_test` 或 `ft.test`，没法核对 mutator 的工作副本，没判（{rel}/mutate.log）。"
+        if timed_out:
+            res["notes"].append(f"mutation timed out after {timeout}s, not judged")
+            return f"{timeout} 秒没跑完，已停掉；未完成，不判 FAIL（{rel}/mutate.log）。"
+        if code == 2:
+            res["notes"].append("mutation baseline red, not judged")
+            return f"测试在不改代码时就没过（mutator exit 2），没判（{rel}/mutate.log）。"
+        if code not in (0, 3):
+            res["notes"].append(f"mutator exit {code}, not judged")
+            return f"mutator exit {code}，没判（{rel}/mutate.log）。"
+        if bad:
+            garbage = bad.get("check") == "garbage"
+            res["notes"].append("mutation not judged: " + ("the tests don't load the mutated copy" if garbage
+                                                           else "the test command fails in mutator's overlay"))
+            return (f"{FTM.overlay_text(bad)}：每个变异体都会被算成{'存活' if garbage else '杀死'}，结果不可信，没判"
+                    f"（{rel}/mutate-overlay.jsonl）。改法：{FTM.overlay_step(bad)}。")
+        killed, survived = FTM.mutation_counts(metrics)
+        res["survivors"] = FTM.survivors(metrics, self.wt, self.lines)
+        return (f"{killed + survived} 个变异体，杀死 {killed}，{sec} 秒。" + (
+            f"改动的函数里存活 {len(res['survivors'])} 个，FAIL：\n"
+            + "\n".join(f"  - `{FTM.survivor_text(s)}`" for s in res["survivors"][:20])
+            + (f"\n  - 另 {len(res['survivors']) - 20} 个见 `{rel}/mutate.log`" if len(res["survivors"]) > 20 else "")
+            if res["survivors"] else "改动的函数里没有存活的。"))
+
+    def mutate(self):
+        folder = self.folder
+        timeout = self.q.get("mutation_timeout_s", 900)
+        start = time.monotonic()
+        code, out, timed_out, metrics, args, cmd, bad = FTM.run_mutation(
+            self.sources, self.wt, env=self.env, timeout=timeout, probes=folder / "mutate-overlay.jsonl")
+        sec = int(time.monotonic() - start)
+        (folder / "mutate.log").write_text(f"$ mutator {shlex.join(args)}\n# FT_MUTRUN_CMD={cmd}\n{out}")
+        FTM.save_metrics(metrics, folder / "mutate")
+        line = self.mutation_line(code, timed_out, metrics, cmd, bad, timeout, sec)
+        self.res["md"].append(f"- 变异测试：{line}")
+
+
+def quality(worktree, round_dir, merge):
+    """None when config.json quality turns nothing on, else {"complexity", "duplication", "survivors": what
+    fails, "md": lines for checks.md, "notes": for the one-line verdict}. Results go to round-N/quality/."""
+    tools = quality_tools()
+    if not tools:
+        return None
+    wt = Path(worktree)
+    folder = round_dir / ("merge-quality" if merge else "quality")
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir(parents=True)
+    lines = FTM.changed_lines(wt, False)
+    sources = FTM.changed_sources(lines, wt)
+    res = {"complexity": [], "duplication": [], "survivors": [], "md": [], "notes": []}
+    rel = folder.relative_to(round_dir.parent).as_posix()
+    if not sources:
+        res["md"] = [f"分支相对 origin/{BASE} 没有改动的源文件（`test_globs` 匹配的不算），没有要判的。"]
+        return res
+
+    with contextlib.ExitStack() as stack, tempfile.TemporaryDirectory(prefix="gate-gh-") as empty:
+        run = QualityRun(stack, clean_env(empty), wt, folder, rel, lines, sources, res)
+        for tool, step in (("crapper", run.crap), ("dryer", run.dry), ("mutator", run.mutate)):
+            if tool in tools:
+                step()
+    res["md"].append(f"\n报表与日志在 `{rel}/`。")
+    return res
+
+
+def gate_inputs(job_id):
+    """What the gate judges: the job, its worktree and round dir, HEAD and base, and what the diff trips."""
+    job = json.loads((JOBS / job_id / "job.json").read_text())
+    missing = FTM.tool_missing(quality_tools())
+    if missing:
+        die(f"config.json quality turns on checks whose tools aren't installed ({', '.join(missing)}): "
+            "run factory/tools/ft tools in the main checkout")
+    worktree = job["worktree"]
+    if job["round"] < 1:
+        die(f"{job_id} hasn't started a build round")
+    round_dir = JOBS / job_id / f"round-{job['round']}"
+    commit = git(worktree, "rev-parse", "HEAD").strip()
+    protected = protected_changes(worktree, job.get("allowed_tests") or []) + holdout_tampered(job)
+    unsigned = unsigned_commits(worktree)
+    changed = changed_files(worktree)
+    extra = [c for c in CONFIG.get("path_checks", [])
+             if any(fnmatch.fnmatch(f, p) for f in changed for p in c["paths"])]
+    base = base_sha(worktree)
+    return {"job": job, "worktree": worktree, "round_dir": round_dir, "commit": commit, "protected": protected,
+            "unsigned": unsigned, "changed": changed, "extra": extra, "base": base}
+
+
+def gate_run_checks(job_id, s):
+    """checks.sh (or the light check), path checks and tools; adds their results and the first verdict to `s`."""
+    worktree, commit, base, label = s["worktree"], s["commit"], s["base"], s["label"]
+    cached = cached_pass(job_id, commit, base, label)
+    if cached:
+        code, log, seconds, hit = 0, cached["log"], 0, None
+    else:
+        code, log, seconds, hit = run_checks(worktree, s["argv"])
+        if code == 0 and hit is None:
+            remember_pass(job_id, commit, base, label, log, seconds)
+    path_results = []
+    for c in s["extra"]:
+        pcode, plog, psec, phit = run_cmd(["bash", "-c", c["run"]], worktree)
+        path_results.append((c["run"], pcode, psec, phit))
+        log += f"\n$ {c['run']}\n{plog}"
+    tool_results = run_tools(s["job"], worktree, s["round_dir"])
+    tool_red = [t for t in tool_results if t[1] != 0 or t[3]]
+    checks_red = code != 0 or hit is not None
+    others_red = bool(s["protected"] or s["unsigned"] or any(r[1] != 0 or r[3] for r in path_results)
+                      or any(t[4] for t in tool_red))
+    verdict = "PASS" if not checks_red and not others_red else "FAIL"
+    red_base = None
+    if checks_red and not others_red:
+        red_base, red = base_red(worktree, s["argv"], label)
+        if red:
+            verdict = "BASE-RED"
+    s.update(cached=cached, code=code, log=log, seconds=seconds, hit=hit, path_results=path_results,
+             tool_results=tool_results, tool_red=tool_red, verdict=verdict, red_base=red_base)
+
+
+def gate_followups(s, merge):
+    """The steps that only run while the verdict is still PASS: new tests on the base, holdout, stability,
+    quality. Adds their results to `s` and may turn the verdict to FAIL."""
+    job, worktree, round_dir = s["job"], s["worktree"], s["round_dir"]
+    name = s["name"] = "merge-checks" if merge else "checks"
+    s.update(weak=None, weak_files=[], weak_note=None, held=None, held_notes=[], sat=None, qual=None)
+    if s["verdict"] == "PASS":
+        s["weak"], s["weak_files"], s["weak_note"] = weak_tests(worktree, round_dir, name)
+        if s["weak"]:
+            s["verdict"] = "FAIL"
+    if s["verdict"] == "PASS":
+        s["held"], s["held_notes"] = run_holdout(job, worktree, s["commit"], name)
+        if s["held"] in {"fail", "weak", "error"}:
+            s["verdict"] = "FAIL"
+    if s["verdict"] == "PASS":
+        s["sat"] = satisfaction(job, worktree, round_dir, name)
+        if s["sat"] and s["sat"]["flaky"]:
+            s["verdict"] = "FAIL"
+    if s["verdict"] == "PASS":
+        qual = s["qual"] = quality(worktree, round_dir, merge)
+        if qual and (qual["complexity"] or qual["duplication"] or qual["survivors"]):
+            s["verdict"] = "FAIL"
+
+
+def gate_reason(s):
+    """One cause per verdict, from config.json reasons; the first that applies wins."""
+    verdict, held, sat, qual = s["verdict"], s["held"], s["sat"], s["qual"]
+    return None if verdict == "PASS" else "base-red" if verdict == "BASE-RED" else (
+        "protected-path" if s["protected"] else "signoff" if s["unsigned"]
+        else "test-weak" if s["weak"] or held == "weak" or (qual and qual["survivors"])
+        else "flaky" if sat and sat["flaky"] else "env" if held == "error"
+        else "complexity" if qual and qual["complexity"] else "duplication" if qual and qual["duplication"]
+        else "correctness")
+
+
+def gate_text_head(s, reason):
+    """checks.md up to the path checks."""
+    bullets = lambda items, none: "\n".join(f"- {i}" for i in items) if items else none
+    held, hit = s["held"], s["hit"]
+    text = f"GATE: {s['verdict']}\nCOMMIT: {s['commit']}\n" + f"BASE: {s['base']}\n" \
+        + (f"REASON: {reason}\n" if reason else "") + (f"HOLDOUT: {held.upper()}\n" if held else "") + "\n"
+    if s["verdict"] == "BASE-RED":
+        text += (f"## Base\norigin/{BASE} at {s['red_base']} fails checks.sh by itself, so this "
+                 "branch can't be judged until the base is fixed.\n\n")
+    text += "## Protected paths\n" + bullets(s["protected"], "None changed.") + "\n\n"
+    if CONFIG.get("signoff"):
+        text += "## Sign-off\n" + bullets([f"{c} has no Signed-off-by" for c in s["unsigned"]],
+                                          "Every commit is signed off.") + "\n\n"
+    text += "## Fail patterns\n" + (f"Matched: `{hit}`" if hit else "None matched.") + "\n\n"
+    text += "## Path checks\n" + bullets(
+        [f"`{r}`: exit {c} in {t}s" + (f", matched `{h}`" if h else "") for r, c, t, h in s["path_results"]],
+        "None triggered.") + "\n\n"
+    return text
+
+
+def gate_text(s, reason):
+    """The whole checks.md (or merge-checks.md) text."""
+    bullets = lambda items, none: "\n".join(f"- {i}" for i in items) if items else none
+    job, sat, qual, held = s["job"], s["sat"], s["qual"], s["held"]
+    text = gate_text_head(s, reason)
+    if s["tool_results"]:
+        text += "## Tools\n" + bullets(
+            [f"`{n}`: exit {c} in {t}s" + (f", matched `{h}`" if h else "")
+             + ("" if c == 0 and not h else ", blocking" if b else ", not blocking: recorded only")
+             + f" (tools/{n}.log)" for n, c, t, h, b in s["tool_results"]], "") + "\n\n"
+    if s["weak_note"]:
+        text += "## New tests on the base\n" + bullets([f"`{f}`" for f in s["weak_files"]], "") \
+            + ("\n\n" if s["weak_files"] else "") + s["weak_note"] + "\n\n"
+    if job.get("holdout"):
+        text += "## 留出验收\n" + ("\n".join(s["held_notes"]) if held else "前面的检查没过，没跑。") + "\n\n"
+    if job.get("satisfaction"):
+        text += "## 稳定性\n" + (sat["line"] + ("\n\n" + sat["weak"] if sat["weak"] else "") if sat
+                                 else "前面的检查没过，没跑。") + "\n\n"
+    if quality_tools():
+        text += "## 质量\n" + ("\n".join(qual["md"]) if qual else "前面的检查没过，没跑。") + "\n\n"
+    tail = "\n".join(s["log"].rstrip().splitlines()[-TAIL:])
+    ran = (f"Reused a passing run of the same {s['label']} on this commit and base (checks-cache/)." if s["cached"]
+           else f"Ran {s['label']}: exit {s['code']} in {s['seconds']}s.")
+    return text + f"## checks.sh\n{ran} Last {TAIL} lines of {s['name']}.log:\n\n```\n{tail}\n```\n"
+
+
+def gate_notes(s):
+    """The comma-separated notes on the GATE line."""
+    label, code, seconds, hit = s["label"], s["code"], s["seconds"], s["hit"]
+    notes = [f"{label} reused (same commit and base)" if s["cached"] else
+             f"{'checks.sh' if label == 'checks.sh' else 'light check'} exit {code} in {seconds}s"]
+    if hit:
+        notes.append(f"fail pattern matched: {hit}")
+    if s["protected"]:
+        notes.append(f"protected paths changed: {', '.join(s['protected'])}")
+    if s["unsigned"]:
+        notes.append(f"not signed off: {', '.join(s['unsigned'])}")
+    notes += [f"path check failed: {r}" for r, c, _, h in s["path_results"] if c != 0 or h]
+    notes += [f"tool {n} failed" + ("" if b else " (not blocking)") for n, _, _, _, b in s["tool_red"]]
+    return notes + gate_result_notes(s)
+
+
+def gate_result_notes(s):
+    """The notes for the follow-up steps: new tests, holdout, stability, quality, base-red."""
+    notes, weak, held, sat, qual = [], s["weak"], s["held"], s["sat"], s["qual"]
+    if weak:
+        notes.append(f"new tests pass on origin/{BASE} too: {', '.join(s['weak_files'])}")
+    if held:
+        notes.append({"pass": "holdout green on HEAD, red on the base", "fail": "holdout red on HEAD",
+                      "weak": "holdout green on the base too: back to spec", "error": "holdout ft.setup failed"}[held])
+    if sat:
+        notes.append(f"satisfaction HEAD {sat['head']}/{sat['runs']}"
+                     + (f", base {sat['base']}/{sat['runs']}" if sat["base"] is not None else "")
+                     + (" (flaky)" if sat["flaky"] else ", weak evidence on the base" if sat["weak"] else ""))
+    if qual:
+        notes += [f"complexity: {', '.join(n for n, _, _ in qual['complexity'])}"] if qual["complexity"] else []
+        notes += [f"duplication: {len(qual['duplication'])} new pair(s)"] if qual["duplication"] else []
+        notes += [f"mutants survived: {len(qual['survivors'])}"] if qual["survivors"] else []
+        notes += qual["notes"]
+    if s["verdict"] == "BASE-RED":
+        notes.append(f"origin/{BASE} {s['red_base'][:7]} fails too")
+    return notes
+
+
+def gate(job_id, merge):
+    s = gate_inputs(job_id)
+    if merge:
+        reused = reuse_for_merge(job_id, s["round_dir"], s["commit"], s["base"])
+        if reused:
+            print(reused)
+            sys.exit(0)
+    s["argv"], s["label"] = checks_argv(s["changed"])
+
+    with Slot():
+        gate_run_checks(job_id, s)
+        gate_followups(s, merge)
+
+    reason = gate_reason(s)
+    (s["round_dir"] / f"{s['name']}.log").write_text(s["log"])
+    (s["round_dir"] / f"{s['name']}.md").write_text(gate_text(s, reason))
+    print(f"GATE: {s['verdict']} ({job_id} round {s['job']['round']}, {', '.join(gate_notes(s))})")
+    sys.exit({"PASS": 0, "FAIL": 1, "BASE-RED": 3}[s["verdict"]])
+
+
+def reuse_for_merge(job_id, round_dir, commit, base):
+    """The line to print when this round's checks.md already passed on exactly this commit and base: the merge
+    gate would judge the same tree against the same base, so it copies that verdict instead of running again."""
+    checks = round_dir / "checks.md"
+    if not checks.exists():
+        return None
+    text = checks.read_text()
+    head = dict(l.split(": ", 1) for l in text.split("\n\n", 1)[0].splitlines()[1:] if ": " in l)
+    if not text.startswith("GATE: PASS\n") or head.get("COMMIT") != commit or head.get("BASE") != base:
+        return None
+    note = (f"## Reused\nround-{round_dir.name.split('-')[-1]} checks.md passed on this commit ({commit[:7]}) and "
+            f"origin/{BASE} ({base[:7]}); nothing changed since, so the merge gate copies it.\n\n")
+    first, rest = text.split("\n\n", 1)
+    (round_dir / "merge-checks.md").write_text(first + "\n\n" + note + rest)
+    return f"GATE: PASS ({job_id} round {round_dir.name.split('-')[-1]}, merge gate reused checks.md: same commit and base)"
+
+
+def hook_job_id(event):
+    """The job named in the subagent's first prompt line, or None when the transcript can't say."""
+    try:
+        with open(Path(event["agent_transcript_path"]).expanduser()) as f:
+            content = json.loads(f.readline())["message"]["content"]
+        prompt = content if isinstance(content, str) else " ".join(b.get("text", "") for b in content)
+        job_id = prompt.split("Job: ", 1)[1].split(".", 1)[0]
+        return job_id if (JOBS / job_id / "job.json").is_file() else None
+    except (KeyError, IndexError, TypeError, AttributeError, ValueError, OSError, RuntimeError):
+        return None
+
+
+def hook_job_in_build():
+    """No transcript to name the job (claude.ai cloud sessions keep none): the one job in build, else None.
+    With several in build, each gets a warning event; with none there is nothing to write to."""
+    building = []
+    for p in sorted(JOBS.glob("*/job.json")):
+        try:
+            job = json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(job, dict) and job.get("stage") == "build":
+            building.append((p.parent, job))
+    if len(building) == 1:
+        return building[0][1]["id"]
+    for folder, job in building if len(building) > 1 else []:
+        line = {"ts": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "from": "build", "to": "build", "round": job.get("round"), "reason": None,
+                "cmd": "gate --hook",
+                "warning": f"builder hook skipped: no transcript and {len(building)} jobs in build"}
+        with (folder / "events.jsonl").open("a") as f:
+            f.write(json.dumps(line, ensure_ascii=False) + "\n")
+    return None
+
+
+def hook():
+    try:
+        event = json.load(sys.stdin)
+    except ValueError:
+        sys.exit(0)
+    if not isinstance(event, dict) or event.get("stop_hook_active"):
+        sys.exit(0)  # one nudge per stop; the gate decides
+    job_id = hook_job_id(event) or hook_job_in_build()
+    if job_id is None:
+        sys.exit(0)
+    job = json.loads((JOBS / job_id / "job.json").read_text())
+    wt = job["worktree"]
+    argv, label = checks_argv(changed_files(wt))
+    commit = git(wt, "rev-parse", "HEAD").strip()
+    base = git(wt, "rev-parse", f"origin/{BASE}").strip()
+    clean = git(wt, "status", "--porcelain").strip() == ""
+    if clean and cached_pass(job_id, commit, base, label):
+        sys.exit(0)
+    with Slot():
+        code, log, seconds, hit = run_checks(wt, argv)
+    if code == 0 and not hit and clean:
+        remember_pass(job_id, commit, base, label, log, seconds)
+    if code != 0 or hit:
+        tail = "\n".join(log.rstrip().splitlines()[-40:])
+        why = f"exit {code}" + (f", matched fail pattern: {hit}" if hit else "")
+        print(f"factory/checks.sh fails in your worktree ({why}). The gate will reject this build. "
+              f"Fix it, or write STATUS: BLOCKED in build.md if you can't. If the same failure is "
+              f"already on origin/{BASE} and unrelated to your change, don't fix it here: the gate "
+              f"reports that as BASE-RED.\n\n{tail}", file=sys.stderr)
+        sys.exit(2)
+
+
+def at_commit(sha):
+    """`gate --at <sha>`: checks.sh on a throwaway worktree of one commit, cached per sha.
+
+    Same checks.sh (the main checkout's), same credential stripping, gate_slots and
+    fail_patterns as the gate; no protected paths, path checks or tools: there is no
+    branch, only a commit on the base."""
+    if not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", sha):
+        die(f"--at wants a full commit sha, not {sha!r}")
+    runs = JOBS / ".watch" / "runs"
+    cache = runs / f"{sha}.json"
+    if cache.exists():
+        r = json.loads(cache.read_text())
+    else:
+        if subprocess.run(["git", "cat-file", "-e", f"{sha}^{{commit}}"], cwd=REPO, check=False).returncode != 0:
+            die(f"commit {sha[:7]} isn't in this checkout; git fetch origin {BASE} first")
+        with Slot(), base_tree(sha) as tree:
+            code, log, seconds, hit = run_checks(tree)
+        runs.mkdir(parents=True, exist_ok=True)
+        (runs / f"{sha}.log").write_text(log)
+        r = {"sha": sha, "red": code != 0 or hit is not None, "exit": code, "seconds": seconds,
+             "fail_pattern": hit, "log": f"factory/jobs/.watch/runs/{sha}.log"}
+        tmp = cache.with_suffix(".tmp")
+        tmp.write_text(json.dumps(r) + "\n")
+        tmp.replace(cache)
+    why = f"exit {r['exit']} in {r['seconds']}s" + (f", fail pattern matched: {r['fail_pattern']}" if r["fail_pattern"] else "")
+    print(f"CHECKS: {'RED' if r['red'] else 'GREEN'} ({sha[:7]}, {why})")
+    sys.exit(1 if r["red"] else 0)
+
+
+def main(argv):
+    if argv == ["--hook"]:
+        hook()
+    elif len(argv) == 2 and argv[0] == "--at":
+        at_commit(argv[1])
+    elif len(argv) == 1 and not argv[0].startswith("-"):
+        gate(argv[0], merge=False)
+    elif len(argv) == 2 and argv[1] == "--merge":
+        gate(argv[0], merge=True)
+    else:
+        die(__doc__.strip())
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

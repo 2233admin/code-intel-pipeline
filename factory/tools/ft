@@ -1,0 +1,1051 @@
+#!/usr/bin/env python3
+"""Thin wrappers the factory's agents call instead of composing long commands.
+
+Each subcommand prints one line; on failure it says what to do next and exits 1.
+
+Usage:
+  ft test [<file>...]                        the tests the change touches, with ft.test; without files:
+                                             origin/<base>...HEAD plus uncommitted and untracked files
+  ft e2e <spec>                              one e2e file with ft.e2e (its env and the job's port)
+  ft shot <url> <out.png> [--wait <selector>]
+                                             a screenshot with ft.shot
+  ft port <job>                              the job's builder port, registered with `job res` (port only)
+  ft serve <job> [<role>]                    dev_server.cmd on the role's port in the job's worktree, in its
+                                             own session; waits for ready_url, registers the pid, prints the URL
+  ft touched [--since <commit>]              the units origin/<base>...HEAD (committed only) changes, one per line,
+                                             sorted: <path>::<qualified function> or <path>::<module> for python
+                                             (ast; either side of the diff), the bare <path> for other files or a
+                                             python file that doesn't parse; test_globs files give none;
+                                             --since: diff <commit>..HEAD instead (<commit> must be an ancestor)
+  ft tools [--check]                         clone config.json quality.tools (crapper, dryer, mutator) at their
+                                             pinned commits into factory/.tools/<name>@<short>/ and run each once
+                                             (its own launcher builds its venv; needs python3 >= 3.11);
+                                             --check only says whether they are there
+  ft crap [--changed] [<path>...]            crapper: complexity (CRAP with quality.crap_coverage) per function;
+                                             FAIL above quality.crap_max (30 when unset)
+  ft dry [--changed] [<path>...]             dryer: duplicate pairs at quality.dry_threshold (0.82 when unset);
+                                             --changed keeps pairs with a side in a changed file
+  ft mutate [--changed] [<path>...]          mutator on these source files (--changed: the changed ones; survivors
+                                             only in changed functions); FAIL when a mutant survives
+
+Templates live in factory/config.json `ft` and `dev_server`, empty until the project fills them:
+  ft.test               {files}: the files; {tests}: those matching config.json test_globs
+  ft.e2e                {spec}, {port}
+  ft.shot               {url}, {out} (absolute), {selector} (empty without --wait), {session},
+                        {console}: a file the command may write page errors to, one per line,
+                        {a11y}: a file it may write axe results to (factory/bin/evidence reads both)
+  ft.setup              gate only: runs in a fresh base worktree before new tests run there
+  dev_server.cmd        {port}; runs in the job's worktree
+  dev_server.ready_url  {port}; empty means http://127.0.0.1:{port}/
+  dev_server.timeout    seconds to wait for ready_url, default 60
+  ft.mutate_test        {tests}: the test files named like the source files (heat-color.ts → heat-color.test.ts,
+                        calc.py → test_calc.py) and the branch's changed test files in a source file's directory,
+                        {files}: the source files; without it, or without such tests,
+                        ft.test with {files} = sources and tests. mutator gets --no-coverage and
+                        --max-workers = gate_slots (as the gate counts them). mutator runs it through
+                        `ft _mutrun`, which also runs it once on the unmutated source in each of mutator's
+                        worker overlays (must pass) and once with the source replaced by garbage (must fail:
+                        else the tests never load the overlay's copy and every mutant would survive); when either
+                        goes wrong, ft mutate fails and the gate doesn't judge mutation
+
+crap and dry stage a named (or, for crap, changed) extensionless file whose first line is a python shebang
+as <git dir>/ft/stage/<path>.py, because crapper and dryer pick the language by suffix; output shows the
+original path. Such scripts under quality.dry_paths or a named directory are staged too (the directory is
+still passed). ft crap with named paths FAILs when none of them yields a function (non-empty input, 0 read).
+
+crap, dry and mutate run the tool in the checkout and copy what it writes (.metrics/) to
+<git dir>/ft/<subcommand>/; .metrics/, target/mutation-workers and coverage output the run created are
+removed, so the worktree stays clean. "Changed" is origin/<base>...HEAD plus uncommitted and untracked
+files, minus files matching test_globs.
+
+Values are shell-quoted when substituted; `${NAME}` is left to the shell. A job's ports
+follow config.json `ports`: base + step*n for the builder (n is the job number, 004 → 4),
++1 reviewer-ux, +2 reviewer-ui, +3 evidence. The log of `ft test`/`ft e2e` goes to
+$FT_LOG, else <git dir>/ft/<subcommand>.log of the checkout it runs in.
+"""
+
+import ast
+import fnmatch
+import json
+import os
+import re
+import shlex
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+SELF = Path(__file__).resolve()
+REPO = SELF.parents[2]
+FACTORY = REPO / "factory"
+JOBS = FACTORY / "jobs"
+JOB = FACTORY / "bin" / "job"
+CONFIG = json.loads((FACTORY / "config.json").read_text())
+BASE = CONFIG["base_branch"]
+FT = CONFIG.get("ft") or {}
+DEV = CONFIG.get("dev_server") or {}
+ROLES = {"builder": 0, "ux": 1, "ui": 2, "evidence": 3}
+QUALITY = CONFIG.get("quality") or {}
+TOOLS = FACTORY / ".tools"
+SUB = "ft"
+
+
+def say(msg):
+    print(f"ft {SUB}: {msg}")
+    sys.exit(0)
+
+
+def fail(msg, step):
+    print(f"ft {SUB}: FAIL {msg}. 下一步：{step}", file=sys.stderr)
+    sys.exit(1)
+
+
+def git(*args, cwd=None):
+    res = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
+    return res.stdout if res.returncode == 0 else None
+
+
+def fill(template, values):
+    """Substitute {key} for the given keys, shell-quoted; leaves ${VAR} and unknown braces alone."""
+    pattern = r"(?<!\$)\{(" + "|".join(map(re.escape, values)) + r")\}"
+    return re.sub(pattern, lambda m: values[m.group(1)], template)
+
+
+def toplevel():
+    top = git("rev-parse", "--show-toplevel")
+    if top is None:
+        fail(f"{os.getcwd()} 不是 git 检出", "cd 到单子的工作树再跑")
+    return Path(top.strip())
+
+
+def log_path(top):
+    if os.environ.get("FT_LOG"):
+        return Path(os.environ["FT_LOG"])
+    gitdir = Path(git("rev-parse", "--absolute-git-dir", cwd=top).strip())
+    (gitdir / "ft").mkdir(exist_ok=True)
+    return gitdir / "ft" / f"{SUB}.log"
+
+
+def run_logged(cmd, cwd):
+    """(exit, seconds, log path) for a shell command, its output in the log."""
+    path = log_path(cwd)
+    start = time.monotonic()
+    with open(path, "w") as log:
+        log.write(f"$ {cmd}\n")
+        log.flush()
+        code = subprocess.run(["bash", "-c", cmd], cwd=cwd, stdin=subprocess.DEVNULL, stdout=log,
+                              stderr=subprocess.STDOUT, check=False).returncode
+    return code, int(time.monotonic() - start), path
+
+
+# ---- jobs and ports ----------------------------------------------------------
+
+
+def find_job(arg):
+    """job.json for a job id or issue number, or None."""
+    if not JOBS.is_dir():
+        return None
+    for path in sorted(JOBS.glob("*/job.json")):
+        job = json.loads(path.read_text())
+        if job["id"] == arg or (arg.isdigit() and job["issue"] == int(arg)):
+            return job
+    return None
+
+
+def job_here(top):
+    """The job whose worktree is the checkout `top`, or None."""
+    for path in sorted(JOBS.glob("*/job.json")) if JOBS.is_dir() else []:
+        job = json.loads(path.read_text())
+        if Path(job["worktree"]).resolve() == top.resolve():
+            return job
+    return None
+
+
+def port_of(job, role="builder"):
+    ports = CONFIG.get("ports") or {"base": 5100, "step": 10}
+    return ports["base"] + ports["step"] * int(job["id"].split("-")[0]) + ROLES[role]
+
+
+def need_job(arg):
+    job = find_job(arg)
+    if not job:
+        fail(f"没有单子 {arg}", "用 job summary 看单号")
+    return job
+
+
+def listening(port):
+    with socket.socket() as s:
+        s.settimeout(0.5)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+# ---- subcommands -------------------------------------------------------------
+
+
+def changed_files(top):
+    names = []
+    for out in (git("diff", "--name-only", f"origin/{BASE}...HEAD", cwd=top),
+                git("diff", "--name-only", "HEAD", cwd=top),
+                git("ls-files", "--others", "--exclude-standard", cwd=top)):
+        names += (out or "").splitlines()
+    seen = set()
+    return [n for n in names if n and not (n in seen or seen.add(n)) and (top / n).exists()]
+
+
+def cmd_test(files):
+    template = FT.get("test")
+    if not template:
+        say("本项目没配快速测试（factory/config.json 的 ft.test），用 factory/checks.sh")
+    top = toplevel()
+    files = files or changed_files(top)
+    if not files:
+        say(f"相对 origin/{BASE} 没有改动的文件，没有要跑的测试")
+    tests = [f for f in files if any(fnmatch.fnmatch(f, g) for g in CONFIG.get("test_globs", []))]
+    if "{tests}" in template and not tests:
+        say("改动里没有匹配 test_globs 的测试文件，没有要跑的测试")
+    cmd = fill(template, {"files": " ".join(map(shlex.quote, files)), "tests": " ".join(map(shlex.quote, tests))})
+    code, sec, log = run_logged(cmd, top)
+    if code != 0:
+        fail(f"exit {code} in {sec}s, {len(files)} 个文件，日志 {log}", "读日志末尾，修好后再跑 ft test")
+    say(f"PASS in {sec}s（{len(files)} 个文件，{len(tests)} 个测试文件）")
+
+
+def cmd_e2e(spec):
+    template = FT.get("e2e")
+    if not template:
+        fail("本项目没配 e2e（factory/config.json 的 ft.e2e）", "让人在 config.json 填 ft.e2e，或改用 checks.sh")
+    top = toplevel()
+    values = {"spec": shlex.quote(spec)}
+    if "{port}" in template:
+        job = job_here(top)
+        if not job:
+            fail(f"{top} 不是哪张单的工作树，不知道用哪个端口", "cd 到单子的工作树再跑")
+        values["port"] = str(port_of(job))
+    code, sec, log = run_logged(fill(template, values), top)
+    if code != 0:
+        fail(f"{spec} exit {code} in {sec}s，日志 {log}", "读日志末尾，修好后再跑 ft e2e")
+    say(f"PASS {spec} in {sec}s")
+
+
+def cmd_shot(url, out, selector):
+    template = FT.get("shot")
+    if not template:
+        fail("本项目没配截图（factory/config.json 的 ft.shot）", "让人在 config.json 填 ft.shot")
+    out = Path(out).resolve()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    console, a11y = out.with_suffix(".console.txt"), out.with_suffix(".a11y.json")
+    for p in (out, console, a11y):
+        p.unlink(missing_ok=True)
+    top = git("rev-parse", "--show-toplevel")
+    job = job_here(Path(top.strip())) if top else None
+    session = os.environ.get("FT_SESSION") or (f"{job['id']}-shot" if job else "ft-shot")
+    cmd = fill(template, {"url": shlex.quote(url), "out": shlex.quote(str(out)), "selector": shlex.quote(selector or ""),
+                          "session": shlex.quote(session), "console": shlex.quote(str(console)),
+                          "a11y": shlex.quote(str(a11y))})
+    res = subprocess.run(["bash", "-c", cmd], stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
+    if res.returncode != 0:
+        tail = (res.stderr or res.stdout).strip().splitlines()[-1:] or [""]
+        fail(f"exit {res.returncode}: {tail[0][:200]}", "确认页面能打开（curl 一下 URL）、ft.shot 的命令能单独跑通")
+    if not out.exists() or out.stat().st_size == 0:
+        fail(f"命令跑完没有生成 {out}", "ft.shot 的命令要把截图写到 {out}（已是绝对路径；agent-browser 会把以 . 开头的参数当成选择器）")
+    say(f"{out}（{out.stat().st_size} 字节）")
+
+
+def cmd_port(arg):
+    job = need_job(arg)
+    port = port_of(job)
+    res = subprocess.run([str(JOB), "res", job["id"], "add", "--port", str(port), "--label", "builder port"],
+                         capture_output=True, text=True, check=False)
+    if res.returncode != 0:
+        fail(f"登记端口 {port} 失败：{res.stderr.strip()}", "看 job res 的报错")
+    print(port)
+
+
+def registered_running(job, port):
+    """`job res list` entries on this port that are still running: [(pid, label)]."""
+    out = subprocess.run([str(JOB), "res", job["id"], "list"], capture_output=True, text=True, check=False).stdout
+    hits = []
+    for line in out.splitlines():
+        m = re.match(r"pid (\d+) port (\d+)(?: \((.*)\))?\trunning\t", line)
+        if m and int(m.group(2)) == port:
+            hits.append((int(m.group(1)), m.group(3) or ""))
+    return hits
+
+
+def cmd_serve(arg, role):
+    role = role.removeprefix("reviewer-")
+    if role not in ROLES:
+        fail(f"不认识的角色 {role}", f"用 {', '.join(ROLES)} 之一")
+    cmd = DEV.get("cmd")
+    if not cmd:
+        fail("本项目没配 dev server（factory/config.json 的 dev_server.cmd）", "让人在 config.json 填 dev_server.cmd")
+    job = need_job(arg)
+    worktree = Path(job["worktree"])
+    if not worktree.is_dir():
+        fail(f"工作树 {worktree} 不存在", "单子还没到 spec 阶段，或已经合并")
+    port = port_of(job, role)
+    ready = fill(DEV.get("ready_url") or "http://127.0.0.1:{port}/", {"port": str(port)})
+    parts = urllib.parse.urlsplit(ready)
+    root = f"{parts.scheme}://{parts.netloc}/"
+    label = f"dev server {role}"
+    if listening(port):
+        mine = [pid for pid, lab in registered_running(job, port) if lab == label]
+        if mine:
+            say(f"{root}（已在运行，pid {mine[0]}，{role}）")
+        fail(f"端口 {port} 已被占用，又不是本单登记的 {label}",
+             f"factory/bin/job res {job['id']} list 看登记的进程；不是登记的就查 `ss -ltnp | grep :{port}`，不要用 pkill -f")
+    log = JOBS / job["id"] / f"serve-{role}.log"
+    timeout = float(DEV.get("timeout") or 60)
+    with open(log, "w") as f:
+        proc = subprocess.Popen(["bash", "-c", fill(cmd, {"port": str(port)})], cwd=worktree,
+                                stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
+
+    def stop():  # our own child, still a group leader: safe to signal its group
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+            proc.wait(timeout=5)
+        except (ProcessLookupError, subprocess.TimeoutExpired):
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    deadline = time.monotonic() + timeout
+    while True:
+        if proc.poll() is not None:
+            fail(f"dev server 退出了（exit {proc.returncode}），日志 {log}", "读日志；端口和依赖对不对")
+        try:
+            urllib.request.urlopen(ready, timeout=2).close()
+            break
+        except urllib.error.HTTPError:
+            break  # it answered
+        except (TimeoutError, urllib.error.URLError, ConnectionError, OSError):
+            pass
+        if time.monotonic() > deadline:
+            stop()
+            fail(f"{ready} 在 {int(timeout)} 秒内没响应，已停掉它，日志 {log}", "读日志；启动慢就调大 dev_server.timeout")
+        time.sleep(0.25)
+    res = subprocess.run([str(JOB), "res", job["id"], "add", "--pid", str(proc.pid), "--port", str(port),
+                          "--label", label], capture_output=True, text=True, check=False)
+    if res.returncode != 0:
+        stop()
+        fail(f"登记 pid {proc.pid} 失败，已停掉它：{res.stderr.strip()}", "看 job res 的报错")
+    say(f"{root}（pid {proc.pid}，{role}，日志 {log}）")
+
+
+# ---- quality tools: unclebob/crapper, dryer, mutator (0BSD), run at pinned commits ----------------
+
+TOOL_OUTPUTS = (".metrics", "target/mutation-workers", "target/coverage", "coverage")
+NEEDS = {"mutator": ["crapper"]}  # mutator takes function names and namespaces from crapper
+EDN_TOKEN = re.compile(r'[^\s,\[\]{}()"]+')
+EDN_STRING = re.compile(r'"((?:[^"\\]|\\.)*)"', re.DOTALL)
+
+
+def slot_count():
+    """config.json gate_slots; "auto" is half the CPUs (from `job doctor`'s .capabilities.json when it exists)."""
+    slots = CONFIG.get("gate_slots", "auto")
+    if slots == "auto":
+        caps = JOBS / ".capabilities.json"
+        cpus = json.loads(caps.read_text()).get("cpus") if caps.exists() else None
+        return max(1, (cpus or os.cpu_count() or 1) // 2)
+    return max(1, int(slots))
+
+
+def edn(text):
+    """The EDN these tools write, as Python: maps, vectors and lists, strings, keywords (without the colon),
+    numbers, nil and booleans."""
+    pos = 0
+
+    def skip():
+        """Past whitespace, commas and ; comments; returns the next character."""
+        nonlocal pos
+        while pos < len(text) and text[pos] in " \t\r\n,;":
+            if text[pos] == ";":
+                end = text.find("\n", pos)
+                pos = len(text) if end < 0 else end
+            else:
+                pos += 1
+        return text[pos] if pos < len(text) else ""
+
+    def value():
+        nonlocal pos
+        c = skip()
+        if not c:
+            raise ValueError("EDN ends early")
+        if c in "{[(":
+            close, items = {"{": "}", "[": "]", "(": ")"}[c], []
+            pos += 1
+            while skip() != close:
+                items.append(value())
+            pos += 1
+            return dict(zip(items[::2], items[1::2])) if c == "{" else items
+        if c == '"':
+            m = EDN_STRING.match(text, pos)
+            pos = m.end()
+            return json.loads(f'"{m.group(1)}"')
+        tok = EDN_TOKEN.match(text, pos).group()
+        pos += len(tok)
+        if tok in ("nil", "true", "false"):
+            return {"nil": None, "true": True, "false": False}[tok]
+        if tok.startswith(":"):
+            return tok[1:]
+        for kind in (int, float):
+            try:
+                return kind(tok)
+            except ValueError:
+                pass
+        return tok
+
+    return value()
+
+
+def setting(key, default):
+    """quality.<key>, or `default` when it is unset (null): the gate leaves that check off, ft still runs it."""
+    return default if QUALITY.get(key) is None else QUALITY[key]
+
+
+def tool_dir(name):
+    commit = ((QUALITY.get("tools") or {}).get(name) or {}).get("commit") or ""
+    return TOOLS / f"{name}@{commit[:7]}"
+
+
+def tool_missing(names):
+    """`<name>@<short>` for each of `names`, and what they need, that `ft tools` hasn't finished installing."""
+    want = dict.fromkeys(n for x in names for n in [x, *NEEDS.get(x, [])])
+    return [tool_dir(n).name for n in want if not (tool_dir(n) / ".ft-ready").is_file()]
+
+
+def is_python_script(path):
+    """A regular file whose name has no '.' and whose first line is a python shebang."""
+    if "." in path.name or not path.is_file():
+        return False
+    with path.open("rb") as f:
+        first = f.readline(256)
+    return first.startswith(b"#!") and b"python" in first
+
+
+def script_files(path, root):
+    """The python scripts `path` (inside `root`) names: itself, or those under it when it is a directory
+    (not into .git, nor out through a symlink)."""
+    found = [path]
+    if path.is_dir():
+        found = []
+        for here, dirs, names in os.walk(path):
+            dirs[:] = [d for d in dirs if d != ".git"]
+            found += [Path(here) / n for n in sorted(names)]
+    return [f for f in found if f.resolve().is_relative_to(root) and is_python_script(f)]
+
+
+def stage_scripts(args, cwd):
+    """(args with extensionless python scripts replaced by copies at <git dir>/ft/stage/<path>.py, {copy: path}).
+
+    A directory argument stays and the scripts under it are appended as copies. The tools report a file inside
+    the project root relative to it, so a copy inside `cwd` is mapped back under that form too.
+    crapper and dryer pick the language by suffix, so they would skip these scripts."""
+    cwd = Path(cwd)
+    gitdir = (git("rev-parse", "--absolute-git-dir", cwd=cwd) or "").strip()
+    if not gitdir:
+        return list(args), {}
+    stage = Path(gitdir) / "ft" / "stage"
+    shutil.rmtree(stage, ignore_errors=True)
+    root = cwd.resolve()
+    out, extra, staged = [], [], {}
+
+    def copy_of(script):
+        rel = script.resolve().relative_to(root).as_posix()
+        copy = stage / f"{rel}.py"
+        if str(copy) not in staged:
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(script, copy)
+            staged[str(copy)] = rel
+            if copy.resolve().is_relative_to(root):
+                staged[copy.resolve().relative_to(root).as_posix()] = rel
+        return str(copy)
+
+    for a in args:
+        path = cwd / a
+        scripts = [] if a.startswith("-") or not path.resolve().is_relative_to(root) else script_files(path, root)
+        if path.is_dir() or not scripts:
+            out.append(a)
+        else:
+            out.append(copy_of(scripts[0]))
+        if path.is_dir():
+            extra += [copy_of(f) for f in scripts]
+    return out + [c for c in extra if c not in out], staged
+
+
+def unstage(text, staged):
+    """`text` with the staged copies' paths and namespaces replaced by the original script's."""
+    for copy, rel in staged.items():
+        text = text.replace(copy, rel)
+        base = copy.removesuffix(".py")
+        text = re.sub(r"\.?" + re.escape(base.replace("/", ".")) + r"(?![\w-])", rel.replace("/", "."), text)
+    return text
+
+
+def run_tool(name, args, cwd, env=None, timeout=None):
+    """(exit, output, timed out, {path under .metrics/: text}) for one run of a quality tool in `cwd`.
+
+    The tool's own launcher runs in its own process group; on timeout that group is killed by the pid this
+    started, never by name, and the exit is 124. Of TOOL_OUTPUTS, whatever the run created is removed."""
+    cwd = Path(cwd)
+    staged = {}
+    if name in ("crapper", "dryer"):
+        args, staged = stage_scripts(args, cwd)
+    before = {p for p in (*TOOL_OUTPUTS, "target") if (cwd / p).exists()}
+    env = dict(os.environ if env is None else env)
+    if name == "mutator":
+        env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(tool_dir("crapper") / "src"), env.get("PYTHONPATH")]))
+    proc = subprocess.Popen([str(tool_dir(name) / name), *args], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+    try:
+        out, timed_out = proc.communicate(timeout=timeout)[0], False
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        out, timed_out = proc.communicate()[0], True
+    root = cwd / ".metrics"
+    metrics = {p.relative_to(root).as_posix(): unstage(p.read_text(errors="replace"), staged)
+               for p in sorted(root.rglob("*")) if p.is_file()} if root.is_dir() else {}
+    for rel in TOOL_OUTPUTS:
+        if rel not in before and (cwd / rel).exists():
+            shutil.rmtree(cwd / rel, ignore_errors=True)
+    if "target" not in before and (cwd / "target").is_dir() and not any((cwd / "target").iterdir()):
+        (cwd / "target").rmdir()
+    return (124 if timed_out else proc.returncode), out or "", timed_out, metrics
+
+
+def save_metrics(metrics, dest):
+    shutil.rmtree(dest, ignore_errors=True)
+    for rel, text in metrics.items():
+        (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+        (dest / rel).write_text(text)
+
+
+def is_test(path):
+    return any(fnmatch.fnmatch(path, g) for g in CONFIG.get("test_globs", []))
+
+
+def changed_lines(top, worktree_too):
+    """{path: new-side line numbers} the branch adds or changes against origin/<base> (with worktree_too also
+    uncommitted edits, and untracked files whole). A deletion marks the lines on either side of it."""
+    base = f"origin/{BASE}"
+    if worktree_too:
+        base = (git("merge-base", base, "HEAD", cwd=top) or "").strip()
+    out = git("diff", "-U0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/",
+              base if worktree_too else f"{base}...HEAD", cwd=top) if base else None
+    lines, path = {}, None
+    for line in (out or "").splitlines():
+        if line.startswith("+++ "):
+            path = line[6:] if line.startswith("+++ b/") else None
+            if path:
+                lines.setdefault(path, set())
+        elif line.startswith("@@") and path:
+            m = re.match(r"@@ -\S+ \+(\d+)(?:,(\d+))? @@", line)
+            start, count = int(m.group(1)), int(m.group(2) or 1)
+            lines[path].update(range(start, start + count) if count else (start, start + 1))
+    for name in (git("ls-files", "--others", "--exclude-standard", cwd=top) or "").splitlines() if worktree_too else []:
+        if (top / name).is_file():
+            lines[name] = set(range(1, (top / name).read_bytes().count(b"\n") + 2))
+    return lines
+
+
+def blob(top, rev, path):
+    """The file's text at rev (None when absent), undecodable bytes replaced."""
+    res = subprocess.run(["git", "show", f"{rev}:{path}"], cwd=top, capture_output=True, check=False)
+    return res.stdout.decode("utf-8", "replace") if res.returncode == 0 else None
+
+
+def python_text(path, text):
+    if path.endswith(".py"):
+        return True
+    first = (text or "").split("\n", 1)[0]
+    return "." not in path.rsplit("/", 1)[-1] and first.startswith("#!") and "python" in first
+
+
+def function_spans(tree):
+    """[(start, end, qualified name)] for every def, from its first decorator to end_lineno."""
+    spans = []
+
+    def walk(node, prefix):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                name = prefix + child.name
+                if not isinstance(child, ast.ClassDef):
+                    start = min([child.lineno, *(d.lineno for d in child.decorator_list)])
+                    spans.append((start, child.end_lineno, name))
+                walk(child, name + ".")
+            else:
+                walk(child, prefix)
+
+    walk(tree, "")
+    return spans
+
+
+def side_units(path, text, lines):
+    """{unit} for these (non-blank) changed line numbers of one side; None when the source doesn't parse."""
+    if not lines:
+        return set()
+    try:
+        spans = function_spans(ast.parse(text))
+    except (SyntaxError, ValueError):
+        return None
+    units = set()
+    for n in lines:
+        inside = [s for s in spans if s[0] <= n <= s[1]]
+        units.add(f"{path}::{min(inside, key=lambda s: s[1] - s[0])[2] if inside else '<module>'}")
+    return units
+
+
+def diff_sides(patch):
+    """({old line numbers}, {new line numbers}) of the non-blank lines a -U0 patch removes and adds."""
+    old, new = set(), set()
+    o = n = 0
+    in_hunk = False
+    for line in patch.splitlines():
+        m = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", line)
+        if line.startswith("diff "):
+            in_hunk = False
+        elif m:
+            in_hunk = True
+            o, n = int(m.group(1)), int(m.group(2))
+        elif not in_hunk:
+            continue
+        elif line.startswith("-"):
+            if line[1:].strip():
+                old.add(o)
+            o += 1
+        elif line.startswith("+"):
+            if line[1:].strip():
+                new.add(n)
+            n += 1
+    return old, new
+
+
+def file_units(top, mb, status, old_path, new_path):
+    path = old_path if status == "D" else new_path
+    if is_test(path) or (not CONFIG.get("test_globs") and fnmatch.fnmatch(path, "*/tests/*")):
+        return set()
+    old = blob(top, mb, old_path) if status != "A" else None
+    new = blob(top, "HEAD", new_path) if status != "D" else None
+    if not all(python_text(p, t) for p, t in ((old_path, old), (new_path, new)) if t is not None):
+        return {path}
+    patch = git("diff", "-U0", "--no-color", "--no-ext-diff", "-M", mb, "HEAD", "--", old_path, new_path, cwd=top) or ""
+    old_lines, new_lines = diff_sides(patch)
+    units = set()
+    for text, lines in ((old, old_lines), (new, new_lines)):
+        found = side_units(path, text, lines)
+        if found is None:
+            return {path}
+        units |= found
+    return units or ({path} if status == "R" else set())
+
+
+def touched_start(top, args):
+    """The commit the touched diff starts from: --since <commit>, else the merge-base with origin/<base>."""
+    if args and (args[0] != "--since" or len(args) != 2):
+        fail(f"touched 只接受 --since <commit>（得到 {' '.join(args)}）", "直接跑 ft touched，或 ft touched --since <commit>")
+    if args:
+        since = (git("rev-parse", "--verify", "--quiet", f"{args[1]}^{{commit}}", cwd=top) or "").strip()
+        if not since or git("merge-base", "--is-ancestor", since, "HEAD", cwd=top) is None:
+            fail(f"--since {args[1]} 不是 HEAD 的祖先提交", "给一个本分支上的提交")
+        return since
+    base = f"origin/{BASE}"
+    mb = (git("merge-base", base, "HEAD", cwd=top) or "").strip()
+    if not mb:
+        fail(f"算不出 {base} 和 HEAD 的 merge-base", f"git fetch origin，确认 {base} 存在")
+    return mb
+
+
+def cmd_touched(args):
+    top = toplevel()
+    mb = touched_start(top, args)
+    raw = git("diff", "--raw", "-z", "-M", "--no-abbrev", mb, "HEAD", cwd=top) or ""
+    fields = raw.split("\0")
+    units, i = set(), 0
+    while i < len(fields) and fields[i].startswith(":"):
+        status = fields[i].split()[-1][0]
+        if status in "RC":
+            old_path, new_path, i = fields[i + 1], fields[i + 2], i + 3
+        else:
+            old_path = new_path = fields[i + 1]
+            i += 2
+        units |= file_units(top, mb, "R" if status in "RC" else status, old_path, new_path)
+    for unit in sorted(units):
+        print(unit)
+
+
+def changed_sources(lines, top):
+    return sorted(p for p in lines if (top / p).is_file() and not is_test(p))
+
+
+def crap_args(paths):
+    return ([] if QUALITY.get("crap_coverage") else ["--no-coverage"]) + list(paths)
+
+
+def crap_label():
+    return "CRAP" if QUALITY.get("crap_coverage") else "CC"
+
+
+def crap_scores(metrics):
+    """{(namespace, name): score} from crap.edn: CRAP, or complexity when coverage is N/A; a repeated name
+    keeps its worst."""
+    out = {}
+    for e in (edn(metrics["crap.edn"]) if "crap.edn" in metrics else {}).get("entries") or []:
+        score = e.get("crap") if e.get("crap") is not None else e.get("complexity")
+        key = (e.get("namespace"), e.get("name"))
+        out[key] = max(score, out.get(key, score))
+    return out
+
+
+def dry_args(paths):
+    return ["--edn", "--threshold", str(setting("dry_threshold", 0.82)), *paths]
+
+
+def dry_pairs(metrics):
+    """[(score, (file, start, end), (file, start, end))] from dry.edn."""
+    out = []
+    for c in (edn(metrics["dry.edn"]) if "dry.edn" in metrics else {}).get("candidates") or []:
+        sides = [(s["file"], s["start-line"], s["end-line"]) for s in (c["left"], c["right"])]
+        out.append((c["score"], *sides))
+    return out
+
+
+def touches(side, lines):
+    file, start, end = side
+    return bool(lines.get(file, set()) & set(range(start, end + 1)))
+
+
+def pair_text(pair):
+    return f"{pair[1][0]}:{pair[1][1]}-{pair[1][2]} ↔ {pair[2][0]}:{pair[2][1]}-{pair[2][2]}（{pair[0]:.2f}）"
+
+
+def stem(path, test=False):
+    """heat-color.ts → heat-color; heat-color.test.ts, test_calc.py, calc_test.go → heat-color, calc, calc."""
+    name = Path(path).name.rsplit(".", 1)[0]
+    if test:
+        for suffix in (".test", ".spec", "_test", "_spec"):
+            if name.endswith(suffix):
+                return name[: -len(suffix)]
+        return name.removeprefix("test_")
+    return name
+
+
+def mutate_args(sources, top):
+    """(mutator's arguments, the test command or None). The arguments are --no-coverage, --max-workers and, when
+    there is a command (ft.mutate_test, else ft.test), --test-command `ft _mutrun`, which runs it (see cmd_mutrun)."""
+    files = (git("ls-files", "--cached", "--others", "--exclude-standard", cwd=top) or "").splitlines()
+    stems = {stem(s) for s in sources}
+    dirs = {Path(s).parent for s in sources}
+    changed = {f for f in changed_lines(top, True) if is_test(f) and Path(f).parent in dirs}
+    tests = sorted(f for f in set(files) if is_test(f) and (top / f).is_file()
+                   and (stem(f, test=True) in stems or f in changed))
+    quote = lambda xs: " ".join(map(shlex.quote, xs))
+    cmd = None
+    if FT.get("mutate_test") and tests:
+        cmd = fill(FT["mutate_test"], {"tests": quote(tests), "files": quote(sources)})
+    elif FT.get("test"):
+        cmd = fill(FT["test"], {"files": quote([*sources, *tests]), "tests": quote(tests)})
+    wrapped = ["--test-command", f"{shlex.quote(sys.executable)} {shlex.quote(str(SELF))} _mutrun"] if cmd else []
+    return ["--no-coverage", "--max-workers", str(slot_count()), *wrapped, *sources], cmd
+
+
+def run_mutation(sources, top, env=None, timeout=None, probes=None):
+    """mutator on `sources` in `top`: (exit, output, timed out, metrics, arguments, test command, overlay failure).
+
+    mutator checks its baseline in `top` but runs each mutant in a symlink overlay under target/mutation-workers.
+    A test command that can't run there at all (`pnpm exec` reinstalling, a path it can't resolve) fails for every
+    mutant, which mutator counts as killed: a clean report about nothing. So `ft _mutrun` also runs the command
+    once per overlay on the unmutated source; the first such run that fails is returned as the overlay failure
+    ({"code", "worker", "tail"}), and then the report means nothing. `probes` is where those runs are logged."""
+    args, cmd = mutate_args(sources, top)
+    env = dict(os.environ if env is None else env)
+    log = Path(probes) if probes else Path(tempfile.mkstemp(prefix="ft-mutrun-", suffix=".jsonl")[1])
+    log.write_text("")
+    if cmd:
+        env.update(FT_MUTRUN_CMD=cmd, FT_MUTRUN_ROOT=str(Path(top).resolve()), FT_MUTRUN_LOG=str(log),
+                   FT_MUTRUN_SOURCES=json.dumps(sources))
+    code, out, timed_out, metrics = run_tool("mutator", args, top, env=env, timeout=timeout)
+    runs = [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
+    if not probes:
+        log.unlink()
+    bad = next((r for r in runs if (r["code"] != 0) == (r.get("check", "unmutated") == "unmutated")), None)
+    return code, out, timed_out, metrics, args, cmd, bad
+
+
+def overlay_text(bad):
+    """One line for an overlay failure."""
+    if bad.get("check") == "garbage":
+        return "测试在 mutator 的工作副本里没有加载被变异的文件（把它换成乱码测试仍然通过，多半导入了原目录里的同名模块）"
+    tail = [l.strip() for l in bad["tail"].splitlines() if l.strip()]
+    errors = [l for l in tail if re.search(r"\berr|error|fail|not found|no such", l, re.IGNORECASE) and not l.startswith("at ")]
+    return f"测试命令在 mutator 的工作副本里不改代码也失败（exit {bad['code']}：{((errors or tail or [''])[0])[:160]}）"
+
+
+def overlay_step(bad):
+    return OVERLAY_LOAD_STEP if bad.get("check") == "garbage" else OVERLAY_STEP
+
+
+OVERLAY_LOAD_STEP = ("查测试启动时有没有按真实路径把原目录放进导入路径：mutator 的副本里除被变异的文件外都是符号链接，"
+                     "`Path(__file__).resolve()`、`realpath` 会解析回原检出（如 conftest 里 `sys.path.insert(0, <resolve 出的目录>)`），"
+                     "改成不解析链接的路径；确认的办法是把源文件改坏一行，看副本里的测试会不会失败")
+
+
+OVERLAY_STEP = ("让测试命令在符号链接的工作副本里也能跑：别用会检查或重装依赖的包装（`pnpm exec`、`npx`、`uv run`），"
+                "直接调 node_modules/.bin/<工具> 或环境里的可执行文件")
+
+
+GARBAGE = b"@@ ft _mutrun: not source code @@ (\n"
+
+
+def cmd_mutrun(args):
+    """mutator's --test-command: FT_MUTRUN_CMD in bash. In a mutator overlay (cwd under
+    target/mutation-workers/run-*/worker-*), the first call there first checks the overlay twice, with the
+    worker's copies of FT_MUTRUN_SOURCES set to (1) the unmutated source, which must pass, and (2) a line no
+    language parses, which must fail; a pass there means the tests never loaded the copy (they import the
+    original tree), so every mutant would survive. Both runs go to FT_MUTRUN_LOG; the mutant is put back and
+    run as usual, and this exits with that run's code."""
+    cmd = os.environ["FT_MUTRUN_CMD"]
+    cwd = Path.cwd()
+    worker = next((p for p in (cwd, *cwd.parents) if p.name.startswith("worker-") and p.parent.name.startswith("run-")
+                   and p.parent.parent.name == "mutation-workers"), None)
+    if worker is not None and not (worker / ".ft-probed").exists():
+        (worker / ".ft-probed").write_text("")
+        root = Path(os.environ["FT_MUTRUN_ROOT"])
+        copies = [(worker / rel, root / rel) for rel in json.loads(os.environ.get("FT_MUTRUN_SOURCES", "[]"))]
+        copies = [(c, o) for c, o in copies if c.is_file() and not c.is_symlink() and o.is_file()]
+        mutants = [(c, c.read_bytes()) for c, _ in copies]
+        runs = []
+        try:
+            for check, content in (("unmutated", lambda o: o.read_bytes()), ("garbage", lambda o: GARBAGE)):
+                if check == "garbage" and not copies:
+                    break
+                for c, o in copies:
+                    c.write_bytes(content(o))
+                res = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False)
+                runs.append({"check": check, "code": res.returncode, "worker": str(worker),
+                             "tail": (res.stdout + res.stderr)[-2000:]})
+        finally:
+            for c, mutant in mutants:
+                c.write_bytes(mutant)
+        with open(os.environ["FT_MUTRUN_LOG"], "a") as f:
+            f.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in runs)
+    sys.exit(subprocess.run(["bash", "-c", cmd], stdin=subprocess.DEVNULL, check=False).returncode)
+
+
+def mutation_counts(metrics):
+    """(killed, survived) over every form in .metrics/mutate/."""
+    forms = [f for rel, text in metrics.items() if rel.startswith("mutate/") and rel.endswith(".edn")
+             for f in edn(text).get("forms") or []]
+    return sum(f.get("killed") or 0 for f in forms), sum(f.get("survived") or 0 for f in forms)
+
+
+def survivors(metrics, top, lines=None):
+    """Sorted (file, line, original, replacement) of surviving mutants; with `lines`, only in functions
+    that have a changed line."""
+    out = set()
+    for rel, text in metrics.items():
+        if not (rel.startswith("mutate/") and rel.endswith(".edn")):
+            continue
+        snap = edn(text)
+        forms = {(f.get("file") or snap.get("source"), f["id"]): f for f in snap.get("forms") or []}
+        for key, status in (snap.get("outcomes") or {}).items():
+            if status != "survived":
+                continue
+            file, _, form_id, start, _, original, replacement = json.loads(key)
+            form = forms.get((file, form_id))
+            if lines is not None and not (form and touches((file, form["line"], form["end-line"]), lines)):
+                continue
+            line = (top / file).read_bytes()[:start].count(b"\n") + 1  # offsets are UTF-8 bytes
+            out.add((file, line, original, replacement))
+    return sorted(out)
+
+
+def survivor_text(s):
+    return f"{s[0]}:{s[1]} {s[2]} → {s[3] or '（删掉）'}"
+
+
+def parse_paths(args):
+    paths = [a for a in args if a != "--changed"]
+    if any(a.startswith("-") for a in paths):
+        fail(f"不认识的参数 {' '.join(a for a in paths if a.startswith('-'))}", f"ft {SUB} [--changed] [<路径>...]")
+    return "--changed" in args, paths
+
+
+def run_here(name, args, top, timeout=None):
+    """Run a tool in the checkout `top`: (exit, timed out, metrics, log, folder its .metrics went to)."""
+    missing = tool_missing([name])
+    if missing:
+        fail(f"没装 {', '.join(missing)}", "factory/tools/ft tools")
+    start = time.monotonic()
+    code, out, timed_out, metrics = run_tool(name, args, top, timeout=timeout)
+    log = log_path(top)
+    log.write_text(f"$ {name} {shlex.join(args)}\n{out}\n# {int(time.monotonic() - start)}s, exit {code}\n")
+    dest = log.with_suffix("")
+    save_metrics(metrics, dest)
+    return code, timed_out, metrics, log, dest
+
+
+def cmd_crap(args):
+    changed, paths = parse_paths(args)
+    top = toplevel()
+    if changed:
+        paths = changed_sources(changed_lines(top, True), top)
+        if not paths:
+            say(f"相对 origin/{BASE} 没有改动的源文件")
+    code, _, metrics, log, dest = run_here("crapper", crap_args(paths), top)
+    if code != 0:
+        fail(f"crapper exit {code}，日志 {log}", "读日志末尾")
+    if not changed and not crap_scores(metrics) and any((top / p).is_file() and (top / p).stat().st_size for p in paths):
+        fail(f"读到 0 个函数，可能是扩展名不被识别（{' '.join(paths)}）（日志 {log}）",
+             "确认文件扩展名，无扩展名的 python 脚本首行要有 #!…python 的 shebang")
+    scores = {f"{ns}.{n}": s for (ns, n), s in crap_scores(metrics).items() if s is not None}
+    limit, label = setting("crap_max", 30), crap_label()
+    over = sorted(((s, n) for n, s in scores.items() if s > limit), reverse=True)
+    if over:
+        fail(f"{len(over)} 个函数的 {label} 超过 {limit}：" + "、".join(f"{n} {s:g}" for s, n in over[:5])
+             + f"（报表 {dest}/crap.edn）", "拆分函数或补测试；门禁只拦新增的或比基线变差的")
+    worst = max(scores.items(), key=lambda kv: kv[1], default=None)
+    say(f"PASS {len(scores)} 个函数" + (f"，{label} 最高 {worst[0]} {worst[1]:g}" if worst else "")
+        + f"（上限 {limit}，报表 {dest}/crap.edn）")
+
+
+def cmd_dry(args):
+    changed, paths = parse_paths(args)
+    top = toplevel()
+    files = None
+    if changed:
+        files = set(changed_sources(changed_lines(top, True), top))
+        if not files:
+            say(f"相对 origin/{BASE} 没有改动的源文件")
+        paths = QUALITY.get("dry_paths") or []
+    code, _, metrics, log, dest = run_here("dryer", dry_args(paths), top)
+    if code != 0:
+        fail(f"dryer exit {code}，日志 {log}", "读日志末尾")
+    pairs = [p for p in dry_pairs(metrics) if files is None or p[1][0] in files or p[2][0] in files]
+    th = setting("dry_threshold", 0.82)
+    if pairs:
+        fail(f"{len(pairs)} 对相似度 ≥{th} 的重复：" + "、".join(map(pair_text, pairs[:3]))
+             + f"（报表 {dest}/dry.edn）", "把重复的结构提成一处；门禁只拦落在改动行上、基线上没有的")
+    say(f"PASS 没有相似度 ≥{th} 的重复（报表 {dest}/dry.edn）")
+
+
+def cmd_mutate(args):
+    changed, paths = parse_paths(args)
+    top = toplevel()
+    lines = None
+    if changed:
+        lines = changed_lines(top, True)
+        paths = changed_sources(lines, top)
+        if not paths:
+            say(f"相对 origin/{BASE} 没有改动的源文件")
+    elif not paths:
+        fail("没点名源文件", "ft mutate <源文件>...，或 ft mutate --changed")
+    timeout = QUALITY.get("mutation_timeout_s", 900)
+    missing = tool_missing(["mutator"])
+    if missing:
+        fail(f"没装 {', '.join(missing)}", "factory/tools/ft tools")
+    if mutate_args(paths, top)[1] is None:
+        fail("没配 ft.mutate_test 或 ft.test，没法核对 mutator 的工作副本", "在 factory/config.json 的 ft 里填测试命令")
+    start = time.monotonic()
+    code, out, timed_out, metrics, margs, cmd, bad = run_mutation(paths, top, timeout=timeout)
+    sec = int(time.monotonic() - start)
+    log = log_path(top)
+    log.write_text(f"$ mutator {shlex.join(margs)}\n# FT_MUTRUN_CMD={cmd}\n{out}\n# {sec}s, exit {code}\n"
+                   + (f"# 工作副本里不改代码的那次运行：exit {bad['code']}（{bad['worker']}）\n{bad['tail']}\n" if bad else ""))
+    dest = log.with_suffix("")
+    save_metrics(metrics, dest)
+    if timed_out:
+        fail(f"{timeout} 秒没跑完，已停掉，日志 {log}", "点名更少的文件，或调大 quality.mutation_timeout_s")
+    if code == 2:
+        fail(f"基线测试没过（mutator exit 2），日志 {log}", "先让 ft.mutate_test（或 ft.test）在不改代码时通过")
+    if code not in (0, 3):
+        fail(f"mutator exit {code}，日志 {log}", "读日志末尾")
+    if bad:
+        fail(f"{overlay_text(bad)}，结果不可信，日志 {log}", overlay_step(bad))
+    killed, survived = mutation_counts(metrics)
+    left = survivors(metrics, top, lines)
+    if left:
+        fail(f"{len(left)} 个变异体存活：" + "、".join(map(survivor_text, left[:5]))
+             + f"（共 {killed + survived} 个，杀死 {killed}，{sec}s，报表 {dest}）",
+             "补能区分它们的断言，或删掉测不到的代码")
+    say(f"PASS {killed + survived} 个变异体，杀死 {killed}" + (f"，改动函数之外存活 {survived}" if survived else "")
+        + f"（{sec}s，报表 {dest}）")
+
+
+def install_tool(name, spec):
+    """Clone `spec` at its commit into tool_dir(name) and run the launcher once, which builds its venv."""
+    d = tool_dir(name)
+    if (d / ".ft-ready").is_file():
+        return
+    if not re.fullmatch(r"[0-9a-f]{40}", spec.get("commit") or "") or not spec.get("repo"):
+        fail(f"quality.tools.{name} 要有 repo 和 40 位 commit", "改 factory/config.json")
+    shutil.rmtree(d, ignore_errors=True)  # a half-finished earlier install: ours, named by the commit
+    d.mkdir(parents=True)
+    for step in (["git", "init", "-q"], ["git", "fetch", "-q", "--depth", "1", spec["repo"], spec["commit"]],
+                 ["git", "checkout", "-q", "--detach", "FETCH_HEAD"]):
+        res = subprocess.run(step, cwd=d, capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False)
+        if res.returncode != 0:
+            fail(f"{name}: `{' '.join(step)}` 失败：{(res.stderr.strip().splitlines() or [''])[-1][:200]}",
+                 "查网络，以及 quality.tools 的 repo 与 commit")
+    res = subprocess.run([str(d / name), "--help"], cwd=d, capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False)
+    if res.returncode != 0:
+        fail(f"{name} 第一次运行（建 venv）exit {res.returncode}：{((res.stderr or res.stdout).strip().splitlines() or [''])[-1][:200]}",
+             "python3 要 ≥3.11、pip 要能装包；修好后再跑 ft tools")
+    (d / ".ft-ready").write_text(spec["commit"] + "\n")
+
+
+def cmd_tools(args):
+    specs = QUALITY.get("tools") or {}
+    if args not in ([], ["--check"]):
+        fail(f"不认识的参数 {' '.join(args)}", "ft tools [--check]")
+    if not specs:
+        say("config.json 没有 quality.tools，没有要装的")
+    if args or not tool_missing(specs):
+        missing = tool_missing(specs)
+        if missing:
+            fail(f"没装 {', '.join(missing)}", "factory/tools/ft tools")
+        say(f"就绪 {' '.join(tool_dir(n).name for n in specs)}（{TOOLS}）")
+    if sys.version_info < (3, 11):  # noqa: UP036 - readable error on python3 < 3.11 instead of a crash
+        fail(f"python3 是 {sys.version.split()[0]}，crapper、dryer、mutator 要 ≥3.11", "装 python3.11 以上并让 python3 指向它")
+    for name, spec in specs.items():
+        install_tool(name, spec)
+    say(f"装好 {' '.join(tool_dir(n).name for n in specs)}（{TOOLS}）")
+
+
+def main(argv):
+    global SUB
+    if not argv or argv[0] in {"-h", "--help"}:
+        print(__doc__.strip())
+        return
+    SUB, args = argv[0], argv[1:]
+    if SUB == "test":
+        cmd_test(args)
+    elif SUB == "e2e" and len(args) == 1:
+        cmd_e2e(args[0])
+    elif SUB == "shot" and len(args) in (2, 4) and (len(args) == 2 or args[2] == "--wait"):
+        cmd_shot(args[0], args[1], args[3] if len(args) == 4 else "")
+    elif SUB == "port" and len(args) == 1:
+        cmd_port(args[0])
+    elif SUB == "serve" and len(args) in (1, 2):
+        cmd_serve(args[0], args[1] if len(args) == 2 else "builder")
+    elif SUB == "touched":
+        cmd_touched(args)
+    elif SUB in {"tools", "crap", "dry", "mutate", "_mutrun"}:
+        {"tools": cmd_tools, "crap": cmd_crap, "dry": cmd_dry, "mutate": cmd_mutate, "_mutrun": cmd_mutrun}[SUB](args)
+    else:
+        print(f"ft: bad arguments: {' '.join(argv)}\n\n{__doc__.strip()}", file=sys.stderr)
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

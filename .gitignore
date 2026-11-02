@@ -16,7 +16,11 @@ __pycache__/
 .understand-anything/
 .sentrux/cache/
 .sentrux/agent-sessions/
-.claude/
+.claude/*
+!.claude/agents/
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/factory/
 artifacts/
 cache/
 dist/
@@ -57,3 +61,9 @@ target-msvc/
 .github/agents/
 _bmad/
 _bmad-output/
+
+# 软件工厂（Nightshift engine）的运行状态，不进仓库
+/factory/jobs/
+/factory/plans/
+/factory/.tools/
+/factory/**/__pycache__/
