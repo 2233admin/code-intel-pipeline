@@ -8,6 +8,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 mod file_gate;
 #[path = "hardened_git.rs"]
 mod hardened_git;
+#[path = "sentrux_coupling_policy.rs"]
+mod sentrux_coupling_policy;
+use sentrux_coupling_policy::is_test_file;
 
 #[derive(Clone, Default)]
 struct GitSignal {
@@ -1221,19 +1224,6 @@ fn module_name(relative: &str) -> String {
         }
         [first, ..] => (*first).to_string(),
     }
-}
-
-fn is_test_file(relative: &str) -> bool {
-    let lower = relative.to_ascii_lowercase();
-    let leaf = lower.rsplit('/').next().unwrap_or(&lower);
-    lower.starts_with("test/")
-        || lower.starts_with("tests/")
-        || lower.contains("/test/")
-        || lower.contains("/tests/")
-        || lower.contains("/__tests__/")
-        || leaf.starts_with("test_")
-        || leaf.contains(".test.")
-        || leaf.contains(".spec.")
 }
 
 fn split_lines(content: &str) -> Vec<String> {
