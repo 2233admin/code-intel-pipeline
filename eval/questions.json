@@ -93,7 +93,7 @@
     "category": "why",
     "golden": {
       "paths": ["crates/code-intel-cli/src/repowise_version.rs"],
-      "spans": [{"path": "crates/code-intel-cli/src/repowise_version.rs", "anchor": {"kind": "snippet", "text": "let meets_minimum", "before": 5, "after": 1}}],
+      "spans": [{"path": "crates/code-intel-cli/src/repowise_version.rs", "anchor": {"kind": "symbol", "symbol_kind": "function", "name": "run_raw", "before": 0, "after": 52}}],
       "keywords": ["run_raw", "repowise_version"]
     },
     "notes": "DR-0002: the pin is a minimum, not an exact version. run_raw (crates/code-intel-cli/src/repowise_version.rs) computes meets_minimum = ordering != Less, so only a version below the minimum gets status below_minimum; equal or newer is accepted, which is why a newer install is not reported as drift."
