@@ -170,8 +170,9 @@ pub(super) fn bind_anchor_verification(
 pub(super) fn admit(
     outcome: crate::dag_coordinator::RunOutcome,
     publication: &super::execution_kernel::Publication,
-) -> Result<(), crate::run_error::RunError> {
-    crate::run_commit::validate_committed_run(&publication.path).map_err(map_commit_error)?;
+) -> Result<serde_json::Value, crate::run_error::RunError> {
+    let (_, committed_manifest) =
+        crate::run_commit::validate_committed_run(&publication.path).map_err(map_commit_error)?;
     let artifact_root = publication
         .path
         .parent()
@@ -184,7 +185,8 @@ pub(super) fn admit(
         require_completed_latest(&index, &publication.repo, &publication.name)?;
     }
     crate::artifact_index::write_index(&artifact_root.join("index.json"), &index)
-        .map_err(map_index_error)
+        .map_err(map_index_error)?;
+    Ok(committed_manifest)
 }
 
 pub(super) fn require_completed_latest(

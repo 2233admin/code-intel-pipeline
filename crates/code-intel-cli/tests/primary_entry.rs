@@ -1,6 +1,8 @@
 mod common;
 #[path = "primary_entry/content_identity.rs"]
 mod content_identity;
+#[path = "primary_entry/readable_artifacts.rs"]
+mod readable_artifacts;
 use std::io::Write;
 
 use std::path::PathBuf;
