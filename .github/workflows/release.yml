@@ -28,6 +28,7 @@ jobs:
     # happens only in the publish job, after every platform package has
     # passed its own gates.
     runs-on: windows-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -81,6 +82,7 @@ jobs:
           - ubuntu-latest
 
     runs-on: ${{ vars.CI_5070X_ENABLED == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && contains(fromJSON('["ubuntu-latest","ubuntu-24.04"]'), matrix.os) && 'ci-5070x-linux' || matrix.os }}
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -139,6 +141,7 @@ jobs:
     # Single release creator: every platform package must already have
     # passed its gates, and only this job holds a write-capable token.
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: package
 
     permissions:

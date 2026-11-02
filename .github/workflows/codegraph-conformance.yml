@@ -2,6 +2,7 @@ name: CodeGraph provider conformance
 
 on:
   push:
+    branches: [main]
     paths:
       - 'crates/code-intel-cli/**'
       - 'orchestration/**'
@@ -18,7 +19,7 @@ permissions:
 
 concurrency:
   group: codegraph-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   codegraph-conformance:
