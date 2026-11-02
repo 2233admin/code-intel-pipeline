@@ -38,6 +38,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::capability::sha256_hex;
+use crate::repin::is_excluded;
 
 /// Where declared pins live, and under which key names.
 ///
@@ -269,11 +270,11 @@ pub(crate) struct Discovered {
 }
 
 /// Every declared pin under every kind, sorted by record then path.
-pub(crate) fn discover(repo: &Path) -> Result<Discovered, String> {
+pub(crate) fn discover(repo: &Path, excludes: &[String]) -> Result<Discovered, String> {
     let mut pins = Vec::new();
     let mut unpaired = Vec::new();
     let registry = repo.join(REGISTRY);
-    if registry.is_file() {
+    if registry.is_file() && !is_excluded(REGISTRY, excludes) {
         let text = fs::read_to_string(&registry)
             .map_err(|err| format!("read {}: {err}", registry.display()))?;
         let parsed: Value = serde_json::from_str(&text)
@@ -307,6 +308,9 @@ pub(crate) fn discover(repo: &Path) -> Result<Discovered, String> {
                 .and_then(|name| name.to_str())
                 .unwrap_or_default();
             let relative = format!("{}/{name}", kind.dir);
+            if is_excluded(&relative, excludes) {
+                continue;
+            }
             let text = fs::read_to_string(&record)
                 .map_err(|err| format!("read {}: {err}", record.display()))?;
             let parsed: Value = serde_json::from_str(&text)
@@ -320,8 +324,8 @@ pub(crate) fn discover(repo: &Path) -> Result<Discovered, String> {
 }
 
 /// Compare every declared pin against the file it names.
-pub(crate) fn audit(repo: &Path) -> Result<Vec<PinFinding>, String> {
-    let Discovered { pins, unpaired } = discover(repo)?;
+pub(crate) fn audit(repo: &Path, excludes: &[String]) -> Result<Vec<PinFinding>, String> {
+    let Discovered { pins, unpaired } = discover(repo, excludes)?;
 
     // A digest stated for two different paths inside one record cannot be
     // rewritten textually without guessing which occurrence meant which file.

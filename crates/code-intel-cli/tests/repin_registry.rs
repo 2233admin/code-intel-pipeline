@@ -283,3 +283,46 @@ fn unpaired_integration_sharing_a_stale_digest_keeps_it() {
     let now = tree.digest("src/tool.rs");
     assert_eq!(tree.read(REGISTRY), text.replacen(&tool, &now, 1));
 }
+
+#[test]
+fn exclude_protects_a_stale_registry_pin() {
+    let tree = fixture("exclude");
+    let before = tree.read(REGISTRY);
+    tree.write("src/tool.rs", "fn tool() { 5 }\n");
+    let output = common::cli()
+        .args(["repin", "--repo"])
+        .arg(&tree.0)
+        .args(["--write", "--exclude", REGISTRY])
+        .output()
+        .unwrap();
+    assert_code(&output, 0);
+    assert_eq!(tree.read(REGISTRY), before);
+}
+
+#[test]
+fn withheld_registry_edit_does_not_reach_dependents() {
+    let tree = fixture("withheld");
+    let tool = tree.digest("src/tool.rs");
+    let text = format!(
+        r#"{{
+  "integrations": [
+    {{"id": "demo.paired", "toolchainDigestEvidence": {{"inputs": ["src/tool.rs"]}}, "capabilityDeclaration": {{"implementation": {{"toolchainDigests": ["{tool}"]}}}}}},
+    {{"id": "demo.unpaired", "toolchainDigestEvidence": {{"inputs": ["src/tool.rs", "src/other.rs"]}}, "capabilityDeclaration": {{"implementation": {{"toolchainDigests": ["{tool}"]}}}}}}
+  ]
+}}
+"#
+    );
+    tree.write(REGISTRY, &text);
+    let note = "docs/registry-digest.txt";
+    tree.write(note, &format!("registry {}\n", tree.digest(REGISTRY)));
+    commit_all(&tree.0);
+    tree.write("src/tool.rs", "fn tool() { 9 }\n");
+    let output = repin(&tree, true);
+    // The unpaired integration keeps the run unresolved, but the dependent
+    // must carry the digest of the registry bytes that actually exist on disk.
+    assert_eq!(output.status.code(), Some(1), "{}", stdout(&output));
+    assert!(
+        tree.read(note).contains(&tree.digest(REGISTRY)),
+        "note pins the registry as written"
+    );
+}

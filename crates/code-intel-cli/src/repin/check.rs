@@ -24,8 +24,8 @@ pub(crate) struct CheckOutcome {
 }
 
 pub(crate) fn run_check(repo: &Path) -> Result<CheckOutcome, String> {
-    let report: RepinReport = scan(repo, &[])?;
-    let declared = declared_pins::audit(repo)?;
+    let report: RepinReport = scan(repo, &[], None)?;
+    let declared = declared_pins::audit(repo, &[])?;
     let declared_dirty = declared
         .iter()
         .any(declared_pins::PinFinding::needs_attention);
