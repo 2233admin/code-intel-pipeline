@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Docs: newcomer quick start now uses only commands present in stable v0.7.1 (`--mode lite` run + `artifact query`), with `setup`/`status`/`query <repo>`/Skill bootstrap marked current-source/prerelease only; drops `code-intel resume` from the guides and demo and labels the demo's `0.7.0-beta.3-dev` provenance (#395).
+
 ## [0.7.2-beta.7] — 2026-10-19
 
 First release installable through the Skill with no PowerShell: `bootstrap.py` verifies the release, then runs its `code-intel setup`.

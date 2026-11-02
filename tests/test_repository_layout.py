@@ -104,6 +104,32 @@ class RepositoryLayoutTests(unittest.TestCase):
             + "\n".join(offenders),
         )
 
+    def test_newcomer_docs_use_only_stable_v071_commands(self) -> None:
+        # #395: the first-run path must use commands that exist in v0.7.1.
+        guides = ["README.md", "README.en.md", "docs/public-beta.md"]
+        for rel in guides + ["docs/demo/index.html"]:
+            text = (ROOT / rel).read_text(encoding="utf-8")
+            self.assertNotIn("code-intel resume", text, rel)
+        for rel in guides:
+            text = (ROOT / rel).read_text(encoding="utf-8")
+            for needle in (
+                "--mode lite",
+                "artifact query",
+                "code_evidence.agent_slice",
+                "code-intel-pipeline/bin/code-intel",
+            ):
+                self.assertIn(needle, text, f"{rel} lacks {needle}")
+
+    def test_readme_first_run_block_has_no_status_or_query(self) -> None:
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        start = text.index("## 30 秒开始")
+        end = text.index("\n## ", start + 1)
+        fences = re.findall(r"```.*?```", text[start:end], re.DOTALL)
+        self.assertTrue(fences)
+        block = "\n".join(fences)
+        self.assertNotIn("code-intel status", block)
+        self.assertNotIn("code-intel query", block)
+
 
 if __name__ == "__main__":
     unittest.main()
