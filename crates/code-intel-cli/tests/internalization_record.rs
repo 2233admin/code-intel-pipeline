@@ -1,3 +1,5 @@
+mod common;
+
 #[path = "../src/authority.rs"]
 mod authority;
 #[path = "../src/content_contract/sha256.rs"]
@@ -12,15 +14,11 @@ mod schema;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use schema::validates_against_schema;
 use serde_json::{json, Value};
 
 const NOW: u64 = 1_700_000_100;
-static NEXT_SCHEMA_CHECK: AtomicUsize = AtomicUsize::new(1);
-static NEXT_REPOSITORY_FIXTURE: AtomicUsize = AtomicUsize::new(1);
-static NEXT_SOURCE_SCRATCH: AtomicUsize = AtomicUsize::new(1);
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -882,27 +880,14 @@ fn temporary_git_scratch_is_removed_on_drop() {
 }
 
 struct RepositoryFixture {
-    path: PathBuf,
+    dir: common::TempDir,
 }
 
 impl RepositoryFixture {
     fn new() -> Self {
-        let path = loop {
-            let id = NEXT_REPOSITORY_FIXTURE.fetch_add(1, Ordering::Relaxed);
-            let candidate = std::env::temp_dir().join(format!(
-                "internalization-repository-bytes-{}-{id}",
-                std::process::id()
-            ));
-            match fs::create_dir(&candidate) {
-                Ok(()) => break candidate,
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => panic!(
-                    "cannot create repository fixture {}: {error}",
-                    candidate.display()
-                ),
-            }
-        };
-        run_fixture_git(&path, &["init"]);
+        let dir = common::TempDir::new("internalization-repository-bytes");
+        let path = dir.path();
+        run_fixture_git(path, &["init"]);
         fs::write(
             path.join(".gitattributes"),
             b"text.txt text eol=lf\nbinary.bin -text\nident.txt text eol=lf ident\nencoded.txt text working-tree-encoding=UTF-16LE-BOM eol=lf\n",
@@ -914,7 +899,7 @@ impl RepositoryFixture {
         fs::write(path.join("encoded.txt"), utf16le_bom("gamma\n")).unwrap();
         fs::write(path.join("filtered.txt"), b"safe\n").unwrap();
         run_fixture_git(
-            &path,
+            path,
             &[
                 "add",
                 ".gitattributes",
@@ -926,7 +911,7 @@ impl RepositoryFixture {
             ],
         );
         run_fixture_git(
-            &path,
+            path,
             &[
                 "-c",
                 "user.name=Code Intel Fixture",
@@ -940,15 +925,15 @@ impl RepositoryFixture {
         fs::write(path.join("text.txt"), b"alpha\r\nbeta\r\n").unwrap();
         fs::write(path.join("ident.txt"), b"$Id: fixture $\r\n").unwrap();
         fs::write(path.join("encoded.txt"), utf16le_bom("gamma\r\n")).unwrap();
-        Self { path }
+        Self { dir }
     }
 
     fn path(&self) -> &Path {
-        &self.path
+        self.dir.path()
     }
 
     fn git_storage_state(&self) -> (Vec<u8>, Vec<u8>) {
-        let index = repository_git(&self.path)
+        let index = repository_git(self.path())
             .args(["rev-parse", "--git-path", "index"])
             .output()
             .unwrap();
@@ -957,21 +942,15 @@ impl RepositoryFixture {
         let index = if index.is_absolute() {
             index
         } else {
-            self.path.join(index)
+            self.path().join(index)
         };
 
-        let objects = repository_git(&self.path)
+        let objects = repository_git(self.path())
             .args(["count-objects", "-v"])
             .output()
             .unwrap();
         assert!(objects.status.success());
         (fs::read(index).unwrap(), objects.stdout)
-    }
-}
-
-impl Drop for RepositoryFixture {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.path).ok();
     }
 }
 
@@ -1175,7 +1154,7 @@ impl WorktreeSourceVerifier {
 }
 
 struct TemporaryGitIndex {
-    directory: TemporaryDirectory,
+    directory: common::TempDir,
     index: PathBuf,
     objects: PathBuf,
     alternates: std::ffi::OsString,
@@ -1183,7 +1162,7 @@ struct TemporaryGitIndex {
 
 impl TemporaryGitIndex {
     fn new(real_objects: &Path) -> Result<Self, String> {
-        let directory = TemporaryDirectory::new()?;
+        let directory = common::TempDir::new("source-index");
         let objects = directory.path().join("objects");
         fs::create_dir(&objects).map_err(|error| {
             format!(
@@ -1216,42 +1195,6 @@ impl TemporaryGitIndex {
             .env("GIT_OBJECT_DIRECTORY", &self.objects)
             .env("GIT_ALTERNATE_OBJECT_DIRECTORIES", &self.alternates);
         command
-    }
-}
-
-struct TemporaryDirectory {
-    path: PathBuf,
-}
-
-impl TemporaryDirectory {
-    fn new() -> Result<Self, String> {
-        loop {
-            let id = NEXT_SOURCE_SCRATCH.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!(
-                "code-intel-source-index-{}-{id}",
-                std::process::id()
-            ));
-            match fs::create_dir(&path) {
-                Ok(()) => return Ok(Self { path }),
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => {
-                    return Err(format!(
-                        "cannot create temporary Git index directory {}: {error}",
-                        path.display()
-                    ));
-                }
-            }
-        }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TemporaryDirectory {
-    fn drop(&mut self) {
-        fs::remove_dir_all(&self.path).ok();
     }
 }
 
@@ -2059,14 +2002,10 @@ fn checked_schemas_accept_complete_record_and_both_projections() {
 }
 
 fn assert_checked_schema(value: &Value, schema: &str) {
-    let path = std::env::temp_dir().join(format!(
-        "code-intel-c03-schema-{}-{}.json",
-        std::process::id(),
-        NEXT_SCHEMA_CHECK.fetch_add(1, Ordering::Relaxed)
-    ));
+    let scratch = common::TempDir::new("c03-schema");
+    let path = scratch.path().join("document.json");
     fs::write(&path, serde_json::to_vec(value).unwrap()).unwrap();
     let schema_path = root().join("orchestration/schemas").join(schema);
     let valid = validates_against_schema(&path, &schema_path);
-    fs::remove_file(path).unwrap();
     assert!(valid, "{schema}: document does not satisfy the schema");
 }

@@ -3,29 +3,15 @@
 
 mod common;
 
-use std::fs;
-use std::path::PathBuf;
+use common::TempDir;
+
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-struct CaptureOutput(PathBuf);
-
-impl Drop for CaptureOutput {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 #[test]
 fn public_http_contract_matches_the_pre_ureq3_mother_copy() {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let output = CaptureOutput(std::env::temp_dir().join(format!(
-        "code-intel-http-capture-{}-{nonce}",
-        std::process::id()
-    )));
+    let scratch = TempDir::new("http-capture");
+    // The driver creates its output directory itself and refuses an existing one.
+    let output = scratch.path().join("capture");
     let interpreter = if cfg!(windows) { "python" } else { "python3" };
     let mut driver = Command::new(interpreter);
     for name in common::env_contract::PIPELINE_VARS {
@@ -41,7 +27,7 @@ fn public_http_contract_matches_the_pre_ureq3_mother_copy() {
             "tests/fixtures/http-migration-ureq2/capture.json",
             "--output",
         ])
-        .arg(&output.0)
+        .arg(&output)
         .output()
         .expect("run the real-CLI HTTP capture comparison");
     print!("{}", String::from_utf8_lossy(&result.stdout));

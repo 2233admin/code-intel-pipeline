@@ -1,10 +1,9 @@
 mod common;
+
+use common::TempDir;
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::Path;
 
 use serde_json::{json, Value};
 
@@ -31,31 +30,6 @@ const CURRENT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 const WRONG: &str = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
 const IMPLEMENTATION_DIGEST: &str =
     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-struct Temp(PathBuf);
-
-impl Temp {
-    fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-b02-{}-{nonce}-{}",
-            std::process::id(),
-            SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn descriptor(name: &str) -> Value {
     let text = match name {
@@ -192,17 +166,17 @@ fn route(root: &Path, native: &Value) -> (i32, Value, String) {
 
 #[test]
 fn internal_and_external_current_outputs_share_one_port_and_provenance_schema() {
-    let internal_root = Temp::new();
-    let external_root = Temp::new();
+    let internal_root = TempDir::new("graph_adapter");
+    let external_root = TempDir::new("graph_adapter");
     let internal_native = build_case(
-        &internal_root.0,
+        internal_root.path(),
         &descriptor("internal-current"),
         CURRENT,
         CURRENT,
         1_950,
     );
     let external_native = build_case(
-        &external_root.0,
+        external_root.path(),
         &descriptor("external-current"),
         CURRENT,
         CURRENT,
@@ -228,7 +202,10 @@ fn internal_and_external_current_outputs_share_one_port_and_provenance_schema() 
         "understand-anything.compat.v1"
     );
 
-    for (root, adapter) in [(&internal_root.0, &internal), (&external_root.0, &external)] {
+    for (root, adapter) in [
+        (internal_root.path(), &internal),
+        (external_root.path(), &external),
+    ] {
         let admitted =
             admissibility::validate_for_consumer(&adapter["evidence"]["request"], root).unwrap();
         assert_eq!(admitted.result()["domainVerdict"], "observed");
@@ -238,9 +215,9 @@ fn internal_and_external_current_outputs_share_one_port_and_provenance_schema() 
 
 #[test]
 fn wrong_head_and_stale_graphs_are_rejected_by_a04() {
-    let wrong_root = Temp::new();
+    let wrong_root = TempDir::new("graph_adapter");
     let wrong_native = build_case(
-        &wrong_root.0,
+        wrong_root.path(),
         &descriptor("internal-current"),
         CURRENT,
         WRONG,
@@ -250,15 +227,15 @@ fn wrong_head_and_stale_graphs_are_rejected_by_a04() {
     assert_eq!(wrong["port"]["freshness"], "snapshot_mismatch");
     assert_eq!(wrong["port"]["anatomyUsable"], false);
     assert!(
-        admissibility::validate_for_consumer(&wrong["evidence"]["request"], &wrong_root.0)
+        admissibility::validate_for_consumer(&wrong["evidence"]["request"], wrong_root.path())
             .err()
             .unwrap()
             .contains("consumed snapshot mismatch")
     );
 
-    let stale_root = Temp::new();
+    let stale_root = TempDir::new("graph_adapter");
     let stale_native = build_case(
-        &stale_root.0,
+        stale_root.path(),
         &descriptor("internal-current"),
         CURRENT,
         CURRENT,
@@ -267,7 +244,7 @@ fn wrong_head_and_stale_graphs_are_rejected_by_a04() {
     let stale = graph_adapter::translate(&stale_native, 2_000, 100).unwrap();
     assert_eq!(stale["port"]["freshness"], "stale");
     assert!(
-        admissibility::validate_for_consumer(&stale["evidence"]["request"], &stale_root.0)
+        admissibility::validate_for_consumer(&stale["evidence"]["request"], stale_root.path())
             .err()
             .unwrap()
             .contains("stale")
@@ -281,11 +258,12 @@ fn missing_partial_and_current_matrix_preserves_unknown_without_facts() {
         ("internal-partial", "unknown", "partial"),
         ("internal-current", "observed", "complete"),
     ] {
-        let root = Temp::new();
-        let native = build_case(&root.0, &descriptor(name), CURRENT, CURRENT, 1_950);
+        let root = TempDir::new("graph_adapter");
+        let native = build_case(root.path(), &descriptor(name), CURRENT, CURRENT, 1_950);
         let adapter = graph_adapter::translate(&native, 2_000, 100).unwrap();
         let admitted =
-            admissibility::validate_for_consumer(&adapter["evidence"]["request"], &root.0).unwrap();
+            admissibility::validate_for_consumer(&adapter["evidence"]["request"], root.path())
+                .unwrap();
         graph_adapter::validate_admitted_payload(admitted.payload(), &adapter).unwrap();
         assert_eq!(adapter["port"]["completeness"], completeness, "{name}");
         assert_eq!(adapter["port"]["anatomyUsable"], false, "{name}");
@@ -301,9 +279,9 @@ fn missing_partial_and_current_matrix_preserves_unknown_without_facts() {
 
 #[test]
 fn fallback_identity_and_payload_identity_cannot_be_relabelled() {
-    let root = Temp::new();
+    let root = TempDir::new("graph_adapter");
     let mut external = build_case(
-        &root.0,
+        root.path(),
         &descriptor("external-current"),
         CURRENT,
         CURRENT,
@@ -325,7 +303,7 @@ fn fallback_identity_and_payload_identity_cannot_be_relabelled() {
         .contains("external graph fallback"));
 
     let mut internal = build_case(
-        &root.0,
+        root.path(),
         &descriptor("internal-current"),
         CURRENT,
         CURRENT,
@@ -341,7 +319,7 @@ fn fallback_identity_and_payload_identity_cannot_be_relabelled() {
         .contains("internal graph provider"));
 
     let native = build_case(
-        &root.0,
+        root.path(),
         &descriptor("external-current"),
         CURRENT,
         CURRENT,
@@ -349,7 +327,7 @@ fn fallback_identity_and_payload_identity_cannot_be_relabelled() {
     );
     let adapter = graph_adapter::translate(&native, 2_000, 100).unwrap();
     let admitted =
-        admissibility::validate_for_consumer(&adapter["evidence"]["request"], &root.0).unwrap();
+        admissibility::validate_for_consumer(&adapter["evidence"]["request"], root.path()).unwrap();
     let mut relabelled = admitted.payload().clone();
     relabelled["data"]["architectureGraph"]["provider"]["fallbackIdentity"] =
         json!("different-fallback");
@@ -362,44 +340,44 @@ fn fallback_identity_and_payload_identity_cannot_be_relabelled() {
 
 #[test]
 fn public_route_accepts_current_and_rejects_wrong_head_without_secret_or_fact() {
-    let current_root = Temp::new();
+    let current_root = TempDir::new("graph_adapter");
     let current_native = build_case(
-        &current_root.0,
+        current_root.path(),
         &descriptor("internal-current"),
         CURRENT,
         CURRENT,
         1_950,
     );
-    let (exit, result, stderr) = route(&current_root.0, &current_native);
+    let (exit, result, stderr) = route(current_root.path(), &current_native);
     assert_eq!(exit, 0, "{stderr}");
     assert_eq!(result["schema"], "code-intel-graph-route-result.v1");
     assert_eq!(result["status"], "completed");
     assert_eq!(result["adapter"]["port"]["anatomyUsable"], true);
     assert_eq!(result["engineeringFacts"], json!([]));
 
-    let wrong_root = Temp::new();
+    let wrong_root = TempDir::new("graph_adapter");
     let wrong_native = build_case(
-        &wrong_root.0,
+        wrong_root.path(),
         &descriptor("internal-current"),
         CURRENT,
         WRONG,
         1_950,
     );
-    let (exit, result, _) = route(&wrong_root.0, &wrong_native);
+    let (exit, result, _) = route(wrong_root.path(), &wrong_native);
     assert_eq!(exit, 65);
     assert_eq!(result["status"], "rejected");
     assert_eq!(result["engineeringFacts"], json!([]));
 
-    let secret_root = Temp::new();
+    let secret_root = TempDir::new("graph_adapter");
     let mut secret_native = build_case(
-        &secret_root.0,
+        secret_root.path(),
         &descriptor("internal-current"),
         CURRENT,
         CURRENT,
         1_950,
     );
     secret_native["apiToken"] = json!("B02-SECRET-SENTINEL");
-    let (exit, result, stderr) = route(&secret_root.0, &secret_native);
+    let (exit, result, stderr) = route(secret_root.path(), &secret_native);
     assert_eq!(exit, 65);
     let rendered = format!("{result}{stderr}");
     assert!(!rendered.contains("B02-SECRET-SENTINEL"));
@@ -477,7 +455,7 @@ fn oversized_current_graph_payload_clears_the_real_admission_path_within_contrac
     // fix this failed admission with "JSON input exceeds <MAX_JSON_BYTES>
     // bytes" even though the contract itself allows up to 64 MiB. Sized
     // from the live default so the test keeps discriminating if it moves.
-    let root = Temp::new();
+    let root = TempDir::new("graph_adapter");
     let fixture = descriptor("internal-current");
     let padded_graph = json!({
         "schema":"code-intel-understand-graph.v1",
@@ -513,7 +491,7 @@ fn oversized_current_graph_payload_clears_the_real_admission_path_within_contrac
         bytes.len() < 64 * 1024 * 1024,
         "fixture must stay within observed.evidence.payload's real 64 MiB contract budget"
     );
-    fs::write(root.0.join("payload.json"), &bytes).unwrap();
+    fs::write(root.path().join("payload.json"), &bytes).unwrap();
     let observed_at = 2_000;
     let native = json!({
         "schema":"code-intel-graph-provider-native.v1",
@@ -540,7 +518,7 @@ fn oversized_current_graph_payload_clears_the_real_admission_path_within_contrac
         "fallback":Value::Null
     });
     let adapter = graph_adapter::translate(&native, observed_at + 100, 200).unwrap();
-    let admitted = admissibility::validate_for_consumer(&adapter["evidence"]["request"], &root.0)
+    let admitted = admissibility::validate_for_consumer(&adapter["evidence"]["request"], root.path())
         .expect("a payload between the scanner default and the real 64 MiB contract budget must be admitted");
     assert_eq!(admitted.result()["domainVerdict"], "observed");
     graph_adapter::validate_admitted_payload(admitted.payload(), &adapter).unwrap();

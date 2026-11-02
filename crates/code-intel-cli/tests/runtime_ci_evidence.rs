@@ -1,18 +1,15 @@
 mod common;
+
+use common::TempDir;
 #[path = "../src/runtime_ci_evidence.rs"]
 mod runtime_ci_evidence;
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::Path;
 
 use serde_json::{json, Value};
 
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-
-struct Temp(PathBuf);
 
 // `SystemTime::now()` is not a unique id. Its resolution is platform
 // dependent — coarser than a nanosecond on macOS — so two tests starting
@@ -23,29 +20,6 @@ struct Temp(PathBuf);
 // the second test failed with the first test's error: "duplicate JSON object
 // key: completeness". The counter makes the name unique regardless of clock
 // resolution; `artifact_ref.rs` already does this.
-static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-impl Temp {
-    fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-runtime-ci-{}-{nonce}-{sequence}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn signal(status: &str, observed: bool) -> Value {
     json!({"status":status,"observed":observed,"summary":format!("fixture {status}")})
@@ -85,9 +59,12 @@ fn write_request(root: &Path, source: &Value) -> Value {
 
 #[test]
 fn only_complete_current_fully_positive_observations_are_green() {
-    let temp = Temp::new();
-    let request = write_request(&temp.0, &source("complete", "passed", "passed", "healthy"));
-    let result = runtime_ci_evidence::ingest_request(&temp.0, &request).unwrap();
+    let temp = TempDir::new("runtime_ci_evidence");
+    let request = write_request(
+        temp.path(),
+        &source("complete", "passed", "passed", "healthy"),
+    );
+    let result = runtime_ci_evidence::ingest_request(temp.path(), &request).unwrap();
     assert_eq!(result["admission"], "accepted");
     assert_eq!(result["health"], "green");
     assert_eq!(result["failureKind"], "none");
@@ -103,14 +80,14 @@ fn only_complete_current_fully_positive_observations_are_green() {
 
 #[test]
 fn missing_partial_and_unobserved_are_unknown_not_green() {
-    let temp = Temp::new();
+    let temp = TempDir::new("runtime_ci_evidence");
     let missing_request = json!({
         "schema":"code-intel-runtime-ci-ingest-request.v1",
         "expectedSnapshotIdentity":SNAPSHOT,
         "artifact":{"path":"missing.json","sha256":"b".repeat(64)},
         "policy":{"evaluatedAt":2000,"maxAgeSeconds":100}
     });
-    let missing = runtime_ci_evidence::ingest_request(&temp.0, &missing_request).unwrap();
+    let missing = runtime_ci_evidence::ingest_request(temp.path(), &missing_request).unwrap();
     assert_eq!(missing["health"], "unknown");
     assert_eq!(missing["failureKind"], "artifact_missing");
     assert_eq!(missing["facts"], json!([]));
@@ -156,10 +133,13 @@ fn stale_snapshot_mismatch_and_digest_forgery_fail_closed() {
     assert_eq!(wrong["failureKind"], "snapshot_mismatch");
     assert_eq!(wrong["facts"], json!([]));
 
-    let temp = Temp::new();
-    let mut request = write_request(&temp.0, &source("complete", "passed", "passed", "healthy"));
+    let temp = TempDir::new("runtime_ci_evidence");
+    let mut request = write_request(
+        temp.path(),
+        &source("complete", "passed", "passed", "healthy"),
+    );
     request["artifact"]["sha256"] = json!("d".repeat(64));
-    assert!(runtime_ci_evidence::ingest_request(&temp.0, &request)
+    assert!(runtime_ci_evidence::ingest_request(temp.path(), &request)
         .unwrap_err()
         .contains("digest mismatch"));
 }
@@ -180,14 +160,14 @@ fn contracts_reject_unknown_fields_false_observation_claims_and_path_escape() {
             .contains("observed is false")
     );
 
-    let temp = Temp::new();
+    let temp = TempDir::new("runtime_ci_evidence");
     let request = json!({
         "schema":"code-intel-runtime-ci-ingest-request.v1",
         "expectedSnapshotIdentity":SNAPSHOT,
         "artifact":{"path":"../escape.json","sha256":"e".repeat(64)},
         "policy":{"evaluatedAt":2000,"maxAgeSeconds":100}
     });
-    assert!(runtime_ci_evidence::ingest_request(&temp.0, &request)
+    assert!(runtime_ci_evidence::ingest_request(temp.path(), &request)
         .unwrap_err()
         .contains("without '..'"));
 }
@@ -212,14 +192,17 @@ fn schemas_and_documentation_are_closed_and_provider_neutral() {
 
 #[test]
 fn production_cli_reads_only_the_pinned_local_artifact() {
-    let temp = Temp::new();
-    let request = write_request(&temp.0, &source("complete", "passed", "passed", "healthy"));
-    let request_path = temp.0.join("request.json");
-    let output_path = temp.0.join("summary.json");
+    let temp = TempDir::new("runtime_ci_evidence");
+    let request = write_request(
+        temp.path(),
+        &source("complete", "passed", "passed", "healthy"),
+    );
+    let request_path = temp.path().join("request.json");
+    let output_path = temp.path().join("summary.json");
     fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
     let output = common::cli()
         .args(["provider", "runtime-ci-evidence", "--artifact-root"])
-        .arg(&temp.0)
+        .arg(temp.path())
         .arg("--request")
         .arg(&request_path)
         .arg("--out")
@@ -240,7 +223,7 @@ fn production_cli_reads_only_the_pinned_local_artifact() {
 
 #[test]
 fn production_cli_rejects_duplicate_source_keys() {
-    let temp = Temp::new();
+    let temp = TempDir::new("runtime_ci_evidence");
     let valid = serde_json::to_string(&source("complete", "passed", "passed", "healthy")).unwrap();
     let duplicate = valid.replacen(
         "\"completeness\":\"complete\"",
@@ -248,19 +231,19 @@ fn production_cli_rejects_duplicate_source_keys() {
         1,
     );
     assert!(duplicate.matches("\"completeness\"").count() >= 2);
-    fs::write(temp.0.join("runtime-ci.json"), duplicate.as_bytes()).unwrap();
+    fs::write(temp.path().join("runtime-ci.json"), duplicate.as_bytes()).unwrap();
     let request = json!({
         "schema":"code-intel-runtime-ci-ingest-request.v1",
         "expectedSnapshotIdentity":SNAPSHOT,
         "artifact":{"path":"runtime-ci.json","sha256":runtime_ci_evidence::sha256_hex(duplicate.as_bytes())},
         "policy":{"evaluatedAt":2000,"maxAgeSeconds":100}
     });
-    let request_path = temp.0.join("request.json");
-    let output_path = temp.0.join("summary.json");
+    let request_path = temp.path().join("request.json");
+    let output_path = temp.path().join("summary.json");
     fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
     let output = common::cli()
         .args(["provider", "runtime-ci-evidence", "--artifact-root"])
-        .arg(&temp.0)
+        .arg(temp.path())
         .arg("--request")
         .arg(&request_path)
         .arg("--out")

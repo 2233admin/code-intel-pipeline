@@ -1,9 +1,9 @@
 mod common;
+
+use common::TempDir;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
@@ -15,19 +15,6 @@ const AST_GREP_SECURITY_DIGEST: &str =
     "d3a55f2a70f1d13581258e34344826fa26433c586907945fdc797363853d43c6";
 const REPO_SNAPSHOT_DIGEST: &str =
     "7bcba2edd7e6c5609049b18b98db17234d8906d235b879ddfb7352e7e40ef6f5";
-static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-fn temp_dir(name: &str) -> PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock")
-        .as_nanos();
-    let sequence = TEMP_DIR_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!(
-        "code-intel-a01-{name}-{}-{nonce}-{sequence}",
-        std::process::id(),
-    ))
-}
 
 fn request(repo: &Path, capability: &str) -> Value {
     request_with_policy_scopes(repo, capability, "explicit_overlay", &["."])
@@ -197,7 +184,8 @@ fn legacy_inventory(repo: &Path) -> Vec<u8> {
 
 #[test]
 fn inventory_rg_exec_emits_one_result_and_stable_real_rg_artifact() {
-    let root = temp_dir("success");
+    let root_dir = TempDir::new("success");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("src")).expect("create fixture repo");
     fs::create_dir_all(repo.join("target")).expect("create excluded target");
@@ -289,12 +277,12 @@ fn inventory_rg_exec_emits_one_result_and_stable_real_rg_artifact() {
         fs::read(&artifact).unwrap(),
         fs::read(&second_artifact).unwrap()
     );
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn inventory_rg_ignores_repository_ignored_workspace_churn() {
-    let root = temp_dir("ignored-workspace-churn");
+    let root_dir = TempDir::new("ignored-workspace-churn");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("work").join("nested")).unwrap();
     git(&repo, &["init", "--quiet"]);
@@ -334,12 +322,12 @@ fn inventory_rg_ignores_repository_ignored_workspace_churn() {
     assert!(files.lines().any(|path| path == ".gitignore"));
     assert!(files.lines().any(|path| path == "kept.txt"));
     assert!(!files.contains("generated-"));
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn inventory_rg_excludes_linked_worktree_git_pointer() {
-    let root = temp_dir("linked-worktree-git-pointer");
+    let root_dir = TempDir::new("linked-worktree-git-pointer");
+    let root = root_dir.path();
     let repo = root.join("repo");
     let linked = root.join("linked");
     fs::create_dir_all(&repo).unwrap();
@@ -383,12 +371,12 @@ fn inventory_rg_excludes_linked_worktree_git_pointer() {
     let files = fs::read_to_string(out.join("files.txt")).unwrap();
     assert!(files.lines().any(|path| path == "kept.py"));
     assert!(!files.lines().any(|path| path == ".git"));
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn inventory_rejects_repository_changes_after_snapshot_and_honors_snapshot_scope() {
-    let root = temp_dir("snapshot-lease");
+    let root_dir = TempDir::new("snapshot-lease");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::create_dir_all(repo.join("docs")).unwrap();
@@ -430,12 +418,12 @@ fn inventory_rejects_repository_changes_after_snapshot_and_honors_snapshot_scope
     let inventory = String::from_utf8(fs::read(current_out.join("files.txt")).unwrap()).unwrap();
     assert!(inventory.contains("src"));
     assert!(!inventory.contains("docs"));
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn head_only_inventory_rejects_untracked_paths_outside_the_head_manifest() {
-    let root = temp_dir("head-only-untracked");
+    let root_dir = TempDir::new("head-only-untracked");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     git(&repo, &["init", "--quiet"]);
@@ -458,12 +446,12 @@ fn head_only_inventory_rejects_untracked_paths_outside_the_head_manifest() {
     assert_eq!(result["status"], "failed");
     assert_eq!(result["exitCode"], 65);
     assert!(!out.exists(), "manifest mismatch must publish nothing");
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn relocated_repositories_emit_identical_inventory_bytes_and_digest() {
-    let root = temp_dir("relocated-inventory");
+    let root_dir = TempDir::new("relocated-inventory");
+    let root = root_dir.path();
     let left = root.join("left repo 空格");
     let right = root.join("另一个 path");
     for repo in [&left, &right] {
@@ -505,7 +493,6 @@ fn relocated_repositories_emit_identical_inventory_bytes_and_digest() {
         left_json["artifacts"][0]["sha256"],
         right_json["artifacts"][0]["sha256"]
     );
-    let _ = fs::remove_dir_all(root);
 }
 
 // Drives the `CODE_INTEL_TEST_RG_EXTRA_PATH` hook in `capability_inventory.rs`,
@@ -517,7 +504,8 @@ fn relocated_repositories_emit_identical_inventory_bytes_and_digest() {
 #[test]
 #[cfg(debug_assertions)]
 fn inventory_rejects_simulated_rg_extra_path_without_publication() {
-    let root = temp_dir("rg-extra-path");
+    let root_dir = TempDir::new("rg-extra-path");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     fs::write(repo.join("kept.txt"), "kept\n").unwrap();
@@ -541,12 +529,12 @@ fn inventory_rejects_simulated_rg_extra_path_without_publication() {
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["exitCode"], 65);
     assert!(!out.exists(), "set mismatch must publish nothing");
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn coherence_failure_exits_64_without_partial_artifact() {
-    let root = temp_dir("coherence");
+    let root_dir = TempDir::new("coherence");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).expect("create fixture repo");
     fs::write(repo.join("README.md"), "fixture\n").expect("write README");
@@ -577,12 +565,12 @@ fn coherence_failure_exits_64_without_partial_artifact() {
         !output.stderr.is_empty(),
         "human-readable diagnostic must use stderr"
     );
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn stdin_rejects_more_than_one_request_with_one_failure_result() {
-    let root = temp_dir("stream");
+    let root_dir = TempDir::new("stream");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).expect("create fixture repo");
     let out = root.join("out");
@@ -617,12 +605,12 @@ fn stdin_rejects_more_than_one_request_with_one_failure_result() {
     );
     assert!(!output.stderr.is_empty());
     assert!(!artifact.exists());
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn pre_envelope_failures_have_typed_exit_stderr_and_empty_stdout() {
-    let root = temp_dir("pre-envelope");
+    let root_dir = TempDir::new("pre-envelope");
+    let root = root_dir.path();
     let missing = root.join("missing.json");
     let out = root.join("out");
     let unreadable = common::cli()
@@ -655,7 +643,8 @@ fn pre_envelope_failures_have_typed_exit_stderr_and_empty_stdout() {
 
 #[test]
 fn stdin_accepts_exactly_one_request_and_keeps_stdout_pure() {
-    let root = temp_dir("stdin-one");
+    let root_dir = TempDir::new("stdin-one");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     fs::write(repo.join("文 & 'file.txt"), "fixture\n").unwrap();
@@ -690,12 +679,12 @@ fn stdin_accepts_exactly_one_request_and_keeps_stdout_pure() {
         fs::read(out.join("files.txt")).unwrap(),
         legacy_inventory(&repo)
     );
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn registry_drift_fails_closed_with_schema_shaped_result_and_no_output_tree() {
-    let root = temp_dir("registry-drift");
+    let root_dir = TempDir::new("registry-drift");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
@@ -739,12 +728,12 @@ fn registry_drift_fails_closed_with_schema_shaped_result_and_no_output_tree() {
     assert_eq!(result["exitCode"], 64);
     assert!(result["artifacts"].as_array().unwrap().is_empty());
     assert!(!out.exists());
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn unavailable_rg_maps_to_69_without_partial_output() {
-    let root = temp_dir("rg-unavailable");
+    let root_dir = TempDir::new("rg-unavailable");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     let out = root.join("out");
@@ -768,12 +757,12 @@ fn unavailable_rg_maps_to_69_without_partial_output() {
         69
     );
     assert!(!out.exists());
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn request_cannot_select_artifact_escape_and_out_must_be_unique() {
-    let root = temp_dir("write-boundary");
+    let root_dir = TempDir::new("write-boundary");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
@@ -804,7 +793,6 @@ fn request_cannot_select_artifact_escape_and_out_must_be_unique() {
         "owned elsewhere"
     );
     assert!(!out.join("files.txt").exists());
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
@@ -894,7 +882,8 @@ fn capability_parser_rejects_missing_unknown_duplicate_and_conflicting_arguments
 
 #[test]
 fn duplicate_json_keys_are_rejected_for_request_and_registry() {
-    let root = temp_dir("duplicate-json");
+    let root_dir = TempDir::new("duplicate-json");
+    let root = root_dir.path();
     fs::create_dir_all(&root).unwrap();
     let out = root.join("out");
     let request_path = root.join("request.json");
@@ -937,12 +926,12 @@ fn duplicate_json_keys_are_rejected_for_request_and_registry() {
     assert_eq!(result["exitCode"], 65);
     assert!(String::from_utf8_lossy(&registry_output.stderr).contains("duplicate JSON object key"));
     assert!(!out.exists());
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn duplicate_registered_declarations_fail_closed() {
-    let root = temp_dir("duplicate-declaration");
+    let root_dir = TempDir::new("duplicate-declaration");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     let request_path = root.join("request.json");
@@ -984,12 +973,12 @@ fn duplicate_registered_declarations_fail_closed() {
     assert!(String::from_utf8_lossy(&output.stderr)
         .contains("duplicate registered capability declaration"));
     assert!(!out.exists());
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn empty_repository_is_a_successful_empty_inventory() {
-    let root = temp_dir("empty");
+    let root_dir = TempDir::new("empty");
+    let root = root_dir.path();
     let repo = root.join("empty repo & 文");
     fs::create_dir_all(&repo).unwrap();
     let out = root.join("out");
@@ -1010,12 +999,12 @@ fn empty_repository_is_a_successful_empty_inventory() {
         serde_json::from_slice::<Value>(&output.stdout).unwrap()["exitCode"],
         0
     );
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn inventory_exclude_is_applied_without_shell_interpretation() {
-    let root = temp_dir("custom-exclude");
+    let root_dir = TempDir::new("custom-exclude");
+    let root = root_dir.path();
     let repo = root.join("repo & 文");
     fs::create_dir_all(repo.join("custom excluded")).unwrap();
     fs::write(repo.join("keep.txt"), "keep").unwrap();
@@ -1033,12 +1022,12 @@ fn inventory_exclude_is_applied_without_shell_interpretation() {
     let files = fs::read_to_string(out.join("files.txt")).unwrap();
     assert!(files.contains("keep.txt"));
     assert!(!files.contains("drop.txt"));
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn tracked_symlink_is_snapshot_bound_but_omitted_from_inventory_for_both_policies() {
-    let root = temp_dir("tracked-symlink");
+    let root_dir = TempDir::new("tracked-symlink");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     git(&repo, &["init", "--quiet"]);
@@ -1049,7 +1038,6 @@ fn tracked_symlink_is_snapshot_bound_but_omitted_from_inventory_for_both_policie
     fs::write(repo.join("target-two.txt"), "two\n").unwrap();
     let link = repo.join("link.txt");
     if !create_file_symlink(Path::new("target-one.txt"), &link) {
-        let _ = fs::remove_dir_all(root);
         return;
     }
     git(&repo, &["add", "."]);
@@ -1122,13 +1110,12 @@ fn tracked_symlink_is_snapshot_bound_but_omitted_from_inventory_for_both_policie
     );
     let after_files = fs::read_to_string(after_out.join("files.txt")).unwrap();
     assert!(!after_files.lines().any(|path| path == "link.txt"));
-
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn populated_gitlink_is_literal_excluded_and_oid_bound_for_both_policies() {
-    let root = temp_dir("populated-gitlink");
+    let root_dir = TempDir::new("populated-gitlink");
+    let root = root_dir.path();
     let child = root.join("child");
     let repo = root.join("repo");
     fs::create_dir_all(&child).unwrap();
@@ -1265,13 +1252,12 @@ fn populated_gitlink_is_literal_excluded_and_oid_bound_for_both_policies() {
         .unwrap()
         .lines()
         .any(|path| path.starts_with(gitlink)));
-
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn nested_linked_worktree_is_excluded_from_inventory() {
-    let root = temp_dir("nested-linked-worktree");
+    let root_dir = TempDir::new("nested-linked-worktree");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     git(&repo, &["init", "--quiet"]);
@@ -1318,13 +1304,12 @@ fn nested_linked_worktree_is_excluded_from_inventory() {
             .lines()
             .any(|path| path.starts_with(".claude/worktrees/agent-test/")));
     }
-
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn inventory_exclude_uses_ripgrep_glob_semantics_for_basename_brace_class_and_segment() {
-    let root = temp_dir("ripgrep-glob-semantics");
+    let root_dir = TempDir::new("ripgrep-glob-semantics");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("nested/generated")).unwrap();
     fs::create_dir_all(repo.join("nested/kept")).unwrap();
@@ -1363,12 +1348,12 @@ fn inventory_exclude_uses_ripgrep_glob_semantics_for_basename_brace_class_and_se
             "nested/kept/data.json".to_string()
         ]
     );
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn snapshot_ignore_control_bytes_drive_root_and_nested_ripgrep_semantics() {
-    let root = temp_dir("snapshot-ignore-controls");
+    let root_dir = TempDir::new("snapshot-ignore-controls");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("git-rule")).unwrap();
     fs::create_dir_all(repo.join("ignore-rule")).unwrap();
@@ -1413,12 +1398,12 @@ fn snapshot_ignore_control_bytes_drive_root_and_nested_ripgrep_semantics() {
     assert!(!files.contains("git-rule/drop.foo"));
     assert!(!files.contains("ignore-rule/drop.foo"));
     assert!(!files.contains("rgignore-rule/drop.foo"));
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn head_only_inventory_uses_frozen_ignore_bytes_for_same_and_different_worktree_semantics() {
-    let root = temp_dir("frozen-head-ignore");
+    let root_dir = TempDir::new("frozen-head-ignore");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     git(&repo, &["init", "--quiet"]);
@@ -1468,12 +1453,12 @@ fn head_only_inventory_uses_frozen_ignore_bytes_for_same_and_different_worktree_
         fs::read(different_out.join("files.txt")).unwrap(),
         "head_only artifact must depend on HEAD ignore bytes, not live worktree bytes"
     );
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn explicit_overlay_rejects_same_semantics_ignore_byte_change_as_stale() {
-    let root = temp_dir("stale-overlay-ignore");
+    let root_dir = TempDir::new("stale-overlay-ignore");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     fs::write(repo.join("hidden.txt"), "hidden\n").unwrap();
@@ -1484,12 +1469,12 @@ fn explicit_overlay_rejects_same_semantics_ignore_byte_change_as_stale() {
     let output = run_with_request_file(&value, &root.join("request.json"), &out, "inventory.rg");
     assert_eq!(output.status.code(), Some(65));
     assert!(!out.exists());
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn scoped_inventory_disables_ancestor_ignore_and_binds_nested_controls() {
-    let root = temp_dir("scoped-ancestor-ignore");
+    let root_dir = TempDir::new("scoped-ancestor-ignore");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("src/nested")).unwrap();
     git(&repo, &["init", "--quiet"]);
@@ -1527,12 +1512,12 @@ fn scoped_inventory_disables_ancestor_ignore_and_binds_nested_controls() {
         !files.contains(".gitignore"),
         "ancestor control is input, not scoped output"
     );
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn inventory_disables_info_parent_and_ripgrep_config_ignore_sources() {
-    let root = temp_dir("external-ignore-sources");
+    let root_dir = TempDir::new("external-ignore-sources");
+    let root = root_dir.path();
     let repo = root.join("parent").join("repo");
     fs::create_dir_all(&repo).unwrap();
     fs::write(root.join("parent/.ignore"), "parent-hidden.txt\n").unwrap();
@@ -1570,12 +1555,12 @@ fn inventory_disables_info_parent_and_ripgrep_config_ignore_sources() {
     assert!(files.contains("info-hidden.txt"));
     assert!(files.contains("parent-hidden.txt"));
     assert!(files.contains("config-hidden.txt"));
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn normalized_inventory_honors_custom_exclude_and_default_build_exclusions() {
-    let root = temp_dir("custom-exclude");
+    let root_dir = TempDir::new("custom-exclude");
+    let root = root_dir.path();
     let repo = root.join("repo & 文");
     fs::create_dir_all(repo.join("custom excluded")).unwrap();
     fs::create_dir_all(repo.join("target")).unwrap();
@@ -1606,12 +1591,12 @@ fn normalized_inventory_honors_custom_exclude_and_default_build_exclusions() {
         !listed.iter().any(|line| line.contains("built.txt")),
         "default exclusions must drop target/: {listed:?}"
     );
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn advisory_workflow_recommend_runs_through_a01_with_zero_effects() {
-    let root = temp_dir("workflow-recommend");
+    let root_dir = TempDir::new("workflow-recommend");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("openspec")).unwrap();
     fs::create_dir_all(repo.join("src")).unwrap();
@@ -1675,13 +1660,12 @@ fn advisory_workflow_recommend_runs_through_a01_with_zero_effects() {
         envelope_proposal["provenance"]["capabilityId"],
         "advisory.workflow-recommend"
     );
-
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn excessive_json_nesting_is_a_pre_envelope_usage_failure() {
-    let root = temp_dir("deep-json");
+    let root_dir = TempDir::new("deep-json");
+    let root = root_dir.path();
     fs::create_dir_all(&root).unwrap();
     let request_path = root.join("request.json");
     fs::write(
@@ -1699,12 +1683,12 @@ fn excessive_json_nesting_is_a_pre_envelope_usage_failure() {
     assert_eq!(output.status.code(), Some(64));
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stderr).contains("nesting"));
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn oversized_request_is_bounded_and_rejected_before_envelope() {
-    let root = temp_dir("oversized-json");
+    let root_dir = TempDir::new("oversized-json");
+    let root = root_dir.path();
     fs::create_dir_all(&root).unwrap();
     let request_path = root.join("request.json");
     // Issue #383/#386 raised `content_contract::MAX_JSON_BYTES` 8 MiB -> 24
@@ -1724,12 +1708,12 @@ fn oversized_request_is_bounded_and_rejected_before_envelope() {
     assert_eq!(output.status.code(), Some(64));
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stderr).contains("exceeds"));
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn cwd_manifest_shadow_is_ignored() {
-    let root = temp_dir("manifest-shadow");
+    let root_dir = TempDir::new("manifest-shadow");
+    let root = root_dir.path();
     let repo = root.join("repo");
     let cwd = root.join("untrusted");
     fs::create_dir_all(cwd.join("orchestration")).unwrap();
@@ -1764,12 +1748,12 @@ fn cwd_manifest_shadow_is_ignored() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(out.join("files.txt").is_file());
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn declaration_determinism_is_used_for_post_declaration_failures() {
-    let root = temp_dir("declaration-determinism");
+    let root_dir = TempDir::new("declaration-determinism");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     let mut value = request(&repo, "inventory.rg");
@@ -1808,12 +1792,12 @@ fn declaration_determinism_is_used_for_post_declaration_failures() {
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["determinism"], "external_nondeterministic");
     assert_eq!(result["exitCode"], 64);
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn structured_edit_plan_is_scope_bound_and_preview_only() {
-    let root = temp_dir("structured-edit");
+    let root_dir = TempDir::new("structured-edit");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(repo.join("src/example.py"), "print(\"hello\")\n").unwrap();
@@ -1846,7 +1830,6 @@ fn structured_edit_plan_is_scope_bound_and_preview_only() {
         .output()
         .is_ok_and(|output| output.status.success());
     if !ast_grep_available {
-        let _ = fs::remove_dir_all(root);
         return;
     }
 
@@ -1881,12 +1864,12 @@ fn structured_edit_plan_is_scope_bound_and_preview_only() {
         fs::read_to_string(repo.join("src/example.py")).unwrap(),
         "print(\"hello\")\n"
     );
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn ast_grep_security_scan_is_scope_bound_and_advisory_only() {
-    let root = temp_dir("ast-grep-security");
+    let root_dir = TempDir::new("ast-grep-security");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(repo.join("src/example.py"), "eval(user_input)\n").unwrap();
@@ -1917,7 +1900,6 @@ fn ast_grep_security_scan_is_scope_bound_and_advisory_only() {
         .output()
         .is_ok_and(|output| output.status.success());
     if !ast_grep_available {
-        let _ = fs::remove_dir_all(root);
         return;
     }
 
@@ -1969,7 +1951,6 @@ fn ast_grep_security_scan_is_scope_bound_and_advisory_only() {
         fs::read_to_string(repo.join("src/example.py")).unwrap(),
         "eval(user_input)\n"
     );
-    let _ = fs::remove_dir_all(root);
 }
 
 fn normalized_lines(text: &str) -> Vec<String> {
@@ -2030,7 +2011,8 @@ fn assistance_gap() -> Value {
 
 #[test]
 fn assistance_discovery_turns_catalog_candidates_into_proposal_only_dossiers() {
-    let root = temp_dir("assistance-discovery");
+    let root_dir = TempDir::new("assistance-discovery");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(repo.join("src/main.rs"), "fn main() {}\n").unwrap();
@@ -2095,13 +2077,12 @@ fn assistance_discovery_turns_catalog_candidates_into_proposal_only_dossiers() {
         .expect("claude-security dossier");
     assert_eq!(security["license"]["status"], "review_required");
     assert_eq!(security["security"]["status"], "review_required");
-
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn assistance_discovery_refuses_a_candidate_that_was_never_reviewed() {
-    let root = temp_dir("assistance-unreviewed");
+    let root_dir = TempDir::new("assistance-unreviewed");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(repo.join("src/main.rs"), "fn main() {}\n").unwrap();
@@ -2139,8 +2120,6 @@ fn assistance_discovery_refuses_a_candidate_that_was_never_reviewed() {
         !out.join("assistance-discovery-result.json").exists(),
         "a refused request must publish nothing"
     );
-
-    let _ = fs::remove_dir_all(root);
 }
 
 /// `provider.codenexus-adapt` has no builtin adapter dispatch test to mirror
@@ -2152,7 +2131,8 @@ fn assistance_discovery_refuses_a_candidate_that_was_never_reviewed() {
 /// second process hop.
 #[test]
 fn codenexus_builtin_compat_dispatches_through_provider_codenexus_adapt() {
-    let root = temp_dir("codenexus");
+    let root_dir = TempDir::new("codenexus");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     fs::create_dir_all(repo.join("src")).unwrap();
@@ -2291,8 +2271,6 @@ fn codenexus_builtin_compat_dispatches_through_provider_codenexus_adapt() {
     assert!(!serialized_provider_data.contains("src/../"));
     assert!(!serialized_provider_data.contains("//?/"));
     assert!(!serialized_provider_data.contains("\\?\\"));
-
-    let _ = fs::remove_dir_all(root);
 }
 
 fn run_capability(

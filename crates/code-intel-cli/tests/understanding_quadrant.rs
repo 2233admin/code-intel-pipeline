@@ -1,10 +1,10 @@
 mod common;
+
+use common::TempDir;
 #[path = "support/schema.rs"]
 mod schema_support;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
@@ -12,31 +12,6 @@ use serde_json::{json, Value};
 mod sha256_support;
 
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-static TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
-
-struct Temp(PathBuf);
-
-impl Temp {
-    fn new() -> Self {
-        let clock = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let sequence = TEMP_NONCE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-d03-{}-{clock}-{sequence}",
-            std::process::id()
-        ));
-        fs::create_dir(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -166,9 +141,9 @@ fn item<'a>(document: &'a Value, id: &str) -> &'a Value {
 
 #[test]
 fn critical_and_supporting_unknowns_remain_visible_with_stable_provenance() {
-    let temp = Temp::new();
-    let request = request(input(&temp.0), json!({}));
-    let output = run(&temp.0, &request, "first");
+    let temp = TempDir::new("understanding_quadrant");
+    let request = request(input(temp.path()), json!({}));
+    let output = run(temp.path(), &request, "first");
     assert_eq!(
         output.status.code(),
         Some(0),
@@ -184,7 +159,7 @@ fn critical_and_supporting_unknowns_remain_visible_with_stable_provenance() {
         envelope["artifacts"][0]["consumedSnapshotIdentity"],
         SNAPSHOT
     );
-    let path = temp.0.join("first/understanding-quadrant.json");
+    let path = temp.path().join("first/understanding-quadrant.json");
     let bytes = fs::read(&path).unwrap();
     let document: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(item(&document, "identity")["quadrant"], "Known Core");
@@ -216,11 +191,11 @@ fn critical_and_supporting_unknowns_remain_visible_with_stable_provenance() {
         "C01_cards_and_C02_selection_may_consume_but_cannot_rewrite"
     );
 
-    let replay = run(&temp.0, &request, "replay");
+    let replay = run(temp.path(), &request, "replay");
     assert_eq!(replay.status.code(), Some(0));
     assert_eq!(
         bytes,
-        fs::read(temp.0.join("replay/understanding-quadrant.json")).unwrap()
+        fs::read(temp.path().join("replay/understanding-quadrant.json")).unwrap()
     );
 
     assert!(
@@ -234,53 +209,63 @@ fn critical_and_supporting_unknowns_remain_visible_with_stable_provenance() {
 
 #[test]
 fn method_rewrite_options_and_snapshot_mismatch_fail_closed_without_artifacts() {
-    let temp = Temp::new();
-    let reference = input(&temp.0);
+    let temp = TempDir::new("understanding_quadrant");
+    let reference = input(temp.path());
     let rewrite = run(
-        &temp.0,
+        temp.path(),
         &request(reference.clone(), json!({"methodId":"fmea"})),
         "rewrite",
     );
     assert_eq!(rewrite.status.code(), Some(64));
-    assert!(!temp.0.join("rewrite/understanding-quadrant.json").exists());
+    assert!(!temp
+        .path()
+        .join("rewrite/understanding-quadrant.json")
+        .exists());
 
     let mut mismatched = reference;
     mismatched["consumedSnapshotIdentity"] = json!("f".repeat(64));
-    let mismatch = run(&temp.0, &request(mismatched, json!({})), "mismatch");
+    let mismatch = run(temp.path(), &request(mismatched, json!({})), "mismatch");
     assert_eq!(mismatch.status.code(), Some(65));
-    assert!(!temp.0.join("mismatch/understanding-quadrant.json").exists());
+    assert!(!temp
+        .path()
+        .join("mismatch/understanding-quadrant.json")
+        .exists());
 
     let mut invalid_provenance = orientation();
     invalid_provenance["identity"]["provenance"] = json!([null]);
     let invalid_ref = input_value(
-        &temp.0,
+        temp.path(),
         &invalid_provenance,
         "invalid-provenance-orientation.json",
     );
     let invalid = run(
-        &temp.0,
+        temp.path(),
         &request(invalid_ref, json!({})),
         "invalid-provenance",
     );
     assert_eq!(invalid.status.code(), Some(65));
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("provenance"));
     assert!(!temp
-        .0
+        .path()
         .join("invalid-provenance/understanding-quadrant.json")
         .exists());
 }
 
 #[test]
 fn a03_rejects_tampered_policy_constants_before_a01_dispatch() {
-    let temp = Temp::new();
-    let output = run(&temp.0, &request(input(&temp.0), json!({})), "source");
+    let temp = TempDir::new("understanding_quadrant");
+    let output = run(
+        temp.path(),
+        &request(input(temp.path()), json!({})),
+        "source",
+    );
     assert_eq!(output.status.code(), Some(0));
     let mut document: Value = serde_json::from_slice(
-        &fs::read(temp.0.join("source/understanding-quadrant.json")).unwrap(),
+        &fs::read(temp.path().join("source/understanding-quadrant.json")).unwrap(),
     )
     .unwrap();
     document["classificationPolicy"]["scoreRange"]["maximum"] = json!(999);
-    let path = temp.0.join("tampered-quadrant.json");
+    let path = temp.path().join("tampered-quadrant.json");
     fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
     let tampered_ref = json!({
         "schema":"code-intel-artifact-ref.v1",
@@ -291,14 +276,14 @@ fn a03_rejects_tampered_policy_constants_before_a01_dispatch() {
         "consumedSnapshotIdentity":SNAPSHOT
     });
     let rejected = run(
-        &temp.0,
+        temp.path(),
         &request(tampered_ref, json!({})),
         "tampered-policy",
     );
     assert_eq!(rejected.status.code(), Some(65));
     assert!(String::from_utf8_lossy(&rejected.stderr).contains("policy"));
     assert!(!temp
-        .0
+        .path()
         .join("tampered-policy/understanding-quadrant.json")
         .exists());
 }

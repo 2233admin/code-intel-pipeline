@@ -8,14 +8,8 @@ use serde_json::Value;
 
 #[test]
 fn real_native_projection_preserves_five_factor_units_and_advisory_admission() {
-    let root = std::env::temp_dir().join(format!(
-        "code-intel-projection-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
+    let root_dir = common::TempDir::new("projection");
+    let root = root_dir.path();
     let repo = root.join("repo");
     let authority = root.join("authority");
     fs::create_dir_all(&repo).unwrap();
@@ -145,5 +139,4 @@ fn real_native_projection_preserves_five_factor_units_and_advisory_admission() {
         fs::read(repo.join(".sentrux/baseline.json")).unwrap(),
         baseline
     );
-    fs::remove_dir_all(root).unwrap();
 }

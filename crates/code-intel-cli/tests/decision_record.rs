@@ -1,9 +1,10 @@
 mod common;
+
+use common::TempDir;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::process::Stdio;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
@@ -34,31 +35,6 @@ mod staged_artifact;
 
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const EVIDENCE: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-static NONCE: AtomicU64 = AtomicU64::new(0);
-
-struct Temp(PathBuf);
-
-impl Temp {
-    fn new() -> Self {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-c07-{}-{now}-{}",
-            std::process::id(),
-            NONCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn resolution() -> Value {
     let options = json!([
@@ -166,8 +142,8 @@ fn wait_record_pair(mut children: [std::process::Child; 2]) -> [std::process::Ou
 
 #[test]
 fn resolve_once_then_replay_without_question() {
-    let root = Temp::new();
-    let store = decision_record::DecisionRecordStore::new(root.0.clone());
+    let root = TempDir::new("decision_record");
+    let store = decision_record::DecisionRecordStore::new(root.path().to_path_buf());
     let resolution = resolution();
     let mut port = decision_port::InMemoryDecisionPort::default();
     port.supply_response(resolution["response"].clone())
@@ -206,8 +182,8 @@ fn resolve_once_then_replay_without_question() {
 
 #[test]
 fn changed_evidence_or_snapshot_requires_reopen() {
-    let root = Temp::new();
-    let store = decision_record::DecisionRecordStore::new(root.0.clone());
+    let root = TempDir::new("decision_record");
+    let store = decision_record::DecisionRecordStore::new(root.path().to_path_buf());
     store.record(&resolution()).unwrap();
 
     let mut changed = replay_query();
@@ -227,8 +203,8 @@ fn changed_evidence_or_snapshot_requires_reopen() {
 
 #[test]
 fn stale_evidence_requires_reopen() {
-    let root = Temp::new();
-    let store = decision_record::DecisionRecordStore::new(root.0.clone());
+    let root = TempDir::new("decision_record");
+    let store = decision_record::DecisionRecordStore::new(root.path().to_path_buf());
     store.record(&resolution()).unwrap();
     let mut query = replay_query();
     query["now"] = json!(2201);
@@ -237,8 +213,8 @@ fn stale_evidence_requires_reopen() {
 
 #[test]
 fn forged_authority_and_replayed_authority_event_are_rejected() {
-    let root = Temp::new();
-    let store = decision_record::DecisionRecordStore::new(root.0.clone());
+    let root = TempDir::new("decision_record");
+    let store = decision_record::DecisionRecordStore::new(root.path().to_path_buf());
     let mut forged = resolution();
     forged["authorityEvent"]["approver"]["id"] = json!("mallory");
     assert!(store
@@ -263,8 +239,8 @@ fn forged_authority_and_replayed_authority_event_are_rejected() {
 
 #[test]
 fn wrong_response_correlation_and_gap_are_rejected() {
-    let root = Temp::new();
-    let store = decision_record::DecisionRecordStore::new(root.0.clone());
+    let root = TempDir::new("decision_record");
+    let store = decision_record::DecisionRecordStore::new(root.path().to_path_buf());
     let mut wrong_correlation = resolution();
     wrong_correlation["response"]["correlationId"] = json!("corr-wrong");
     assert!(store
@@ -284,8 +260,8 @@ fn wrong_response_correlation_and_gap_are_rejected() {
 
 #[test]
 fn branch_scope_mismatch_is_rejected_not_replayed() {
-    let root = Temp::new();
-    let store = decision_record::DecisionRecordStore::new(root.0.clone());
+    let root = TempDir::new("decision_record");
+    let store = decision_record::DecisionRecordStore::new(root.path().to_path_buf());
     store.record(&resolution()).unwrap();
     let mut query = replay_query();
     query["affectedBranches"] = json!(["unrelated"]);
@@ -298,9 +274,9 @@ fn branch_scope_mismatch_is_rejected_not_replayed() {
 
 #[test]
 fn invalid_stored_records_are_ignored_with_diagnosis() {
-    let root = Temp::new();
-    fs::write(root.0.join("forged.json"), b"{\"schema\":\"forged\"}").unwrap();
-    let store = decision_record::DecisionRecordStore::new(root.0.clone());
+    let root = TempDir::new("decision_record");
+    fs::write(root.path().join("forged.json"), b"{\"schema\":\"forged\"}").unwrap();
+    let store = decision_record::DecisionRecordStore::new(root.path().to_path_buf());
     let result = store.replay(&replay_query()).unwrap();
     assert_eq!(result["status"], "reopen");
     assert_eq!(result["reason"], "no_record");
@@ -309,14 +285,14 @@ fn invalid_stored_records_are_ignored_with_diagnosis() {
 
 #[test]
 fn committed_store_uses_a06_a07_manifest_marker_and_real_schema_validation() {
-    let root = Temp::new();
-    let store = decision_record::DecisionRecordStore::new(root.0.join("records"));
+    let root = TempDir::new("decision_record");
+    let store = decision_record::DecisionRecordStore::new(root.path().join("records"));
     let result = store.record(&resolution()).unwrap();
     let record = &result["record"];
     let bytes = serde_json::to_vec_pretty(record).unwrap();
     decision_record::validate_decision_record_artifact(&bytes).unwrap();
 
-    let runs = committed_runs(&root.0.join("records"));
+    let runs = committed_runs(&root.path().join("records"));
     assert_eq!(runs.len(), 1);
     assert_eq!(run_commit::classify(&runs[0]), "committed");
     let (marker, manifest) = run_commit::validate_committed_run(&runs[0]).unwrap();
@@ -355,7 +331,7 @@ fn committed_store_uses_a06_a07_manifest_marker_and_real_schema_validation() {
     )
     .is_err());
 
-    let reopened = decision_record::DecisionRecordStore::new(root.0.join("records"));
+    let reopened = decision_record::DecisionRecordStore::new(root.path().join("records"));
     assert_eq!(
         reopened.replay(&replay_query()).unwrap()["status"],
         "replay"
@@ -364,9 +340,9 @@ fn committed_store_uses_a06_a07_manifest_marker_and_real_schema_validation() {
 
 #[test]
 fn store_lock_serializes_same_binding_and_authority_reuse_across_processes() {
-    let root = Temp::new();
-    let same_store = root.0.join("same-store");
-    let same_path = root.0.join("same.json");
+    let root = TempDir::new("decision_record");
+    let same_store = root.path().join("same-store");
+    let same_path = root.path().join("same.json");
     fs::write(&same_path, serde_json::to_vec(&resolution()).unwrap()).unwrap();
     let first = spawn_record(&same_path, &same_store);
     let second = spawn_record(&same_path, &same_store);
@@ -385,9 +361,9 @@ fn store_lock_serializes_same_binding_and_authority_reuse_across_processes() {
     assert_eq!(statuses, ["recorded", "replay"]);
     assert_eq!(committed_runs(&same_store).len(), 1);
 
-    let authority_store = root.0.join("authority-store");
-    let first_path = root.0.join("first.json");
-    let second_path = root.0.join("second.json");
+    let authority_store = root.path().join("authority-store");
+    let first_path = root.path().join("first.json");
+    let second_path = root.path().join("second.json");
     fs::write(&first_path, serde_json::to_vec(&resolution()).unwrap()).unwrap();
     let mut second_resolution = resolution();
     second_resolution["gap"]["id"] = json!("gap-second");
@@ -420,8 +396,8 @@ fn store_lock_serializes_same_binding_and_authority_reuse_across_processes() {
 
 #[test]
 fn binding_and_replay_reject_temporal_backdating() {
-    let root = Temp::new();
-    let store = decision_record::DecisionRecordStore::new(root.0.clone());
+    let root = TempDir::new("decision_record");
+    let store = decision_record::DecisionRecordStore::new(root.path().to_path_buf());
     let mut late = resolution();
     late["recordedAt"] = json!(2160);
     late["authorityEvent"]["expiresAt"] = json!(2190);
@@ -451,24 +427,33 @@ fn binding_and_replay_reject_temporal_backdating() {
 
 #[test]
 fn store_entry_failures_and_symlinks_are_reported_not_silently_filtered() {
-    let root = Temp::new();
-    fs::write(root.0.join("forged.json"), b"{\"schema\":\"forged\"}").unwrap();
-    fs::create_dir(root.0.join("uncommitted-run")).unwrap();
+    let root = TempDir::new("decision_record");
+    fs::write(root.path().join("forged.json"), b"{\"schema\":\"forged\"}").unwrap();
+    fs::create_dir(root.path().join("uncommitted-run")).unwrap();
     let mut expected = 2;
     #[cfg(unix)]
     {
         use std::os::unix::fs::symlink;
-        symlink(root.0.join("forged.json"), root.0.join("record-link")).unwrap();
+        symlink(
+            root.path().join("forged.json"),
+            root.path().join("record-link"),
+        )
+        .unwrap();
         expected += 1;
     }
     #[cfg(windows)]
     {
         use std::os::windows::fs::symlink_file;
-        if symlink_file(root.0.join("forged.json"), root.0.join("record-link")).is_ok() {
+        if symlink_file(
+            root.path().join("forged.json"),
+            root.path().join("record-link"),
+        )
+        .is_ok()
+        {
             expected += 1;
         }
     }
-    let store = decision_record::DecisionRecordStore::new(root.0.clone());
+    let store = decision_record::DecisionRecordStore::new(root.path().to_path_buf());
     let result = store.replay(&replay_query()).unwrap();
     let diagnostics = result["diagnostics"].as_array().unwrap();
     assert_eq!(diagnostics.len(), expected);
@@ -482,10 +467,10 @@ fn store_entry_failures_and_symlinks_are_reported_not_silently_filtered() {
 
 #[test]
 fn production_cli_registry_and_schema_are_wired() {
-    let root = Temp::new();
-    let resolution_path = root.0.join("resolution.json");
-    let query_path = root.0.join("query.json");
-    let store_path = root.0.join("records");
+    let root = TempDir::new("decision_record");
+    let resolution_path = root.path().join("resolution.json");
+    let query_path = root.path().join("query.json");
+    let store_path = root.path().join("records");
     fs::write(&resolution_path, serde_json::to_vec(&resolution()).unwrap()).unwrap();
     fs::write(&query_path, serde_json::to_vec(&replay_query()).unwrap()).unwrap();
     let output = common::cli()
