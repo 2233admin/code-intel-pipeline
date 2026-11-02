@@ -38,7 +38,6 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::capability::sha256_hex;
-use crate::repin::is_excluded;
 
 /// Where declared pins live, and under which key names.
 ///
@@ -142,6 +141,18 @@ fn collect(value: &Value, record: &str, keys: &[(&str, &str)], out: &mut Vec<Dec
         }
         _ => {}
     }
+}
+
+/// Whether `path` is one of `excludes` or lies under one (prefix match on
+/// whole path components).
+pub(crate) fn is_excluded(path: &str, excludes: &[String]) -> bool {
+    excludes.iter().any(|prefix| {
+        let prefix = prefix.trim_end_matches('/');
+        path == prefix
+            || path
+                .strip_prefix(prefix)
+                .is_some_and(|rest| rest.starts_with('/'))
+    })
 }
 
 /// Fixed location of the integration registry, the one record whose pins are

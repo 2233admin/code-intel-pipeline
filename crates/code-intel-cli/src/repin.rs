@@ -453,18 +453,6 @@ fn flush(repo: &Path, report: &RepinReport) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether `path` is one of `excludes` or lies under one (prefix match on
-/// whole path components).
-pub(crate) fn is_excluded(path: &str, excludes: &[String]) -> bool {
-    excludes.iter().any(|prefix| {
-        let prefix = prefix.trim_end_matches('/');
-        path == prefix
-            || path
-                .strip_prefix(prefix)
-                .is_some_and(|rest| rest.starts_with('/'))
-    })
-}
-
 /// `withheld` is a path the caller will not let `--write` change: the scan
 /// still reads it, but never rewrites it, so nothing downstream is rewritten
 /// to describe bytes that will not be written.
@@ -475,7 +463,7 @@ fn scan(
 ) -> Result<RepinReport, String> {
     let mut excludes: Vec<String> = DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect();
     excludes.extend(extra_excludes.iter().cloned());
-    let is_excluded = |path: &str| is_excluded(path, &excludes);
+    let is_excluded = |path: &str| declared_pins::is_excluded(path, &excludes);
 
     let digests = snapshot::repin_digests(repo)?;
     let head_map = digests.head;
