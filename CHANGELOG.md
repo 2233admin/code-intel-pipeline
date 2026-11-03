@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `change risk`/`change agenda` count edits inside an inline `#[cfg(test)] mod` block as touching tests (#504): a source file whose diff hits such a block no longer makes `signals.testAsymmetry` report `asymmetric` with no tests changed. `files[]` rows gain `touchesInlineTests`, and `--format text` marks them ` [inline-test]`.
 - `repin` now audits the toolchain digest pins of `orchestration/integrations.json` by their declared paths (#129): `toolchainDigestEvidence.inputs[i]` is checked against `toolchainDigests[i]` in the worktree regardless of HEAD, so a second uncommitted edit after `repin --write` is reported STALE (and by `verify`) instead of `clean`. An integration whose arrays do not pair is reported `UNRESOLVED` (`state: "unpaired"` in `verify`) and never rewritten. `--write` now repeats scan and declared-pin resync to a fixpoint, so a record that pins the registry is updated in the same run.
 - `sentrux` native gate now honors `ignore_test_dependencies` from `.sentrux/rules.toml` (#394): test files no longer count toward coupling (imports and file denominator), so import-only test changes do not trigger `coupling_increased`. `scan` reports `coupling_policy`, `save_baseline` records `couplingPolicy`, and `gate`/`check` fail closed with `baseline_engine_mismatch` when the baseline's recorded policy differs from the current rules (or is invalid) instead of comparing incomparable numbers.
 
