@@ -423,3 +423,18 @@ new file mode 100644
     assert_eq!(hunks["x.rs"], vec![((1, 3), (0, 0))]);
     assert_eq!(hunks["y.rs"], vec![((0, 0), (1, 2))]);
 }
+
+#[test]
+fn unparseable_tip_version_stays_asymmetric() {
+    let repo = init_repo("inline-non-utf8-tip");
+    let body = "pub fn compute() -> i32 {\n    1\n}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn works() {\n        assert_eq!(1, 1);\n    }\n}\n";
+    write_file(&repo, FILE, body);
+    commit(&repo, "add");
+    let mut edited = b"// \xff not utf-8\n".to_vec();
+    edited.extend_from_slice(body.replace("(1, 1)", "(2, 2)").as_bytes());
+    std::fs::write(repo.join(FILE), edited).unwrap();
+    commit(&repo, "edit");
+    let result = execute(&repo, "HEAD", 0).expect("scoring succeeds");
+    assert_eq!(signals_of(&result)["asymmetric"], true);
+    assert_eq!(file_row(&result, FILE)["touchesInlineTests"], false);
+}

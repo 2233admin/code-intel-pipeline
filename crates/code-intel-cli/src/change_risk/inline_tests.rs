@@ -43,7 +43,9 @@ pub(crate) fn touched_inline_test_files(
     let mut hunks = parse_hunks(&diff);
     hunks.retain(|path, _| candidates.contains(path.as_str()));
     let paths: Vec<&str> = hunks.keys().map(String::as_str).collect();
-    let new_ranges = ranges_by_path(git::read_blobs_at(repo, tip, &paths));
+    let tip_blobs = git::read_blobs_at(repo, tip, &paths);
+    let at_tip: BTreeSet<String> = tip_blobs.iter().map(|(path, _)| path.clone()).collect();
+    let new_ranges = ranges_by_path(tip_blobs);
     // Removed lines (a pure deletion has no new-side lines at all) are
     // matched against the module spans of the old side instead.
     let deleting: Vec<&str> = hunks
@@ -61,6 +63,10 @@ pub(crate) fn touched_inline_test_files(
     hunks
         .iter()
         .filter(|(path, list)| {
+            // A tip version that exists but cannot be parsed stays untouched.
+            if at_tip.contains(path.as_str()) && !new_ranges.contains_key(path.as_str()) {
+                return false;
+            }
             // A file absent at the tip (deleted) has no new-side lines.
             hunks_hit(
                 new_ranges.get(path.as_str()).unwrap_or(&none),
