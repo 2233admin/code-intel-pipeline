@@ -22,7 +22,7 @@ model: sonnet
 
 1. `AGENTS.md`（或 `CLAUDE.md`），以及它要求改这一块前先读的文档。
 2. `<单子目录>/spec.md` 和 `<单子目录>/build.md`。
-3. 本轮的 `checks.md`：门禁已经跑过 `factory/checks.sh` 并通过了，不必整套重跑。
+3. 本轮的 `checks.md`：门禁已经跑过 `factory/checks.sh` 和 spec 的 `## 判定命令` 并通过了，不必重跑。
 4. 改动：`git log --oneline <基线>..HEAD` 和 `git diff <基线>...HEAD`（基线是 prompt 里的 `origin/<分支>`）。
    diff 不够时读改过的文件全文。
 5. `<单子目录>/round-<N>/coverage.md`（prompt 第五行 `Coverage:` 给路径）：脚本按 `ft touched` 生成，每个改到的单元一行
@@ -33,7 +33,7 @@ model: sonnet
 
 ## 查
 
-跑 spec 的 `## 判定命令`，以及 AGENTS.md 列的、和改动相关的验证命令里门禁没覆盖的部分。lint 只针对改过的文件，
+跑 AGENTS.md 列的、和改动相关的验证命令里门禁没覆盖的部分。lint 只针对改过的文件，
 不用会改写文件的模式（`--fix` 之类）。
 
 ## 看什么
@@ -82,9 +82,6 @@ model: sonnet
 VERDICT: PASS | CHANGES
 COMMIT: <你审的完整 40 位 sha>
 REASON: <只在 CHANGES 时写，见下>
-
-## Checks
-<命令>: pass/fail
 
 ## 发现
 

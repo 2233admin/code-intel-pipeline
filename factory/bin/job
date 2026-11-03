@@ -40,7 +40,7 @@ Usage:
   job metrics [--since <YYYY-MM-DD>] [--json]
                                  cycle, rounds, reasons, tool use, review findings and how many re-runs
                                  confirmed from events.jsonl and job.json, escape rate from .escaped.json;
-                                 writes factory/jobs/.metrics.json for the dashboard
+                                 writes factory/jobs/.metrics.json
   job res <job> add [--pid <N>] [--port <P>] [--label <text>]
   job res <job> list|release [--pid <N>]
                                  processes (and ports) a job holds; released by pid when it leaves build/review
@@ -92,7 +92,8 @@ when the transition went ahead without a check it couldn't make.
 spec → build also records what the gate needs from the spec into job.json, so nothing written later can
 change it: the sha256 of every file under holdout/ (`holdout`; refused when holdout/manifest.json is invalid,
 or missing while config.json holdout_required is true), `## 允许修改的测试` (`allowed_tests`) and
-`## 稳定性` (`satisfaction`; refused when `runs` is over config.json satisfaction.max_runs).
+`## 稳定性` (`satisfaction`; refused when `runs` is over config.json satisfaction.max_runs), and the commands
+of `## 判定命令` (`spec_commands`, which the gate runs; refused when there is none).
 Only `job rework` adds to `allowed_tests`: the paths an operator's comment lists under `## 允许修改的测试`.
 gate → spec is legal only for GATE: FAIL with REASON: test-weak and HOLDOUT: WEAK (the holdout passes on the
 base too); the round isn't used, and spec → build then keeps the round. After config.json holdout.max_respecs (default 2)
@@ -114,7 +115,8 @@ after the branch moved past the gate's COMMIT skips the HEAD check. A job that e
 (no record) is checked for the clean worktree only, with a warning in events.jsonl. `stalled` skips it like every check.
 
 gate → review on a job whose SURFACES include ui needs round-N/evidence/index.md
-(factory/bin/evidence) when config.json has dev_server.cmd and ft.shot.
+(factory/bin/evidence) when config.json has dev_server.cmd and ft.shot, with `EVIDENCE: <n> paths, 0 failed`;
+up to config.json evidence.allow_failed failed shots pass when spec.md marks each of them `(optional)`.
 """
 
 import fcntl
@@ -739,7 +741,9 @@ def own_files(job, stage):
                         evidence.add(hit_.relative_to(d).as_posix() + ("/" if hit_.is_dir() else ""))
     folders += tuple(e for e in evidence if e.endswith("/"))
     exact |= {e for e in evidence if not e.endswith("/")}
-    return lambda rel: rel in exact or rel.startswith(folders)
+    # The ui and ux reviewers' own screenshots: round-N/evidence/ui-*, ux-* (one file each, no subfolders).
+    shots = tuple(f"round-{n}/evidence/{r}-" for r in names if r in ("ui", "ux"))
+    return lambda rel: rel in exact or rel.startswith(folders) or (rel.startswith(shots) and "/" not in rel.split("/", 2)[2])
 
 
 def read_only_problems(job, stage, x, snap):
@@ -1494,6 +1498,37 @@ def record_spec(job, path):
         job["holdout"] = None
     job["allowed_tests"] = allowed_tests(path)
     job["satisfaction"] = stability(path)
+    job["spec_commands"] = spec_commands(path)
+    require(job["spec_commands"], "spec.md `## 判定命令` has no command the gate can run: put them in a ```bash block "
+                                  "or start a line with `<command>`")
+
+
+def spec_commands(path):
+    """What the gate runs from `## 判定命令`: each fenced block (``` or ~~~) verbatim, as one bash script (-e,
+    pipefail), and each line outside them that starts with its only `<command>`. Refuses any other line outside the
+    blocks that has backticks, since the gate can't tell whether it names a command, and a block that runs holdout/
+    together with other commands, since the gate leaves that block to the holdout acceptance."""
+    text = section(path, "判定命令") or ""
+    fence = re.compile(r"^[ \t]*(```|~~~)[^\n]*\n(.*?)^[ \t]*\1[ \t]*$", re.MULTILINE | re.DOTALL)
+    out = []
+    for m in fence.finditer(text):
+        body = m.group(2).rstrip("\n")  # verbatim: blank and `#` lines may be heredoc data, trailing spaces too
+        if any(l.strip() and not l.lstrip().startswith("#") for l in body.splitlines()):
+            out.append(body)
+    for line in fence.sub("", text).splitlines():
+        m = re.match(r"\s*(?:[-*]\s+|\d+\.\s+)?`([^`]+)`", line)
+        if m and "`" not in line[m.end():]:
+            out.append(m.group(1).strip())
+        else:
+            require("`" not in line, f"spec.md `## 判定命令`: can't tell whether this line names a command: {line.strip()!r}; "
+                                     "put commands in a ```bash block, or start the line with `<command>`")
+    runs_holdout = gate_module()["runs_holdout"]
+    for cmd in out:
+        lines = [l for l in cmd.splitlines() if l.strip() and not l.lstrip().startswith("#")]
+        require(not runs_holdout(cmd) or len(lines) == 1,
+                "spec.md `## 判定命令`: a block that runs holdout/ is left to the holdout acceptance, so the other "
+                f"commands in it wouldn't run; give the holdout command its own line: {lines[0]!r}")
+    return out
 
 
 def allowed_tests(path):
@@ -1576,9 +1611,37 @@ def check_evidence(job):
         warning = f"no page evidence: factory/config.json has no {' or '.join(missing)}"
         print(f"job: warning: {job['id']}: {warning}", file=sys.stderr)
         return warning
-    require((round_dir(job) / "evidence" / "index.md").exists(),
-            f"round {job['round']} has no evidence/index.md; run factory/bin/evidence {job['id']} first")
+    index = round_dir(job) / "evidence" / "index.md"
+    require(index.exists(), f"round {job['round']} has no evidence/index.md; run factory/bin/evidence {job['id']} first")
+    text = index.read_text()
+    m = re.match(r"EVIDENCE: (\d+) paths, (\d+) failed\n", text)
+    require(m, f"{index.name} doesn't start with `EVIDENCE: <n> paths, <k> failed`; run factory/bin/evidence {job['id']} again")
+    lines = [l for l in (section(text, "Failed") or "").splitlines() if l.strip()]
+    failed = max(int(m.group(2)), len(lines))
+    if not failed:
+        return None
+    detail = "\n".join(lines)
+    allow = (CONFIG.get("evidence") or {}).get("allow_failed", 0)
+    require(failed <= allow, f"{failed} of {m.group(1)} shots failed (config.json evidence.allow_failed is {allow}); "
+                             f"the job stays at gate:\n{detail}")
+    optional = optional_paths(job_dir(job["id"]) / "spec.md")
+    paths = [p.group(1) for l in lines if (p := re.match(r"\d+\. `([^`]*)`", l))]
+    bad = [p for p in paths if p not in optional]
+    require(len(paths) == failed and not bad,
+            f"failed shots not marked `(optional)` under spec.md `## 验收路径`: {', '.join(bad) or detail}")
     return None
+
+
+def optional_paths(spec):
+    """Paths under spec.md's `## 验收路径` marked `(optional)`, as factory/bin/evidence writes them."""
+    out = set()
+    for line in (section(spec, "验收路径") or "").splitlines() if spec.exists() else []:
+        item = re.match(r"\s*[-*]\s+(.*)", line)
+        field = item.group(1).partition("|")[0] if item else ""
+        if "(optional)" in field:  # only on the path field: a selector may contain the word
+            path = re.sub(r"\s*\(optional\)", "", field).strip().strip("`")
+            out.add("/" + path.lstrip("/"))
+    return out
 
 
 def last_gate(job):
@@ -2422,14 +2485,16 @@ def checks_settled(sha):
            [s["context"] for s in statuses if s["state"] != "success"]
 
 
-CHECKS_REFUSED = re.compile(r"(?i)required status checks?\b")
+# GitHub answers "not mergeable" too while the checks on a just-pushed head are still queued (#31)
+CHECKS_REFUSED = re.compile(r"(?i)required status checks?\b|Pull Request is not mergeable")
 
 
 def put_merge(job, sha, base):
     """PUT pulls/N/merge at `sha`, `base` being origin/<base> it was synced with. (response, None), or (None, why):
     "base moved" when the base moved past `base` (sync and gate again), else the text for decision.md.
     Retried after waiting where GitHub refuses only for now: mergeability not computed yet after the base moved
-    (once), or required checks not finished on the commit just pushed (until CHECKS_WAIT runs out)."""
+    (once), or required checks not finished on the commit just pushed, refused as such or as "not mergeable"
+    (until CHECKS_WAIT runs out)."""
     def put():
         return api("PUT", repo_api(f"pulls/{job['pr']}/merge"), {"sha": sha, "merge_method": CONFIG["merge_method"]})
 
