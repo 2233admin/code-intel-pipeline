@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "code-intel-surgery-plan.v1",
+  "title": "Code Intel Surgery Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "admission",
+    "primary_target",
+    "operating_plan",
+    "verification",
+    "discharge_criteria"
+  ],
+  "properties": {
+    "schema": { "const": "code-intel-surgery-plan.v1" },
+    "status": { "enum": ["planned", "not_required"] },
+    "admission": { "type": "object" },
+    "primary_target": { "type": "object" },
+    "operating_plan": { "type": "array" },
+    "verification": { "type": "array" },
+    "discharge_criteria": { "type": "array" }
+  }
+}
