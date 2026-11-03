@@ -25,6 +25,9 @@ from the main checkout's config.json too:
 - fail_patterns: regexes; FAIL when any line of the log matches, even on exit 0.
 - path_checks: [{"paths": [<fnmatch>], "run": "<command>"}]; when the branch
   changes a matching path, `run` runs after checks.sh, in the worktree.
+- The spec's `## 判定命令` (job.json `spec_commands`, recorded at spec → build: each fenced block whole, each
+  line outside them that starts with its only `<command>`): each runs with `bash -e -o pipefail -c` after the path checks, in the worktree; a non-zero exit or fail_patterns hit is FAIL (correctness), and checks.md shows
+  the command, its exit and output tail. One that names holdout/ is left to the holdout acceptance.
 - signoff: when true, FAIL unless every commit in base..HEAD has Signed-off-by.
 - tools.json: every `kind: "script"` tool whose `stages` include "gate" (and whose
   `surfaces`, when set, meet the job's) runs after the path checks, in the
@@ -156,6 +159,21 @@ def protected_changes(worktree, allowed_tests=()):
         elif any(fnmatch.fnmatch(old, g) for g in tests) and not any(fnmatch.fnmatch(old, a) for a in allowed_tests):
             hits.append(f"{status[0]} {old} (existing test, not in spec.md `## 允许修改的测试`)")
     return hits
+
+
+def runs_holdout(cmd):
+    """Whether a spec command names holdout/ as one of its own words (`holdout`, `holdout/...`): that one is the
+    holdout acceptance's to run. A word that only mentions it (`--ignore=holdout/`, `tests/holdout/x.py`) doesn't."""
+    for line in cmd.splitlines():
+        try:
+            lex = shlex.shlex(line, posix=True, punctuation_chars=True)  # `holdout;`, `holdout>log`: operators apart
+            lex.whitespace_split = True
+            words = list(lex)
+        except ValueError:
+            words = line.split()
+        if any(w == "holdout" or w.startswith("holdout/") for w in words):
+            return True
+    return False
 
 
 def unsigned_commits(worktree):
@@ -795,11 +813,20 @@ def gate_run_checks(job_id, s):
         pcode, plog, psec, phit = run_cmd(["bash", "-c", c["run"]], worktree)
         path_results.append((c["run"], pcode, psec, phit))
         log += f"\n$ {c['run']}\n{plog}"
+    spec_results = []
+    for cmd in s["job"].get("spec_commands") or []:
+        if runs_holdout(cmd):
+            spec_results.append((cmd, None, 0, None, ""))
+            continue
+        scode, slog, ssec, shit = run_cmd(["bash", "-e", "-o", "pipefail", "-c", cmd], worktree)
+        spec_results.append((cmd, scode, ssec, shit, slog))
+        log += f"\n$ {cmd}\n{slog}"
+    spec_red = [r for r in spec_results if r[1] is not None and (r[1] != 0 or r[3])]
     tool_results = run_tools(s["job"], worktree, s["round_dir"])
     tool_red = [t for t in tool_results if t[1] != 0 or t[3]]
     checks_red = code != 0 or hit is not None
     others_red = bool(s["protected"] or s["unsigned"] or any(r[1] != 0 or r[3] for r in path_results)
-                      or any(t[4] for t in tool_red))
+                      or spec_red or any(t[4] for t in tool_red))
     verdict = "PASS" if not checks_red and not others_red else "FAIL"
     red_base = None
     if checks_red and not others_red:
@@ -807,7 +834,7 @@ def gate_run_checks(job_id, s):
         if red:
             verdict = "BASE-RED"
     s.update(cached=cached, code=code, log=log, seconds=seconds, hit=hit, path_results=path_results,
-             tool_results=tool_results, tool_red=tool_red, verdict=verdict, red_base=red_base)
+             spec_results=spec_results, spec_red=spec_red, tool_results=tool_results, tool_red=tool_red, verdict=verdict, red_base=red_base)
 
 
 def gate_followups(s, merge):
@@ -862,7 +889,23 @@ def gate_text_head(s, reason):
     text += "## Path checks\n" + bullets(
         [f"`{r}`: exit {c} in {t}s" + (f", matched `{h}`" if h else "") for r, c, t, h in s["path_results"]],
         "None triggered.") + "\n\n"
+    if s["job"].get("spec_commands") is not None:
+        text += "## 判定命令\n" + bullets([spec_line(r) for r in s["spec_results"]], "None ran.") + "\n\n"
     return text
+
+
+def spec_line(result):
+    """One `## 判定命令` bullet: the command and its exit, with the output tail when it failed."""
+    cmd, code, sec, hit, log = result
+    first, *rest = cmd.splitlines()
+    cmd = first + (f" …（代码块共 {len(rest) + 1} 行）" if rest else "")
+    if code is None:
+        return f"`{cmd}`: 引用 holdout/，留给留出验收"
+    line = f"`{cmd}`: exit {code} in {sec}s" + (f", matched `{hit}`" if hit else "")
+    if code == 0 and not hit:
+        return line
+    tail = "\n".join("  " + l for l in log.rstrip().splitlines()[-40:])
+    return line + "\n\n  ```\n" + tail + "\n  ```"
 
 
 def gate_text(s, reason):
@@ -903,6 +946,7 @@ def gate_notes(s):
     if s["unsigned"]:
         notes.append(f"not signed off: {', '.join(s['unsigned'])}")
     notes += [f"path check failed: {r}" for r, c, _, h in s["path_results"] if c != 0 or h]
+    notes += [f"spec command failed: {r[0]}" for r in s["spec_red"]]
     notes += [f"tool {n} failed" + ("" if b else " (not blocking)") for n, _, _, _, b in s["tool_red"]]
     return notes + gate_result_notes(s)
 

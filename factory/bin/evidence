@@ -7,14 +7,15 @@ Usage:
 For a job whose intake SURFACES include ui, with config.json dev_server.cmd and
 ft.shot set: starts the dev server with `factory/tools/ft serve <job> evidence`,
 then for each line of spec.md's optional `## 验收路径` section
-(`- <path> [| <selector to wait for>]`, relative to the server root; `/` when
+(`- <path> [(optional)] [| <selector to wait for>]`, relative to the server root; `/` when
 the section is missing) records the HTTP status, takes `ft shot <url>
 round-N/evidence/<i>.png [--wait <selector>]`, and counts the lines ft.shot
 wrote to <i>.console.txt (page errors) and links <i>.a11y.json (axe) when they
 exist. Then it releases the dev server by its pid (`job res <job> release --pid`).
 
 Run it after the gate passes and before `job advance <job> review`, which
-requires round-N/evidence/index.md for such a job. Without ui, or without the
+requires round-N/evidence/index.md for such a job and refuses it while shots
+failed (beyond config.json evidence.allow_failed, on paths marked `(optional)`). Without ui, or without the
 config, it prints why and exits 0 without writing anything.
 """
 
@@ -62,6 +63,7 @@ def accept_paths(spec):
         if not item:
             continue
         path, _, selector = item.group(1).partition("|")
+        path = re.sub(r"\s*\(optional\)", "", path)  # a marker on the path field only; job reads it
         path, selector = path.strip().strip("`"), selector.strip().strip("`")
         if path:
             paths.append(("/" + path.lstrip("/"), selector))

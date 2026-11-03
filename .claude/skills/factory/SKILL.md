@@ -298,8 +298,7 @@ prompt `<头>` + `Build round <N>: read build.md and the round folders, then con
   `evidence` 只对 `SURFACES` 含 `ui` 的单采证据：起 dev server、按 spec 的 `## 验收路径` 逐条截图，写
   `round-<N>/evidence/index.md`，用完按 pid 停掉服务。别的单、或 `config.json` 没配 `dev_server.cmd` 和 `ft.shot` 时它说跳过，
   不写文件，`advance` 照常放行（没配时 stderr 打一行警告、事件里记一条 `warning`，在汇报里带上）。
-  它退出非零但写了 `index.md`（个别截图失败）时照常推进，在汇报里带上它那一行；没写 `index.md`（dev server 没起来）时
-  `advance` 会拒绝：把它那一行原样告诉用户，这张单停在 gate。
+  它退出非零（截图失败或 dev server 没起来）时 `advance` 会拒绝（`evidence.allow_failed` 放行的除外）：把它那一行原样告诉用户，这张单停在 gate。
 - `GATE: FAIL` 且文件头有 `HOLDOUT: WEAK`（`REASON: test-weak`：spec-writer 写的留出验收在基线上也通过）：
   `factory/bin/job advance <job-id> spec`，照 **spec** 里「从 gate 退回来的」做。不派回 builder，不占轮次。
 - `GATE: FAIL`（含 `REASON: test-weak`：builder 的新测试在基线上就通过；`REASON: flaky`：`## 稳定性` 的命令在 HEAD 上
