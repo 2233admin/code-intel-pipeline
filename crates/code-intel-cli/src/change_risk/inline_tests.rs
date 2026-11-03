@@ -230,7 +230,12 @@ fn skip_whitespace(code: &[u8], mut at: usize) -> usize {
 fn test_module_span(code: &[u8], mut at: usize) -> Option<(usize, usize)> {
     loop {
         at = skip_whitespace(code, at);
-        if !code[at..].starts_with(b"#[") {
+        if code.get(at) != Some(&b'#') {
+            break;
+        }
+        // `#` and `[` are separate tokens: whitespace may sit between them.
+        let bracket = skip_whitespace(code, at + 1);
+        if code.get(bracket) != Some(&b'[') {
             break;
         }
         at = skip_attribute(code, at)?;

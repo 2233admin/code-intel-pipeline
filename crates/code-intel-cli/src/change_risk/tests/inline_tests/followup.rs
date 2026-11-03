@@ -167,3 +167,81 @@ fn top_of_file_deletion_is_not_a_whole_file_deletion() {
     let result = execute(&repo, "HEAD", 0).expect("scoring succeeds");
     assert_eq!(signals_of(&result)["asymmetric"], true);
 }
+
+#[test]
+fn whitespace_between_hash_and_bracket_in_middle_attribute_gives_ranges() {
+    assert_eq!(
+        inline_test_ranges("#[cfg(test)]\n# [allow(dead_code)]\nmod tests {\n}\n"),
+        vec![(3, 4)]
+    );
+    assert_eq!(
+        inline_test_ranges("#[cfg(test)]\n#\n[allow(dead_code)]\npub mod tests {\n}\n"),
+        vec![(4, 5)]
+    );
+    assert_eq!(
+        inline_test_ranges(
+            "#[cfg(test)]\n#[allow(dead_code)]\n# [allow(unused)]\nmod tests {\n}\n"
+        ),
+        vec![(4, 5)]
+    );
+}
+
+#[test]
+fn edit_inside_module_with_spaced_middle_attribute_touches_inline_tests() {
+    let repo = init_repo("inline-spaced-middle-attr");
+    let before = BEFORE.replace("#[cfg(test)]\n", "#[cfg(test)]\n# [allow(dead_code)]\n");
+    write_file(&repo, FILE, &before);
+    commit(&repo, "add");
+    write_file(&repo, FILE, &before.replace("(1, 1)", "(2, 2)"));
+    commit(&repo, "edit test");
+    let result = execute(&repo, "HEAD", 0).expect("scoring succeeds");
+    assert_eq!(signals_of(&result)["asymmetric"], false);
+    assert_eq!(file_row(&result, FILE)["touchesInlineTests"], true);
+}
+
+const NON_ASCII_FILE: &str = "crates/code-intel-cli/src/测试.rs";
+
+#[test]
+fn non_ascii_path_edit_inside_test_module_touches_inline_tests() {
+    let repo = init_repo("inline-non-ascii-edit");
+    write_file(&repo, NON_ASCII_FILE, BEFORE);
+    commit(&repo, "add");
+    write_file(&repo, NON_ASCII_FILE, &BEFORE.replace("(1, 1)", "(2, 2)"));
+    commit(&repo, "edit test");
+    let result = execute(&repo, "HEAD", 0).expect("scoring succeeds");
+    assert_eq!(signals_of(&result)["asymmetric"], false);
+    assert_eq!(
+        file_row(&result, NON_ASCII_FILE)["touchesInlineTests"],
+        true
+    );
+}
+
+#[test]
+fn non_ascii_path_whole_file_deletion_counts_as_a_test_change() {
+    let repo = init_repo("inline-non-ascii-delete");
+    write_file(&repo, NON_ASCII_FILE, BEFORE);
+    commit(&repo, "add");
+    std::fs::remove_file(repo.join(NON_ASCII_FILE)).unwrap();
+    commit(&repo, "delete file");
+    let result = execute(&repo, "HEAD", 0).expect("scoring succeeds");
+    assert_eq!(signals_of(&result)["testFilesChanged"], 1);
+    assert_eq!(
+        file_row(&result, NON_ASCII_FILE)["touchesInlineTests"],
+        true
+    );
+}
+
+#[test]
+fn whole_file_deletion_with_unparseable_old_version_stays_asymmetric() {
+    let repo = init_repo("inline-delete-non-utf8-old");
+    let mut old = b"// \xff not utf-8\n".to_vec();
+    old.extend_from_slice(BEFORE.as_bytes());
+    std::fs::create_dir_all(repo.join(FILE).parent().unwrap()).unwrap();
+    std::fs::write(repo.join(FILE), old).unwrap();
+    commit(&repo, "add");
+    std::fs::remove_file(repo.join(FILE)).unwrap();
+    commit(&repo, "delete file");
+    let result = execute(&repo, "HEAD", 0).expect("scoring succeeds");
+    assert_eq!(signals_of(&result)["asymmetric"], true);
+    assert_eq!(file_row(&result, FILE)["touchesInlineTests"], false);
+}
