@@ -361,6 +361,13 @@ fn text_format_marks_inline_test_files() {
             .unwrap()
             .as_nanos()
     ));
+    struct RemoveOnDrop(std::path::PathBuf);
+    impl Drop for RemoveOnDrop {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let _cleanup = RemoveOnDrop(repo.clone());
     std::fs::create_dir_all(repo.join("crates/code-intel-cli/src")).unwrap();
     let git = |args: &[&str]| {
         assert!(Command::new("git")
