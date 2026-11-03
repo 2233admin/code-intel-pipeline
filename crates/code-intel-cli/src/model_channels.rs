@@ -252,6 +252,22 @@ fn reject_credentialed_http_endpoint(endpoint: &str, has_api_key: bool) -> Resul
     Ok(())
 }
 
+/// Parse a CC Switch response body into its `channels` array. serde_json's
+/// `from_reader` does not buffer, and ureq 3's body reader does not either, so
+/// without the `BufReader` a multi-megabyte body costs one `read` per byte and
+/// can hit the 5s global timeout.
+fn parse_cc_switch_channels(reader: impl std::io::Read) -> Result<Vec<Value>, String> {
+    let cc_data: Value = serde_json::from_reader(std::io::BufReader::new(reader))
+        .map_err(|e| format!("CC Switch response parse failed: {}", e))?;
+    match cc_data {
+        Value::Object(mut object) => match object.remove("channels") {
+            Some(Value::Array(channels)) => Ok(channels),
+            _ => Err("CC Switch response missing 'channels' array".to_string()),
+        },
+        _ => Err("CC Switch response missing 'channels' array".to_string()),
+    }
+}
+
 fn merge_cc_switch_candidates(inventory: &mut Value) -> Result<(), String> {
     let cc_switch_endpoint = match env::var("CODE_INTEL_CC_SWITCH_ENDPOINT") {
         Ok(endpoint) => endpoint,
@@ -287,21 +303,14 @@ fn merge_cc_switch_candidates(inventory: &mut Value) -> Result<(), String> {
     }
 
     // Stream JSON without introducing ureq 3's convenience-reader body limit.
-    let cc_data: Value = serde_json::from_reader(response.into_body().into_reader())
-        .map_err(|e| format!("CC Switch response parse failed: {}", e))?;
-
-    let channels = cc_data
-        .get("channels")
-        .and_then(Value::as_array)
-        .ok_or("CC Switch response missing 'channels' array")?;
+    let channels = parse_cc_switch_channels(response.into_body().into_reader())?;
 
     let candidates = inventory
         .get_mut("candidates")
         .and_then(Value::as_array_mut)
         .ok_or("inventory missing candidates array")?;
 
-    for channel in channels {
-        let mut candidate = channel.clone();
+    for mut candidate in channels {
         if !candidate.is_object() {
             continue;
         }
@@ -756,6 +765,56 @@ mod tests {
             .expect_err("http + api key must be rejected");
         assert!(err.contains("https://"));
         assert!(err.contains("CODE_INTEL_CC_SWITCH_API_KEY"));
+    }
+
+    struct CountingReader<R> {
+        inner: R,
+        reads: usize,
+    }
+
+    impl<R: std::io::Read> std::io::Read for CountingReader<R> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.reads += 1;
+            self.inner.read(buf)
+        }
+    }
+
+    #[test]
+    fn cc_switch_body_is_read_through_a_buffer() {
+        let head = br#"{"channels":[{"id":"a"},{"id":"b"}],"padding":""#;
+        let tail = br#""}"#;
+        let mut body = head.to_vec();
+        body.resize(10_486_815 - tail.len(), b' ');
+        body.extend_from_slice(tail);
+        let body_len = body.len();
+        assert!(body_len >= 10_000_000);
+
+        let mut reader = CountingReader {
+            inner: std::io::Cursor::new(body),
+            reads: 0,
+        };
+        let channels = parse_cc_switch_channels(&mut reader).expect("body parses");
+        assert_eq!(channels, vec![json!({"id":"a"}), json!({"id":"b"})]);
+        assert!(
+            reader.reads <= body_len / 4096 + 64,
+            "too many read calls: {}",
+            reader.reads
+        );
+    }
+
+    #[test]
+    fn cc_switch_body_errors_keep_their_text() {
+        let err = parse_cc_switch_channels(&b"{not json"[..]).expect_err("invalid json");
+        assert!(
+            err.starts_with("CC Switch response parse failed: "),
+            "{err}"
+        );
+        for body in [&br#"{"other":[]}"#[..], br#"{"channels":{}}"#, b"[]"] {
+            assert_eq!(
+                parse_cc_switch_channels(body).expect_err("missing channels"),
+                "CC Switch response missing 'channels' array"
+            );
+        }
     }
 
     fn candidate(id: &str, scope: &str) -> Value {
