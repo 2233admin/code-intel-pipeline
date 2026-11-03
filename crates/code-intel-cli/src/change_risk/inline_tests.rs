@@ -21,8 +21,6 @@ type Hunk = (Span, Span);
 /// Inclusive 1-based line range of one inline test module.
 type LineRange = (usize, usize);
 
-const CFG_TEST: &[u8] = b"#[cfg(test)]";
-
 /// The paths among `files` whose diff over `range` hits an inline test
 /// module in their `tip` version.
 pub(crate) fn touched_inline_test_files(
@@ -42,7 +40,7 @@ pub(crate) fn touched_inline_test_files(
     let Some(diff) = git::unified_zero_diff(repo, range) else {
         return InlineTests::new();
     };
-    let mut hunks = parse_hunks(&diff);
+    let (mut hunks, deleted) = parse_diff(&diff);
     hunks.retain(|path, _| candidates.contains(path.as_str()));
     let paths: Vec<&str> = hunks.keys().map(String::as_str).collect();
     let new_ranges = ranges_by_path(git::read_blobs_at(repo, tip, &paths));
@@ -63,14 +61,16 @@ pub(crate) fn touched_inline_test_files(
     hunks
         .iter()
         .filter(|(path, list)| {
-            let new = new_ranges.get(path.as_str());
-            // A file absent at the tip has no hunks to attribute.
-            new.is_some()
-                && hunks_hit(
-                    new.unwrap_or(&none),
-                    old_ranges.get(path.as_str()).unwrap_or(&none),
-                    list,
-                )
+            // Only a path the diff header marks `+++ /dev/null` may lack a
+            // tip version; any other unreadable tip stays untouched.
+            if !deleted.contains(path.as_str()) && !new_ranges.contains_key(path.as_str()) {
+                return false;
+            }
+            hunks_hit(
+                new_ranges.get(path.as_str()).unwrap_or(&none),
+                old_ranges.get(path.as_str()).unwrap_or(&none),
+                list,
+            )
         })
         .map(|(path, _)| path.clone())
         .collect()
@@ -96,17 +96,35 @@ pub(super) fn touches_inline_tests(path: &str, inline: &InlineTests) -> bool {
 }
 
 /// Hunks per path from `git diff -U0 --no-prefix` output.
+#[cfg(test)]
 pub(super) fn parse_hunks(diff: &str) -> BTreeMap<String, Vec<Hunk>> {
+    parse_diff(diff).0
+}
+
+/// Hunks per path, plus the paths whose header says `+++ /dev/null`.
+fn parse_diff(diff: &str) -> (BTreeMap<String, Vec<Hunk>>, BTreeSet<String>) {
+    let mut deleted = BTreeSet::new();
     let mut hunks: BTreeMap<String, Vec<Hunk>> = BTreeMap::new();
     let mut in_header = false;
     let mut current: Option<String> = None;
+    let mut old_path: Option<String> = None;
     for line in diff.lines() {
         if line.starts_with("diff --git ") {
             in_header = true;
             current = None;
+            old_path = None;
         } else if in_header {
-            if let Some(path) = line.strip_prefix("+++ ") {
-                current = (path != "/dev/null").then(|| path.trim_end_matches('\t').to_string());
+            if let Some(path) = line.strip_prefix("--- ") {
+                old_path = Some(path.trim_end_matches('\t').to_string());
+            } else if let Some(path) = line.strip_prefix("+++ ") {
+                // A deleted file keys its hunks by the old path.
+                current = if path == "/dev/null" {
+                    let old = old_path.take().filter(|old| old != "/dev/null");
+                    deleted.extend(old.clone());
+                    old
+                } else {
+                    Some(path.trim_end_matches('\t').to_string())
+                };
             } else if line.starts_with("@@ ") {
                 in_header = false;
             }
@@ -118,7 +136,7 @@ pub(super) fn parse_hunks(diff: &str) -> BTreeMap<String, Vec<Hunk>> {
             }
         }
     }
-    hunks
+    (hunks, deleted)
 }
 
 /// `@@ -a,b +c,d @@` -> `((a, b), (c, d))`; a missing count defaults to 1.
@@ -158,13 +176,30 @@ pub(super) fn inline_test_ranges(source: &str) -> Vec<LineRange> {
     let code = mask_non_code(source.as_bytes());
     let mut ranges = Vec::new();
     let mut from = 0;
-    while let Some(found) = find(&code, CFG_TEST, from) {
-        from = found + CFG_TEST.len();
-        if let Some((open, close)) = test_module_span(&code, from) {
+    while let Some(found) = find(&code, b"#", from) {
+        from = found + 1;
+        let Some(end) = cfg_test_end(&code, found) else {
+            continue;
+        };
+        from = end;
+        if let Some((open, close)) = test_module_span(&code, end) {
             ranges.push((line_of(&code, open), line_of(&code, close)));
         }
     }
     ranges
+}
+
+/// Offset just past a `#[cfg(test)]` starting at `at`; ASCII whitespace is
+/// allowed between its tokens, anything but a bare `test` predicate is not.
+fn cfg_test_end(code: &[u8], mut at: usize) -> Option<usize> {
+    for token in [&b"#"[..], b"[", b"cfg", b"(", b"test", b")", b"]"] {
+        at = skip_whitespace(code, at);
+        if !code[at..].starts_with(token) {
+            return None;
+        }
+        at += token.len();
+    }
+    Some(at)
 }
 
 fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
@@ -200,6 +235,7 @@ fn test_module_span(code: &[u8], mut at: usize) -> Option<(usize, usize)> {
         }
         at = skip_attribute(code, at)?;
     }
+    at = skip_visibility(code, at);
     let keyword = at;
     if !code[at..].starts_with(b"mod") || code.get(at + 3).is_none_or(|byte| is_ident(*byte)) {
         return None;
@@ -214,6 +250,32 @@ fn test_module_span(code: &[u8], mut at: usize) -> Option<(usize, usize)> {
         return None;
     }
     Some((keyword, matching_brace(code, at)?))
+}
+
+/// Skip an optional `pub` / `pub(crate)` / `pub(in path)` and the
+/// whitespace after it; `at` unchanged when there is none.
+fn skip_visibility(code: &[u8], at: usize) -> usize {
+    if !code[at..].starts_with(b"pub") || code.get(at + 3).is_some_and(|byte| is_ident(*byte)) {
+        return at;
+    }
+    let after = skip_whitespace(code, at + 3);
+    if code.get(after) != Some(&b'(') {
+        return after;
+    }
+    let mut depth = 0usize;
+    for (offset, byte) in code[after..].iter().enumerate() {
+        match byte {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return skip_whitespace(code, after + offset + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    at
 }
 
 /// Offset just past the `]` closing the attribute that starts at `at`.

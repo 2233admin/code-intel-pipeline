@@ -305,3 +305,5 @@ fn deleting_the_whole_test_module_counts_as_a_test_change() {
         assert_eq!(signals_of(&result)["asymmetric"], false, "{spec}");
     }
 }
+
+mod followup;
