@@ -149,3 +149,21 @@ fn unparseable_tip_stays_asymmetric_when_another_path_becomes_a_directory() {
     let result = execute(&repo, "HEAD", 0).expect("scoring succeeds");
     assert_eq!(signals_of(&result)["asymmetric"], true);
 }
+
+#[test]
+fn top_of_file_deletion_is_not_a_whole_file_deletion() {
+    let repo = init_repo("inline-top-deletion-unreadable-tip");
+    let other = "crates/code-intel-cli/src/other.rs";
+    let module = "#[cfg(test)]\nmod tests {\n    #[test]\n    fn works() {\n        assert_eq!(1, 1);\n    }\n}\n";
+    write_file(&repo, FILE, module);
+    write_file(&repo, other, "pub fn other() {}\n");
+    commit(&repo, "add");
+    // Drop the first two lines (hunk `@@ -1,2 +0,0 @@`), not the whole file.
+    let kept: String = module.lines().skip(2).map(|l| format!("{l}\n")).collect();
+    write_file(&repo, FILE, &kept);
+    std::fs::remove_file(repo.join(other)).unwrap();
+    write_file(&repo, &format!("{other}/mod.rs"), "pub fn other() {}\n");
+    commit(&repo, "edit");
+    let result = execute(&repo, "HEAD", 0).expect("scoring succeeds");
+    assert_eq!(signals_of(&result)["asymmetric"], true);
+}

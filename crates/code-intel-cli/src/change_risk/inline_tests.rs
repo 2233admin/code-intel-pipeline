@@ -40,7 +40,7 @@ pub(crate) fn touched_inline_test_files(
     let Some(diff) = git::unified_zero_diff(repo, range) else {
         return InlineTests::new();
     };
-    let mut hunks = parse_hunks(&diff);
+    let (mut hunks, deleted) = parse_diff(&diff);
     hunks.retain(|path, _| candidates.contains(path.as_str()));
     let paths: Vec<&str> = hunks.keys().map(String::as_str).collect();
     let new_ranges = ranges_by_path(git::read_blobs_at(repo, tip, &paths));
@@ -61,10 +61,9 @@ pub(crate) fn touched_inline_test_files(
     hunks
         .iter()
         .filter(|(path, list)| {
-            // Only a whole-file deletion (new side `+0,0` everywhere) may lack
-            // a tip version; any other unreadable tip stays untouched.
-            let deleted = list.iter().all(|(_, new)| *new == (0, 0));
-            if !deleted && !new_ranges.contains_key(path.as_str()) {
+            // Only a path the diff header marks `+++ /dev/null` may lack a
+            // tip version; any other unreadable tip stays untouched.
+            if !deleted.contains(path.as_str()) && !new_ranges.contains_key(path.as_str()) {
                 return false;
             }
             hunks_hit(
@@ -97,7 +96,14 @@ pub(super) fn touches_inline_tests(path: &str, inline: &InlineTests) -> bool {
 }
 
 /// Hunks per path from `git diff -U0 --no-prefix` output.
+#[cfg(test)]
 pub(super) fn parse_hunks(diff: &str) -> BTreeMap<String, Vec<Hunk>> {
+    parse_diff(diff).0
+}
+
+/// Hunks per path, plus the paths whose header says `+++ /dev/null`.
+fn parse_diff(diff: &str) -> (BTreeMap<String, Vec<Hunk>>, BTreeSet<String>) {
+    let mut deleted = BTreeSet::new();
     let mut hunks: BTreeMap<String, Vec<Hunk>> = BTreeMap::new();
     let mut in_header = false;
     let mut current: Option<String> = None;
@@ -113,7 +119,9 @@ pub(super) fn parse_hunks(diff: &str) -> BTreeMap<String, Vec<Hunk>> {
             } else if let Some(path) = line.strip_prefix("+++ ") {
                 // A deleted file keys its hunks by the old path.
                 current = if path == "/dev/null" {
-                    old_path.take().filter(|old| old != "/dev/null")
+                    let old = old_path.take().filter(|old| old != "/dev/null");
+                    deleted.extend(old.clone());
+                    old
                 } else {
                     Some(path.trim_end_matches('\t').to_string())
                 };
@@ -128,7 +136,7 @@ pub(super) fn parse_hunks(diff: &str) -> BTreeMap<String, Vec<Hunk>> {
             }
         }
     }
-    hunks
+    (hunks, deleted)
 }
 
 /// `@@ -a,b +c,d @@` -> `((a, b), (c, d))`; a missing count defaults to 1.
