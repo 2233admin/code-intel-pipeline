@@ -128,6 +128,26 @@ pub(super) fn unified_zero_diff(repo: &Path, range: &str) -> Option<String> {
     run(range).or_else(|| run(&root_commit_fallback(range)?))
 }
 
+/// The commit the old side of `range` is read from: the left of `A..B`, the
+/// merge base for `A...B`, `HEAD` when the left is omitted. `None` when it
+/// does not resolve (root commit, empty-tree fallback): nothing to read.
+pub(super) fn range_base(repo: &Path, range: &str) -> Option<String> {
+    let (left, right) = range.split_once("..")?;
+    let left = if left.is_empty() { "HEAD" } else { left };
+    let Some(right) = right.strip_prefix('.') else {
+        return Some(left.to_string());
+    };
+    let right = if right.is_empty() { "HEAD" } else { right };
+    let output = crate::hardened_git::command(repo)
+        .args(["merge-base", left, right])
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 /// Contents of `paths` at `rev`, fetched with one `git cat-file --batch`.
 /// Files missing at `rev` are absent from the result; any git failure or
 /// unexpected framing degrades to an empty map.

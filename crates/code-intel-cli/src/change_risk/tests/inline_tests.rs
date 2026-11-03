@@ -217,16 +217,17 @@ fn sample_baselines_use_the_same_inline_test_decision() {
 fn hunk_and_module_intersection() {
     let ranges = inline_test_ranges(BEFORE);
     assert_eq!(ranges, vec![(6, 11)]);
-    assert!(hunks_hit(&ranges, &[(8, 1)]));
-    assert!(hunks_hit(&ranges, &[(1, 6)]), "overlap at the mod line");
-    assert!(
-        hunks_hit(&ranges, &[(11, 3)]),
-        "overlap at the closing brace"
-    );
-    assert!(!hunks_hit(&ranges, &[(1, 3)]));
-    assert!(!hunks_hit(&ranges, &[(12, 2)]));
-    assert!(hunks_hit(&ranges, &[(8, 0)]), "pure deletion inside");
-    assert!(!hunks_hit(&ranges, &[(3, 0)]), "pure deletion outside");
+    let hit = |hunk| hunks_hit(&ranges, &ranges, &[hunk]);
+    assert!(hit(((8, 1), (8, 1))));
+    assert!(hit(((1, 1), (1, 6))), "overlap at the mod line");
+    assert!(hit(((11, 1), (11, 3))), "overlap at the closing brace");
+    assert!(!hit(((1, 1), (1, 3))));
+    assert!(!hit(((12, 1), (12, 2))));
+    assert!(hit(((8, 1), (7, 0))), "pure deletion of old lines inside");
+    assert!(!hit(((3, 1), (2, 0))), "pure deletion of old lines outside");
+    assert!(!hit(((12, 1), (11, 0))), "deletion just after the module");
+    let new_only = hunks_hit(&ranges, &[], &[((7, 1), (6, 0))]);
+    assert!(!new_only, "deletions never consult the new side");
 }
 
 #[test]
@@ -255,7 +256,7 @@ pub fn after() {}
 }
 
 #[test]
-fn parse_hunks_reads_new_side_ranges() {
+fn parse_hunks_reads_both_sides() {
     let diff = "diff --git a/x.rs b/x.rs
 index 1..2 100644
 --- x.rs
@@ -273,6 +274,34 @@ diff --git a/y.rs b/y.rs
 @@ -0,0 +1,4 @@
 ";
     let hunks = parse_hunks(diff);
-    assert_eq!(hunks["x.rs"], vec![(3, 1), (10, 0)]);
-    assert_eq!(hunks["y.rs"], vec![(1, 4)]);
+    assert_eq!(hunks["x.rs"], vec![((3, 1), (3, 1)), ((10, 2), (10, 0))]);
+    assert_eq!(hunks["y.rs"], vec![((0, 0), (1, 4))]);
+}
+
+#[test]
+fn deleting_production_code_right_after_the_module_stays_asymmetric() {
+    let with_tail = format!("{BEFORE}\npub fn tail() -> i32 {{\n    3\n}}\n");
+    let repo = init_repo("inline-delete-after");
+    write_file(&repo, FILE, &with_tail);
+    commit(&repo, "add");
+    write_file(&repo, FILE, BEFORE);
+    commit(&repo, "drop tail fn");
+    for spec in ["HEAD", "HEAD~1..HEAD"] {
+        let result = execute(&repo, spec, 0).expect("scoring succeeds");
+        assert_eq!(signals_of(&result)["asymmetric"], true, "{spec}");
+    }
+}
+
+#[test]
+fn deleting_the_whole_test_module_counts_as_a_test_change() {
+    let repo = init_repo("inline-delete-module");
+    write_file(&repo, FILE, BEFORE);
+    commit(&repo, "add");
+    write_file(&repo, FILE, "pub fn compute() -> i32 {\n    2\n}\n");
+    commit(&repo, "change fn and drop the test module");
+    for spec in ["HEAD", "HEAD~1..HEAD"] {
+        let result = execute(&repo, spec, 0).expect("scoring succeeds");
+        assert_eq!(signals_of(&result)["testFilesChanged"], 1, "{spec}");
+        assert_eq!(signals_of(&result)["asymmetric"], false, "{spec}");
+    }
 }

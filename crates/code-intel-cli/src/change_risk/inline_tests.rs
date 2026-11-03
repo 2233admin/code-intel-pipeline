@@ -14,8 +14,10 @@ use std::path::Path;
 use super::signals::{is_source_file, is_test_file};
 use super::{git, FileDiff, InlineTests};
 
-/// New-side line range `(start, count)` of one `-U0` hunk.
-type Hunk = (usize, usize);
+/// Line span `(start, count)` of one side of a `-U0` hunk.
+type Span = (usize, usize);
+/// `(old side, new side)` of one `-U0` hunk.
+type Hunk = (Span, Span);
 /// Inclusive 1-based line range of one inline test module.
 type LineRange = (usize, usize);
 
@@ -43,13 +45,44 @@ pub(crate) fn touched_inline_test_files(
     let mut hunks = parse_hunks(&diff);
     hunks.retain(|path, _| candidates.contains(path.as_str()));
     let paths: Vec<&str> = hunks.keys().map(String::as_str).collect();
-    git::read_blobs_at(repo, tip, &paths)
-        .into_iter()
-        .filter(|(path, bytes)| {
-            std::str::from_utf8(bytes)
-                .is_ok_and(|text| hunks_hit(&inline_test_ranges(text), &hunks[path]))
+    let new_ranges = ranges_by_path(git::read_blobs_at(repo, tip, &paths));
+    // Removed lines (a pure deletion has no new-side lines at all) are
+    // matched against the module spans of the old side instead.
+    let deleting: Vec<&str> = hunks
+        .iter()
+        .filter(|(_, list)| list.iter().any(|((_, count), _)| *count > 0))
+        .map(|(path, _)| path.as_str())
+        .collect();
+    let old_ranges = match git::range_base(repo, range) {
+        Some(base) if !deleting.is_empty() => {
+            ranges_by_path(git::read_blobs_at(repo, &base, &deleting))
+        }
+        _ => BTreeMap::new(),
+    };
+    let none = Vec::new();
+    hunks
+        .iter()
+        .filter(|(path, list)| {
+            let new = new_ranges.get(path.as_str());
+            // A file absent at the tip has no hunks to attribute.
+            new.is_some()
+                && hunks_hit(
+                    new.unwrap_or(&none),
+                    old_ranges.get(path.as_str()).unwrap_or(&none),
+                    list,
+                )
         })
-        .map(|(path, _)| path)
+        .map(|(path, _)| path.clone())
+        .collect()
+}
+
+fn ranges_by_path(blobs: Vec<(String, Vec<u8>)>) -> BTreeMap<String, Vec<LineRange>> {
+    blobs
+        .into_iter()
+        .filter_map(|(path, bytes)| {
+            let text = std::str::from_utf8(&bytes).ok()?;
+            Some((path, inline_test_ranges(text)))
+        })
         .collect()
 }
 
@@ -62,7 +95,7 @@ pub(super) fn touches_inline_tests(path: &str, inline: &InlineTests) -> bool {
     inline.contains(path) && is_inline_candidate(path)
 }
 
-/// New-side hunks per path from `git diff -U0 --no-prefix` output.
+/// Hunks per path from `git diff -U0 --no-prefix` output.
 pub(super) fn parse_hunks(diff: &str) -> BTreeMap<String, Vec<Hunk>> {
     let mut hunks: BTreeMap<String, Vec<Hunk>> = BTreeMap::new();
     let mut in_header = false;
@@ -88,24 +121,35 @@ pub(super) fn parse_hunks(diff: &str) -> BTreeMap<String, Vec<Hunk>> {
     hunks
 }
 
-/// `@@ -a,b +c,d @@` -> `(c, d)`; `d` defaults to 1.
+/// `@@ -a,b +c,d @@` -> `((a, b), (c, d))`; a missing count defaults to 1.
 fn parse_hunk_header(line: &str) -> Option<Hunk> {
     let rest = line.strip_prefix("@@ -")?;
-    let new_side = rest.split(" +").nth(1)?.split(' ').next()?;
-    let (start, count) = match new_side.split_once(',') {
-        Some((start, count)) => (start, count),
-        None => (new_side, "1"),
-    };
+    let (old_side, rest) = rest.split_once(" +")?;
+    Some((parse_span(old_side)?, parse_span(rest.split(' ').next()?)?))
+}
+
+fn parse_span(text: &str) -> Option<Span> {
+    let (start, count) = text.split_once(',').unwrap_or((text, "1"));
     Some((start.parse().ok()?, count.parse().ok()?))
 }
 
-/// A hunk hits a module when its new-side lines `[c, c+d-1]` intersect the
-/// module; a pure deletion (`d == 0`) counts when line `c` is inside it.
-pub(super) fn hunks_hit(ranges: &[LineRange], hunks: &[Hunk]) -> bool {
-    hunks.iter().any(|&(start, count)| {
-        let last = if count == 0 { start } else { start + count - 1 };
-        ranges.iter().any(|&(from, to)| start <= to && last >= from)
-    })
+/// A hunk hits a module when its added lines intersect `new_ranges` (new
+/// side) or its removed lines intersect `old_ranges` (old side). A pure
+/// deletion has no new-side lines, so only the old side can match it.
+pub(super) fn hunks_hit(
+    new_ranges: &[LineRange],
+    old_ranges: &[LineRange],
+    hunks: &[Hunk],
+) -> bool {
+    let overlaps = |(start, count): Span, ranges: &[LineRange]| {
+        count > 0
+            && ranges
+                .iter()
+                .any(|&(from, to)| start <= to && start + count - 1 >= from)
+    };
+    hunks
+        .iter()
+        .any(|&(old, new)| overlaps(new, new_ranges) || overlaps(old, old_ranges))
 }
 
 /// Line ranges of every `#[cfg(test)]`-gated `mod <name> { … }` block,
