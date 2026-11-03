@@ -58,7 +58,7 @@
       },
       "conformance": {
         "path": "crates/code-intel-cli/tests/codegraph_provider.rs",
-        "sha256": "bbaaabe958513710750e40fa632400cfc30f4d1aed83818fe7f0830323990a53",
+        "sha256": "977a43548608df291088372e0f540d7f4447b1ac4166a662e362adee26c8a72e",
         "testName": "real_upstream_edges_source_and_add_change_delete_sync_are_snapshot_bound"
       }
     }
@@ -107,7 +107,7 @@
     { "path": "crates/code-intel-cli/src/cli/command_catalog/routes/provider_routes.rs", "description": "Public optional-provider route alongside existing provider contracts" },
     { "path": "crates/code-intel-cli/src/mcp_serve/handlers.rs", "description": "Repository-pinned get_code_context query handler; cannot request writes or redirect repository" },
     { "path": "crates/code-intel-cli/src/mcp_serve/tools.rs", "description": "Closed source-read-only get_code_context descriptor with explicit local-artifact effects" },
-    { "path": "crates/code-intel-cli/tests/codegraph_provider.rs", "description": "Public failures and real upstream source/edge/staleness/scope transition conformance", "sha256": "bbaaabe958513710750e40fa632400cfc30f4d1aed83818fe7f0830323990a53" }
+    { "path": "crates/code-intel-cli/tests/codegraph_provider.rs", "description": "Public failures and real upstream source/edge/staleness/scope transition conformance", "sha256": "977a43548608df291088372e0f540d7f4447b1ac4166a662e362adee26c8a72e" }
   ],
   "rollback": {
     "strategy": "Stop explicit CodeGraph calls or omit get_code_context; native CodeNexus and committed-run gates remain independent. Keep content-addressed evidence referenced by admission. No source migration, default DAG switch or main release is part of this deployment.",

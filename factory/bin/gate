@@ -37,7 +37,8 @@ from the main checkout's config.json too:
   Modified tests aren't checked. ft.setup, when set, runs first in that worktree.
 - Existing tests are read-only: a file matching test_globs that the branch
   modifies or deletes is a protected path too, unless the spec listed it under
-  `## 允许修改的测试` (job.json `allowed_tests`, recorded at spec → build).
+  `## 允许修改的测试` (job.json `allowed_tests`, recorded at spec → build;
+  `job rework` adds those an operator comment lists).
 - Holdout acceptance (job.json `holdout`, recorded at spec → build): the job
   folder's holdout/ files must still have the sha256 recorded then, else FAIL
   (protected-path). When everything above passed, holdout/manifest.json's files
@@ -375,7 +376,13 @@ def weak_tests(worktree, round_dir, name):
             if scode != 0:
                 return None, files, (f"ft.setup failed on the base (exit {scode}), so the new tests weren't judged. "
                                      f"Log: {name}-base-setup.log.")
-        code, _, _, _ = run_cmd([str(FT), "test", *files], tree, {"FT_LOG": str(log_path)})
+        code, out, _, _ = run_cmd([str(FT), "test", *files], tree, {"FT_LOG": str(log_path)})
+    # ft test exits 1 on any failure and names the runner's own exit code: `exit <N> in <s>s`.
+    runner = re.search(r"\bexit (\d+) in \d+s", out or "")
+    code = int(runner.group(1)) if code and runner else code
+    if code in (126, 127):  # the runner itself couldn't start: the environment failed, not the red the tests need
+        return None, files, (f"The new tests couldn't run on origin/{BASE} {sha[:7]} (exit {code}), so they "
+                             f"weren't judged. Log: {log_path.name}.")
     if code == 0:
         return True, files, (f"这些新测试在基线上就通过，测不到本次改动。origin/{BASE} {sha[:7]}, "
                              f"log: {log_path.name}.")

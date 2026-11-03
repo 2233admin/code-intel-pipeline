@@ -1,12 +1,10 @@
-use crate::{codenexus_adapter, graph, Result};
+use crate::{codenexus_adapter, Result};
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::{env, fs};
 
-#[path = "graph_adapter.rs"]
-mod graph_adapter;
 #[path = "repowise_adapter.rs"]
 mod repowise_adapter;
 #[path = "sentrux_adapter.rs"]
@@ -85,20 +83,6 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         notes: "Optional session-review route. Mindwalk extraction remains replaceable; raw prompts, summaries, outside paths, and provider-specific policy never enter the normalized artifact.",
     },
     ProviderOperation {
-        provider: "graph",
-        operation: "adapt",
-        stage: "architecture_graph",
-        protocol: "provider-port+cli",
-        method: "POST",
-        route: "/api/providers/graph/adapt",
-        command_template: "target/debug/code-intel.exe provider graph-adapt --request <native.json|-> --artifact-root <artifact-directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>",
-        artifact: "code-intel-graph-route-result.v1",
-        required: true,
-        status: "active",
-        source_spec: "Pipeline-owned B02 adapter over internal Rust or explicit Understand-compatible fallback output and A04 admissibility",
-        notes: "Canonical graph evidence route. Current snapshot binding is mandatory; external graph execution remains explicit fallback/legacy rollback only.",
-    },
-    ProviderOperation {
         provider: "repowise",
         operation: "adapt",
         stage: "semantic_memory",
@@ -169,50 +153,6 @@ pub const OPERATIONS: &[ProviderOperation] = &[
         source_spec: "Compiled `codenexus generate` route (codenexus_lite.rs) localization adapter",
         notes: "Canonical compatibility route; non-blocking and replaceable, with Survival Scanner preserving localization when unavailable.",
     },
-    ProviderOperation {
-        provider: "understand",
-        operation: "graph",
-        stage: "architecture_graph",
-        protocol: "artifact+command",
-        method: "POST",
-        route: "/api/providers/understand/graph",
-        command_template:
-            "target/debug/code-intel.exe provider --action Invoke --provider understand --operation graph --repo <repo-path> --language zh --write --json",
-        artifact: ".understand-anything/knowledge-graph.json",
-        required: true,
-        status: "active",
-        source_spec: "Understand Anything command contract: /understand <repo> --language <lang>, graph artifact",
-        notes: "Internal Rust provider emits the Understand-compatible artifact first.",
-    },
-    ProviderOperation {
-        provider: "understand",
-        operation: "graph_full",
-        stage: "architecture_graph",
-        protocol: "artifact+command",
-        method: "POST",
-        route: "/api/providers/understand/graph/full",
-        command_template:
-            "target/debug/code-intel.exe provider --action Invoke --provider understand --operation graph_full --repo <repo-path> --language zh --write --json",
-        artifact: ".understand-anything/knowledge-graph.json",
-        required: false,
-        status: "active",
-        source_spec: "Understand Anything full graph refresh semantics",
-        notes: "Use when a fresh complete graph is requested.",
-    },
-    ProviderOperation {
-        provider: "understand",
-        operation: "external_fallback",
-        stage: "architecture_graph",
-        protocol: "manual-command",
-        method: "MANUAL",
-        route: "/compat/providers/understand/external",
-        command_template: "/understand <repo-path> --language zh",
-        artifact: ".understand-anything/knowledge-graph.json",
-        required: false,
-        status: "compatibility",
-        source_spec: "Understand Anything upstream/plugin command surface",
-        notes: "Use only if internal graph provider fails or richer external pass is explicitly requested.",
-    },
 ];
 
 pub fn translate_repowise_native(
@@ -221,14 +161,6 @@ pub fn translate_repowise_native(
     max_age_seconds: u64,
 ) -> std::result::Result<Value, String> {
     repowise_adapter::translate(native, evaluated_at, max_age_seconds)
-}
-
-pub fn translate_graph_native(
-    native: &Value,
-    evaluated_at: u64,
-    max_age_seconds: u64,
-) -> std::result::Result<Value, String> {
-    graph_adapter::translate(native, evaluated_at, max_age_seconds)
 }
 
 pub fn translate_sentrux_native(
@@ -449,111 +381,6 @@ fn parse_sentrux_adapt_cli(raw: &[String]) -> std::result::Result<SentruxAdaptCl
 fn print_sentrux_route_rejection(message: &str) -> i32 {
     let result = json!({
         "schema":"code-intel-sentrux-route-result.v1",
-        "status":"rejected",
-        "adapter":null,
-        "admission":null,
-        "engineeringFacts":[],
-        "diagnostics":[message]
-    });
-    println!("{}", serde_json::to_string(&result).unwrap());
-    eprintln!("{message}");
-    65
-}
-
-pub(crate) fn run_graph_adapt_raw(raw: &[String]) -> i32 {
-    let cli = match parse_graph_adapt_cli(raw) {
-        Ok(cli) => cli,
-        Err(message) => {
-            eprintln!("{message}");
-            return 64;
-        }
-    };
-    let native = match read_provider_native(&cli.request, "graph") {
-        Ok(value) => value,
-        Err(message) => return print_graph_route_rejection(&message),
-    };
-    let mut adapter = match translate_graph_native(&native, cli.evaluated_at, cli.max_age_seconds) {
-        Ok(value) => value,
-        Err(message) => return print_graph_route_rejection(&message),
-    };
-    let admitted = match crate::admissibility::validate_for_consumer(
-        &adapter["evidence"]["request"],
-        &cli.artifact_root,
-    ) {
-        Ok(value) => value,
-        Err(message) => return print_graph_route_rejection(&message),
-    };
-    if let Err(message) = graph_adapter::validate_admitted_payload(admitted.payload(), &adapter) {
-        return print_graph_route_rejection(&message);
-    }
-    adapter["port"]["anatomyUsable"] = json!(
-        admitted.result()["domainVerdict"] == "observed"
-            && adapter["port"]["status"] == "current"
-            && adapter["port"]["freshness"] == "current"
-    );
-    let result = json!({
-        "schema":"code-intel-graph-route-result.v1",
-        "status":"completed",
-        "adapter":adapter,
-        "admission":admitted.result(),
-        "engineeringFacts":[],
-        "diagnostics":[]
-    });
-    println!("{}", serde_json::to_string(&result).unwrap());
-    0
-}
-
-struct GraphAdaptCli {
-    request: String,
-    artifact_root: PathBuf,
-    evaluated_at: u64,
-    max_age_seconds: u64,
-}
-
-fn parse_graph_adapt_cli(raw: &[String]) -> std::result::Result<GraphAdaptCli, String> {
-    let mut request = None;
-    let mut artifact_root = None;
-    let mut evaluated_at = None;
-    let mut max_age_seconds = None;
-    let mut index = 0;
-    while index < raw.len() {
-        let flag = raw[index].as_str();
-        if !matches!(
-            flag,
-            "--request" | "--artifact-root" | "--evaluated-at" | "--max-age-seconds"
-        ) {
-            return Err(format!("unknown graph adapter argument: {flag}"));
-        }
-        let value = raw
-            .get(index + 1)
-            .filter(|value| !value.starts_with("--"))
-            .ok_or_else(|| format!("{flag} requires exactly one value"))?;
-        match flag {
-            "--request" if request.replace(value.clone()).is_some() => {
-                return Err("duplicate graph adapter argument: --request".to_string())
-            }
-            "--artifact-root" if artifact_root.replace(PathBuf::from(value)).is_some() => {
-                return Err("duplicate graph adapter argument: --artifact-root".to_string())
-            }
-            "--evaluated-at" => set_u64(&mut evaluated_at, value, flag, "graph")?,
-            "--max-age-seconds" => set_u64(&mut max_age_seconds, value, flag, "graph")?,
-            _ => {}
-        }
-        index += 2;
-    }
-    Ok(GraphAdaptCli {
-        request: request.ok_or("graph adapter requires --request")?,
-        artifact_root: artifact_root.ok_or("graph adapter requires --artifact-root")?,
-        evaluated_at: evaluated_at.ok_or("graph adapter requires --evaluated-at")?,
-        max_age_seconds: max_age_seconds
-            .filter(|value| *value > 0)
-            .ok_or("--max-age-seconds requires a positive integer")?,
-    })
-}
-
-fn print_graph_route_rejection(message: &str) -> i32 {
-    let result = json!({
-        "schema":"code-intel-graph-route-result.v1",
         "status":"rejected",
         "adapter":null,
         "admission":null,
@@ -851,7 +678,6 @@ pub fn validate() -> Value {
     }
 
     validate_codenexus_registry(&mut errors);
-    validate_graph_registry(&mut errors);
     validate_sentrux_registry(&mut errors);
 
     json!({
@@ -919,75 +745,6 @@ fn validate_sentrux_registry(errors: &mut Vec<String>) {
                 "provider.sentrux-adapt contract is missing: {path}"
             ));
         }
-    }
-}
-
-fn validate_graph_registry(errors: &mut Vec<String>) {
-    let Some(operation) = find("graph", "adapt") else {
-        errors.push("missing canonical provider operation: graph/adapt".to_string());
-        return;
-    };
-    if !operation.required || operation.status != "active" {
-        errors.push("graph/adapt must be an active required provider route".to_string());
-    }
-
-    let (manifest_path, root) = match orchestration_manifest() {
-        Ok(value) => value,
-        Err(error) => {
-            errors.push(error);
-            return;
-        }
-    };
-    let manifest: Value = match fs::read_to_string(&manifest_path)
-        .map_err(|error| error.to_string())
-        .and_then(|text| {
-            serde_json::from_str(text.trim_start_matches('\u{feff}'))
-                .map_err(|error| error.to_string())
-        }) {
-        Ok(value) => value,
-        Err(error) => {
-            errors.push(format!(
-                "cannot read graph provider manifest {}: {error}",
-                manifest_path.display()
-            ));
-            return;
-        }
-    };
-    let integration = manifest
-        .get("integrations")
-        .and_then(Value::as_array)
-        .and_then(|items| {
-            items
-                .iter()
-                .find(|item| item["id"] == "provider.graph-adapt")
-        });
-    let Some(integration) = integration else {
-        errors.push("provider binding missing integration: provider.graph-adapt".to_string());
-        return;
-    };
-    if integration["required"] != operation.required {
-        errors.push("provider.graph-adapt required flag drifts from graph/adapt".to_string());
-    }
-    if integration["commands"]["adapt"] != operation.command_template {
-        errors.push("provider.graph-adapt command drifts from graph/adapt".to_string());
-    }
-    if integration["entrypoint"] != "crates/code-intel-cli/src/providers.rs"
-        || !root
-            .join("crates/code-intel-cli/src/providers.rs")
-            .is_file()
-    {
-        errors.push("provider.graph-adapt entrypoint is missing or invalid".to_string());
-    }
-    for schema in [
-        "code-intel-architecture-graph-port.v1.schema.json",
-        "code-intel-graph-route-result.v1.schema.json",
-    ] {
-        if !root.join("orchestration/schemas").join(schema).is_file() {
-            errors.push(format!("provider.graph-adapt schema is missing: {schema}"));
-        }
-    }
-    if !root.join("docs/graph-provider-adapter.md").is_file() {
-        errors.push("provider.graph-adapt documentation is missing".to_string());
     }
 }
 
@@ -1359,10 +1116,6 @@ pub fn invoke(options: &Options<'_>) -> Result<Value> {
     let repo = repo_input.canonicalize()?;
 
     match (operation.provider, operation.operation) {
-        ("understand", "graph") => {
-            invoke_understand(&repo, options.language, options.full, options.write)
-        }
-        ("understand", "graph_full") => invoke_understand(&repo, options.language, true, true),
         ("repowise", "status") => invoke_repowise(&repo, "status", &["--no-workspace"]),
         ("repowise", "index") => invoke_repowise_index(&repo),
         (provider, operation) => Err(format!(
@@ -1370,18 +1123,6 @@ pub fn invoke(options: &Options<'_>) -> Result<Value> {
         )
         .into()),
     }
-}
-
-fn invoke_understand(repo: &Path, language: &str, full: bool, write: bool) -> Result<Value> {
-    let graph = graph::generate(repo, language, full, write)?;
-    Ok(json!({
-        "ok": true,
-        "schema": "code-intel-provider-api.v1",
-        "provider": "understand",
-        "operation": if full { "graph_full" } else { "graph" },
-        "artifact": graph::graph_path(repo),
-        "result": graph
-    }))
 }
 
 fn invoke_repowise_index(repo: &Path) -> Result<Value> {
@@ -1567,9 +1308,9 @@ mod tests {
     }
 
     #[test]
-    fn repowise_and_understand_share_schema() {
+    fn repowise_and_sentrux_share_schema() {
         let repowise = operation_json(find("repowise", "index").unwrap());
-        let understand = operation_json(find("understand", "graph").unwrap());
+        let sentrux = operation_json(find("sentrux", "adapt").unwrap());
 
         for key in [
             "provider",
@@ -1581,7 +1322,7 @@ mod tests {
             "sourceSpec",
         ] {
             assert!(repowise.get(key).is_some(), "repowise missing {key}");
-            assert!(understand.get(key).is_some(), "understand missing {key}");
+            assert!(sentrux.get(key).is_some(), "sentrux missing {key}");
         }
     }
 

@@ -4,14 +4,11 @@ mod repowise_adapter;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{json, Value};
 
 const EVALUATED_AT: u64 = 1_700_000_100;
 const MAX_AGE: u64 = 300;
-static NEXT_REQUEST: AtomicUsize = AtomicUsize::new(1);
 
 fn fixture_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -33,11 +30,8 @@ fn evidence<'a>(translated: &'a Value, channel: &str) -> &'a Value {
 }
 
 fn admit(entry: &Value, artifact_root: &Path) -> (i32, Value) {
-    let stamp = NEXT_REQUEST.fetch_add(1, Ordering::Relaxed);
-    let request_path = std::env::temp_dir().join(format!(
-        "code-intel-repowise-admission-{}-{stamp}.json",
-        std::process::id()
-    ));
+    let scratch = common::TempDir::new("repowise-admission");
+    let request_path = scratch.path().join("request.json");
     fs::write(
         &request_path,
         serde_json::to_vec(&entry["request"]).unwrap(),
@@ -54,7 +48,6 @@ fn admit(entry: &Value, artifact_root: &Path) -> (i32, Value) {
         ])
         .output()
         .unwrap();
-    fs::remove_file(request_path).unwrap();
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
     (output.status.code().unwrap(), result)
 }

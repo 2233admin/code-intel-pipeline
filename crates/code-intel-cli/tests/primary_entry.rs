@@ -92,10 +92,8 @@ fn run_alias_uses_the_same_primary_error_contract() {
 
 #[test]
 fn project_query_resolves_repository_context_before_loading_evidence() {
-    let root = std::env::temp_dir().join(format!(
-        "code-intel-project-query-empty-{}",
-        std::process::id()
-    ));
+    let root_dir = common::TempDir::new("project-query-empty");
+    let root = root_dir.path();
     let repo = root.join("fixture-repo");
     let artifacts = root.join("artifacts");
     std::fs::create_dir_all(&repo).expect("create repository fixture");
@@ -121,8 +119,6 @@ fn project_query_resolves_repository_context_before_loading_evidence() {
             .is_some_and(|message| message.contains("no committed authoritative run")),
         "{error}"
     );
-
-    let _ = std::fs::remove_dir_all(root);
 }
 
 /// Issue #279: `code-intel .` (this file's
@@ -138,10 +134,8 @@ fn project_query_resolves_repository_context_before_loading_evidence() {
 /// shared helper in `artifacts_tests.rs` instead.
 #[test]
 fn root_entry_names_the_authority_root_path_when_a_file_blocks_it() {
-    let root = std::env::temp_dir().join(format!(
-        "code-intel-primary-entry-authority-blocked-{}",
-        std::process::id()
-    ));
+    let root_dir = common::TempDir::new("primary-entry-authority-blocked");
+    let root = root_dir.path();
     let repo = root.join("fixture-repo");
     let artifacts = root.join("artifacts");
     std::fs::create_dir_all(&repo).expect("create repository fixture");
@@ -170,16 +164,12 @@ fn root_entry_names_the_authority_root_path_when_a_file_blocks_it() {
         diagnostic.contains(&blocked.display().to_string()),
         "diagnostic omits the blocked path: {diagnostic}"
     );
-
-    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
 fn project_status_turns_an_unindexed_project_into_a_guided_first_step() {
-    let root = std::env::temp_dir().join(format!(
-        "code-intel-project-status-empty-{}",
-        std::process::id()
-    ));
+    let root_dir = common::TempDir::new("project-status-empty");
+    let root = root_dir.path();
     let repo = root.join("fixture-repo");
     let artifacts = root.join("artifacts");
     std::fs::create_dir_all(&repo).expect("create repository fixture");
@@ -216,8 +206,6 @@ fn project_status_turns_an_unindexed_project_into_a_guided_first_step() {
     assert!(summary.contains("[NEEDS_RUN] fixture-repo"), "{summary}");
     assert!(summary.contains("Next actions:"), "{summary}");
     assert!(summary.contains("analyze:"), "{summary}");
-
-    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
@@ -254,14 +242,8 @@ fn unknown_subcommand_points_to_help() {
 /// summary lines `main.rs` prints.
 #[test]
 fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_index() {
-    let root = std::env::temp_dir().join(format!(
-        "code-intel-wrapper-e2e-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock is after the epoch")
-            .as_nanos()
-    ));
+    let root_dir = common::TempDir::new("wrapper-e2e");
+    let root = root_dir.path();
     let repo = root.join("fixture-repo");
     let artifacts = root.join("artifacts");
     std::fs::create_dir_all(repo.join("assets")).expect("fixture assets");
@@ -315,7 +297,6 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
         eprintln!(
             "host toolchain is incomplete, so the authoritative route is not asserted:\n{output}"
         );
-        let _ = std::fs::remove_dir_all(root);
         return;
     }
     assert_eq!(
@@ -335,7 +316,7 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
     let completed_run = latest_core_run(&authority);
     let completed = manifest_of(&completed_run);
     assert_eq!(completed["outcome"], "completed", "manifest={completed}");
-    for node in ["evidence.graph", "evidence.sentrux", "diagnosis.hospital"] {
+    for node in ["evidence.sentrux", "diagnosis.hospital"] {
         assert_eq!(
             completed["nodes"][node]["status"], "succeeded",
             "default spine did not complete {node}: {completed}"
@@ -685,8 +666,6 @@ fn stable_wrapper_publishes_a_completed_run_then_keeps_a_failed_one_out_of_the_i
             }),
         "the failed run was not classified outside the authoritative index: {index}"
     );
-
-    let _ = std::fs::remove_dir_all(root);
 }
 
 /// `git init` is allowed to fail on the second call; everything else is not.

@@ -19,7 +19,7 @@
       "additionalProperties": false,
       "required": ["precedence"],
       "properties": {
-        "precedence": { "type": "array", "minItems": 8, "maxItems": 8, "items": { "type": "string", "minLength": 1 } },
+        "precedence": { "type": "array", "minItems": 7, "maxItems": 7, "items": { "type": "string", "minLength": 1 } },
         "scope": { "type": "object", "additionalProperties": false, "required": ["structuralEvidence"],
           "properties": { "structuralEvidence": { "enum": ["in_scope", "out_of_scope"] } } }
       }

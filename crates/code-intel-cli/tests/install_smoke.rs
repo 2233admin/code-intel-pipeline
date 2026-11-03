@@ -5,6 +5,8 @@
 //! sees that regression. CI points `CODE_INTEL_SMOKE_BIN` at the installed
 //! release's `bin/` after the packaged install and runs it with `--ignored`.
 
+mod common;
+
 use std::env;
 use std::ffi::OsString;
 use std::fs;
@@ -79,7 +81,8 @@ fn packaged_doctor_is_ready_without_python_pwsh_or_bin_on_path() {
         binary.display()
     );
 
-    let scratch = env::temp_dir().join(format!("code-intel-396-{}", std::process::id()));
+    let scratch_dir = common::TempDir::new("install-smoke-396");
+    let scratch = scratch_dir.path();
     let fixture = scratch.join("repo");
     fs::create_dir_all(&fixture).expect("create fixture repo");
     fs::write(fixture.join("main.py"), "print('hi')\n").expect("write fixture source");
@@ -110,7 +113,7 @@ fn packaged_doctor_is_ready_without_python_pwsh_or_bin_on_path() {
         .arg(&fixture)
         .args(["--no-require-repowise", "--json"])
         .current_dir(&fixture)
-        .env("PATH", git_and_rg_only_path(&scratch))
+        .env("PATH", git_and_rg_only_path(scratch))
         .env_remove("CODE_INTEL_HOME")
         .output()
         .unwrap_or_else(|error| panic!("launch {}: {error}", binary.display()));
@@ -127,7 +130,6 @@ fn packaged_doctor_is_ready_without_python_pwsh_or_bin_on_path() {
         "packaged doctor must be ready with only git + rg (#396); exit {:?}, missing {missing:?}:\n{stdout}",
         output.status.code()
     );
-    let _ = fs::remove_dir_all(&scratch);
 }
 
 #[test]
@@ -147,7 +149,8 @@ fn packaged_sentrux_gate_honors_ignore_test_dependencies() {
         "installed binary missing: {}",
         binary.display()
     );
-    let scratch = env::temp_dir().join(format!("code-intel-394-{}", std::process::id()));
+    let scratch_dir = common::TempDir::new("install-smoke-394");
+    let scratch = scratch_dir.path();
     let repo = scratch.join("repo");
     fs::create_dir_all(repo.join("src")).expect("create src");
     fs::create_dir_all(repo.join("tests")).expect("create tests");
@@ -232,5 +235,4 @@ fn packaged_sentrux_gate_honors_ignore_test_dependencies() {
         fs::read(repo.join(".sentrux/baseline.json")).expect("read baseline"),
         saved
     );
-    let _ = fs::remove_dir_all(&scratch);
 }

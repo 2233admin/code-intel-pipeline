@@ -1,4 +1,6 @@
 mod common;
+
+use common::TempDir;
 #[path = "support/sha256.rs"]
 mod sha256;
 
@@ -6,10 +8,7 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Output;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const REQUEST_SCHEMA: &str = "code-intel-capability-request.v1";
 const CAPABILITY: &str = "advisory.design-proposal.compat";
 
@@ -18,26 +17,12 @@ fn implementation() -> Value {
 }
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-struct TempTree(PathBuf);
-impl Drop for TempTree {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
-fn temp_repo(label: &str) -> TempTree {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock")
-        .as_nanos();
-    let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    let root = std::env::temp_dir().join(format!(
-        "code-intel-design-proposal-{label}-{}-{nonce}-{sequence}",
-        std::process::id()
-    ));
+fn temp_repo(label: &str) -> TempDir {
+    let tree = TempDir::new(&format!("design-proposal-{label}"));
+    let root = tree.path();
     fs::create_dir_all(root.join("repo")).expect("create temporary repository");
     fs::write(root.join("repo/source.rs"), "fn fixture() {}\n").expect("write repository fixture");
-    TempTree(root)
+    tree
 }
 
 fn snapshot_for(repo: &Path) -> Value {
@@ -96,10 +81,10 @@ fn as_path(value: &Value) -> PathBuf {
     PathBuf::from(value.as_str().expect("path value"))
 }
 
-fn setup(name: &str) -> (TempTree, PathBuf, PathBuf, Value) {
+fn setup(name: &str) -> (TempDir, PathBuf, PathBuf, Value) {
     let tree = temp_repo(name);
-    let repo = tree.0.join("repo");
-    let out = tree.0.join("out");
+    let repo = tree.path().join("repo");
+    let out = tree.path().join("out");
     let mut candidate = fixture(name);
     let current_snapshot = snapshot_for(&repo);
     if name == "snapshot-field-mismatch.json" {
@@ -112,13 +97,13 @@ fn setup(name: &str) -> (TempTree, PathBuf, PathBuf, Value) {
         stale_snapshot["identity"] = json!(SNAPSHOT.replace('a', "b"));
         candidate["snapshot"] = stale_snapshot;
     }
-    let candidate_path = tree.0.join("candidate.json");
+    let candidate_path = tree.path().join("candidate.json");
     fs::write(
         &candidate_path,
         serde_json::to_vec_pretty(&candidate).unwrap(),
     )
     .unwrap();
-    let context_path = tree.0.join("context.json");
+    let context_path = tree.path().join("context.json");
     let context = json!({"schema":"code-intel-design-context.v1","type":"design.context","snapshot":current_snapshot,"evidenceRefs":["artifact://sha256/1111111111111111111111111111111111111111111111111111111111111111","artifact://sha256/2222222222222222222222222222222222222222222222222222222222222222","artifact://sha256/3333333333333333333333333333333333333333333333333333333333333333"],"methods":["contract-testing"],"constraints":[],"knownUnknowns":[]});
     fs::write(&context_path, serde_json::to_vec_pretty(&context).unwrap()).unwrap();
     (
@@ -172,7 +157,7 @@ fn valid_two_option_candidate_stages_advisory_result() {
             &as_path(&paths["candidate"]),
             &out,
         ),
-        &tree.0.join("request.json"),
+        &tree.path().join("request.json"),
         &out,
     );
     assert!(
@@ -215,7 +200,7 @@ fn valid_three_option_candidate_preserves_all_ids() {
             &as_path(&paths["candidate"]),
             &out,
         ),
-        &tree.0.join("request.json"),
+        &tree.path().join("request.json"),
         &out,
     );
     assert!(
@@ -251,11 +236,11 @@ fn valid_three_option_candidate_preserves_all_ids() {
 #[test]
 fn context_mode_stages_design_context() {
     let tree = temp_repo("context-mode");
-    let repo = tree.0.join("repo");
-    let out = tree.0.join("context-out");
+    let repo = tree.path().join("repo");
+    let out = tree.path().join("context-out");
     let output = run_capability(
         &context_request(&repo, &out),
-        &tree.0.join("context-request.json"),
+        &tree.path().join("context-request.json"),
         &out,
     );
     assert!(
@@ -281,7 +266,7 @@ fn assert_invalid(fixture_name: &str, rule: &str) {
             &as_path(&paths["candidate"]),
             &out,
         ),
-        &tree.0.join("request.json"),
+        &tree.path().join("request.json"),
         &out,
     );
     assert!(!output.status.success(), "expected failure");
@@ -330,7 +315,7 @@ fn authority_escalation_is_rejected() {
 fn option_count_diagnostic_rejects_one_and_four_options() {
     let (tree, repo, out, paths) = setup("invalid-option-count.json");
     for count in [1usize, 4] {
-        let candidate_path = tree.0.join(format!("candidate-{count}.json"));
+        let candidate_path = tree.path().join(format!("candidate-{count}.json"));
         let mut candidate = fixture("invalid-option-count.json");
         let options = candidate["options"].as_array().unwrap().clone();
         let mut four = options.clone();
@@ -352,7 +337,7 @@ fn option_count_diagnostic_rejects_one_and_four_options() {
         fs::write(&candidate_path, serde_json::to_vec(&candidate).unwrap()).unwrap();
         let output = run_capability(
             &validate_request(&repo, &as_path(&paths["context"]), &candidate_path, &out),
-            &tree.0.join(format!("request-{count}.json")),
+            &tree.path().join(format!("request-{count}.json")),
             &out,
         );
         assert!(!output.status.success());

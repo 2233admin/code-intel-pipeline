@@ -1,24 +1,10 @@
 mod common;
+
+use common::TempDir;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
-
-static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-fn temp_dir() -> PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock")
-        .as_nanos();
-    std::env::temp_dir().join(format!(
-        "code-intel-b10-{}-{nonce}-{}",
-        std::process::id(),
-        TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-    ))
-}
 
 fn manifest_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -107,7 +93,8 @@ fn exec(
 
 #[test]
 fn doctor_cli_emits_one_envelope_and_snapshot_bound_redacted_observation() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("doctor_envelope");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
@@ -137,7 +124,7 @@ fn doctor_cli_emits_one_envelope_and_snapshot_bound_redacted_observation() {
         &request(
             "doctor",
             &snapshot,
-            json!({"repoPath":repo,"requireRepowise":false,"requireUnderstand":false}),
+            json!({"repoPath":repo,"requireRepowise":false}),
             json!([input]),
         ),
         "doctor",
@@ -166,12 +153,12 @@ fn doctor_cli_emits_one_envelope_and_snapshot_bound_redacted_observation() {
     assert_eq!(observation["schema"], "code-intel-doctor-observation.v1");
     assert_eq!(observation["engineeringFacts"], json!([]));
     assert!(!observation_text.to_ascii_lowercase().contains("password="));
-    fs::remove_dir_all(root).ok();
 }
 
 #[test]
 fn doctor_cli_fails_closed_without_verified_snapshot_input() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("doctor_envelope");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     let snapshot = snapshot(&repo);
@@ -190,12 +177,12 @@ fn doctor_cli_fails_closed_without_verified_snapshot_input() {
     assert_eq!(envelope["verdict"], "unknown");
     assert!(envelope["artifacts"].as_array().unwrap().is_empty());
     assert!(!out.exists());
-    fs::remove_dir_all(root).ok();
 }
 
 #[test]
 fn doctor_cli_reports_nonconforming_provider_and_manifest_drift_as_domain_failure() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("doctor_envelope");
+    let root = root_dir.path();
     let repo = root.join("repo");
     let fixture_bin = root.join("fixture-bin");
     fs::create_dir_all(&repo).unwrap();
@@ -209,15 +196,11 @@ fn doctor_cli_reports_nonconforming_provider_and_manifest_drift_as_domain_failur
     .unwrap();
     #[cfg(not(windows))]
     {
-        use std::os::unix::fs::PermissionsExt;
-
-        let sentrux = fixture_bin.join("sentrux");
-        fs::write(
-            &sentrux,
+        common::write_executable(
+            &fixture_bin,
+            "sentrux",
             "#!/bin/sh\necho 'Authorization: Bearer fixture-secret-token'\nexit 0\n",
-        )
-        .unwrap();
-        fs::set_permissions(&sentrux, fs::Permissions::from_mode(0o755)).unwrap();
+        );
     }
 
     let mut drift: Value = serde_json::from_slice(&fs::read(manifest_path()).unwrap()).unwrap();
@@ -259,8 +242,7 @@ fn doctor_cli_reports_nonconforming_provider_and_manifest_drift_as_domain_failur
             json!({
                 "repoPath":repo,
                 "manifestPath":drift_path,
-                "requireRepowise":false,
-                "requireUnderstand":false
+                "requireRepowise":false
             }),
             json!([input]),
         ),
@@ -306,118 +288,4 @@ fn doctor_cli_reports_nonconforming_provider_and_manifest_drift_as_domain_failur
     assert_eq!(observation["engineeringFacts"], json!([]));
     assert!(!observation_text.contains("fixture-secret-token"));
     assert!(!observation_text.contains(root.to_string_lossy().as_ref()));
-    fs::remove_dir_all(root).ok();
-}
-
-/// A pipeline checkout shaped like the real one: the crate
-/// files `graphProvider` probes for, so `sourceFound`/`cargoFound` are both
-/// true. That is the whole point — those two are the only things
-/// `--require-understand` used to check, and inside a checkout they are
-/// trivially satisfied.
-fn pipeline_scratch(root: &Path) {
-    let crate_src = root.join("crates").join("code-intel-cli").join("src");
-    fs::create_dir_all(&crate_src).unwrap();
-    fs::create_dir_all(root.join("legacy")).unwrap();
-    // graph.rs is a directory module (mod.rs + tests.rs, issue #155's
-    // god-file split): the probe's sourceFound check looks for
-    // src/graph/mod.rs.
-    let graph_dir = crate_src.join("graph");
-    fs::create_dir_all(&graph_dir).unwrap();
-    fs::write(graph_dir.join("mod.rs"), "// graph provider\n").unwrap();
-    fs::write(
-        root.join("crates")
-            .join("code-intel-cli")
-            .join("Cargo.toml"),
-        "[package]\n",
-    )
-    .unwrap();
-}
-
-fn doctor_bootstrap(pipeline_root: &Path, home: &Path) -> Value {
-    let output = common::cli()
-        .args(["doctor", "bootstrap", "--pipeline-root"])
-        .arg(pipeline_root)
-        .args(["--no-require-repowise", "--require-understand", "--json"])
-        // The probe derives the Understand Anything candidates from the home
-        // directory, so pinning it is what makes this test independent of
-        // whatever the developer or CI runner happens to have installed.
-        .env("USERPROFILE", home)
-        .env("HOME", home)
-        .output()
-        .expect("doctor bootstrap");
-    serde_json::from_slice(&output.stdout).expect("bootstrap JSON")
-}
-
-/// Regression: `--require-understand` was a fail-open no-op. It gated only on
-/// `/graphProvider/{sourceFound,cargoFound}` — both trivially true in a
-/// checkout — and never once read the `understandAnything` block the very same
-/// document publishes, so the flag answered `ok: true, missing: []` on a
-/// machine reporting `skillFound: false, pluginFound: false`.
-#[test]
-fn require_understand_reports_missing_understand_anything() {
-    let root = temp_dir();
-    let pipeline = root.join("pipeline");
-    let home = root.join("home");
-    pipeline_scratch(&pipeline);
-    fs::create_dir_all(&home).unwrap();
-
-    let absent = doctor_bootstrap(&pipeline, &home);
-    // Precondition: the checks the flag *used* to rely on are both satisfied,
-    // so nothing but the Understand Anything check can fail this run.
-    assert_eq!(
-        absent["checks"]["graphProvider"]["sourceFound"],
-        json!(true)
-    );
-    assert_eq!(absent["checks"]["graphProvider"]["cargoFound"], json!(true));
-    assert_eq!(
-        absent["checks"]["understandAnything"]["skillFound"],
-        json!(false)
-    );
-    assert_eq!(
-        absent["checks"]["understandAnything"]["pluginFound"],
-        json!(false)
-    );
-    assert_eq!(absent["strict"]["requireUnderstand"], json!(true));
-
-    // An installed skill satisfies the requirement, so the check cannot be a
-    // blanket failure that merely looks like enforcement.
-    let skill = home.join(".claude").join("skills").join("understand");
-    fs::create_dir_all(&skill).unwrap();
-    fs::write(skill.join("SKILL.md"), "# understand\n").unwrap();
-    let present = doctor_bootstrap(&pipeline, &home);
-    assert_eq!(
-        present["checks"]["understandAnything"]["skillFound"],
-        json!(true)
-    );
-
-    // A differential rather than a bare membership check: the scratch root is
-    // deliberately incomplete in other ways (no pipeline script, no config),
-    // so the honest claim is that installing Understand Anything removes
-    // exactly one entry and changes nothing else.
-    let entries = |observation: &Value| {
-        observation["missing"]
-            .as_array()
-            .expect("missing array")
-            .iter()
-            .map(|entry| entry.as_str().expect("missing entry").to_string())
-            .collect::<Vec<_>>()
-    };
-    let (before, after) = (entries(&absent), entries(&present));
-    let removed = before
-        .iter()
-        .filter(|entry| !after.contains(entry))
-        .cloned()
-        .collect::<Vec<_>>();
-    assert_eq!(
-        removed,
-        vec!["Understand Anything skill or plugin".to_string()],
-        "installing the skill must clear exactly the understand requirement\n\
-         before={before:?}\nafter={after:?}"
-    );
-    assert!(
-        after.iter().all(|entry| before.contains(entry)),
-        "installing the skill must not introduce new missing entries"
-    );
-
-    fs::remove_dir_all(root).ok();
 }

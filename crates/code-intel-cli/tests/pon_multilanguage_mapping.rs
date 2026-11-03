@@ -1,34 +1,11 @@
 mod common;
+
+use common::TempDir;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
-
-struct Temp(PathBuf);
-
-impl Temp {
-    fn new(label: &str) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-pon-{label}-{}-{nonce}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn read_json(path: impl AsRef<Path>) -> Value {
     serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
@@ -49,11 +26,8 @@ fn tool_fixture(root: &Path) -> std::ffi::OsString {
     }
     #[cfg(not(windows))]
     {
-        use std::os::unix::fs::PermissionsExt;
         for name in ["python", "repowise"] {
-            let path = bin.join(name);
-            fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            common::write_executable(&bin, name, "#!/bin/sh\nexit 0\n");
         }
     }
     // Stub only doctor Python/Repowise; keep rg/git and Sentrux real.
@@ -104,9 +78,9 @@ fn pon_frontend_pattern_maps_supported_languages_into_one_code_evidence_contract
             .join("../..")
             .join("orchestration/internalization/fixtures/pon-multilanguage-code-evidence.json"),
     );
-    let temp = Temp::new("multilanguage-mapping");
-    let repo = temp.0.join("repo");
-    let out = temp.0.join("run");
+    let temp = TempDir::new("multilanguage-mapping");
+    let repo = temp.path().join("repo");
+    let out = temp.path().join("run");
     fs::create_dir_all(&repo).unwrap();
 
     for sample in fixture["samples"].as_array().unwrap() {

@@ -13,19 +13,14 @@ use std::process::Output;
 use serde_json::Value;
 
 struct Fixture {
+    _dir: common::TempDir,
     root: PathBuf,
 }
 
 impl Fixture {
     fn new(label: &str) -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "code-intel-setup-{label}-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let dir = common::TempDir::new(&format!("setup-{label}"));
+        let root = dir.path().to_path_buf();
         let binary = if cfg!(windows) {
             "code-intel.exe"
         } else {
@@ -43,7 +38,7 @@ impl Fixture {
         fs::write(skill.join("scripts/bootstrap.py"), "print('bootstrap')\n").unwrap();
         fs::create_dir_all(root.join("home")).unwrap();
         fs::create_dir_all(root.join("empty-path")).unwrap();
-        Self { root }
+        Self { _dir: dir, root }
     }
 
     fn home(&self) -> PathBuf {
@@ -82,12 +77,6 @@ impl Fixture {
                 )
             })
             .collect()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

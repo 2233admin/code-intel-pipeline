@@ -15,22 +15,10 @@
 
 mod common;
 
+use common::TempDir;
+
 use std::fs;
 use std::path::{Path, PathBuf};
-
-fn temp_dir(tag: &str) -> PathBuf {
-    let unique = format!(
-        "code-intel-perf-optimize-e2e-{tag}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    );
-    let dir = std::env::temp_dir().join(unique);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
 
 fn fixture_source_file(dir: &Path) -> PathBuf {
     let path = dir.join("fixture_target.rs");
@@ -81,8 +69,6 @@ fn write_weco_fixture(
     best_metric: f64,
     then_hang: bool,
 ) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
-    let script = dir.join("weco");
     let run_body = if then_hang { "sleep 60\n" } else { "" };
     let body = format!(
         "#!/bin/sh\n\
@@ -101,9 +87,7 @@ fn write_weco_fixture(
          echo \"Run ID: {run_id}\"\n\
          {run_body}"
     );
-    fs::write(&script, body).unwrap();
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
-    script
+    common::write_executable(dir, "weco", &body)
 }
 
 fn baseline_eval_command(value: &str) -> String {
@@ -150,7 +134,8 @@ fn run(dir: &Path, source: &Path, extra_args: &[&str]) -> serde_json::Value {
 
 #[test]
 fn a_candidate_clearing_the_threshold_reports_no_stopped_by() {
-    let dir = temp_dir("happy-path");
+    let dir_dir = TempDir::new("happy-path");
+    let dir = dir_dir.path();
     let source = fixture_source_file(&dir);
     write_weco_fixture(&dir, "e2e-fixture-run", 3, 80.0, false);
 
@@ -177,13 +162,12 @@ fn a_candidate_clearing_the_threshold_reports_no_stopped_by() {
         .as_str()
         .unwrap()
         .contains("fixture_target.rs"));
-
-    fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
 fn a_candidate_that_never_clears_the_threshold_reports_steps_exhausted() {
-    let dir = temp_dir("steps-exhausted-path");
+    let dir_dir = TempDir::new("steps-exhausted-path");
+    let dir = dir_dir.path();
     let source = fixture_source_file(&dir);
     // weco runs every step it was given and exits cleanly (no timeout), but
     // never finds a candidate good enough to clear the default 5% bar --
@@ -207,13 +191,12 @@ fn a_candidate_that_never_clears_the_threshold_reports_steps_exhausted() {
     // 3% improvement is under the 5% default threshold.
     assert_eq!(report["metThreshold"], false);
     assert_eq!(report["stoppedBy"], "steps_exhausted");
-
-    fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
 fn a_wall_clock_timeout_reports_budget_exhausted_with_whatever_was_captured() {
-    let dir = temp_dir("timeout-path");
+    let dir_dir = TempDir::new("timeout-path");
+    let dir = dir_dir.path();
     let source = fixture_source_file(&dir);
     write_weco_fixture(&dir, "e2e-fixture-run-timeout", 1, 98.0, true);
 
@@ -238,13 +221,12 @@ fn a_wall_clock_timeout_reports_budget_exhausted_with_whatever_was_captured() {
     // 2% improvement is under the 5% default threshold.
     assert_eq!(report["metThreshold"], false);
     assert_eq!(report["stoppedBy"], "budget_exhausted");
-
-    fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
 fn a_missing_eval_command_reports_unavailable_without_spawning_weco() {
-    let dir = temp_dir("no-eval-command");
+    let dir_dir = TempDir::new("no-eval-command");
+    let dir = dir_dir.path();
     let source = fixture_source_file(&dir);
     // Deliberately empty: if the CLI reached weco detection despite having
     // no eval-command, this would still report unavailable (no weco found
@@ -257,15 +239,14 @@ fn a_missing_eval_command_reports_unavailable_without_spawning_weco() {
         .as_str()
         .unwrap()
         .contains("no --eval-command"));
-
-    fs::remove_dir_all(&dir).ok();
 }
 
 /// #301 correction: `--source` is required just as much as `--eval-command`
 /// -- weco can't run at all without a file to mutate.
 #[test]
 fn a_missing_source_reports_unavailable_without_spawning_weco() {
-    let dir = temp_dir("no-source");
+    let dir_dir = TempDir::new("no-source");
+    let dir = dir_dir.path();
     let mut command = common::cli();
     command
         .args([
@@ -291,15 +272,14 @@ fn a_missing_source_reports_unavailable_without_spawning_weco() {
 
     assert_eq!(report["status"], "unavailable");
     assert!(report["reason"].as_str().unwrap().contains("no --source"));
-
-    fs::remove_dir_all(&dir).ok();
 }
 
 /// #301 correction: BYOK alone isn't enough -- weco's own account token
 /// (`WECO_API_KEY`) is a second, independent gate.
 #[test]
 fn byok_without_a_weco_account_token_reports_unavailable() {
-    let dir = temp_dir("byok-no-account");
+    let dir_dir = TempDir::new("byok-no-account");
+    let dir = dir_dir.path();
     let source = fixture_source_file(&dir);
     write_weco_fixture(&dir, "unused-run-id", 0, 0.0, false);
 
@@ -332,6 +312,4 @@ fn byok_without_a_weco_account_token_reports_unavailable() {
 
     assert_eq!(report["status"], "unavailable");
     assert!(report["reason"].as_str().unwrap().contains("WECO_API_KEY"));
-
-    fs::remove_dir_all(&dir).ok();
 }

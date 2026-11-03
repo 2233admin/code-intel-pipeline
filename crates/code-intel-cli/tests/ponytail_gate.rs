@@ -6,7 +6,7 @@ mod ponytail_gate;
 
 use std::collections::BTreeSet;
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use serde_json::{json, Value};
 

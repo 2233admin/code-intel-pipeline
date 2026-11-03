@@ -5,7 +5,6 @@ Hospital mode is the product layer of Code Intel Pipeline. It turns raw tool out
 ## Modalities
 
 - `xray`: fast file inventory from `rg`. It sees the project surface and gives the cheapest first signal.
-- `anatomy`: Understand Anything graph. It shows the structural map when the graph is available and fresh.
 - `ct`: Sentrux DSM, hotspots, and file/function detail. It shows static structure, coupling, complexity, and risk.
 - `mri`: CodeNexus-lite context. It narrows the next read to high-value files and references.
 - `pet`: execution-risk proxy from Sentrux evolution, what-if, and test gaps. It is not a live runtime trace yet.
@@ -14,7 +13,7 @@ Hospital mode is the product layer of Code Intel Pipeline. It turns raw tool out
 
 ## Protocols
 
-- `triage`: classify the run into provider quota, local tool error, graph missing, Sentrux failure, or clean.
+- `triage`: classify the run into provider quota, local tool error, Sentrux failure, or clean.
 - `diagnose`: produce `summary.md`, `hospital.md`, Sentrux artifacts, and CodeNexus context.
 - `govern`: require rules plus gate/check before treating a scope as governed.
 - `surgery_plan`: choose one hotspot, one boundary, and one verification command before editing.
@@ -38,7 +37,7 @@ Structural evidence is complete only when DSM, file-details, hotspots, evolution
 
 Every hospital report carries `triage.disposition`.
 
-- `admit`: keep the project in the hospital. Use this for missing graph, missing rules, Sentrux failures, local tool failures, or scheduled modernization debt.
+- `admit`: keep the project in the hospital. Use this for missing rules, Sentrux failures, local tool failures, or scheduled modernization debt.
 - `observe`: the project can continue with explicit follow-up checks.
 - `discharge_ready`: the project can leave the hospital after post-op verification. Do not mark discharge-ready merely because a scan completed.
 

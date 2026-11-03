@@ -20,9 +20,7 @@ Proves:
     resolve_question_spans turns that into a "broken question" rather
     than ever silently scoring it as a miss;
   * every anchor in the real eval/questions.json resolves against the
-    live repo tree except q03/q07/q09, which PR #460 (DR-0018, PowerShell
-    removal) broke by deleting or rewriting the text they anchor on; those
-    are left for the other half of #93 decision 3.
+    live repo tree (q03/q07/q09 anchor on symbols that still exist).
 
 Stdlib unittest only (no pytest). Run directly:
     python eval/test_golden_anchors.py
@@ -200,11 +198,8 @@ class RealQuestionsAnchorTests(unittest.TestCase):
     def test_real_questions_anchors_all_resolve_against_the_live_tree(self):
         # The whole point: every golden anchor in the real question set must
         # resolve against the actual current repo, or it's a broken question
-        # (see GoldenAnchorTests above). Exactly q03, q07 and q09 are
-        # expected broken: PR #460 (DR-0018, PowerShell removal) deleted or
-        # rewrote the text or files they anchor on, which is left for the
-        # other half of #93 decision 3. q01/q02 are no exception any more;
-        # any other change in this set, better or worse, must fail here.
+        # (see GoldenAnchorTests above). No question is expected broken;
+        # any anchor that stops resolving must fail here.
         questions = {q["id"]: q for q in harness.load_questions(EVAL_DIR / "questions.json")}
         repo_root = EVAL_DIR.parent
         broken = {}
@@ -213,7 +208,7 @@ class RealQuestionsAnchorTests(unittest.TestCase):
             if error:
                 broken[qid] = error
         self.assertEqual(
-            set(broken), {"q03", "q07", "q09"}, f"unexpected broken/resolved anchors: {broken}"
+            set(broken), set(), f"unexpected broken anchors: {broken}"
         )
 
 

@@ -96,8 +96,7 @@ pub(super) fn probe_command_output(
 /// Assistance candidates are Claude Code plugin assets, not PATH binaries, so
 /// `locate` would never see them and the doctor would stay blind to a routing
 /// target the catalog names. Presence is the directory the harness unpacks a
-/// marketplace plugin into, matching how `understandAnything` already probes
-/// its plugin. A machine with no catalog or no Claude Code installation is a
+/// marketplace plugin into. A machine with no catalog or no Claude Code installation is a
 /// valid machine: it simply produces no rows, or rows that are all absent.
 pub(super) fn probe_assistance_plugins(catalog_path: &Path, home: &Path) -> Vec<Value> {
     let Ok(bytes) = std::fs::read(catalog_path) else {

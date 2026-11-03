@@ -3,14 +3,11 @@ mod common;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
-static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
 struct Project {
+    _dir: common::TempDir,
     root: PathBuf,
     repo: PathBuf,
     artifacts: PathBuf,
@@ -19,15 +16,8 @@ struct Project {
 
 impl Project {
     fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "code-intel-codegraph space-{}-{nonce}-{}",
-            std::process::id(),
-            SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
+        let dir = common::TempDir::new("codegraph space");
+        let root = dir.path().to_path_buf();
         let repo = root.join("source repo");
         let artifacts = root.join("evidence artifacts");
         fs::create_dir_all(repo.join("src")).unwrap();
@@ -87,6 +77,7 @@ impl Project {
         assert!(absent_provider.is_absolute());
         assert!(!absent_provider.exists());
         Self {
+            _dir: dir,
             root,
             repo,
             artifacts,
@@ -120,12 +111,6 @@ impl Project {
         let value = self.run("query", &["--query", name, "--limit", "100"], 0);
         assert_observation(&value);
         value
-    }
-}
-
-impl Drop for Project {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

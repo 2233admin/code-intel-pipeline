@@ -14,6 +14,13 @@
 //! pinned elsewhere (for example a shared measurements ledger) must be
 //! re-hashed and propagated again after it is patched, so the scan repeats
 //! to a fixpoint rather than running once.
+//!
+//! That scan anchors only on HEAD: a bare token with no declared path stops
+//! being visible once `--write` pushes it off HEAD. Pins that do declare a path
+//! (internalization, acceptance, and the toolchain digests of
+//! `orchestration/integrations.json`) are audited by `declared_pins` against the
+//! worktree file instead, at any generation. `--write` alternates both until
+//! neither has anything left, so a chain of declared pins converges in one run.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -40,80 +47,44 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
             return 64;
         }
     };
-    let report = match scan(&cli.repo, &cli.excludes) {
-        Ok(report) => report,
-        Err(message) => {
-            eprintln!("error: {message}");
-            return 65;
-        }
-    };
     // Digests an internalization record declares about itself are invisible to
     // the scan above: it only sees a pin as stale while HEAD and the worktree
     // disagree, which stops being true the moment the edit is committed. The
     // record carries the pinned path next to the digest, so those are resolved
     // from that declaration instead. See `declared_pins`.
-    let declared = match declared_pins::audit(&cli.repo) {
+    let declared = match declared_pins::audit(&cli.repo, &cli.excludes) {
         Ok(findings) => findings,
         Err(message) => {
             eprintln!("error: auditing declared pins: {message}");
             return 65;
         }
     };
+    // The generic scan rewrites a bare token anywhere, which would also touch
+    // an integration the registry audit refused to pair. While any is unpaired
+    // the registry is left to the declared-pin resync, and the scan must not
+    // propagate its hypothetical digest into dependents either.
+    let withheld = declared
+        .iter()
+        .any(|finding| matches!(finding.state, declared_pins::PinState::Unpaired))
+        .then_some(declared_pins::REGISTRY)
+        .filter(|_| cli.write);
+    let report = match scan(&cli.repo, &cli.excludes, withheld) {
+        Ok(report) => report,
+        Err(message) => {
+            eprintln!("error: {message}");
+            return 65;
+        }
+    };
 
+    let mut later_passes = String::new();
     if cli.write {
-        if let Err(error) = flush(&cli.repo, &report) {
-            eprintln!("error: {error}");
-            return 74;
-        }
-        match declared_pins::resync(&cli.repo, &declared) {
-            Ok(records) if !records.is_empty() => {
-                for record in &records {
-                    println!("repin: resynced declared pins in {record}");
-                }
-            }
-            Err(message) => {
-                eprintln!("error: resyncing declared pins: {message}");
-                return 74;
-            }
-            Ok(_) => {}
-        }
-        match scan(&cli.repo, &cli.excludes) {
-            Ok(verify) if !verify.findings.is_empty() => {
-                eprintln!(
-                    "error: repin left {} stale pin site(s) after write \u{2014} internal inconsistency, please report",
-                    verify.findings.len()
-                );
-                return 65;
-            }
-            Err(message) => {
-                eprintln!("error: verifying after write: {message}");
-                return 65;
-            }
-            Ok(_) => {}
-        }
-        match declared_pins::audit(&cli.repo) {
-            Ok(verify) => {
-                let unresolved: Vec<_> = verify
-                    .iter()
-                    .filter(|finding| {
-                        matches!(finding.state, declared_pins::PinState::Stale { .. })
-                    })
-                    .collect();
-                if !unresolved.is_empty() {
-                    eprintln!(
-                        "error: repin left {} declared pin(s) stale after write \u{2014} internal inconsistency, please report",
-                        unresolved.len()
-                    );
-                    return 65;
-                }
-            }
-            Err(message) => {
-                eprintln!("error: verifying declared pins after write: {message}");
-                return 65;
-            }
+        match write_to_fixpoint(&cli, &report, &declared, withheld) {
+            Ok(text) => later_passes = text,
+            Err(code) => return code,
         }
     }
     print!("{}", declared_pins::render_findings(&declared, cli.write));
+    print!("{later_passes}");
     if cli.json {
         println!(
             "{}",
@@ -130,7 +101,9 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
     let declared_unresolved = declared.iter().any(|finding| {
         matches!(
             finding.state,
-            declared_pins::PinState::Ambiguous | declared_pins::PinState::SourceMissing
+            declared_pins::PinState::Ambiguous
+                | declared_pins::PinState::SourceMissing
+                | declared_pins::PinState::Unpaired
         )
     });
     let declared_dirty = declared
@@ -144,6 +117,63 @@ pub(crate) fn run_raw(raw: &[String]) -> i32 {
     } else {
         1
     }
+}
+
+/// Apply the first scan and declared-pin audit, then keep rescanning and
+/// resyncing until both are quiet. A declared-pin resync edits a file that
+/// another declared pin (or a HEAD digest) may point at, so one round is not
+/// enough. Returns the report lines for the declared pins fixed after the first
+/// round, or the exit code to stop with. Not converging within `MAX_PASSES` is
+/// an error, never exit 0.
+fn write_to_fixpoint(
+    cli: &Cli,
+    report: &RepinReport,
+    declared: &[declared_pins::PinFinding],
+    withheld: Option<&'static str>,
+) -> Result<String, i32> {
+    let apply = |report: &RepinReport, declared: &[declared_pins::PinFinding]| {
+        if let Err(error) = flush(&cli.repo, report) {
+            eprintln!("error: {error}");
+            return Err(74);
+        }
+        match declared_pins::resync(&cli.repo, declared) {
+            Ok(records) => {
+                for record in &records {
+                    println!("repin: resynced declared pins in {record}");
+                }
+                Ok(())
+            }
+            Err(message) => {
+                eprintln!("error: resyncing declared pins: {message}");
+                Err(74)
+            }
+        }
+    };
+    apply(report, declared)?;
+    let mut later = String::new();
+    for _ in 0..MAX_PASSES {
+        let rescan = scan(&cli.repo, &cli.excludes, withheld).map_err(|message| {
+            eprintln!("error: verifying after write: {message}");
+            65
+        })?;
+        let audit = declared_pins::audit(&cli.repo, &cli.excludes).map_err(|message| {
+            eprintln!("error: verifying declared pins after write: {message}");
+            65
+        })?;
+        let stale: Vec<_> = audit
+            .into_iter()
+            .filter(|finding| matches!(finding.state, declared_pins::PinState::Stale { .. }))
+            .collect();
+        if rescan.findings.is_empty() && stale.is_empty() {
+            return Ok(later);
+        }
+        later.push_str(&declared_pins::render_findings(&stale, true));
+        apply(&rescan, &stale)?;
+    }
+    eprintln!(
+        "error: repin did not reach a fixpoint within {MAX_PASSES} passes \u{2014} internal inconsistency, please report"
+    );
+    Err(65)
 }
 
 struct Cli {
@@ -423,18 +453,17 @@ fn flush(repo: &Path, report: &RepinReport) -> Result<(), String> {
     Ok(())
 }
 
-fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
+/// `withheld` is a path the caller will not let `--write` change: the scan
+/// still reads it, but never rewrites it, so nothing downstream is rewritten
+/// to describe bytes that will not be written.
+fn scan(
+    repo: &Path,
+    extra_excludes: &[String],
+    withheld: Option<&str>,
+) -> Result<RepinReport, String> {
     let mut excludes: Vec<String> = DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect();
     excludes.extend(extra_excludes.iter().cloned());
-    let is_excluded = |path: &str| {
-        excludes.iter().any(|prefix| {
-            let prefix = prefix.trim_end_matches('/');
-            path == prefix
-                || path
-                    .strip_prefix(prefix)
-                    .is_some_and(|rest| rest.starts_with('/'))
-        })
-    };
+    let is_excluded = |path: &str| declared_pins::is_excluded(path, &excludes);
 
     let digests = snapshot::repin_digests(repo)?;
     let head_map = digests.head;
@@ -523,6 +552,9 @@ fn scan(repo: &Path, extra_excludes: &[String]) -> Result<RepinReport, String> {
                         continue;
                     }
                 }
+            }
+            if Some(path.as_str()) == withheld {
+                continue;
             }
             let bytes = contents.get(path).expect("just loaded or already cached");
             let (rewritten, hits) = rewrite_tokens(bytes, &rewrite_map);

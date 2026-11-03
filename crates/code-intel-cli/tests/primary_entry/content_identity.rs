@@ -6,14 +6,8 @@ use crate::common;
 #[test]
 fn content_identity_repositories_support_run_query_and_unchanged_rerun() {
     for (label, unborn) in [("unversioned", false), ("unborn", true)] {
-        let root = std::env::temp_dir().join(format!(
-            "code-intel-content-project-{label}-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("clock is after the epoch")
-                .as_nanos()
-        ));
+        let tree = common::TempDir::new(&format!("content-project-{label}"));
+        let root = tree.path();
         let repo = root.join(format!("{label}-repo"));
         let artifacts = root.join("artifacts");
         std::fs::create_dir_all(repo.join("src")).expect("create content repository");
@@ -104,7 +98,5 @@ fn content_identity_repositories_support_run_query_and_unchanged_rerun() {
                 .is_some_and(|message| message.contains("repository key collision")),
             "{label}: {stale}"
         );
-
-        let _ = std::fs::remove_dir_all(root);
     }
 }

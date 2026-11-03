@@ -4,7 +4,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use super::{doctor_tool_fixture, temp_dir};
+use super::doctor_tool_fixture;
+use crate::common::{write_executable, TempDir};
 
 fn doctor_tool_timeout_fixture(root: &Path) -> PathBuf {
     let bin = doctor_tool_fixture(root, true);
@@ -16,16 +17,14 @@ fn doctor_tool_timeout_fixture(root: &Path) -> PathBuf {
     .unwrap();
     #[cfg(not(windows))]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let path = bin.join("sentrux");
-        fs::write(&path, "#!/bin/sh\nsleep 5\nexit 0\n").unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        write_executable(&bin, "sentrux", "#!/bin/sh\nsleep 5\nexit 0\n");
     }
     bin
 }
 
 pub(super) fn production_run_timeout_keeps_sibling_artifact_and_commits_manifest() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("dag-run-timeout");
+    let root = root_dir.path();
     let repo = root.join("fixture-repo");
     let source = root.join("run-source");
     let authority = root.join("authority");
@@ -104,6 +103,4 @@ pub(super) fn production_run_timeout_keeps_sibling_artifact_and_commits_manifest
         serde_json::from_slice(&fs::read(publication.join("run-complete.json")).unwrap()).unwrap();
     let published_manifest = publication.join(marker["manifest"]["path"].as_str().unwrap());
     assert!(published_manifest.is_file());
-
-    let _ = fs::remove_dir_all(root);
 }

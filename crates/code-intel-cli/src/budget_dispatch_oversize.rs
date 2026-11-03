@@ -140,7 +140,7 @@ mod tests {
         let eight_mib: u64 = 8 * 1024 * 1024;
         let ten_mib: u64 = 10 * 1024 * 1024;
         let budgeted = run_to_completion_with_oversize_policy(
-            single_node_coordinator("graph", "evidence.graph"),
+            single_node_coordinator("sentrux", "evidence.sentrux"),
             &counter,
             Budget::new(60, ten_mib, true),
             |_| DispatchCost::new(1, eight_mib),
@@ -152,7 +152,7 @@ mod tests {
             0,
             "8MB input must be refused before any dispatch"
         );
-        let node = &budgeted.manifest_json["nodes"]["graph"];
+        let node = &budgeted.manifest_json["nodes"]["sentrux"];
         assert_eq!(node["status"], "skipped_oversize");
         assert_eq!(node["actualBytes"], eight_mib);
         assert_eq!(node["byteLimit"], ten_mib);

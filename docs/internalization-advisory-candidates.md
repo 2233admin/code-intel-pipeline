@@ -14,7 +14,6 @@ evidence, so the engine emits diagnostics and keeps `productionEnabled=false`.
 | Record | Locally measured evidence | Unresolved production blockers |
 | --- | --- | --- |
 | `internalization.repowise-record` | B01 adapter and conformance SHA-256 plus 2 registered production operations | upstream revision/license, CLI compatibility, quota/security/maintenance, representative value/cost, exit and retirement proof |
-| `internalization.graph-record` | B02 adapter and conformance SHA-256 plus separately traced internal and external implementations | external revision/license/runtime/conformance, maintenance/security, representative utility/cost, exit and retirement proof |
 | `internalization.sentrux-record` | B03 adapter and conformance SHA-256 plus registered adapter/runtime operations | upstream revision/license, Windows/plugin conformance, maintenance/security, representative value/cost, shim retirement proof |
 | `internalization.codenexus-record` | B04 adapter and conformance SHA-256 plus full/lite swap and registered production operations | full-provider revision/license/runtime/security/maintenance, measured localization value/cost, exit and lite retirement proof |
 | `internalization.openspec-record` | 5 `openspec-opsx` occurrences in the current advisory atom | update, security (upstream revision and license admitted 2026-08-04, issue #156) |

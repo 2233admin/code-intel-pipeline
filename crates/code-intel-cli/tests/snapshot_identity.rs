@@ -1,30 +1,11 @@
 mod common;
+
+use common::TempDir;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
-
-struct TempTree(PathBuf);
-
-impl TempTree {
-    fn new(label: &str) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("code-intel-{label}-{nonce}"));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for TempTree {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn git(repo: &Path, args: &[&str]) {
     let output = Command::new("git")
@@ -79,13 +60,13 @@ fn ok_json(output: Output) -> Value {
 
 #[test]
 fn identity_is_portable_scope_bound_and_dirty_overlay_explicit() {
-    let fixture = TempTree::new("snapshot fixture 空格");
-    let source = fixture.0.join("源 repo");
-    let copy = fixture.0.join("copy repo");
+    let fixture = TempDir::new("snapshot fixture 空格");
+    let source = fixture.path().join("源 repo");
+    let copy = fixture.path().join("copy repo");
     fs::create_dir_all(&source).unwrap();
     init_repo(&source);
     git(
-        &fixture.0,
+        fixture.path(),
         &[
             "clone",
             "--quiet",
@@ -155,11 +136,15 @@ fn identity_is_portable_scope_bound_and_dirty_overlay_explicit() {
 
 #[test]
 fn missing_git_is_content_addressed_and_rejects_head_only() {
-    let fixture = TempTree::new("snapshot unversioned");
-    fs::create_dir_all(fixture.0.join("scope 空格")).unwrap();
-    fs::write(fixture.0.join("scope 空格/file.txt"), "one\n").unwrap();
+    let fixture = TempDir::new("snapshot unversioned");
+    fs::create_dir_all(fixture.path().join("scope 空格")).unwrap();
+    fs::write(fixture.path().join("scope 空格/file.txt"), "one\n").unwrap();
 
-    let first = ok_json(snapshot(&fixture.0, "explicit_overlay", &["scope 空格"]));
+    let first = ok_json(snapshot(
+        fixture.path(),
+        "explicit_overlay",
+        &["scope 空格"],
+    ));
     assert_eq!(first["snapshot"]["head"], "unversioned");
     assert!(first["snapshot"]["repoIdentity"]
         .as_str()
@@ -167,14 +152,18 @@ fn missing_git_is_content_addressed_and_rejects_head_only() {
         .starts_with("content-v1:"));
     assert_eq!(first["dirtyOverlay"]["present"], true);
 
-    fs::write(fixture.0.join("scope 空格/file.txt"), "two\n").unwrap();
-    let second = ok_json(snapshot(&fixture.0, "explicit_overlay", &["scope 空格"]));
+    fs::write(fixture.path().join("scope 空格/file.txt"), "two\n").unwrap();
+    let second = ok_json(snapshot(
+        fixture.path(),
+        "explicit_overlay",
+        &["scope 空格"],
+    ));
     assert_ne!(
         first["snapshot"]["identity"],
         second["snapshot"]["identity"]
     );
 
-    let rejected = snapshot(&fixture.0, "head_only", &["."]);
+    let rejected = snapshot(fixture.path(), "head_only", &["."]);
     assert_eq!(rejected.status.code(), Some(69));
     assert!(rejected.stdout.is_empty());
     assert!(String::from_utf8_lossy(&rejected.stderr).contains("requires Git"));
@@ -198,11 +187,11 @@ fn alternate_vcs_contract_fixture_is_fail_closed_and_rolls_back_to_unversioned()
         serde_json::json!(["git", "unversioned-explicit-overlay"])
     );
 
-    let tree = TempTree::new("alternate-vcs-rollback");
-    fs::write(tree.0.join("source.txt"), "rollback content\n").unwrap();
+    let tree = TempDir::new("alternate-vcs-rollback");
+    fs::write(tree.path().join("source.txt"), "rollback content\n").unwrap();
     // The adapter only has to answer with a mismatching identity; printing a
     // fixed reply keeps the fixture free of any particular shell.
-    let reply = tree.0.join("mismatched-reply.json");
+    let reply = tree.path().join("mismatched-reply.json");
     fs::write(&reply, r#"{"snapshot":{"identity":"mismatch"}}"#).unwrap();
     let (program, args): (&str, Vec<std::ffi::OsString>) = if cfg!(windows) {
         (
@@ -217,7 +206,7 @@ fn alternate_vcs_contract_fixture_is_fail_closed_and_rolls_back_to_unversioned()
         .arg("snapshot")
         .arg("identity")
         .arg("--repo")
-        .arg(&tree.0)
+        .arg(tree.path())
         .arg("--working-tree-policy")
         .arg("explicit_overlay")
         .arg("--scope")
@@ -239,7 +228,7 @@ fn alternate_vcs_contract_fixture_is_fail_closed_and_rolls_back_to_unversioned()
         String::from_utf8_lossy(&rejected.stderr)
     );
 
-    let rolled_back = ok_json(snapshot(&tree.0, "explicit_overlay", &["."]));
+    let rolled_back = ok_json(snapshot(tree.path(), "explicit_overlay", &["."]));
     assert_eq!(rolled_back["snapshot"]["head"], "unversioned");
     assert_eq!(
         rolled_back["snapshot"]["workingTreePolicy"],
@@ -252,21 +241,21 @@ fn alternate_vcs_contract_fixture_is_fail_closed_and_rolls_back_to_unversioned()
 
 #[test]
 fn nonexistent_nonroot_scope_fails_closed_while_empty_root_scope_is_legal() {
-    let fixture = TempTree::new("snapshot scope existence");
-    let typo = snapshot(&fixture.0, "explicit_overlay", &["typo/missing"]);
+    let fixture = TempDir::new("snapshot scope existence");
+    let typo = snapshot(fixture.path(), "explicit_overlay", &["typo/missing"]);
     assert_eq!(typo.status.code(), Some(64));
     assert!(typo.stdout.is_empty());
     assert!(String::from_utf8_lossy(&typo.stderr).contains("does not exist"));
 
-    let root = ok_json(snapshot(&fixture.0, "explicit_overlay", &["."]));
+    let root = ok_json(snapshot(fixture.path(), "explicit_overlay", &["."]));
     assert_eq!(root["snapshot"]["scope"], serde_json::json!(["."]));
     assert_eq!(root["snapshot"]["head"], "unversioned");
 }
 
 #[test]
 fn head_identity_ignores_checkout_state_time_and_attachment_but_binds_scope_and_mode() {
-    let fixture = TempTree::new("snapshot head rules");
-    let repo = fixture.0.join("repo");
+    let fixture = TempDir::new("snapshot head rules");
+    let repo = fixture.path().join("repo");
     fs::create_dir_all(&repo).unwrap();
     init_repo(&repo);
     let attached = ok_json(snapshot(&repo, "head_only", &["src", "docs/."]));
@@ -307,8 +296,8 @@ fn head_identity_ignores_checkout_state_time_and_attachment_but_binds_scope_and_
 
 #[test]
 fn overlay_classifies_delete_untracked_and_ignored_without_following_ignored_input() {
-    let fixture = TempTree::new("snapshot overlay rules");
-    let repo = fixture.0.join("repo");
+    let fixture = TempDir::new("snapshot overlay rules");
+    let repo = fixture.path().join("repo");
     fs::create_dir_all(&repo).unwrap();
     init_repo(&repo);
     fs::write(repo.join(".gitignore"), "ignored.bin\nscratch/\n").unwrap();
@@ -359,8 +348,8 @@ fn overlay_classifies_delete_untracked_and_ignored_without_following_ignored_inp
 
 #[test]
 fn intent_to_add_is_an_explicit_overlay_member() {
-    let fixture = TempTree::new("snapshot intent to add");
-    let repo = fixture.0.join("repo");
+    let fixture = TempDir::new("snapshot intent to add");
+    let repo = fixture.path().join("repo");
     fs::create_dir_all(&repo).unwrap();
     init_repo(&repo);
     fs::write(repo.join("intent.txt"), "intent").unwrap();
@@ -377,8 +366,8 @@ fn intent_to_add_is_an_explicit_overlay_member() {
 #[cfg(windows)]
 #[test]
 fn windows_scope_case_collision_fails_closed() {
-    let fixture = TempTree::new("snapshot scope collision");
-    let repo = fixture.0.join("repo");
+    let fixture = TempDir::new("snapshot scope collision");
+    let repo = fixture.path().join("repo");
     fs::create_dir_all(&repo).unwrap();
     init_repo(&repo);
     let output = snapshot(&repo, "head_only", &["src", "SRC"]);
@@ -390,24 +379,24 @@ fn windows_scope_case_collision_fails_closed() {
 
 #[test]
 fn unborn_git_is_explicit_content_snapshot_and_head_only_is_unavailable() {
-    let fixture = TempTree::new("snapshot unborn");
-    git(&fixture.0, &["init", "--quiet"]);
-    fs::write(fixture.0.join("file.txt"), "unborn").unwrap();
-    let explicit = ok_json(snapshot(&fixture.0, "explicit_overlay", &["."]));
+    let fixture = TempDir::new("snapshot unborn");
+    git(fixture.path(), &["init", "--quiet"]);
+    fs::write(fixture.path().join("file.txt"), "unborn").unwrap();
+    let explicit = ok_json(snapshot(fixture.path(), "explicit_overlay", &["."]));
     assert_eq!(explicit["snapshot"]["head"], "unborn");
     assert_eq!(explicit["repository"]["kind"], "git_unborn");
     assert!(explicit["snapshot"]["repoIdentity"]
         .as_str()
         .unwrap()
         .starts_with("content-v1:"));
-    let rejected = snapshot(&fixture.0, "head_only", &["."]);
+    let rejected = snapshot(fixture.path(), "head_only", &["."]);
     assert_eq!(rejected.status.code(), Some(69));
 }
 
 #[test]
 fn head_snapshot_binds_gitlink_lfs_pointer_and_case_sensitive_scope() {
-    let fixture = TempTree::new("snapshot special entries");
-    let repo = fixture.0.join("repo");
+    let fixture = TempDir::new("snapshot special entries");
+    let repo = fixture.path().join("repo");
     fs::create_dir_all(&repo).unwrap();
     init_repo(&repo);
     let commit = String::from_utf8(
@@ -464,14 +453,14 @@ fn head_snapshot_binds_gitlink_lfs_pointer_and_case_sensitive_scope() {
 
 #[test]
 fn shallow_lineage_is_rejected_and_symlink_target_is_hashed_without_following() {
-    let fixture = TempTree::new("snapshot shallow symlink");
-    let repo = fixture.0.join("repo");
+    let fixture = TempDir::new("snapshot shallow symlink");
+    let repo = fixture.path().join("repo");
     fs::create_dir_all(&repo).unwrap();
     init_repo(&repo);
     fs::write(repo.join("docs/readme.md"), "second").unwrap();
     git(&repo, &["add", "."]);
     git(&repo, &["commit", "--quiet", "-m", "second"]);
-    let shallow = fixture.0.join("shallow");
+    let shallow = fixture.path().join("shallow");
     // Build a shallow repository without git's file:// clone: on Windows,
     // file:// URLs fail under an 8.3 short temp name (e.g. `ADMINI~1` — git
     // parses `file:///C:/...` as a relative `/C:/...` and reports "does not
@@ -479,9 +468,9 @@ fn shallow_lineage_is_rejected_and_symlink_target_is_hashed_without_following() 
     // --depth and produces a full repo. A full copy plus a .git/shallow
     // boundary line yields the same `rev-parse --is-shallow-repository ==
     // true` state the snapshot gate rejects.
-    let full = fixture.0.join("fullclone");
+    let full = fixture.path().join("fullclone");
     git(
-        &fixture.0,
+        fixture.path(),
         &[
             "clone",
             "--quiet",
@@ -498,7 +487,7 @@ fn shallow_lineage_is_rejected_and_symlink_target_is_hashed_without_following() 
     assert_eq!(rejected.status.code(), Some(69));
     assert!(String::from_utf8_lossy(&rejected.stderr).contains("shallow"));
 
-    let outside = fixture.0.join("outside.txt");
+    let outside = fixture.path().join("outside.txt");
     fs::write(&outside, "outside-one").unwrap();
     let link = repo.join("outside-link");
     #[cfg(windows)]
@@ -520,14 +509,14 @@ fn shallow_lineage_is_rejected_and_symlink_target_is_hashed_without_following() 
 
 #[test]
 fn missing_git_executable_is_unavailable_not_unversioned() {
-    let fixture = TempTree::new("snapshot missing git");
-    fs::write(fixture.0.join("file.txt"), "content").unwrap();
+    let fixture = TempDir::new("snapshot missing git");
+    fs::write(fixture.path().join("file.txt"), "content").unwrap();
     let output = common::cli()
         .args([
             "snapshot",
             "identity",
             "--repo",
-            fixture.0.to_str().unwrap(),
+            fixture.path().to_str().unwrap(),
             "--working-tree-policy",
             "explicit_overlay",
             "--scope",

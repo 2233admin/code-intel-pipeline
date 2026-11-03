@@ -1,32 +1,12 @@
 mod common;
+
+use common::TempDir;
 #[path = "support/schema.rs"]
 mod schema_support;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::Path;
 
 use serde_json::{json, Value};
-
-struct Temp(PathBuf);
-
-impl Temp {
-    fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path =
-            std::env::temp_dir().join(format!("code-intel-d02-{}-{nonce}", std::process::id()));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn sha256(path: &Path) -> String {
     sha256_hex(&fs::read(path).unwrap())
@@ -109,8 +89,8 @@ fn sha256_hex(bytes: &[u8]) -> String {
 
 #[test]
 fn representative_corpus_measures_quality_latency_and_rejects_fast_provenance_free_output() {
-    let temp = Temp::new();
-    let out = temp.0.join("benchmark");
+    let temp = TempDir::new("project_orientation_benchmark");
+    let out = temp.path().join("benchmark");
     let measured = common::cli()
         .args([
             "benchmark",
@@ -267,9 +247,9 @@ fn representative_corpus_measures_quality_latency_and_rejects_fast_provenance_fr
         }],
         "effectPolicy":{"allowedEffects":["local_write"]}
     });
-    let valid_request_path = temp.0.join("valid-request.json");
+    let valid_request_path = temp.path().join("valid-request.json");
     fs::write(&valid_request_path, serde_json::to_vec(&request).unwrap()).unwrap();
-    let valid_out = temp.0.join("a01-valid");
+    let valid_out = temp.path().join("a01-valid");
     let valid = common::cli()
         .args([
             "capability",
@@ -281,7 +261,7 @@ fn representative_corpus_measures_quality_latency_and_rejects_fast_provenance_fr
         .arg("--out")
         .arg(&valid_out)
         .arg("--artifact-root")
-        .arg(&temp.0)
+        .arg(temp.path())
         .output()
         .unwrap();
     assert_eq!(
@@ -299,7 +279,7 @@ fn representative_corpus_measures_quality_latency_and_rejects_fast_provenance_fr
         .as_u64()
         .unwrap();
     wrong_count_observations["fixtures"][0]["expected"]["fileCount"] = json!(expected_count + 1);
-    let wrong_count_path = temp.0.join("wrong-count-observations.json");
+    let wrong_count_path = temp.path().join("wrong-count-observations.json");
     fs::write(
         &wrong_count_path,
         serde_json::to_vec(&wrong_count_observations).unwrap(),
@@ -308,13 +288,13 @@ fn representative_corpus_measures_quality_latency_and_rejects_fast_provenance_fr
     let mut wrong_count_request = request.clone();
     wrong_count_request["inputs"][0]["path"] = json!("wrong-count-observations.json");
     wrong_count_request["inputs"][0]["sha256"] = json!(sha256(&wrong_count_path));
-    let wrong_count_request_path = temp.0.join("wrong-count-request.json");
+    let wrong_count_request_path = temp.path().join("wrong-count-request.json");
     fs::write(
         &wrong_count_request_path,
         serde_json::to_vec(&wrong_count_request).unwrap(),
     )
     .unwrap();
-    let wrong_count_out = temp.0.join("wrong-count-out");
+    let wrong_count_out = temp.path().join("wrong-count-out");
     let wrong_count = common::cli()
         .args([
             "capability",
@@ -326,7 +306,7 @@ fn representative_corpus_measures_quality_latency_and_rejects_fast_provenance_fr
         .arg("--out")
         .arg(&wrong_count_out)
         .arg("--artifact-root")
-        .arg(&temp.0)
+        .arg(temp.path())
         .output()
         .unwrap();
     assert_eq!(wrong_count.status.code(), Some(0));
@@ -343,7 +323,7 @@ fn representative_corpus_measures_quality_latency_and_rejects_fast_provenance_fr
     let mut forged_observations = observations;
     forged_observations["fixtures"][0]["samples"]["warm"][0]["orientation"]["identity"]
         ["provenance"] = json!([]);
-    let forged_path = temp.0.join("forged-observations.json");
+    let forged_path = temp.path().join("forged-observations.json");
     fs::write(
         &forged_path,
         serde_json::to_vec(&forged_observations).unwrap(),
@@ -352,9 +332,9 @@ fn representative_corpus_measures_quality_latency_and_rejects_fast_provenance_fr
     let mut forged_request = request;
     forged_request["inputs"][0]["path"] = json!("forged-observations.json");
     forged_request["inputs"][0]["sha256"] = json!(sha256(&forged_path));
-    let request_path = temp.0.join("forged-request.json");
+    let request_path = temp.path().join("forged-request.json");
     fs::write(&request_path, serde_json::to_vec(&forged_request).unwrap()).unwrap();
-    let rejected_out = temp.0.join("rejected");
+    let rejected_out = temp.path().join("rejected");
     let rejected = common::cli()
         .args([
             "capability",
@@ -366,7 +346,7 @@ fn representative_corpus_measures_quality_latency_and_rejects_fast_provenance_fr
         .arg("--out")
         .arg(&rejected_out)
         .arg("--artifact-root")
-        .arg(&temp.0)
+        .arg(temp.path())
         .output()
         .unwrap();
     assert_eq!(rejected.status.code(), Some(65));

@@ -1,7 +1,8 @@
 mod common;
+
+use common::TempDir;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::Path;
 
 use serde_json::{json, Value};
 
@@ -47,14 +48,6 @@ fn branches(result: &Value) -> Vec<(&str, &str)> {
             )
         })
         .collect()
-}
-
-fn temp_root(label: &str) -> PathBuf {
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("clock")
-        .as_nanos();
-    std::env::temp_dir().join(format!("code-intel-c06-{label}-{stamp}"))
 }
 
 #[test]
@@ -314,7 +307,8 @@ fn native_plain_text_and_file_adapters_are_substitutable() {
     let plain_result = resolve_with(plain);
     assert_eq!(plain_result["status"], "resolved");
 
-    let root = temp_root("file");
+    let root_dir = TempDir::new("file");
+    let root = root_dir.path();
     fs::create_dir_all(&root).unwrap();
     let response_path = root.join("decision-42.response.json");
     fs::write(
@@ -322,8 +316,7 @@ fn native_plain_text_and_file_adapters_are_substitutable() {
         serde_json::to_vec_pretty(&response).unwrap(),
     )
     .unwrap();
-    let file_result = resolve_with(FileDecisionPort::new(root.clone()));
-    fs::remove_dir_all(root).unwrap();
+    let file_result = resolve_with(FileDecisionPort::new(root.to_path_buf()));
     assert_eq!(file_result["status"], "resolved");
 }
 
@@ -447,7 +440,8 @@ fn production_cli_routes_through_the_native_structured_adapter() {
 
 #[test]
 fn production_cli_rejects_duplicate_keys_with_a_machine_envelope() {
-    let root = temp_root("duplicate-json");
+    let root_dir = TempDir::new("duplicate-json");
+    let root = root_dir.path();
     fs::create_dir_all(&root).unwrap();
     let fixture_root =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/decision-port");
@@ -476,7 +470,6 @@ fn production_cli_rejects_duplicate_keys_with_a_machine_envelope() {
         ])
         .output()
         .unwrap();
-    fs::remove_dir_all(root).unwrap();
     assert_eq!(output.status.code(), Some(65));
     let envelope: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(envelope["status"], "rejected");
@@ -492,7 +485,8 @@ fn file_response_and_cancellation_ingress_reject_duplicate_keys() {
     let fixture_root =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/decision-port");
 
-    let response_root = temp_root("duplicate-response");
+    let response_root_dir = TempDir::new("duplicate-response");
+    let response_root = response_root_dir.path();
     fs::create_dir_all(&response_root).unwrap();
     let response = fs::read_to_string(fixture_root.join("valid-response.json"))
         .unwrap()
@@ -502,7 +496,7 @@ fn file_response_and_cancellation_ingress_reject_duplicate_keys() {
             1,
         );
     fs::write(response_root.join("decision-42.response.json"), response).unwrap();
-    let mut response_port = FileDecisionPort::new(response_root.clone());
+    let mut response_port = FileDecisionPort::new(response_root.to_path_buf());
     assert!(DecisionExchange::default()
         .advance(
             &request,
@@ -513,15 +507,15 @@ fn file_response_and_cancellation_ingress_reject_duplicate_keys() {
         .unwrap_err()
         .to_string()
         .contains("duplicate"));
-    fs::remove_dir_all(response_root).unwrap();
 
-    let cancel_root = temp_root("duplicate-cancel");
+    let cancel_root_dir = TempDir::new("duplicate-cancel");
+    let cancel_root = cancel_root_dir.path();
     fs::create_dir_all(&cancel_root).unwrap();
     let cancellation = fs::read_to_string(fixture_root.join("cancellation.json"))
         .unwrap()
         .replacen("\"reason\":", "\"reason\": \"forged\",\n  \"reason\":", 1);
     fs::write(cancel_root.join("decision-42.cancel.json"), cancellation).unwrap();
-    let mut cancel_port = FileDecisionPort::new(cancel_root.clone());
+    let mut cancel_port = FileDecisionPort::new(cancel_root.to_path_buf());
     assert!(DecisionExchange::default()
         .advance(
             &request,
@@ -532,7 +526,6 @@ fn file_response_and_cancellation_ingress_reject_duplicate_keys() {
         .unwrap_err()
         .to_string()
         .contains("duplicate"));
-    fs::remove_dir_all(cancel_root).unwrap();
 }
 
 #[test]
