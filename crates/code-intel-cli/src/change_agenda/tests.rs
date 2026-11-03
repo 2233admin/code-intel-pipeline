@@ -347,3 +347,53 @@ fn unit_test_asymmetry_counts_inline_test_module_changes() {
     assert_eq!(unit["signals"]["testAsymmetry"]["testFilesChanged"], 1);
     assert_eq!(unit["files"][0]["touchesInlineTests"], true);
 }
+
+#[test]
+fn text_format_marks_inline_test_files() {
+    use std::process::Command;
+
+    let file = "crates/code-intel-cli/src/native_code_evidence.rs";
+    let repo = std::env::temp_dir().join(format!(
+        "code-intel-change-agenda-inline-text-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(repo.join("crates/code-intel-cli/src")).unwrap();
+    let git = |args: &[&str]| {
+        assert!(Command::new("git")
+            .args(args)
+            .current_dir(&repo)
+            .status()
+            .unwrap()
+            .success());
+    };
+    git(&["init", "--quiet"]);
+    git(&["config", "user.name", "Agenda Test"]);
+    git(&["config", "user.email", "agenda@example.invalid"]);
+    git(&["config", "commit.gpgsign", "false"]);
+    let write_and_commit = |body: &str, message: &str| {
+        std::fs::write(repo.join(file), body).unwrap();
+        git(&["add", "."]);
+        git(&["commit", "--quiet", "-m", message]);
+    };
+    write_and_commit(
+        "pub fn f() -> i32 {\n    1\n}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn a() {}\n}\n",
+        "add",
+    );
+    write_and_commit(
+        "pub fn f() -> i32 {\n    1\n}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn a() {}\n\n    #[test]\n    fn b() {}\n}\n",
+        "change",
+    );
+
+    let report = super::execute(&repo, "HEAD", DEFAULT_MIN_COCHANGE).expect("agenda succeeds");
+    let text = super::render::render_text(&report);
+    let line = text
+        .lines()
+        .find(|line| line.contains(file))
+        .expect("file line");
+    assert!(line.contains(" [inline-test] fix180d="), "{line}");
+    assert!(!line.contains("[test]"), "{line}");
+}

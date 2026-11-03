@@ -152,11 +152,13 @@ pub(super) fn render_text(value: &Value) -> String {
             unit["files"].as_array().map_or(0, Vec::len)
         ));
         for file in unit["files"].as_array().cloned().unwrap_or_default() {
-            let marker = if file["isTestFile"].as_bool().unwrap_or(false) {
-                " [test]"
-            } else {
-                ""
-            };
+            let mut marker = String::new();
+            if file["isTestFile"].as_bool().unwrap_or(false) {
+                marker.push_str(" [test]");
+            }
+            if file["touchesInlineTests"].as_bool().unwrap_or(false) {
+                marker.push_str(" [inline-test]");
+            }
             lines.push(format!(
                 "    {} +{}/-{}{marker} fix180d={} churn90d={}",
                 file["path"].as_str().unwrap_or(""),
