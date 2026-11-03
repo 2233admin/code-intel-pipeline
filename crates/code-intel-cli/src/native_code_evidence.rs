@@ -480,7 +480,10 @@ fn symbol_candidate<'a>(language: &str, line: &'a str) -> Option<(&'static str, 
                 .or_else(|| arrow_name(line).map(|name| ("function", name)))
         }
         "rust" => {
-            let line = line.strip_prefix("pub ").unwrap_or(line);
+            let line = match line.strip_prefix("pub(") {
+                Some(rest) => rest.split_once(')')?.1.trim_start(),
+                None => line.strip_prefix("pub ").unwrap_or(line),
+            };
             let line = line.strip_prefix("async ").unwrap_or(line);
             word_after(line, "fn ").map(|name| ("function", name))
         }
@@ -872,6 +875,34 @@ fn publish(out: &Path, relative: &str, bytes: &[u8]) -> Result<(), AdapterError>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn symbol_candidate_rust_accepts_restricted_visibility() {
+        for line in [
+            "pub(crate) fn a(",
+            "    pub(super) fn a(",
+            "pub(self) fn a(",
+            "pub(in crate::x) fn a(",
+            "pub(in crate :: x) fn a(",
+            "pub(crate) async fn a(",
+            "pub fn a(",
+            "pub async fn a(",
+            "async fn a(",
+            "fn a(",
+        ] {
+            assert_eq!(
+                symbol_candidate("rust", line),
+                Some(("function", "a")),
+                "{line}"
+            );
+        }
+    }
+
+    #[test]
+    fn symbol_candidate_rust_unclosed_visibility_is_none() {
+        assert_eq!(symbol_candidate("rust", "pub(crate fn a("), None);
+        assert_eq!(symbol_candidate("rust", "pub("), None);
+    }
 
     #[test]
     fn registry_toolchain_digest_is_the_declared_source_sha256() {
