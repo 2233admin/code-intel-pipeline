@@ -53,7 +53,8 @@ python scripts/bootstrap.py --repo-path "<repo-path>" --json
 ```
 
 Add `--version <tag>` only for a requested version. Add `--channel prerelease` only when the user
-explicitly requests the latest published prerelease. Never put provider keys in commands,
+explicitly requests the latest published prerelease; a pinned prerelease uses `--channel prerelease`
+together with `--version <tag>`. Never put provider keys in commands,
 repository files, artifacts, or Skill resources.
 
 Bootstrap verifies and extracts the release, then hands off to the release's own binary with

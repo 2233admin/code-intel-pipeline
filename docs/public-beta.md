@@ -75,8 +75,14 @@ gh attestation verify ./code-intel-pipeline-v0.7.1-<platform>.zip --repo 2233adm
 6. Read the output back from the published run:
 
 ```bash
-<extracted>/code-intel-pipeline/bin/code-intel artifact query --artifact-root <root> --repo <published-repo-key> --type code_evidence.agent_slice
+<extracted>/code-intel-pipeline/bin/code-intel artifact query --artifact-root <root> --repo <published-repo-key> --type code_evidence.agent_slice --repo-path <repo>
 ```
+
+`artifact query` reads the latest *completed* run in the index; a run that is not
+completed is skipped, so it may return an earlier run. Compare the returned `run`
+with your `<run-id>`. `--repo-path <repo>` is needed so freshness is not
+`unknown`. Each `matches[].preview` is capped at 400 characters and carries
+`previewTruncated`; the full report is not returned here.
 
 ### Reading the result
 
@@ -114,9 +120,9 @@ use them with the stable ZIP.
   persists `PATH` and `CODE_INTEL_HOME`, links the Skill, runs doctor) needs
   `v0.7.2-beta.7` or newer.
 - The Skill's `scripts/bootstrap.py` ends by running the release's own
-  `bin/code-intel setup`, so it has the same requirement. Its default stable
-  channel is currently rejected with "This release predates `code-intel
-  setup`". Use `--version v0.7.2-beta.7 --channel prerelease` (the bootstrap checks `--channel` even with `--version`, so pass both) or just `--channel prerelease`, and only
+  `bin/code-intel setup`, so it has the same requirement. On its default stable
+  channel only the real install is rejected, with "This release predates
+  `code-intel setup`"; `--dry-run` still succeeds. Use `--version v0.7.2-beta.7 --channel prerelease` (the bootstrap checks `--channel` even with `--version`, so pass both) or just `--channel prerelease`, and only
   when the user explicitly asks for it.
 - `code-intel status <repo>` and `code-intel query <repo> ...` exist only in
   current source builds and newer prereleases.

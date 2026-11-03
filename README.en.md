@@ -53,7 +53,7 @@ output back:
 
 ```bash
 <extracted>/code-intel-pipeline/bin/code-intel <repo> --mode lite --artifact-root <root> --json
-<extracted>/code-intel-pipeline/bin/code-intel artifact query --artifact-root <root> --repo <published-repo-key> --type code_evidence.agent_slice
+<extracted>/code-intel-pipeline/bin/code-intel artifact query --artifact-root <root> --repo <published-repo-key> --type code_evidence.agent_slice --repo-path <repo>
 ```
 
 Prerequisites: `git` and `rg` are required; `python` and `repowise` are
@@ -69,8 +69,8 @@ on Linux or macOS.
 **Current source / prerelease only (not in v0.7.1): `code-intel setup` and the
 Skill bootstrap.** They need `v0.7.2-beta.7` or newer: pass
 `--version v0.7.2-beta.7 --channel prerelease` (the bootstrap checks `--channel` even with `--version`, so pass both) or just `--channel prerelease`, and only when the user
-explicitly asks for it (#405). The default stable channel is now rejected with
-"This release predates `code-intel setup`". `code-intel status <repo>` and
+explicitly asks for it (#405). On the default stable channel only the real install is rejected, with
+"This release predates `code-intel setup`"; `--dry-run` still succeeds. `code-intel status <repo>` and
 `code-intel query <repo>` are likewise absent from v0.7.1. Review the plan
 first, then run it, from `skills/code-intel-pipeline/`:
 

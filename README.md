@@ -48,10 +48,10 @@
 
 ```bash
 <解压目录>/code-intel-pipeline/bin/code-intel <repo> --mode lite --artifact-root <root> --json
-<解压目录>/code-intel-pipeline/bin/code-intel artifact query --artifact-root <root> --repo <published-repo-key> --type code_evidence.agent_slice
+<解压目录>/code-intel-pipeline/bin/code-intel artifact query --artifact-root <root> --repo <published-repo-key> --type code_evidence.agent_slice --repo-path <repo>
 ```
 
-`<published-repo-key>` 和 `<run-id>` 从 `--json` 输出的 `publication.path`（`<root>/<published-repo-key>/<run-id>`）里读，且该目录里要有 `run-complete.json`。`lite` 不发布 `diagnosis.*`；要读 `diagnosis.hospital-view` 请改用 `--mode normal`。
+`<published-repo-key>` 和 `<run-id>` 从 `--json` 输出的 `publication.path`（`<root>/<published-repo-key>/<run-id>`）里读，且该目录里要有 `run-complete.json`。`artifact query` 读的是索引里最近一次已完成（completed）的 run，未完成的 run 会被跳过，所以可能返回更早的一次：把返回结果里的 `run` 与你的 `<run-id>` 对一下。加 `--repo-path <repo>` 才能得到 freshness，否则是 `unknown`。`lite` 不发布 `diagnosis.*`；要读 `diagnosis.hospital-view` 请改用 `--mode normal`。
 退出码与 outcome 的含义、committed run 目录里有什么（只有 `run-complete.json` 和 `objects/sha256/<hash>`，没有 `report.json`），以及完整的下载、校验步骤见 [docs/public-beta.md](docs/public-beta.md)。这条路径的 audit 在 Windows 上跑过，Linux / macOS 没跑过。
 
 > **仅当前源码 / 预发布（v0.7.1 稳定版没有）：** `code-intel setup`、`code-intel status <repo>`、`code-intel query <repo>` 和 Skill 的 bootstrap 默认路径只存在于当前源码或 `v0.7.2-beta.7` 及更新的版本；稳定版 ZIP 里没有它们。详见 [docs/public-beta.md](docs/public-beta.md)。
@@ -159,14 +159,14 @@ windows / macos / linux 三平台相同：**不需要 PowerShell，也不需要 
 
 ```bash
 <解压目录>/code-intel-pipeline/bin/code-intel <repo> --mode lite --artifact-root <root> --json
-<解压目录>/code-intel-pipeline/bin/code-intel artifact query --artifact-root <root> --repo <published-repo-key> --type code_evidence.agent_slice
+<解压目录>/code-intel-pipeline/bin/code-intel artifact query --artifact-root <root> --repo <published-repo-key> --type code_evidence.agent_slice --repo-path <repo>
 ```
 
 前置条件：`git`、`rg` 必需，`python`、`repowise` 可选。
 
 ### 仅当前源码 / 预发布：`code-intel setup` 与 Skill bootstrap
 
-> 下面这些在 v0.7.1 稳定版里没有。`code-intel setup` 和 Skill 的 `scripts/bootstrap.py` 需要 `v0.7.2-beta.7` 或更新的版本：传 `--version v0.7.2-beta.7 --channel prerelease`（bootstrap 即使给了 `--version` 也会核对 `--channel`，所以两个都要传）或只传 `--channel prerelease`，并且只在用户明确要求时才用（#405）。默认的稳定频道现在会被拒绝，报错是 "This release predates `code-intel setup`"。
+> 下面这些在 v0.7.1 稳定版里没有。`code-intel setup` 和 Skill 的 `scripts/bootstrap.py` 需要 `v0.7.2-beta.7` 或更新的版本：传 `--version v0.7.2-beta.7 --channel prerelease`（bootstrap 即使给了 `--version` 也会核对 `--channel`，所以两个都要传）或只传 `--channel prerelease`，并且只在用户明确要求时才用（#405）。默认的稳定频道下，真正的安装（`setup`）现在会被拒绝，报错是 "This release predates `code-intel setup`"；`--dry-run` 仍然成功。
 
 Codex 可以先安装官方结构的 Skill 包，再由 Skill 下载并校验该 Release；也可以在 `skills/code-intel-pipeline/` 下直接运行引导脚本：先看计划，再执行：
 
@@ -210,27 +210,27 @@ bin/code-intel setup --repo-path ~/src/your-repo
 
 ```bash
 # 校验二进制确实产自本仓 CI（不是有人改了字节又同步改了 SHA-256）
-gh attestation verify code-intel-pipeline-v0.7.0-windows.zip --repo 2233admin/code-intel-pipeline
+gh attestation verify code-intel-pipeline-v0.7.1-windows.zip --repo 2233admin/code-intel-pipeline
 
 # 校验 SHA-256 —— Windows
-certutil -hashfile code-intel-pipeline-v0.7.0-windows.zip SHA256
+certutil -hashfile code-intel-pipeline-v0.7.1-windows.zip SHA256
 
 # 校验 SHA-256 —— macOS
-shasum -a 256 -c code-intel-pipeline-v0.7.0-macos.zip.sha256
+shasum -a 256 -c code-intel-pipeline-v0.7.1-macos.zip.sha256
 
 # 校验 SHA-256 —— Linux
-sha256sum -c code-intel-pipeline-v0.7.0-linux.zip.sha256
+sha256sum -c code-intel-pipeline-v0.7.1-linux.zip.sha256
 ```
 
-正式版（不带 `-beta.<n>` 或 `-rc.<n>` 后缀的 tag，例如 `v0.7.0`；`v0.7.0-beta.2` 这种预发布 tag 不算）额外要求 tag 本身经 SSH 签名，签名与验证方式见 [docs/RELEASE_SIGNING.md](docs/RELEASE_SIGNING.md)：
+正式版（不带 `-beta.<n>` 或 `-rc.<n>` 后缀的 tag，例如 `v0.7.1`；`v0.7.0-beta.2` 这种预发布 tag 不算）额外要求 tag 本身经 SSH 签名，签名与验证方式见 [docs/RELEASE_SIGNING.md](docs/RELEASE_SIGNING.md)：
 
 ```bash
-git verify-tag v0.7.0
+git verify-tag v0.7.1
 ```
 
 ### 运行
 
-安装后直接使用编译入口；不需要 Cargo，也不依赖仓库里的 `target/`：
+下面的命令以安装后 `PATH` 上有 `code-intel` 为前提（`setup` 仅当前源码 / 预发布）。稳定版 v0.7.1 没有 `PATH` 上的二进制，请把 `code-intel` 换成解压后的 `<解压目录>/code-intel-pipeline/bin/code-intel`（Windows 是 `code-intel.exe`），与上面的稳定版快速开始一致。不需要 Cargo，也不依赖仓库里的 `target/`：
 
 ```bash
 code-intel C:\path\to\your\repo
@@ -312,10 +312,10 @@ cat "objects/sha256/$view_sha"   # 就是 hospital.md 的 markdown 正文
 不想手工解引用 blob，直接读最近一次已提交结果：
 
 ```bash
-<解压目录>/code-intel-pipeline/bin/code-intel artifact query --artifact-root <artifact-root> --repo <published-repo-key> --type diagnosis.hospital-view
+<解压目录>/code-intel-pipeline/bin/code-intel artifact query --artifact-root <artifact-root> --repo <published-repo-key> --type diagnosis.hospital-view --repo-path <repo>
 ```
 
-它按 `run-complete.json` 和 manifest 校验后读出 `diagnosis.hospital-view`，与上面 jq 路径读到的是同一份已验证字节。
+它读的是索引里最近一次已完成（completed）的 run（未完成的会被跳过，可能返回更早的一次；把返回的 `run` 与你的 `<run-id>` 对一下）。它按 `run-complete.json` 和 manifest 校验后读出 `diagnosis.hospital-view`，与上面 jq 路径读到的是同一份已验证字节。注意 `artifact query` 返回的 `matches[].preview` 最多 400 个字符，并带 `previewTruncated` 标记；要完整报告请走上面的 jq 路径。
 
 `artifact query` 只是替你做了上面那趟 manifest 解引用。artifact 根目录的 `index.json` 只有主入口会在提交后自动重建；单独跑 `run execute` 不会顺带写它，要索引就显式 `artifact index --operation rebuild`。
 
