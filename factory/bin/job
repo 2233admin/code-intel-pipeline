@@ -20,7 +20,16 @@ Usage:
                                  prints `<n> <url>`
   job create <issue>             new job for an open `factory` issue; prints the job id
   job advance <job> <stage>      move a job to <stage>, or refuse
-  job merge <job>                APPROVE → sync with the base branch, gate, merge the PR at that commit
+  job drive <job>                from build, gate, review or approve, run the steps that need no judgement
+                                 (advance, gate, evidence, sync, merge) up to the next agent or person; prints
+                                 `DISPATCH <role> <model>` + its prompt per agent (a builder continuation: the three
+                                 header lines + the continuation); `WAIT <stage> <roles>` while dispatched agents
+                                 haven't written their file (drive again when they return); or `STOP <stage> <why>`
+                                 when a person or the orchestrator's judgement is next (a refusal word for word);
+                                 `ERROR <command> <output>` and exit 1 when a step fails to run
+  job merge <job>                APPROVE → sync with the base branch, gate, merge the PR at that commit;
+                                 when the base moved meanwhile, sync and gate again (3 rounds at most); when
+                                 required checks haven't finished on it, try again every 30s for 30 min at most
   job rework <job>               needs-human → build, with your PR comments as rework-<k>.md
   job prompt <job> <role>        the standard four-line prompt for an agent of the job's current stage
                                  (intake adds a fifth line, `Model: <model>.`, from intake_routing; reviewer-code
@@ -84,6 +93,7 @@ spec → build also records what the gate needs from the spec into job.json, so 
 change it: the sha256 of every file under holdout/ (`holdout`; refused when holdout/manifest.json is invalid,
 or missing while config.json holdout_required is true), `## 允许修改的测试` (`allowed_tests`) and
 `## 稳定性` (`satisfaction`; refused when `runs` is over config.json satisfaction.max_runs).
+Only `job rework` adds to `allowed_tests`: the paths an operator's comment lists under `## 允许修改的测试`.
 gate → spec is legal only for GATE: FAIL with REASON: test-weak and HOLDOUT: WEAK (the holdout passes on the
 base too); the round isn't used, and spec → build then keeps the round. After config.json holdout.max_respecs (default 2)
 such returns gate → spec is refused and gate → needs-human (REASON test-weak) is the way on. Leaving build for the gate refuses
@@ -340,8 +350,9 @@ def require_reason(path, what):
 
 
 def section(path, heading):
-    """Body of a `## heading` section, or None."""
-    m = re.search(rf"^## {re.escape(heading)}[ \t]*\n(.*?)(?=^## |\Z)", path.read_text(), re.MULTILINE | re.DOTALL)
+    """Body of a `## heading` section of a file (or of a str), or None."""
+    text = path if isinstance(path, str) else path.read_text()
+    m = re.search(rf"^## {re.escape(heading)}[ \t]*\n(.*?)(?=^## |\Z)", text, re.MULTILINE | re.DOTALL)
     return m.group(1).strip() if m else None
 
 
@@ -938,10 +949,15 @@ EVIDENCE_REVIEWERS = {"ux", "ui"}  # the only reviewers that may prove a finding
 NOT_FOR_CHANGES = {"style", "unproven"}  # style is a 建议; unproven is written by this script
 PROOF_FORMAT = ("`VERDICT: CHANGES` needs a `## 发现` section with one `### <title>` per finding, each with a proof: "
                 "a line 命令: `<command>` that exits non-zero in the worktree at COMMIT, a ```text block with its "
-                "output and a line 应为: <what the intent requires>; or (reviewer-ux, reviewer-ui only) a line "
+                "output, a line 应为: <what the intent requires> and a line EXPECT: <the exit code, or a piece of text "
+                "its output must contain>; or (reviewer-ux, reviewer-ui only) a line "
                 "证据: round-<N>/evidence/<file> <what it shows, what it should be>. Unproven remarks go under `## 建议`")
+# A proof that fails like this didn't reach the code it means to test: the environment failed, not the branch.
+ENV_FAILED_EXITS = {126, 127}
+ENV_FAILED_TEXT = ("ModuleNotFoundError", "ImportError", "SyntaxError", "command not found", "No such file")
 FENCE = re.compile(r"^\s*(```+|~~~+)")
 WHY = {}  # reviewer → why its review is invalid, for the refusal `advance` prints in the same run
+REOPENED = {}  # reviewer → confirmed findings this round whose key was fixed, for the `job sync` line
 
 
 def git(job, *args, check=True):
@@ -969,6 +985,29 @@ def md_blocks(lines, prefix):
     return out
 
 
+SYMBOL_REF = re.compile(r"([\w./\\-]+\.\w+)::([A-Za-z_][\w.]*)")
+LINE_REF = re.compile(r"([\w./\\-]+\.\w+):\d+")
+
+
+def finding_key(reviewer, f):
+    """A finding's identity across rounds: sha1 of the reviewer and the `path::symbol` the finding names, else its
+    path (from `path:line`; line numbers drift between rounds), else its title lower-cased without punctuation or
+    digits. Fenced output and the 命令/EXPECT lines are left out, so a traceback's paths don't decide it."""
+    text, fence = [f["title"]], None
+    for line in f["body"]:
+        m = FENCE.match(line)
+        if m:
+            fence = None if fence and m.group(1).startswith(fence) else fence or m.group(1)
+        elif fence is None and not re.match(r"\s*(命令|EXPECT)\s*[:：]", line):
+            text.append(line)
+    text = "\n".join(text)
+    sym, line = SYMBOL_REF.search(text), LINE_REF.search(text)
+    norm = lambda p: p.replace("\\", "/").removeprefix("./")
+    basis = (f"{norm(sym[1])}::{sym[2]}" if sym else norm(line[1]) if line
+             else "title:" + re.sub(r"[\W\d_]+", "", f["title"].lower()))
+    return hashlib.sha1(f"{reviewer}\n{basis}".encode()).hexdigest()[:12]
+
+
 def parse_findings(path, reviewer, job):
     """([finding], None) from a CHANGES review's `## 发现`, or (None, why it isn't valid)."""
     found = [b for h, b in md_blocks(path.read_text().splitlines(), "##") if h == "发现"]
@@ -993,12 +1032,15 @@ def parse_findings(path, reviewer, job):
                 outside.append(line.strip())
         cmd = next((m.group(1) for l in outside if (m := re.match(r"命令\s*[:：]\s*`(.+)`$", l))), None)
         want = next((m.group(1) for l in outside if (m := re.match(r"应为\s*[:：]\s*(\S.*)$", l))), None)
+        expect = next((m.group(1).strip().strip("`") for l in outside
+                       if (m := re.match(r"EXPECT\s*[:：]\s*(.*)$", l))), None)
         ev = next((m for l in outside if (m := re.match(r"证据\s*[:：]\s*`?([^\s`]+)`?\s*(.*)$", l))), None)
         where = f"review-{reviewer}.md finding {title!r}"
         if cmd:
             if text is None or not want:
                 return None, f"{where} has 命令 but no ```text block of its output or no 应为: line. {PROOF_FORMAT}"
-            out.append({"title": title, "kind": "run", "command": cmd, "body": body})
+            out.append({"title": title, "kind": "run", "command": cmd, "expect": expect, "body": body})
+            out[-1]["key"] = finding_key(reviewer, out[-1])
         elif ev:
             if reviewer not in EVIDENCE_REVIEWERS:
                 return None, f"{where}: only reviewer-ux and reviewer-ui may prove with 证据; run it instead. {PROOF_FORMAT}"
@@ -1008,6 +1050,7 @@ def parse_findings(path, reviewer, job):
                 return None, (f"{where}: 证据 must name a file under round-{job['round']}/evidence/ and say what it "
                               f"shows and what it should be. {PROOF_FORMAT}")
             out.append({"title": title, "kind": "evidence", "evidence": ev.group(1), "body": body, "path": target})
+            out[-1]["key"] = finding_key(reviewer, out[-1])
         else:
             return None, f"{where} has no proof. {PROOF_FORMAT}"
     return out, None
@@ -1043,6 +1086,36 @@ def run_proof(command, cwd):
     return code, out, int(time.monotonic() - start)
 
 
+def proof_result(code, log, expect):
+    """One run at HEAD: unjudged, unconfirmed, env-failed or confirmed.
+
+    A text EXPECT the output meets wins over environment-looking text: the reviewer said what the failure looks
+    like. A numeric EXPECT doesn't: exit 1 is also what an import error gives."""
+    expect = (expect or "").strip()
+    if code is None or not expect:
+        return "unjudged"  # timed out, or no EXPECT to judge it by
+    if code == 0:
+        return "unconfirmed"
+    if code in ENV_FAILED_EXITS:
+        return "env-failed"
+    numeric = re.fullmatch(r"-?\d+", expect)
+    if not numeric and expect in log:
+        return "confirmed"
+    if any(s in log for s in ENV_FAILED_TEXT):
+        return "env-failed"
+    return "confirmed" if numeric and code == int(expect) else "unconfirmed"
+
+
+def evidence_result(job, f):
+    """An evidence file confirms a finding when it exists, isn't empty, and index.md or the finding names it."""
+    path = f["path"]
+    if not path.is_file() or path.stat().st_size == 0:
+        return "unconfirmed"
+    index = round_dir(job) / "evidence" / "index.md"
+    named = path.name in (index.read_text() if index.is_file() else "") or f["evidence"] in "\n".join(f["body"])
+    return "confirmed" if named else "unconfirmed"
+
+
 def tree_state(job):
     """(HEAD, `git status --porcelain`) of the worktree: what a proof must leave as it found it."""
     return head(job), git(job, "status", "--porcelain", check=False).stdout.strip()
@@ -1058,7 +1131,8 @@ def confirm(job, reviewer, path, findings, run_now):
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     if cache.exists():
         c = json.loads(cache.read_text())
-        if c.get("review_sha256") == digest and c.get("commit") == job["head"]:
+        # A cache from before proofs were classified (no env_failed count) is re-run under the current rules.
+        if c.get("review_sha256") == digest and c.get("commit") == job["head"] and "env_failed" in c:
             return c
     if not run_now:
         return None
@@ -1070,17 +1144,20 @@ def confirm(job, reviewer, path, findings, run_now):
                 f"the worktree isn't clean at {(job['head'] or '?')[:7]}, so the proofs weren't run "
                 f"(git status: {before[1].splitlines()[0] if before[1] else 'HEAD ' + (before[0] or '?')[:7]}); "
                 f"the reviewer whose proof changed it restores it: git -C {job['worktree']} status")}
-    results, why = [], None
+    results, why, no_expect = [], None, []
     for k, f in enumerate(findings, 1):
-        r = {"title": f["title"], "kind": f["kind"]}
+        r = {"title": f["title"], "kind": f["kind"], "key": f["key"]}
         if f["kind"] == "evidence":
-            r.update(evidence=f["evidence"], result="confirmed" if f["path"].is_file() else "unconfirmed")
+            r.update(evidence=f["evidence"], result=evidence_result(job, f))
+        elif not f["expect"]:
+            r.update(command=f["command"], result="unjudged")
+            no_expect.append(f["title"])
         else:
             code, log, seconds = run_proof(f["command"], job["worktree"])
             out_dir.mkdir(parents=True, exist_ok=True)
             (out_dir / f"confirm-{k}.log").write_text(f"$ {f['command']}\n{log}")
-            r.update(command=f["command"], exit=code, seconds=seconds, timed_out=code is None,
-                     log=f"confirm-{k}.log", result="confirmed" if code not in (0, None) else "unconfirmed")
+            r.update(command=f["command"], expect=f["expect"], exit=code, seconds=seconds, timed_out=code is None,
+                     log=f"confirm-{k}.log", result=proof_result(code, log, f["expect"]))
             after = tree_state(job)
             if after != before:
                 changed = after[1].splitlines()[0] if after[1] else f"HEAD {(after[0] or '?')[:7]}"
@@ -1090,10 +1167,16 @@ def confirm(job, reviewer, path, findings, run_now):
                 results.append(r)
                 break
         results.append(r)
-    confirmed = sum(r["result"] == "confirmed" for r in results)
+    if no_expect and not why:
+        why = (f"finding(s) {', '.join(map(repr, no_expect))} have no `EXPECT:` line, so their proofs can't be "
+               f"judged. {PROOF_FORMAT}")
+    def count(result):
+        return sum(r["result"] == result for r in results)
+    confirmed = count("confirmed")
     c = {"reviewer": reviewer, "round": job["round"], "commit": job["head"], "review_sha256": digest,
          "status": "invalid" if why else "CHANGES" if confirmed else "unproven", "why": why,
-         "confirmed": confirmed, "findings": results, "ran": now()}
+         "confirmed": confirmed, "env_failed": count("env-failed"), "unjudged": count("unjudged"),
+         "findings": results, "ran": now()}
     out_dir.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps(c, indent=2, ensure_ascii=False) + "\n")
     return c
@@ -1221,15 +1304,19 @@ def sync(job, run_proofs=True):
         if job["agents"] and job["stage"] in {"review", "approve", "merging", "merged", "needs-human"}:
             job["reviews"] = {}
             WHY.clear()
+            REOPENED.clear()
             for r in reviewers(job):
                 v, findings, c = review_verdict(job, r, run_proofs)
                 job["reviews"][r] = v
+                fixed = {k for k, e in (job.get("findings") or {}).items() if e["status"] == "fixed"}
+                REOPENED[r] = sum(x["result"] == "confirmed" and x.get("key") in fixed for x in (c or {}).get("findings", []))
                 # Per round and reviewer, for job metrics: how many findings, how many a re-run confirmed.
                 if run_proofs and job["stage"] == "review" and v in {"PASS", "CHANGES", "unproven"} \
                         and (v == "PASS" or c):
                     job.setdefault("proofs", {}).setdefault(str(job["round"]), {})[r] = {
                         "model": job["agents"]["reviewers"][r], "status": v, "findings": len(findings),
-                        "confirmed": c["confirmed"] if c else 0}
+                        "confirmed": c["confirmed"] if c else 0, "env_failed": c["env_failed"] if c else 0,
+                        "unjudged": c["unjudged"] if c else 0}
     if job.get("satisfaction"):  # the latest round's result the gate wrote, for job metrics
         done = sorted(job_dir(job["id"]).glob("round-*/satisfaction.json"), key=lambda p: int(p.parent.name[6:]))
         if done:
@@ -1265,25 +1352,99 @@ def check_reviews_done(job):
                        f"run them again: {', '.join(stale)}")
 
 
-def write_findings(job, changes):
-    """round-N/findings.md: the confirmed findings of this round, the only ones the builder gets."""
+def round_findings(job, reviewer):
+    """[(finding, confirm result)] of one review of the current round, or [] without a confirm cache."""
     rd = round_dir(job)
+    cache = rd / "proof" / reviewer / "confirm.json"
+    if not cache.exists():
+        return []
+    findings, _ = parse_findings(rd / f"review-{reviewer}.md", reviewer, job)
+    return list(zip(findings or [], json.loads(cache.read_text())["findings"]))
+
+
+def record_findings(job):
+    """At the end of a review round, job.json `findings` {key: entry}: each reported finding counts once per round
+    and reviewer; a confirmed one not seen before is `open`, a confirmed one that was `fixed` is `reopened`.
+    Only confirmed findings start an entry; the title is the one it was first reported under."""
+    table = job.setdefault("findings", {})
+    for r, v in job["reviews"].items():
+        if v not in {"CHANGES", "unproven"}:
+            continue
+        seen = set()
+        for f, res in round_findings(job, r):
+            k, confirmed = f["key"], res["result"] == "confirmed"
+            if k not in table and not confirmed:
+                continue
+            e = table.setdefault(k, {"reviewer": r, "title": f["title"], "first_round": job["round"],
+                                     "status": "open", "reports": 0, "reopened": 0})
+            if k not in seen:
+                seen.add(k)
+                e["reports"] += 1
+            e["last_round"] = job["round"]
+            if confirmed:
+                e.update(kind=f["kind"], **({"command": f["command"], "expect": f["expect"]} if f["kind"] == "run"
+                                           else {}))
+                if e["status"] == "fixed":
+                    e["status"], e["reopened"] = "reopened", e["reopened"] + 1
+
+
+def write_findings(job, changes):
+    """round-N/findings.md, the builder's work: this round's confirmed findings (new, reopened or still open), each
+    once, and at the end the ones the script found fixed before this round's gate, which need nothing."""
+    rd, table = round_dir(job), job.get("findings") or {}
     lines = [f"# Round {job['round']}: confirmed findings", "",
              (f"Only findings whose proof factory/bin/job re-ran at {(job['head'] or '?')[:7]} and saw fail "
-              "(or whose evidence file exists) are here. Fix each one; in build.md write what its proof gives now."), ""]
+              "(or whose evidence file exists, isn't empty and is named) are here. Fix each one. Before the next "
+              "gate the script re-runs each proof at your new HEAD: the ones that no longer fail are listed as fixed "
+              "in the next findings.md; one that still fails keeps the job in build."), ""]
+    seen = set()
     for r in changes:
         path = rd / f"review-{r}.md"
-        c = json.loads((rd / "proof" / r / "confirm.json").read_text())
-        findings, _ = parse_findings(path, r, job)
         lines += [f"## reviewer-{r} (REASON: {header(path).get('REASON')})", ""]
-        for f, res in zip(findings, c["findings"]):
-            if res["result"] != "confirmed":
+        for f, res in round_findings(job, r):
+            if res["result"] != "confirmed" or f["key"] in seen:
                 continue
-            seen = (f"exit {res['exit']}, log proof/{r}/{res['log']}" if f["kind"] == "run"
-                    else f"{f['evidence']} exists")
-            lines += [f"### {f['title']}", *"\n".join(f["body"]).strip().splitlines(), "",
-                      f"Re-run by job: {seen}.", ""]
+            seen.add(f["key"])
+            e = table.get(f["key"], {})
+            status = ("重开：之前确认已修，这一轮又成立" if e.get("status") == "reopened"
+                      else "新" if e.get("first_round") == job["round"] else "仍未修")
+            ran = (f"exit {res['exit']}, log proof/{r}/{res['log']}" if f["kind"] == "run"
+                   else f"{f['evidence']} exists")
+            lines += [f"### {f['title']}", f"状态: {status}（key {f['key']}）",
+                      *"\n".join(f["body"]).strip().splitlines(), "", f"Re-run by job: {ran}.", ""]
+    fixed = [e for e in table.values() if e["status"] == "fixed" and e.get("fixed_round") == job["round"]]
+    lines += ["## 已确认修复", "",
+              *([f"- reviewer-{e['reviewer']}: {e['title']}（第 {e['first_round']} 轮报，进第 {e['fixed_round']} 轮"
+                 f"门禁前在 {e['recheck']['commit'][:7]} 上重跑不再成立）" for e in fixed] or ["（无）"]), ""]
     (rd / "findings.md").write_text("\n".join(lines))
+
+
+def recheck_findings(job):
+    """Entering the gate: re-run every open or reopened run finding's proof at the new HEAD. No longer failing →
+    `fixed`; still failing → refuse, the job stays in build; env-failed or unjudged → left open, not blocking."""
+    todo = [e for e in (job.get("findings") or {}).values()
+            if e["status"] in {"open", "reopened"} and e.get("kind") == "run"]
+    if not todo:
+        return
+    out_dir = round_dir(job) / "proof" / "recheck"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    sha, still = head(job), []
+    for e in todo:
+        before = tree_state(job)
+        code, log, _ = run_proof(e["command"], job["worktree"])
+        require(tree_state(job) == before, f"re-running {e['title']!r} (`{e['command']}`) changed the worktree; "
+                                           f"restore it (git -C {job['worktree']} status)")
+        key = next(k for k, v in job["findings"].items() if v is e)
+        (out_dir / f"{key}.log").write_text(f"$ {e['command']}\n{log}")
+        result = proof_result(code, log, e["expect"])
+        e["recheck"] = {"round": job["round"], "commit": sha, "result": result, "log": f"proof/recheck/{key}.log"}
+        if result == "unconfirmed":
+            e["status"], e["fixed_round"] = "fixed", job["round"]
+        elif result == "confirmed":
+            still.append(e)
+    require(not still, f"these findings still reproduce at {sha[:7]}, fix them before the gate (logs in "
+                       f"round-{job['round']}/proof/recheck/): "
+                       + "; ".join(f"reviewer-{e['reviewer']} {e['title']!r}: `{e['command']}`" for e in still))
 
 
 def next_round(job):
@@ -1336,11 +1497,17 @@ def record_spec(job, path):
 
 
 def allowed_tests(path):
-    """Paths (or fnmatch patterns) under `## 允许修改的测试`: existing tests this job may change."""
+    """Paths (or fnmatch patterns) under `## 允许修改的测试` of spec.md (or of a str such as an operator's
+    rework comment): existing tests this job may change.
+
+    An item may list several backticked paths (separated by 、 , ， or spaces) before its `：`;
+    backticks in the description after it aren't paths."""
     out = []
     for item in section_items(section(path, "允许修改的测试")):
-        m = re.match(r"`([^`]+)`", item) or re.match(r"([^\s：:，,（(]+)", item)
-        if m:
+        listed = re.match(r"(?:`[^`]+`[\s、,，]*)+", item)
+        if listed:
+            out += [p.strip() for p in re.findall(r"`([^`]+)`", listed.group(0))]
+        elif m := re.match(r"([^\s：:，,（(]+)", item):
             out.append(m.group(1).strip())
     return out
 
@@ -1509,6 +1676,7 @@ def _build_ready(job, stage, x):
     res = git(job, "rev-parse", f"origin/{job['branch']}", check=False)
     remote = res.stdout.strip() if res.returncode == 0 else ""
     require(local == remote, f"{job['branch']} isn't pushed: local {local[:7]}, origin {remote[:7] or 'missing'}")
+    recheck_findings(job)
     check_tools(job, "build", ["builder"])
     x.warning = check_holdout_blind(job)
     if not job["pr"]:
@@ -1624,6 +1792,7 @@ def _review_done(job, stage, x):
                       "so the gate and the reviews no longer describe it.", "other")
         return
     changes, unproven = _review_verdicts(job, stage, x)
+    record_findings(job)
     if stage == "approve":
         require(not changes, f"reviews want CHANGES: {', '.join(changes)}")
         require(not moved, "checks.md was written for another commit than HEAD; the gate is stale")
@@ -2228,6 +2397,84 @@ def cmd_doctor():
 NO_REBASE = "合并前同步会产生合并提交，rebase 合并不支持；改用 squash 或 merge"
 
 
+MERGE_ROUNDS = 3  # merge origin/<base> → gate → push → PUT, while the base keeps moving under it (#8)
+MERGEABLE_WAIT = (5, 60)  # seconds between GETs of the PR, and the most to wait for `mergeable` to be computed
+CHECKS_WAIT = (30, 30 * 60)  # seconds between merges, and the most to wait for checks on the pushed head
+
+
+def wait(until, every, most):
+    """Call `until` now and every `every` seconds until it returns something but None or `most` seconds passed."""
+    deadline = time.monotonic() + most
+    while (out := until()) is None and time.monotonic() < deadline:
+        time.sleep(every)
+    return out
+
+
+def checks_settled(sha):
+    """None while a check run or commit status on `sha` is still running (or none reported yet), else the failed ones.
+    Required or not: GitHub doesn't say which are required without admin rights."""
+    runs = api("GET", repo_api(f"commits/{sha}/check-runs?per_page=100"))["check_runs"]
+    statuses = api("GET", repo_api(f"commits/{sha}/status?per_page=100"))["statuses"]
+    if not runs + statuses or any(r["status"] != "completed" for r in runs) or \
+            any(s["state"] == "pending" for s in statuses):
+        return None
+    return [r["name"] for r in runs if r["conclusion"] not in {"success", "neutral", "skipped"}] + \
+           [s["context"] for s in statuses if s["state"] != "success"]
+
+
+CHECKS_REFUSED = re.compile(r"(?i)required status checks?\b")
+
+
+def put_merge(job, sha, base):
+    """PUT pulls/N/merge at `sha`, `base` being origin/<base> it was synced with. (response, None), or (None, why):
+    "base moved" when the base moved past `base` (sync and gate again), else the text for decision.md.
+    Retried after waiting where GitHub refuses only for now: mergeability not computed yet after the base moved
+    (once), or required checks not finished on the commit just pushed (until CHECKS_WAIT runs out)."""
+    def put():
+        return api("PUT", repo_api(f"pulls/{job['pr']}/merge"), {"sha": sha, "merge_method": CONFIG["merge_method"]})
+
+    try:
+        return put(), None
+    except Refused as e:
+        err = str(e)
+    if "Base branch was modified" in err:
+        git(job, "fetch", "origin", BASE)
+        if git(job, "rev-parse", f"origin/{BASE}").stdout.strip() != base:
+            return None, "base moved"
+        # GitHub's docs: `mergeable` is null while a background job computes it; wait, then submit again.
+        wait(lambda: get_pr(job["pr"]).get("mergeable"), *MERGEABLE_WAIT)
+    elif CHECKS_REFUSED.search(err):
+        return merge_after_checks(sha, put, err)
+    else:
+        return None, f"```\n{err}\n```"
+    try:
+        return put(), None
+    except Refused as e:
+        return None, f"```\n{err}\n```\n\nAgain after waiting:\n\n```\n{e}\n```"
+
+
+def merge_after_checks(sha, put, err):
+    """GitHub refused `sha` for its required checks: PUT again every CHECKS_WAIT interval until GitHub merges,
+    refuses for something else or a failing check, or CHECKS_WAIT runs out. Only GitHub knows which checks are
+    required (a non-required one may stay pending for good), so the checks on `sha` are listed only to explain an
+    escalation in decision.md."""
+    every, most = CHECKS_WAIT
+    start = time.monotonic()
+    while True:
+        time.sleep(every)
+        try:
+            return put(), None
+        except Refused as e:
+            again = str(e)
+        if not CHECKS_REFUSED.search(again) or re.search(r"(?i)\bfailing\b", again) or \
+                time.monotonic() - start >= most:
+            break
+    settled, waited = checks_settled(sha), int(time.monotonic() - start) // 60
+    seen = (f"Checks on {sha[:7]} still running after {waited} min." if settled is None else
+            f"Checks failed on {sha[:7]}: {', '.join(settled)}." if settled else f"Every check on {sha[:7]} passed.")
+    return None, f"{seen}\n\n```\n{err}\n```\n\nAgain after waiting:\n\n```\n{again}\n```"
+
+
 def cmd_merge(job):
     if CONFIG["merge_method"] == "rebase":
         die(f"merge_method 是 rebase：{NO_REBASE}")
@@ -2254,28 +2501,39 @@ def cmd_merge(job):
                     f"{', '.join(hits)}. Reviews by subagents of the same session don't count: "
                     "a person or another session reviews it, then merges the PR on GitHub.", "human-review-path")
     signoff = ["--signoff"] if CONFIG.get("signoff") else []
-    approved = head(job)
-    merged = git(job, "merge", "--no-edit", *signoff, f"origin/{BASE}", check=False)
-    if merged.returncode != 0:
-        git(job, "merge", "--abort", check=False)
-        return fail(f"The branch conflicts with {BASE}:\n\n```\n{merged.stdout.strip()}\n```", "conflict")
-    synced = head(job)
-    gate = subprocess.run([str(BIN / "gate"), job["id"], "--merge"], capture_output=True, text=True, check=False)
-    gated = header(round_dir(job) / "merge-checks.md").get("COMMIT")
-    if gate.returncode != 0 or gated != synced:
-        git(job, "reset", "--hard", approved)  # keep the worktree equal to the pushed branch
-        # Exit 3 is BASE-RED: the base itself is red, not this branch's fault.
-        reason = "base-red" if gate.returncode == 3 else "regression"
-        return fail(f"The gate failed after syncing with {BASE}. "
-                    f"See round-{job['round']}/merge-checks.md.\n\n{(gate.stdout or gate.stderr).strip()}", reason)
-    try:
-        git(job, "push", "origin", f"HEAD:refs/heads/{job['branch']}")
-        mark_ready(job)
-        done = api("PUT", repo_api(f"pulls/{job['pr']}/merge"),
-                   {"sha": synced, "merge_method": CONFIG["merge_method"]})
-    except Refused as e:
-        return fail(f"The merge of {synced[:7]} failed (GitHub refuses when the PR head moved):\n\n```\n{e}\n```",
-                    "other")
+    pushed = head(job)  # the branch on GitHub; the worktree goes back to it when a round fails
+    for attempt in range(1, MERGE_ROUNDS + 1):
+        if attempt > 1:
+            git(job, "fetch", "origin", BASE)
+        base = git(job, "rev-parse", f"origin/{BASE}").stdout.strip()
+        merged = git(job, "merge", "--no-edit", *signoff, f"origin/{BASE}", check=False)
+        if merged.returncode != 0:
+            git(job, "merge", "--abort", check=False)
+            return fail(f"The branch conflicts with {BASE}:\n\n```\n{merged.stdout.strip()}\n```", "conflict")
+        synced = head(job)
+        gate = subprocess.run([str(BIN / "gate"), job["id"], "--merge"], capture_output=True, text=True, check=False)
+        gated = header(round_dir(job) / "merge-checks.md").get("COMMIT")
+        if gate.returncode != 0 or gated != synced:
+            git(job, "reset", "--hard", pushed)  # keep the worktree equal to the pushed branch
+            # Exit 3 is BASE-RED: the base itself is red, not this branch's fault.
+            reason = "base-red" if gate.returncode == 3 else "regression"
+            return fail(f"The gate failed after syncing with {BASE}. "
+                        f"See round-{job['round']}/merge-checks.md.\n\n{(gate.stdout or gate.stderr).strip()}", reason)
+        try:
+            git(job, "push", "origin", f"HEAD:refs/heads/{job['branch']}")
+            pushed = synced
+            mark_ready(job)
+            done, why = put_merge(job, synced, base)
+        except Refused as e:
+            done, why = None, f"```\n{e}\n```"
+        if done is not None:
+            break
+        if why != "base moved":
+            return fail(f"The merge of {synced[:7]} failed:\n\n{why}", "other")
+    else:
+        return fail(f"The base branch ({BASE}) moved again during each of {MERGE_ROUNDS} rounds of "
+                    f"merge origin/{BASE} → gate → push → merge, so GitHub refused every merge "
+                    "(Base branch was modified). Find out why it keeps moving, then merge the PR.", "other")
     # GitHub may already have deleted the branch on merge.
     run(["git", "push", "origin", "--delete", job["branch"]], check=False)
     job["merged_sha"] = done.get("sha")  # the commit on the base that `job watch` checks
@@ -2315,6 +2573,12 @@ def cmd_rework(job):
     d = job_dir(job["id"])
     k = len(list(d.glob("rework-*.md"))) + 1
     lines = [f"# Rework {k}", "", f"Feedback from @{operator()} after the job escalated.", ""]
+    # Existing tests the operator allows in a `## 允许修改的测试` section join job.json allowed_tests.
+    allowed = job.get("allowed_tests") or []
+    added = [t for t in dict.fromkeys(t for n in sorted(notes) for t in allowed_tests(n[3])) if t not in allowed]
+    if added:
+        job["allowed_tests"] = allowed + added
+        lines += [f"Added to job.json allowed_tests: {', '.join(added)}", ""]
     for when, _, where, body in sorted(notes):
         lines += [f"## {where or 'General'} ({when})", "", body.strip(), ""]
     (d / f"rework-{k}.md").write_text("\n".join(lines))
@@ -2421,11 +2685,46 @@ def job_metrics(job, events, at, escaped=None, refusals=()):
         "tool_refusals": {t: sum(r["tool"] == t for r in refusals) for t in sorted({r["tool"] for r in refusals})},
         # Per reviewed round: findings and how many a re-run confirmed; per review, for the by-model rate.
         "findings": {rnd: {"findings": sum(x["findings"] for x in rs.values()),
-                           "confirmed": sum(x["confirmed"] for x in rs.values())}
+                           "confirmed": sum(x["confirmed"] for x in rs.values()),
+                           "env_failed": sum(x.get("env_failed", 0) for x in rs.values()),
+                           "unjudged": sum(x.get("unjudged", 0) for x in rs.values())}
                      for rnd, rs in sorted((job.get("proofs") or {}).items(), key=lambda kv: int(kv[0]))},
         "review_findings": [{"round": int(rnd), "reviewer": r, **x}
                             for rnd, rs in (job.get("proofs") or {}).items() for r, x in rs.items()],
+        **finding_identity(job),
     }
+
+
+def identity_summary(records):
+    unique = sum(r["unique_findings"] for r in records)
+    reports = sum(r["finding_reports"] for r in records)
+    by_model = {}
+    for r in records:
+        for model, x in r["duplicates_by_model"].items():
+            m = by_model.setdefault(model, {"reports": 0, "duplicates": 0})
+            m["reports"] += x["reports"]
+            m["duplicates"] += x["duplicates"]
+    for m in by_model.values():
+        m["rate"] = round(m["duplicates"] / m["reports"], 3) if m["reports"] else None
+    return {"unique": unique, "reports": reports,
+            "duplicate_rate": round((reports - unique) / reports, 3) if reports else None,
+            "reopened": sum(r["reopened"] for r in records), "by_model": dict(sorted(by_model.items()))}
+
+
+def finding_identity(job):
+    """Per job, from job.json `findings`: unique findings, reports, duplicate rate ((reports of a key − 1) summed
+    over reports), reopened, and the same per reviewer model."""
+    table = job.get("findings") or {}
+    reports = sum(e["reports"] for e in table.values())
+    models = ((job.get("agents") or {}).get("reviewers") or {})
+    by_model = {}
+    for e in table.values():
+        m = by_model.setdefault(models.get(e["reviewer"], "?"), {"reports": 0, "duplicates": 0})
+        m["reports"] += e["reports"]
+        m["duplicates"] += e["reports"] - 1
+    return {"unique_findings": len(table), "finding_reports": reports,
+            "duplicate_rate": round((reports - len(table)) / reports, 3) if reports else None,
+            "reopened": sum(e.get("reopened", 0) for e in table.values()), "duplicates_by_model": by_model}
 
 
 def tool_usage(records, tools):
@@ -2474,6 +2773,7 @@ def summarize(records, tools):
     rounds = [f for r in records for f in r["findings"].values()]
     found = sum(f["findings"] for f in rounds)
     confirmed = sum(f["confirmed"] for f in rounds)
+    env_failed, unjudged = (sum(f.get(k, 0) for f in rounds) for k in ("env_failed", "unjudged"))
     by_model = {}
     for x in (x for r in records for x in r["review_findings"]):
         m = by_model.setdefault(x["model"], {"findings": 0, "unconfirmed": 0})
@@ -2513,7 +2813,9 @@ def summarize(records, tools):
         "findings": {"rounds": len(rounds), "total": found,
                      "per_round": round(found / len(rounds), 2) if rounds else None,
                      "confirmed": confirmed, "confirmed_rate": round(confirmed / found, 3) if found else None,
+                     "env_failed": env_failed, "unjudged": unjudged,
                      "unconfirmed_by_model": dict(sorted(by_model.items()))},
+        "finding_identity": identity_summary(records),
     }
 
 
@@ -2634,7 +2936,11 @@ def cmd_metrics(args):
           + (f" ({f['per_round']}/round), confirmed {f['confirmed']} ({f['confirmed_rate']:.0%})" if f["total"] else "")
           + "; unconfirmed by reviewer model: "
           + (", ".join(f"{k} {v['unconfirmed']}/{v['findings']}" + (f" ({v['rate']:.0%})" if v["findings"] else "")
-                       for k, v in f["unconfirmed_by_model"].items()) or "none"))
+                       for k, v in f["unconfirmed_by_model"].items()) or "none")
+          + f"; env-failed {f['env_failed']}, unjudged {f['unjudged']}")
+    fi = s["finding_identity"]
+    print(f"finding identity: unique {fi['unique']}, duplicate rate "
+          f"{'-' if fi['duplicate_rate'] is None else format(fi['duplicate_rate'], '.0%')}, reopened {fi['reopened']}")
     st = s["satisfaction"]
     pct = lambda x: "-" if x is None else f"{x:.0%}"
     print(f"stability: {st['jobs']} jobs, mean pass rate HEAD {pct(st['head_pass_rate'])}, "
@@ -2896,7 +3202,7 @@ def cmd_watch(args):
 
 TUNE_DEFAULTS = {"min_jobs": 5, "escape_rate_max": 0.1, "avg_rounds_max": 2.0,
                  "reason_share_max": {"design-unsettled": 0.3, "flaky": 0.1, "base-red": 0.1},
-                 "required_refusals_per_job_max": 1.0}
+                 "required_refusals_per_job_max": 1.0, "duplicate_rate_max": 0.3}
 LADDER_DEFAULT = ["haiku", "sonnet", "opus"]
 REASON_ADVICE = {
     "design-unsettled": "收紧 intake（设计没定的单判 NEEDS-INFO），或先走规划，把设计定稿后再开票。",
@@ -2973,6 +3279,21 @@ def tune_reasons(data, t):
     return out
 
 
+def tune_duplicates(data, t):
+    """5. A reviewer model that keeps reporting the same finding → advice for its review."""
+    out = []
+    for model, m in data["summary"]["finding_identity"]["by_model"].items():
+        if m["rate"] is None or data["summary"]["jobs"] < t["min_jobs"] or m["rate"] <= t["duplicate_rate_max"]:
+            continue
+        out.append(tune_item(
+            f"reviewer model {model}: duplicate rate", f"finding_identity.by_model.{model}.rate", m["rate"],
+            t["duplicate_rate_max"], f"{m['reports']} reports, {m['duplicates']} of them repeats",
+            f"用 {model} 的审查者反复报同一条发现：换更强的模型给这个视角，或在它的提示词里强调先读上一轮 "
+            "findings.md 的「已确认修复」、只报仍成立的新问题。",
+            job_refs([r for r in data["jobs"] if (r["duplicates_by_model"].get(model) or {}).get("duplicates")])))
+    return out
+
+
 def tune_tool_unused(name, u, tool, jobs, t):
     return tune_item(
         f"tool {name}: never used", f"tool_usage.{name}.rate", 0.0, "> 0", f"{u['due']} jobs where it applied",
@@ -3016,7 +3337,7 @@ def tune_suggestions(data, cfg, tools):
     ladder = cfg.get("model_ladder") or LADDER_DEFAULT
     routing = cfg.get("routing", {})
     return (tune_escapes(data, t, routing, ladder) + tune_rounds(data, t, ladder)
-            + tune_reasons(data, t) + tune_tools(data, t, tools))
+            + tune_reasons(data, t) + tune_tools(data, t, tools) + tune_duplicates(data, t))
 
 
 def cmd_tune(args):
@@ -3831,7 +4152,14 @@ def run_advance(args):
 def run_sync(args):
     job = sync(resolve(args[0]))
     save(job)
-    reviews = " ".join(f"{k}:{v}" for k, v in job["reviews"].items())
+    proofs = (job.get("proofs") or {}).get(str(job["round"]), {})
+
+    def named(k):  # env-failed and unjudged proofs are named, so an unproven review isn't silently waved through
+        parts = [f"{label} {n}" for label, n in (("env-failed", proofs.get(k, {}).get("env_failed")),
+                                                ("unjudged", proofs.get(k, {}).get("unjudged")),
+                                                ("reopened", REOPENED.get(k))) if n]
+        return f"({', '.join(parts)})" if parts else ""
+    reviews = " ".join(f"{k}:{v}{named(k)}" for k, v in job["reviews"].items())
     print(f"{job['id']}: {job['stage']} round {job['round']} gate {job['gate'] or '-'} "
           f"head {(job['head'] or '-')[:7]} {reviews}".rstrip())
 
@@ -3841,6 +4169,142 @@ def run_new_issue(args):
         cmd_new_issue(*args[1:], plan=True)
     else:
         cmd_new_issue(*args)
+
+
+# ---- drive -----------------------------------------------------------------
+# `job drive` runs the steps the orchestrator does without judgement, each through the existing command, and stops
+# where an agent or a person is next. It never holds a job's lock: every step is a separate `job`/`gate`/`evidence`
+# process that takes the lock itself.
+
+DRIVEN = ("build", "gate", "review", "approve")
+
+
+class DriveWait(Exception):
+    """`WAIT <stage> <roles>`: agents already dispatched haven't written their files; drive again when they return."""
+
+
+class DriveStop(Exception):
+    """`STOP <stage> <why>`: a person (or the orchestrator's judgement) is next."""
+
+
+class DriveError(Exception):
+    """`ERROR <command> <its output>`: a step failed without refusing."""
+
+
+def peek(job_id):
+    """job.json without taking the job's lock."""
+    return json.loads((job_dir(job_id) / "job.json").read_text())
+
+
+def drive_id(arg):
+    if not arg.isdigit():
+        if not (job_dir(arg) / "job.json").exists():
+            die(f"no job {arg}")
+        return arg
+    for p in sorted(JOBS.iterdir()) if JOBS.exists() else []:
+        if (p / "job.json").exists() and peek(p.name)["issue"] == int(arg):
+            return p.name
+    die(f"no job for issue #{arg}")
+
+
+def drive_job(*args, stop=None):
+    """Run one `job` step. Non-zero exit: a refusal (STOP at `stop`) when `stop` is given, else an error."""
+    res = run([sys.executable, str(BIN / "job"), *args], check=False)
+    if res.returncode:
+        out = (res.stderr or res.stdout).strip().removeprefix("job: ")
+        if stop:
+            raise DriveStop(stop, out)
+        raise DriveError(f"factory/bin/job {' '.join(args)}", out)
+    return res.stdout.strip()
+
+
+def dispatch(job_id, role, model, tail=None):
+    """A DISPATCH block: `job prompt`'s prompt, or its three header lines and `tail` for a continuation."""
+    prompt = drive_job("prompt", job_id, role)
+    if tail:
+        prompt = "\n".join([*prompt.splitlines()[:3], tail])
+    return f"DISPATCH {role} {model}\n{prompt}"
+
+
+def drive_gate(job_id):
+    res = run([str(BIN / "gate"), job_id], check=False)
+    if res.returncode not in (0, 1, 3):  # PASS, FAIL, BASE-RED; anything else is the gate failing to run
+        raise DriveError(f"factory/bin/gate {job_id}", (res.stderr or res.stdout).strip())
+    job = peek(job_id)
+    rnd = job["round"]
+    if header(round_dir(job) / "checks.md").get("GATE") == "PASS":
+        run([str(BIN / "evidence"), job_id], check=False)  # a partial failure still writes index.md; advance judges
+        drive_job("advance", job_id, "review", stop="gate")
+        reviewers_ = peek(job_id)["agents"]["reviewers"]
+        return [dispatch(job_id, f"reviewer-{k}", m) for k, m in reviewers_.items()]
+    drive_job("advance", job_id, "build", stop="gate")  # refused for the last round, BASE-RED or a weak holdout
+    return [dispatch(job_id, "builder", job["agents"]["builder"],
+                     f"The gate failed in round {rnd}: read round-{rnd}/checks.md and checks.log, fix it, commit, "
+                     f"push, and update build.md for round {rnd + 1}.")]
+
+
+def drive_review(job_id):
+    job = peek(job_id)
+    missing = [f"reviewer-{k}" for k in job["agents"]["reviewers"] if not (round_dir(job) / f"review-{k}.md").exists()]
+    if missing:
+        raise DriveWait("review", " ".join(missing))
+    drive_job("sync", job_id)
+    job = peek(job_id)
+    rnd = job["round"]
+    target = "build" if "CHANGES" in job.get("reviews", {}).values() else "approve"
+    drive_job("advance", job_id, target, stop="review")  # refuses with the reason on missing, invalid or stale
+    if target == "approve":
+        return [dispatch(job_id, "approver", agent_model("approver"))]
+    return [dispatch(job_id, "builder", job["agents"]["builder"],
+                     f"Round {rnd} confirmed findings are in round-{rnd}/findings.md. Fix each one, commit, push, "
+                     f"and update build.md for round {rnd + 1} with what each finding's proof command gives now.")]
+
+
+def drive_approve(job_id):
+    decision = job_dir(job_id) / "decision.md"
+    if not decision.exists():
+        raise DriveWait("approve", "approver")
+    verdict = first_line(decision)
+    if verdict == "APPROVE":
+        out = drive_job("merge", job_id, stop="approve")
+        raise DriveStop(peek(job_id)["stage"], out)
+    if verdict == "ESCALATE":
+        drive_job("advance", job_id, "needs-human", stop="approve")
+        raise DriveStop("needs-human", f"the approver escalated: REASON {header(decision).get('REASON')}")
+    raise DriveStop("approve", "decision.md's first line is neither APPROVE nor ESCALATE")
+
+
+def drive(job_id):
+    stage = peek(job_id)["stage"]
+    if stage == "build":
+        if not (job_dir(job_id) / "build.md").exists():
+            raise DriveWait("build", "builder")
+        h = header(job_dir(job_id) / "build.md")
+        if h.get("STATUS") != "READY":
+            why = f" (REASON: {h['REASON']})" if h.get("REASON") else ""
+            raise DriveStop("build", f"build.md is {h.get('STATUS') or 'without a STATUS'}{why}, not READY")
+        drive_job("advance", job_id, "gate", stop="build")
+        stage = "gate"
+    if stage == "gate":
+        return drive_gate(job_id)
+    if stage == "review":
+        return drive_review(job_id)
+    if stage == "approve":
+        return drive_approve(job_id)
+    raise DriveStop(stage, f"job drive only advances {', '.join(DRIVEN)}; follow the factory skill for {stage}")
+
+
+def cmd_drive(arg):
+    job_id = drive_id(arg)
+    try:
+        print("\n\n".join(drive(job_id)))
+    except DriveWait as w:
+        print(f"WAIT {w.args[0]} {w.args[1]}")
+    except DriveStop as s:
+        print(f"STOP {s.args[0]} {s.args[1]}")
+    except DriveError as e:
+        print(f"ERROR {e.args[0]} {e.args[1]}")
+        sys.exit(1)
 
 
 # cmd -> (args 合法吗, 处理函数)；不合法走 die("bad arguments")
@@ -3892,6 +4356,7 @@ COMMANDS = {
     "plan": (lambda a: True, cmd_plan),
     "create": (lambda a: len(a) == 1 and a[0].isdigit(), lambda a: cmd_create(a[0])),
     "advance": (lambda a: len(a) == 2, run_advance),
+    "drive": (lambda a: len(a) == 1, lambda a: cmd_drive(a[0])),
     "merge": (lambda a: len(a) == 1, lambda a: cmd_merge(resolve(a[0]))),
     "rework": (lambda a: len(a) == 1, lambda a: cmd_rework(resolve(a[0]))),
     "prompt": (lambda a: len(a) == 2, lambda a: cmd_prompt(resolve(a[0]), a[1])),
