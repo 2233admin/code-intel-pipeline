@@ -230,22 +230,22 @@ git verify-tag v0.7.1
 
 ### 运行
 
-下面的命令以安装后 `PATH` 上有 `code-intel` 为前提（`setup` 仅当前源码 / 预发布）。稳定版 v0.7.1 没有 `PATH` 上的二进制，请把 `code-intel` 换成解压后的 `<解压目录>/code-intel-pipeline/bin/code-intel`（Windows 是 `code-intel.exe`），与上面的稳定版快速开始一致。不需要 Cargo，也不依赖仓库里的 `target/`：
+稳定版 v0.7.1 没有 `PATH` 上的二进制，下面直接用解压后的 `<解压目录>/code-intel-pipeline/bin/code-intel`（Windows 是 `code-intel.exe`），与上面的稳定版快速开始一致；`setup`（仅当前源码 / 预发布）装好后可在 `PATH` 上直接写 `code-intel`。不需要 Cargo，也不依赖仓库里的 `target/`：
 
 ```bash
-code-intel C:\path\to\your\repo
+<解压目录>/code-intel-pipeline/bin/code-intel C:\path\to\your\repo
 ```
 
 只使用离线核心能力：
 
 ```bash
-code-intel C:\path\to\your\repo --mode lite
+<解压目录>/code-intel-pipeline/bin/code-intel C:\path\to\your\repo --mode lite
 ```
 
 完整 normal 模式：
 
 ```bash
-code-intel C:\path\to\your\repo --mode normal
+<解压目录>/code-intel-pipeline/bin/code-intel C:\path\to\your\repo --mode normal
 ```
 
 ## 新机器部署
