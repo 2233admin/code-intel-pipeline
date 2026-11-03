@@ -1,36 +1,10 @@
 mod common;
 
+use common::TempDir;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Output;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
-
-static TEMP_TREE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-struct TempTree(PathBuf);
-
-impl TempTree {
-    fn new(label: &str) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let sequence = TEMP_TREE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-{label}-{nonce}-{}-{sequence}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for TempTree {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn init_repo(repo: &Path) {
     let output = std::process::Command::new("git")
@@ -43,8 +17,8 @@ fn init_repo(repo: &Path) {
 
 /// A fake `$HOME`/`%USERPROFILE%` so tests never read or write this
 /// machine's real `~/.claude/settings.json`.
-fn fake_home() -> TempTree {
-    TempTree::new("repowise-hooks-home")
+fn fake_home() -> TempDir {
+    TempDir::new("repowise-hooks-home")
 }
 
 /// A directory holding a stub `repowise` executable that never touches the
@@ -53,15 +27,15 @@ fn fake_home() -> TempTree {
 /// this machine's PATH must not change what these tests exercise, so every
 /// `run()` call prepends this directory ahead of the real PATH.
 struct FakeRepowise {
-    dir: TempTree,
+    dir: TempDir,
     log: PathBuf,
 }
 
 impl FakeRepowise {
     fn new() -> Self {
-        let dir = TempTree::new("repowise-hooks-stub");
-        let log = dir.0.join("invocations.log");
-        write_stub(&dir.0);
+        let dir = TempDir::new("repowise-hooks-stub");
+        let log = dir.path().join("invocations.log");
+        write_stub(dir.path());
         Self { dir, log }
     }
 
@@ -90,12 +64,8 @@ fn write_stub(dir: &Path) {
 
 #[cfg(unix)]
 fn write_stub(dir: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-
     let script = "#!/bin/sh\necho \"CWD=$(pwd)\" >> \"$REPOWISE_STUB_LOG\"\necho \"ARGS=$*\" >> \"$REPOWISE_STUB_LOG\"\nexit 0\n";
-    let path = dir.join("repowise");
-    fs::write(&path, script).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    common::write_executable(dir, "repowise", script);
 }
 
 fn run(repo: &Path, home: &Path, stub: &FakeRepowise, extra_args: &[&str]) -> Output {
@@ -103,7 +73,8 @@ fn run(repo: &Path, home: &Path, stub: &FakeRepowise, extra_args: &[&str]) -> Ou
     // `:`-delimited -- `env::join_paths` picks whichever the running
     // platform actually uses.
     let existing = std::env::var_os("PATH").unwrap_or_default();
-    let entries = std::iter::once(stub.dir.0.clone()).chain(std::env::split_paths(&existing));
+    let entries =
+        std::iter::once(stub.dir.path().to_path_buf()).chain(std::env::split_paths(&existing));
     let path_with_stub = std::env::join_paths(entries).unwrap();
     let mut command = common::cli();
     command
@@ -122,12 +93,12 @@ fn run(repo: &Path, home: &Path, stub: &FakeRepowise, extra_args: &[&str]) -> Ou
 
 #[test]
 fn detects_missing_hooks_without_write() {
-    let repo = TempTree::new("repowise-hooks-missing");
-    init_repo(&repo.0);
+    let repo = TempDir::new("repowise-hooks-missing");
+    init_repo(repo.path());
     let home = fake_home();
     let stub = FakeRepowise::new();
 
-    let output = run(&repo.0, &home.0, &stub, &[]);
+    let output = run(repo.path(), home.path(), &stub, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(
@@ -139,7 +110,7 @@ fn detects_missing_hooks_without_write() {
     assert!(stdout.contains("distill rewrite hook not installed"));
     assert!(
         !repo
-            .0
+            .path()
             .join(".git")
             .join("hooks")
             .join("post-commit")
@@ -155,12 +126,12 @@ fn detects_missing_hooks_without_write() {
 
 #[test]
 fn detects_installed_post_commit_hook() {
-    let repo = TempTree::new("repowise-hooks-postcommit");
-    init_repo(&repo.0);
+    let repo = TempDir::new("repowise-hooks-postcommit");
+    init_repo(repo.path());
     let home = fake_home();
     let stub = FakeRepowise::new();
 
-    let hooks_dir = repo.0.join(".git").join("hooks");
+    let hooks_dir = repo.path().join(".git").join("hooks");
     fs::create_dir_all(&hooks_dir).unwrap();
     fs::write(
         hooks_dir.join("post-commit"),
@@ -168,7 +139,7 @@ fn detects_installed_post_commit_hook() {
     )
     .unwrap();
 
-    let output = run(&repo.0, &home.0, &stub, &[]);
+    let output = run(repo.path(), home.path(), &stub, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(output.status.success());
@@ -177,12 +148,12 @@ fn detects_installed_post_commit_hook() {
 
 #[test]
 fn detects_installed_rewrite_hook() {
-    let repo = TempTree::new("repowise-hooks-rewrite");
-    init_repo(&repo.0);
+    let repo = TempDir::new("repowise-hooks-rewrite");
+    init_repo(repo.path());
     let home = fake_home();
     let stub = FakeRepowise::new();
 
-    let claude_dir = home.0.join(".claude");
+    let claude_dir = home.path().join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();
     fs::write(
         claude_dir.join("settings.json"),
@@ -190,7 +161,7 @@ fn detects_installed_rewrite_hook() {
     )
     .unwrap();
 
-    let output = run(&repo.0, &home.0, &stub, &[]);
+    let output = run(repo.path(), home.path(), &stub, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(output.status.success());
@@ -206,8 +177,8 @@ fn resolves_hooks_dir_through_linked_worktree_commondir() {
     // hooks actually live under -- the exact indirection `git worktree add`
     // itself creates, so a resolver that skips it looks for hooks in a
     // directory git never puts them in.
-    let common_git = TempTree::new("repowise-hooks-commongit");
-    let hooks_dir = common_git.0.join("hooks");
+    let common_git = TempDir::new("repowise-hooks-commongit");
+    let hooks_dir = common_git.path().join("hooks");
     fs::create_dir_all(&hooks_dir).unwrap();
     fs::write(
         hooks_dir.join("post-commit"),
@@ -215,24 +186,24 @@ fn resolves_hooks_dir_through_linked_worktree_commondir() {
     )
     .unwrap();
 
-    let private_git = common_git.0.join("worktrees").join("wt");
+    let private_git = common_git.path().join("worktrees").join("wt");
     fs::create_dir_all(&private_git).unwrap();
     fs::write(
         private_git.join("commondir"),
-        format!("{}\n", common_git.0.display()),
+        format!("{}\n", common_git.path().display()),
     )
     .unwrap();
 
-    let worktree = TempTree::new("repowise-hooks-worktree");
+    let worktree = TempDir::new("repowise-hooks-worktree");
     fs::write(
-        worktree.0.join(".git"),
+        worktree.path().join(".git"),
         format!("gitdir: {}\n", private_git.display()),
     )
     .unwrap();
     let home = fake_home();
     let stub = FakeRepowise::new();
 
-    let output = run(&worktree.0, &home.0, &stub, &[]);
+    let output = run(worktree.path(), home.path(), &stub, &[]);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(
@@ -250,19 +221,19 @@ fn rejects_non_directory_repo() {
     let missing = std::env::temp_dir().join("code-intel-repowise-hooks-does-not-exist");
     let _ = fs::remove_dir_all(&missing);
 
-    let output = run(&missing, &home.0, &stub, &[]);
+    let output = run(&missing, home.path(), &stub, &[]);
 
     assert_eq!(output.status.code(), Some(64));
 }
 
 #[test]
 fn write_installs_both_missing_hooks_scoped_to_this_repo_only() {
-    let repo = TempTree::new("repowise-hooks-write-missing");
-    init_repo(&repo.0);
+    let repo = TempDir::new("repowise-hooks-write-missing");
+    init_repo(repo.path());
     let home = fake_home();
     let stub = FakeRepowise::new();
 
-    let output = run(&repo.0, &home.0, &stub, &["--write"]);
+    let output = run(repo.path(), home.path(), &stub, &["--write"]);
     assert!(
         output.status.success(),
         "stderr: {}",
@@ -289,19 +260,19 @@ fn write_installs_both_missing_hooks_scoped_to_this_repo_only() {
 
 #[test]
 fn write_skips_already_installed_hooks_without_invoking_repowise() {
-    let repo = TempTree::new("repowise-hooks-write-already-installed");
-    init_repo(&repo.0);
+    let repo = TempDir::new("repowise-hooks-write-already-installed");
+    init_repo(repo.path());
     let home = fake_home();
     let stub = FakeRepowise::new();
 
-    let hooks_dir = repo.0.join(".git").join("hooks");
+    let hooks_dir = repo.path().join(".git").join("hooks");
     fs::create_dir_all(&hooks_dir).unwrap();
     fs::write(
         hooks_dir.join("post-commit"),
         "#!/bin/sh\n# repowise-hook-start\necho installed\n# repowise-hook-end\n",
     )
     .unwrap();
-    let claude_dir = home.0.join(".claude");
+    let claude_dir = home.path().join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();
     fs::write(
         claude_dir.join("settings.json"),
@@ -309,7 +280,7 @@ fn write_skips_already_installed_hooks_without_invoking_repowise() {
     )
     .unwrap();
 
-    let output = run(&repo.0, &home.0, &stub, &["--write"]);
+    let output = run(repo.path(), home.path(), &stub, &["--write"]);
 
     assert!(output.status.success());
     assert!(

@@ -43,7 +43,6 @@ mod execution_policy;
 mod file_boundary;
 mod friction_log;
 mod git_remote_registry;
-mod graph;
 mod hardcoded_paths;
 mod hardened_gh;
 mod hardened_git;

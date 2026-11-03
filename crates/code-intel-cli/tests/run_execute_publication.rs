@@ -11,26 +11,13 @@
 //! assert the run is found.
 mod common;
 
+use common::TempDir;
+
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::Output;
 
 use serde_json::{json, Value};
-
-fn temp_dir(label: &str) -> PathBuf {
-    static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let sequence = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!(
-        "code-intel-a08-f2-{label}-{}-{nonce}-{sequence}",
-        std::process::id()
-    ))
-}
 
 /// A minimal source tree `run execute` can scan. No `.git` needed: the
 /// default working-tree policy (`explicit_overlay`) reads the working tree
@@ -70,19 +57,14 @@ fn doctor_tool_fixture(root: &Path) -> PathBuf {
     }
     #[cfg(not(windows))]
     {
-        use std::os::unix::fs::PermissionsExt;
         for name in ["rg", "git", "python", "repowise"] {
-            let path = bin.join(name);
-            fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            common::write_executable(&bin, name, "#!/bin/sh\nexit 0\n");
         }
-        let path = bin.join("sentrux");
-        fs::write(
-            &path,
+        common::write_executable(
+            &bin,
+            "sentrux",
             "#!/bin/sh\necho 'Enforce architectural rules'\necho 'Tier: pro'\nexit 0\n",
-        )
-        .unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        );
     }
     bin
 }
@@ -158,7 +140,8 @@ fn query(artifact_root: &Path, repo_name: &str, repo_path: &Path) -> (Output, Va
 /// --artifact-root <artifact-root> --repo <repo-name>` must find the run.
 #[test]
 fn run_execute_publishes_where_artifact_query_can_find_it() {
-    let root = temp_dir("fresh-nest");
+    let root_dir = TempDir::new("fresh-nest");
+    let root = root_dir.path();
     let repo = fixture_repo(&root);
     let authority = root.join("authority");
     fs::create_dir_all(&authority).expect("fixture authority root");
@@ -237,8 +220,6 @@ fn run_execute_publishes_where_artifact_query_can_find_it() {
             .is_empty(),
         "query matched nothing: {query_result}"
     );
-
-    fs::remove_dir_all(&root).ok();
 }
 
 /// Issue #111's confirmed workaround was folding the repo name into
@@ -247,7 +228,8 @@ fn run_execute_publishes_where_artifact_query_can_find_it() {
 /// `fixture-repo/fixture-repo/run-002` — and query must still find it.
 #[test]
 fn run_execute_does_not_double_nest_when_authority_root_already_ends_with_repo_name() {
-    let root = temp_dir("pre-nested");
+    let root_dir = TempDir::new("pre-nested");
+    let root = root_dir.path();
     let repo = fixture_repo(&root);
     let artifact_root = root.join("authority");
     let pre_nested_authority = artifact_root.join("fixture-repo");
@@ -281,8 +263,6 @@ fn run_execute_does_not_double_nest_when_authority_root_already_ends_with_repo_n
         "artifact query failed against a pre-nested --authority-root: {query_result}\nstderr={}",
         String::from_utf8_lossy(&query_output.stderr)
     );
-
-    fs::remove_dir_all(&root).ok();
 }
 
 /// Dogfood finding F2-publish-collision-no-json. CI's self-scan hard-codes
@@ -295,7 +275,8 @@ fn run_execute_does_not_double_nest_when_authority_root_already_ends_with_repo_n
 /// even English. The completed manifest was simply discarded.
 #[test]
 fn republishing_a_taken_final_name_reports_a_distinct_code_and_a_parseable_envelope() {
-    let root = temp_dir("republish-collision");
+    let root_dir = TempDir::new("republish-collision");
+    let root = root_dir.path();
     let repo = fixture_repo(&root);
     let authority = root.join("authority");
     fs::create_dir_all(&authority).expect("fixture authority root");
@@ -366,8 +347,6 @@ fn republishing_a_taken_final_name_reports_a_distinct_code_and_a_parseable_envel
 
     // The publication that was already there is untouched.
     assert!(published.join("run-complete.json").is_file());
-
-    fs::remove_dir_all(&root).ok();
 }
 
 /// The stdout envelope above is a declared contract, not an ad hoc blob: it
@@ -401,7 +380,8 @@ fn checked_in_execution_failure_schema_is_closed_and_pins_the_collision_exit_cod
 
 #[test]
 fn completed_index_admission_is_current_and_repairable() {
-    let root = temp_dir("index-admission");
+    let root_dir = TempDir::new("index-admission");
+    let root = root_dir.path();
     let repo = fixture_repo(&root);
     let artifact_root = root.join("authority");
     let authority = artifact_root.join("fixture-repo");
@@ -439,8 +419,6 @@ fn completed_index_admission_is_current_and_repairable() {
     assert_eq!(repaired.status.code(), Some(0));
     let repaired: Value = serde_json::from_slice(&repaired.stdout).unwrap();
     assert_eq!(repaired["entries"][0]["run"], "run-002");
-
-    fs::remove_dir_all(&root).ok();
 }
 
 // Issue #307's end-to-end "#123 8 MB scenario" acceptance criterion is

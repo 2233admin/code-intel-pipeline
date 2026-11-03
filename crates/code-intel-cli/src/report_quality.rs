@@ -261,12 +261,12 @@ mod tests {
                 "failing_rules": []
             },
             "modalities": [{
-                "provider": "architecture-graph.internal",
+                "provider": "structural-evidence.sentrux",
                 "admissionIdentity": admission_identity
             }],
             "diagnosis": {
                 "evidence": [{
-                    "provider": "architecture-graph.internal",
+                    "provider": "structural-evidence.sentrux",
                     "admissionIdentity": admission_identity
                 }]
             },

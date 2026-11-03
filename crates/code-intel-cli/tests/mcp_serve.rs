@@ -7,7 +7,7 @@
 //! spawned process, which is how every client will run this.
 
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::Stdio;
 
 use serde_json::{json, Value};
@@ -19,26 +19,17 @@ mod common;
 /// The handshake and framing are what this file tests, and they must hold
 /// before any run has been committed — that is precisely the state an agent
 /// meets on the first day in a new repository.
-struct Fixture(PathBuf);
+struct Fixture(common::TempDir);
 
 impl Fixture {
     fn create(label: &str) -> Self {
-        let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-serve-{label}-{}-{nonce}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(path.join("artifacts")).expect("create serve fixture");
-        Self(path)
+        let tree = common::TempDir::new(&format!("serve-{label}"));
+        std::fs::create_dir_all(tree.path().join("artifacts")).expect("create serve fixture");
+        Self(tree)
     }
-}
 
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+    fn path(&self) -> &Path {
+        self.0.path()
     }
 }
 
@@ -49,7 +40,7 @@ impl Drop for Fixture {
 /// instead would leave the rest of `PIPELINE_VARS` free to point this at the
 /// developer's real installation and make the test pass for the wrong reason.
 fn session(fixture: &Fixture, requests: &[Value]) -> (Vec<Value>, i32, String) {
-    session_with_artifact_root(fixture, &fixture.0.join("artifacts"), requests)
+    session_with_artifact_root(fixture, &fixture.path().join("artifacts"), requests)
 }
 
 fn session_with_artifact_root(
@@ -59,7 +50,7 @@ fn session_with_artifact_root(
 ) -> (Vec<Value>, i32, String) {
     let mut child = common::cli()
         .args(["serve", "--mcp", "--repo-path"])
-        .arg(&fixture.0)
+        .arg(fixture.path())
         .args(["--artifact-root"])
         .arg(artifact_root)
         .stdin(Stdio::piped())
@@ -205,9 +196,9 @@ fn tools_refuse_readably_when_no_run_has_been_committed() {
     );
     let cli = common::cli()
         .arg("query")
-        .arg(&fixture.0)
+        .arg(fixture.path())
         .args(["--kind", "evidence", "--json"])
-        .env("CODE_INTEL_ARTIFACT_ROOT", fixture.0.join("artifacts"))
+        .env("CODE_INTEL_ARTIFACT_ROOT", fixture.path().join("artifacts"))
         .output()
         .expect("run CLI query against the same empty project");
     assert_eq!(cli.status.code(), Some(65));
@@ -239,9 +230,9 @@ fn cli_and_mcp_preserve_usage_error_kind_and_exit_code() {
 
     let cli = common::cli()
         .arg("query")
-        .arg(&fixture.0)
+        .arg(fixture.path())
         .args(["--kind", "evidence", "--limit", "0", "--json"])
-        .env("CODE_INTEL_ARTIFACT_ROOT", fixture.0.join("artifacts"))
+        .env("CODE_INTEL_ARTIFACT_ROOT", fixture.path().join("artifacts"))
         .output()
         .expect("run CLI usage error");
     assert_eq!(cli.status.code(), Some(64));
@@ -255,7 +246,7 @@ fn cli_and_mcp_preserve_usage_error_kind_and_exit_code() {
 #[test]
 fn cli_and_mcp_preserve_host_io_faults_exactly() {
     let fixture = Fixture::create("host-io-contract");
-    let artifact_file = fixture.0.join("artifact-root-is-a-file");
+    let artifact_file = fixture.path().join("artifact-root-is-a-file");
     std::fs::write(&artifact_file, b"not a directory").expect("create host-I/O fixture");
     let (responses, exit, stderr) = session_with_artifact_root(
         &fixture,
@@ -275,7 +266,7 @@ fn cli_and_mcp_preserve_host_io_faults_exactly() {
 
     let cli = common::cli()
         .arg("query")
-        .arg(&fixture.0)
+        .arg(fixture.path())
         .args(["--kind", "evidence", "--json"])
         .env("CODE_INTEL_ARTIFACT_ROOT", &artifact_file)
         .output()

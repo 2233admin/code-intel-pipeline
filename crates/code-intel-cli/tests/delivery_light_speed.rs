@@ -1,38 +1,12 @@
 mod common;
+
+use common::TempDir;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-static TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
-
-struct Temp(PathBuf);
-
-impl Temp {
-    fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let sequence = TEMP_NONCE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-d04-{}-{nonce}-{sequence}",
-            std::process::id()
-        ));
-        fs::create_dir(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn sha256(path: &Path) -> String {
     sha256_hex(&fs::read(path).unwrap())
@@ -310,9 +284,9 @@ fn execute(root: &Path, request: &Value, name: &str) -> (i32, Vec<u8>, Vec<u8>, 
 
 #[test]
 fn committed_trace_attributes_queue_protects_mandatory_tests_and_reports_deterministic_delta() {
-    let temp = Temp::new();
+    let temp = TempDir::new("delivery_light_speed");
     let (baseline, mut inputs) = committed_trace(
-        &temp.0,
+        temp.path(),
         "baseline",
         &format!("dag-v1:{}", "1a".repeat(16)),
         vec![
@@ -409,7 +383,7 @@ fn committed_trace_attributes_queue_protects_mandatory_tests_and_reports_determi
         ],
     );
     let (current, current_inputs) = committed_trace(
-        &temp.0,
+        temp.path(),
         "current",
         &format!("dag-v1:{}", "2b".repeat(16)),
         vec![
@@ -503,8 +477,8 @@ fn committed_trace_attributes_queue_protects_mandatory_tests_and_reports_determi
         "current":current
     });
     inputs.extend(current_inputs);
-    inputs.extend(method_inputs(&temp.0));
-    let telemetry_path = temp.0.join("timing-events.json");
+    inputs.extend(method_inputs(temp.path()));
+    let telemetry_path = temp.path().join("timing-events.json");
     fs::write(&telemetry_path, serde_json::to_vec(&telemetry).unwrap()).unwrap();
     inputs.push(artifact_ref(
         "code-intel-run-timing-events.v1",
@@ -514,9 +488,9 @@ fn committed_trace_attributes_queue_protects_mandatory_tests_and_reports_determi
     ));
     let valid_request = request(inputs.clone(), SNAPSHOT);
 
-    let (left_exit, _, left_stderr, left_out) = execute(&temp.0, &valid_request, "left");
+    let (left_exit, _, left_stderr, left_out) = execute(temp.path(), &valid_request, "left");
     assert_eq!(left_exit, 0, "{}", String::from_utf8_lossy(&left_stderr));
-    let (right_exit, _, right_stderr, right_out) = execute(&temp.0, &valid_request, "right");
+    let (right_exit, _, right_stderr, right_out) = execute(temp.path(), &valid_request, "right");
     assert_eq!(right_exit, 0, "{}", String::from_utf8_lossy(&right_stderr));
     let left_bytes = fs::read(left_out.join("light-speed-report.json")).unwrap();
     let right_bytes = fs::read(right_out.join("light-speed-report.json")).unwrap();
@@ -577,13 +551,13 @@ fn committed_trace_attributes_queue_protects_mandatory_tests_and_reports_determi
     }));
 
     let mismatch = request(inputs.clone(), &"9".repeat(64));
-    let (mismatch_exit, _, _, mismatch_out) = execute(&temp.0, &mismatch, "mismatch");
+    let (mismatch_exit, _, _, mismatch_out) = execute(temp.path(), &mismatch, "mismatch");
     assert_eq!(mismatch_exit, 65);
     assert!(!mismatch_out.join("light-speed-report.json").exists());
 
     let mut unprotected = telemetry.clone();
     unprotected["current"]["events"][5]["mandatory"] = json!(false);
-    let unprotected_path = temp.0.join("unprotected-timing-events.json");
+    let unprotected_path = temp.path().join("unprotected-timing-events.json");
     fs::write(&unprotected_path, serde_json::to_vec(&unprotected).unwrap()).unwrap();
     let mut unprotected_inputs = inputs.clone();
     let timing_input = unprotected_inputs.last_mut().unwrap();
@@ -591,14 +565,14 @@ fn committed_trace_attributes_queue_protects_mandatory_tests_and_reports_determi
     timing_input["sha256"] = json!(sha256(&unprotected_path));
     let unprotected_request = request(unprotected_inputs, SNAPSHOT);
     let (unprotected_exit, _, _, unprotected_out) =
-        execute(&temp.0, &unprotected_request, "unprotected");
+        execute(temp.path(), &unprotected_request, "unprotected");
     assert_eq!(unprotected_exit, 65);
     assert!(!unprotected_out.join("light-speed-report.json").exists());
 
-    let missing_commit_path = temp.0.join("commits/baseline.json");
+    let missing_commit_path = temp.path().join("commits/baseline.json");
     let missing_commit_bytes = fs::read(&missing_commit_path).unwrap();
     fs::remove_file(&missing_commit_path).unwrap();
-    let (missing_exit, _, _, missing_out) = execute(&temp.0, &valid_request, "missing-commit");
+    let (missing_exit, _, _, missing_out) = execute(temp.path(), &valid_request, "missing-commit");
     assert_eq!(missing_exit, 65);
     assert!(!missing_out.join("light-speed-report.json").exists());
     fs::write(&missing_commit_path, missing_commit_bytes).unwrap();
@@ -611,7 +585,7 @@ fn committed_trace_attributes_queue_protects_mandatory_tests_and_reports_determi
     missing_manifest_inputs.remove(manifest_index);
     let missing_manifest_request = request(missing_manifest_inputs, SNAPSHOT);
     let (missing_manifest_exit, _, _, missing_manifest_out) = execute(
-        &temp.0,
+        temp.path(),
         &missing_manifest_request,
         "missing-a07-manifest-object",
     );
@@ -622,7 +596,7 @@ fn committed_trace_attributes_queue_protects_mandatory_tests_and_reports_determi
     assert!(!missing_manifest_out.join("light-speed-report.md").exists());
 
     let tampered_card = temp
-        .0
+        .path()
         .join("methods/cards/value-stream-queue-delay.v1.json");
     let mut card: Value = serde_json::from_slice(&fs::read(&tampered_card).unwrap()).unwrap();
     card["deterministicSteps"][1]["action"] = json!("tampered but structurally valid formula");
@@ -634,16 +608,17 @@ fn committed_trace_attributes_queue_protects_mandatory_tests_and_reports_determi
         .unwrap();
     card_ref["sha256"] = json!(sha256(&tampered_card));
     let tampered_request = request(tampered_inputs, SNAPSHOT);
-    let (tampered_exit, _, _, tampered_out) = execute(&temp.0, &tampered_request, "tampered-card");
+    let (tampered_exit, _, _, tampered_out) =
+        execute(temp.path(), &tampered_request, "tampered-card");
     assert_eq!(tampered_exit, 65);
     assert!(!tampered_out.join("light-speed-report.json").exists());
 }
 
 #[test]
 fn critical_path_is_predecessor_closed_for_a_diamond_join() {
-    let temp = Temp::new();
+    let temp = TempDir::new("delivery_light_speed");
     let (baseline, mut inputs) = committed_trace(
-        &temp.0,
+        temp.path(),
         "diamond-baseline",
         &format!("dag-v1:{}", "3c".repeat(16)),
         vec![event(
@@ -658,7 +633,7 @@ fn critical_path_is_predecessor_closed_for_a_diamond_join() {
         )],
     );
     let (current, current_inputs) = committed_trace(
-        &temp.0,
+        temp.path(),
         "diamond-current",
         &format!("dag-v1:{}", "4d".repeat(16)),
         vec![
@@ -696,7 +671,7 @@ fn critical_path_is_predecessor_closed_for_a_diamond_join() {
         ],
     );
     inputs.extend(current_inputs);
-    inputs.extend(method_inputs(&temp.0));
+    inputs.extend(method_inputs(temp.path()));
     let telemetry = json!({
         "schema":"code-intel-run-timing-events.v1",
         "measurementSnapshotIdentity":SNAPSHOT,
@@ -704,14 +679,14 @@ fn critical_path_is_predecessor_closed_for_a_diamond_join() {
         "baseline":baseline,
         "current":current
     });
-    let timing = write_artifact(&temp.0, "diamond-timing.json", &telemetry);
+    let timing = write_artifact(temp.path(), "diamond-timing.json", &telemetry);
     inputs.push(artifact_ref(
         "code-intel-run-timing-events.v1",
         "delivery.run-timing-events",
         timing["path"].as_str().unwrap(),
         timing["sha256"].as_str().unwrap(),
     ));
-    let (exit, _, stderr, out) = execute(&temp.0, &request(inputs, SNAPSHOT), "diamond");
+    let (exit, _, stderr, out) = execute(temp.path(), &request(inputs, SNAPSHOT), "diamond");
     assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr));
     let report: Value =
         serde_json::from_slice(&fs::read(out.join("light-speed-report.json")).unwrap()).unwrap();

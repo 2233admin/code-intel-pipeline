@@ -19,40 +19,18 @@ mod snapshot;
 #[path = "../src/stable_artifact.rs"]
 mod stable_artifact;
 
+mod common;
+
+use common::TempDir;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-struct Temp(PathBuf);
-impl Temp {
-    fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-c02-{}-{nonce}-{}",
-            std::process::id(),
-            SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 struct Case {
-    root: Temp,
+    root: TempDir,
     request: Value,
 }
 
@@ -87,8 +65,8 @@ fn base(signals: &[&str], evidence_kinds: &[&str]) -> Case {
 }
 
 fn build_case(facts: &Value, gaps: &Value) -> Case {
-    let root = Temp::new();
-    let (envelope, admission_id) = make_envelope(&root.0, facts, "primary");
+    let root = TempDir::new("method_select");
+    let (envelope, admission_id) = make_envelope(root.path(), facts, "primary");
     let bound_facts = facts
         .as_array()
         .unwrap()
@@ -149,11 +127,11 @@ fn make_envelope(root: &Path, facts: &Value, tag: &str) -> (Value, String) {
 }
 
 fn run(case: &Case) -> Value {
-    run_request(&case.request, &case.root.0).unwrap()
+    run_request(&case.request, &case.root.path()).unwrap()
 }
 
 fn run_error(case: &Case) -> String {
-    run_request(&case.request, &case.root.0)
+    run_request(&case.request, &case.root.path())
         .unwrap_err()
         .to_string()
 }
@@ -239,7 +217,7 @@ fn selection_is_order_independent_and_stably_sorted() {
         "signalIds":["schedule-slippage"],
         "evidenceKinds":["activity-duration-estimates", "activity-network"]
     }]);
-    let (extra, extra_id) = make_envelope(&case.root.0, &extra_facts, "order-extra");
+    let (extra, extra_id) = make_envelope(&case.root.path(), &extra_facts, "order-extra");
     case.request["admissions"]
         .as_array_mut()
         .unwrap()
@@ -317,7 +295,7 @@ fn every_admission_must_be_referenced_by_a_payload_bound_fact() {
         "signalIds":["process-instability"],
         "evidenceKinds":["ordered-process-measurements"]
     }]);
-    let (unused, _) = make_envelope(&case.root.0, &unused_facts, "unused");
+    let (unused, _) = make_envelope(&case.root.path(), &unused_facts, "unused");
     case.request["admissions"]
         .as_array_mut()
         .unwrap()

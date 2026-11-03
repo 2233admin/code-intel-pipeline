@@ -6,8 +6,7 @@
 mod common;
 
 use std::fs;
-use std::path::PathBuf;
-use std::process::Command;
+use std::path::{Path, PathBuf};
 
 const ROOT_CAUSES: [&str; 5] = [
     "modularity",
@@ -17,16 +16,9 @@ const ROOT_CAUSES: [&str; 5] = [
     "redundancy",
 ];
 
-fn fixture_root(tag: &str) -> PathBuf {
-    let root = std::env::temp_dir().join(format!(
-        "sentrux-gate-cli-{tag}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock after epoch")
-            .as_nanos()
-    ));
-    fs::create_dir_all(root.join("src")).expect("create fixture root");
+fn fixture_root(tag: &str) -> common::TempDir {
+    let root = common::TempDir::new(&format!("sentrux-gate-cli-{tag}"));
+    fs::create_dir_all(root.path().join("src")).expect("create fixture root");
     root
 }
 
@@ -34,7 +26,7 @@ fn code_intel(args: &[&str]) -> std::process::Output {
     common::cli().args(args).output().expect("run code-intel")
 }
 
-fn write_rules(root: &PathBuf) {
+fn write_rules(root: &Path) {
     fs::create_dir_all(root.join(".sentrux")).expect("create .sentrux");
     fs::write(
         root.join(".sentrux/rules.toml"),
@@ -117,7 +109,8 @@ fn run_capability(
 
 #[test]
 fn cli_health_exposes_bottleneck_and_all_five_root_causes() {
-    let root = fixture_root("health-contract");
+    let root_dir = fixture_root("health-contract");
+    let root = root_dir.path();
     fs::write(root.join("src/lib.rs"), "pub fn fixture() {}\n").expect("write fixture");
 
     let root_arg = root.to_string_lossy().to_string();
@@ -130,13 +123,12 @@ fn cli_health_exposes_bottleneck_and_all_five_root_causes() {
     );
     let health: serde_json::Value = serde_json::from_slice(&output.stdout).expect("health JSON");
     assert_health_contract(&health);
-
-    fs::remove_dir_all(&root).expect("remove fixture");
 }
 
 #[test]
 fn builtin_provider_health_preserves_bottleneck_and_all_five_root_causes() {
-    let root = fixture_root("provider-health-contract");
+    let root_dir = fixture_root("provider-health-contract");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("src")).expect("create fixture repo");
     fs::write(repo.join("src/lib.rs"), "pub fn fixture() {}\n").expect("write fixture");
@@ -231,13 +223,12 @@ fn builtin_provider_health_preserves_bottleneck_and_all_five_root_causes() {
     assert_eq!(health_artifact["capabilityId"], "sentrux.health");
     assert_eq!(health_artifact["status"], "succeeded");
     assert_health_contract(&health_artifact["outputs"]["structuredData"]);
-
-    fs::remove_dir_all(&root).expect("remove fixture");
 }
 
 #[test]
 fn save_baseline_records_the_v6_god_file_identity_list() {
-    let root = fixture_root("save-v6");
+    let root_dir = fixture_root("save-v6");
+    let root = root_dir.path();
     fs::write(root.join("src/big.rs"), god_file_body(850)).expect("write god file");
     fs::write(root.join("src/small.rs"), "pub fn small() {}\n").expect("write small file");
     write_rules(&root);
@@ -271,13 +262,12 @@ fn save_baseline_records_the_v6_god_file_identity_list() {
     assert_eq!(gods[0]["path"], "src/big.rs");
     assert_eq!(gods[0]["loc"], 851);
     assert_eq!(gods[0]["rule"], "loc>800");
-
-    fs::remove_dir_all(&root).expect("remove fixture");
 }
 
 #[test]
 fn cli_check_blocks_a_new_god_file_by_identity() {
-    let root = fixture_root("check-new-god");
+    let root_dir = fixture_root("check-new-god");
+    let root = root_dir.path();
     fs::write(root.join("src/small.rs"), "pub fn small() {}\n").expect("write small file");
     write_rules(&root);
 
@@ -316,11 +306,9 @@ fn cli_check_blocks_a_new_god_file_by_identity() {
         .find(|violation| violation["rule"] == "god_files_increased")
         .expect("god violation");
     assert_eq!(violation["targets"], serde_json::json!(["src/new_god.rs"]));
-
-    fs::remove_dir_all(&root).expect("remove fixture");
 }
 
-fn cli_result(root: &PathBuf, operation: &str, extra: &[&str]) -> (bool, serde_json::Value) {
+fn cli_result(root: &Path, operation: &str, extra: &[&str]) -> (bool, serde_json::Value) {
     let output = common::cli()
         .args(["sentrux", "--operation", operation, "--repo"])
         .arg(root)
@@ -338,13 +326,14 @@ fn cli_result(root: &PathBuf, operation: &str, extra: &[&str]) -> (bool, serde_j
     (output.status.success(), value)
 }
 
-fn save_fixture(root: &PathBuf) {
+fn save_fixture(root: &Path) {
     assert!(cli_result(root, "save_baseline", &[]).0);
 }
 
 #[test]
 fn quality_only_decline_admits_with_measured_advisory_and_immutable_policy() {
-    let root = fixture_root("quality-advisory");
+    let root_dir = fixture_root("quality-advisory");
+    let root = root_dir.path();
     fs::write(root.join("src/a.rs"), "pub fn alpha() {}\n").expect("first source");
     fs::write(root.join("src/b.rs"), "pub fn beta() {}\n").expect("second source");
     write_rules(&root);
@@ -393,12 +382,12 @@ fn quality_only_decline_admits_with_measured_advisory_and_immutable_policy() {
         fs::read(root.join(".sentrux/baseline.json")).unwrap(),
         baseline_bytes
     );
-    fs::remove_dir_all(&root).expect("remove fixture");
 }
 
 #[test]
 fn diagnostic_checks_cannot_impersonate_authoritative_admission() {
-    let root = fixture_root("diagnostic-check");
+    let root_dir = fixture_root("diagnostic-check");
+    let root = root_dir.path();
     fs::write(root.join("src/lib.rs"), "pub fn fixture() {}\n").expect("source");
     write_rules(&root);
     let (gate_success, gate) = cli_result(&root, "gate", &[]);
@@ -416,12 +405,12 @@ fn diagnostic_checks_cannot_impersonate_authoritative_admission() {
     assert_eq!(diagnostic["admission"], serde_json::Value::Null);
     assert_eq!(diagnostic["verdict"], "unknown");
     assert!(diagnostic.get("schema").is_none());
-    fs::remove_dir_all(&root).expect("remove fixture");
 }
 
 #[test]
 fn invalid_baseline_identities_and_values_never_admit() {
-    let root = fixture_root("invalid-baseline");
+    let root_dir = fixture_root("invalid-baseline");
+    let root = root_dir.path();
     fs::write(root.join("src/lib.rs"), "pub fn fixture() {}\n").expect("source");
     write_rules(&root);
     save_fixture(&root);
@@ -478,12 +467,12 @@ fn invalid_baseline_identities_and_values_never_admit() {
     let (success, result) = cli_result(&root, "gate", &[]);
     assert!(!success);
     assert_eq!(result["verdict"], "fail");
-    fs::remove_dir_all(&root).expect("remove fixture");
 }
 
 #[test]
 fn coupling_regression_remains_blocking() {
-    let root = fixture_root("blocking-coupling");
+    let root_dir = fixture_root("blocking-coupling");
+    let root = root_dir.path();
     fs::write(root.join("src/lib.rs"), "pub fn fixture() {}\n").expect("source");
     write_rules(&root);
     save_fixture(&root);
@@ -502,12 +491,12 @@ fn coupling_regression_remains_blocking() {
             .iter()
             .any(|violation| violation["rule"] == "coupling_increased"));
     }
-    fs::remove_dir_all(&root).expect("remove fixture");
 }
 
 #[test]
 fn aligned_check_preserves_static_failures_even_when_ratchet_passes() {
-    let root = fixture_root("blocking-static");
+    let root_dir = fixture_root("blocking-static");
+    let root = root_dir.path();
     fs::write(
         root.join("src/lib.rs"),
         "use std::fs;\npub fn fixture() {}\n",
@@ -535,12 +524,12 @@ fn aligned_check_preserves_static_failures_even_when_ratchet_passes() {
         .any(|comparison| comparison["rule"] == "max_coupling"
             && comparison["disposition"] == "blocking"
             && comparison["verdict"] == "fail"));
-    fs::remove_dir_all(&root).expect("remove fixture");
 }
 
 #[test]
 fn cycles_remain_blocking_in_gate_and_static_check() {
-    let root = fixture_root("blocking-cycles");
+    let root_dir = fixture_root("blocking-cycles");
+    let root = root_dir.path();
     fs::write(root.join("Cargo.toml"), "[package]\n").expect("crate marker");
     fs::write(root.join("src/lib.rs"), "mod a;\nmod b;\n").expect("modules");
     fs::write(root.join("src/a.rs"), "pub fn a() {}\n").expect("first module");
@@ -571,12 +560,12 @@ fn cycles_remain_blocking_in_gate_and_static_check() {
                 .any(|violation| violation["rule"] == "max_cycles"));
         }
     }
-    fs::remove_dir_all(&root).expect("remove fixture");
 }
 
 #[test]
 fn aligned_check_preserves_layer_and_boundary_failures() {
-    let root = fixture_root("blocking-layers");
+    let root_dir = fixture_root("blocking-layers");
+    let root = root_dir.path();
     fs::write(root.join("Cargo.toml"), "[package]\n").expect("crate marker");
     fs::write(root.join("src/lib.rs"), "mod a;\nmod b;\n").expect("modules");
     fs::write(
@@ -610,12 +599,12 @@ fn aligned_check_preserves_layer_and_boundary_failures() {
                 && comparison["disposition"] == "blocking"
                 && comparison["verdict"] == "fail"));
     }
-    fs::remove_dir_all(&root).expect("remove fixture");
 }
 
 #[test]
 fn replacing_a_grandfathered_god_path_blocks_even_when_count_is_unchanged() {
-    let root = fixture_root("blocking-god-swap");
+    let root_dir = fixture_root("blocking-god-swap");
+    let root = root_dir.path();
     fs::write(root.join("src/old.rs"), god_file_body(850)).expect("standing debt");
     write_rules(&root);
     save_fixture(&root);
@@ -640,12 +629,12 @@ fn replacing_a_grandfathered_god_path_blocks_even_when_count_is_unchanged() {
         .find(|violation| violation["rule"] == "god_files_increased")
         .unwrap();
     assert_eq!(violation["targets"], serde_json::json!(["src/new.rs"]));
-    fs::remove_dir_all(&root).expect("remove fixture");
 }
 
 #[test]
 fn aggregate_only_python_cycle_is_advisory_without_claiming_equivalent_protection() {
-    let root = fixture_root("accepted-python-cycle-loss");
+    let root_dir = fixture_root("accepted-python-cycle-loss");
+    let root = root_dir.path();
     for (path, body) in [
         ("a.py", "import b\n\ndef one():\n    return 11\n"),
         ("b.py", "import c\n\ndef two():\n    return 22\n"),
@@ -698,13 +687,13 @@ fn aggregate_only_python_cycle_is_advisory_without_claiming_equivalent_protectio
         fs::read(root.join(".sentrux/baseline.json")).unwrap(),
         baseline_bytes
     );
-    fs::remove_dir_all(root).expect("remove fixture");
 }
 
 // ---- #394: `ignore_test_dependencies` coupling policy ----
 
-fn policy_fixture(tag: &str, policy: Option<bool>) -> PathBuf {
-    let root = fixture_root(tag);
+fn policy_fixture(tag: &str, policy: Option<bool>) -> common::TempDir {
+    let root_dir = fixture_root(tag);
+    let root = root_dir.path();
     fs::create_dir_all(root.join("tests")).expect("create tests dir");
     fs::create_dir_all(root.join(".sentrux")).expect("create .sentrux");
     fs::write(root.join("src/app.py"), "import os\n").expect("app.py");
@@ -716,7 +705,7 @@ fn policy_fixture(tag: &str, policy: Option<bool>) -> PathBuf {
         ))
     );
     fs::write(root.join(".sentrux/rules.toml"), rules).expect("rules");
-    root
+    root_dir
 }
 
 #[test]
@@ -734,7 +723,8 @@ fn coupling_policy_ignores_test_imports_only_when_on_and_records_itself() {
         (Some(false), "tests/test_app.py", false),
         (None, "tests/test_app.py", false),
     ] {
-        let root = policy_fixture("policy-ratchet", policy);
+        let root_dir = policy_fixture("policy-ratchet", policy);
+        let root = root_dir.path();
         save_fixture(&root);
         let baseline: serde_json::Value =
             serde_json::from_slice(&fs::read(root.join(".sentrux/baseline.json")).unwrap())
@@ -756,14 +746,13 @@ fn coupling_policy_ignores_test_imports_only_when_on_and_records_itself() {
             assert_eq!(blocks_coupling(&result), !passes, "{result}");
             assert_eq!(result["verdict"], if passes { "pass" } else { "fail" });
         }
-        fs::remove_dir_all(root).expect("remove fixture");
     }
 }
 
 #[test]
 fn coupling_policy_mismatch_or_invalid_record_fails_closed_without_touching_baseline() {
-    let baseline_of = |root: &PathBuf| fs::read(root.join(".sentrux/baseline.json")).unwrap();
-    let set_policy = |root: &PathBuf, value: Option<serde_json::Value>| {
+    let baseline_of = |root: &Path| fs::read(root.join(".sentrux/baseline.json")).unwrap();
+    let set_policy = |root: &Path, value: Option<serde_json::Value>| {
         let mut baseline: serde_json::Value = serde_json::from_slice(&baseline_of(root)).unwrap();
         match value {
             Some(value) => baseline["couplingPolicy"] = value,
@@ -772,11 +761,11 @@ fn coupling_policy_mismatch_or_invalid_record_fails_closed_without_touching_base
         let bytes = serde_json::to_vec_pretty(&baseline).unwrap();
         fs::write(root.join(".sentrux/baseline.json"), bytes).unwrap();
     };
-    let flip = |root: &PathBuf, now: bool| {
+    let flip = |root: &Path, now: bool| {
         let rules = format!("[constraints]\nignore_test_dependencies = {now}\n");
         fs::write(root.join(".sentrux/rules.toml"), rules).unwrap();
     };
-    let assert_fails_closed = |root: &PathBuf, recorded: &str, current: &str| {
+    let assert_fails_closed = |root: &Path, recorded: &str, current: &str| {
         let before = baseline_of(root);
         for operation in ["gate", "check"] {
             let (success, result) = cli_result(root, operation, &[]);
@@ -800,7 +789,8 @@ fn coupling_policy_mismatch_or_invalid_record_fails_closed_without_touching_base
         assert_eq!(baseline_of(root), before);
     };
     for (saved, now) in [(true, false), (false, true)] {
-        let root = policy_fixture("policy-flip", Some(saved));
+        let root_dir = policy_fixture("policy-flip", Some(saved));
+        let root = root_dir.path();
         save_fixture(&root);
         flip(&root, now);
         assert_fails_closed(&root, &saved.to_string(), &now.to_string());
@@ -812,9 +802,9 @@ fn coupling_policy_mismatch_or_invalid_record_fails_closed_without_touching_base
             root.to_str().unwrap(),
         ]);
         assert!(String::from_utf8_lossy(&text.stdout).contains("save_baseline"));
-        fs::remove_dir_all(root).expect("remove fixture");
     }
-    let root = policy_fixture("policy-missing", Some(false));
+    let root_dir = policy_fixture("policy-missing", Some(false));
+    let root = root_dir.path();
     save_fixture(&root);
     set_policy(&root, None);
     assert!(
@@ -832,5 +822,4 @@ fn coupling_policy_mismatch_or_invalid_record_fails_closed_without_touching_base
         set_policy(&root, Some(invalid));
         assert_fails_closed(&root, "invalid couplingPolicy", "false");
     }
-    fs::remove_dir_all(root).expect("remove fixture");
 }

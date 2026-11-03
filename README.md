@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <code>rg</code> + <code>Repowise</code> + <code>Understand Anything</code> + <code>Sentrux</code> + <code>CodeNexus context</code>
+  <code>rg</code> + <code>Repowise</code> + <code>Sentrux</code> + <code>CodeNexus context</code>
   <br>
   一条给 AI Agent 用的本地代码理解管线。
 </p>
@@ -90,6 +90,8 @@ Follow-up automation can proactively propose `/investigate` for actionable scan 
 - `code-intel`: 人工和 Agent 的正式主入口。新文档和命令示例一律以它开头。
 - `crates/code-intel-cli`: Rust policy/artifact CLI core。
 - 常用子命令：`code-intel setup`（安装收尾）、`code-intel doctor` / `code-intel doctor bootstrap`（环境检查）、`code-intel sentrux gate`（结构门禁）、`code-intel lint hardcoded-paths`（机器路径扫描）。完整列表见 `code-intel --help --all`。
+- [CONTRIBUTING.md](CONTRIBUTING.md): 贡献步骤（认领、构建、验证、PR）。
+- [SECURITY.md](SECURITY.md): 漏洞报告的现状说明（目前没有私密渠道）。
 
 ## Public beta 范围
 
@@ -99,13 +101,12 @@ Follow-up automation can proactively propose `/investigate` for actionable scan 
 
 - `code-intel` Primary Operator Entry
 - `code-intel.exe` 的 A01-A09 capability/DAG/policy/artifact core
-- `rg` inventory、native code evidence、内部 graph provider、真实 Sentrux `gate`/`check` 命令证据和 Hospital diagnosis
+- `rg` inventory、native code evidence、真实 Sentrux `gate`/`check` 命令证据和 Hospital diagnosis
 - snapshot-bound staging、A07 原子提交、A08 completed-only 索引、query/impact/freshness
 
 默认包含但不阻塞测试版的增强能力：
 
 - Repowise 语义索引与文档生成
-- Understand Anything 图谱
 - CodeNexus context、模型辅助通道
 - runtime/CI 证据和 file-boundary provider
 
@@ -141,7 +142,6 @@ code-intel benchmark tools --corpus <corpus.json> --runs <runs.json> --artifact-
 GPT 娘坐在空白处，不紧不慢。她把文件列成星图，把依赖连成道路，把热点标成红点。等地图亮起来，Agent 才知道哪里能走，哪里别碰，第一步该落在哪。
 
 - `rg` 先把文件和文本线索找出来。
-- `Understand Anything` 把架构关系画出来。
 - `Sentrux` 盯住结构质量和架构规则。
 - `Repowise` 记住项目语义，下一次不用从零开始。
 - `CodeNexus-lite` 给 Agent 一个低成本的上下文入口。
@@ -218,7 +218,7 @@ Skill 默认只解析稳定版；`gh` 2.49+ 在场时先验 [GitHub Artifact Att
 ```bash
 git clone https://github.com/2233admin/code-intel-pipeline.git
 cd code-intel-pipeline
-cargo build --release -p code-intel
+cargo build --release --locked -p code-intel
 mkdir -p bin && cp target/release/code-intel bin/    # Windows 为 code-intel.exe
 bin/code-intel setup --repo-path ~/src/your-repo
 ```
@@ -288,7 +288,6 @@ code-intel doctor bootstrap --repo-path C:\path\to\your\repo
 | CodeNexus compatibility adapter | 可选热点定位、引用搜索、下一步上下文；失败不阻塞 beta core | `codenexus-context.json` |
 | `rg` | 快速文件清单、文本搜索 | `files.txt` |
 | `Repowise` | 语义索引、长期记忆、项目上下文 | `.repowise/` 或 scoped shadow |
-| `Understand Anything` | 架构图谱快照 | `.understand-anything/knowledge-graph.json` |
 | `Sentrux` | 结构质量、规则门禁、Agent 会话回归 | DSM、hotspots、what-if、evolution |
 | `CodeNexus-lite` | 热点定位、引用搜索、下一步上下文 | `codenexus-context.json` |
 | `Greenfield` | 从源码、文档、SDK、运行时和二进制证据抽取干净行为规格 | `greenfield-manifest.json`、`greenfield-plan.md`、`greenfield-workspace/output/` |
@@ -641,42 +640,18 @@ CODE_INTEL_API_KEY=<key>
 CODE_INTEL_BASE_URL=https://your-endpoint/v1
 ```
 
-## Understand Anything 图谱
-
-如果报告里出现：
-
-```text
-graph_missing: understand graph
-```
-
-先运行项目内 Rust 图谱 provider：
-
-```bash
-code-intel graph --repo C:\path\to\repo --language zh --write --json
-```
-
-完整重建：
-
-```bash
-code-intel graph --repo C:\path\to\repo --language zh --full --write --json
-```
-
-然后重新运行 pipeline。`/understand C:\path\to\repo --language zh` 只作为兼容兜底，或在你明确需要外部 Understand Anything 更富图谱时使用。
-
 ## 全局 Provider Route
 
-Repowise 和 Understand-compatible graph 统一走 `code-intel provider` 规范，再由 `code-intel route` 暴露入口：
+Repowise 等 provider 统一走 `code-intel provider` 规范，再由 `code-intel route` 暴露入口：
 
 ```bash
 code-intel provider --action Validate --json
 code-intel provider --action Plan --provider repowise --operation index --repo C:\path\to\repo --json
-code-intel provider --action Plan --provider understand --operation graph --repo C:\path\to\repo --json
 code-intel route --action List --json
 code-intel route --action Plan --provider repowise --operation index --repo C:\path\to\repo --json
-code-intel route --action Plan --provider understand --operation graph --repo C:\path\to\repo --json
 ```
 
-HTTP route 使用命名空间：`/api/providers/repowise/*`、`/api/providers/understand/*`。旧的 `/scan`、`/lite`、`/doctor`、`/understand` 只能作为兼容入口。
+HTTP route 使用命名空间：`/api/providers/repowise/*`。旧的 `/scan`、`/lite`、`/doctor` 只能作为兼容入口。
 
 ## 规则文件
 
@@ -784,16 +759,6 @@ install-smoke -> doctor -> tests
 install-smoke 在 windows / macos / linux 三个 runner 上从 Release 形态的 ZIP 完整走一遍安装。
 
 ## 常见问题
-
-### `Understand graph missing`
-
-运行：
-
-```bash
-code-intel graph --repo C:\path\to\repo --language zh --write --json
-```
-
-再重跑 pipeline。
 
 ### Repowise 很慢
 

@@ -1,37 +1,18 @@
 mod common;
+
+use common::TempDir;
 #[path = "../src/content_contract/sha256.rs"]
 mod content_sha256;
 #[path = "../src/evidence_outcome.rs"]
 mod evidence_outcome;
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
 use evidence_outcome::EvidenceOutcome;
-
-struct TempTree(PathBuf);
-
-impl TempTree {
-    fn new(label: &str) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("code-intel-{label}-{nonce}"));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for TempTree {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn git(repo: &Path, args: &[&str]) {
     let output = Command::new("git")
@@ -102,12 +83,12 @@ fn json(output: &Output) -> Value {
 
 #[test]
 fn clean_repo_reports_no_stale_pins() {
-    let tree = TempTree::new("repin-clean");
-    init_repo(&tree.0);
-    fs::write(tree.0.join("source.rs"), "fn a() {}\n").unwrap();
-    commit_all(&tree.0, "init");
+    let tree = TempDir::new("repin-clean");
+    init_repo(tree.path());
+    fs::write(tree.path().join("source.rs"), "fn a() {}\n").unwrap();
+    commit_all(tree.path(), "init");
 
-    let output = repin(&tree.0, &[]);
+    let output = repin(tree.path(), &[]);
     assert!(
         output.status.success(),
         "stderr: {}",
@@ -120,24 +101,24 @@ fn clean_repo_reports_no_stale_pins() {
 
 #[test]
 fn report_mode_detects_a_stale_pin_without_writing() {
-    let tree = TempTree::new("repin-detect");
-    init_repo(&tree.0);
-    fs::write(tree.0.join("source.rs"), "fn a() {}\n").unwrap();
-    commit_all(&tree.0, "init source");
+    let tree = TempDir::new("repin-detect");
+    init_repo(tree.path());
+    fs::write(tree.path().join("source.rs"), "fn a() {}\n").unwrap();
+    commit_all(tree.path(), "init source");
 
-    let head_digest = sha256_of(&tree.0.join("source.rs"));
+    let head_digest = sha256_of(&tree.path().join("source.rs"));
     fs::write(
-        tree.0.join("record.json"),
+        tree.path().join("record.json"),
         format!(r#"{{"source":{{"path":"source.rs","sha256":"{head_digest}"}}}}"#),
     )
     .unwrap();
-    commit_all(&tree.0, "pin record");
+    commit_all(tree.path(), "pin record");
 
     // Edit the source; record.json's pin is now stale.
-    fs::write(tree.0.join("source.rs"), "fn a() { changed(); }\n").unwrap();
-    let before = fs::read_to_string(tree.0.join("record.json")).unwrap();
+    fs::write(tree.path().join("source.rs"), "fn a() { changed(); }\n").unwrap();
+    let before = fs::read_to_string(tree.path().join("record.json")).unwrap();
 
-    let output = repin(&tree.0, &[]);
+    let output = repin(tree.path(), &[]);
     assert_eq!(
         output.status.code(),
         Some(1),
@@ -152,48 +133,52 @@ fn report_mode_detects_a_stale_pin_without_writing() {
 
     // Report mode must never touch disk.
     assert_eq!(
-        fs::read_to_string(tree.0.join("record.json")).unwrap(),
+        fs::read_to_string(tree.path().join("record.json")).unwrap(),
         before
     );
 }
 
 #[test]
 fn write_mode_fixes_a_stale_pin_and_a_self_referential_chain() {
-    let tree = TempTree::new("repin-write");
-    init_repo(&tree.0);
-    fs::write(tree.0.join("source.rs"), "fn a() {}\n").unwrap();
-    fs::write(tree.0.join("measurements.json"), "{\"placeholder\":true}\n").unwrap();
-    commit_all(&tree.0, "init source and measurements");
+    let tree = TempDir::new("repin-write");
+    init_repo(tree.path());
+    fs::write(tree.path().join("source.rs"), "fn a() {}\n").unwrap();
+    fs::write(
+        tree.path().join("measurements.json"),
+        "{\"placeholder\":true}\n",
+    )
+    .unwrap();
+    commit_all(tree.path(), "init source and measurements");
 
-    let source_head = sha256_of(&tree.0.join("source.rs"));
-    let measurements_head = sha256_of(&tree.0.join("measurements.json"));
+    let source_head = sha256_of(&tree.path().join("source.rs"));
+    let measurements_head = sha256_of(&tree.path().join("measurements.json"));
     // record-a pins BOTH source.rs and the shared measurements ledger;
     // record-b only pins the ledger. Editing both source files in one shot
     // means measurements.json's own digest is only known to have changed
     // once the first pass re-hashes it — propagating that to record-b
     // requires a second pass, not a single sweep.
     fs::write(
-        tree.0.join("record-a.json"),
+        tree.path().join("record-a.json"),
         format!(
             r#"{{"source":{{"path":"source.rs","sha256":"{source_head}"}},"measurement":"{measurements_head}"}}"#
         ),
     )
     .unwrap();
     fs::write(
-        tree.0.join("record-b.json"),
+        tree.path().join("record-b.json"),
         format!(r#"{{"measurement":"{measurements_head}"}}"#),
     )
     .unwrap();
-    commit_all(&tree.0, "pin records");
+    commit_all(tree.path(), "pin records");
 
-    fs::write(tree.0.join("source.rs"), "fn a() { changed(); }\n").unwrap();
+    fs::write(tree.path().join("source.rs"), "fn a() { changed(); }\n").unwrap();
     fs::write(
-        tree.0.join("measurements.json"),
+        tree.path().join("measurements.json"),
         "{\"placeholder\":false}\n",
     )
     .unwrap();
 
-    let output = repin(&tree.0, &["--write"]);
+    let output = repin(tree.path(), &["--write"]);
     assert!(
         output.status.success(),
         "stderr: {}",
@@ -207,37 +192,39 @@ fn write_mode_fixes_a_stale_pin_and_a_self_referential_chain() {
     );
 
     let record_a: Value =
-        serde_json::from_str(&fs::read_to_string(tree.0.join("record-a.json")).unwrap()).unwrap();
+        serde_json::from_str(&fs::read_to_string(tree.path().join("record-a.json")).unwrap())
+            .unwrap();
     let record_b: Value =
-        serde_json::from_str(&fs::read_to_string(tree.0.join("record-b.json")).unwrap()).unwrap();
-    let new_source = sha256_of(&tree.0.join("source.rs"));
-    let new_measurements = sha256_of(&tree.0.join("measurements.json"));
+        serde_json::from_str(&fs::read_to_string(tree.path().join("record-b.json")).unwrap())
+            .unwrap();
+    let new_source = sha256_of(&tree.path().join("source.rs"));
+    let new_measurements = sha256_of(&tree.path().join("measurements.json"));
     assert_eq!(record_a["source"]["sha256"], new_source);
     assert_eq!(record_a["measurement"], new_measurements);
     assert_eq!(record_b["measurement"], new_measurements);
 
     // A second run must find nothing left to do.
-    let verify = json(&repin(&tree.0, &[]));
+    let verify = json(&repin(tree.path(), &[]));
     assert_eq!(verify["clean"], true, "not clean after write: {verify}");
 }
 
 #[test]
 fn deleted_source_is_reported_as_an_orphaned_pin() {
-    let tree = TempTree::new("repin-orphan");
-    init_repo(&tree.0);
-    fs::write(tree.0.join("source.rs"), "fn a() {}\n").unwrap();
-    commit_all(&tree.0, "init source");
-    let source_head = sha256_of(&tree.0.join("source.rs"));
+    let tree = TempDir::new("repin-orphan");
+    init_repo(tree.path());
+    fs::write(tree.path().join("source.rs"), "fn a() {}\n").unwrap();
+    commit_all(tree.path(), "init source");
+    let source_head = sha256_of(&tree.path().join("source.rs"));
     fs::write(
-        tree.0.join("record.json"),
+        tree.path().join("record.json"),
         format!(r#"{{"source":{{"path":"source.rs","sha256":"{source_head}"}}}}"#),
     )
     .unwrap();
-    commit_all(&tree.0, "pin record");
+    commit_all(tree.path(), "pin record");
 
-    fs::remove_file(tree.0.join("source.rs")).unwrap();
+    fs::remove_file(tree.path().join("source.rs")).unwrap();
 
-    let output = repin(&tree.0, &[]);
+    let output = repin(tree.path(), &[]);
     assert_eq!(
         output.status.code(),
         Some(1),
@@ -251,25 +238,25 @@ fn deleted_source_is_reported_as_an_orphaned_pin() {
 
 #[test]
 fn write_mode_fixes_resolvable_pins_but_still_exits_nonzero_on_an_orphan() {
-    let tree = TempTree::new("repin-write-orphan");
-    init_repo(&tree.0);
-    fs::write(tree.0.join("gone.rs"), "fn gone() {}\n").unwrap();
-    fs::write(tree.0.join("kept.rs"), "fn kept() {}\n").unwrap();
-    commit_all(&tree.0, "init two sources");
+    let tree = TempDir::new("repin-write-orphan");
+    init_repo(tree.path());
+    fs::write(tree.path().join("gone.rs"), "fn gone() {}\n").unwrap();
+    fs::write(tree.path().join("kept.rs"), "fn kept() {}\n").unwrap();
+    commit_all(tree.path(), "init two sources");
 
-    let gone_head = sha256_of(&tree.0.join("gone.rs"));
-    let kept_head = sha256_of(&tree.0.join("kept.rs"));
+    let gone_head = sha256_of(&tree.path().join("gone.rs"));
+    let kept_head = sha256_of(&tree.path().join("kept.rs"));
     fs::write(
-        tree.0.join("record.json"),
+        tree.path().join("record.json"),
         format!(r#"{{"gone":"{gone_head}","kept":"{kept_head}"}}"#),
     )
     .unwrap();
-    commit_all(&tree.0, "pin record");
+    commit_all(tree.path(), "pin record");
 
-    fs::remove_file(tree.0.join("gone.rs")).unwrap();
-    fs::write(tree.0.join("kept.rs"), "fn kept() { changed(); }\n").unwrap();
+    fs::remove_file(tree.path().join("gone.rs")).unwrap();
+    fs::write(tree.path().join("kept.rs"), "fn kept() { changed(); }\n").unwrap();
 
-    let output = repin(&tree.0, &["--write"]);
+    let output = repin(tree.path(), &["--write"]);
     assert_eq!(
         output.status.code(),
         Some(1),
@@ -281,46 +268,47 @@ fn write_mode_fixes_resolvable_pins_but_still_exits_nonzero_on_an_orphan() {
 
     // The resolvable half of the same file was still fixed.
     let record: Value =
-        serde_json::from_str(&fs::read_to_string(tree.0.join("record.json")).unwrap()).unwrap();
+        serde_json::from_str(&fs::read_to_string(tree.path().join("record.json")).unwrap())
+            .unwrap();
     assert_eq!(record["gone"], gone_head, "orphaned pin must be left as-is");
-    assert_eq!(record["kept"], sha256_of(&tree.0.join("kept.rs")));
+    assert_eq!(record["kept"], sha256_of(&tree.path().join("kept.rs")));
 }
 
 #[test]
 fn exclude_flag_protects_a_path_prefix_outside_the_default_list() {
-    let tree = TempTree::new("repin-exclude");
-    init_repo(&tree.0);
-    fs::write(tree.0.join("source.rs"), "fn a() {}\n").unwrap();
-    commit_all(&tree.0, "init source");
+    let tree = TempDir::new("repin-exclude");
+    init_repo(tree.path());
+    fs::write(tree.path().join("source.rs"), "fn a() {}\n").unwrap();
+    commit_all(tree.path(), "init source");
 
-    let source_head = sha256_of(&tree.0.join("source.rs"));
-    fs::create_dir_all(tree.0.join("vendor/frozen")).unwrap();
+    let source_head = sha256_of(&tree.path().join("source.rs"));
+    fs::create_dir_all(tree.path().join("vendor/frozen")).unwrap();
     fs::write(
-        tree.0.join("vendor/frozen/record.json"),
+        tree.path().join("vendor/frozen/record.json"),
         format!(r#"{{"source":{{"path":"source.rs","sha256":"{source_head}"}}}}"#),
     )
     .unwrap();
-    commit_all(&tree.0, "pin record under vendor/");
+    commit_all(tree.path(), "pin record under vendor/");
 
-    fs::write(tree.0.join("source.rs"), "fn a() { changed(); }\n").unwrap();
-    let before = fs::read_to_string(tree.0.join("vendor/frozen/record.json")).unwrap();
+    fs::write(tree.path().join("source.rs"), "fn a() { changed(); }\n").unwrap();
+    let before = fs::read_to_string(tree.path().join("vendor/frozen/record.json")).unwrap();
 
     // A backslash-style prefix (as a Windows caller would pass) must
     // normalize the same as a forward-slash one.
-    let output = repin(&tree.0, &["--write", "--exclude", "vendor\\frozen"]);
+    let output = repin(tree.path(), &["--write", "--exclude", "vendor\\frozen"]);
     assert!(
         output.status.success(),
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let after = fs::read_to_string(tree.0.join("vendor/frozen/record.json")).unwrap();
+    let after = fs::read_to_string(tree.path().join("vendor/frozen/record.json")).unwrap();
     assert_eq!(before, after, "--exclude'd path must never be rewritten");
 
     // Proof the file is genuinely still stale, not just untouched because
     // there was nothing to fix: without --exclude, default-scope repin must
     // find it.
-    let verify = json(&repin(&tree.0, &[]));
+    let verify = json(&repin(tree.path(), &[]));
     assert_eq!(
         verify["clean"], false,
         "the excluded pin must still read as stale once back in scope: {verify}"
@@ -329,28 +317,28 @@ fn exclude_flag_protects_a_path_prefix_outside_the_default_list() {
 
 #[test]
 fn duplicate_head_content_is_reported_ambiguous_not_silently_rewritten() {
-    let tree = TempTree::new("repin-ambiguous");
-    init_repo(&tree.0);
+    let tree = TempDir::new("repin-ambiguous");
+    init_repo(tree.path());
     // Two distinct paths, byte-identical content at HEAD: they share one
     // digest, so nothing pinning that digest can be safely auto-resolved.
-    fs::write(tree.0.join("twin-a.rs"), "// stub\n").unwrap();
-    fs::write(tree.0.join("twin-b.rs"), "// stub\n").unwrap();
-    commit_all(&tree.0, "init identical twins");
+    fs::write(tree.path().join("twin-a.rs"), "// stub\n").unwrap();
+    fs::write(tree.path().join("twin-b.rs"), "// stub\n").unwrap();
+    commit_all(tree.path(), "init identical twins");
 
-    let shared_head = sha256_of(&tree.0.join("twin-a.rs"));
-    assert_eq!(shared_head, sha256_of(&tree.0.join("twin-b.rs")));
+    let shared_head = sha256_of(&tree.path().join("twin-a.rs"));
+    assert_eq!(shared_head, sha256_of(&tree.path().join("twin-b.rs")));
     fs::write(
-        tree.0.join("record.json"),
+        tree.path().join("record.json"),
         format!(r#"{{"shared":"{shared_head}"}}"#),
     )
     .unwrap();
-    commit_all(&tree.0, "pin the shared digest");
+    commit_all(tree.path(), "pin the shared digest");
 
     // Only one twin changes; naively keying by digest would still resolve
     // the pin (wrongly) to whichever twin's new content wins the map.
-    fs::write(tree.0.join("twin-a.rs"), "// changed\n").unwrap();
+    fs::write(tree.path().join("twin-a.rs"), "// changed\n").unwrap();
 
-    let output = repin(&tree.0, &[]);
+    let output = repin(tree.path(), &[]);
     assert_eq!(
         output.status.code(),
         Some(1),
@@ -372,36 +360,36 @@ fn duplicate_head_content_is_reported_ambiguous_not_silently_rewritten() {
     assert!(paths.contains(&"twin-b.rs".to_string()));
 
     // --write must not touch record.json either.
-    let before = fs::read_to_string(tree.0.join("record.json")).unwrap();
-    let write_output = repin(&tree.0, &["--write"]);
+    let before = fs::read_to_string(tree.path().join("record.json")).unwrap();
+    let write_output = repin(tree.path(), &["--write"]);
     assert_eq!(write_output.status.code(), Some(1));
-    let after = fs::read_to_string(tree.0.join("record.json")).unwrap();
+    let after = fs::read_to_string(tree.path().join("record.json")).unwrap();
     assert_eq!(before, after, "ambiguous pin must never be auto-resolved");
 }
 
 #[test]
 fn oversized_file_is_reported_skipped_not_silently_clean() {
-    let tree = TempTree::new("repin-skipped");
-    init_repo(&tree.0);
-    fs::write(tree.0.join("source.rs"), "fn a() {}\n").unwrap();
-    commit_all(&tree.0, "init source");
+    let tree = TempDir::new("repin-skipped");
+    init_repo(tree.path());
+    fs::write(tree.path().join("source.rs"), "fn a() {}\n").unwrap();
+    commit_all(tree.path(), "init source");
 
-    let source_head = sha256_of(&tree.0.join("source.rs"));
+    let source_head = sha256_of(&tree.path().join("source.rs"));
     // A record padded past the 4 MiB scan cap: repin must say it never
     // looked, not claim the repo is clean.
     let padding = "x".repeat(5 * 1024 * 1024);
     fs::write(
-        tree.0.join("record.json"),
+        tree.path().join("record.json"),
         format!(
             r#"{{"padding":"{padding}","source":{{"path":"source.rs","sha256":"{source_head}"}}}}"#
         ),
     )
     .unwrap();
-    commit_all(&tree.0, "pin record (oversized)");
+    commit_all(tree.path(), "pin record (oversized)");
 
-    fs::write(tree.0.join("source.rs"), "fn a() { changed(); }\n").unwrap();
+    fs::write(tree.path().join("source.rs"), "fn a() { changed(); }\n").unwrap();
 
-    let output = repin(&tree.0, &[]);
+    let output = repin(tree.path(), &[]);
     assert_eq!(
         output.status.code(),
         Some(1),
@@ -415,21 +403,21 @@ fn oversized_file_is_reported_skipped_not_silently_clean() {
 
 #[test]
 fn binary_file_is_skipped_but_does_not_gate_clean() {
-    let tree = TempTree::new("repin-binary");
-    init_repo(&tree.0);
-    fs::write(tree.0.join("source.rs"), "fn a() {}\n").unwrap();
+    let tree = TempDir::new("repin-binary");
+    init_repo(tree.path());
+    fs::write(tree.path().join("source.rs"), "fn a() {}\n").unwrap();
     // 0xFF can never begin a valid UTF-8 sequence, so this is binary under
     // any decoder — no text-editing tool could have produced it by accident.
-    fs::write(tree.0.join("blob.bin"), [0xffu8, 0xfe, 0x00, 0x80]).unwrap();
-    commit_all(&tree.0, "init source and a binary file");
+    fs::write(tree.path().join("blob.bin"), [0xffu8, 0xfe, 0x00, 0x80]).unwrap();
+    commit_all(tree.path(), "init source and a binary file");
 
     // Nothing pins source.rs's digest anywhere, but a stale digest is what
     // makes repin walk every tracked file looking for a reference to it —
     // with nothing stale at all, the scan short-circuits on pass one before
     // ever reaching blob.bin, and it would never be scanned or reported.
-    fs::write(tree.0.join("source.rs"), "fn a() { changed(); }\n").unwrap();
+    fs::write(tree.path().join("source.rs"), "fn a() { changed(); }\n").unwrap();
 
-    let output = repin(&tree.0, &[]);
+    let output = repin(tree.path(), &[]);
     assert!(
         output.status.success(),
         "a binary file must not gate clean: stderr: {}",
@@ -442,7 +430,7 @@ fn binary_file_is_skipped_but_does_not_gate_clean() {
 
     // The human-readable form must mark it as informational too, not just
     // the JSON `gatesClean` field.
-    let text_output = repin_text(&tree.0, &[]);
+    let text_output = repin_text(tree.path(), &[]);
     let stdout = String::from_utf8_lossy(&text_output.stdout);
     assert!(
         stdout.contains("skipped: blob.bin") && stdout.contains(", informational"),
@@ -452,38 +440,38 @@ fn binary_file_is_skipped_but_does_not_gate_clean() {
 
 #[test]
 fn human_output_reports_ambiguous_skipped_and_summary_counts() {
-    let tree = TempTree::new("repin-human");
-    init_repo(&tree.0);
+    let tree = TempDir::new("repin-human");
+    init_repo(tree.path());
     // Two distinct paths, byte-identical content at HEAD: an ambiguous
     // digest, same as duplicate_head_content_is_reported_ambiguous_not_silently_rewritten.
-    fs::write(tree.0.join("twin-a.rs"), "// stub\n").unwrap();
-    fs::write(tree.0.join("twin-b.rs"), "// stub\n").unwrap();
-    fs::write(tree.0.join("source.rs"), "fn a() {}\n").unwrap();
-    commit_all(&tree.0, "init identical twins and a source");
+    fs::write(tree.path().join("twin-a.rs"), "// stub\n").unwrap();
+    fs::write(tree.path().join("twin-b.rs"), "// stub\n").unwrap();
+    fs::write(tree.path().join("source.rs"), "fn a() {}\n").unwrap();
+    commit_all(tree.path(), "init identical twins and a source");
 
-    let shared_head = sha256_of(&tree.0.join("twin-a.rs"));
-    let source_head = sha256_of(&tree.0.join("source.rs"));
+    let shared_head = sha256_of(&tree.path().join("twin-a.rs"));
+    let source_head = sha256_of(&tree.path().join("source.rs"));
     // A record padded past the scan cap, pinning both the shared (ambiguous)
     // digest and the source digest: it can never be resynced (too large to
     // scan), so it lands in `skipped` regardless of the ambiguous pin inside.
     let padding = "x".repeat(5 * 1024 * 1024);
     fs::write(
-        tree.0.join("record.json"),
+        tree.path().join("record.json"),
         format!(
             r#"{{"padding":"{padding}","shared":"{shared_head}","source":{{"path":"source.rs","sha256":"{source_head}"}}}}"#
         ),
     )
     .unwrap();
-    commit_all(&tree.0, "pin the shared digest and an oversized record");
+    commit_all(tree.path(), "pin the shared digest and an oversized record");
 
     // twin-a.rs's own digest is ambiguous, so changing it alone would never
     // populate the rewrite set (an ambiguous digest is excluded from it) and
     // the scan would short-circuit before ever reaching record.json. Also
     // changing source.rs — an unambiguous digest — is what forces the walk.
-    fs::write(tree.0.join("twin-a.rs"), "// changed\n").unwrap();
-    fs::write(tree.0.join("source.rs"), "fn a() { changed(); }\n").unwrap();
+    fs::write(tree.path().join("twin-a.rs"), "// changed\n").unwrap();
+    fs::write(tree.path().join("source.rs"), "fn a() { changed(); }\n").unwrap();
 
-    let output = repin_text(&tree.0, &[]);
+    let output = repin_text(tree.path(), &[]);
     assert_eq!(
         output.status.code(),
         Some(1),
@@ -512,14 +500,14 @@ fn human_output_reports_ambiguous_skipped_and_summary_counts() {
 
 #[test]
 fn empty_scan_surface_is_reported_not_computed_not_clean() {
-    let tree = TempTree::new("repin-empty-surface");
-    init_repo(&tree.0);
-    fs::write(tree.0.join("only.rs"), "fn a() {}\n").unwrap();
-    commit_all(&tree.0, "init the only tracked file");
+    let tree = TempDir::new("repin-empty-surface");
+    init_repo(tree.path());
+    fs::write(tree.path().join("only.rs"), "fn a() {}\n").unwrap();
+    commit_all(tree.path(), "init the only tracked file");
 
     // Excluding the only tracked file leaves nothing to scan at all --
     // previously reported as a vacuous "clean".
-    let output = repin(&tree.0, &["--exclude", "only.rs"]);
+    let output = repin(tree.path(), &["--exclude", "only.rs"]);
     let report = json(&output);
     assert_eq!(
         report["scanCoverage"]["status"], "not-computed",
@@ -539,12 +527,12 @@ fn empty_scan_surface_is_reported_not_computed_not_clean() {
 
 #[test]
 fn real_scan_reports_complete_with_its_scope() {
-    let tree = TempTree::new("repin-complete-scope");
-    init_repo(&tree.0);
-    fs::write(tree.0.join("source.rs"), "fn a() {}\n").unwrap();
-    commit_all(&tree.0, "init");
+    let tree = TempDir::new("repin-complete-scope");
+    init_repo(tree.path());
+    fs::write(tree.path().join("source.rs"), "fn a() {}\n").unwrap();
+    commit_all(tree.path(), "init");
 
-    let report = json(&repin(&tree.0, &[]));
+    let report = json(&repin(tree.path(), &[]));
     assert_eq!(report["clean"], true);
     assert_eq!(report["scanCoverage"]["status"], "complete");
     let scanned: Vec<String> = report["scanCoverage"]["scope"]["scannedPaths"]
@@ -565,23 +553,23 @@ fn real_scan_reports_complete_with_its_scope() {
 
 #[test]
 fn oversized_input_reports_partial_coverage_not_complete() {
-    let tree = TempTree::new("repin-partial-scope");
-    init_repo(&tree.0);
-    fs::write(tree.0.join("source.rs"), "fn a() {}\n").unwrap();
-    let source_head = sha256_of(&tree.0.join("source.rs"));
+    let tree = TempDir::new("repin-partial-scope");
+    init_repo(tree.path());
+    fs::write(tree.path().join("source.rs"), "fn a() {}\n").unwrap();
+    let source_head = sha256_of(&tree.path().join("source.rs"));
     let padding = "x".repeat(5 * 1024 * 1024);
     fs::write(
-        tree.0.join("record.json"),
+        tree.path().join("record.json"),
         format!(
             r#"{{"padding":"{padding}","source":{{"path":"source.rs","sha256":"{source_head}"}}}}"#
         ),
     )
     .unwrap();
-    commit_all(&tree.0, "init source and an oversized record");
+    commit_all(tree.path(), "init source and an oversized record");
 
-    fs::write(tree.0.join("source.rs"), "fn a() { changed(); }\n").unwrap();
+    fs::write(tree.path().join("source.rs"), "fn a() { changed(); }\n").unwrap();
 
-    let report = json(&repin(&tree.0, &[]));
+    let report = json(&repin(tree.path(), &[]));
     assert_eq!(report["scanCoverage"]["status"], "partial", "{report}");
     assert_eq!(
         report["scanCoverage"]["partialReason"], "unreadable_input",
@@ -605,14 +593,14 @@ fn oversized_input_reports_partial_coverage_not_complete() {
 /// G1 would not be built, no matter how the type looks.
 #[test]
 fn forged_complete_claim_without_scope_is_rejected() {
-    let tree = TempTree::new("repin-forged-complete");
-    init_repo(&tree.0);
-    fs::write(tree.0.join("only.rs"), "fn a() {}\n").unwrap();
-    commit_all(&tree.0, "init the only tracked file");
+    let tree = TempDir::new("repin-forged-complete");
+    init_repo(tree.path());
+    fs::write(tree.path().join("only.rs"), "fn a() {}\n").unwrap();
+    commit_all(tree.path(), "init the only tracked file");
 
     // A real, honestly produced `not-computed` outcome (same setup as
     // `empty_scan_surface_is_reported_not_computed_not_clean`).
-    let report = json(&repin(&tree.0, &["--exclude", "only.rs"]));
+    let report = json(&repin(tree.path(), &["--exclude", "only.rs"]));
     let honest = report["scanCoverage"].clone();
     assert_eq!(honest["status"], "not-computed");
 
@@ -634,22 +622,22 @@ fn forged_complete_claim_without_scope_is_rejected() {
 
     // Also forge from a genuinely partial report the same way, to prove
     // this is not an artifact of the not-computed case specifically.
-    let tree2 = TempTree::new("repin-forged-complete-from-partial");
-    init_repo(&tree2.0);
-    fs::write(tree2.0.join("source.rs"), "fn a() {}\n").unwrap();
-    let source_head = sha256_of(&tree2.0.join("source.rs"));
+    let tree2 = TempDir::new("repin-forged-complete-from-partial");
+    init_repo(tree2.path());
+    fs::write(tree2.path().join("source.rs"), "fn a() {}\n").unwrap();
+    let source_head = sha256_of(&tree2.path().join("source.rs"));
     let padding = "x".repeat(5 * 1024 * 1024);
     fs::write(
-        tree2.0.join("record.json"),
+        tree2.path().join("record.json"),
         format!(
             r#"{{"padding":"{padding}","source":{{"path":"source.rs","sha256":"{source_head}"}}}}"#
         ),
     )
     .unwrap();
-    commit_all(&tree2.0, "init source and an oversized record");
-    fs::write(tree2.0.join("source.rs"), "fn a() { changed(); }\n").unwrap();
+    commit_all(tree2.path(), "init source and an oversized record");
+    fs::write(tree2.path().join("source.rs"), "fn a() { changed(); }\n").unwrap();
 
-    let partial_report = json(&repin(&tree2.0, &[]));
+    let partial_report = json(&repin(tree2.path(), &[]));
     let partial = partial_report["scanCoverage"].clone();
     assert_eq!(partial["status"], "partial");
     assert!(EvidenceOutcome::from_json(&partial).is_ok());

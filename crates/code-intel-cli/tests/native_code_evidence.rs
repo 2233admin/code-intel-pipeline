@@ -1,33 +1,11 @@
 mod common;
+
+use common::TempDir;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
-
-struct Temp(PathBuf);
-
-impl Temp {
-    fn new(label: &str) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-b08-{label}-{}-{nonce}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn tool_fixture(root: &Path) -> std::ffi::OsString {
     let bin = root.join("dag-tools");
@@ -44,11 +22,8 @@ fn tool_fixture(root: &Path) -> std::ffi::OsString {
     }
     #[cfg(not(windows))]
     {
-        use std::os::unix::fs::PermissionsExt;
         for name in ["python", "repowise"] {
-            let path = bin.join(name);
-            fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            common::write_executable(&bin, name, "#!/bin/sh\nexit 0\n");
         }
     }
     // Stub only doctor Python/Repowise; keep rg/git and Sentrux real.
@@ -171,9 +146,9 @@ fn reverse_semantic_arrays(relative: &str, mut value: Value) -> Value {
 
 #[test]
 fn native_atom_preserves_representative_v1_artifacts_through_a01_a03_a09() {
-    let temp = Temp::new("parity");
-    let repo = temp.0.join("repo");
-    let out = temp.0.join("run");
+    let temp = TempDir::new("parity");
+    let repo = temp.path().join("repo");
+    let out = temp.path().join("run");
     fs::create_dir_all(&repo).unwrap();
     fs::write(
         repo.join("index.js"),
@@ -252,9 +227,9 @@ fn native_atom_preserves_representative_v1_artifacts_through_a01_a03_a09() {
 
 #[test]
 fn rust_grouped_and_multiline_uses_expand_to_individual_import_artifacts() {
-    let temp = Temp::new("rust-use-imports");
-    let repo = temp.0.join("repo");
-    let out = temp.0.join("run");
+    let temp = TempDir::new("rust-use-imports");
+    let repo = temp.path().join("repo");
+    let out = temp.path().join("run");
     fs::create_dir_all(&repo).unwrap();
     fs::write(
         repo.join("uses.rs"),
@@ -297,9 +272,9 @@ fn rust_grouped_and_multiline_uses_expand_to_individual_import_artifacts() {
 
 #[test]
 fn unsupported_language_is_explicit_unknown_without_relationship_fabrication() {
-    let temp = Temp::new("unsupported");
-    let repo = temp.0.join("repo");
-    let out = temp.0.join("run");
+    let temp = TempDir::new("unsupported");
+    let repo = temp.path().join("repo");
+    let out = temp.path().join("run");
     fs::create_dir_all(&repo).unwrap();
     fs::write(repo.join("mystery.zig"), "pub fn hidden() void {}\n").unwrap();
 
@@ -321,9 +296,9 @@ fn unsupported_language_is_explicit_unknown_without_relationship_fabrication() {
 
 #[test]
 fn binary_non_source_is_preserved_as_explicit_unsupported_without_failing_the_run() {
-    let temp = Temp::new("binary-unsupported");
-    let repo = temp.0.join("repo");
-    let out = temp.0.join("run");
+    let temp = TempDir::new("binary-unsupported");
+    let repo = temp.path().join("repo");
+    let out = temp.path().join("run");
     fs::create_dir_all(repo.join("assets")).unwrap();
     fs::write(repo.join("src.rs"), "pub fn visible() {}\n").unwrap();
     fs::write(repo.join("assets/logo.png"), [0x89, 0x50, 0x4e, 0x47, 0xff]).unwrap();
@@ -353,9 +328,9 @@ fn binary_non_source_is_preserved_as_explicit_unsupported_without_failing_the_ru
 
 #[test]
 fn non_utf8_supported_source_remains_a_visible_contract_failure() {
-    let temp = Temp::new("binary-supported");
-    let repo = temp.0.join("repo");
-    let out = temp.0.join("run");
+    let temp = TempDir::new("binary-supported");
+    let repo = temp.path().join("repo");
+    let out = temp.path().join("run");
     fs::create_dir_all(&repo).unwrap();
     fs::write(repo.join("broken.rs"), [0xff, 0xfe, 0xfd]).unwrap();
 
@@ -379,9 +354,9 @@ fn labeled_multilingual_corpus_quantifies_native_symbol_precision_recall_and_cov
             .join("../..")
             .join("orchestration/internalization/fixtures/r06-native-labeled-corpus.json"),
     );
-    let temp = Temp::new("labeled-corpus");
-    let repo = temp.0.join("repo");
-    let out = temp.0.join("run");
+    let temp = TempDir::new("labeled-corpus");
+    let repo = temp.path().join("repo");
+    let out = temp.path().join("run");
     fs::create_dir_all(&repo).unwrap();
     for sample in corpus["samples"].as_array().unwrap() {
         fs::write(
@@ -433,9 +408,9 @@ fn labeled_multilingual_corpus_quantifies_native_symbol_precision_recall_and_cov
 
 #[test]
 fn a01_a09_artifacts_are_canonical_and_rank_the_representative_fixture() {
-    let temp = Temp::new("canonical-ranking");
-    let repo = temp.0.join("repo");
-    let out = temp.0.join("native-run");
+    let temp = TempDir::new("canonical-ranking");
+    let repo = temp.path().join("repo");
+    let out = temp.path().join("native-run");
     fs::create_dir_all(&repo).unwrap();
     fs::write(
         repo.join("main.js"),

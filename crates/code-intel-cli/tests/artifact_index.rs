@@ -1,9 +1,8 @@
 mod common;
+
+use common::TempDir;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
@@ -58,29 +57,6 @@ const SNAPSHOT_PAYLOAD: &[u8] = br#"{
   },
   "repository":{"kind":"unversioned"}
 }"#;
-static SEQ: AtomicU64 = AtomicU64::new(0);
-
-struct Temp(PathBuf);
-impl Temp {
-    fn new(label: &str) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-a08-{label}-{}-{nonce}-{}",
-            std::process::id(),
-            SEQ.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn inventory_contract() -> ArtifactWriteContract {
     ArtifactWriteContract {
@@ -291,13 +267,13 @@ fn staged_non_repository_iteration(root: &Path) -> (staged_artifact::StagedArtif
 
 #[test]
 fn completed_governance_run_cannot_enter_the_repository_authority_index() {
-    let tree = Temp::new("governance-purpose");
-    let repo = tree.0.join("repo-a");
+    let tree = TempDir::new("governance-purpose");
+    let repo = tree.path().join("repo-a");
     fs::create_dir(&repo).unwrap();
     let (set, manifest_ref) = staged_non_repository_iteration(&repo);
     run_commit::commit(set, &manifest_ref, "decision-001", CommitOptions::default()).unwrap();
 
-    let index = artifact_index::rebuild(&tree.0).unwrap();
+    let index = artifact_index::rebuild(tree.path()).unwrap();
     assert!(index["entries"].as_array().unwrap().is_empty());
     assert!(index["diagnostics"].as_array().unwrap().iter().any(|item| {
         item["repo"] == "repo-a"
@@ -308,9 +284,9 @@ fn completed_governance_run_cannot_enter_the_repository_authority_index() {
 
 #[test]
 fn snapshot_only_admin_commit_cannot_enter_the_repository_authority_index() {
-    let tree = Temp::new("snapshot-only-admin");
-    let source = tree.0.join("source");
-    let repo = tree.0.join("repo-a");
+    let tree = TempDir::new("snapshot-only-admin");
+    let source = tree.path().join("source");
+    let repo = tree.path().join("repo-a");
     fs::create_dir_all(&source).unwrap();
     fs::create_dir_all(&repo).unwrap();
     let (set, manifest_ref) = staged_snapshot_only(&source, "dag-v1:aabb");
@@ -339,7 +315,7 @@ fn snapshot_only_admin_commit_cannot_enter_the_repository_authority_index() {
         String::from_utf8_lossy(&command.stderr)
     );
 
-    let index = artifact_index::rebuild(&tree.0).unwrap();
+    let index = artifact_index::rebuild(tree.path()).unwrap();
     assert!(index["entries"].as_array().unwrap().is_empty());
     assert!(index["diagnostics"].as_array().unwrap().iter().any(|item| {
         item["repo"] == "repo-a"
@@ -350,7 +326,7 @@ fn snapshot_only_admin_commit_cannot_enter_the_repository_authority_index() {
 
 #[test]
 fn repository_iteration_provenance_requires_exact_authority_bindings() {
-    let tree = Temp::new("provenance-bindings");
+    let tree = TempDir::new("provenance-bindings");
     let cases = [
         ("wrong-run", "dag-v1:ccdd", SNAPSHOT, "wrong-run", "run"),
         (
@@ -370,7 +346,7 @@ fn repository_iteration_provenance_requires_exact_authority_bindings() {
         ),
     ];
     for (repo_name, payload_run, payload_snapshot, payload_repo, payload_publication) in cases {
-        let repo = tree.0.join(repo_name);
+        let repo = tree.path().join(repo_name);
         fs::create_dir(&repo).unwrap();
         let payload = provenance_payload(
             payload_run,
@@ -383,7 +359,7 @@ fn repository_iteration_provenance_requires_exact_authority_bindings() {
         run_commit::commit(set, &manifest_ref, "run", CommitOptions::default()).unwrap();
     }
 
-    let index = artifact_index::rebuild(&tree.0).unwrap();
+    let index = artifact_index::rebuild(tree.path()).unwrap();
     assert!(index["entries"].as_array().unwrap().is_empty());
     assert_eq!(
         index["diagnostics"]
@@ -398,12 +374,12 @@ fn repository_iteration_provenance_requires_exact_authority_bindings() {
 
 #[test]
 fn duplicate_or_wrong_status_provenance_is_not_repository_authority() {
-    let tree = Temp::new("provenance-cardinality-status");
+    let tree = TempDir::new("provenance-cardinality-status");
     for (repo_name, status, duplicate) in [
         ("duplicate", "succeeded", true),
         ("wrong-status", "domain_failed", false),
     ] {
-        let repo = tree.0.join(repo_name);
+        let repo = tree.path().join(repo_name);
         fs::create_dir(&repo).unwrap();
         let first = provenance_payload("dag-v1:aabb", repo_name, "run", SNAPSHOT);
         let mut payloads = vec![first];
@@ -418,7 +394,7 @@ fn duplicate_or_wrong_status_provenance_is_not_repository_authority() {
         let (set, manifest_ref) = staged_custom_provenance(&repo, "dag-v1:aabb", &payloads, status);
         run_commit::commit(set, &manifest_ref, "run", CommitOptions::default()).unwrap();
     }
-    let index = artifact_index::rebuild(&tree.0).unwrap();
+    let index = artifact_index::rebuild(tree.path()).unwrap();
     assert!(index["entries"].as_array().unwrap().is_empty());
     assert_eq!(
         index["diagnostics"]
@@ -488,15 +464,15 @@ fn repository_iteration_payload_contract_rejects_strict_field_mutations() {
 
 #[test]
 fn complete_and_staged_side_by_side_indexes_only_complete_run() {
-    let tree = Temp::new("smallest");
-    let repo = tree.0.join("repo-a");
+    let tree = TempDir::new("smallest");
+    let repo = tree.path().join("repo-a");
     fs::create_dir(&repo).unwrap();
     let (set, manifest_ref) = staged(&repo, "dag-v1:aabb", "run-001");
     run_commit::commit(set, &manifest_ref, "run-001", CommitOptions::default()).unwrap();
     let (staged_set, _) = staged(&repo, "dag-v1:ccdd", "run-002");
     assert!(staged_set.path().is_dir());
 
-    let result = artifact_index::rebuild(&tree.0).unwrap();
+    let result = artifact_index::rebuild(tree.path()).unwrap();
 
     assert_eq!(result["schema"], "code-intel-artifact-index.v1");
     assert_eq!(result["entries"].as_array().unwrap().len(), 1);
@@ -521,8 +497,8 @@ fn committed_repo(root: &Path, repo_name: &str, run_name: &str, identity: &str) 
 
 #[test]
 fn forged_marker_manifest_and_artifact_bindings_are_diagnosed_and_rejected() {
-    let tree = Temp::new("forged");
-    let bad_digest = committed_repo(&tree.0, "bad-digest", "run", "dag-v1:aabb");
+    let tree = TempDir::new("forged");
+    let bad_digest = committed_repo(tree.path(), "bad-digest", "run", "dag-v1:aabb");
     let mut marker: Value =
         serde_json::from_slice(&fs::read(bad_digest.join("run-complete.json")).unwrap()).unwrap();
     marker["manifest"]["sha256"] = json!("0".repeat(64));
@@ -532,7 +508,7 @@ fn forged_marker_manifest_and_artifact_bindings_are_diagnosed_and_rejected() {
     )
     .unwrap();
 
-    let bad_identity = committed_repo(&tree.0, "bad-identity", "run", "dag-v1:aabb");
+    let bad_identity = committed_repo(tree.path(), "bad-identity", "run", "dag-v1:aabb");
     let mut marker: Value =
         serde_json::from_slice(&fs::read(bad_identity.join("run-complete.json")).unwrap()).unwrap();
     marker["runIdentity"] = json!("dag-v1:ccdd");
@@ -542,7 +518,7 @@ fn forged_marker_manifest_and_artifact_bindings_are_diagnosed_and_rejected() {
     )
     .unwrap();
 
-    let bad_snapshot = committed_repo(&tree.0, "bad-snapshot", "run", "dag-v1:aabb");
+    let bad_snapshot = committed_repo(tree.path(), "bad-snapshot", "run", "dag-v1:aabb");
     let mut marker: Value =
         serde_json::from_slice(&fs::read(bad_snapshot.join("run-complete.json")).unwrap()).unwrap();
     marker["snapshotIdentity"] = json!("b".repeat(64));
@@ -552,14 +528,14 @@ fn forged_marker_manifest_and_artifact_bindings_are_diagnosed_and_rejected() {
     )
     .unwrap();
 
-    let bad_artifact = committed_repo(&tree.0, "bad-artifact", "run", "dag-v1:aabb");
+    let bad_artifact = committed_repo(tree.path(), "bad-artifact", "run", "dag-v1:aabb");
     let (_, manifest) = run_commit::validate_committed_run(&bad_artifact).unwrap();
     let artifact_path = manifest["nodes"]["repo.snapshot"]["artifacts"][0]["path"]
         .as_str()
         .unwrap();
     fs::write(bad_artifact.join(artifact_path), b"tampered evidence\n").unwrap();
 
-    let bad_provenance = committed_repo(&tree.0, "bad-provenance", "run", "dag-v1:aabb");
+    let bad_provenance = committed_repo(tree.path(), "bad-provenance", "run", "dag-v1:aabb");
     let (_, manifest) = run_commit::validate_committed_run(&bad_provenance).unwrap();
     let provenance_path = manifest["nodes"]["repository.iteration"]["artifacts"][0]["path"]
         .as_str()
@@ -570,7 +546,7 @@ fn forged_marker_manifest_and_artifact_bindings_are_diagnosed_and_rejected() {
     )
     .unwrap();
 
-    let result = artifact_index::rebuild(&tree.0).unwrap();
+    let result = artifact_index::rebuild(tree.path()).unwrap();
     assert_eq!(result["entries"], json!([]));
     let forged = result["diagnostics"]
         .as_array()
@@ -583,16 +559,16 @@ fn forged_marker_manifest_and_artifact_bindings_are_diagnosed_and_rejected() {
 
 #[test]
 fn incomplete_and_legacy_runs_are_diagnostic_only_and_newer_invalid_does_not_win() {
-    let tree = Temp::new("diagnostics");
-    let valid = committed_repo(&tree.0, "repo-a", "run-001", "dag-v1:aabb");
+    let tree = TempDir::new("diagnostics");
+    let valid = committed_repo(tree.path(), "repo-a", "run-001", "dag-v1:aabb");
     assert!(valid.is_dir());
-    let incomplete = committed_repo(&tree.0, "repo-a", "run-999", "dag-v1:ccdd");
+    let incomplete = committed_repo(tree.path(), "repo-a", "run-999", "dag-v1:ccdd");
     fs::remove_file(incomplete.join("run-complete.json")).unwrap();
-    let legacy = tree.0.join("legacy-repo/20260713-120000");
+    let legacy = tree.path().join("legacy-repo/20260713-120000");
     fs::create_dir_all(&legacy).unwrap();
     fs::write(legacy.join("report.json"), b"{}\n").unwrap();
 
-    let result = artifact_index::rebuild(&tree.0).unwrap();
+    let result = artifact_index::rebuild(tree.path()).unwrap();
     assert_eq!(result["entries"].as_array().unwrap().len(), 1);
     assert_eq!(result["entries"][0]["run"], "run-001");
     assert!(result["diagnostics"]
@@ -609,13 +585,13 @@ fn incomplete_and_legacy_runs_are_diagnostic_only_and_newer_invalid_does_not_win
 
 #[test]
 fn catalog_keeps_every_admitted_run_and_a_newer_refused_run_never_becomes_latest() {
-    let tree = Temp::new("catalog");
-    committed_repo(&tree.0, "repo-a", "run-001", "dag-v1:aabb");
-    committed_repo(&tree.0, "repo-a", "run-002", "dag-v1:ccdd");
-    let repo = tree.0.join("repo-a");
+    let tree = TempDir::new("catalog");
+    committed_repo(tree.path(), "repo-a", "run-001", "dag-v1:aabb");
+    committed_repo(tree.path(), "repo-a", "run-002", "dag-v1:ccdd");
+    let repo = tree.path().join("repo-a");
     let (set, manifest_ref) = staged_with_outcome(&repo, "dag-v1:eeff", "domain_failed", "run-003");
     run_commit::commit(set, &manifest_ref, "run-003", CommitOptions::default()).unwrap();
-    let forged = committed_repo(&tree.0, "repo-a", "run-004", "dag-v1:1122");
+    let forged = committed_repo(tree.path(), "repo-a", "run-004", "dag-v1:1122");
     let mut marker: Value =
         serde_json::from_slice(&fs::read(forged.join("run-complete.json")).unwrap()).unwrap();
     marker["manifest"]["sha256"] = json!("0".repeat(64));
@@ -627,7 +603,7 @@ fn catalog_keeps_every_admitted_run_and_a_newer_refused_run_never_becomes_latest
     let (staged_set, _) = staged(&repo, "dag-v1:3344", "run-005");
     assert!(staged_set.path().is_dir());
 
-    let catalog = artifact_index::SnapshotCatalog::build(&tree.0).unwrap();
+    let catalog = artifact_index::SnapshotCatalog::build(tree.path()).unwrap();
 
     let runs = catalog.admitted["repo-a"]
         .iter()
@@ -655,7 +631,7 @@ fn catalog_keeps_every_admitted_run_and_a_newer_refused_run_never_becomes_latest
                 .as_str()
                 .is_some_and(|reason| reason.contains("domain_failed"))
     }));
-    let index = artifact_index::rebuild(&tree.0).unwrap();
+    let index = artifact_index::rebuild(tree.path()).unwrap();
     assert_eq!(index["entries"].as_array().unwrap().len(), 1);
     assert_eq!(
         index["entries"][0]["run"], "run-002",
@@ -671,11 +647,11 @@ fn catalog_keeps_every_admitted_run_and_a_newer_refused_run_never_becomes_latest
 
 #[test]
 fn rebuild_and_incremental_are_byte_equivalent_and_stably_sorted() {
-    let tree = Temp::new("equivalence");
-    committed_repo(&tree.0, "repo-z", "run-001", "dag-v1:aabb");
-    committed_repo(&tree.0, "repo-a", "run-001", "dag-v1:ccdd");
-    let first = artifact_index::rebuild(&tree.0).unwrap();
-    let second = artifact_index::incremental(&tree.0, &first).unwrap();
+    let tree = TempDir::new("equivalence");
+    committed_repo(tree.path(), "repo-z", "run-001", "dag-v1:aabb");
+    committed_repo(tree.path(), "repo-a", "run-001", "dag-v1:ccdd");
+    let first = artifact_index::rebuild(tree.path()).unwrap();
+    let second = artifact_index::incremental(tree.path(), &first).unwrap();
 
     assert_eq!(
         serde_json::to_vec(&first).unwrap(),
@@ -683,14 +659,14 @@ fn rebuild_and_incremental_are_byte_equivalent_and_stably_sorted() {
     );
     assert_eq!(first["entries"][0]["repo"], "repo-a");
     assert_eq!(first["entries"][1]["repo"], "repo-z");
-    assert!(artifact_index::incremental(&tree.0, &json!({})).is_err());
+    assert!(artifact_index::incremental(tree.path(), &json!({})).is_err());
 }
 
 #[test]
 fn incremental_rejects_every_invalid_nested_existing_index_shape() {
-    let tree = Temp::new("nested-existing");
-    committed_repo(&tree.0, "repo-a", "run-001", "dag-v1:aabb");
-    let valid = artifact_index::rebuild(&tree.0).unwrap();
+    let tree = TempDir::new("nested-existing");
+    committed_repo(tree.path(), "repo-a", "run-001", "dag-v1:aabb");
+    let valid = artifact_index::rebuild(tree.path()).unwrap();
 
     let mut cases = Vec::new();
     let mut value = valid.clone();
@@ -739,7 +715,7 @@ fn incremental_rejects_every_invalid_nested_existing_index_shape() {
 
     for (index, invalid) in cases.into_iter().enumerate() {
         assert!(
-            artifact_index::incremental(&tree.0, &invalid).is_err(),
+            artifact_index::incremental(tree.path(), &invalid).is_err(),
             "invalid nested existing-index case {index} was accepted"
         );
     }
@@ -747,32 +723,32 @@ fn incremental_rejects_every_invalid_nested_existing_index_shape() {
 
 #[test]
 fn write_index_replaces_an_existing_index_and_leaves_no_backup_behind() {
-    let tree = Temp::new("rewrite");
-    committed_repo(&tree.0, "repo-a", "run-001", "dag-v1:aabb");
-    let output = tree.0.join("index.json");
-    let index = artifact_index::rebuild(&tree.0).unwrap();
+    let tree = TempDir::new("rewrite");
+    committed_repo(tree.path(), "repo-a", "run-001", "dag-v1:aabb");
+    let output = tree.path().join("index.json");
+    let index = artifact_index::rebuild(tree.path()).unwrap();
     artifact_index::write_index(&output, &index).unwrap();
     artifact_index::write_index(&output, &index).unwrap();
 
     let written: Value = serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
     assert_eq!(written, index);
     assert!(
-        !tree.0.join("index.json.bak").exists(),
+        !tree.path().join("index.json.bak").exists(),
         "publish must remove the transient .bak once the new index is in place"
     );
 }
 
 #[test]
 fn production_cli_writes_the_registered_committed_only_schema() {
-    let tree = Temp::new("cli");
-    committed_repo(&tree.0, "repo-a", "run-001", "dag-v1:aabb");
-    let output = tree.0.join("index.json");
+    let tree = TempDir::new("cli");
+    committed_repo(tree.path(), "repo-a", "run-001", "dag-v1:aabb");
+    let output = tree.path().join("index.json");
     let command = common::cli()
         .args([
             "artifact",
             "index",
             "--artifact-root",
-            tree.0.to_str().unwrap(),
+            tree.path().to_str().unwrap(),
             "--output",
             output.to_str().unwrap(),
             "--operation",

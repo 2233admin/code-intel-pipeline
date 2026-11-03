@@ -354,12 +354,7 @@ fn command_authority_and_effect_contracts_cover_conditional_and_mutating_routes(
         raw("edit", Some("impact")).contract.effects,
         &[CommandEffect::RepoRead, CommandEffect::ProcessSpawn]
     );
-    for adapter in [
-        "repowise-adapt",
-        "graph-adapt",
-        "sentrux-adapt",
-        "codenexus-adapt",
-    ] {
+    for adapter in ["repowise-adapt", "sentrux-adapt", "codenexus-adapt"] {
         assert_eq!(
             raw("provider", Some(adapter)).contract.effects,
             &[CommandEffect::RepoRead],
@@ -370,17 +365,6 @@ fn command_authority_and_effect_contracts_cover_conditional_and_mutating_routes(
         raw("provider", Some("session-adapt")).contract.effects,
         &[CommandEffect::RepoRead, CommandEffect::LocalWrite],
         "session adapter can write its optional --out artifact"
-    );
-    let graph = COMMAND_ROUTES
-        .iter()
-        .find_map(|route| match route {
-            CommandRoute::Legacy(route) if route.command == "graph" => Some(route),
-            _ => None,
-        })
-        .expect("registered graph command");
-    assert_eq!(
-        graph.contract.effects,
-        &[CommandEffect::RepoRead, CommandEffect::LocalWrite]
     );
 }
 
@@ -456,11 +440,6 @@ fn observable_contracts_pin_exact_schemas_composites_and_exit_sets() {
             "repowise-adapt",
             "code-intel-repowise-route-result.v1",
             "code-intel-repowise-adapter-result.v1",
-        ),
-        (
-            "graph-adapt",
-            "code-intel-graph-route-result.v1",
-            "code-intel-graph-adapter-result.v1",
         ),
         (
             "sentrux-adapt",
