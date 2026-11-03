@@ -109,6 +109,10 @@ pub(super) fn unified_zero_diff(repo: &Path, range: &str) -> Option<String> {
     let run = |range: &str| {
         let output = crate::hardened_git::command(repo)
             .args([
+                // Same quotePath rule as run_git_diff_numstat: `---`/`+++`
+                // paths are parsed and must arrive unquoted.
+                "-c",
+                "core.quotePath=false",
                 "diff",
                 "-U0",
                 "--no-prefix",
