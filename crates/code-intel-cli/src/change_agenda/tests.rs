@@ -300,3 +300,50 @@ fn parse_defaults_are_json_and_the_documented_cochange_threshold() {
     assert!(request.repo.is_none());
     assert!(matches!(request.format, crate::change_risk::Format::Json));
 }
+
+#[test]
+fn unit_test_asymmetry_counts_inline_test_module_changes() {
+    use std::process::Command;
+
+    let file = "crates/code-intel-cli/src/native_code_evidence.rs";
+    let repo = std::env::temp_dir().join(format!(
+        "code-intel-change-agenda-inline-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(repo.join("crates/code-intel-cli/src")).unwrap();
+    let git = |args: &[&str]| {
+        assert!(Command::new("git")
+            .args(args)
+            .current_dir(&repo)
+            .status()
+            .unwrap()
+            .success());
+    };
+    git(&["init", "--quiet"]);
+    git(&["config", "user.name", "Agenda Test"]);
+    git(&["config", "user.email", "agenda@example.invalid"]);
+    git(&["config", "commit.gpgsign", "false"]);
+    let write_and_commit = |body: &str, message: &str| {
+        std::fs::write(repo.join(file), body).unwrap();
+        git(&["add", "."]);
+        git(&["commit", "--quiet", "-m", message]);
+    };
+    write_and_commit(
+        "pub fn f() -> i32 {\n    1\n}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn a() {}\n}\n",
+        "add",
+    );
+    write_and_commit(
+        "pub fn f() -> i32 {\n    2\n}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn a() {}\n\n    #[test]\n    fn b() {}\n}\n",
+        "change",
+    );
+
+    let report = super::execute(&repo, "HEAD", DEFAULT_MIN_COCHANGE).expect("agenda succeeds");
+    let unit = &report["units"][0];
+    assert_eq!(unit["signals"]["testAsymmetry"]["asymmetric"], false);
+    assert_eq!(unit["signals"]["testAsymmetry"]["testFilesChanged"], 1);
+    assert_eq!(unit["files"][0]["touchesInlineTests"], true);
+}

@@ -35,7 +35,9 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::change_risk::{self, git, FileDiff, FileHistory, Format, RiskError};
+use crate::change_risk::{
+    self, git, inline_tests, FileDiff, FileHistory, Format, InlineTests, RiskError,
+};
 
 mod cluster;
 mod cochange;
@@ -261,13 +263,15 @@ fn execute(repo: &Path, revspec: &str, min_cochange: usize) -> Result<Value, Ris
     // One history walk for the whole diff; every unit scores against this
     // same map rather than paying for a `git log` apiece.
     let history = git::file_commit_history(repo, &paths, anchor_unix, &exclude);
+    let inline =
+        inline_tests::touched_inline_test_files(repo, &endpoint.range, &endpoint.tip, &files);
     let commits =
         git::cochanging_commits(repo, &paths, anchor_unix, COCHANGE_WINDOW_DAYS, &exclude);
     let (edges, observed) = cochange::build_edges(&commits, min_cochange);
 
     let mut units: Vec<Unit> = cluster::group(&paths, &edges)
         .into_iter()
-        .map(|members| build_unit(members, &files, &edges, &history, anchor_unix))
+        .map(|members| build_unit(members, &files, &edges, &history, &inline, anchor_unix))
         .collect();
     // Worst first. `total_cmp` rather than `partial_cmp().unwrap()`: the
     // scores are finite by construction, and this states that rather than
@@ -298,6 +302,7 @@ fn build_unit(
     files: &[FileDiff],
     edges: &[cochange::Edge],
     history: &FileHistory,
+    inline: &InlineTests,
     anchor_unix: i64,
 ) -> Unit {
     let member_set: BTreeSet<&str> = members.iter().map(String::as_str).collect();
@@ -314,7 +319,7 @@ fn build_unit(
         })
         .cloned()
         .collect();
-    let scored = change_risk::score_subset(&unit_files, history, anchor_unix);
+    let scored = change_risk::score_subset_with_inline(&unit_files, history, inline, anchor_unix);
     Unit {
         members,
         score: scored.score,

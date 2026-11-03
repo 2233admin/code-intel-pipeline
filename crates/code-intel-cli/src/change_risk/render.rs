@@ -143,11 +143,13 @@ pub(super) fn render_text(value: &Value) -> String {
     let files = value["files"].as_array().cloned().unwrap_or_default();
     lines.push(format!("files: {}", files.len()));
     for file in &files {
-        let marker = if file["isTestFile"].as_bool().unwrap_or(false) {
-            " [test]"
-        } else {
-            ""
-        };
+        let mut marker = String::new();
+        if file["isTestFile"].as_bool().unwrap_or(false) {
+            marker.push_str(" [test]");
+        }
+        if file["touchesInlineTests"].as_bool().unwrap_or(false) {
+            marker.push_str(" [inline-test]");
+        }
         lines.push(format!(
             "  {} +{}/-{}{marker}",
             file["path"].as_str().unwrap_or(""),

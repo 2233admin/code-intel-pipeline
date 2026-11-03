@@ -6,7 +6,9 @@
 //! module.
 
 use std::collections::BTreeSet;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 
 use super::{Endpoint, FileDiff, FileHistory, RiskError, BUG_MAGNET_WINDOW_DAYS};
 
@@ -85,18 +87,127 @@ pub(crate) fn diff_stats(repo: &Path, range: &str) -> Result<Vec<FileDiff>, Risk
     if primary.is_ok() {
         return primary;
     }
-    // Likely a root commit with no parent on the left side of "X^..X";
-    // retry against the empty tree so the very first commit in a
-    // repository can still be scored.
-    if let Some((left, right)) = range.split_once("..") {
-        if let Some(root) = left.strip_suffix('^') {
-            if root == right {
-                let fallback = format!("{EMPTY_TREE}..{right}");
-                return run_git_diff_numstat(repo, &fallback);
-            }
-        }
+    match root_commit_fallback(range) {
+        Some(fallback) => run_git_diff_numstat(repo, &fallback),
+        None => primary,
     }
-    primary
+}
+
+/// Likely a root commit with no parent on the left side of "X^..X"; the
+/// empty-tree range lets the very first commit in a repository still be
+/// diffed.
+fn root_commit_fallback(range: &str) -> Option<String> {
+    let (left, right) = range.split_once("..")?;
+    let root = left.strip_suffix('^')?;
+    (root == right).then(|| format!("{EMPTY_TREE}..{right}"))
+}
+
+/// `git diff -U0` text for `range`, with the same root-commit fallback as
+/// [`diff_stats`]. Paths are unprefixed (`+++ path`). Best-effort: `None`
+/// when git fails, since `diff_stats` already proved the range resolves.
+pub(super) fn unified_zero_diff(repo: &Path, range: &str) -> Option<String> {
+    let run = |range: &str| {
+        let output = crate::hardened_git::command(repo)
+            .args([
+                "diff",
+                "-U0",
+                "--no-prefix",
+                "--no-renames",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-textconv",
+                range,
+            ])
+            .output()
+            .ok()?;
+        output
+            .status
+            .success()
+            .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+    };
+    run(range).or_else(|| run(&root_commit_fallback(range)?))
+}
+
+/// The commit the old side of `range` is read from: the left of `A..B`, the
+/// merge base for `A...B`, `HEAD` when the left is omitted. `None` when it
+/// does not resolve (root commit, empty-tree fallback): nothing to read.
+pub(super) fn range_base(repo: &Path, range: &str) -> Option<String> {
+    let (left, right) = range.split_once("..")?;
+    let left = if left.is_empty() { "HEAD" } else { left };
+    let Some(right) = right.strip_prefix('.') else {
+        return Some(left.to_string());
+    };
+    let right = if right.is_empty() { "HEAD" } else { right };
+    let output = crate::hardened_git::command(repo)
+        .args(["merge-base", left, right])
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Contents of `paths` at `rev`, fetched with one `git cat-file --batch`.
+/// Files missing at `rev` are absent from the result; any git failure or
+/// unexpected framing degrades to an empty map.
+pub(super) fn read_blobs_at(repo: &Path, rev: &str, paths: &[&str]) -> Vec<(String, Vec<u8>)> {
+    let paths: Vec<&str> = paths
+        .iter()
+        .copied()
+        .filter(|path| !path.contains('\n'))
+        .collect();
+    if paths.is_empty() {
+        return Vec::new();
+    }
+    let request: String = paths.iter().map(|path| format!("{rev}:{path}\n")).collect();
+    let Ok(mut child) = crate::hardened_git::command(repo)
+        .args(["cat-file", "--batch"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return Vec::new();
+    };
+    let Some(mut stdin) = child.stdin.take() else {
+        return Vec::new();
+    };
+    // Written from a thread: a large reply would otherwise fill the stdout
+    // pipe while we are still blocked writing requests.
+    let writer = std::thread::spawn(move || stdin.write_all(request.as_bytes()));
+    let Ok(output) = child.wait_with_output() else {
+        return Vec::new();
+    };
+    let _ = writer.join();
+    if !output.status.success() {
+        return Vec::new();
+    }
+    parse_batch_blobs(&output.stdout, &paths).unwrap_or_default()
+}
+
+/// Batch framing is `<oid> SP <type> SP <size> LF <content> LF`, or
+/// `<spec> SP missing LF`; replies arrive in request order.
+fn parse_batch_blobs(stream: &[u8], paths: &[&str]) -> Option<Vec<(String, Vec<u8>)>> {
+    let mut blobs = Vec::new();
+    let mut cursor = 0usize;
+    for path in paths {
+        let newline = stream[cursor..].iter().position(|byte| *byte == b'\n')?;
+        let header = std::str::from_utf8(&stream[cursor..cursor + newline]).ok()?;
+        cursor += newline + 1;
+        if header.ends_with(" missing") {
+            continue;
+        }
+        let mut fields = header.split(' ');
+        let (_oid, kind, size) = (fields.next()?, fields.next()?, fields.next()?);
+        let size: usize = size.parse().ok()?;
+        if kind != "blob" || cursor + size > stream.len() {
+            return None;
+        }
+        blobs.push(((*path).to_string(), stream[cursor..cursor + size].to_vec()));
+        cursor += size + 1;
+    }
+    Some(blobs)
 }
 
 fn run_git_diff_numstat(repo: &Path, range: &str) -> Result<Vec<FileDiff>, RiskError> {

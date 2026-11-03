@@ -10,21 +10,23 @@ use std::path::Path;
 use serde_json::{json, Value};
 
 use super::git::file_commit_history;
+use super::inline_tests::touches_inline_tests;
 use super::scoring::combine;
 use super::{
-    BugMagnet, Churn, DiffShape, FileDiff, FileHistory, Scored, TestAsymmetry, BUG_MAGNET_CAP,
-    CHURN_CAP, CHURN_WINDOW_DAYS, FILES_TOUCHED_CAP, LINES_CHANGED_CAP,
+    BugMagnet, Churn, DiffShape, FileDiff, FileHistory, InlineTests, Scored, TestAsymmetry,
+    BUG_MAGNET_CAP, CHURN_CAP, CHURN_WINDOW_DAYS, FILES_TOUCHED_CAP, LINES_CHANGED_CAP,
 };
 
 pub(super) fn score_files(
     repo: &Path,
     files: &[FileDiff],
+    inline: &InlineTests,
     anchor_unix: i64,
     exclude: &BTreeSet<String>,
 ) -> Scored {
     let paths: Vec<String> = files.iter().map(|(_, _, path)| path.clone()).collect();
     let history = file_commit_history(repo, &paths, anchor_unix, exclude);
-    score_files_with_history(files, &history, anchor_unix)
+    score_files_with_history(files, &history, inline, anchor_unix)
 }
 
 /// The scoring half of [`score_files`], split out so a caller that already
@@ -35,15 +37,16 @@ pub(super) fn score_files(
 pub(super) fn score_files_with_history(
     files: &[FileDiff],
     history: &FileHistory,
+    inline: &InlineTests,
     anchor_unix: i64,
 ) -> Scored {
     let diff = diff_shape(files);
-    let asymmetry = test_asymmetry_signal(files);
+    let asymmetry = test_asymmetry_signal(files, inline);
     let paths: Vec<String> = files.iter().map(|(_, _, path)| path.clone()).collect();
     let bug_magnet = bug_magnet_signal(&paths, history);
     let churn = churn_signal(&paths, history, anchor_unix);
     let score = combine(&diff, &asymmetry, &bug_magnet, &churn);
-    let scored_files = build_scored_files(files, history, anchor_unix);
+    let scored_files = build_scored_files(files, history, inline, anchor_unix);
     Scored {
         score,
         diff,
@@ -143,14 +146,14 @@ fn file_stem(filename: &str) -> &str {
     }
 }
 
-fn test_asymmetry_signal(files: &[FileDiff]) -> TestAsymmetry {
+fn test_asymmetry_signal(files: &[FileDiff], inline: &InlineTests) -> TestAsymmetry {
     let source_files_changed = files
         .iter()
         .filter(|(_, _, path)| is_source_file(path))
         .count();
     let test_files_changed = files
         .iter()
-        .filter(|(_, _, path)| is_test_file(path))
+        .filter(|(_, _, path)| is_test_file(path) || touches_inline_tests(path, inline))
         .count();
     let asymmetric = source_files_changed > 0 && test_files_changed == 0;
     TestAsymmetry {
@@ -210,7 +213,12 @@ fn churn_signal(paths: &[String], history: &FileHistory, anchor_unix: i64) -> Ch
     }
 }
 
-fn build_scored_files(files: &[FileDiff], history: &FileHistory, anchor_unix: i64) -> Vec<Value> {
+fn build_scored_files(
+    files: &[FileDiff],
+    history: &FileHistory,
+    inline: &InlineTests,
+    anchor_unix: i64,
+) -> Vec<Value> {
     let since_churn = anchor_unix - CHURN_WINDOW_DAYS * 86_400;
     files
         .iter()
@@ -230,6 +238,7 @@ fn build_scored_files(files: &[FileDiff], history: &FileHistory, anchor_unix: i6
                 "deletions": deletions,
                 "isSourceFile": is_source_file(path),
                 "isTestFile": is_test_file(path),
+                "touchesInlineTests": touches_inline_tests(path, inline),
                 "bugFixCommits180d": bug_fix_commits,
                 "churnCommits90d": churn_commits,
             })

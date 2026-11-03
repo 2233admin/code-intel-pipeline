@@ -48,6 +48,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 pub(crate) mod git;
+pub(crate) mod inline_tests;
 mod render;
 mod scoring;
 mod signals;
@@ -295,6 +296,10 @@ fn print_result(value: &Value, format: Format) {
 /// (insertions, deletions, repository-relative path)
 pub(crate) type FileDiff = (i64, i64, String);
 
+/// Paths whose diff touches an inline `#[cfg(test)] mod` block, fetched by
+/// the caller once per diff (see [`inline_tests`]).
+pub(crate) type InlineTests = BTreeSet<String>;
+
 /// Repository-relative path -> the (committer date, subject) of every commit
 /// touching it inside the bug-magnet window.
 pub(crate) type FileHistory = BTreeMap<String, Vec<(i64, String)>>;
@@ -368,13 +373,26 @@ pub(crate) struct SubsetScore {
 }
 
 /// Scores `files` — a subset of an already-walked diff — against a history
-/// map the caller fetched once for the whole diff. No git, no I/O.
+/// map the caller fetched once for the whole diff. No git, no I/O. Treats
+/// no file as having touched an inline test module; see
+/// [`score_subset_with_inline`].
 pub(crate) fn score_subset(
     files: &[FileDiff],
     history: &FileHistory,
     anchor_unix: i64,
 ) -> SubsetScore {
-    let scored = signals::score_files_with_history(files, history, anchor_unix);
+    score_subset_with_inline(files, history, &InlineTests::new(), anchor_unix)
+}
+
+/// [`score_subset`] with the inline-test-module information the caller
+/// fetched once for the whole diff.
+pub(crate) fn score_subset_with_inline(
+    files: &[FileDiff],
+    history: &FileHistory,
+    inline: &InlineTests,
+    anchor_unix: i64,
+) -> SubsetScore {
+    let scored = signals::score_files_with_history(files, history, inline, anchor_unix);
     SubsetScore {
         score: scored.score,
         signals: render::signals_value(&scored),
@@ -402,7 +420,9 @@ fn execute(repo: &Path, revspec: &str, sample_requested: u32) -> Result<Value, R
     let exclude = git::commits_in_range(repo, &endpoint.range)
         .into_iter()
         .collect::<BTreeSet<_>>();
-    let target = signals::score_files(repo, &files, anchor_unix, &exclude);
+    let inline =
+        inline_tests::touched_inline_test_files(repo, &endpoint.range, &endpoint.tip, &files);
+    let target = signals::score_files(repo, &files, &inline, anchor_unix, &exclude);
 
     let mut baseline_scores = Vec::new();
     for (sha, sha_unix) in git::sample_history(repo, &endpoint.tip, sample_requested) {
@@ -421,8 +441,16 @@ fn execute(repo: &Path, revspec: &str, sample_requested: u32) -> Result<Value, R
         if sample_files.is_empty() {
             continue;
         }
+        let sample_inline =
+            inline_tests::touched_inline_test_files(repo, &sample_range, &sha, &sample_files);
         let sample_exclude: BTreeSet<String> = std::iter::once(sha).collect();
-        let sample_scored = signals::score_files(repo, &sample_files, sha_unix, &sample_exclude);
+        let sample_scored = signals::score_files(
+            repo,
+            &sample_files,
+            &sample_inline,
+            sha_unix,
+            &sample_exclude,
+        );
         baseline_scores.push(sample_scored.score);
     }
     let sample_used = baseline_scores.len();
