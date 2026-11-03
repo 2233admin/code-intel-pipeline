@@ -17,18 +17,11 @@
 mod common;
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 
-fn fixture_root(tag: &str) -> PathBuf {
-    let root = std::env::temp_dir().join(format!(
-        "sentrux-gate-neg-{tag}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("clock after epoch")
-            .as_nanos()
-    ));
-    fs::create_dir_all(root.join("src")).expect("create fixture root");
+fn fixture_root(tag: &str) -> common::TempDir {
+    let root = common::TempDir::new(&format!("sentrux-gate-neg-{tag}"));
+    fs::create_dir_all(root.path().join("src")).expect("create fixture root");
     root
 }
 
@@ -36,7 +29,7 @@ fn code_intel(args: &[&str]) -> std::process::Output {
     common::cli().args(args).output().expect("run code-intel")
 }
 
-fn write_rules(root: &PathBuf) {
+fn write_rules(root: &Path) {
     fs::create_dir_all(root.join(".sentrux")).expect("create .sentrux");
     fs::write(
         root.join(".sentrux/rules.toml"),
@@ -53,7 +46,7 @@ fn padded(head: &str, lines: usize) -> String {
     body
 }
 
-fn save_baseline(root: &PathBuf) {
+fn save_baseline(root: &Path) {
     let root_arg = root.to_string_lossy().to_string();
     let saved = code_intel(&[
         "sentrux",
@@ -71,7 +64,7 @@ fn save_baseline(root: &PathBuf) {
 }
 
 /// Run `check` and assert it stays green, quoting the rationale on failure.
-fn assert_not_flagged(root: &PathBuf, why: &str) {
+fn assert_not_flagged(root: &Path, why: &str) {
     let root_arg = root.to_string_lossy().to_string();
     let check = code_intel(&[
         "sentrux",
@@ -95,7 +88,6 @@ fn assert_not_flagged(root: &PathBuf, why: &str) {
     let result: serde_json::Value = serde_json::from_slice(&check.stdout).expect("check JSON");
     assert_eq!(result["verdict"], "pass", "{why}: {result}");
     assert_eq!(result["blockingViolations"], serde_json::json!([]));
-    fs::remove_dir_all(root).expect("remove fixture");
 }
 
 #[test]
@@ -103,7 +95,8 @@ fn growth_that_stays_under_the_threshold_is_not_a_regression() {
     // A file getting longer is not itself the finding — crossing the rule is.
     // A gate that trends on size rather than thresholds turns every ordinary
     // commit into a negotiation.
-    let root = fixture_root("under-threshold");
+    let root_dir = fixture_root("under-threshold");
+    let root = root_dir.path();
     fs::write(root.join("src/lib.rs"), padded("pub fn entry() {}\n", 200))
         .expect("write initial file");
     write_rules(&root);
@@ -122,7 +115,8 @@ fn growth_that_stays_under_the_threshold_is_not_a_regression() {
 fn a_grandfathered_god_file_that_shrinks_is_not_a_regression() {
     // Debt paid down must never read as debt added. This is the case that
     // breaks if the ratchet ever compares counts instead of identities.
-    let root = fixture_root("shrinking-god");
+    let root_dir = fixture_root("shrinking-god");
+    let root = root_dir.path();
     fs::write(root.join("src/big.rs"), padded("pub fn entry() {}\n", 900)).expect("write god file");
     write_rules(&root);
     save_baseline(&root);
@@ -142,7 +136,8 @@ fn deleting_a_god_file_and_adding_a_small_one_is_not_a_regression() {
     // The count moves 1 -> 1 here only if the replacement is also a god file.
     // It is not, so this is a strict improvement that a count-based rule with a
     // sloppy identity check could still report as churn.
-    let root = fixture_root("god-replaced-small");
+    let root_dir = fixture_root("god-replaced-small");
+    let root = root_dir.path();
     fs::write(root.join("src/big.rs"), padded("pub fn entry() {}\n", 900)).expect("write god file");
     write_rules(&root);
     save_baseline(&root);
@@ -166,7 +161,8 @@ fn adding_tests_to_an_existing_file_is_not_a_new_god_file() {
     //
     // The baseline already lists this path, so the identity ratchet tolerates
     // it as standing debt. This case exists to keep that true.
-    let root = fixture_root("tests-grew");
+    let root_dir = fixture_root("tests-grew");
+    let root = root_dir.path();
     fs::create_dir_all(root.join("tests")).expect("create tests dir");
     fs::write(
         root.join("tests/suite.rs"),
@@ -197,7 +193,8 @@ fn the_negatives_above_are_not_vacuous() {
     // control: the same shape as `adding_tests_to_an_existing_file`, except the
     // baseline does not list the path, which is the one difference that should
     // decide the verdict. It must be flagged.
-    let root = fixture_root("control-must-flag");
+    let root_dir = fixture_root("control-must-flag");
+    let root = root_dir.path();
     fs::create_dir_all(root.join("tests")).expect("create tests dir");
     fs::write(root.join("src/small.rs"), "pub fn small() {}\n").expect("write small file");
     write_rules(&root);
@@ -232,15 +229,14 @@ fn the_negatives_above_are_not_vacuous() {
         .expect("violations")
         .iter()
         .any(|violation| violation["rule"] == "god_files_increased"));
-
-    fs::remove_dir_all(&root).expect("remove fixture");
 }
 
 #[test]
 fn an_unchanged_tree_is_never_a_regression() {
     // The floor. If this ever fails the gate is non-deterministic, and every
     // other negative here is unreadable noise.
-    let root = fixture_root("unchanged");
+    let root_dir = fixture_root("unchanged");
+    let root = root_dir.path();
     fs::write(root.join("src/big.rs"), padded("pub fn entry() {}\n", 900)).expect("write god file");
     fs::write(root.join("src/small.rs"), "pub fn small() {}\n").expect("write small file");
     write_rules(&root);

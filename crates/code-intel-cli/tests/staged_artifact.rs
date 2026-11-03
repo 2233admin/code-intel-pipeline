@@ -4,43 +4,18 @@ mod stable_artifact;
 #[path = "../src/staged_artifact.rs"]
 mod staged_artifact;
 
+mod common;
+
+use common::TempDir;
 use std::fs;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 use staged_artifact::{
     ArtifactWriteContract, InterruptAfter, StageWriteError, StagedWriter, WriterOptions,
 };
-
-static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-struct TempTree(PathBuf);
-
-impl TempTree {
-    fn new(label: &str) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-a06-{label}-{}-{nonce}-{sequence}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for TempTree {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn contract(max_bytes: u64) -> ArtifactWriteContract {
     ArtifactWriteContract {
@@ -83,22 +58,22 @@ fn staging_children(root: &Path) -> Vec<PathBuf> {
 
 #[test]
 fn schema_failure_rolls_back_owned_staging_and_never_exposes_a_final_run() {
-    let tree = TempTree::new("schema-failure");
-    let mut writer = begin(&tree.0, "schema-failure").unwrap();
+    let tree = TempDir::new("schema-failure");
+    let mut writer = begin(tree.path(), "schema-failure").unwrap();
     let error = writer.stage(b"invalid", contract(64)).unwrap_err();
     assert!(matches!(error, StageWriteError::Contract(_)));
-    assert!(staging_children(&tree.0).is_empty());
+    assert!(staging_children(tree.path()).is_empty());
     assert!(writer.seal().is_err());
-    assert!(!tree.0.join("run-complete.json").exists());
-    assert!(fs::read_dir(&tree.0)
+    assert!(!tree.path().join("run-complete.json").exists());
+    assert!(fs::read_dir(tree.path())
         .unwrap()
         .all(|entry| entry.unwrap().file_name() == ".staging"));
 }
 
 #[test]
 fn content_is_addressed_validated_and_duplicate_bytes_reuse_one_owned_object() {
-    let tree = TempTree::new("content-addressed");
-    let mut writer = begin(&tree.0, "content-addressed").unwrap();
+    let tree = TempDir::new("content-addressed");
+    let mut writer = begin(tree.path(), "content-addressed").unwrap();
     let first = writer.stage(b"alpha\n", contract(64)).unwrap();
     let second = writer.stage(b"alpha\n", contract(64)).unwrap();
 
@@ -114,8 +89,8 @@ fn content_is_addressed_validated_and_duplicate_bytes_reuse_one_owned_object() {
     assert_eq!(first.consumed_snapshot_identity.len(), 64);
 
     let staged = writer.seal().unwrap();
-    assert!(staged.path().starts_with(tree.0.join(".staging")));
-    assert_eq!(staged.authority_root(), tree.0);
+    assert!(staged.path().starts_with(tree.path().join(".staging")));
+    assert_eq!(staged.authority_root(), tree.path());
     assert_eq!(staged.artifacts().len(), 2);
     let manifest = staged.to_manifest_value();
     assert_eq!(manifest["schema"], "code-intel-staged-artifact-set.v1");
@@ -130,17 +105,17 @@ fn content_is_addressed_validated_and_duplicate_bytes_reuse_one_owned_object() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     assert_eq!(objects.len(), 1);
-    assert!(!tree.0.join("run-complete.json").exists());
+    assert!(!tree.path().join("run-complete.json").exists());
 
     drop(staged);
-    assert!(staging_children(&tree.0).is_empty());
+    assert!(staging_children(tree.path()).is_empty());
 }
 
 #[cfg(windows)]
 #[test]
 fn content_addressed_publication_supports_windows_paths_beyond_max_path() {
-    let tree = TempTree::new("windows-long-path");
-    let mut root = tree.0.clone();
+    let tree = TempDir::new("windows-long-path");
+    let mut root = tree.path().to_path_buf();
     for index in 0..3 {
         root.push(format!(
             "nested-authority-{index}-abcdefghijklmnopqrstuvwxyz0123456789"
@@ -167,27 +142,30 @@ fn content_addressed_publication_supports_windows_paths_beyond_max_path() {
 
 #[test]
 fn production_begin_is_unique_and_reports_only_its_observed_local_write_effect() {
-    let tree = TempTree::new("production-begin");
+    let tree = TempDir::new("production-begin");
     let first = StagedWriter::begin(
-        &tree.0,
+        tree.path(),
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     )
     .unwrap();
     let second = StagedWriter::begin(
-        &tree.0,
+        tree.path(),
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     )
     .unwrap();
     assert_eq!(first.observed_effects(), &["local_write"]);
-    assert_ne!(staging_children(&tree.0)[0], staging_children(&tree.0)[1]);
+    assert_ne!(
+        staging_children(tree.path())[0],
+        staging_children(tree.path())[1]
+    );
     drop((first, second));
-    assert!(staging_children(&tree.0).is_empty());
+    assert!(staging_children(tree.path()).is_empty());
 }
 
 #[test]
 fn commit_handoff_releases_handles_but_retains_owned_rollback() {
-    let tree = TempTree::new("handoff");
-    let mut writer = begin(&tree.0, "handoff").unwrap();
+    let tree = TempDir::new("handoff");
+    let mut writer = begin(tree.path(), "handoff").unwrap();
     writer.stage(b"alpha\n", contract(64)).unwrap();
     let mut staged = writer.seal().unwrap();
     let path = staged.path().to_path_buf();
@@ -199,8 +177,8 @@ fn commit_handoff_releases_handles_but_retains_owned_rollback() {
 
 #[test]
 fn bounded_writes_accept_max_minus_one_and_max_but_reject_max_plus_one() {
-    let tree = TempTree::new("bounds");
-    let mut writer = begin(&tree.0, "bounds").unwrap();
+    let tree = TempDir::new("bounds");
+    let mut writer = begin(tree.path(), "bounds").unwrap();
     assert!(writer.stage(b"a\n", contract(3)).is_ok());
     assert!(writer.stage(b"bb\n", contract(3)).is_ok());
     assert!(matches!(
@@ -219,9 +197,9 @@ fn every_interrupt_phase_rolls_back_only_the_owned_staging_tree() {
         InterruptAfter::DirectorySynced,
     ];
     for phase in phases {
-        let tree = TempTree::new("interrupt");
+        let tree = TempDir::new("interrupt");
         let writer = StagedWriter::begin_with_options(
-            &tree.0,
+            tree.path(),
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             WriterOptions {
                 nonce: format!("interrupt-{phase:?}"),
@@ -242,8 +220,8 @@ fn every_interrupt_phase_rolls_back_only_the_owned_staging_tree() {
                 drop(writer);
             }
         }
-        assert!(staging_children(&tree.0).is_empty(), "phase={phase:?}");
-        assert!(!tree.0.join("run-complete.json").exists());
+        assert!(staging_children(tree.path()).is_empty(), "phase={phase:?}");
+        assert!(!tree.path().join("run-complete.json").exists());
     }
 }
 
@@ -260,14 +238,14 @@ fn occupy_addressed_target_with_different_bytes(
 
 #[test]
 fn publish_race_with_different_content_reports_collision_and_preserves_competitor() {
-    let tree = TempTree::new("publish-race-different");
+    let tree = TempDir::new("publish-race-different");
     let nonce = "publish-race-different";
-    let target = tree.0.join(format!(
+    let target = tree.path().join(format!(
         ".staging/stage-{nonce}/objects/sha256/{}",
         "b6a98d9ce9a2d9149288fa3df42d377c3e42737afdcdaf714e33c0a100b51060"
     ));
     let mut writer = StagedWriter::begin_with_options(
-        &tree.0,
+        tree.path(),
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         WriterOptions {
             nonce: nonce.to_string(),
@@ -287,14 +265,14 @@ fn publish_race_with_different_content_reports_collision_and_preserves_competito
 
 #[test]
 fn publish_race_with_same_content_deduplicates_without_taking_delete_ownership() {
-    let tree = TempTree::new("publish-race-same");
+    let tree = TempDir::new("publish-race-same");
     let nonce = "publish-race-same";
-    let target = tree.0.join(format!(
+    let target = tree.path().join(format!(
         ".staging/stage-{nonce}/objects/sha256/{}",
         "b6a98d9ce9a2d9149288fa3df42d377c3e42737afdcdaf714e33c0a100b51060"
     ));
     let mut writer = StagedWriter::begin_with_options(
-        &tree.0,
+        tree.path(),
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         WriterOptions {
             nonce: nonce.to_string(),
@@ -318,12 +296,12 @@ fn publish_race_with_same_content_deduplicates_without_taking_delete_ownership()
 
 #[test]
 fn nonce_collision_is_never_treated_as_owned_or_deleted() {
-    let tree = TempTree::new("collision");
-    let collision = tree.0.join(".staging/stage-collision");
+    let tree = TempDir::new("collision");
+    let collision = tree.path().join(".staging/stage-collision");
     fs::create_dir_all(&collision).unwrap();
     fs::write(collision.join("competitor.txt"), b"keep me").unwrap();
 
-    let error = begin(&tree.0, "collision").unwrap_err();
+    let error = begin(tree.path(), "collision").unwrap_err();
     assert!(matches!(error, StageWriteError::Collision(_)));
     assert_eq!(error.kind(), "collision");
     assert_eq!(
@@ -334,10 +312,10 @@ fn nonce_collision_is_never_treated_as_owned_or_deleted() {
 
 #[test]
 fn root_links_and_out_of_scope_authorities_fail_closed() {
-    let tree = TempTree::new("boundary");
-    let real = tree.0.join("real");
+    let tree = TempDir::new("boundary");
+    let real = tree.path().join("real");
     fs::create_dir(&real).unwrap();
-    let link = tree.0.join("link");
+    let link = tree.path().join("link");
     #[cfg(unix)]
     let linked = std::os::unix::fs::symlink(&real, &link).is_ok();
     #[cfg(windows)]
@@ -349,7 +327,7 @@ fn root_links_and_out_of_scope_authorities_fail_closed() {
         ));
     }
 
-    let file_root = tree.0.join("not-a-directory");
+    let file_root = tree.path().join("not-a-directory");
     fs::write(&file_root, b"x").unwrap();
     assert!(matches!(
         begin(&file_root, "file-root"),

@@ -37,7 +37,7 @@ pub(crate) enum RunMode {
     Lite,
     #[default]
     Normal,
-    /// Normal plus the deeper understand sweep.
+    /// Normal with nothing narrowed; reserved for deeper sweeps.
     Full,
 }
 
@@ -135,7 +135,6 @@ pub(crate) struct SkipFlags {
     pub(crate) repowise: bool,
     pub(crate) sentrux: bool,
     pub(crate) open_spec: bool,
-    pub(crate) require_understand_graph: bool,
 }
 
 #[cfg(test)]

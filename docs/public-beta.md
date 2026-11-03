@@ -22,7 +22,6 @@ not redefine whether the core pipeline is usable.
 | Sentrux structural evidence | Core | Report real gate/check failure |
 | Transactional run commit and reports | Core | Fail closed; incomplete runs are not indexed |
 | Repowise semantic memory/docs | Optional, included by default | Record unavailable/skipped; `--no-require-repowise` relaxes the doctor check |
-| Understand Anything graph | Optional | Record `graph_missing` / manual action |
 | CodeNexus context | Optional compatibility adapter | Record note and continue |
 | Repomix pack | Optional | Record unavailable/skipped and continue |
 | Model assistance channels | Optional | Emit a request/dossier or explicit provider outcome |
@@ -154,7 +153,6 @@ providers remain in the orchestration plan and are used when available.
   v0.7.0-beta.2 onward ship windows/macos/linux ZIPs.
 - External providers can be unavailable, rate-limited, or unconfigured. Their
   outcomes are reported rather than rewritten as local success.
-- Understand Anything graph generation still depends on its host integration.
 - The beta does not promise the incubated CodeNexus Rust worker binary.
 
 ## Upgrade and rollback

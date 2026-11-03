@@ -46,10 +46,10 @@ non-completed, and only descendants are blocked while unrelated ready nodes cont
 
 The production facade is `code-intel run dag-coordinate --repo <repo> --out <staging>`. Its default
 normal graph computes the A02 snapshot and executes `repo.snapshot`, `doctor`, `inventory.rg`,
-`evidence.native-code`, `provider.graph-adapt`, `provider.sentrux-adapt`, and
+`evidence.native-code`, `provider.sentrux-adapt`, and
 `diagnosis.hospital` through A01 request/result envelopes. The snapshot feeds doctor, inventory,
-graph, and Sentrux only after A03 verification; verified inventory feeds Native Code Evidence, and
-verified graph/Sentrux evidence feeds Hospital. Doctor domain failure remains fail-closed but does
+and Sentrux only after A03 verification; verified inventory feeds Native Code Evidence, and
+verified Sentrux evidence feeds Hospital. Doctor domain failure remains fail-closed but does
 not stop the unrelated evidence branch. Request/result envelopes and diagnostic failure artifacts
 remain in staging for audit and recovery; every manifest artifact is A03-verified and snapshot-bound.
 

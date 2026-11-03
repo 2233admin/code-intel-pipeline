@@ -35,7 +35,8 @@ transcript 核对，碰过就不让进门禁。门禁失败时你在 `checks.md`
 3. 主检出的 `factory/config.json`（即 `<单子目录>/../../config.json`）：`signoff` 和 `protected_paths`。
 4. 审查后被续接时：消息里点名的 `round-<N>/findings.md`。里面只有 `factory/bin/job` 重跑证明命令、确实失败了的发现
    （confirmed），每条都要处理，也只处理它们：审查文件里没进 `findings.md` 的发现（重跑没失败，unconfirmed）和
-   `## 建议` 不处理。门禁失败被续接时：该轮的 `checks.md` 和 `checks.log`。
+   `## 建议` 不处理。每条带 `状态:`（新、重开、仍未修）；文末「已确认修复」是脚本在进门禁前重跑确认已修的，不用再动。
+   门禁失败被续接时：该轮的 `checks.md` 和 `checks.log`。
 5. 返工启动时：prompt 点名的 `rework-<k>.md`，加上已有的 `build.md` 和每个轮次目录，弄清来龙去脉。
 
 ## 构建
@@ -145,8 +146,8 @@ STATUS: READY
 
 ## Log
 ### Round <N>
-本轮做了什么。第二轮起，逐条列 `findings.md` 里的发现、你的处理，以及它的证明命令现在的结果：
-在工作树里重跑那条 `命令:`，写退出码和输出的关键一行（修好了应当退出 0）。
+本轮做了什么。第二轮起，逐条列 `findings.md` 里的发现和你的处理。修没修好不用自述：进门禁前脚本在你推送的 HEAD 上
+重跑每条的证明，仍成立的会拒绝进门禁并点名，交付前自己先跑一遍那条 `命令:` 更省事。
 ```
 
 只有这几种情况第一行改写 `STATUS: BLOCKED`，第二行写 `REASON: <值>`：与规格矛盾（`spec-conflict`；spec 自相矛盾时

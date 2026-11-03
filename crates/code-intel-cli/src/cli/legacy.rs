@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::{
-    artifacts, capability, capability_inventory, file_boundary, graph, orchestration,
+    artifacts, capability, capability_inventory, file_boundary, orchestration,
     project_orientation_benchmark, providers, routes, runtime_ci_evidence, sentrux,
     tool_effectiveness_benchmark,
 };
@@ -994,18 +994,6 @@ pub(super) fn cmd_doctor(args: &Args) -> Result<()> {
     artifacts::doctor(args.artifact_root.as_deref(), args.json)
 }
 
-pub(super) fn cmd_graph(args: &Args) -> Result<()> {
-    let repo = args.repo.as_ref().ok_or("graph requires --repo <path>")?;
-    let language = crate::language_pref::resolve(args.language.as_deref(), Some(repo));
-    graph::run(&graph::Options {
-        repo,
-        language: &language.language,
-        full: args.full,
-        write: args.write,
-        json: args.json,
-    })
-}
-
 pub(super) fn cmd_orchestrate(args: &Args) -> Result<()> {
     orchestration::run(&orchestration::Options {
         action: &args.action,
@@ -1026,7 +1014,7 @@ pub(super) fn cmd_provider(args: &Args) -> Result<()> {
         repo: args.repo.as_deref(),
         language: &language.language,
         full: args.full,
-        write: args.write || args.operation.as_deref().unwrap_or("") == "graph",
+        write: args.write,
         json: args.json,
     })
 }
@@ -1053,7 +1041,7 @@ pub(super) fn cmd_sentrux(args: &Args) -> Result<()> {
 /// `language set --language <zh|en> --repo <path> [--json]`: the one
 /// deliberate action that persists a project's default documentation
 /// language (issue #155). Distinct on purpose from an ordinary `--language`
-/// override on `graph`/`provider`, which must affect only that one run.
+/// override on `provider`, which must affect only that one run.
 pub(super) fn cmd_language(args: &Args) -> Result<()> {
     match args.operation.as_deref().unwrap_or_default() {
         "set" => cmd_language_set(args),
@@ -1100,7 +1088,6 @@ Quick start:
 
 Common commands:
   code-intel doctor --json
-  code-intel graph --repo <path> --write
   code-intel resume --repo <path> --json
   code-intel sentrux check <path>
   code-intel provider codegraph explore --repo <path> --query <text>
@@ -1122,12 +1109,10 @@ Commands:
   sentrux-normalize --steps <report.json> [--out <sentrux-failures.json>]
   sentrux-debt-register --failures <sentrux-failures.json> [--repo <path>] [--out <sentrux-debt-register.json>]
   doctor [--artifact-root <path>] [--json]
-  doctor bootstrap [--repo <alias>] [--repo-path <path>] [--config <pipeline.config.json>] [--platform auto|windows|macos|linux] [--no-require-repowise] [--require-understand] [--json]
+  doctor bootstrap [--repo <alias>] [--repo-path <path>] [--config <pipeline.config.json>] [--platform auto|windows|macos|linux] [--no-require-repowise] [--json]
   setup [--release-root <dir>] [--repo-path <path>] [--language zh|en] [--platform auto|windows|macos|linux] [--no-modify-path] [--no-skills] [--skip-doctor] [--json] (finish a Skill install: binary into bin, PATH/CODE_INTEL_HOME, Skill links, doctor; never installs system tools)
-  graph|understand --repo <path> [--language zh] [--full] [--write] [--json]
-  provider|providers [--action List|Plan|Validate|Invoke] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--language zh] [--write] [--json]
+  provider|providers [--action List|Plan|Validate|Invoke] [--provider repowise] [--operation <name>] [--repo <path>] [--language zh] [--write] [--json]
   provider repowise-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
-  provider graph-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
   provider sentrux-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
   provider session-adapt --repo <repo> --trace <mindwalk-trace.json> [--hotspots <sentrux-hotspots-or-dsm.json>] [--out <session-evidence.json>] [--working-tree-policy head_only|explicit_overlay]
   provider codenexus-adapt --request <native.json|-> --artifact-root <directory> --evaluated-at <unix-seconds> --max-age-seconds <seconds>
@@ -1136,7 +1121,7 @@ Commands:
   provider file-boundary --request <request.json> --out <result.json>
   provider runtime-ci-evidence --artifact-root <directory> --request <request.json> --out <summary.json>
   lint hardcoded-paths [<repo-path>] [--json]
-  route|routes [--action List|Plan|Validate] [--provider repowise|understand] [--operation <name>] [--repo <path>] [--json]
+  route|routes [--action List|Plan|Validate] [--provider repowise] [--operation <name>] [--repo <path>] [--json]
   sentrux <dsm|scan|health|check|gate|check_rules|gate_save|hotspots> <path> [--no-ratchet]
   sentrux capabilities [<path>] [--json] (read-only capability matrix audit)
     (--no-ratchet: `check` only, skip the .sentrux/baseline.json ratchet)
@@ -1211,14 +1196,14 @@ mod tests {
         assert!(HELP_TEXT.contains("Quick start"));
         assert!(HELP_TEXT.contains("code-intel ."));
         assert!(HELP_TEXT.contains("code-intel --help --all"));
-        assert!(!HELP_TEXT.contains("provider graph-adapt"));
-        assert!(FULL_HELP_TEXT.contains("provider graph-adapt"));
+        assert!(!HELP_TEXT.contains("provider sentrux-adapt"));
+        assert!(FULL_HELP_TEXT.contains("provider sentrux-adapt"));
     }
 
     #[test]
-    fn parse_args_preserves_graph_options() {
+    fn parse_args_preserves_provider_switches() {
         let args = parse_args(cli_args(&[
-            "graph",
+            "provider",
             "--repo",
             "D:/repo",
             "--language",
@@ -1227,9 +1212,9 @@ mod tests {
             "--full",
             "--json",
         ]))
-        .expect("graph CLI should parse");
+        .expect("provider CLI should parse");
 
-        assert_eq!(args.command, "graph");
+        assert_eq!(args.command, "provider");
         assert_eq!(args.repo, Some(PathBuf::from("D:/repo")));
         assert_eq!(args.language.as_deref(), Some("en"));
         assert!(args.write);
@@ -1244,9 +1229,9 @@ mod tests {
             "--action",
             "Invoke",
             "--provider",
-            "understand",
+            "repowise",
             "--operation",
-            "graph",
+            "index",
             "--repo",
             "D:/repo",
             "--language",
@@ -1258,8 +1243,8 @@ mod tests {
 
         assert_eq!(args.command, "provider");
         assert_eq!(args.action, "Invoke");
-        assert_eq!(args.provider.as_deref(), Some("understand"));
-        assert_eq!(args.operation.as_deref(), Some("graph"));
+        assert_eq!(args.provider.as_deref(), Some("repowise"));
+        assert_eq!(args.operation.as_deref(), Some("index"));
         assert_eq!(args.repo, Some(PathBuf::from("D:/repo")));
         assert_eq!(args.language.as_deref(), Some("zh"));
         assert!(args.write);
@@ -1294,8 +1279,8 @@ mod tests {
         // Issue #155: an unset `--language` must stay distinguishable from
         // an explicit one, or the precedence chain's flag tier would always
         // win with whatever this parser defaulted to.
-        let args = parse_args(cli_args(&["graph", "--repo", "D:/repo"]))
-            .expect("graph CLI should parse without --language");
+        let args = parse_args(cli_args(&["provider", "--repo", "D:/repo"]))
+            .expect("provider CLI should parse without --language");
 
         assert_eq!(args.language, None);
     }
@@ -1382,16 +1367,16 @@ mod tests {
 
     #[test]
     fn parse_args_rejects_unknown_argument() {
-        let err = parse_args(cli_args(&["graph", "--bogus"]))
+        let err = parse_args(cli_args(&["provider", "--bogus"]))
             .expect_err("unknown flag should fail")
             .to_string();
 
-        assert!(err.contains("unknown argument for graph: --bogus"));
+        assert!(err.contains("unknown argument for provider: --bogus"));
     }
 
     #[test]
     fn parse_args_rejects_missing_flag_value() {
-        let err = parse_args(cli_args(&["graph", "--repo"]))
+        let err = parse_args(cli_args(&["provider", "--repo"]))
             .expect_err("missing flag value should fail")
             .to_string();
 

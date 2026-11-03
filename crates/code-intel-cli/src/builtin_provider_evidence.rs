@@ -16,17 +16,13 @@ mod admissibility;
 // A local nested copy, not `crate::codenexus_adapter`: this file is compiled
 // standalone into several test binaries (via `capability_inventory.rs`'s own
 // `#[path]` tree) that never declare a crate-root `codenexus_adapter` module,
-// exactly like `graph_adapter`/`sentrux_adapter` below already have to be.
+// exactly like `sentrux_adapter` below already has to be.
 #[path = "codenexus_adapter.rs"]
 mod codenexus_adapter;
 #[path = "codenexus_lite.rs"]
 mod codenexus_lite;
 #[path = "codenexus_scratch.rs"]
 mod codenexus_scratch;
-#[path = "graph/mod.rs"]
-mod graph;
-#[path = "graph_adapter.rs"]
-mod graph_adapter;
 #[path = "sentrux_adapter.rs"]
 mod sentrux_adapter;
 #[path = "sentrux_analysis.rs"]
@@ -63,84 +59,6 @@ const CODENEXUS_EFFECTS: [&str; 4] = [
     "read_sentrux_artifacts",
     "write_compatibility_artifact",
 ];
-
-pub(super) fn graph_admission(
-    request: &Value,
-    inputs: &[VerifiedArtifact],
-    out: &Path,
-) -> Result<AdapterOutput, AdapterError> {
-    let repo = provider_repo(request, inputs, "provider.graph-adapt")?;
-    let lease =
-        snapshot::begin_consumption(repo, &request["snapshot"]).map_err(AdapterError::Contract)?;
-    let collected_at = now()?;
-    let document = graph::generate(repo, "zh", false, false)
-        .map_err(|error| AdapterError::Internal(format!("generate built-in graph: {error}")))?;
-    lease.verify_after(repo).map_err(AdapterError::Contract)?;
-    let observed_at = now()?.max(collected_at);
-    let identity = snapshot_identity(request)?;
-    let payload = json!({
-        "schema":"code-intel-evidence-payload.v1",
-        "data":{"architectureGraph":{
-            "schema":"code-intel-architecture-graph-evidence.v1",
-            "snapshotIdentity":identity,
-            "provider":{
-                "mode":"internal",
-                "implementationId":"architecture-graph.internal-rust",
-                "fallbackIdentity":Value::Null
-            },
-            "provenance":payload_provenance(request),
-            "completeness":"complete",
-            "graph":document
-        }}
-    });
-    fs::create_dir(out)
-        .map_err(|error| AdapterError::Io(format!("create graph provider output: {error}")))?;
-    let payload_bytes = serde_json::to_vec(&payload)
-        .map_err(|error| AdapterError::Internal(format!("serialize graph payload: {error}")))?;
-    fs::write(out.join("graph-payload.json"), &payload_bytes)
-        .map_err(|error| AdapterError::Io(format!("write graph payload: {error}")))?;
-    let native = json!({
-        "schema":"code-intel-graph-provider-native.v1",
-        "providerMode":"internal",
-        "status":"current",
-        "implementation":{
-            "id":"architecture-graph.internal-rust",
-            "version":"1.0.0",
-            "digest":sha256_hex(include_bytes!("graph/mod.rs"))
-        },
-        "sourceRevision":source_revision(request),
-        "expectedSnapshotIdentity":identity,
-        "sourceSnapshotIdentity":identity,
-        "collectedAt":collected_at,
-        "observedAt":observed_at,
-        "payload":payload_ref("graph-payload.json", &payload_bytes, identity),
-        "fallback":Value::Null
-    });
-    let adapter = graph_adapter::translate(&native, observed_at, MAX_AGE_SECONDS)
-        .map_err(AdapterError::Contract)?;
-    let admission = admissibility::validate_for_consumer(&adapter["evidence"]["request"], out)
-        .map_err(AdapterError::Contract)?;
-    graph_adapter::validate_admitted_payload(admission.payload(), &adapter)
-        .map_err(AdapterError::Contract)?;
-    if admission.result()["domainVerdict"] != "observed" {
-        return Err(AdapterError::Contract(
-            "built-in current graph was not admitted as observed evidence".into(),
-        ));
-    }
-    let mut output = publish_admission(
-        out,
-        "graph-admission.json",
-        admission.result().clone(),
-        &["repo_read", "local_write"],
-    )?;
-    output.artifacts.push(AdapterArtifact {
-        artifact_schema: "code-intel-evidence-payload.v1".into(),
-        artifact_type: "observed.evidence.payload".into(),
-        relative_path: "graph-payload.json".into(),
-        bytes: payload_bytes,
-    });
-    Ok(output)
-}
 
 pub(super) fn sentrux_admission(
     request: &Value,
@@ -705,22 +623,6 @@ fn snapshot_identity(request: &Value) -> Result<&str, AdapterError> {
 
 fn source_revision(request: &Value) -> &str {
     request["snapshot"]["head"].as_str().unwrap_or("unknown")
-}
-
-/// Provenance for the *content-addressed evidence payload*, which is not the
-/// same thing as the port/admission provenance.
-///
-/// The payload's bytes are its identity: `payload.sha256` is what the
-/// admission envelope references and what the publication layer dedupes on.
-/// Stamping the collection wall-clock into those bytes made every payload a
-/// fresh object on every run -- a 1.9 MB architecture-graph payload was
-/// re-published unchanged once per second-of-difference, and its digest churn
-/// propagated into `admissionIdentity`. So the payload carries only what the
-/// snapshot determines, and `observedAt` stays in the native result, the
-/// provider port and the A04 observation, which is where the freshness policy
-/// actually reads it (`admissibility::validate_sealed`).
-fn payload_provenance(request: &Value) -> Value {
-    json!({"sourceRevision": source_revision(request)})
 }
 
 fn now() -> Result<u64, AdapterError> {

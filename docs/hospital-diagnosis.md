@@ -11,13 +11,12 @@ The precedence is stable and evaluated from admitted machine evidence only:
 1. local tool failure
 2. provider quota exhausted
 3. architecture gate failure
-4. architecture graph missing
-5. authoritative structural evidence unavailable
-6. ungoverned structural scope
-7. known modernization debt
-8. clean snapshot
+4. authoritative structural evidence unavailable
+5. ungoverned structural scope
+6. known modernization debt
+7. clean snapshot
 
-Missing, partial, stale, rejected, or otherwise untrusted authoritative graph or
+Missing, partial, stale, rejected, or otherwise untrusted authoritative
 structural evidence fails closed to an `unknown` diagnosis. Native-code targets
 may enrich a treatment plan, but cannot turn unknown authority into a pass.
 

@@ -1,38 +1,14 @@
 mod common;
+
+use common::TempDir;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const PAYLOAD: &[u8] = br#"{"schema":"code-intel-evidence-payload.v1","data":{"files":3}}"#;
 const PAYLOAD_SHA: &str = "4669d0e1cbe1105783b6eeaaae64e00b392860c50c65cdb2cdd953fa8c2fdbca";
-static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-struct Temp(PathBuf);
-impl Temp {
-    fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-a04-{}-{nonce}-{}",
-            std::process::id(),
-            SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn good_request(provider: &str) -> Value {
     json!({
@@ -89,8 +65,8 @@ fn run_with_payload(root: &Path, request: &Value, payload: &[u8]) -> (i32, Value
 
 #[test]
 fn unknown_synthetic_provider_is_admitted_without_registry_branching() {
-    let temp = Temp::new();
-    let (exit, result, stderr) = run(&temp.0, &good_request("provider.never-registered"));
+    let temp = TempDir::new("evidence_admissibility");
+    let (exit, result, stderr) = run(temp.path(), &good_request("provider.never-registered"));
     assert_eq!(exit, 0, "{stderr}");
     assert_eq!(result["status"], "admitted");
     assert_eq!(result["domainVerdict"], "observed");
@@ -105,14 +81,14 @@ fn unknown_synthetic_provider_is_admitted_without_registry_branching() {
 #[test]
 fn snapshot_and_digest_mismatch_fail_closed_without_fact() {
     for mutation in ["snapshot", "digest"] {
-        let temp = Temp::new();
+        let temp = TempDir::new("evidence_admissibility");
         let mut request = good_request("synthetic");
         if mutation == "snapshot" {
             request["observation"]["consumedSnapshotIdentity"] = json!("c".repeat(64));
         } else {
             request["observation"]["payload"]["sha256"] = json!("d".repeat(64));
         }
-        let (exit, result, _) = run(&temp.0, &request);
+        let (exit, result, _) = run(temp.path(), &request);
         assert_eq!(exit, 65, "mutation={mutation}");
         assert_eq!(result["status"], "rejected");
         assert_eq!(result["domainVerdict"], "unknown");
@@ -158,10 +134,10 @@ fn stale_malformed_and_incomplete_as_complete_fail_closed() {
         }),
     ];
     for mutate in cases {
-        let temp = Temp::new();
+        let temp = TempDir::new("evidence_admissibility");
         let mut request = good_request("synthetic");
         mutate(&mut request);
-        let (exit, result, _) = run(&temp.0, &request);
+        let (exit, result, _) = run(temp.path(), &request);
         assert_eq!(exit, 65);
         assert_eq!(result["domainVerdict"], "unknown");
         assert_eq!(result["engineeringFacts"], json!([]));
@@ -170,12 +146,12 @@ fn stale_malformed_and_incomplete_as_complete_fail_closed() {
 
 #[test]
 fn freshness_boundaries_clock_types_and_replay_identity_are_deterministic() {
-    let temp = Temp::new();
+    let temp = TempDir::new("evidence_admissibility");
     let mut boundary = good_request("synthetic.clock");
     boundary["policy"]["evaluatedAt"] = json!(1_700_000_300u64);
-    let (exit, first, _) = run(&temp.0, &boundary);
+    let (exit, first, _) = run(temp.path(), &boundary);
     assert_eq!(exit, 0);
-    let (exit, replay, _) = run(&temp.0, &boundary);
+    let (exit, replay, _) = run(temp.path(), &boundary);
     assert_eq!(exit, 0);
     assert_eq!(first["admissionIdentity"], replay["admissionIdentity"]);
     assert_eq!(first["engineeringFacts"], json!([]));
@@ -187,10 +163,10 @@ fn freshness_boundaries_clock_types_and_replay_identity_are_deterministic() {
         Box::new(|v| v["policy"]["maxAgeSeconds"] = json!(0)),
     ];
     for mutate in cases {
-        let temp = Temp::new();
+        let temp = TempDir::new("evidence_admissibility");
         let mut request = good_request("synthetic.clock");
         mutate(&mut request);
-        let (exit, result, _) = run(&temp.0, &request);
+        let (exit, result, _) = run(temp.path(), &request);
         assert_eq!(exit, 65);
         assert_eq!(result["domainVerdict"], "unknown");
         assert_eq!(result["engineeringFacts"], json!([]));
@@ -235,7 +211,7 @@ fn completeness_and_failure_semantics_are_exhaustive() {
             "unknown",
         ),
     ] {
-        let temp = Temp::new();
+        let temp = TempDir::new("evidence_admissibility");
         let mut request = good_request("synthetic.failure");
         request["observation"]["completeness"] = json!(completeness);
         request["observation"]["claimedComplete"] = json!(claimed);
@@ -243,7 +219,7 @@ fn completeness_and_failure_semantics_are_exhaustive() {
             Some(m) => json!({"kind":kind,"message":m}),
             None => json!({"kind":kind}),
         };
-        let (exit, result, _) = run(&temp.0, &request);
+        let (exit, result, _) = run(temp.path(), &request);
         assert_eq!(exit, if accepted { 0 } else { 65 }, "{completeness}/{kind}");
         assert_eq!(result["domainVerdict"], verdict);
         assert_eq!(result["engineeringFacts"], json!([]));
@@ -252,12 +228,12 @@ fn completeness_and_failure_semantics_are_exhaustive() {
 
 #[test]
 fn payload_schema_is_checked_after_digest_verification() {
-    let temp = Temp::new();
+    let temp = TempDir::new("evidence_admissibility");
     let payload = br#"{"schema":"wrong.v1","data":{"files":3}}"#;
     let mut request = good_request("synthetic.payload");
     request["observation"]["payload"]["sha256"] =
         json!("cfa6e883b9208641a7de6bd394db4ff63c8950a8712593a704d192cdd71556b9");
-    let (exit, result, stderr) = run_with_payload(&temp.0, &request, payload);
+    let (exit, result, stderr) = run_with_payload(temp.path(), &request, payload);
     assert_eq!(exit, 65);
     assert!(stderr.contains("schema/data"), "{stderr}");
     assert_eq!(result["domainVerdict"], "unknown");
@@ -266,7 +242,7 @@ fn payload_schema_is_checked_after_digest_verification() {
 
 #[test]
 fn endpoint_identity_can_replace_source_revision_and_partial_is_preserved() {
-    let temp = Temp::new();
+    let temp = TempDir::new("evidence_admissibility");
     let mut request = good_request("synthetic.endpoint");
     request["observation"]["source"] =
         json!({"endpointIdentity":"https://fixture.invalid/api@etag-7"});
@@ -274,7 +250,7 @@ fn endpoint_identity_can_replace_source_revision_and_partial_is_preserved() {
     request["observation"]["claimedComplete"] = json!(false);
     request["observation"]["failure"] =
         json!({"kind":"domain_unknown","message":"coverage unavailable"});
-    let (exit, result, stderr) = run(&temp.0, &request);
+    let (exit, result, stderr) = run(temp.path(), &request);
     assert_eq!(exit, 0, "{stderr}");
     assert_eq!(result["status"], "admitted");
     assert_eq!(result["evidence"]["completeness"], "partial");
@@ -289,13 +265,13 @@ fn checked_in_provider_protocol_fixture_is_executable() {
         .join("tests/fixtures/evidence-admissibility/good");
     let request: Value =
         serde_json::from_slice(&fs::read(fixture.join("request.json")).unwrap()).unwrap();
-    let request_copy = Temp::new();
+    let request_copy = TempDir::new("evidence_admissibility");
     fs::copy(
         fixture.join("payload.json"),
-        request_copy.0.join("payload.json"),
+        request_copy.path().join("payload.json"),
     )
     .unwrap();
-    let request_path = request_copy.0.join("request.json");
+    let request_path = request_copy.path().join("request.json");
     fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
     let output = common::cli()
         .args([
@@ -304,7 +280,7 @@ fn checked_in_provider_protocol_fixture_is_executable() {
             "--request",
             request_path.to_str().unwrap(),
             "--artifact-root",
-            request_copy.0.to_str().unwrap(),
+            request_copy.path().to_str().unwrap(),
         ])
         .output()
         .unwrap();
@@ -318,9 +294,9 @@ fn checked_in_provider_protocol_fixture_is_executable() {
 
 #[test]
 fn duplicate_key_malformed_request_returns_unknown_without_fact() {
-    let temp = Temp::new();
-    fs::write(temp.0.join("payload.json"), PAYLOAD).unwrap();
-    let request_path = temp.0.join("request.json");
+    let temp = TempDir::new("evidence_admissibility");
+    fs::write(temp.path().join("payload.json"), PAYLOAD).unwrap();
+    let request_path = temp.path().join("request.json");
     fs::write(
         &request_path,
         br#"{"schema":"code-intel-evidence-admissibility-request.v1","schema":"duplicate"}"#,
@@ -333,7 +309,7 @@ fn duplicate_key_malformed_request_returns_unknown_without_fact() {
             "--request",
             request_path.to_str().unwrap(),
             "--artifact-root",
-            temp.0.to_str().unwrap(),
+            temp.path().to_str().unwrap(),
         ])
         .output()
         .unwrap();

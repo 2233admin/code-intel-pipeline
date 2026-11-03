@@ -4,37 +4,23 @@
 //!
 //! Two `run dag-coordinate` executions over one unchanged tree used to emit
 //! two different payload digests, because the provider stamped its collection
-//! wall-clock into the hashed bytes (`provenance.observedAt`, and
-//! `graph.generatedAtUnix` inside the embedded architecture graph). A 1.9 MB
-//! graph payload was re-published on every run, and the digest churn
-//! propagated into `admissionIdentity`.
+//! wall-clock into the hashed bytes (`provenance.observedAt`). A payload was
+//! re-published on every run, and the digest churn propagated into
+//! `admissionIdentity`.
 //!
 //! Freshness is not lost: `observedAt` still rides in the native result, the
 //! provider port and the A04 observation, which is where
 //! `admissibility::validate_sealed` reads it.
 mod common;
 
+use common::TempDir;
+
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use serde_json::Value;
-
-fn temp_dir() -> PathBuf {
-    static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let sequence = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!(
-        "code-intel-f3-payload-{}-{nonce}-{sequence}",
-        std::process::id()
-    ))
-}
 
 fn doctor_tool_fixture(root: &Path) -> std::ffi::OsString {
     let bin = root.join("doctor-tools");
@@ -51,11 +37,8 @@ fn doctor_tool_fixture(root: &Path) -> std::ffi::OsString {
     }
     #[cfg(not(windows))]
     {
-        use std::os::unix::fs::PermissionsExt;
         for name in ["python", "repowise"] {
-            let path = bin.join(name);
-            fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            common::write_executable(&bin, name, "#!/bin/sh\nexit 0\n");
         }
     }
     // Stub only doctor Python/Repowise; keep rg/git and Sentrux real.
@@ -117,7 +100,8 @@ fn published_digest(manifest: &Value, node: &str, path: &str) -> String {
 
 #[test]
 fn evidence_payloads_are_byte_identical_across_runs_of_one_unchanged_tree() {
-    let root = temp_dir();
+    let root_dir = TempDir::new("evidence_payload_determinism");
+    let root = root_dir.path();
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(repo.join("README.md"), "fixture\n").unwrap();
@@ -145,10 +129,7 @@ fn evidence_payloads_are_byte_identical_across_runs_of_one_unchanged_tree() {
     let second_out = root.join("run-2");
     let second = dag_run(&repo, &second_out, &doctor_tools);
 
-    for (node, relative) in [
-        ("evidence.graph", "evidence.graph/graph-payload.json"),
-        ("evidence.sentrux", "evidence.sentrux/sentrux-payload.json"),
-    ] {
+    for (node, relative) in [("evidence.sentrux", "evidence.sentrux/sentrux-payload.json")] {
         let first_bytes = fs::read(first_out.join(relative)).unwrap();
         let second_bytes = fs::read(second_out.join(relative)).unwrap();
         let first_payload: Value = serde_json::from_slice(&first_bytes).unwrap();
@@ -174,6 +155,4 @@ fn evidence_payloads_are_byte_identical_across_runs_of_one_unchanged_tree() {
     // The snapshot really was identical: without this the assertions above
     // would be vacuous if the runs had somehow scanned different trees.
     assert_eq!(first["snapshotIdentity"], second["snapshotIdentity"]);
-
-    let _ = fs::remove_dir_all(root);
 }

@@ -1,7 +1,8 @@
+mod common;
+
+use common::TempDir;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::Path;
 
 use serde_json::{json, Value};
 
@@ -28,29 +29,6 @@ use run_commit::{CommitOptions, PublicationPhase};
 use staged_artifact::{ArtifactWriteContract, StagedWriter};
 
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-static SEQ: AtomicU64 = AtomicU64::new(0);
-
-struct Temp(PathBuf);
-impl Temp {
-    fn new(label: &str) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-a07-{label}-{}-{nonce}-{}",
-            std::process::id(),
-            SEQ.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn inventory_contract() -> ArtifactWriteContract {
     ArtifactWriteContract {
@@ -98,17 +76,21 @@ fn staged(root: &Path) -> (staged_artifact::StagedArtifactSet, Value) {
 
 #[test]
 fn staged_run_is_promoted_and_completion_marker_is_published_last() {
-    let tree = Temp::new("complete");
-    let (set, manifest_ref) = staged(&tree.0);
+    let tree = TempDir::new("complete");
+    let (set, manifest_ref) = staged(tree.path());
     let result =
         run_commit::commit(set, &manifest_ref, "run-001", CommitOptions::default()).unwrap();
-    assert_eq!(result.final_path, tree.0.join("run-001"));
+    assert_eq!(result.final_path, tree.path().join("run-001"));
     assert_eq!(result.marker["runIdentity"], "dag-v1:aabb");
     assert_eq!(result.marker["snapshotIdentity"], SNAPSHOT);
     assert_eq!(result.marker["manifest"]["sha256"], manifest_ref["sha256"]);
     assert!(result.final_path.join("run-complete.json").is_file());
     assert_eq!(run_commit::classify(&result.final_path), "committed");
-    assert!(!tree.0.join("run-001").join("artifact-index.json").exists());
+    assert!(!tree
+        .path()
+        .join("run-001")
+        .join("artifact-index.json")
+        .exists());
 }
 
 #[test]
@@ -122,8 +104,8 @@ fn every_publication_phase_is_fail_closed_and_post_promotion_is_recoverable() {
         PublicationPhase::PostMarkerVerify,
         PublicationPhase::Rollback,
     ] {
-        let tree = Temp::new(&format!("phase-{phase:?}"));
-        let (set, manifest_ref) = staged(&tree.0);
+        let tree = TempDir::new(&format!("phase-{phase:?}"));
+        let (set, manifest_ref) = staged(tree.path());
         let error = run_commit::commit(
             set,
             &manifest_ref,
@@ -135,7 +117,7 @@ fn every_publication_phase_is_fail_closed_and_post_promotion_is_recoverable() {
         )
         .unwrap_err();
         assert!(matches!(error, run_commit::CommitError::Interrupted(value) if value == phase));
-        let final_path = tree.0.join("run");
+        let final_path = tree.path().join("run");
         assert!(!final_path.join("run-complete.json").exists(), "{phase:?}");
         if phase == PublicationPhase::MarkerPublish {
             assert!(
@@ -167,15 +149,15 @@ fn every_publication_phase_is_fail_closed_and_post_promotion_is_recoverable() {
 
 #[test]
 fn prevalidation_rechecks_digest_schema_snapshot_and_manifest_completeness() {
-    let tree = Temp::new("tamper");
-    let (set, manifest_ref) = staged(&tree.0);
+    let tree = TempDir::new("tamper");
+    let (set, manifest_ref) = staged(tree.path());
     fs::write(
         set.path().join(manifest_ref["path"].as_str().unwrap()),
         b"{}\n",
     )
     .unwrap();
     assert!(run_commit::commit(set, &manifest_ref, "run", CommitOptions::default()).is_err());
-    assert!(!tree.0.join("run").exists());
+    assert!(!tree.path().join("run").exists());
 
     let invalid = json!({"schema":"code-intel-run-manifest.v1","runIdentity":"dag-v1:aabb","snapshotIdentity":SNAPSHOT,"outcome":"incomplete","nodes":{"x":{"status":"running"}}});
     assert!(
@@ -185,19 +167,19 @@ fn prevalidation_rechecks_digest_schema_snapshot_and_manifest_completeness() {
 
 #[test]
 fn competing_destination_and_marker_are_preserved() {
-    let tree = Temp::new("competitor-dir");
-    let competitor = tree.0.join("run");
+    let tree = TempDir::new("competitor-dir");
+    let competitor = tree.path().join("run");
     fs::create_dir(&competitor).unwrap();
     fs::write(competitor.join("sentinel.txt"), b"competitor").unwrap();
-    let (set, manifest_ref) = staged(&tree.0);
+    let (set, manifest_ref) = staged(tree.path());
     assert!(run_commit::commit(set, &manifest_ref, "run", CommitOptions::default()).is_err());
     assert_eq!(
         fs::read(competitor.join("sentinel.txt")).unwrap(),
         b"competitor"
     );
 
-    let tree = Temp::new("competitor-marker");
-    let (set, manifest_ref) = staged(&tree.0);
+    let tree = TempDir::new("competitor-marker");
+    let (set, manifest_ref) = staged(tree.path());
     let _ = run_commit::commit(
         set,
         &manifest_ref,
@@ -207,23 +189,26 @@ fn competing_destination_and_marker_are_preserved() {
             ..CommitOptions::default()
         },
     );
-    let marker = tree.0.join("run/run-complete.json");
+    let marker = tree.path().join("run/run-complete.json");
     fs::write(&marker, b"competitor-marker").unwrap();
-    assert!(
-        run_commit::recover(&tree.0.join("run"), &manifest_ref, CommitOptions::default()).is_err()
-    );
+    assert!(run_commit::recover(
+        &tree.path().join("run"),
+        &manifest_ref,
+        CommitOptions::default()
+    )
+    .is_err());
     assert_eq!(fs::read(marker).unwrap(), b"competitor-marker");
 }
 
 #[test]
 fn post_publish_sync_and_read_failures_roll_back_owned_marker() {
     for read_failure in [false, true] {
-        let tree = Temp::new(if read_failure {
+        let tree = TempDir::new(if read_failure {
             "read-failure"
         } else {
             "sync-failure"
         });
-        let (set, manifest_ref) = staged(&tree.0);
+        let (set, manifest_ref) = staged(tree.path());
         let result = run_commit::commit(
             set,
             &manifest_ref,
@@ -235,7 +220,7 @@ fn post_publish_sync_and_read_failures_roll_back_owned_marker() {
             },
         );
         assert!(result.is_err());
-        let final_path = tree.0.join("run");
+        let final_path = tree.path().join("run");
         assert!(!final_path.join("run-complete.json").exists());
         assert_eq!(run_commit::classify(&final_path), "legacy-uncommitted");
     }
@@ -243,8 +228,8 @@ fn post_publish_sync_and_read_failures_roll_back_owned_marker() {
 
 #[test]
 fn legacy_timestamp_run_is_readable_but_uncommitted() {
-    let tree = Temp::new("legacy");
-    let legacy = tree.0.join("20260713-120000");
+    let tree = TempDir::new("legacy");
+    let legacy = tree.path().join("20260713-120000");
     fs::create_dir(&legacy).unwrap();
     fs::write(legacy.join("report.json"), b"{}\n").unwrap();
     assert_eq!(run_commit::classify(&legacy), "legacy-uncommitted");
@@ -253,15 +238,15 @@ fn legacy_timestamp_run_is_readable_but_uncommitted() {
 
 #[test]
 fn production_run_commit_cli_restages_a09_refs_through_a06_and_publishes() {
-    let tree = Temp::new("cli");
-    let source_authority = tree.0.join("source-authority");
-    let publication_authority = tree.0.join("publication-authority");
+    let tree = TempDir::new("cli");
+    let source_authority = tree.path().join("source-authority");
+    let publication_authority = tree.path().join("publication-authority");
     fs::create_dir(&source_authority).unwrap();
     fs::create_dir(&publication_authority).unwrap();
     let (set, manifest_ref) = staged(&source_authority);
     let source =
         run_commit::commit(set, &manifest_ref, "source", CommitOptions::default()).unwrap();
-    let manifest_ref_path = tree.0.join("manifest-ref.json");
+    let manifest_ref_path = tree.path().join("manifest-ref.json");
     fs::write(
         &manifest_ref_path,
         serde_json::to_vec(&manifest_ref).unwrap(),
@@ -287,9 +272,9 @@ fn production_run_commit_cli_restages_a09_refs_through_a06_and_publishes() {
 
 #[test]
 fn cli_publication_preserves_the_callers_manifest_bytes_and_digest() {
-    let tree = Temp::new("cli-verbatim");
-    let source_root = tree.0.join("source");
-    let publication_authority = tree.0.join("publication-authority");
+    let tree = TempDir::new("cli-verbatim");
+    let source_root = tree.path().join("source");
+    let publication_authority = tree.path().join("publication-authority");
     let objects = source_root.join("objects").join("sha256");
     fs::create_dir_all(&objects).unwrap();
     fs::create_dir(&publication_authority).unwrap();
@@ -327,7 +312,7 @@ fn cli_publication_preserves_the_callers_manifest_bytes_and_digest() {
         "sha256":manifest_digest,
         "consumedSnapshotIdentity":SNAPSHOT
     });
-    let manifest_ref_path = tree.0.join("manifest-ref.json");
+    let manifest_ref_path = tree.path().join("manifest-ref.json");
     fs::write(
         &manifest_ref_path,
         serde_json::to_vec(&manifest_ref).unwrap(),

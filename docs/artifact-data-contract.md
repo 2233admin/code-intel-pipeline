@@ -69,7 +69,7 @@ Tool evidence:
   snapshot-bound session-review artifact with advisory-only authority; raw traces, prompts, event
   summaries, user-message marks, absolute paths, and outside-path values are not published.
 - Optional `competitive-intelligence-request.json`, `competitive-intelligence-prompt.md`, and `competitive-score.json`. These are advisory market/product intelligence from the external `compete` workflow; they have no hospital, gate, or discharge authority.
-- Repowise Understand Anything outputs referenced `report.json`
+- Repowise outputs referenced `report.json`
 - Greenfield workspace outputs, when generated: `greenfield-workspace/output/specs`, `greenfield-workspace/output/test-vectors`, `greenfield-workspace/output/validation`, `greenfield-workspace/provenance`
 
 ## Native Code Evidence Canonical Order

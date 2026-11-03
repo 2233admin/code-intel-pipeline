@@ -1,9 +1,10 @@
 mod common;
+
+use common::TempDir;
 #[path = "support/schema.rs"]
 mod schema_support;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::Path;
 
 use serde_json::{json, Value};
 
@@ -24,27 +25,6 @@ mod stable_artifact;
 
 const SNAPSHOT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-struct Temp(PathBuf);
-
-impl Temp {
-    fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path =
-            std::env::temp_dir().join(format!("code-intel-d01-{}-{nonce}", std::process::id()));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
 fn write_ref(root: &Path, path: &str, schema: &str, kind: &str, bytes: &[u8]) -> Value {
     fs::write(root.join(path), bytes).unwrap();
     json!({
@@ -59,7 +39,7 @@ fn write_ref(root: &Path, path: &str, schema: &str, kind: &str, bytes: &[u8]) ->
 
 #[test]
 fn fixture_composes_first_actionable_view_without_fabricating_purpose() {
-    let temp = Temp::new();
+    let temp = TempDir::new("project_orientation");
     let fixture: Value = serde_json::from_str(include_str!(
         "fixtures/project-orientation/missing-purpose.json"
     ))
@@ -77,14 +57,14 @@ fn fixture_composes_first_actionable_view_without_fabricating_purpose() {
         .expect("D01 must be registered as a real A01 atom");
     let bytes = |value: &Value| serde_json::to_vec(value).unwrap();
     let snapshot_ref = write_ref(
-        &temp.0,
+        temp.path(),
         "snapshot.json",
         "code-intel-repository-snapshot.v1",
         "repository.snapshot",
         &bytes(&fixture["snapshot"]),
     );
     let inventory_ref = write_ref(
-        &temp.0,
+        temp.path(),
         "files.txt",
         "code-intel-file-inventory.v1",
         "inventory.files",
@@ -97,28 +77,28 @@ fn fixture_composes_first_actionable_view_without_fabricating_purpose() {
         snapshot_ref,
         inventory_ref,
         write_ref(
-            &temp.0,
+            temp.path(),
             "survival.json",
             "code-intel-repository-survival-scan-result.v1",
             "repository.survival-scan",
             &bytes(&survival),
         ),
         write_ref(
-            &temp.0,
+            temp.path(),
             "native-files.json",
             "code-evidence-files.v1",
             "code_evidence.files",
             &bytes(&fixture["nativeFiles"]),
         ),
         write_ref(
-            &temp.0,
+            temp.path(),
             "native-coverage.json",
             "code-evidence-coverage.v1",
             "code_evidence.coverage",
             &bytes(&fixture["nativeCoverage"]),
         ),
         write_ref(
-            &temp.0,
+            temp.path(),
             "native-ranking.json",
             "agent-code-slice-ranking.v1",
             "code_evidence.agent_slice",
@@ -135,16 +115,16 @@ fn fixture_composes_first_actionable_view_without_fabricating_purpose() {
         "inputs":inputs,
         "effectPolicy":{"allowedEffects":["local_write"]}
     });
-    let request_path = temp.0.join("request.json");
+    let request_path = temp.path().join("request.json");
     fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
-    let out = temp.0.join("out");
+    let out = temp.path().join("out");
     let output = common::cli()
         .args(["capability", "exec", "project.orientation", "--request"])
         .arg(&request_path)
         .arg("--out")
         .arg(&out)
         .arg("--artifact-root")
-        .arg(&temp.0)
+        .arg(temp.path())
         .output()
         .unwrap();
     assert_eq!(
@@ -241,7 +221,7 @@ fn fixture_composes_first_actionable_view_without_fabricating_purpose() {
     let mut incoherent_survival = survival;
     incoherent_survival["repository"]["sourceSha256"] = json!("9".repeat(64));
     let incoherent_ref = write_ref(
-        &temp.0,
+        temp.path(),
         "incoherent-survival.json",
         "code-intel-repository-survival-scan-result.v1",
         "repository.survival-scan",
@@ -255,20 +235,20 @@ fn fixture_composes_first_actionable_view_without_fabricating_purpose() {
         .find(|input| input["type"] == "repository.survival-scan")
         .unwrap();
     *survival_input = incoherent_ref;
-    let incoherent_request_path = temp.0.join("incoherent-request.json");
+    let incoherent_request_path = temp.path().join("incoherent-request.json");
     fs::write(
         &incoherent_request_path,
         serde_json::to_vec(&incoherent_request).unwrap(),
     )
     .unwrap();
-    let incoherent_out = temp.0.join("incoherent-out");
+    let incoherent_out = temp.path().join("incoherent-out");
     let rejected = common::cli()
         .args(["capability", "exec", "project.orientation", "--request"])
         .arg(&incoherent_request_path)
         .arg("--out")
         .arg(&incoherent_out)
         .arg("--artifact-root")
-        .arg(&temp.0)
+        .arg(temp.path())
         .output()
         .unwrap();
     assert_eq!(rejected.status.code(), Some(65));

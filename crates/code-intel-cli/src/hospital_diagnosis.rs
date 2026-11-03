@@ -16,8 +16,6 @@ mod report_quality;
 struct Signals {
     local_tool_failure: bool,
     provider_quota: bool,
-    graph_seen: bool,
-    graph_current: bool,
     /// Whether the run was configured to produce structural evidence at all.
     ///
     /// Absence and exclusion are different facts. A run that was asked for the
@@ -49,8 +47,6 @@ impl Default for Signals {
         Self {
             local_tool_failure: false,
             provider_quota: false,
-            graph_seen: false,
-            graph_current: false,
             // Fail closed: unless a run explicitly declares the structural
             // stage out of scope, its absence stays an evidence gap.
             structural_in_scope: true,
@@ -229,18 +225,6 @@ fn consume_admission(input: &VerifiedArtifact, signals: &mut Signals) -> Result<
     }
     signals.provider_quota |= matches!(provider, "repowise.docs" | "repowise.index")
         && (failure == "provider_unavailable" || data["repowise"]["status"] == "quota");
-    if let Some(graph) = data.get("architectureGraph") {
-        require_provider_modality(provider, "architecture_graph")?;
-        if signals.graph_seen {
-            return Err(AdapterError::Contract(
-                "duplicate admitted authoritative modality: architecture_graph".into(),
-            ));
-        }
-        signals.graph_seen = true;
-        signals.graph_current = verdict == "observed"
-            && graph["completeness"] == "complete"
-            && graph["graph"].is_object();
-    }
     if let Some(structural) = data.get("structuralEvidence") {
         require_provider_modality(provider, "structural_evidence")?;
         if signals.structural_seen {
@@ -323,7 +307,6 @@ fn consume_admission(input: &VerifiedArtifact, signals: &mut Signals) -> Result<
 fn require_provider_modality(provider: &str, modality: &str) -> Result<(), AdapterError> {
     let matches = match modality {
         "repowise" => matches!(provider, "repowise.docs" | "repowise.index"),
-        "architecture_graph" => provider == "architecture-graph.internal",
         "structural_evidence" => provider == "structural-evidence.sentrux",
         "native_code" => provider == "native-code-evidence",
         _ => false,
@@ -361,14 +344,6 @@ fn diagnose(request: &Value, s: &Signals, audit: Option<&AuditReport>) -> Value 
             "govern",
             "admit",
             "fail",
-        )
-    } else if !s.graph_seen || !s.graph_current {
-        (
-            "unknown",
-            "architecture graph missing",
-            "diagnose",
-            "admit",
-            "unknown",
         )
     } else if s.structural_in_scope && (!s.structural_seen || !s.structural_trusted) {
         (
@@ -465,7 +440,7 @@ fn diagnose(request: &Value, s: &Signals, audit: Option<&AuditReport>) -> Value 
         },
         "state_machine":{"schema":"code-intel-hospital-state-machine.v1","current_state":next_protocol,"disposition":disposition,"next_protocol":next_protocol,"states":["triage","diagnose","govern","surgery_plan","post_op","discharge_ready"],"transitions":[]},
         "modalities":evidence,
-        "policies":{"precedence":["local tool failure","provider quota exhausted","architecture gate failure","architecture graph missing","authoritative structural evidence unavailable","ungoverned structural scope","known modernization debt","clean snapshot"],"scope":{"structuralEvidence":if s.structural_in_scope {"in_scope"} else {"out_of_scope"}}},
+        "policies":{"precedence":["local tool failure","provider quota exhausted","architecture gate failure","authoritative structural evidence unavailable","ungoverned structural scope","known modernization debt","clean snapshot"],"scope":{"structuralEvidence":if s.structural_in_scope {"in_scope"} else {"out_of_scope"}}},
         "report_quality":{"overall_score":null,"diagnostic_score":null,"governance_score":null,"dimensions":[]},
         "diagnosis":{"findings":[diagnosis],"impression":diagnosis,"risk":status,"evidence":evidence},
         "treatment":{"plan":treatment,"follow_up":["Rerun diagnosis.hospital with current admitted evidence."]},
@@ -492,7 +467,6 @@ fn admission_reason(diagnosis: &str) -> &'static str {
         "local tool failure" => "Local execution failed before diagnosis could be trusted.",
         "provider quota exhausted" => "Provider quota prevented complete evidence collection.",
         "architecture gate failure" => "Admitted authoritative structural rules contain a failure.",
-        "architecture graph missing" => "A current admitted architecture graph is unavailable.",
         "authoritative structural evidence unavailable" => {
             "Required authoritative structural evidence is missing or unknown."
         }
@@ -509,7 +483,6 @@ fn treatment(diagnosis: &str, target: Option<&str>, failing: &[Value]) -> Vec<St
         "local tool failure" => "Fix local tool errors before interpreting architecture signals.".into(),
         "provider quota exhausted" => "Restore provider quota or use a complete admitted local evidence path before interpreting the result.".into(),
         "architecture gate failure" => "Repair the first failing admitted structural rule without weakening its threshold.".into(),
-        "architecture graph missing" => "Produce and admit a current-snapshot architecture graph.".into(),
         "authoritative structural evidence unavailable" => "Produce and admit complete authoritative structural evidence.".into(),
         "ungoverned structural scope" => "Add and admit structural rules for the selected scope.".into(),
         "known modernization debt" => "Repair the first admitted modernization target and verify behavior.".into(),
@@ -641,8 +614,6 @@ mod audit_wiring_tests {
 
     fn clean_signals() -> Signals {
         Signals {
-            graph_seen: true,
-            graph_current: true,
             structural_seen: true,
             structural_trusted: true,
             structural_rules: true,
@@ -677,8 +648,6 @@ mod audit_wiring_tests {
     #[test]
     fn structural_evidence_out_of_scope_reaches_a_verdict_instead_of_unknown() {
         let signals = Signals {
-            graph_seen: true,
-            graph_current: true,
             structural_in_scope: false,
             ..Signals::default()
         };
@@ -696,8 +665,6 @@ mod audit_wiring_tests {
     #[test]
     fn structural_evidence_in_scope_but_absent_stays_unknown() {
         let signals = Signals {
-            graph_seen: true,
-            graph_current: true,
             ..Signals::default()
         };
         let machine = diagnose(&sample_request(), &signals, None);
@@ -719,8 +686,6 @@ mod audit_wiring_tests {
     #[test]
     fn an_out_of_scope_claim_cannot_launder_an_admitted_structural_failure() {
         let signals = Signals {
-            graph_seen: true,
-            graph_current: true,
             structural_in_scope: false,
             structural_seen: true,
             structural_trusted: true,
@@ -762,22 +727,6 @@ mod audit_wiring_tests {
             assert_eq!(machine["domainVerdict"], "unknown", "{label}");
             assert_eq!(machine["diagnosis"]["impression"], label);
         }
-    }
-
-    /// A missing architecture graph outranks the structural scope question,
-    /// so lite runs still cannot certify without one.
-    #[test]
-    fn out_of_scope_does_not_excuse_a_missing_architecture_graph() {
-        let signals = Signals {
-            structural_in_scope: false,
-            ..Signals::default()
-        };
-        let machine = diagnose(&sample_request(), &signals, None);
-        assert_eq!(machine["domainVerdict"], "unknown");
-        assert_eq!(
-            machine["diagnosis"]["impression"],
-            "architecture graph missing"
-        );
     }
 
     #[test]

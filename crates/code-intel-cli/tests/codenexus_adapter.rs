@@ -1,10 +1,9 @@
 mod common;
+
+use common::TempDir;
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::Path;
 
 use serde_json::{json, Value};
 
@@ -31,31 +30,6 @@ const CURRENT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 const WRONG: &str = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
 const IMPLEMENTATION_DIGEST: &str =
     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-struct Temp(PathBuf);
-
-impl Temp {
-    fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-b04-{}-{nonce}-{}",
-            std::process::id(),
-            SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-}
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn descriptor(name: &str) -> Value {
     let text = match name {
@@ -181,17 +155,17 @@ fn route(root: &Path, native: &Value) -> (i32, Vec<u8>, String) {
 
 #[test]
 fn full_and_lite_share_one_port_shape_but_keep_distinct_provenance() {
-    let full_root = Temp::new();
-    let lite_root = Temp::new();
+    let full_root = TempDir::new("codenexus_adapter");
+    let lite_root = TempDir::new("codenexus_adapter");
     let full_native = build_case(
-        &full_root.0,
+        full_root.path(),
         &descriptor("full-current"),
         CURRENT,
         CURRENT,
         1_950,
     );
     let lite_native = build_case(
-        &lite_root.0,
+        lite_root.path(),
         &descriptor("lite-current"),
         CURRENT,
         CURRENT,
@@ -217,7 +191,7 @@ fn full_and_lite_share_one_port_shape_but_keep_distinct_provenance() {
     assert_eq!(full["port"]["boundary"]["storageOwnership"], "provider");
     assert_eq!(lite["port"]["boundary"]["storageOwnership"], "provider");
 
-    for (root, adapter) in [(&full_root.0, &full), (&lite_root.0, &lite)] {
+    for (root, adapter) in [(full_root.path(), &full), (lite_root.path(), &lite)] {
         let admitted =
             admissibility::validate_for_consumer(&adapter["evidence"]["request"], root).unwrap();
         assert_eq!(admitted.result()["domainVerdict"], "observed");
@@ -227,15 +201,21 @@ fn full_and_lite_share_one_port_shape_but_keep_distinct_provenance() {
 
 #[test]
 fn unavailable_is_partial_provider_unavailable_and_never_fabricates_facts() {
-    let root = Temp::new();
-    let native = build_case(&root.0, &descriptor("unavailable"), CURRENT, CURRENT, 1_950);
+    let root = TempDir::new("codenexus_adapter");
+    let native = build_case(
+        root.path(),
+        &descriptor("unavailable"),
+        CURRENT,
+        CURRENT,
+        1_950,
+    );
     let adapter = codenexus_adapter::translate(&native, 2_000, 100).unwrap();
     assert_eq!(adapter["port"]["status"], "unavailable");
     assert_eq!(adapter["port"]["completeness"], "partial");
     assert_eq!(adapter["port"]["failureKind"], "provider_unavailable");
     assert_eq!(adapter["port"]["perceptionUsable"], false);
     let admitted =
-        admissibility::validate_for_consumer(&adapter["evidence"]["request"], &root.0).unwrap();
+        admissibility::validate_for_consumer(&adapter["evidence"]["request"], root.path()).unwrap();
     assert_eq!(admitted.result()["domainVerdict"], "unknown");
     assert_eq!(admitted.result()["engineeringFacts"], json!([]));
     assert_eq!(
@@ -246,9 +226,9 @@ fn unavailable_is_partial_provider_unavailable_and_never_fabricates_facts() {
 
 #[test]
 fn snapshot_mismatch_and_stale_observation_fail_closed_in_a04() {
-    let wrong_root = Temp::new();
+    let wrong_root = TempDir::new("codenexus_adapter");
     let wrong_native = build_case(
-        &wrong_root.0,
+        wrong_root.path(),
         &descriptor("full-current"),
         CURRENT,
         WRONG,
@@ -256,16 +236,18 @@ fn snapshot_mismatch_and_stale_observation_fail_closed_in_a04() {
     );
     let wrong = codenexus_adapter::translate(&wrong_native, 2_000, 100).unwrap();
     assert_eq!(wrong["port"]["freshness"], "snapshot_mismatch");
-    let wrong_error =
-        match admissibility::validate_for_consumer(&wrong["evidence"]["request"], &wrong_root.0) {
-            Ok(_) => panic!("wrong-snapshot evidence was admitted"),
-            Err(error) => error,
-        };
+    let wrong_error = match admissibility::validate_for_consumer(
+        &wrong["evidence"]["request"],
+        wrong_root.path(),
+    ) {
+        Ok(_) => panic!("wrong-snapshot evidence was admitted"),
+        Err(error) => error,
+    };
     assert!(wrong_error.contains("consumed snapshot mismatch"));
 
-    let stale_root = Temp::new();
+    let stale_root = TempDir::new("codenexus_adapter");
     let stale_native = build_case(
-        &stale_root.0,
+        stale_root.path(),
         &descriptor("full-current"),
         CURRENT,
         CURRENT,
@@ -273,19 +255,21 @@ fn snapshot_mismatch_and_stale_observation_fail_closed_in_a04() {
     );
     let stale = codenexus_adapter::translate(&stale_native, 2_000, 100).unwrap();
     assert_eq!(stale["port"]["freshness"], "stale");
-    let stale_error =
-        match admissibility::validate_for_consumer(&stale["evidence"]["request"], &stale_root.0) {
-            Ok(_) => panic!("stale evidence was admitted"),
-            Err(error) => error,
-        };
+    let stale_error = match admissibility::validate_for_consumer(
+        &stale["evidence"]["request"],
+        stale_root.path(),
+    ) {
+        Ok(_) => panic!("stale evidence was admitted"),
+        Err(error) => error,
+    };
     assert!(stale_error.contains("stale"));
 }
 
 #[test]
 fn lite_is_only_explicit_fallback_or_rollback_and_full_is_primary() {
-    let root = Temp::new();
+    let root = TempDir::new("codenexus_adapter");
     let mut lite = build_case(
-        &root.0,
+        root.path(),
         &descriptor("lite-current"),
         CURRENT,
         CURRENT,
@@ -297,7 +281,7 @@ fn lite_is_only_explicit_fallback_or_rollback_and_full_is_primary() {
         .contains("explicit fallback or legacy rollback"));
 
     let mut full = build_case(
-        &root.0,
+        root.path(),
         &descriptor("full-current"),
         CURRENT,
         CURRENT,
@@ -309,7 +293,7 @@ fn lite_is_only_explicit_fallback_or_rollback_and_full_is_primary() {
         .contains("full provider must be primary"));
 
     let mut relabelled_lite = build_case(
-        &root.0,
+        root.path(),
         &descriptor("lite-current"),
         CURRENT,
         CURRENT,
@@ -323,9 +307,9 @@ fn lite_is_only_explicit_fallback_or_rollback_and_full_is_primary() {
 
 #[test]
 fn adapter_declares_effects_rejects_storage_coupling_and_drops_unknown_secrets() {
-    let root = Temp::new();
+    let root = TempDir::new("codenexus_adapter");
     let mut full = build_case(
-        &root.0,
+        root.path(),
         &descriptor("full-current"),
         CURRENT,
         CURRENT,
@@ -338,7 +322,7 @@ fn adapter_declares_effects_rejects_storage_coupling_and_drops_unknown_secrets()
     assert!(!error.contains("B04-SECRET-SENTINEL"));
 
     let native = build_case(
-        &root.0,
+        root.path(),
         &descriptor("full-current"),
         CURRENT,
         CURRENT,
@@ -358,9 +342,9 @@ fn adapter_declares_effects_rejects_storage_coupling_and_drops_unknown_secrets()
 
 #[test]
 fn admitted_payload_identity_cannot_be_relabelled() {
-    let root = Temp::new();
+    let root = TempDir::new("codenexus_adapter");
     let native = build_case(
-        &root.0,
+        root.path(),
         &descriptor("full-current"),
         CURRENT,
         CURRENT,
@@ -368,7 +352,7 @@ fn admitted_payload_identity_cannot_be_relabelled() {
     );
     let adapter = codenexus_adapter::translate(&native, 2_000, 100).unwrap();
     let admitted =
-        admissibility::validate_for_consumer(&adapter["evidence"]["request"], &root.0).unwrap();
+        admissibility::validate_for_consumer(&adapter["evidence"]["request"], root.path()).unwrap();
     let mut relabelled = admitted.payload().clone();
     relabelled["data"]["codenexus"]["provider"]["implementationId"] =
         json!("pipeline.fake-impact-engine");
@@ -410,9 +394,15 @@ fn production_route_runs_full_lite_and_unavailable_through_a04() {
         ("lite-current", "observed", true),
         ("unavailable", "unknown", false),
     ] {
-        let root = Temp::new();
-        let native = build_case(&root.0, &descriptor(fixture_name), CURRENT, CURRENT, 1_950);
-        let (exit, stdout, stderr) = route(&root.0, &native);
+        let root = TempDir::new("codenexus_adapter");
+        let native = build_case(
+            root.path(),
+            &descriptor(fixture_name),
+            CURRENT,
+            CURRENT,
+            1_950,
+        );
+        let (exit, stdout, stderr) = route(root.path(), &native);
         assert_eq!(exit, 0, "{fixture_name}: {stderr}");
         let result: Value = serde_json::from_slice(&stdout).unwrap();
         assert_eq!(result["schema"], "code-intel-codenexus-route-result.v1");
@@ -425,29 +415,29 @@ fn production_route_runs_full_lite_and_unavailable_through_a04() {
 
 #[test]
 fn production_route_rejects_secret_fields_wrong_snapshot_and_bad_usage() {
-    let secret_root = Temp::new();
+    let secret_root = TempDir::new("codenexus_adapter");
     let mut secret = build_case(
-        &secret_root.0,
+        secret_root.path(),
         &descriptor("full-current"),
         CURRENT,
         CURRENT,
         1_950,
     );
     secret["apiToken"] = json!("B04-ROUTE-SECRET");
-    let (exit, stdout, stderr) = route(&secret_root.0, &secret);
+    let (exit, stdout, stderr) = route(secret_root.path(), &secret);
     assert_eq!(exit, 65);
     let rendered = format!("{}{}", String::from_utf8_lossy(&stdout), stderr);
     assert!(!rendered.contains("B04-ROUTE-SECRET"));
 
-    let wrong_root = Temp::new();
+    let wrong_root = TempDir::new("codenexus_adapter");
     let wrong = build_case(
-        &wrong_root.0,
+        wrong_root.path(),
         &descriptor("full-current"),
         CURRENT,
         WRONG,
         1_950,
     );
-    let (exit, stdout, _) = route(&wrong_root.0, &wrong);
+    let (exit, stdout, _) = route(wrong_root.path(), &wrong);
     assert_eq!(exit, 65);
     let result: Value = serde_json::from_slice(&stdout).unwrap();
     assert_eq!(result["status"], "rejected");

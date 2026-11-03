@@ -96,7 +96,6 @@ pattern alone — see TASK_REPORT.md for the cases where the obvious pattern mat
 | docs/file-boundary-observation.md | living-contract | kept | Referenced by file_boundary.rs |
 | docs/follow-up-automation.md | living-contract | kept | Linked from README.md |
 | docs/frontier-quality-loop.md | living-contract | kept | Referenced by orchestration/internalization/frontier.json |
-| docs/graph-provider-adapter.md | living-contract | kept | Referenced by providers.rs |
 | docs/harness-factory-reference.md | living-contract | kept | Linked from README.md |
 | docs/hospital-diagnosis.md | living-contract | kept | Live src + test; referenced by t2-dot-source-parity-map.md |
 | docs/hospital-mode.md | living-contract | kept | Linked from README.md |

@@ -13,7 +13,6 @@ __pycache__/
 .repowise-workspace/
 .repowise/
 .repowise.backup*/
-.understand-anything/
 .sentrux/cache/
 .sentrux/agent-sessions/
 .claude/*

@@ -20,8 +20,7 @@ Proves:
     resolve_question_spans turns that into a "broken question" rather
     than ever silently scoring it as a miss;
   * every anchor in the real eval/questions.json resolves against the
-    live repo tree except the two known, expected exceptions (q01/q02:
-    real code PR #134 moved out of main.rs entirely, not line rot).
+    live repo tree (q03/q07/q09 anchor on symbols that still exist).
 
 Stdlib unittest only (no pytest). Run directly:
     python eval/test_golden_anchors.py
@@ -199,11 +198,8 @@ class RealQuestionsAnchorTests(unittest.TestCase):
     def test_real_questions_anchors_all_resolve_against_the_live_tree(self):
         # The whole point: every golden anchor in the real question set must
         # resolve against the actual current repo, or it's a broken question
-        # (see GoldenAnchorTests above). q01 and q02 are the one known,
-        # expected exception: PR #134 moved is_primary_invocation and the
-        # RAW_ROUTES table out of main.rs entirely, which is a real code
-        # move this resolver correctly refuses to paper over -- it must
-        # report exactly those two broken, and nothing else.
+        # (see GoldenAnchorTests above). No question is expected broken;
+        # any anchor that stops resolving must fail here.
         questions = {q["id"]: q for q in harness.load_questions(EVAL_DIR / "questions.json")}
         repo_root = EVAL_DIR.parent
         broken = {}
@@ -212,7 +208,7 @@ class RealQuestionsAnchorTests(unittest.TestCase):
             if error:
                 broken[qid] = error
         self.assertEqual(
-            set(broken), {"q01", "q02"}, f"unexpected broken/resolved anchors: {broken}"
+            set(broken), set(), f"unexpected broken anchors: {broken}"
         )
 
 

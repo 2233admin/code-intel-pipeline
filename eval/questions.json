@@ -1,36 +1,36 @@
 [
   {
     "id": "q01",
-    "question": "In crates/code-intel-cli/src/main.rs, how does the CLI decide whether the first argument to `code-intel` is a repository path (primary invocation) versus a named subcommand?",
+    "question": "How does the CLI decide whether the first argument to `code-intel` is a repository path (primary invocation) versus a named subcommand?",
     "category": "how",
     "golden": {
-      "paths": ["crates/code-intel-cli/src/main.rs"],
-      "spans": [{"path": "crates/code-intel-cli/src/main.rs", "anchor": {"kind": "symbol", "symbol_kind": "function", "name": "is_primary_invocation", "before": 0, "after": 9}}],
-      "keywords": ["is_primary_invocation"]
+      "paths": ["crates/code-intel-cli/src/cli/primary.rs"],
+      "spans": [{"path": "crates/code-intel-cli/src/cli/primary.rs", "anchor": {"kind": "symbol", "symbol_kind": "function", "name": "matches_primary_pattern", "before": 0, "after": 14}}],
+      "keywords": ["matches_primary_pattern", "resolve_command_route"]
     },
-    "notes": "is_primary_invocation treats a first argument as a repo path unless it starts with '-', matches a registered raw route, or names a legacy subcommand (is_named_command); the disambiguation logic is inline in this ~10-line function body. Known-broken anchor as of issue #93 golden-symbol-anchors: PR #134 removed this function from main.rs entirely (moved/absorbed elsewhere during the CLI-to-typed-controllers convergence), so the anchor correctly fails to resolve rather than silently pointing at the wrong file's current line 265-274 -- this is a real code move, not line rot, and needs a human to re-author the question against wherever the logic actually lives now."
+    "notes": "matches_primary_pattern (crates/code-intel-cli/src/cli/primary.rs) carries the responsibility the old is_primary_invocation had: the first argument is treated as a repo path when there are no arguments; or it does not start with '-' and is an existing directory, an absolute path, contains '/' or '\\', or starts with '__'; or it is one of --mode, --artifact-root, --json. resolve_command_route calls it in COMMAND_ROUTES order."
   },
   {
     "id": "q02",
-    "question": "Where in crates/code-intel-cli/src/main.rs is the `code-intel repin` subcommand registered, and which function runs when it is invoked?",
+    "question": "Where is the `code-intel repin` subcommand registered in the CLI command catalog, and which function runs when it is invoked?",
     "category": "where",
     "golden": {
-      "paths": ["crates/code-intel-cli/src/main.rs"],
-      "spans": [{"path": "crates/code-intel-cli/src/main.rs", "anchor": {"kind": "snippet", "text": "repin::run_raw", "before": 4, "after": 1}}],
-      "keywords": ["RAW_ROUTES", "repin"]
+      "paths": ["crates/code-intel-cli/src/cli/command_catalog/routes/mod.rs", "crates/code-intel-cli/src/cli/command_catalog/mod.rs"],
+      "spans": [{"path": "crates/code-intel-cli/src/cli/command_catalog/routes/mod.rs", "anchor": {"kind": "snippet", "text": "command: \"repin\"", "before": 1, "after": 4}}, {"path": "crates/code-intel-cli/src/cli/command_catalog/mod.rs", "anchor": {"kind": "snippet", "text": "repin::run_raw", "before": 0, "after": 0}}],
+      "keywords": ["COMMAND_ROUTES", "CompatibilityRoute::Repin", "repin::run_raw"]
     },
-    "notes": "repin was wired via a RAW_ROUTES table entry (routing to repin::run_raw). Expected artifact-guided miss: consts are never indexed as symbols, and repin::run_raw's own declaration is one of several RAW_ROUTES handler functions the native-minimal scanner fails to capture at all (verified absent from code_evidence.symbols). Known-broken anchor as of issue #93 golden-symbol-anchors: PR #134 removed RAW_ROUTES from main.rs entirely -- a real code move, not line rot; needs a human to re-author against the new routing table's location."
+    "notes": "Registration is a raw_route! entry with command: \"repin\" in COMMAND_ROUTES (command_catalog/routes/mod.rs, id CompatibilityRoute::Repin); the dispatch arm CompatibilityRoute::Repin => repin::run_raw(raw) in command_catalog/mod.rs names the function that runs. The two answers live in two different files."
   },
   {
     "id": "q03",
-    "question": "Why does sentrux_gate.rs's coupling metric only count files in IMPORT_MODELED_EXTENSIONS instead of every file in CODE_EXTENSIONS?",
+    "question": "Why does the Quality Signal geometric mean clamp every factor to 0.01 before taking the fifth root, instead of using the bare formula from the sentrux docs page?",
     "category": "why",
     "golden": {
-      "paths": ["crates/code-intel-cli/src/sentrux_gate.rs"],
-      "spans": [{"path": "crates/code-intel-cli/src/sentrux_gate.rs", "anchor": {"kind": "snippet", "text": "inverted the gate", "before": 6, "after": 3}}],
-      "keywords": ["coupling_limit"]
+      "paths": ["crates/code-intel-cli/src/sentrux_quality_signal.rs"],
+      "spans": [{"path": "crates/code-intel-cli/src/sentrux_quality_signal.rs", "anchor": {"kind": "symbol", "symbol_kind": "function", "name": "normalize_and_aggregate", "before": 4, "after": 18}}],
+      "keywords": ["normalize_and_aggregate"]
     },
-    "notes": "The rationale (PowerShell has no modeled import syntax, so counting .ps1 files in the coupling denominator inverted the gate during the Rust migration -- every correct migration step registered as a structural regression) sits in the module's //! doc comment at the top of the file. The nearest real symbol a keyword search can anchor on is the coupling_limit function, well over 1000 lines away -- deliberately not a symbol anchor, since the rationale is prose, not a declaration."
+    "notes": "DR-0011 item 1: normalize_and_aggregate (crates/code-intel-cli/src/sentrux_quality_signal.rs) applies .max(0.01) to each factor before aggregation, and FORMULA_VERSION carries the +max-floor-0.01 marker, so one zero factor cannot collapse the whole product to zero as the bare formula would."
   },
   {
     "id": "q04",
@@ -67,14 +67,14 @@
   },
   {
     "id": "q07",
-    "question": "Why does `code-intel repin`'s DEFAULT_EXCLUDES list exclude orchestration/retirements/ from its stale sha256 pin rewriting?",
+    "question": "Why does manifest discovery run an entrypoint probe (`manifest_entrypoints_resolve`) on guessed candidates instead of just checking for markers like `.git` or `Cargo.toml` at the root?",
     "category": "why",
     "golden": {
-      "paths": ["crates/code-intel-cli/src/repin.rs"],
-      "spans": [{"path": "crates/code-intel-cli/src/repin.rs", "anchor": {"kind": "snippet", "text": "New-*RetirementPacket.ps1", "before": 7, "after": 0}}],
-      "keywords": ["DEFAULT_EXCLUDES"]
+      "paths": ["crates/code-intel-cli/src/capability.rs"],
+      "spans": [{"path": "crates/code-intel-cli/src/capability.rs", "anchor": {"kind": "symbol", "symbol_kind": "function", "name": "manifest_entrypoints_resolve", "before": 12, "after": 0}}],
+      "keywords": ["manifest_entrypoints_resolve"]
     },
-    "notes": "Retirement packets freeze a working-tree overlay captured at generation time, not a commit, so there is no 'current' digest to resync them to; only their own New-*RetirementPacket.ps1 generator can produce a valid one. This lives in the module's //! doc comment; DEFAULT_EXCLUDES is a const, so anchored on the doc comment's own distinctive closing sentence (a snippet) rather than the const declaration itself, which is a different location from the rationale."
+    "notes": "DR-0003: a manifest copied next to the binary can parse fine yet resolve nothing, and such a candidate must yield to the next one. The doc comment above manifest_entrypoints_resolve (crates/code-intel-cli/src/capability.rs) explains this, so a root-marker check would accept a manifest whose entrypoints do not exist."
   },
   {
     "id": "q08",
@@ -89,14 +89,14 @@
   },
   {
     "id": "q09",
-    "question": "Why does compatibility_retirement_ticket::execute require the E00 decision's authorityBoundary to equal `approval_only_no_deletion_authority`?",
+    "question": "Why does `code-intel repowise-version` treat an installed version above `--minimum` as accepted (`meetsMinimum: true`) instead of flagging it as version drift?",
     "category": "why",
     "golden": {
-      "paths": ["crates/code-intel-cli/src/compatibility_retirement_ticket.rs"],
-      "spans": [{"path": "crates/code-intel-cli/src/compatibility_retirement_ticket.rs", "anchor": {"kind": "snippet", "text": "decision_value[\"authorityBoundary\"]", "before": 1, "after": 5}}],
-      "keywords": ["authorityBoundary"]
+      "paths": ["crates/code-intel-cli/src/repowise_version.rs"],
+      "spans": [{"path": "crates/code-intel-cli/src/repowise_version.rs", "anchor": {"kind": "symbol", "symbol_kind": "function", "name": "run_raw", "before": 0, "after": 52}}],
+      "keywords": ["run_raw", "repowise_version"]
     },
-    "notes": "The check enforces that an E00 retirement decision can only ever be an approval to retire, never a deletion authorization itself; deletion remains a separate, later, explicitly authorized act. execute() has a multi-line signature and is absent from the symbol index; authorityBoundary is a JSON field name, never a source symbol, so no structured artifact field ever carries it. The bare literal 'authorityBoundary' appears 3 times in this file (also in a schema field list and a second, differently-gated check further down), so the anchor snippet includes the `decision_value[...]` prefix that is unique to this specific check."
+    "notes": "DR-0002: the pin is a minimum, not an exact version. run_raw (crates/code-intel-cli/src/repowise_version.rs) computes meets_minimum = ordering != Less, so only a version below the minimum gets status below_minimum; equal or newer is accepted, which is why a newer install is not reported as drift."
   },
   {
     "id": "q10",

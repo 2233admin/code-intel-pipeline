@@ -1,7 +1,8 @@
+mod common;
+
+use common::TempDir;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
@@ -21,31 +22,6 @@ use schema::validates_against_schema;
 // perfect-score-needs-high-coverage, one-row-per-department) exercise the
 // real `validate()` logic and live as `#[cfg(test)]` unit tests inside
 // `src/audit_report.rs` instead.
-
-static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-struct Temp(PathBuf);
-
-impl Temp {
-    fn new(label: &str) -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "code-intel-audit-report-test-{label}-{}-{nonce}-{}.json",
-            std::process::id(),
-            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        Self(path)
-    }
-}
-
-impl Drop for Temp {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
-    }
-}
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -96,11 +72,12 @@ fn fixture_validates_against_the_audit_report_schema() {
 fn unknown_top_level_field_fails_schema_validation() {
     let mut value = fixture_value();
     value["bogus"] = json!(true);
-    let temp = Temp::new("unknown-field");
-    fs::write(&temp.0, serde_json::to_vec(&value).unwrap()).unwrap();
+    let temp = TempDir::new("unknown-field");
+    let report = temp.path().join("report.json");
+    fs::write(&report, serde_json::to_vec(&value).unwrap()).unwrap();
     let schema = repo_root().join("orchestration/schemas/code-intel-audit-report.v1.schema.json");
     assert!(
-        !validates_against_schema(&temp.0, &schema),
+        !validates_against_schema(&report, &schema),
         "additionalProperties: false must reject an unknown top-level field"
     );
 }

@@ -128,7 +128,7 @@ Note: the pipeline needs full git history for lineage identity — run
 Public beta. All production logic lives in the compiled Rust `code-intel`
 binary, the primary entry point; PowerShell has been removed from the product.
 Since v0.7.0 all three platforms ship prebuilt release ZIPs. Enhancement providers
-(Repowise semantic docs, Understand Anything graphs, CodeNexus context) are
+(Repowise semantic docs, CodeNexus context) are
 optional: when absent the run records them as skipped instead of faking
 success.
 
