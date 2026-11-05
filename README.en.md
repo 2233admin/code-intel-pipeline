@@ -31,8 +31,8 @@ code-intel .
   plan) computed from the admitted evidence, not from vibes.
 - **Transactional artifacts** — every node's output lands in a
   content-addressed store, committed atomically; a run is either fully
-  published or not indexed at all. Read runs back with `code-intel resume
-  --repo <path>`.
+  published or not indexed at all. Read runs back with
+  `code-intel artifact query` (see [Install](#install)).
 
 See a real run against a fresh `expressjs/express` clone:
 [live demo report](https://2233admin.github.io/code-intel-pipeline/demo/).
@@ -40,34 +40,55 @@ See a real run against a fresh `expressjs/express` clone:
 ## Install
 
 Same on windows / macos / linux. **No PowerShell and no Rust toolchain needed.**
+The stable release v0.7.1 has no install step. Full guide:
+[docs/public-beta.md](docs/public-beta.md).
 
-**Recommended: via the agent Skill (Codex / Claude Code).** Install the skill
-package with `$skill-installer` from
-[`skills/code-intel-pipeline`](skills/code-intel-pipeline), or run the
-bootstrap directly from that directory: review the plan first, then run it.
+**Stable v0.7.1: download, verify, run in place.** Download
+`code-intel-pipeline-v0.7.1-<platform>.zip` and its `.sha256` from
+[GitHub Releases](https://github.com/2233admin/code-intel-pipeline/releases),
+verify both (`gh attestation verify <zip> --repo 2233admin/code-intel-pipeline`;
+see [docs/release-provenance-runbook.md](docs/release-provenance-runbook.md)),
+extract, then run the binary directly (`code-intel.exe` on Windows) and read the
+output back:
 
 ```bash
-python scripts/bootstrap.py --repo-path "<repo>" --dry-run --json
-python scripts/bootstrap.py --repo-path "<repo>" --json
+<extracted>/code-intel-pipeline/bin/code-intel <repo> --mode lite --artifact-root <root> --json
+<extracted>/code-intel-pipeline/bin/code-intel artifact query --artifact-root <root> --repo <published-repo-key> --type code_evidence.agent_slice --repo-path <repo>
 ```
 
-Options: `--version <tag>`, `--channel prerelease`. It downloads the GitHub
-Release ZIP for your platform, verifies its SHA-256 and build provenance
-(`gh attestation verify` when `gh` 2.49+ is present; otherwise it prints an
-explicit degradation notice instead of silently skipping), extracts it, then
-runs the release's own `bin/code-intel setup`. Verify the same guarantee by
-hand with `gh attestation verify <zip> --repo 2233admin/code-intel-pipeline`;
-see [docs/release-provenance-runbook.md](docs/release-provenance-runbook.md).
+Prerequisites: `git` and `rg` are required; `python` and `repowise` are
+optional. `<published-repo-key>` and `<run-id>` come from `publication.path`
+in the `--json` output (`<root>/<published-repo-key>/<run-id>`; the run is
+committed when `run-complete.json` exists there). `lite` does not publish
+`diagnosis.*`; use `--mode normal` to read `diagnosis.hospital-view`. A
+committed run directory holds only `run-complete.json` and
+`objects/sha256/<hash>`; there is no `report.json`. Exit codes and outcomes are
+explained in the guide. This path was audited on Windows; it has not been run
+on Linux or macOS.
 
-**Manual install.** Download `code-intel-pipeline-<tag>-<platform>.zip` and its
-`.sha256` from [GitHub Releases](https://github.com/2233admin/code-intel-pipeline/releases),
-verify both, extract, then run (`code-intel.exe` on Windows):
+**Current source / prerelease only (not in v0.7.1): `code-intel setup` and the
+Skill bootstrap.** They need `v0.7.2-beta.7` or newer: pass
+`--version v0.7.2-beta.7 --channel prerelease` (the bootstrap checks `--channel` even with `--version`, so pass both) or just `--channel prerelease`, and only when the user
+explicitly asks for it (#405). On the default stable channel only the real install is rejected, with
+"This release predates `code-intel setup`"; `--dry-run` still succeeds. `code-intel status <repo>` and
+`code-intel query <repo>` are likewise absent from v0.7.1. Review the plan
+first, then run it, from `skills/code-intel-pipeline/`:
+
+```bash
+python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --channel prerelease --dry-run --json
+python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --channel prerelease --json
+```
+
+The script downloads the GitHub Release ZIP for your platform, verifies its
+SHA-256 and build provenance (`gh attestation verify` when `gh` 2.49+ is
+present; otherwise it prints an explicit degradation notice instead of silently
+skipping), extracts it, then runs the release's own `bin/code-intel setup`.
+From an extracted package of that version you can run it by hand
+(`--language zh|en` records the repo's report language):
 
 ```bash
 <extracted>/code-intel-pipeline/bin/code-intel setup --repo-path <repo>
 ```
-
-Add `--language zh|en` to record the repo's report language.
 
 `code-intel setup` copies the binary to the data bin dir (Windows
 `$env:LOCALAPPDATA\code-intel\bin`, macOS `~/Library/Application Support/code-intel/bin`,
@@ -80,7 +101,7 @@ doctor (`--skip-doctor` to skip). Missing external tools (`rg`, `git`, `python`,
 `repowise`) are reported with an install command; setup never installs system
 tools itself. Re-running it is idempotent.
 
-**Build from source** (needs a Rust toolchain):
+**Build from source** (needs a Rust toolchain; current source, includes `setup`):
 
 ```bash
 git clone https://github.com/2233admin/code-intel-pipeline.git

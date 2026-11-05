@@ -28,24 +28,34 @@ Do not infer a clean result from a partial run, provider outage, stale advisory,
 2. Reuse that installation when it is valid. Repair only a missing or invalid installation.
 3. Bootstrap only when the user requested installation or the task explicitly requires the
    missing pipeline.
-4. From this skill directory, inspect the latest published stable release plan:
+4. `code-intel setup`, and therefore this Skill's bootstrap, needs release `v0.7.2-beta.7` or newer.
+   The default stable channel currently resolves to a release that predates `setup`. On stable
+   v0.7.1 the step 5 `--dry-run` still succeeds and returns a v0.7.1 plan; the real install in
+   step 7 is rejected with "This release predates `code-intel setup`", and that is expected, not a
+   success path. Only when the user
+   explicitly requests a prerelease, add `--version v0.7.2-beta.7 --channel prerelease` (the
+   bootstrap checks `--channel` even with `--version`, so a pinned prerelease needs both) or just
+   `--channel prerelease`. Never add them on your own. For a
+   first install and the per-version prerequisites (including the stable v0.7.1 manual path that
+   needs no `setup`), follow `docs/public-beta.md`.
+5. From this skill directory, inspect the latest published stable release plan:
 
 ```text
 python scripts/bootstrap.py --repo-path "<repo-path>" --dry-run --json
 ```
 
-5. Review the reported release tag, version source, asset URL, SHA-256 digest, destination, and
+6. Review the reported release tag, version source, asset URL, SHA-256 digest, destination, and
    target repository.
-6. Install the verified stable release:
+7. Install the verified stable release:
 
 ```text
 python scripts/bootstrap.py --repo-path "<repo-path>" --json
 ```
 
-The default follows GitHub's latest published stable release. Add `--version <tag>` only for a
-requested version. Add `--channel prerelease` only when the user explicitly requests the latest
-published prerelease. Never put provider keys in commands, repository files, artifacts, or Skill
-resources.
+Add `--version <tag>` only for a requested version. Add `--channel prerelease` only when the user
+explicitly requests the latest published prerelease; a pinned prerelease uses `--channel prerelease`
+together with `--version <tag>`. Never put provider keys in commands,
+repository files, artifacts, or Skill resources.
 
 Bootstrap verifies and extracts the release, then hands off to the release's own binary with
 `code-intel setup`. Setup installs the binary, adds it to `PATH`, sets `CODE_INTEL_HOME`, links this

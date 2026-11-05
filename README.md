@@ -44,36 +44,17 @@
 
 ## 30 秒开始
 
-在要分析的仓库目录中运行稳定入口；不传参数时默认分析当前目录：
+稳定版 v0.7.1 不需要安装步骤：下载并校验 Release ZIP（见[安装](#安装)），解压后直接运行包内二进制（Windows 是 `code-intel.exe`）。`<repo>` 是带完整 git 历史的 checkout，运行只读它；前置条件只有 `git` 和 `rg`（必需），`python`、`repowise`（可选），不需要 PowerShell 或 Rust 工具链。
 
 ```bash
-code-intel .
+<解压目录>/code-intel-pipeline/bin/code-intel <repo> --mode lite --artifact-root <root> --json
+<解压目录>/code-intel-pipeline/bin/code-intel artifact query --artifact-root <root> --repo <published-repo-key> --type code_evidence.agent_slice --repo-path <repo>
 ```
 
-或显式指定仓库：
+`<published-repo-key>` 和 `<run-id>` 从 `--json` 输出的 `publication.path`（`<root>/<published-repo-key>/<run-id>`）里读，且该目录里要有 `run-complete.json`。`artifact query` 读的是索引里最近一次已完成（completed）的 run，未完成的 run 会被跳过，所以可能返回更早的一次：把返回结果里的 `run` 与你的 `<run-id>` 对一下。加 `--repo-path <repo>` 才能得到 freshness，否则是 `unknown`。`lite` 不发布 `diagnosis.*`；要读 `diagnosis.hospital-view` 请改用 `--mode normal`。
+退出码与 outcome 的含义、committed run 目录里有什么（只有 `run-complete.json` 和 `objects/sha256/<hash>`，没有 `report.json`），以及完整的下载、校验步骤见 [docs/public-beta.md](docs/public-beta.md)。这条路径的 audit 在 Windows 上跑过，Linux / macOS 没跑过。
 
-```bash
-code-intel C:\path\to\your\repo
-```
-
-还没有 `code-intel`？见[安装](#安装)——windows / macos / linux 都有 Release ZIP，不需要 PowerShell 或 Rust 工具链。装好后第一次运行：
-
-```bash
-code-intel status ~/src/your-repo
-code-intel ~/src/your-repo
-code-intel query ~/src/your-repo --kind evidence --json
-```
-
-`status` 是低摩擦的项目入口：它把仓库身份、最近一次 committed run 的新鲜度和
-下一步动作放在一起。未分析时返回 `needs_run`，证据与当前 checkout 一致时返回
-`ready`，不一致时返回 `stale`；Agent 可用 `--json` 读取同一个
-`code-intel-project-status.v1` envelope。它只组合现有 authority/freshness 契约，
-不会把未提交或过期证据伪装成当前事实。
-
-`code-intel run <repo>` 是分析主入口的等价命名形式。`query` 只接收仓库路径，
-由 ProjectContext 统一解析仓库键和 artifact root；日常调用不需要再传
-`--artifact-root`、`--repo`、run id 或 manifest。低层发布/排障仍可使用
-`run execute` 和 `artifact query` 的显式参数接口。
+> **仅当前源码 / 预发布（v0.7.1 稳定版没有）：** `code-intel setup`、`code-intel status <repo>`、`code-intel query <repo>` 和 Skill 的 bootstrap 默认路径只存在于当前源码或 `v0.7.2-beta.7` 及更新的版本；稳定版 ZIP 里没有它们。详见 [docs/public-beta.md](docs/public-beta.md)。
 
 ## 语言方向与治理
 
@@ -89,7 +70,7 @@ Follow-up automation can proactively propose `/investigate` for actionable scan 
 
 - `code-intel`: 人工和 Agent 的正式主入口。新文档和命令示例一律以它开头。
 - `crates/code-intel-cli`: Rust policy/artifact CLI core。
-- 常用子命令：`code-intel setup`（安装收尾）、`code-intel doctor` / `code-intel doctor bootstrap`（环境检查）、`code-intel sentrux gate`（结构门禁）、`code-intel lint hardcoded-paths`（机器路径扫描）。完整列表见 `code-intel --help --all`。
+- 常用子命令：`code-intel setup`（安装收尾，仅当前源码 / 预发布）、`code-intel doctor` / `code-intel doctor bootstrap`（环境检查）、`code-intel sentrux gate`（结构门禁）、`code-intel lint hardcoded-paths`（机器路径扫描）。完整列表见 `code-intel --help --all`。
 - [CONTRIBUTING.md](CONTRIBUTING.md): 贡献步骤（认领、构建、验证、PR）。
 - [SECURITY.md](SECURITY.md): 漏洞报告的现状说明（目前没有私密渠道）。
 
@@ -168,43 +149,41 @@ GPT 娘坐在空白处，不紧不慢。她把文件列成星图，把依赖连�
 
 ## 安装
 
-windows / macos / linux 三平台的安装方式相同：**不需要 PowerShell，也不需要 Rust 工具链**。
+windows / macos / linux 三平台相同：**不需要 PowerShell，也不需要 Rust 工具链**。稳定版 v0.7.1 不需要安装步骤，两条路径如下，完整说明见 [docs/public-beta.md](docs/public-beta.md)。
 
-### 推荐：通过 Agent Skill 安装
+### 稳定版 v0.7.1：手动下载、校验、直接运行
 
-Codex 可以先安装官方结构的 Skill 包，再由 Skill 下载并校验稳定版 Release：
-
-```text
-请使用 $skill-installer 安装：
-https://github.com/2233admin/code-intel-pipeline/tree/main/skills/code-intel-pipeline
-
-然后使用 $code-intel-pipeline 为 /path/to/your/repo 安装并运行稳定版。
-```
-
-也可以在 `skills/code-intel-pipeline/` 下直接运行引导脚本：先看计划，再执行：
+1. 从 [GitHub Releases](https://github.com/2233admin/code-intel-pipeline/releases) 下载 `code-intel-pipeline-v0.7.1-<platform>.zip` 和对应的 `.sha256`（`<platform>` 为 `windows` / `macos` / `linux`）。
+2. 按下文[验证发布来源](#验证发布来源)校验。
+3. 解压，直接运行包内二进制（Windows 上是 `code-intel.exe`），再读输出：
 
 ```bash
-python scripts/bootstrap.py --repo-path "<repo>" --dry-run --json
-python scripts/bootstrap.py --repo-path "<repo>" --json
+<解压目录>/code-intel-pipeline/bin/code-intel <repo> --mode lite --artifact-root <root> --json
+<解压目录>/code-intel-pipeline/bin/code-intel artifact query --artifact-root <root> --repo <published-repo-key> --type code_evidence.agent_slice --repo-path <repo>
 ```
 
-可选参数：`--version <tag>` 指定版本，`--channel prerelease` 选择预发布。它会下载当前平台的 GitHub Release ZIP，校验 SHA-256 和构建来源，解压后运行该 Release 自带的 `bin/code-intel setup`。
+前置条件：`git`、`rg` 必需，`python`、`repowise` 可选。
 
-Skill 默认只解析稳定版；`gh` 2.49+ 在场时先验 [GitHub Artifact Attestation](https://cli.github.com/manual/gh_attestation_verify)（证明这份 ZIP 确实产自本仓发布流水线，不只是字节没传坏），再校验 GitHub Release 提供的 SHA-256；`gh` 缺失或过旧会显式打印降级说明而不是静默只查 SHA-256。命令与验证记录见 [docs/release-provenance-runbook.md](docs/release-provenance-runbook.md)。预发布版本和第三方依赖安装都需要显式选择。
+### 仅当前源码 / 预发布：`code-intel setup` 与 Skill bootstrap
 
-### 手动安装
+> 下面这些在 v0.7.1 稳定版里没有。`code-intel setup` 和 Skill 的 `scripts/bootstrap.py` 需要 `v0.7.2-beta.7` 或更新的版本：传 `--version v0.7.2-beta.7 --channel prerelease`（bootstrap 即使给了 `--version` 也会核对 `--channel`，所以两个都要传）或只传 `--channel prerelease`，并且只在用户明确要求时才用（#405）。默认的稳定频道下，真正的安装（`setup`）现在会被拒绝，报错是 "This release predates `code-intel setup`"；`--dry-run` 仍然成功。
 
-1. 从 [GitHub Releases](https://github.com/2233admin/code-intel-pipeline/releases) 下载 `code-intel-pipeline-<tag>-<platform>.zip` 和对应的 `.sha256`（`<platform>` 为 `windows` / `macos` / `linux`）。
-2. 按下文[验证发布来源](#验证发布来源)校验。
-3. 解压，运行包内自带的 `setup`（Windows 上是 `code-intel.exe`）：
+Codex 可以先安装官方结构的 Skill 包，再由 Skill 下载并校验该 Release；也可以在 `skills/code-intel-pipeline/` 下直接运行引导脚本：先看计划，再执行：
+
+```bash
+python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --channel prerelease --dry-run --json
+python scripts/bootstrap.py --repo-path "<repo>" --version v0.7.2-beta.7 --channel prerelease --json
+```
+
+它会下载当前平台的 GitHub Release ZIP，校验 SHA-256 和构建来源，解压后运行该 Release 自带的 `bin/code-intel setup`。`gh` 2.49+ 在场时先验 [GitHub Artifact Attestation](https://cli.github.com/manual/gh_attestation_verify)（证明这份 ZIP 确实产自本仓发布流水线，不只是字节没传坏），再校验 GitHub Release 提供的 SHA-256；`gh` 缺失或过旧会显式打印降级说明而不是静默只查 SHA-256。命令与验证记录见 [docs/release-provenance-runbook.md](docs/release-provenance-runbook.md)。第三方依赖安装需要显式选择。
+
+手动安装这样的版本时，运行包内自带的 `setup`（加 `--language zh|en` 可记录该仓库的报告语言）：
 
 ```bash
 <解压目录>/code-intel-pipeline/bin/code-intel setup --repo-path <repo>
 ```
 
-加 `--language zh|en` 可记录该仓库的报告语言。
-
-### `code-intel setup` 做了什么
+### `code-intel setup` 做了什么（仅当前源码 / 预发布）
 
 - 把二进制复制到数据目录的 `bin`：Windows `$env:LOCALAPPDATA\code-intel\bin`，macOS `~/Library/Application Support/code-intel/bin`，Linux `${XDG_DATA_HOME:-~/.local/share}/code-intel/bin`。
 - 持久化 `PATH` 和 `CODE_INTEL_HOME`：Windows 写用户环境变量（新开终端生效）；macOS / Linux 写 `~/.config/code-intel/env.sh`，并在 `~/.profile`（以及存在的 `~/.bashrc` / `~/.bash_profile`，装了 zsh 时还有 `.zshenv`）里加一行 `. "…/env.sh"`。`--no-modify-path` 跳过这些修改。
@@ -213,7 +192,7 @@ Skill 默认只解析稳定版；`gh` 2.49+ 在场时先验 [GitHub Artifact Att
 
 重复运行是幂等的。其余参数：`--release-root`、`--repo-path`、`--platform`、`--json`。Artifact 默认写到 `<数据目录>/artifacts`（各平台相同）。
 
-### 源码构建（需要 Rust 工具链）
+### 源码构建（需要 Rust 工具链；当前源码，含 `setup`）
 
 ```bash
 git clone https://github.com/2233admin/code-intel-pipeline.git
@@ -231,42 +210,42 @@ bin/code-intel setup --repo-path ~/src/your-repo
 
 ```bash
 # 校验二进制确实产自本仓 CI（不是有人改了字节又同步改了 SHA-256）
-gh attestation verify code-intel-pipeline-v0.7.0-windows.zip --repo 2233admin/code-intel-pipeline
+gh attestation verify code-intel-pipeline-v0.7.1-windows.zip --repo 2233admin/code-intel-pipeline
 
 # 校验 SHA-256 —— Windows
-certutil -hashfile code-intel-pipeline-v0.7.0-windows.zip SHA256
+certutil -hashfile code-intel-pipeline-v0.7.1-windows.zip SHA256
 
 # 校验 SHA-256 —— macOS
-shasum -a 256 -c code-intel-pipeline-v0.7.0-macos.zip.sha256
+shasum -a 256 -c code-intel-pipeline-v0.7.1-macos.zip.sha256
 
 # 校验 SHA-256 —— Linux
-sha256sum -c code-intel-pipeline-v0.7.0-linux.zip.sha256
+sha256sum -c code-intel-pipeline-v0.7.1-linux.zip.sha256
 ```
 
-正式版（不带 `-beta.<n>` 或 `-rc.<n>` 后缀的 tag，例如 `v0.7.0`；`v0.7.0-beta.2` 这种预发布 tag 不算）额外要求 tag 本身经 SSH 签名，签名与验证方式见 [docs/RELEASE_SIGNING.md](docs/RELEASE_SIGNING.md)：
+正式版（不带 `-beta.<n>` 或 `-rc.<n>` 后缀的 tag，例如 `v0.7.1`；`v0.7.0-beta.2` 这种预发布 tag 不算）额外要求 tag 本身经 SSH 签名，签名与验证方式见 [docs/RELEASE_SIGNING.md](docs/RELEASE_SIGNING.md)：
 
 ```bash
-git verify-tag v0.7.0
+git verify-tag v0.7.1
 ```
 
 ### 运行
 
-安装后直接使用编译入口；不需要 Cargo，也不依赖仓库里的 `target/`：
+稳定版 v0.7.1 没有 `PATH` 上的二进制，下面直接用解压后的 `<解压目录>/code-intel-pipeline/bin/code-intel`（Windows 是 `code-intel.exe`），与上面的稳定版快速开始一致；`setup`（仅当前源码 / 预发布）装好后可在 `PATH` 上直接写 `code-intel`。不需要 Cargo，也不依赖仓库里的 `target/`：
 
 ```bash
-code-intel C:\path\to\your\repo
+<解压目录>/code-intel-pipeline/bin/code-intel C:\path\to\your\repo
 ```
 
 只使用离线核心能力：
 
 ```bash
-code-intel C:\path\to\your\repo --mode lite
+<解压目录>/code-intel-pipeline/bin/code-intel C:\path\to\your\repo --mode lite
 ```
 
 完整 normal 模式：
 
 ```bash
-code-intel C:\path\to\your\repo --mode normal
+<解压目录>/code-intel-pipeline/bin/code-intel C:\path\to\your\repo --mode normal
 ```
 
 ## 新机器部署
@@ -277,14 +256,14 @@ code-intel C:\path\to\your\repo --mode normal
 code-intel doctor bootstrap --repo-path C:\path\to\your\repo
 ```
 
-缺失的外部工具（`rg`、`git`、`python`、`repowise`）会连同对应的 winget / brew / apt / pip 安装命令一起报告，由你自己决定是否执行。`setup` 不会写 API key，不会把 secret 存进仓库。
+缺失的外部工具（`rg`、`git`、`python`、`repowise`）会连同对应的 winget / brew / apt / pip 安装命令一起报告，由你自己决定是否执行。`setup`（仅当前源码 / 预发布）不会写 API key，不会把 secret 存进仓库。
 
 ## 工具角色
 
 | 工具 | 角色 | 产物 |
 | --- | --- | --- |
 | Integration orchestration | 融合注册、能力编排、扩展边界 | `code-intel orchestrate` |
-| `code-intel` Rust CLI | orchestration、artifact resume、failure classify、artifact doctor | `code-intel` |
+| `code-intel` Rust CLI | orchestration、artifact query、failure classify、artifact doctor | `code-intel` |
 | CodeNexus compatibility adapter | 可选热点定位、引用搜索、下一步上下文；失败不阻塞 beta core | `codenexus-context.json` |
 | `rg` | 快速文件清单、文本搜索 | `files.txt` |
 | `Repowise` | 语义索引、长期记忆、项目上下文 | `.repowise/` 或 scoped shadow |
@@ -333,12 +312,12 @@ cat "objects/sha256/$view_sha"   # 就是 hospital.md 的 markdown 正文
 不想手工解引用 blob，直接读最近一次已提交结果：
 
 ```bash
-code-intel report --repo C:\path\to\your\repo --artifact-root <artifact-root>
+<解压目录>/code-intel-pipeline/bin/code-intel artifact query --artifact-root <artifact-root> --repo <published-repo-key> --type diagnosis.hospital-view --repo-path <repo>
 ```
 
-它校验 `run-complete.json` 和 manifest 的 Artifact Ref，打印 `hospital.md`、机器报告和可选的 Agent 切片排名；`--json` 只输出这些已验证路径。
+它读的是索引里最近一次已完成（completed）的 run（未完成的会被跳过，可能返回更早的一次；把返回的 `run` 与你的 `<run-id>` 对一下）。它按 `run-complete.json` 和 manifest 校验后读出 `diagnosis.hospital-view`，与上面 jq 路径读到的是同一份已验证字节。注意 `artifact query` 返回的 `matches[].preview` 最多 400 个字符，并带 `previewTruncated` 标记；要完整报告请走上面的 jq 路径。
 
-或者跳过手工 jq，直接用上面「全链路命令」里的 `artifact query --type diagnosis.hospital-view`——两条路径读到的是同一份已验证字节，`artifact query` 只是替你做了这趟 manifest 解引用。artifact 根目录的 `index.json` 只有主入口会在提交后自动重建；单独跑 `run execute` 不会顺带写它，要索引就显式 `artifact index --operation rebuild`。
+`artifact query` 只是替你做了上面那趟 manifest 解引用。artifact 根目录的 `index.json` 只有主入口会在提交后自动重建；单独跑 `run execute` 不会顺带写它，要索引就显式 `artifact index --operation rebuild`。
 
 `run-complete.json` 是最后写入的事务提交标记；主入口的标记绑定 manifest blob 的 sha256（即上面 `manifest.sha256` 字段），索引只接受标记存在且校验一致的运行目录。
 
@@ -449,7 +428,7 @@ code-intel audit --operation scope --repo C:\path\to\repo --since <git-ref>
 
 ## Agent 工作流
 
-### 先看状态，再沿下一步工作
+### 先看状态，再沿下一步工作（仅当前源码 / 预发布，v0.7.1 稳定版没有 `status`）
 
 ```bash
 code-intel status <path>
@@ -558,7 +537,7 @@ code-intel sentrux hotspots C:\path\to\repo\backend
 
 | 命令 | 档位 | 一句话 |
 | --- | --- | --- |
-| `report` | 结果阅读 | 直接把最近一次已提交的 `hospital.md` 和关键 artifact 路径递到人眼前 |
+| `report`（仅当前源码 / 预发布） | 结果阅读 | 直接把最近一次已提交的 `hospital.md` 和关键 artifact 路径递到人眼前 |
 | `artifact query` | 直查 | 从已提交 run 里按 type / schema / contains 直接读证据，不重跑管线 |
 | `run execute` | 跑管线 | 权威全量扫描 + 发布到 content-addressed authority root；CI 自扫描步骤用它 |
 | `change risk` | 门禁 | 只用 git 历史给 PR 打缺陷风险分，不需要索引 / 网络 / LLM；驱动 `pr-gate.yml` |
@@ -800,15 +779,11 @@ code-intel C:\path\to\repo\backend --mode normal
 
 MIT
 
-## Rust CLI resume preview
+## Rust CLI preview
 
 ```bash
 code-intel orchestrate --action Validate --json
 code-intel orchestrate --action Plan --repo /path/to/your/repo --mode normal --json
-code-intel report --repo /path/to/your/repo
-code-intel resume --repo /path/to/your/repo
-code-intel resume --repo /path/to/your/repo --artifact-root /path/to/artifacts
-code-intel resume --repo /path/to/your/repo --json
 code-intel classify --report /path/to/artifact/report.json
 ```
 

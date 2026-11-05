@@ -115,7 +115,8 @@ $ code-intel ./express
   <p class="note">
     Artifacts land in a content-addressed store and are committed atomically —
     a run is either fully published or not indexed at all. Read it back with
-    <code>code-intel resume --repo ./express</code>.
+    <code>code-intel artifact query --artifact-root &lt;root&gt; --repo express --type code_evidence.agent_slice</code>
+    (see the <a href="https://github.com/2233admin/code-intel-pipeline/blob/main/docs/public-beta.md">public beta guide</a>).
   </p>
 
   <h2>Governance verdict</h2>
@@ -134,10 +135,13 @@ $ code-intel ./express
     instead of letting an agent pile speed onto debt.
   </p>
 
+  <p class="note">Produced by <span class="mono">code-intel 0.7.0-beta.3-dev (2026-08-02, Windows source build)</span>.</p>
   <h2>Reproduce it</h2>
   <div class="card"><pre>$ git clone https://github.com/expressjs/express.git   # full history; unshallow if --depth 1
 $ code-intel ./express
-$ code-intel resume --repo ./express --json</pre></div>
+$ code-intel artifact query --artifact-root &lt;root&gt; --repo express --type code_evidence.agent_slice</pre>
+  <p class="note">Stable v0.7.1 path (download, verify, run in place):
+  <a href="https://github.com/2233admin/code-intel-pipeline/blob/main/docs/public-beta.md">docs/public-beta.md</a>.</p></div>
 
   <footer class="note">
     Generated 2026-08-02 from real, unedited pipeline artifacts ·
