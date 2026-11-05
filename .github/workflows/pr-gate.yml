@@ -70,6 +70,7 @@ jobs:
 
   change-risk:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -207,6 +208,7 @@ jobs:
     # 配合 branch protection 的 required check 生效。labeled/unlabeled 已在
     # 本 workflow 的触发类型里,点 label 即重跑。
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Evaluate agent label gate
         env:
@@ -236,6 +238,7 @@ jobs:
     # treats Sentrux stdout as authority: `artifact index` revalidates the
     # completion marker, content-addressed manifest, and every Artifact Ref.
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

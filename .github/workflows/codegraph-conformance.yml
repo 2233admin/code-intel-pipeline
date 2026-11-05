@@ -2,6 +2,7 @@ name: CodeGraph provider conformance
 
 on:
   push:
+    branches: [main]
     paths:
       - 'crates/code-intel-cli/**'
       - 'orchestration/**'
@@ -17,15 +18,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: codegraph-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
+  # 同 ci.yml：PR 按号分组（新推送顶掉旧的），main 按 sha 分组，排队中的旧 run 也不会被顶掉。
+  group: codegraph-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   codegraph-conformance:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # PR 上只跑 ubuntu（#488：windows leg 中位 14.1 分钟是每个 PR 最慢的 job）；main 与手动触发仍跑三平台。
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
     runs-on: ${{ vars.CI_5070X_ENABLED == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && contains(fromJSON('["ubuntu-latest","ubuntu-24.04"]'), matrix.os) && 'ci-5070x-linux' || matrix.os }}
     timeout-minutes: 30
     env:
